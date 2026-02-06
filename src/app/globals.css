@@ -1,8 +1,33 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --ccr-bg: #f5f7fc;
+  --ccr-text: #1a243b;
+  --ccr-surface: #ffffff;
+  --ccr-surface-soft: #eef2fb;
+  --ccr-border: #d4dced;
+  --ccr-muted: #5e6e8d;
+  --ccr-accent: #f5b41b;
+  --ccr-accent-strong: #d69305;
+  --ccr-primary: #1f2d4d;
+  --ccr-primary-soft: #2a3b63;
+  --background: var(--ccr-bg);
+  --foreground: var(--ccr-text);
+}
+
+[data-theme="dark"] {
+  --ccr-bg: #0d1427;
+  --ccr-text: #e8edf8;
+  --ccr-surface: #14203a;
+  --ccr-surface-soft: #1a2a4a;
+  --ccr-border: #2c3f67;
+  --ccr-muted: #a5b6d8;
+  --ccr-accent: #f8c648;
+  --ccr-accent-strong: #e4a611;
+  --ccr-primary: #111a31;
+  --ccr-primary-soft: #1c2a4c;
+  --background: var(--ccr-bg);
+  --foreground: var(--ccr-text);
 }
 
 @theme inline {
@@ -12,15 +37,40 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+.logo-light-img {
+  display: inline-block;
+}
+
+.logo-dark-img {
+  display: none;
+}
+
+[data-theme="dark"] .logo-light-img {
+  display: none;
+}
+
+[data-theme="dark"] .logo-dark-img {
+  display: inline-block;
+}
+
+@keyframes logo-pulse-once {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.12);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.logo-pulse-once {
+  animation: logo-pulse-once 900ms ease-in-out 1;
 }

@@ -1,0 +1,13 @@
+<svg width="1200" height="800" viewBox="0 0 1200 800" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="800" fill="#BE185D"/>
+  <rect y="560" width="1200" height="240" fill="#9D174D"/>
+  <rect x="80" y="100" width="1040" height="420" rx="24" fill="white" fill-opacity="0.18"/>
+  <path d="M275 510L355 410H820L900 510H275Z" fill="#111827" fill-opacity="0.9"/>
+  <rect x="360" y="425" width="455" height="70" rx="10" fill="#E5E7EB" fill-opacity="0.95"/>
+  <circle cx="365" cy="535" r="58" fill="#111827"/>
+  <circle cx="810" cy="535" r="58" fill="#111827"/>
+  <circle cx="365" cy="535" r="24" fill="#D1D5DB"/>
+  <circle cx="810" cy="535" r="24" fill="#D1D5DB"/>
+  <text x="95" y="180" fill="white" font-size="66" font-family="Arial, Helvetica, sans-serif" font-weight="700">Honda Fit</text>
+  <text x="95" y="245" fill="white" font-size="34" font-family="Arial, Helvetica, sans-serif" font-weight="500">Weekend Escape</text>
+</svg>

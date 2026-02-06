@@ -1,0 +1,85 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+}
+
+enum BookingStatus {
+  pending
+  confirmed
+  cancelled
+}
+
+enum PaymentStatus {
+  initiated
+  succeeded
+  failed
+  refunded
+}
+
+model Vehicle {
+  id          String   @id @default(cuid())
+  name        String
+  make        String?
+  model       String?
+  year        Int?
+  dailyRate   Decimal  @db.Numeric(12,2)
+  depositRate Decimal  @db.Numeric(12,2) // 0.30 = 30% deposit
+  isActive    Boolean  @default(true)
+
+  bookings    Booking[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Booking {
+  id            String        @id @default(cuid())
+  vehicleId     String
+  vehicle       Vehicle       @relation(fields: [vehicleId], references: [id])
+
+  // [startDate, endDate) allows back-to-back bookings
+  startDate     DateTime
+  endDate       DateTime
+
+  customerName  String
+  customerEmail String
+  customerPhone String?
+
+  totalAmount   Decimal       @db.Numeric(12,2)
+  depositAmount Decimal       @db.Numeric(12,2)
+  balanceDue    Decimal       @db.Numeric(12,2)
+
+  status        BookingStatus @default(pending)
+
+  payments      Payment[]
+
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([vehicleId, startDate, endDate])
+}
+
+model Payment {
+  id          String        @id @default(cuid())
+  bookingId   String
+  booking     Booking       @relation(fields: [bookingId], references: [id])
+
+  amount      Decimal       @db.Numeric(12,2)
+  currency    String        @default("JMD")
+  status      PaymentStatus @default(initiated)
+
+  provider    String?
+  providerRef String?
+
+  createdAt   DateTime      @default(now())
+}
+
