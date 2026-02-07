@@ -25,6 +25,22 @@ export function parseIntSafe(value: unknown) {
   return null;
 }
 
+export function parseMoneyToCents(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.round(value);
+  }
+
+  if (typeof value === "string") {
+    const cleaned = value.replace(/,/g, "").trim();
+    if (cleaned === "") return null;
+    const parsed = Number.parseFloat(cleaned);
+    if (!Number.isFinite(parsed)) return null;
+    return Math.round(parsed);
+  }
+
+  return null;
+}
+
 export function sanitizeText(value: unknown, maxLength = 200) {
   if (typeof value !== "string") return "";
   return value.trim().slice(0, maxLength);

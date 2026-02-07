@@ -19,7 +19,7 @@ export const vehicles: Vehicle[] = [
     transmission: "Automatic",
     seats: 5,
     bags: 2,
-    pricePerDay: 58,
+    pricePerDay: 5800,
     images: [
       "/cars/real/toyota-yaris-2020-1.jpg",
       "/cars/real/toyota-yaris-2020-2.jpg",
@@ -35,7 +35,7 @@ export const vehicles: Vehicle[] = [
     transmission: "Automatic",
     seats: 5,
     bags: 3,
-    pricePerDay: 62,
+    pricePerDay: 6200,
     images: [
       "/cars/real/honda-fit-2020-1.jpg",
       "/cars/real/honda-fit-2020-2.jpg",
@@ -51,7 +51,7 @@ export const vehicles: Vehicle[] = [
     transmission: "Automatic",
     seats: 5,
     bags: 3,
-    pricePerDay: 74,
+    pricePerDay: 7400,
     images: [
       "/cars/real/toyota-corolla-2020-1.jpg",
       "/cars/real/toyota-corolla-2020-2.jpg",
@@ -66,7 +66,7 @@ export const vehicles: Vehicle[] = [
     transmission: "Automatic",
     seats: 5,
     bags: 4,
-    pricePerDay: 98,
+    pricePerDay: 9800,
     images: [
       "/cars/real/nissan-xtrail-1.jpg",
       "/cars/real/nissan-xtrail-2.jpg",

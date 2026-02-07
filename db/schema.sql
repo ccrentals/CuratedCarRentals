@@ -53,7 +53,29 @@ create table if not exists payments (
   currency text not null default 'JMD',
   status text not null,
   provider_ref text,
+  provider_transaction_id text,
+  metadata_json jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists blockouts (
+  id uuid primary key default gen_random_uuid(),
+  vehicle_id uuid not null references vehicles(id) on delete cascade,
+  start_at timestamptz not null,
+  end_at timestamptz not null,
+  reason text not null,
+  notes text,
+  created_by uuid references users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists admin_documents (
+  id uuid primary key default gen_random_uuid(),
+  key text not null unique,
+  content text not null default '',
+  updated_by uuid references users(id) on delete set null,
   updated_at timestamptz not null default now()
 );
 
@@ -81,3 +103,6 @@ create index if not exists bookings_dates_idx on bookings(start_date, end_date);
 create index if not exists payments_booking_id_idx on payments(booking_id);
 create index if not exists payments_status_idx on payments(status);
 create index if not exists vehicles_status_idx on vehicles(status);
+create index if not exists blockouts_vehicle_id_idx on blockouts(vehicle_id);
+create index if not exists blockouts_range_idx on blockouts(start_at, end_at);
+create index if not exists admin_documents_key_idx on admin_documents(key);

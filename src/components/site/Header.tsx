@@ -66,20 +66,13 @@ export function Header() {
   }, []);
 
   return (
-    <header className="sticky top-0 z-30 shadow-sm">
+    <header className="site-header sticky top-0 z-30 shadow-sm">
       <div
         className={cn(
           "overflow-hidden transition-all duration-500 ease-in-out",
           isCompact ? "pointer-events-none max-h-0 -translate-y-6 opacity-0" : "max-h-60 translate-y-0 opacity-100",
         )}
       >
-        <div className="bg-[var(--ccr-primary)] text-[var(--ccr-muted)]">
-          <Container className="flex items-center justify-between py-2 text-xs uppercase tracking-wide">
-            <p>Welcome to Curated Car Rentals</p>
-            <ThemeToggle variant="inverse" />
-          </Container>
-        </div>
-
         <div className="border-b border-[var(--ccr-border)] bg-[var(--ccr-surface)]">
           <Container className="flex flex-col gap-4 py-4 lg:flex-row lg:items-center lg:justify-between">
             <Link href="/" className="inline-flex items-center gap-3 text-2xl font-extrabold tracking-tight text-[var(--ccr-text)]">
@@ -87,16 +80,38 @@ export function Header() {
               <span>Curated Car Rentals</span>
             </Link>
 
-            <div className="grid gap-1 text-sm text-[var(--ccr-muted)] md:grid-cols-3 md:gap-4">
-              <p>{siteContent.location}</p>
+            <div className="grid gap-1 text-sm text-[var(--ccr-muted)] md:grid-cols-2 md:gap-4">
               <p>{siteContent.phone}</p>
               <p>{siteContent.email}</p>
             </div>
 
-            <div className="lg:hidden">
-              <Button href="/book" className="px-3 py-1.5 text-xs">
-                Book Now
-              </Button>
+            <div className="flex items-center gap-2">
+              <ThemeToggle />
+              <Link
+                href="/admin"
+                aria-label="Admin sign in"
+                className="inline-flex items-center gap-2 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-muted)] hover:bg-[var(--ccr-surface-soft)]"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  className="h-4 w-4"
+                  aria-hidden="true"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <circle cx="12" cy="7.5" r="3.5" />
+                  <path d="M4 20c1.8-3.5 5-5.5 8-5.5s6.2 2 8 5.5" />
+                </svg>
+                <span>Admin</span>
+              </Link>
+              <div className="lg:hidden">
+                <Button href="/book" className="px-3 py-1.5 text-xs">
+                  Book Now
+                </Button>
+              </div>
             </div>
           </Container>
         </div>

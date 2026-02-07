@@ -1,3 +1,5 @@
+"use client";
+
 import Link from "next/link";
 
 import { Container } from "@/components/site/Container";
@@ -13,7 +15,7 @@ const footerLinks = [
 
 export function Footer() {
   return (
-    <footer className="mt-16 border-t border-[var(--ccr-border)] bg-[var(--ccr-primary)] text-[var(--ccr-muted)]">
+    <footer className="site-footer mt-16 border-t border-[var(--ccr-border)] bg-[var(--ccr-primary)] text-[var(--ccr-muted)]">
       <Container className="py-10">
         <div className="grid gap-8 md:grid-cols-3">
           <div>
