@@ -5,12 +5,10 @@
 [functions]
   directory = "netlify/functions"
 
-[[functions]]
-  name = "cron-pickup-reminders"
+[functions."cron-pickup-reminders"]
   schedule = "0 12 * * *"
 
-[[functions]]
-  name = "cron-balance-reminders"
+[functions."cron-balance-reminders"]
   schedule = "0 13 * * *"
 
 [[plugins]]
