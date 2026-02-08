@@ -8,6 +8,7 @@ import {
   sendPaymentCompleteEmail,
   sendPaymentUpdateEmail,
 } from "@/lib/notifications/email";
+import { recalculateBookingPayments } from "@/lib/payments/recalculateBooking";
 
 function calcDays(start: string, end: string) {
   const startDate = new Date(`${start}T00:00:00Z`);
@@ -62,7 +63,7 @@ export async function POST(
     await client.query("begin");
 
     const bookingResult = await client.query(
-      "select b.id, b.status, b.start_date, b.end_date, b.pickup_location, b.pricing_json, c.full_name as customer_name, c.email as customer_email, c.phone as customer_phone, v.make as vehicle_make, v.model as vehicle_model, v.year as vehicle_year, v.daily_rate_cents, v.deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.id = $1",
+      "select b.id, b.vehicle_id, b.status, b.start_date, b.end_date, b.pickup_location, b.pricing_json, c.full_name as customer_name, c.email as customer_email, c.phone as customer_phone, v.make as vehicle_make, v.model as vehicle_model, v.year as vehicle_year, v.daily_rate_cents, v.deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.id = $1",
       [id],
     );
 
@@ -116,33 +117,23 @@ export async function POST(
       ],
     );
 
-    const paidResult = await client.query(
-      "select coalesce(sum(deposit_amount_cents), 0) as amount from payments where booking_id = $1 and status = 'DEPOSIT_PAID'",
-      [booking.id],
-    );
+    const summary = await recalculateBookingPayments(booking.id, { client });
+    const shouldConfirm =
+      String(booking.status).toUpperCase() === "PENDING_PAYMENT" &&
+      summary.netPaidToDate >= summary.depositAmount;
 
-    const paidToDate = Number(paidResult.rows[0]?.amount ?? 0);
-    const balanceDue = Math.max(0, total - paidToDate);
-    const paidInFull = balanceDue <= 0;
+    if (shouldConfirm) {
+      const overlapResult = await client.query(
+        "select id from bookings where vehicle_id = $1 and status in ('CONFIRMED','PICKED_UP') and id <> $2 and not ($4 < start_date or $3 > end_date)",
+        [booking.vehicle_id, booking.id, booking.start_date, booking.end_date],
+      );
 
-    const shouldConfirm = booking.status === "PENDING_PAYMENT" && paidToDate >= deposit;
-    const updatedPricing = {
-      ...pricing,
-      daily_rate_cents: dailyRate,
-      deposit_cents: deposit,
-      days,
-      subtotal_cents: total,
-      paid_to_date: paidToDate,
-      balance_due: balanceDue,
-      paid_in_full: paidInFull,
-      balance_paid: paidInFull,
-      balance_paid_amount_cents: paidInFull ? Math.max(0, total - deposit) : 0,
-    };
-
-    await client.query(
-      "update bookings set pricing_json = $1, status = $2, updated_at = now() where id = $3",
-      [updatedPricing, shouldConfirm ? "CONFIRMED" : booking.status, booking.id],
-    );
+      if (overlapResult.rowCount === 0) {
+        await client.query("update bookings set status = 'CONFIRMED', updated_at = now() where id = $1", [
+          booking.id,
+        ]);
+      }
+    }
 
     await client.query("commit");
 
@@ -157,7 +148,7 @@ export async function POST(
     const vehicleLabel = `${booking.vehicle_year} ${booking.vehicle_make} ${booking.vehicle_model}`.trim();
     const methodLabel = METHOD_LABELS[method] ?? method;
 
-    if (paidInFull) {
+    if (summary.balanceDue <= 0) {
       await sendPaymentCompleteEmail({
         bookingId: booking.id,
         customerEmail: booking.customer_email,
@@ -169,8 +160,8 @@ export async function POST(
         dailyRate,
         deposit,
         total,
-        paidToDate,
-        balanceDue,
+        paidToDate: summary.netPaidToDate,
+        balanceDue: summary.balanceDue,
         paymentAmount: amount,
         paymentMethod: methodLabel,
         paymentDateTime: paidAtIso,
@@ -188,8 +179,8 @@ export async function POST(
         dailyRate,
         deposit,
         total,
-        paidToDate,
-        balanceDue,
+        paidToDate: summary.netPaidToDate,
+        balanceDue: summary.balanceDue,
         paymentAmount: amount,
         paymentMethod: methodLabel,
         paymentDateTime: paidAtIso,
@@ -197,7 +188,12 @@ export async function POST(
       });
     }
 
-    return NextResponse.json({ ok: true, paidToDate, balanceDue, paidInFull });
+    return NextResponse.json({
+      ok: true,
+      paidToDate: summary.netPaidToDate,
+      balanceDue: summary.balanceDue,
+      paidInFull: summary.balanceDue <= 0,
+    });
   } catch (error) {
     await client.query("rollback");
     console.error("add-payment failed", error);

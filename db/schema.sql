@@ -52,10 +52,22 @@ create table if not exists bookings (
   pickup_location text not null,
   status text not null,
   pricing_json jsonb not null default '{}'::jsonb,
+  archived_at timestamptz,
+  archived_by_user_id uuid references users(id) on delete set null,
+  archived_reason text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint bookings_date_check check (end_date > start_date)
 );
+
+alter table bookings
+  add column if not exists archived_at timestamptz;
+
+alter table bookings
+  add column if not exists archived_by_user_id uuid references users(id) on delete set null;
+
+alter table bookings
+  add column if not exists archived_reason text;
 
 create table if not exists payments (
   id uuid primary key default gen_random_uuid(),
@@ -124,6 +136,7 @@ create table if not exists audit_logs (
 create index if not exists bookings_vehicle_id_idx on bookings(vehicle_id);
 create index if not exists bookings_status_idx on bookings(status);
 create index if not exists bookings_dates_idx on bookings(start_date, end_date);
+create index if not exists bookings_archived_at_idx on bookings(archived_at);
 create index if not exists payments_booking_id_idx on payments(booking_id);
 create index if not exists payments_status_idx on payments(status);
 create index if not exists payments_deleted_at_idx on payments(deleted_at);

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { dbQuery } from "@/lib/db";
 import { fmtDate } from "@/lib/dateFormat";
 import BookingFilters from "@/components/admin/BookingFilters";
+import { getSessionFromRequest } from "@/lib/auth/session";
 
 type BookingRow = {
   id: string;
@@ -15,11 +16,29 @@ type BookingRow = {
   vehicle_model: string;
 };
 
+function isAdminRole(role: string | undefined) {
+  return String(role ?? "")
+    .trim()
+    .toUpperCase() === "ADMIN";
+}
+
+function isUndefinedColumn(error: unknown, column: string) {
+  const code = (error as { code?: string } | null)?.code;
+  const message = String((error as { message?: unknown } | null)?.message ?? "");
+  if (code !== "42703") return false;
+  const haystack = message.toLowerCase();
+  const needle = column.toLowerCase();
+  return haystack.includes("does not exist") && (haystack.includes(`"${needle}"`) || haystack.includes(`.${needle}`) || haystack.includes(needle));
+}
+
 export default async function AdminBookingsPage({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  const session = await getSessionFromRequest();
+  const canAdmin = isAdminRole(session?.role);
+
   const params = await searchParams;
   const rawStatus = typeof params.status === "string" ? params.status : undefined;
   const statusKey = rawStatus ? rawStatus.toLowerCase() : undefined;
@@ -47,6 +66,11 @@ export default async function AdminBookingsPage({
   const whereClauses: string[] = [];
   const values: Array<string | string[]> = [];
   let index = 1;
+
+  const includeArchived = typeof params.archived === "string" && params.archived === "1";
+  if (!includeArchived) {
+    whereClauses.push("b.archived_at is null");
+  }
 
   if (statusFilter) {
     if (statusFilter.length === 1) {
@@ -86,7 +110,25 @@ export default async function AdminBookingsPage({
     whereSql +
     " order by b.created_at desc";
 
-  const bookings = await dbQuery<BookingRow>(queryText, values);
+  let archiveNotConfigured = false;
+  const queryTextWithoutArchive =
+    "select b.id, b.start_date, b.end_date, b.status, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id " +
+    (whereClauses.filter((clause) => clause !== "b.archived_at is null").length
+      ? `where ${whereClauses.filter((clause) => clause !== "b.archived_at is null").join(" and ")}`
+      : "") +
+    " order by b.created_at desc";
+
+  const bookings = await (async () => {
+    try {
+      return await dbQuery<BookingRow>(queryText, values);
+    } catch (error) {
+      if (isUndefinedColumn(error, "archived_at")) {
+        archiveNotConfigured = true;
+        return await dbQuery<BookingRow>(queryTextWithoutArchive, values);
+      }
+      throw error;
+    }
+  })();
 
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-10">
@@ -95,15 +137,35 @@ export default async function AdminBookingsPage({
           <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Admin</p>
           <h1 className="text-3xl font-bold text-[var(--ccr-text)]">Bookings</h1>
         </div>
-        <Link
-          href="/admin/bookings"
-          className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
-        >
-          Reset
-        </Link>
+        <div className="flex items-center gap-2">
+          {canAdmin ? (
+            <Link
+              href="/admin/bookings/archive"
+              className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+            >
+              Archive
+            </Link>
+          ) : null}
+          <Link
+            href="/admin/bookings"
+            className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+          >
+            Reset
+          </Link>
+        </div>
       </div>
 
-      <BookingFilters />
+      {archiveNotConfigured ? (
+        <div className="mt-6 rounded-2xl border border-amber-400/40 bg-amber-500/10 p-4 text-sm text-amber-100">
+          <p className="font-semibold">Archive not configured</p>
+          <p className="mt-1 text-xs text-amber-100/80">
+            The archive columns are missing in the connected database. Apply the archive section from
+            schema.sql to enable hiding archived bookings.
+          </p>
+        </div>
+      ) : null}
+
+      <BookingFilters canAdmin={canAdmin} />
 
       <div className="mt-6 overflow-x-auto rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)]">
         {bookings.rows.length === 0 ? (

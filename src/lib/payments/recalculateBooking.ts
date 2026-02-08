@@ -63,10 +63,25 @@ export async function recalculateBookingPayments(
   // "Successful" money movements:
   // - DEPOSIT_PAID: any captured payment (deposit/balance/manual)
   // - REFUNDED: refund rows (should be stored as negative amounts)
-  const paidResult = await db.query(
-    "select coalesce(sum(deposit_amount_cents), 0) as amount from payments where booking_id = $1 and deleted_at is null and status in ('DEPOSIT_PAID','REFUNDED')",
-    [bookingId],
-  );
+  let paidResult: { rows: any[]; rowCount: number };
+  try {
+    paidResult = await db.query(
+      "select coalesce(sum(deposit_amount_cents), 0) as amount from payments where booking_id = $1 and deleted_at is null and status in ('DEPOSIT_PAID','REFUNDED')",
+      [bookingId],
+    );
+  } catch (error) {
+    const code = (error as { code?: string } | null)?.code;
+    const message = String((error as { message?: unknown } | null)?.message ?? "");
+    // Graceful fallback if DB hasn't been migrated yet.
+    if (code === "42703" && message.includes("\"deleted_at\"") && message.includes("does not exist")) {
+      paidResult = await db.query(
+        "select coalesce(sum(deposit_amount_cents), 0) as amount from payments where booking_id = $1 and status in ('DEPOSIT_PAID','REFUNDED')",
+        [bookingId],
+      );
+    } else {
+      throw error;
+    }
+  }
   const netPaidToDate = Number(paidResult.rows[0]?.amount ?? 0);
 
   const balanceDue = Math.max(0, totalAmount - netPaidToDate);
@@ -108,4 +123,3 @@ export async function recalculateBookingPayments(
     refundRequired,
   };
 }
-

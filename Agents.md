@@ -56,3 +56,15 @@ Create/maintain these files:
 - No TypeScript errors.
 - `npm run dev` runs successfully.
 - You clearly state what pages to open to verify (e.g., `/fleet`, `/book`).
+
+## PROCESS RULE (MANDATORY WORKFLOW)
+- Implement tasks in order.
+- After implementation, explicitly review against the Acceptance Checklist (below).
+- If any task was skipped or incomplete:
+   - complete skipped task(s)
+   - run the checklist again
+- Repeat until all checklist items pass.
+- Provide final summary:
+   - files changed
+   - migrations added
+   - how to test manually (step-by-step)

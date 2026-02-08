@@ -5,6 +5,18 @@ import { dbQuery } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
 import { requireCsrf } from "@/lib/security/csrf";
 
+function isAdminRole(role: string | undefined) {
+  return String(role ?? "")
+    .trim()
+    .toUpperCase() === "ADMIN";
+}
+
+function isUndefinedColumn(error: unknown, column: string) {
+  const code = (error as { code?: string } | null)?.code;
+  const message = String((error as { message?: unknown } | null)?.message ?? "");
+  return code === "42703" && message.includes(`"${column}"`) && message.includes("does not exist");
+}
+
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -120,7 +132,21 @@ export async function PATCH(
       return NextResponse.json({ error: "Booking cannot be completed" }, { status: 400 });
     }
 
-    await dbQuery("update bookings set status = 'RETURNED', updated_at = now() where id = $1", [id]);
+    try {
+      await dbQuery(
+        "update bookings set status = 'RETURNED', archived_at = now(), archived_by_user_id = $2, archived_reason = $3, updated_at = now() where id = $1",
+        [id, session.userId, "Completed/Returned"],
+      );
+    } catch (error) {
+      // Graceful fallback if DB hasn't been migrated yet.
+      if (isUndefinedColumn(error, "archived_at")) {
+        await dbQuery("update bookings set status = 'RETURNED', updated_at = now() where id = $1", [
+          id,
+        ]);
+      } else {
+        throw error;
+      }
+    }
 
     await writeAuditLog({
       userId: session.userId,
@@ -128,6 +154,81 @@ export async function PATCH(
       entityType: "booking",
       entityId: id,
       details: { previous_status: status },
+    });
+
+    await writeAuditLog({
+      userId: session.userId,
+      action: "BOOKING_ARCHIVED",
+      entityType: "booking",
+      entityId: id,
+      details: { reason: "Completed/Returned" },
+    });
+
+    return NextResponse.json({ ok: true });
+  }
+
+  if (action === "archive") {
+    if (!isAdminRole(session.role)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    const reason = typeof body?.reason === "string" ? body.reason.trim() : "";
+    if (!reason) {
+      return NextResponse.json({ error: "Reason is required" }, { status: 400 });
+    }
+
+    try {
+      await dbQuery(
+        "update bookings set archived_at = now(), archived_by_user_id = $2, archived_reason = $3, updated_at = now() where id = $1",
+        [id, session.userId, reason],
+      );
+    } catch (error) {
+      if (isUndefinedColumn(error, "archived_at")) {
+        return NextResponse.json(
+          { error: "ARCHIVE_NOT_CONFIGURED", message: "Archive columns are missing. Apply schema.sql changes." },
+          { status: 500 },
+        );
+      }
+      throw error;
+    }
+
+    await writeAuditLog({
+      userId: session.userId,
+      action: "BOOKING_ARCHIVED",
+      entityType: "booking",
+      entityId: id,
+      details: { reason },
+    });
+
+    return NextResponse.json({ ok: true });
+  }
+
+  if (action === "unarchive") {
+    if (!isAdminRole(session.role)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    try {
+      await dbQuery(
+        "update bookings set archived_at = null, archived_by_user_id = null, archived_reason = null, updated_at = now() where id = $1",
+        [id],
+      );
+    } catch (error) {
+      if (isUndefinedColumn(error, "archived_at")) {
+        return NextResponse.json(
+          { error: "ARCHIVE_NOT_CONFIGURED", message: "Archive columns are missing. Apply schema.sql changes." },
+          { status: 500 },
+        );
+      }
+      throw error;
+    }
+
+    await writeAuditLog({
+      userId: session.userId,
+      action: "BOOKING_UNARCHIVED",
+      entityType: "booking",
+      entityId: id,
+      details: {},
     });
 
     return NextResponse.json({ ok: true });

@@ -4,6 +4,8 @@ import { dbQuery } from "@/lib/db";
 import { BookingActions } from "@/components/admin/BookingActions";
 import { BookingNotes } from "@/components/admin/BookingNotes";
 import { ManualPaymentForm } from "@/components/admin/ManualPaymentForm";
+import { PaymentRowActions } from "@/components/admin/PaymentRowActions";
+import { getSessionFromRequest } from "@/lib/auth/session";
 import { fmtDate } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
 import { formatPaymentStatus } from "@/lib/payments/formatPaymentStatus";
@@ -33,6 +35,8 @@ type PaymentRow = {
   currency: string;
   created_at: string;
   metadata_json: Record<string, unknown> | null;
+  deleted_at?: string | null;
+  deleted_reason?: string | null;
 };
 
 type AdminNote = {
@@ -40,6 +44,12 @@ type AdminNote = {
   created_at?: string;
   user_id?: string;
 };
+
+function isUndefinedColumn(error: unknown, column: string) {
+  const code = (error as { code?: string } | null)?.code;
+  const message = String((error as { message?: unknown } | null)?.message ?? "");
+  return code === "42703" && message.includes(`"${column}"`) && message.includes("does not exist");
+}
 
 function calcDays(start: string, end: string) {
   const startDate = new Date(`${start}T00:00:00Z`);
@@ -63,6 +73,10 @@ function statusBadge(status: string) {
 
 export default async function AdminBookingDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const session = await getSessionFromRequest();
+  const canAdmin = String(session?.role ?? "")
+    .trim()
+    .toUpperCase() === "ADMIN";
 
   const bookingResult = await dbQuery<BookingDetails>(
     "select b.id, b.start_date, b.end_date, b.pickup_location, b.status, b.pricing_json, c.full_name as customer_name, c.email as customer_email, c.phone as customer_phone, v.make as vehicle_make, v.model as vehicle_model, v.year as vehicle_year, v.daily_rate_cents, v.deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.id = $1",
@@ -78,10 +92,23 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
     );
   }
 
-  const payments = await dbQuery<PaymentRow>(
-    "select id, provider, status, deposit_amount_cents, currency, created_at, metadata_json from payments where booking_id = $1 order by created_at desc",
-    [id],
-  );
+  let payments: { rows: PaymentRow[]; rowCount: number };
+  try {
+    payments = await dbQuery<PaymentRow>(
+      "select id, provider, status, deposit_amount_cents, currency, created_at, metadata_json, deleted_at, deleted_reason from payments where booking_id = $1 order by created_at desc",
+      [id],
+    );
+  } catch (error) {
+    // Graceful fallback if the DB hasn't been migrated yet.
+    if (isUndefinedColumn(error, "deleted_at")) {
+      payments = await dbQuery<PaymentRow>(
+        "select id, provider, status, deposit_amount_cents, currency, created_at, metadata_json from payments where booking_id = $1 order by created_at desc",
+        [id],
+      );
+    } else {
+      throw error;
+    }
+  }
 
   const pricing = booking.pricing_json ?? {};
   const days = Number(pricing.days ?? calcDays(booking.start_date, booking.end_date));
@@ -91,7 +118,10 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
   const paymentRows = payments.rows as PaymentRow[];
   const paidToDate = paymentRows.reduce(
     (sum: number, payment: PaymentRow) =>
-      sum + (payment.status === "DEPOSIT_PAID" ? Number(payment.deposit_amount_cents ?? 0) : 0),
+      sum +
+      (!payment.deleted_at && (payment.status === "DEPOSIT_PAID" || payment.status === "REFUNDED")
+        ? Number(payment.deposit_amount_cents ?? 0)
+        : 0),
     0,
   );
   const balanceDue = Math.max(0, total - paidToDate);
@@ -232,11 +262,18 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
                   <th className="px-3 py-2">Status</th>
                   <th className="px-3 py-2">Amount</th>
                   <th className="px-3 py-2">Created</th>
+                  <th className="px-3 py-2 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {payments.rows.map((payment: PaymentRow) => (
-                  <tr key={payment.id} className="border-b border-[var(--ccr-border)] last:border-b-0">
+                  <tr
+                    key={payment.id}
+                    className={`border-b border-[var(--ccr-border)] last:border-b-0 ${
+                      payment.deleted_at ? "opacity-60" : ""
+                    }`}
+                    title={payment.deleted_reason ? `Deleted: ${payment.deleted_reason}` : undefined}
+                  >
                     <td className="px-3 py-2 font-mono text-xs text-[var(--ccr-text)]">
                       {payment.id.slice(0, 8)}
                     </td>
@@ -260,6 +297,16 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
                     </td>
                     <td className="px-3 py-2 text-[var(--ccr-muted)]">
                       {fmtDate(payment.created_at)}
+                    </td>
+                    <td className="px-3 py-2">
+                      <PaymentRowActions
+                        paymentId={payment.id}
+                        provider={payment.provider}
+                        status={payment.status}
+                        amount={Number(payment.deposit_amount_cents ?? 0)}
+                        deletedAt={payment.deleted_at}
+                        canAdmin={canAdmin}
+                      />
                     </td>
                   </tr>
                 ))}

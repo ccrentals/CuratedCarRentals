@@ -19,7 +19,7 @@ function normalizeStatus(value: string | null) {
   return STATUS_OPTIONS.some((option) => option.value === normalized) ? normalized : "all";
 }
 
-export default function BookingFilters() {
+export default function BookingFilters({ canAdmin }: { canAdmin?: boolean }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -28,19 +28,22 @@ export default function BookingFilters() {
   const qParam = searchParams.get("q") ?? "";
   const dateFromParam = searchParams.get("dateFrom") ?? "";
   const dateToParam = searchParams.get("dateTo") ?? "";
+  const archivedParam = searchParams.get("archived") === "1";
 
   const [status, setStatus] = useState(statusParam);
   const [query, setQuery] = useState(qParam);
   const [dateFrom, setDateFrom] = useState(dateFromParam);
   const [dateTo, setDateTo] = useState(dateToParam);
+  const [showArchived, setShowArchived] = useState(archivedParam);
 
   useEffect(() => {
     if (statusParam !== status) setStatus(statusParam);
     if (qParam !== query) setQuery(qParam);
     if (dateFromParam !== dateFrom) setDateFrom(dateFromParam);
     if (dateToParam !== dateTo) setDateTo(dateToParam);
+    if (archivedParam !== showArchived) setShowArchived(archivedParam);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusParam, qParam, dateFromParam, dateToParam]);
+  }, [statusParam, qParam, dateFromParam, dateToParam, archivedParam]);
 
   const updateParams = useCallback(
     (updates: Record<string, string | null | undefined>) => {
@@ -75,8 +78,8 @@ export default function BookingFilters() {
   }, [query, searchParams, updateParams]);
 
   const activeFilters = useMemo(
-    () => status !== "all" || query.trim() || dateFrom || dateTo,
-    [status, query, dateFrom, dateTo],
+    () => status !== "all" || query.trim() || dateFrom || dateTo || showArchived,
+    [status, query, dateFrom, dateTo, showArchived],
   );
 
   return (
@@ -111,6 +114,7 @@ export default function BookingFilters() {
               setQuery("");
               setDateFrom("");
               setDateTo("");
+              setShowArchived(false);
               router.push(pathname);
             }}
             className="ml-auto rounded-full border border-[var(--ccr-border)] px-4 py-1.5 text-xs font-semibold text-[var(--ccr-text)] hover:border-[var(--ccr-primary)]"
@@ -163,6 +167,28 @@ export default function BookingFilters() {
           />
         </div>
       </div>
+
+      {canAdmin ? (
+        <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2">
+          <div>
+            <p className="text-xs font-semibold text-[var(--ccr-text)]">Show archived</p>
+            <p className="text-xs text-[var(--ccr-muted)]">Include archived bookings in this list.</p>
+          </div>
+          <label className="flex items-center gap-2 text-xs font-semibold text-[var(--ccr-text)]">
+            <input
+              type="checkbox"
+              checked={showArchived}
+              onChange={(event) => {
+                const next = event.target.checked;
+                setShowArchived(next);
+                updateParams({ archived: next ? "1" : null });
+              }}
+              className="h-4 w-4 rounded border border-[var(--ccr-border)] bg-transparent"
+            />
+            Archived
+          </label>
+        </div>
+      ) : null}
     </div>
   );
 }
