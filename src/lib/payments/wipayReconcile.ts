@@ -2,6 +2,7 @@ import { computeHash } from "@/lib/wipay";
 import { sendDepositReceiptEmail, sendPaymentCompleteEmail } from "@/lib/notifications/email";
 import { dbQuery, getDbPool } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
+import { logError } from "@/lib/log";
 
 type ReconcileInput = {
   orderId: string;
@@ -239,7 +240,13 @@ export async function reconcileWiPayPayment(input: ReconcileInput): Promise<Reco
           balanceDue,
         });
       } catch (error) {
-        console.error("Balance receipt email failed", error);
+        logError("wipay_balance_receipt_email_failed", error, {
+          bookingId: booking.id,
+          paymentId: payment.id,
+          orderId: input.orderId,
+          transactionId: input.transactionId,
+          source: input.source,
+        });
       }
 
       return { ok: true, bookingId: booking.id };
@@ -333,14 +340,26 @@ export async function reconcileWiPayPayment(input: ReconcileInput): Promise<Reco
           );
         }
       } catch (error) {
-        console.error("Receipt email failed", error);
+        logError("wipay_deposit_receipt_email_failed", error, {
+          bookingId: booking.id,
+          paymentId: payment.id,
+          orderId: input.orderId,
+          transactionId: input.transactionId,
+          source: input.source,
+        });
       }
     }
 
     return { ok: true, bookingId: booking.id };
   } catch (error) {
     await client.query("rollback");
-    console.error("WiPay reconcile failed", error);
+    logError("wipay_reconcile_failed", error, {
+      orderId: input.orderId,
+      transactionId: input.transactionId,
+      source: input.source,
+      paymentId: payment.id,
+      bookingId: payment.booking_id,
+    });
     return { ok: false };
   } finally {
     client.release();

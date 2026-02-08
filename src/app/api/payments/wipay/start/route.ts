@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { dbQuery } from "@/lib/db";
+import { logError, logWarn } from "@/lib/log";
 import { requireCsrf } from "@/lib/security/csrf";
 import { buildRequestParams, requestHostedPageUrl } from "@/lib/wipay";
 
@@ -27,14 +28,14 @@ export async function POST(request: Request) {
   ];
   for (const key of requiredEnv) {
     if (!process.env[key]) {
-      console.error(`WiPay start failed: Missing ${key}`);
+      logWarn("wipay_start_missing_env", { missing: key });
       return NextResponse.json({ ok: false, error: `Missing ${key}` }, { status: 400 });
     }
   }
 
   const accountNumber = (process.env.WIPAY_ACCOUNT_NUMBER ?? "").trim();
   if (!/^\d+$/.test(accountNumber)) {
-    console.error("WiPay start failed: Invalid WIPAY_ACCOUNT_NUMBER");
+    logWarn("wipay_start_invalid_account_number");
     return NextResponse.json(
       { ok: false, error: "Invalid WIPAY_ACCOUNT_NUMBER: must be digits only" },
       { status: 400 },
@@ -42,7 +43,7 @@ export async function POST(request: Request) {
   }
 
   if (!["sandbox", "live"].includes(process.env.WIPAY_ENV ?? "")) {
-    console.error("WiPay start failed: Invalid WIPAY_ENV");
+    logWarn("wipay_start_invalid_env", { env: process.env.WIPAY_ENV });
     return NextResponse.json({ ok: false, error: "Invalid WIPAY_ENV" }, { status: 400 });
   }
 
@@ -130,7 +131,7 @@ export async function POST(request: Request) {
     paymentId = insertResult.rows[0]?.id ?? null;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Insert failed";
-    console.error(`WiPay start failed: DB error: ${message}`);
+    logError("wipay_start_db_insert_failed", error, { bookingId: booking.id, orderId });
     return NextResponse.json({ ok: false, error: `DB error: ${message}` }, { status: 500 });
   }
 
@@ -151,11 +152,17 @@ export async function POST(request: Request) {
       );
     } catch (dbError) {
       const msg = dbError instanceof Error ? dbError.message : "Update failed";
-      console.error(`WiPay start failed: DB error: ${msg}`);
+      logError("wipay_start_db_update_failed", dbError, { bookingId: booking.id, orderId, paymentId });
       return NextResponse.json({ ok: false, error: `DB error: ${msg}` }, { status: 500 });
     }
 
-    console.error(`WiPay start failed: ${reason}`);
+    logError("wipay_start_request_failed", error, {
+      bookingId: booking.id,
+      orderId,
+      amountDecimal: totalDecimal,
+      env: process.env.WIPAY_ENV ?? "sandbox",
+      paymentId,
+    });
     return NextResponse.json(
       {
         ok: false,

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { sendBookingCreatedEmail } from "@/lib/notifications/email";
 import { dbQuery, getDbPool } from "@/lib/db";
+import { logError } from "@/lib/log";
 import { isEmail, isISODate, isNonEmptyString } from "@/lib/validators";
 
 const UUID_REGEX =
@@ -135,7 +136,12 @@ export async function POST(request: Request) {
         deposit: depositCents,
       });
     } catch (error) {
-      console.error("Booking email failed", error);
+      logError("public_booking_email_failed", error, {
+        bookingId: bookingInsert.rows[0]?.id,
+        vehicleId,
+        startDate,
+        endDate,
+      });
     }
 
     return NextResponse.json({
@@ -144,7 +150,11 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     await client.query("rollback");
-    console.error("POST /api/public/bookings failed", error);
+    logError("public_booking_create_failed", error, {
+      vehicleId,
+      startDate,
+      endDate,
+    });
     return NextResponse.json({ error: "Failed to create booking" }, { status: 500 });
   } finally {
     client.release();

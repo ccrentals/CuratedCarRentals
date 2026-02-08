@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { dbQuery } from "@/lib/db";
 import { reconcileWiPayPayment } from "@/lib/payments/wipayReconcile";
+import { logError } from "@/lib/log";
 
 function pick(body: Record<string, any>, keys: string[]) {
   for (const key of keys) {
@@ -36,7 +37,7 @@ export async function POST(request: Request) {
         ["WIPAY", eventId],
       );
     } catch (error) {
-      console.error("WiPay webhook event insert failed", error);
+      logError("wipay_webhook_event_insert_failed", error, { eventId });
     }
   }
 

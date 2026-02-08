@@ -1,3 +1,5 @@
+import { redactText } from "@/lib/log";
+
 const PDFMONKEY_BASE_URL = "https://api.pdfmonkey.io/api/v1";
 
 export type InvoicePaymentLine = {
@@ -103,8 +105,9 @@ async function createDocumentSync(payload: Record<string, unknown>, meta: Record
   });
 
   if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`PDFMonkey error: ${text.slice(0, 300)}`);
+    const text = await response.text().catch(() => "");
+    const safe = redactText(text).replace(/\s+/g, " ").slice(0, 300);
+    throw new Error(`PDFMonkey request failed: HTTP ${response.status}${safe ? `: ${safe}` : ""}`);
   }
 
   const data = (await response.json()) as {
@@ -163,7 +166,7 @@ export async function generateInvoicePdf(payload: Record<string, unknown>, booki
 export async function downloadPdfBase64(downloadUrl: string) {
   const response = await fetch(downloadUrl);
   if (!response.ok) {
-    throw new Error("Failed to download PDF");
+    throw new Error(`Failed to download PDF (HTTP ${response.status})`);
   }
   const buffer = Buffer.from(await response.arrayBuffer());
   return buffer.toString("base64");

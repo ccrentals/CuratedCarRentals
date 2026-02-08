@@ -3,6 +3,7 @@ import Link from "next/link";
 import PrintInvoiceButton from "@/components/payments/PrintInvoiceButton";
 import { dbQuery } from "@/lib/db";
 import { fmtDateOnly } from "@/lib/dateFormat";
+import { logError } from "@/lib/log";
 import { formatJmd } from "@/lib/money";
 import { buildInvoicePayload, generateInvoicePdf } from "@/lib/pdfmonkey";
 
@@ -109,7 +110,7 @@ export default async function PaymentSuccessPage({
       pdfPreviewUrl = pdf?.previewUrl ?? undefined;
       pdfDownloadUrl = pdf?.downloadUrl ?? undefined;
     } catch (error) {
-      console.error("PDFMonkey preview failed", error);
+      logError("pdfmonkey_preview_failed", error, { bookingId: booking.id });
       pdfError =
         error instanceof Error
           ? "Invoice PDF is temporarily unavailable. We will email it shortly."
