@@ -17,7 +17,14 @@ function calcDays(start: string, end: string) {
   return diff >= 0 ? diff + 1 : 0;
 }
 
-const METHOD_ALLOWLIST = new Set(["CASH", "CARD", "BANK_TRANSFER", "OTHER"]);
+const METHOD_ALLOWLIST = new Set(["CASH", "BANK_TRANSFER", "POS_CARD", "CHEQUE", "OTHER"]);
+const METHOD_LABELS: Record<string, string> = {
+  CASH: "Cash",
+  BANK_TRANSFER: "Bank Transfer",
+  POS_CARD: "POS/Card on delivery",
+  CHEQUE: "Cheque",
+  OTHER: "Other",
+};
 
 export async function POST(
   request: Request,
@@ -38,6 +45,11 @@ export async function POST(
   const methodRaw = typeof body?.method === "string" ? body.method.trim().toUpperCase() : "";
   const method = METHOD_ALLOWLIST.has(methodRaw) ? methodRaw : "OTHER";
   const note = typeof body?.note === "string" ? body.note.trim() : "";
+  const reference = typeof body?.reference === "string" ? body.reference.trim() : "";
+  const paidAtRaw = typeof body?.paidAt === "string" ? body.paidAt.trim() : "";
+  const paidAtDate = paidAtRaw ? new Date(paidAtRaw) : null;
+  const paidAtIso =
+    paidAtDate && !Number.isNaN(paidAtDate.getTime()) ? paidAtDate.toISOString() : new Date().toISOString();
 
   if (!Number.isFinite(amount) || amount <= 0) {
     return NextResponse.json({ error: "Invalid payment amount" }, { status: 400 });
@@ -71,18 +83,33 @@ export async function POST(
     const deposit = Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0);
     const total = Number(pricing.subtotal_cents ?? dailyRate * days);
 
-    const providerRef = `${method}_${Date.now()}`;
+    const providerRef = reference || `${method}_${Date.now()}`;
+
+    // Idempotency: if a receipt/reference is provided, don't double-apply the same payment.
+    if (reference) {
+      const existing = await client.query(
+        "select id from payments where booking_id = $1 and provider = 'MANUAL' and provider_ref = $2 limit 1",
+        [booking.id, reference],
+      );
+      if (existing.rowCount > 0) {
+        await client.query("rollback");
+        return NextResponse.json({ ok: true, duplicate: true });
+      }
+    }
+
     await client.query(
-      "insert into payments (booking_id, provider, deposit_amount_cents, currency, status, provider_ref, metadata_json) values ($1, $2, $3, 'JMD', 'DEPOSIT_PAID', $4, $5)",
+      "insert into payments (booking_id, provider, deposit_amount_cents, currency, status, provider_ref, metadata_json) values ($1, 'MANUAL', $2, 'JMD', 'DEPOSIT_PAID', $3, $4)",
       [
         booking.id,
-        method,
         amount,
         providerRef,
         {
           payment_type: "manual",
           method,
+          method_label: METHOD_LABELS[method] ?? method,
           note,
+          reference: reference || undefined,
+          paid_at: paidAtIso,
           entered_by: session.userId,
           created_at: new Date().toISOString(),
         },
@@ -124,10 +151,11 @@ export async function POST(
       action: "BOOKING_MANUAL_PAYMENT_ADDED",
       entityType: "booking",
       entityId: booking.id,
-      details: { amount, method, confirmed: shouldConfirm },
+      details: { amount, method, reference: reference || undefined, confirmed: shouldConfirm },
     });
 
     const vehicleLabel = `${booking.vehicle_year} ${booking.vehicle_make} ${booking.vehicle_model}`.trim();
+    const methodLabel = METHOD_LABELS[method] ?? method;
 
     if (paidInFull) {
       await sendPaymentCompleteEmail({
@@ -143,6 +171,10 @@ export async function POST(
         total,
         paidToDate,
         balanceDue,
+        paymentAmount: amount,
+        paymentMethod: methodLabel,
+        paymentDateTime: paidAtIso,
+        paymentReference: reference || undefined,
       });
     } else {
       await sendPaymentUpdateEmail({
@@ -158,6 +190,10 @@ export async function POST(
         total,
         paidToDate,
         balanceDue,
+        paymentAmount: amount,
+        paymentMethod: methodLabel,
+        paymentDateTime: paidAtIso,
+        paymentReference: reference || undefined,
       });
     }
 

@@ -20,6 +20,12 @@ function formatDateOnly(value: string) {
   return date.toLocaleDateString("en-JM");
 }
 
+function formatDateTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("en-JM");
+}
+
 function daysInclusive(start: string, end: string) {
   const startDate = new Date(start);
   const endDate = new Date(end);
@@ -292,6 +298,10 @@ export async function sendPaymentUpdateEmail(input: {
   total: number;
   paidToDate: number;
   balanceDue: number;
+  paymentAmount?: number;
+  paymentMethod?: string;
+  paymentDateTime?: string;
+  paymentReference?: string;
 }) {
   const bookingLink = `${baseUrl()}/bookings/${input.bookingId}`;
   const invoiceLink = `${baseUrl()}/bookings/${input.bookingId}/invoice`;
@@ -299,9 +309,22 @@ export async function sendPaymentUpdateEmail(input: {
 
   const html = `
     <div style="font-family: Arial, sans-serif; color: #0f172a;">
-      <h2>Payment received</h2>
+      <h2>Payment updated</h2>
       <p>Hi ${input.customerName},</p>
       <p>We have recorded a payment toward your booking.</p>
+      ${
+        input.paymentAmount || input.paymentMethod || input.paymentDateTime || input.paymentReference
+          ? `
+        <div style="margin-top:12px; padding:12px; border:1px solid #e2e8f0; border-radius:10px; background:#f8fafc;">
+          <p style="margin:0 0 6px; font-weight:600;">Payment details</p>
+          ${input.paymentAmount ? `<p style="margin:0;"><strong>Amount:</strong> ${formatAmount(input.paymentAmount)}</p>` : ""}
+          ${input.paymentMethod ? `<p style="margin:0;"><strong>Method:</strong> ${input.paymentMethod}</p>` : ""}
+          ${input.paymentDateTime ? `<p style="margin:0;"><strong>Date/time:</strong> ${formatDateTime(input.paymentDateTime)}</p>` : ""}
+          ${input.paymentReference ? `<p style="margin:0;"><strong>Reference:</strong> ${input.paymentReference}</p>` : ""}
+        </div>
+      `
+          : ""
+      }
       <p><strong>Booking reference:</strong> ${input.bookingId.slice(0, 8)}</p>
       <p><strong>Vehicle:</strong> ${input.vehicleLabel}</p>
       <p><strong>Dates:</strong> ${formatDateOnly(input.startDate)} → ${formatDateOnly(input.endDate)}</p>
@@ -361,6 +384,10 @@ export async function sendPaymentCompleteEmail(input: {
   total: number;
   paidToDate: number;
   balanceDue: number;
+  paymentAmount?: number;
+  paymentMethod?: string;
+  paymentDateTime?: string;
+  paymentReference?: string;
 }) {
   const bookingLink = `${baseUrl()}/bookings/${input.bookingId}`;
   const invoiceLink = `${baseUrl()}/bookings/${input.bookingId}/invoice`;
@@ -370,6 +397,19 @@ export async function sendPaymentCompleteEmail(input: {
       <h2>Payment complete</h2>
       <p>Hi ${input.customerName},</p>
       <p>Your booking is now paid in full. Thank you!</p>
+      ${
+        input.paymentAmount || input.paymentMethod || input.paymentDateTime || input.paymentReference
+          ? `
+        <div style="margin-top:12px; padding:12px; border:1px solid #e2e8f0; border-radius:10px; background:#f8fafc;">
+          <p style="margin:0 0 6px; font-weight:600;">Payment details</p>
+          ${input.paymentAmount ? `<p style="margin:0;"><strong>Amount:</strong> ${formatAmount(input.paymentAmount)}</p>` : ""}
+          ${input.paymentMethod ? `<p style="margin:0;"><strong>Method:</strong> ${input.paymentMethod}</p>` : ""}
+          ${input.paymentDateTime ? `<p style="margin:0;"><strong>Date/time:</strong> ${formatDateTime(input.paymentDateTime)}</p>` : ""}
+          ${input.paymentReference ? `<p style="margin:0;"><strong>Reference:</strong> ${input.paymentReference}</p>` : ""}
+        </div>
+      `
+          : ""
+      }
       <p><strong>Booking reference:</strong> ${input.bookingId.slice(0, 8)}</p>
       <p><strong>Vehicle:</strong> ${input.vehicleLabel}</p>
       <p><strong>Dates:</strong> ${formatDateOnly(input.startDate)} → ${formatDateOnly(input.endDate)}</p>

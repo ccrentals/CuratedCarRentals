@@ -59,7 +59,8 @@ export function logError(context: string, error: unknown, extra?: Record<string,
     payload.stack = safeString(error.stack);
   }
 
-  console.error(payload);
+  // Next's dev overlay often shows `{}` for object-only logs; include a readable summary first.
+  console.error(`[${context}] ${payload.message}`, payload);
 }
 
 export function logWarn(context: string, extra?: Record<string, unknown>) {
@@ -69,5 +70,5 @@ export function logWarn(context: string, extra?: Record<string, unknown>) {
   };
   const redacted = redact(extra);
   if (redacted && Object.keys(redacted).length) payload.extra = redacted;
-  console.warn(payload);
+  console.warn(`[${context}]`, payload);
 }

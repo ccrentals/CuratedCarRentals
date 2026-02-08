@@ -67,6 +67,7 @@ export async function reconcileWiPayPayment(input: ReconcileInput): Promise<Reco
   const metadata = payment.metadata_json ?? {};
   const totalDecimal = typeof metadata.total_decimal === "string" ? metadata.total_decimal : "";
   const receiptSent = Boolean((metadata as Record<string, unknown>).receipt_email_sent);
+  const overlapReview = Boolean((metadata as Record<string, unknown>).overlap_review);
   const paymentType =
     typeof (metadata as Record<string, unknown>).payment_type === "string"
       ? String((metadata as Record<string, unknown>).payment_type)
@@ -83,6 +84,7 @@ export async function reconcileWiPayPayment(input: ReconcileInput): Promise<Reco
         ],
       );
     }
+    if (overlapReview) return { ok: false, reason: "overlap", bookingId: payment.booking_id };
     return { ok: true, bookingId: payment.booking_id };
   }
 
@@ -180,9 +182,10 @@ export async function reconcileWiPayPayment(input: ReconcileInput): Promise<Reco
             1,
             Math.floor((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1,
           );
-      const days = Number(pricing.days ?? fallbackDays);
+      // Always compute days from booking dates so totals match the customer UI and what we charge via WiPay.
+      const days = fallbackDays;
       const dailyRate = Number(pricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
-      const total = Number(pricing.subtotal_cents ?? dailyRate * days);
+      const total = dailyRate * days;
 
       const paidResult = await client.query(
         "select coalesce(sum(deposit_amount_cents), 0) as amount from payments where booking_id = $1 and status = 'DEPOSIT_PAID'",
@@ -201,7 +204,10 @@ export async function reconcileWiPayPayment(input: ReconcileInput): Promise<Reco
         balance_due: balanceDue,
         paid_in_full: balanceDue <= 0,
         balance_paid: balanceDue <= 0,
-        balance_paid_amount_cents: balanceDue <= 0 ? Math.max(0, total - Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0)) : 0,
+        balance_paid_amount_cents:
+          balanceDue <= 0
+            ? Math.max(0, total - Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0))
+            : 0,
       };
 
       await client.query("update bookings set pricing_json = $1, updated_at = now() where id = $2", [
@@ -209,11 +215,46 @@ export async function reconcileWiPayPayment(input: ReconcileInput): Promise<Reco
         booking.id,
       ]);
 
+      const shouldConfirmBooking = booking.status === "PENDING_PAYMENT";
+      if (shouldConfirmBooking) {
+        await client.query("select pg_advisory_xact_lock(hashtext($1))", [booking.vehicle_id]);
+
+        const overlapResult = await client.query(
+          "select id from bookings where vehicle_id = $1 and status in ('CONFIRMED','PICKED_UP') and id <> $2 and not ($4 < start_date or $3 > end_date)",
+          [booking.vehicle_id, booking.id, booking.start_date, booking.end_date],
+        );
+
+        if (overlapResult.rowCount > 0) {
+          await client.query(
+            "update payments set metadata_json = jsonb_set(metadata_json, '{overlap_review}', 'true'::jsonb, true), updated_at = now() where id = $1",
+            [payment.id],
+          );
+          await client.query("commit");
+          await writeAuditLog({
+            userId: "system",
+            action: "PAYMENT_FULL_OVERLAP_REVIEW",
+            entityType: "booking",
+            entityId: booking.id,
+            details: {
+              paymentId: payment.id,
+              orderId: input.orderId,
+              transactionId: input.transactionId,
+              source: input.source,
+            },
+          });
+          return { ok: false, reason: "overlap", bookingId: booking.id };
+        }
+
+        await client.query("update bookings set status = 'CONFIRMED', updated_at = now() where id = $1", [
+          booking.id,
+        ]);
+      }
+
       await client.query("commit");
 
       await writeAuditLog({
         userId: "system",
-        action: "PAYMENT_BALANCE_CONFIRMED_WIPAY",
+        action: shouldConfirmBooking ? "PAYMENT_FULL_CONFIRMED_WIPAY" : "PAYMENT_BALANCE_CONFIRMED_WIPAY",
         entityType: "booking",
         entityId: booking.id,
         details: {
@@ -260,6 +301,10 @@ export async function reconcileWiPayPayment(input: ReconcileInput): Promise<Reco
     );
 
     if (overlapResult.rowCount > 0) {
+      await client.query(
+        "update payments set metadata_json = jsonb_set(metadata_json, '{overlap_review}', 'true'::jsonb, true), updated_at = now() where id = $1",
+        [payment.id],
+      );
       await client.query("commit");
       await writeAuditLog({
         userId: "system",

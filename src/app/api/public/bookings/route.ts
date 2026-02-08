@@ -59,7 +59,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "endDate must be after startDate" }, { status: 400 });
   }
 
-  const days = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+  // Pricing/UI treats end_date as inclusive (e.g. 3/19 -> 3/20 is 2 days).
+  const days = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
   if (days <= 0) {
     return NextResponse.json({ error: "Invalid rental duration" }, { status: 400 });
   }

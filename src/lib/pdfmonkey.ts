@@ -37,6 +37,10 @@ type PdfMonkeyDocument = {
   failure_cause?: string | null;
 };
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function getPdfMonkeyKey() {
   const key = process.env.PDFMONKEY_API_KEY;
   if (!key) return null;
@@ -140,20 +144,50 @@ export async function generateInvoicePdf(payload: Record<string, unknown>, booki
     booking_id: bookingId,
   };
 
-  const document = await createDocumentSync(payload, meta);
+  let document = await createDocumentSync(payload, meta);
   if (!document) return null;
 
-  if (document.status && document.status !== "success") {
-    throw new Error(document.failure_cause ?? "PDFMonkey generation failed");
+  const status = document.status ?? "";
+  const statusNormalized = status.toLowerCase();
+
+  // Treat explicit failures as errors, but allow "pending"/"generating" by polling briefly.
+  if (statusNormalized && statusNormalized !== "success") {
+    if (["failure", "failed", "error", "canceled", "cancelled"].includes(statusNormalized)) {
+      throw new Error(document.failure_cause ?? "PDFMonkey generation failed");
+    }
+
+    if (document.id) {
+      const delays = [200, 300, 500, 800];
+      for (const delay of delays) {
+        await sleep(delay);
+        const refreshed = await fetchDocument(document.id);
+        if (!refreshed) continue;
+        const refreshedStatus = (refreshed.status ?? "").toLowerCase();
+        if (refreshedStatus === "success") {
+          document = refreshed;
+          break;
+        }
+        if (["failure", "failed", "error", "canceled", "cancelled"].includes(refreshedStatus)) {
+          throw new Error(refreshed.failure_cause ?? "PDFMonkey generation failed");
+        }
+      }
+    }
+  }
+
+  if ((document.status ?? "").toLowerCase() !== "success") {
+    // Still pending after retries.
+    return null;
   }
 
   let downloadUrl = document.download_url ?? undefined;
   let previewUrl = document.preview_url ?? undefined;
 
-  if (!downloadUrl && document.id) {
+  if ((!downloadUrl || !previewUrl) && document.id) {
     const refreshed = await fetchDocument(document.id);
-    downloadUrl = refreshed?.download_url ?? downloadUrl;
-    previewUrl = refreshed?.preview_url ?? previewUrl;
+    if (refreshed && (refreshed.status ?? "").toLowerCase() === "success") {
+      downloadUrl = refreshed.download_url ?? downloadUrl;
+      previewUrl = refreshed.preview_url ?? previewUrl;
+    }
   }
 
   return {

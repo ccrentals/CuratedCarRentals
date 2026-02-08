@@ -67,9 +67,21 @@ create table if not exists payments (
   provider_ref text,
   provider_transaction_id text,
   metadata_json jsonb not null default '{}'::jsonb,
+  deleted_at timestamptz,
+  deleted_by_user_id uuid references users(id) on delete set null,
+  deleted_reason text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table payments
+  add column if not exists deleted_at timestamptz;
+
+alter table payments
+  add column if not exists deleted_by_user_id uuid references users(id) on delete set null;
+
+alter table payments
+  add column if not exists deleted_reason text;
 
 create table if not exists blockouts (
   id uuid primary key default gen_random_uuid(),
@@ -114,6 +126,7 @@ create index if not exists bookings_status_idx on bookings(status);
 create index if not exists bookings_dates_idx on bookings(start_date, end_date);
 create index if not exists payments_booking_id_idx on payments(booking_id);
 create index if not exists payments_status_idx on payments(status);
+create index if not exists payments_deleted_at_idx on payments(deleted_at);
 create index if not exists vehicles_status_idx on vehicles(status);
 create index if not exists admin_login_attempts_email_idx on admin_login_attempts(email);
 create index if not exists admin_login_attempts_ip_idx on admin_login_attempts(ip);

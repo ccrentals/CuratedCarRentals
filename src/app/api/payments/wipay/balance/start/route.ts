@@ -89,9 +89,11 @@ export async function POST(request: Request) {
   }
 
   const pricing = booking.pricing_json ?? {};
-  const days = Number(pricing.days ?? daysInclusive(booking.start_date, booking.end_date));
+  // Always compute days from booking dates so what we charge matches what the UI shows.
+  // We keep dailyRate from pricing_json when present so rate changes on the vehicle do not change existing bookings.
+  const days = daysInclusive(booking.start_date, booking.end_date);
   const dailyRate = Number(pricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
-  const total = Number(pricing.subtotal_cents ?? dailyRate * days);
+  const total = dailyRate * days;
   const paidToDate = Number(booking.paid_to_date ?? 0);
   const balanceDue = Math.max(0, total - paidToDate);
 

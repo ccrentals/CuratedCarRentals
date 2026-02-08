@@ -20,9 +20,15 @@ type BookingActionsProps = {
   bookingId: string;
   bookingStatus?: string;
   hasPayments?: boolean;
+  isPaidInFull?: boolean;
 };
 
-export function BookingActions({ bookingId, bookingStatus, hasPayments }: BookingActionsProps) {
+export function BookingActions({
+  bookingId,
+  bookingStatus,
+  hasPayments,
+  isPaidInFull,
+}: BookingActionsProps) {
   const router = useRouter();
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -65,15 +71,15 @@ export function BookingActions({ bookingId, bookingStatus, hasPayments }: Bookin
             headers,
           });
 
+    const data = await response.json().catch(() => ({}));
     setLoadingKey(null);
 
     if (!response.ok) {
-      const data = await response.json().catch(() => ({}));
       setError(data.error ?? "Action failed");
       return;
     }
 
-    setMessage("Action completed successfully.");
+    setMessage(data.message ?? "Action completed successfully.");
     router.refresh();
   }
 
@@ -133,7 +139,8 @@ export function BookingActions({ bookingId, bookingStatus, hasPayments }: Bookin
         <button
           type="button"
           onClick={() => runAction("full")}
-          disabled={loadingKey === "full"}
+          disabled={loadingKey === "full" || Boolean(isPaidInFull)}
+          title={isPaidInFull ? "Already fully paid" : undefined}
           className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
         >
           {loadingKey === "full" ? "Working..." : actionLabels.full}

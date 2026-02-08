@@ -22,6 +22,7 @@ type PaymentRow = {
   status: string;
   deposit_amount_cents: number;
   created_at: string;
+  metadata_json: Record<string, unknown> | null;
 };
 
 export default async function PaymentSuccessPage({
@@ -59,19 +60,26 @@ export default async function PaymentSuccessPage({
 
   const paymentsResult = bookingId
     ? await dbQuery<PaymentRow>(
-        "select id, provider, status, deposit_amount_cents, created_at from payments where booking_id = $1 order by created_at asc",
+        "select id, provider, status, deposit_amount_cents, created_at, metadata_json from payments where booking_id = $1 order by created_at asc",
         [bookingId],
       )
     : null;
 
   const payments = (paymentsResult?.rows as PaymentRow[] | undefined) ?? [];
-  const depositAmount = booking
-    ? Number((booking.pricing_json as Record<string, unknown> | null)?.deposit_cents ?? booking.deposit_cents)
-    : 0;
   const days = booking ? daysInclusive(booking.start_date, booking.end_date) : 0;
   const total = booking ? days * Number(booking.daily_rate_cents || 0) : 0;
   const paidToDate = payments.reduce((sum: number, payment: PaymentRow) => {
     if (payment.status !== "DEPOSIT_PAID") return sum;
+    return sum + Number(payment.deposit_amount_cents || 0);
+  }, 0);
+  const depositPaid = payments.reduce((sum: number, payment: PaymentRow) => {
+    if (payment.status !== "DEPOSIT_PAID") return sum;
+    const metadata = payment.metadata_json ?? {};
+    const paymentType =
+      typeof metadata.payment_type === "string" ? String(metadata.payment_type) : "deposit";
+    // Balance/full payments are recorded with payment_type='balance'. Deposit paid should reflect
+    // actual deposit payments only.
+    if (paymentType === "balance") return sum;
     return sum + Number(payment.deposit_amount_cents || 0);
   }, 0);
   const balanceDue = Math.max(0, total - paidToDate);
@@ -82,6 +90,7 @@ export default async function PaymentSuccessPage({
 
   if (booking) {
     try {
+      const pdfConfigured = Boolean(process.env.PDFMONKEY_API_KEY && process.env.PDFMONKEY_TEMPLATE_ID);
       const payload = buildInvoicePayload({
         bookingId: booking.id,
         bookingStatus: booking.status,
@@ -95,7 +104,7 @@ export default async function PaymentSuccessPage({
         vehicleModel: booking.vehicle_model,
         vehicleYear: booking.vehicle_year,
         dailyRate: Number(booking.daily_rate_cents || 0),
-        deposit: depositAmount,
+        deposit: depositPaid,
         total,
         paidToDate,
         balanceDue,
@@ -109,12 +118,21 @@ export default async function PaymentSuccessPage({
       const pdf = await generateInvoicePdf(payload, booking.id);
       pdfPreviewUrl = pdf?.previewUrl ?? undefined;
       pdfDownloadUrl = pdf?.downloadUrl ?? undefined;
+
+      if (!pdf && pdfConfigured) {
+        pdfError = "Invoice PDF is generating. Refresh in a moment or check your email.";
+      }
     } catch (error) {
       logError("pdfmonkey_preview_failed", error, { bookingId: booking.id });
+      const rawMessage = error instanceof Error ? error.message.toLowerCase() : "";
+      if (rawMessage.includes("quota")) {
+        pdfError = "Invoice PDF is temporarily unavailable (quota reached). We will email it shortly.";
+      } else {
       pdfError =
         error instanceof Error
           ? "Invoice PDF is temporarily unavailable. We will email it shortly."
           : "Invoice PDF is temporarily unavailable.";
+      }
     }
   }
 
@@ -180,7 +198,7 @@ export default async function PaymentSuccessPage({
                   <div>
                     <p className="text-xs uppercase text-[var(--ccr-muted)]">Charges</p>
                     <p>Total rental: {formatJmd(total)}</p>
-                    <p>Deposit paid: {formatJmd(depositAmount)}</p>
+                    <p>Deposit paid: {formatJmd(depositPaid)}</p>
                     <p>Paid to date: {formatJmd(paidToDate)}</p>
                     <p className="font-semibold">Balance on pickup: {formatJmd(balanceDue)}</p>
                   </div>

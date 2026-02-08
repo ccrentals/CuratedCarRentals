@@ -6,6 +6,7 @@ import { BookingNotes } from "@/components/admin/BookingNotes";
 import { ManualPaymentForm } from "@/components/admin/ManualPaymentForm";
 import { fmtDate } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
+import { formatPaymentStatus } from "@/lib/payments/formatPaymentStatus";
 
 type BookingDetails = {
   id: string;
@@ -31,6 +32,7 @@ type PaymentRow = {
   deposit_amount_cents: number;
   currency: string;
   created_at: string;
+  metadata_json: Record<string, unknown> | null;
 };
 
 type AdminNote = {
@@ -77,7 +79,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
   }
 
   const payments = await dbQuery<PaymentRow>(
-    "select id, provider, status, deposit_amount_cents, currency, created_at from payments where booking_id = $1 order by created_at desc",
+    "select id, provider, status, deposit_amount_cents, currency, created_at, metadata_json from payments where booking_id = $1 order by created_at desc",
     [id],
   );
 
@@ -88,10 +90,12 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
   const total = Number(pricing.subtotal_cents ?? dailyRate * days);
   const paymentRows = payments.rows as PaymentRow[];
   const paidToDate = paymentRows.reduce(
-    (sum: number, payment: PaymentRow) => sum + Number(payment.deposit_amount_cents ?? 0),
+    (sum: number, payment: PaymentRow) =>
+      sum + (payment.status === "DEPOSIT_PAID" ? Number(payment.deposit_amount_cents ?? 0) : 0),
     0,
   );
   const balanceDue = Math.max(0, total - paidToDate);
+  const isPaidInFull = balanceDue <= 0;
 
   const notesRaw = (pricing as { admin_notes?: AdminNote[] }).admin_notes;
   const notes = Array.isArray(notesRaw) ? [...notesRaw] : [];
@@ -125,6 +129,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
           bookingId={booking.id}
           bookingStatus={booking.status}
           hasPayments={paidToDate > 0}
+          isPaidInFull={isPaidInFull}
         />
       </div>
 
@@ -235,8 +240,21 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
                     <td className="px-3 py-2 font-mono text-xs text-[var(--ccr-text)]">
                       {payment.id.slice(0, 8)}
                     </td>
-                    <td className="px-3 py-2 text-[var(--ccr-text)]">{payment.provider}</td>
-                    <td className="px-3 py-2 text-[var(--ccr-text)]">{payment.status}</td>
+                    <td className="px-3 py-2 text-[var(--ccr-text)]">
+                      {payment.provider === "MANUAL"
+                        ? (payment.metadata_json?.method_label as string | undefined) ??
+                          (payment.metadata_json?.method as string | undefined) ??
+                          "MANUAL"
+                        : payment.provider}
+                    </td>
+                    <td className="px-3 py-2 text-[var(--ccr-text)]">
+                      {formatPaymentStatus(payment.status, {
+                        paymentType:
+                          typeof payment.metadata_json?.payment_type === "string"
+                            ? String(payment.metadata_json.payment_type)
+                            : null,
+                      })}
+                    </td>
                     <td className="px-3 py-2 text-[var(--ccr-text)]">
                       {formatJmd(payment.deposit_amount_cents)}
                     </td>

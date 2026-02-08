@@ -103,7 +103,7 @@ export default async function BookingSummaryPage({
               href={`/bookings/${booking.id}/pay`}
               className="rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-sm font-semibold text-white"
             >
-              Pay Deposit
+              Make Payment
             </Link>
           ) : null}
           {canPayBalance ? (

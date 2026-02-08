@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { PayDepositButton } from "@/components/payments/PayDepositButton";
+import { PayInFullButton } from "@/components/payments/PayInFullButton";
 import { dbQuery } from "@/lib/db";
 import { fmtDateOnly } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
@@ -54,8 +55,10 @@ export default async function BookingPayPage({
   return (
     <div className="mx-auto w-full max-w-3xl px-6 py-12">
       <div className="rounded-3xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-8 shadow-sm">
-        <h1 className="text-3xl font-bold text-[var(--ccr-text)]">Pay Deposit</h1>
-        <p className="mt-2 text-sm text-[var(--ccr-muted)]">Complete your deposit to confirm the booking.</p>
+        <h1 className="text-3xl font-bold text-[var(--ccr-text)]">Pay Online</h1>
+        <p className="mt-2 text-sm text-[var(--ccr-muted)]">
+          Choose to pay the deposit now or pay in full to complete payment.
+        </p>
 
         <div className="mt-4 space-y-2 text-sm text-[var(--ccr-muted)]">
           <p>
@@ -75,11 +78,32 @@ export default async function BookingPayPage({
           </div>
         </div>
 
-        <div className="mt-6 flex flex-wrap gap-3">
-          <PayDepositButton bookingId={booking.id} />
+        <div className="mt-6 grid gap-4 sm:grid-cols-2">
+          <div className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
+            <p className="text-sm font-semibold text-[var(--ccr-text)]">Pay Deposit</p>
+            <p className="mt-1 text-sm text-[var(--ccr-muted)]">
+              Pay {formatJmd(deposit)} now to confirm. Balance due on pickup.
+            </p>
+            <div className="mt-3">
+              <PayDepositButton bookingId={booking.id} />
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
+            <p className="text-sm font-semibold text-[var(--ccr-text)]">Pay in Full</p>
+            <p className="mt-1 text-sm text-[var(--ccr-muted)]">
+              Pay {formatJmd(total)} now. Balance due becomes {formatJmd(0)}.
+            </p>
+            <div className="mt-3">
+              <PayInFullButton bookingId={booking.id} />
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-6">
           <Link
             href={`/bookings/${booking.id}`}
-            className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)]"
+            className="inline-flex rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)]"
           >
             Back to Booking
           </Link>
