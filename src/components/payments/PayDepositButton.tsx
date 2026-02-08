@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 
+import { ensureCsrfToken } from "@/lib/security/csrf-client";
+
 export function PayDepositButton({ bookingId }: { bookingId: string }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -11,9 +13,14 @@ export function PayDepositButton({ bookingId }: { bookingId: string }) {
     setLoading(true);
     setError(null);
 
+    const csrfToken = await ensureCsrfToken();
+
     const response = await fetch("/api/payments/wipay/start", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "x-csrf-token": csrfToken ?? "",
+      },
       body: JSON.stringify({ bookingId }),
     });
 

@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 
+import { ensureCsrfToken } from "@/lib/security/csrf-client";
+
 type VehicleOption = {
   id: string;
   make: string;
@@ -85,11 +87,15 @@ export function BlockoutModal({
       notes: draft.notes,
     };
 
+    const csrfToken = await ensureCsrfToken();
     const response = await fetch(
       isEditing ? `/api/admin/blockouts/${draft.id}` : "/api/admin/blockouts",
       {
         method: isEditing ? "PATCH" : "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-csrf-token": csrfToken ?? "",
+        },
         body: JSON.stringify(payload),
       },
     );
@@ -113,7 +119,13 @@ export function BlockoutModal({
     setSaving(true);
     setError(null);
 
-    const response = await fetch(`/api/admin/blockouts/${draft.id}`, { method: "DELETE" });
+    const csrfToken = await ensureCsrfToken();
+    const response = await fetch(`/api/admin/blockouts/${draft.id}`, {
+      method: "DELETE",
+      headers: {
+        "x-csrf-token": csrfToken ?? "",
+      },
+    });
     setSaving(false);
 
     if (!response.ok) {
@@ -129,7 +141,7 @@ export function BlockoutModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-10">
       <div className="w-full max-w-xl rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-xl">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-bold text-[var(--ccr-primary)]">
+          <h2 className="text-lg font-bold text-[var(--ccr-text)]">
             {isEditing ? "Edit Blockout" : "Add Blockout"}
           </h2>
           <button

@@ -24,7 +24,7 @@ export default async function PaymentFailedPage({
   return (
     <div className="mx-auto w-full max-w-3xl px-6 py-12">
       <div className="rounded-3xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-8 shadow-sm">
-        <h1 className="text-3xl font-bold text-[var(--ccr-primary)]">Payment issue</h1>
+        <h1 className="text-3xl font-bold text-[var(--ccr-text)]">Payment issue</h1>
         <p className="mt-3 text-sm text-[var(--ccr-muted)]">{getMessage(reason)}</p>
         {shortBooking ? (
           <p className="mt-4 text-sm text-[var(--ccr-text)]">

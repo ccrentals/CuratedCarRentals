@@ -15,6 +15,7 @@ We are creating a professional car rental site skeleton similar to curatedcarren
   1) Summarize what changed
   2) Tell me exactly how to verify in the browser
   3) STOP and wait for the next instruction
+- Ensure all steps in the requested task are completed, then review the work once finished to confirm every task item is done.
 
 ## Do
 - Keep changes minimal and consistent with existing styling.

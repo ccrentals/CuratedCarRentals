@@ -79,3 +79,56 @@ html[data-admin="true"] .site-footer {
 .logo-pulse-once {
   animation: logo-pulse-once 900ms ease-in-out 1;
 }
+
+@media print {
+  @page {
+    size: auto;
+    margin: 18mm;
+  }
+
+  html,
+  body {
+    background: #ffffff !important;
+    color: #0f172a !important;
+  }
+
+  .site-header,
+  .site-footer,
+  .admin-shell,
+  nav {
+    display: none !important;
+  }
+
+  .print-hide {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  .invoice-card {
+    box-shadow: none !important;
+    border: 1px solid #e2e8f0 !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+  }
+
+  .invoice-card * {
+    color: #0f172a !important;
+  }
+
+  .invoice-card {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 12mm !important;
+  }
+
+  .invoice-page {
+    max-width: none !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+}

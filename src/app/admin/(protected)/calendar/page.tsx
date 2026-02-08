@@ -1,4 +1,5 @@
 import { CalendarView } from "@/components/admin/CalendarView";
+import { CopySqlButton } from "@/components/admin/CopySqlButton";
 import { dbQuery } from "@/lib/db";
 
 type VehicleRow = {
@@ -87,6 +88,21 @@ export default async function AdminCalendarPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  const blockoutsSchemaSql = `create table if not exists blockouts (
+  id uuid primary key default gen_random_uuid(),
+  vehicle_id uuid not null references vehicles(id) on delete cascade,
+  start_at timestamptz not null,
+  end_at timestamptz not null,
+  reason text not null,
+  notes text,
+  created_by uuid references users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists blockouts_vehicle_id_idx on blockouts(vehicle_id);
+create index if not exists blockouts_range_idx on blockouts(start_at, end_at);`;
+
   const params = await searchParams;
   const view = params.view === "week" ? "week" : "month";
   const baseDate = parseDate(typeof params.date === "string" ? params.date : undefined) ?? new Date();
@@ -180,7 +196,7 @@ export default async function AdminCalendarPage({
     <div className="mx-auto w-full max-w-6xl px-6 py-10">
       <div>
         <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Admin</p>
-        <h1 className="text-3xl font-bold text-[var(--ccr-primary)]">Calendar</h1>
+        <h1 className="text-3xl font-bold text-[var(--ccr-text)]">Calendar</h1>
       </div>
 
       {blockoutsTableMissing ? (
@@ -190,6 +206,18 @@ export default async function AdminCalendarPage({
             The ‘blockouts’ table is missing in the connected database. Apply the blockouts table
             section from schema.sql to enable maintenance/unavailable scheduling.
           </p>
+          <details className="mt-3 rounded-xl border border-amber-200 bg-white/60 px-3 py-2">
+            <summary className="cursor-pointer text-sm font-semibold text-amber-900">
+              Show SQL to create blockouts table
+            </summary>
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs text-amber-900">Run this in the Neon SQL Editor.</p>
+              <CopySqlButton text={blockoutsSchemaSql} />
+            </div>
+            <pre className="mt-2 whitespace-pre-wrap rounded-lg bg-white px-3 py-2 text-xs text-amber-900">
+{blockoutsSchemaSql}
+            </pre>
+          </details>
         </div>
       ) : null}
 

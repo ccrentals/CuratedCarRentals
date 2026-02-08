@@ -3,6 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { ensureCsrfToken } from "@/lib/security/csrf-client";
+
 type DocumentationEditorProps = {
   initialContent: string;
   disabled?: boolean;
@@ -26,9 +28,13 @@ export function DocumentationEditor({ initialContent, disabled }: DocumentationE
     setMessage(null);
     setError(null);
 
+    const csrfToken = await ensureCsrfToken();
     const response = await fetch("/api/admin/docs", {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "x-csrf-token": csrfToken ?? "",
+      },
       body: JSON.stringify({ content }),
     });
 

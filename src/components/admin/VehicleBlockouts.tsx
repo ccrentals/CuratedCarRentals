@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { BlockoutModal } from "@/components/admin/BlockoutModal";
+import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
 type VehicleOption = {
   id: string;
@@ -82,7 +83,13 @@ export function VehicleBlockouts({ vehicle }: VehicleBlockoutsProps) {
   async function handleDelete(blockout: BlockoutRow) {
     const confirmed = window.confirm("Delete this blockout?");
     if (!confirmed) return;
-    const response = await fetch(`/api/admin/blockouts/${blockout.id}`, { method: "DELETE" });
+    const csrfToken = await ensureCsrfToken();
+    const response = await fetch(`/api/admin/blockouts/${blockout.id}`, {
+      method: "DELETE",
+      headers: {
+        "x-csrf-token": csrfToken ?? "",
+      },
+    });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
       if (data.error === "BLOCKOUTS_TABLE_MISSING") {
@@ -129,7 +136,7 @@ export function VehicleBlockouts({ vehicle }: VehicleBlockoutsProps) {
     <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-bold text-[var(--ccr-primary)]">Blockouts</h2>
+          <h2 className="text-lg font-bold text-[var(--ccr-text)]">Blockouts</h2>
           <p className="text-xs text-[var(--ccr-muted)]">
             {vehicle.make} {vehicle.model}
           </p>

@@ -132,6 +132,44 @@ const NAV_ITEMS = [
     ),
   },
   {
+    label: "Cron",
+    href: "/admin/cron",
+    icon: (className: string) => (
+      <svg
+        viewBox="0 0 24 24"
+        className={className}
+        aria-hidden="true"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 7v6l4 2" />
+      </svg>
+    ),
+  },
+  {
+    label: "Health",
+    href: "/admin/health",
+    icon: (className: string) => (
+      <svg
+        viewBox="0 0 24 24"
+        className={className}
+        aria-hidden="true"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M12 21s-7-4.4-9-9.5C1.6 8 3.7 5 7.2 5c1.9 0 3.2 1 3.8 2 0.6-1 1.9-2 3.8-2C18.3 5 20.4 8 21 11.5 19 16.6 12 21 12 21z" />
+        <path d="M3.8 12h3l1.2-2.4L10 14l1.4-2h2.6l1.2-2.2L16.7 12h3.5" />
+      </svg>
+    ),
+  },
+  {
     label: "Documentation",
     href: "/admin/documentation",
     icon: (className: string) => (
@@ -211,9 +249,8 @@ export function AdminShell({
     };
   }, [drawerOpen]);
 
-  const activeLabel = useMemo(() => {
-    const item = NAV_ITEMS.find((nav) => isActivePath(pathname, nav.href));
-    return item?.label ?? "Admin";
+  const activeItem = useMemo(() => {
+    return NAV_ITEMS.find((nav) => isActivePath(pathname, nav.href));
   }, [pathname]);
 
   const NavLinks = ({
@@ -245,11 +282,11 @@ export function AdminShell({
               className={`flex h-9 w-9 items-center justify-center rounded-lg ${
                 active
                   ? "bg-white/20 text-white"
-                  : "bg-[var(--ccr-surface-soft)] text-[var(--ccr-primary)]"
+                  : "bg-[var(--ccr-surface-soft)] text-[var(--ccr-text)]"
               }`}
             >
               {item.icon(
-                `h-5 w-5 ${active ? "text-white" : "text-[var(--ccr-primary)]"}`,
+                `h-5 w-5 ${active ? "text-white" : "text-[var(--ccr-text)]"}`,
               )}
             </span>
             {collapsedState ? null : <span>{item.label}</span>}
@@ -283,12 +320,32 @@ export function AdminShell({
       <aside
         className={`hidden lg:fixed lg:inset-y-0 lg:left-0 lg:flex lg:flex-col lg:border-r lg:border-[var(--ccr-border)] lg:bg-[var(--ccr-surface)] lg:px-4 lg:py-6 ${sidebarWidth}`}
       >
-        <Link
-          href="/admin"
-          className={`text-lg font-bold text-[var(--ccr-primary)] ${collapsed ? "text-center" : ""}`}
-        >
-          {brandLabel}
-        </Link>
+        <div className={`flex items-center gap-2 ${collapsed ? "justify-center" : ""}`}>
+          <button
+            type="button"
+            onClick={handleMenuToggle}
+            aria-label="Toggle admin sidebar"
+            className="rounded-lg border border-[var(--ccr-border)] px-2 py-1 text-sm font-semibold text-[var(--ccr-text)]"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              className="h-5 w-5"
+              aria-hidden="true"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M3 6h18M3 12h18M3 18h18" />
+            </svg>
+          </button>
+          {collapsed ? null : (
+            <Link href="/admin" className="text-lg font-bold text-[var(--ccr-text)]">
+              {brandLabel}
+            </Link>
+          )}
+        </div>
         <NavLinks collapsedState={collapsed} />
       </aside>
 
@@ -304,7 +361,7 @@ export function AdminShell({
         }`}
       >
         <div className="flex items-center justify-between">
-          <Link href="/admin" className="text-lg font-bold text-[var(--ccr-primary)]">
+          <Link href="/admin" className="text-lg font-bold text-[var(--ccr-text)]">
             Curated Admin
           </Link>
           <button
@@ -327,16 +384,29 @@ export function AdminShell({
                 type="button"
                 onClick={handleMenuToggle}
                 aria-label="Open admin menu"
-                className="rounded-lg border border-[var(--ccr-border)] px-2 py-1 text-sm font-semibold text-[var(--ccr-text)]"
+                className="rounded-lg border border-[var(--ccr-border)] px-2 py-1 text-sm font-semibold text-[var(--ccr-text)] lg:hidden"
               >
-                Menu
+                <svg
+                  viewBox="0 0 24 24"
+                  className="h-5 w-5"
+                  aria-hidden="true"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M3 6h18M3 12h18M3 18h18" />
+                </svg>
               </button>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-                  Admin
-                </p>
-                <p className="text-base font-semibold text-[var(--ccr-text)]">{activeLabel}</p>
-              </div>
+              {activeItem ? (
+                <div className="flex items-center gap-2 text-lg font-semibold text-[var(--ccr-text)]">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--ccr-surface-soft)]">
+                    {activeItem.icon("h-5 w-5 text-[var(--ccr-text)]")}
+                  </span>
+                  <span>{activeItem.label}</span>
+                </div>
+              ) : null}
             </div>
             <UserMenu email={user.email} role={(user.role ?? "Admin").toUpperCase()} />
           </div>

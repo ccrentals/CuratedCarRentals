@@ -2,5 +2,16 @@
   command = "npm run build"
   publish = ".next"
 
+[functions]
+  directory = "netlify/functions"
+
+[[functions]]
+  name = "cron-pickup-reminders"
+  schedule = "0 12 * * *"
+
+[[functions]]
+  name = "cron-balance-reminders"
+  schedule = "0 13 * * *"
+
 [[plugins]]
   package = "@netlify/plugin-nextjs"

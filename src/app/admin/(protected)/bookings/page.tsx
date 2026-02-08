@@ -93,7 +93,7 @@ export default async function AdminBookingsPage({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Admin</p>
-          <h1 className="text-3xl font-bold text-[var(--ccr-primary)]">Bookings</h1>
+          <h1 className="text-3xl font-bold text-[var(--ccr-text)]">Bookings</h1>
         </div>
         <Link
           href="/admin/bookings"
@@ -142,7 +142,7 @@ export default async function AdminBookingsPage({
                   <td className="px-4 py-3">
                     <Link
                       href={`/admin/bookings/${booking.id}`}
-                      className="text-sm font-semibold text-[var(--ccr-primary)]"
+                      className="text-sm font-semibold text-[var(--ccr-text)]"
                     >
                       View
                     </Link>

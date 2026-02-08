@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery } from "@/lib/db";
-import { isNonEmptyString, parseIntSafe, parseMoneyToCents } from "@/lib/validators";
+import { isNonEmptyString, parseIntSafe, parseMoneyToCents, parseImageUrls } from "@/lib/validators";
+import { requireCsrf } from "@/lib/security/csrf";
 
 const allowedStatuses = ["AVAILABLE", "RESERVED", "RENTED", "MAINTENANCE", "INACTIVE"];
 
@@ -40,6 +41,10 @@ export async function POST(request: Request) {
     });
   }
 
+  if (!(await requireCsrf(request, (body?.csrfToken as string) ?? null))) {
+    return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
+  }
+
   const make = body.make;
   const model = body.model;
   const year = parseIntSafe(body.year);
@@ -52,6 +57,7 @@ export async function POST(request: Request) {
       ? parseIntSafe(body.deposit_cents)
       : parseMoneyToCents(body.deposit_jmd ?? body.deposit);
   const status = body.status ?? "AVAILABLE";
+  const imageUrls = parseImageUrls(body.image_urls_json);
 
   const currentYear = new Date().getFullYear() + 1;
 
@@ -72,7 +78,7 @@ export async function POST(request: Request) {
   }
 
   const result = await dbQuery(
-    "insert into vehicles (make, model, year, daily_rate_cents, deposit_cents, status) values ($1, $2, $3, $4, $5, $6) returning id, make, model, year, daily_rate_cents, deposit_cents, status, created_at",
+    "insert into vehicles (make, model, year, daily_rate_cents, deposit_cents, status, image_urls_json) values ($1, $2, $3, $4, $5, $6, $7) returning id, make, model, year, daily_rate_cents, deposit_cents, status, created_at",
     [
       String(make).trim(),
       String(model).trim(),
@@ -80,6 +86,7 @@ export async function POST(request: Request) {
       dailyRate,
       deposit,
       status,
+      imageUrls,
     ],
   );
 

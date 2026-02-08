@@ -3,11 +3,13 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 const COOKIE_NAME = "ccr_admin_session";
 const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 8; // 8 hours
+const SESSION_ROTATION_WINDOW_SECONDS = 60 * 60; // rotate if within 1 hour of expiry
 
 export type AdminSession = {
   userId: string;
   role: string;
   expiresAt: number;
+  issuedAt: number;
 };
 
 function getSessionSecret() {
@@ -32,8 +34,9 @@ function sign(payload: string) {
 }
 
 export function createSessionToken(userId: string, role: string) {
-  const expiresAt = Math.floor(Date.now() / 1000) + COOKIE_MAX_AGE_SECONDS;
-  const payload = JSON.stringify({ sub: userId, role, exp: expiresAt });
+  const issuedAt = Math.floor(Date.now() / 1000);
+  const expiresAt = issuedAt + COOKIE_MAX_AGE_SECONDS;
+  const payload = JSON.stringify({ sub: userId, role, exp: expiresAt, iat: issuedAt });
   const encoded = base64UrlEncode(payload);
   const signature = sign(encoded);
   return `${encoded}.${signature}`;
@@ -78,14 +81,26 @@ export async function getSessionFromRequest(): Promise<AdminSession | null> {
       sub: string;
       role: string;
       exp: number;
+      iat?: number;
     };
 
-    if (payload.exp * 1000 < Date.now()) return null;
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    if (payload.exp < nowSeconds) return null;
+
+    if (payload.exp - nowSeconds <= SESSION_ROTATION_WINDOW_SECONDS) {
+      const refreshed = createSessionToken(payload.sub, payload.role);
+      try {
+        await setSessionCookie(refreshed);
+      } catch {
+        // Ignore rotation errors in read-only rendering contexts.
+      }
+    }
 
     return {
       userId: payload.sub,
       role: payload.role,
       expiresAt: payload.exp,
+      issuedAt: payload.iat ?? payload.exp - COOKIE_MAX_AGE_SECONDS,
     };
   } catch {
     return null;

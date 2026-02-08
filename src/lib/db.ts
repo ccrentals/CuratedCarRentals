@@ -2,6 +2,12 @@ import { Pool } from "pg";
 
 let pool: any = null;
 
+function normalizeDatabaseUrl(url: string) {
+  if (/[?&]sslmode=/.test(url)) return url;
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}sslmode=verify-full`;
+}
+
 export function getDbPool() {
   if (pool) return pool;
 
@@ -11,7 +17,7 @@ export function getDbPool() {
   }
 
   pool = new Pool({
-    connectionString,
+    connectionString: normalizeDatabaseUrl(connectionString),
     max: 5,
     idleTimeoutMillis: 10000,
   });

@@ -6,6 +6,18 @@ create table if not exists users (
   email text unique not null,
   password_hash text not null,
   role text not null default 'admin',
+  locked_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+alter table users
+  add column if not exists locked_at timestamptz;
+
+create table if not exists admin_login_attempts (
+  id uuid primary key default gen_random_uuid(),
+  email text,
+  ip text,
+  success boolean not null default false,
   created_at timestamptz not null default now()
 );
 
@@ -103,6 +115,9 @@ create index if not exists bookings_dates_idx on bookings(start_date, end_date);
 create index if not exists payments_booking_id_idx on payments(booking_id);
 create index if not exists payments_status_idx on payments(status);
 create index if not exists vehicles_status_idx on vehicles(status);
+create index if not exists admin_login_attempts_email_idx on admin_login_attempts(email);
+create index if not exists admin_login_attempts_ip_idx on admin_login_attempts(ip);
+create index if not exists admin_login_attempts_created_idx on admin_login_attempts(created_at);
 create index if not exists blockouts_vehicle_id_idx on blockouts(vehicle_id);
 create index if not exists blockouts_range_idx on blockouts(start_at, end_at);
 create index if not exists admin_documents_key_idx on admin_documents(key);

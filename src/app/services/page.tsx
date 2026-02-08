@@ -21,7 +21,7 @@ export default function ServicesPage() {
               key={service.title}
               className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm"
             >
-              <h2 className="text-lg font-bold text-[var(--ccr-primary)]">{service.title}</h2>
+              <h2 className="text-lg font-bold text-[var(--ccr-text)]">{service.title}</h2>
               <p className="mt-2 text-sm text-[var(--ccr-muted)]">{service.description}</p>
             </article>
           ))}

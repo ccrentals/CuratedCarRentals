@@ -18,7 +18,7 @@ export default function ContactPage() {
 
         <div className="mt-8 grid gap-8 lg:grid-cols-[1fr_1.2fr]">
           <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm">
-            <h2 className="text-lg font-bold text-[var(--ccr-primary)]">Contact Details</h2>
+            <h2 className="text-lg font-bold text-[var(--ccr-text)]">Contact Details</h2>
             <ul className="mt-4 space-y-2 text-sm text-[var(--ccr-muted)]">
               <li>Phone: {siteContent.phone}</li>
               <li>Email: {siteContent.email}</li>
@@ -27,7 +27,7 @@ export default function ContactPage() {
           </section>
 
           <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm">
-            <h2 className="text-lg font-bold text-[var(--ccr-primary)]">Send a Message</h2>
+            <h2 className="text-lg font-bold text-[var(--ccr-text)]">Send a Message</h2>
             <form className="mt-4 space-y-4">
               <label className="block text-sm text-[var(--ccr-muted)]">
                 Name

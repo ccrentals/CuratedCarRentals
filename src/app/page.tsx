@@ -10,6 +10,12 @@ const fallbackVehicles = vehicles.filter((vehicle) => !vehicle.featured);
 const featuredVehicles = [...explicitlyFeaturedVehicles, ...fallbackVehicles].slice(0, 3);
 
 export default function HomePage() {
+  const todayKey = (() => {
+    const now = new Date();
+    const pad = (value: number) => String(value).padStart(2, "0");
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  })();
+
   return (
     <div className="pb-4">
       <section
@@ -65,6 +71,7 @@ export default function HomePage() {
                     Pickup Date
                     <input
                       type="date"
+                      min={todayKey}
                       className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] px-3 py-2 text-sm text-[var(--ccr-text)]"
                     />
                   </label>
@@ -72,6 +79,7 @@ export default function HomePage() {
                     Return Date
                     <input
                       type="date"
+                      min={todayKey}
                       className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] px-3 py-2 text-sm text-[var(--ccr-text)]"
                     />
                   </label>

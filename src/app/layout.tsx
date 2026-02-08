@@ -2,8 +2,10 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 
 import { AdminRouteFlag } from "@/components/site/AdminRouteFlag";
+import { CsrfBootstrap } from "@/components/site/CsrfBootstrap";
 import { Footer } from "@/components/site/Footer";
 import { Header } from "@/components/site/Header";
+import { assertProductionEnv } from "@/lib/env";
 
 import "./globals.css";
 
@@ -27,11 +29,14 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  assertProductionEnv();
+
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <div className="flex min-h-screen flex-col bg-[var(--ccr-bg)] text-[var(--ccr-text)]">
           <AdminRouteFlag />
+          <CsrfBootstrap />
           <Header />
           <main className="flex-1">{children}</main>
           <Footer />

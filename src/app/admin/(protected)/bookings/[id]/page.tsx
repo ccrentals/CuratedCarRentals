@@ -3,6 +3,7 @@ import Link from "next/link";
 import { dbQuery } from "@/lib/db";
 import { BookingActions } from "@/components/admin/BookingActions";
 import { BookingNotes } from "@/components/admin/BookingNotes";
+import { ManualPaymentForm } from "@/components/admin/ManualPaymentForm";
 import { fmtDate } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
 
@@ -102,7 +103,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
 
   return (
     <div className="mx-auto w-full max-w-5xl px-6 py-10">
-      <Link href="/admin/bookings" className="text-sm font-semibold text-[var(--ccr-primary)]">
+      <Link href="/admin/bookings" className="text-sm font-semibold text-[var(--ccr-text)]">
         Back to bookings
       </Link>
 
@@ -110,7 +111,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Booking</p>
           <div className="mt-1 flex flex-wrap items-center gap-3">
-            <h1 className="text-3xl font-bold text-[var(--ccr-primary)]">{booking.id}</h1>
+            <h1 className="text-3xl font-bold text-[var(--ccr-text)]">{booking.id}</h1>
             <span
               className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${statusBadge(
                 booking.status,
@@ -129,7 +130,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[1.2fr_1fr]">
         <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm">
-          <h2 className="text-lg font-bold text-[var(--ccr-primary)]">Booking Details</h2>
+          <h2 className="text-lg font-bold text-[var(--ccr-text)]">Booking Details</h2>
           <dl className="mt-4 grid gap-3 text-sm text-[var(--ccr-muted)]">
             <div>
               <dt className="text-xs uppercase tracking-wide">Status</dt>
@@ -149,7 +150,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
         </section>
 
         <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm">
-          <h2 className="text-lg font-bold text-[var(--ccr-primary)]">Customer & Vehicle</h2>
+          <h2 className="text-lg font-bold text-[var(--ccr-text)]">Customer & Vehicle</h2>
           <div className="mt-4 space-y-3 text-sm">
             <div>
               <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Customer</p>
@@ -169,7 +170,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
       </div>
 
       <section className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm">
-        <h2 className="text-lg font-bold text-[var(--ccr-primary)]">Charges Summary</h2>
+        <h2 className="text-lg font-bold text-[var(--ccr-text)]">Charges Summary</h2>
         <div className="mt-4 grid gap-3 text-sm text-[var(--ccr-muted)] md:grid-cols-2">
           <div className="flex items-center justify-between">
             <span>Days</span>
@@ -200,14 +201,20 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
 
       <section className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-lg font-bold text-[var(--ccr-primary)]">Payments</h2>
+          <h2 className="text-lg font-bold text-[var(--ccr-text)]">Payments</h2>
           <Link
             href={`/admin/payments?bookingId=${booking.id}`}
-            className="text-sm font-semibold text-[var(--ccr-primary)]"
+            className="text-sm font-semibold text-[var(--ccr-text)]"
           >
             View in Payments
           </Link>
         </div>
+        <ManualPaymentForm
+          bookingId={booking.id}
+          total={total}
+          paidToDate={paidToDate}
+          balanceDue={balanceDue}
+        />
         {payments.rows.length === 0 ? (
           <p className="mt-3 text-sm text-[var(--ccr-muted)]">No payments recorded yet.</p>
         ) : (
@@ -245,7 +252,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
       </section>
 
       <section className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm">
-        <h2 className="text-lg font-bold text-[var(--ccr-primary)]">Admin Notes</h2>
+        <h2 className="text-lg font-bold text-[var(--ccr-text)]">Admin Notes</h2>
         <BookingNotes bookingId={booking.id} notes={notes} />
       </section>
     </div>

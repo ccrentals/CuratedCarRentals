@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
+import { requireCsrf } from "@/lib/security/csrf";
+import { parseMoneyToCents, parseImageUrls } from "@/lib/validators";
 
 const STATUS_MAP: Record<string, string> = {
   available: "AVAILABLE",
@@ -52,6 +54,9 @@ export async function PATCH(
 
   const { id } = await params;
   const body = await request.json().catch(() => null);
+  if (!(await requireCsrf(request))) {
+    return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
+  }
   const dailyRateRaw =
     typeof body?.daily_rate === "number"
       ? body.daily_rate
@@ -60,11 +65,20 @@ export async function PATCH(
         : typeof body?.dailyRate === "number"
           ? body.dailyRate
           : undefined;
+  const depositRaw =
+    body?.deposit_cents !== undefined
+      ? body.deposit_cents
+      : body?.deposit !== undefined
+        ? body.deposit
+        : body?.deposit_jmd !== undefined
+          ? body.deposit_jmd
+          : undefined;
 
   const statusRaw = typeof body?.status === "string" ? body.status : undefined;
+  const imageUrls = parseImageUrls(body?.image_urls_json);
 
   const updates: string[] = [];
-  const values: Array<string | number> = [];
+  const values: Array<string | number | string[]> = [];
   let index = 1;
 
   if (dailyRateRaw !== undefined) {
@@ -73,6 +87,23 @@ export async function PATCH(
     }
     updates.push(`daily_rate_cents = $${index}`);
     values.push(Math.round(dailyRateRaw));
+    index += 1;
+  }
+
+  if (depositRaw !== undefined) {
+    const parsedDeposit =
+      typeof depositRaw === "number" ? depositRaw : parseMoneyToCents(depositRaw);
+    if (parsedDeposit === null || !Number.isFinite(parsedDeposit) || parsedDeposit < 0) {
+      return NextResponse.json({ error: "Invalid deposit" }, { status: 400 });
+    }
+    updates.push(`deposit_cents = $${index}`);
+    values.push(Math.round(parsedDeposit));
+    index += 1;
+  }
+
+  if (imageUrls.length > 0 || body?.image_urls_json !== undefined) {
+    updates.push(`image_urls_json = $${index}`);
+    values.push(imageUrls);
     index += 1;
   }
 

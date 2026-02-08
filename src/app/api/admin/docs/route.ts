@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery } from "@/lib/db";
+import { requireCsrf } from "@/lib/security/csrf";
 
 const DOC_KEY = "documentation";
 
@@ -50,6 +51,9 @@ export async function PATCH(request: Request) {
   }
 
   const body = await request.json().catch(() => null);
+  if (!(await requireCsrf(request))) {
+    return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
+  }
   const content = typeof body?.content === "string" ? body.content.trim() : "";
 
   if (!content) {

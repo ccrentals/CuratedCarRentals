@@ -232,7 +232,7 @@ export default async function AdminReportsPage({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Admin</p>
-          <h1 className="text-3xl font-bold text-[var(--ccr-primary)]">Reports</h1>
+          <h1 className="text-3xl font-bold text-[var(--ccr-text)]">Reports</h1>
         </div>
         <Link
           href="/admin/bookings"
@@ -300,21 +300,21 @@ export default async function AdminReportsPage({
       <div className="mt-6 grid gap-4 md:grid-cols-4">
         <div className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
           <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Total Revenue</p>
-          <p className="mt-2 text-2xl font-bold text-[var(--ccr-primary)]">{formatJmd(totalRevenue)}</p>
+          <p className="mt-2 text-2xl font-bold text-[var(--ccr-text)]">{formatJmd(totalRevenue)}</p>
         </div>
         <div className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
           <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Bookings Count</p>
-          <p className="mt-2 text-2xl font-bold text-[var(--ccr-primary)]">{bookingsCreatedCount}</p>
+          <p className="mt-2 text-2xl font-bold text-[var(--ccr-text)]">{bookingsCreatedCount}</p>
         </div>
         <div className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
           <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Outstanding Balance</p>
-          <p className="mt-2 text-2xl font-bold text-[var(--ccr-primary)]">
+          <p className="mt-2 text-2xl font-bold text-[var(--ccr-text)]">
             {formatJmd(outstandingBalanceSum)}
           </p>
         </div>
         <div className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
           <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Deposits Due</p>
-          <p className="mt-2 text-2xl font-bold text-[var(--ccr-primary)]">
+          <p className="mt-2 text-2xl font-bold text-[var(--ccr-text)]">
             {depositDueCount}
           </p>
           <p className="text-xs text-[var(--ccr-muted)]">{formatJmd(depositDueSum)}</p>
@@ -323,7 +323,7 @@ export default async function AdminReportsPage({
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[1.5fr_1fr]">
         <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
-          <h2 className="text-lg font-bold text-[var(--ccr-primary)]">Revenue Breakdown</h2>
+          <h2 className="text-lg font-bold text-[var(--ccr-text)]">Revenue Breakdown</h2>
           <div className="mt-4 overflow-x-auto">
             <table className="min-w-full text-left text-sm">
               <thead className="border-b border-[var(--ccr-border)] text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
@@ -347,7 +347,7 @@ export default async function AdminReportsPage({
         </section>
 
         <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
-          <h2 className="text-lg font-bold text-[var(--ccr-primary)]">Booking Funnel</h2>
+          <h2 className="text-lg font-bold text-[var(--ccr-text)]">Booking Funnel</h2>
           <div className="mt-4 grid gap-3 text-sm">
             <div className="flex items-center justify-between">
               <span>Pending payment</span>
@@ -367,7 +367,7 @@ export default async function AdminReportsPage({
             </div>
           </div>
 
-          <h2 className="mt-6 text-lg font-bold text-[var(--ccr-primary)]">Utilization by Vehicle</h2>
+          <h2 className="mt-6 text-lg font-bold text-[var(--ccr-text)]">Utilization by Vehicle</h2>
           <div className="mt-4 space-y-3 text-sm">
             {(
               vehicleId
@@ -404,7 +404,7 @@ export default async function AdminReportsPage({
       </div>
 
       <section className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
-        <h2 className="text-lg font-bold text-[var(--ccr-primary)]">Outstanding Balances</h2>
+        <h2 className="text-lg font-bold text-[var(--ccr-text)]">Outstanding Balances</h2>
         {outstandingBookings.length === 0 ? (
           <p className="mt-3 text-sm text-[var(--ccr-muted)]">No outstanding balances.</p>
         ) : (
@@ -427,7 +427,7 @@ export default async function AdminReportsPage({
                     <td className="px-3 py-2">
                       <Link
                         href={`/admin/bookings/${booking.id}`}
-                        className="text-sm font-semibold text-[var(--ccr-primary)]"
+                        className="text-sm font-semibold text-[var(--ccr-text)]"
                       >
                         {booking.id.slice(0, 8)}
                       </Link>

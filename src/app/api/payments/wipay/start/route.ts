@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { dbQuery } from "@/lib/db";
+import { requireCsrf } from "@/lib/security/csrf";
 import { buildRequestParams, requestHostedPageUrl } from "@/lib/wipay";
 
 function amountToDecimal(amount: number) {
@@ -14,6 +15,10 @@ function buildOrderId() {
 }
 
 export async function POST(request: Request) {
+  if (!(await requireCsrf(request))) {
+    return NextResponse.json({ ok: false, error: "Invalid CSRF token" }, { status: 403 });
+  }
+
   const requiredEnv = [
     "WIPAY_ACCOUNT_NUMBER",
     "WIPAY_API_KEY",
@@ -116,6 +121,7 @@ export async function POST(request: Request) {
           bookingId: booking.id,
           deposit_cents: depositCents,
           total_decimal: totalDecimal,
+          payment_type: "deposit",
           env: process.env.WIPAY_ENV ?? "sandbox",
           created_at: new Date().toISOString(),
         },

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
+import { requireCsrf } from "@/lib/security/csrf";
 
 export async function GET(
   request: Request,
@@ -65,6 +66,9 @@ export async function PATCH(
 
   const { id } = await params;
   const body = await request.json().catch(() => null);
+  if (!(await requireCsrf(request))) {
+    return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
+  }
   const action = typeof body?.action === "string" ? body.action : "";
 
   if (!action) {

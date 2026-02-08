@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { sendBookingCreatedEmail } from "@/lib/notifications/email";
 import { dbQuery, getDbPool } from "@/lib/db";
 import { isEmail, isISODate, isNonEmptyString } from "@/lib/validators";
 
@@ -8,6 +9,12 @@ const UUID_REGEX =
 
 function toUtcDate(value: string) {
   return new Date(`${value}T00:00:00Z`);
+}
+
+function todayUtc() {
+  const now = new Date();
+  now.setUTCHours(0, 0, 0, 0);
+  return now;
 }
 
 export async function POST(request: Request) {
@@ -42,6 +49,11 @@ export async function POST(request: Request) {
 
   const start = toUtcDate(startDate);
   const end = toUtcDate(endDate);
+  const today = todayUtc();
+
+  if (start < today) {
+    return NextResponse.json({ error: "startDate must be today or later" }, { status: 400 });
+  }
   if (!(end > start)) {
     return NextResponse.json({ error: "endDate must be after startDate" }, { status: 400 });
   }
@@ -58,7 +70,7 @@ export async function POST(request: Request) {
     await client.query("begin");
 
     const vehicleResult = await client.query(
-      "select id, daily_rate_cents, deposit_cents from vehicles where id = $1 and status <> 'INACTIVE'",
+      "select id, make, model, year, daily_rate_cents, deposit_cents from vehicles where id = $1 and status <> 'INACTIVE'",
       [vehicleId],
     );
 
@@ -108,6 +120,23 @@ export async function POST(request: Request) {
     );
 
     await client.query("commit");
+
+    try {
+      const vehicle = vehicleResult.rows[0];
+      await sendBookingCreatedEmail({
+        bookingId: bookingInsert.rows[0].id,
+        customerEmail: email.trim().toLowerCase(),
+        customerName: fullName.trim(),
+        vehicleLabel: `${vehicle.year} ${vehicle.make} ${vehicle.model}`.trim(),
+        startDate,
+        endDate,
+        pickupLocation: pickupLocation.trim(),
+        dailyRate,
+        deposit: depositCents,
+      });
+    } catch (error) {
+      console.error("Booking email failed", error);
+    }
 
     return NextResponse.json({
       bookingId: bookingInsert.rows[0].id,

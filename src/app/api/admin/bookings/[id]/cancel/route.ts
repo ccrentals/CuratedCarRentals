@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
+import { requireCsrf } from "@/lib/security/csrf";
 
 export async function POST(
   request: Request,
@@ -11,6 +12,10 @@ export async function POST(
   const session = await getSessionFromRequest();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (!(await requireCsrf(request))) {
+    return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
   }
 
   const { id } = await params;

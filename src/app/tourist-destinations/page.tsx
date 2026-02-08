@@ -24,7 +24,7 @@ export default function TouristDestinationsPage() {
               <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-accent-strong)]">
                 {destination.parish}
               </p>
-              <h2 className="mt-1 text-lg font-bold text-[var(--ccr-primary)]">{destination.name}</h2>
+              <h2 className="mt-1 text-lg font-bold text-[var(--ccr-text)]">{destination.name}</h2>
               <p className="mt-2 text-sm text-[var(--ccr-muted)]">{destination.description}</p>
             </article>
           ))}

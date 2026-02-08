@@ -1,0 +1,128 @@
+import Link from "next/link";
+
+import { CronRunButtons } from "@/components/admin/CronRunButtons";
+import { dbQuery } from "@/lib/db";
+import { fmtDate } from "@/lib/dateFormat";
+
+type AuditRow = {
+  action: string;
+  entity_id: string;
+  details_json: Record<string, unknown> | null;
+  created_at: string;
+};
+
+const ACTION_LABELS: Record<string, string> = {
+  BOOKING_PICKUP_REMINDER_SENT: "Pickup reminder sent",
+  BOOKING_BALANCE_REMINDER_SENT: "Balance reminder sent",
+};
+
+export default async function AdminCronPage() {
+  const cronConfigured = Boolean(process.env.CRON_SECRET);
+
+  const auditRows = await dbQuery<AuditRow>(
+    "select action, entity_id, details_json, created_at from audit_logs where action in ('BOOKING_PICKUP_REMINDER_SENT','BOOKING_BALANCE_REMINDER_SENT') order by created_at desc limit 20",
+  );
+
+  const rows = auditRows.rows as AuditRow[];
+  const latestByAction = rows.reduce(
+    (acc, row) => {
+      if (!acc[row.action]) acc[row.action] = row;
+      return acc;
+    },
+    {} as Record<string, AuditRow>,
+  );
+
+  return (
+    <div className="mx-auto w-full max-w-5xl px-6 py-10">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Admin</p>
+          <h1 className="text-3xl font-bold text-[var(--ccr-text)]">Cron Status</h1>
+          <p className="mt-2 text-sm text-[var(--ccr-muted)]">
+            Scheduled reminders for pickup and balance due.
+          </p>
+        </div>
+        <Link
+          href="/admin/payments"
+          className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+        >
+          View Payments
+        </Link>
+      </div>
+
+      {!cronConfigured ? (
+        <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          CRON_SECRET is not configured. Scheduled reminders will not run until it is set.
+        </div>
+      ) : null}
+
+      <div className="mt-6 grid gap-4 md:grid-cols-2">
+        <div className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-5">
+          <h2 className="text-lg font-semibold text-[var(--ccr-text)]">Schedules (UTC)</h2>
+          <ul className="mt-3 space-y-2 text-sm text-[var(--ccr-text)]">
+            <li>
+              Pickup reminders: <span className="font-semibold">12:00 UTC daily</span>
+            </li>
+            <li>
+              Balance reminders: <span className="font-semibold">13:00 UTC daily</span>
+            </li>
+          </ul>
+          <CronRunButtons />
+        </div>
+
+        <div className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-5">
+          <h2 className="text-lg font-semibold text-[var(--ccr-text)]">Last Runs</h2>
+          <ul className="mt-3 space-y-2 text-sm text-[var(--ccr-text)]">
+            {Object.keys(ACTION_LABELS).map((action) => {
+              const row = latestByAction[action];
+              return (
+                <li key={action} className="flex items-center justify-between gap-3">
+                  <span>{ACTION_LABELS[action]}</span>
+                  <span className="text-xs text-[var(--ccr-muted)]">
+                    {row ? fmtDate(row.created_at) : "No runs yet"}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      </div>
+
+      <div className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-5">
+        <h2 className="text-lg font-semibold text-[var(--ccr-text)]">Recent Reminder Events</h2>
+        {rows.length === 0 ? (
+          <p className="mt-3 text-sm text-[var(--ccr-muted)]">No reminder events logged yet.</p>
+        ) : (
+          <div className="mt-3 overflow-x-auto">
+            <table className="min-w-full text-left text-sm">
+              <thead className="border-b border-[var(--ccr-border)] text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
+                <tr>
+                  <th className="px-3 py-2">Type</th>
+                  <th className="px-3 py-2">Booking</th>
+                  <th className="px-3 py-2">Details</th>
+                  <th className="px-3 py-2">Sent</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={`${row.action}-${row.created_at}`} className="border-b border-[var(--ccr-border)] last:border-b-0">
+                    <td className="px-3 py-2 text-[var(--ccr-text)]">
+                      {ACTION_LABELS[row.action] ?? row.action}
+                    </td>
+                    <td className="px-3 py-2 text-[var(--ccr-text)]">
+                      {row.entity_id ? row.entity_id.slice(0, 8) : "—"}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-[var(--ccr-muted)]">
+                      {row.details_json ? JSON.stringify(row.details_json) : "—"}
+                    </td>
+                    <td className="px-3 py-2 text-[var(--ccr-muted)]">{fmtDate(row.created_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

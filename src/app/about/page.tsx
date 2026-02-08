@@ -17,7 +17,7 @@ export default function AboutPage() {
 
         <div className="mt-8 grid gap-8 md:grid-cols-2">
           <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm">
-            <h2 className="text-lg font-bold text-[var(--ccr-primary)]">Who We Are</h2>
+            <h2 className="text-lg font-bold text-[var(--ccr-text)]">Who We Are</h2>
             <p className="mt-3 text-sm leading-6 text-[var(--ccr-muted)]">
               We are a Jamaica-based rental team helping visitors and returning residents secure dependable transportation.
               This page is part of your frontend template and ready for brand copy updates.
@@ -25,7 +25,7 @@ export default function AboutPage() {
           </section>
 
           <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm">
-            <h2 className="text-lg font-bold text-[var(--ccr-primary)]">Why Guests Choose Us</h2>
+            <h2 className="text-lg font-bold text-[var(--ccr-text)]">Why Guests Choose Us</h2>
             <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-[var(--ccr-muted)]">
               {aboutHighlights.map((item) => (
                 <li key={item}>{item}</li>

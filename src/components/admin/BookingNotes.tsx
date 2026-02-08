@@ -3,6 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { ensureCsrfToken } from "@/lib/security/csrf-client";
+
 type AdminNote = {
   message: string;
   created_at?: string;
@@ -39,9 +41,13 @@ export function BookingNotes({ bookingId, notes }: BookingNotesProps) {
     setMessage(null);
     setError(null);
 
+    const csrfToken = await ensureCsrfToken();
     const response = await fetch(`/api/admin/bookings/${bookingId}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "x-csrf-token": csrfToken ?? "",
+      },
       body: JSON.stringify({ action: "add_note", note: trimmed }),
     });
 

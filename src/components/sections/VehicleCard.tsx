@@ -87,7 +87,7 @@ export function VehicleCard({ vehicle, showBookButton = true }: VehicleCardProps
           <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">{vehicle.category}</p>
           <h3 className="mt-1 text-xl font-bold text-[var(--ccr-text)]">{vehicle.name}</h3>
         </div>
-        <p className="text-sm font-semibold text-[var(--ccr-primary)]">{formatCurrency(vehicle.pricePerDay)}/day</p>
+        <p className="text-sm font-semibold text-[var(--ccr-text)]">{formatCurrency(vehicle.pricePerDay)}/day</p>
       </div>
 
       <p className="mt-4 text-sm text-[var(--ccr-muted)]">{vehicle.description}</p>

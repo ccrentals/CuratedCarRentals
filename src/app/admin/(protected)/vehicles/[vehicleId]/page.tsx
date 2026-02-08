@@ -10,7 +10,9 @@ type VehicleDetail = {
   model: string;
   year: number;
   daily_rate_cents: number;
+  deposit_cents: number;
   status: string;
+  image_urls_json: string[] | null;
 };
 
 export default async function AdminVehicleDetailPage({
@@ -20,7 +22,7 @@ export default async function AdminVehicleDetailPage({
 }) {
   const { vehicleId } = await params;
   const vehicleResult = await dbQuery<VehicleDetail>(
-    "select id, make, model, year, daily_rate_cents, status from vehicles where id = $1",
+    "select id, make, model, year, daily_rate_cents, deposit_cents, status, image_urls_json from vehicles where id = $1",
     [vehicleId],
   );
 
@@ -28,7 +30,7 @@ export default async function AdminVehicleDetailPage({
   if (!vehicle) {
     return (
       <div className="mx-auto w-full max-w-5xl px-6 py-10">
-        <Link href="/admin/vehicles" className="text-sm font-semibold text-[var(--ccr-primary)]">
+        <Link href="/admin/vehicles" className="text-sm font-semibold text-[var(--ccr-text)]">
           Back to vehicles
         </Link>
         <p className="mt-4 text-sm text-[var(--ccr-muted)]">Vehicle not found.</p>
@@ -38,7 +40,7 @@ export default async function AdminVehicleDetailPage({
 
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-10">
-      <Link href="/admin/vehicles" className="text-sm font-semibold text-[var(--ccr-primary)]">
+      <Link href="/admin/vehicles" className="text-sm font-semibold text-[var(--ccr-text)]">
         Back to vehicles
       </Link>
 

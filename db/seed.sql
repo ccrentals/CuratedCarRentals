@@ -12,6 +12,8 @@ values (
   '["/cars/real/toyota-yaris-2020-1.jpg"]'
 );
 
+-- Admin login (replace with a bcrypt hash before use)
+-- Example: generate with Node using bcryptjs hash
 insert into users (email, password_hash, role)
-values ('admin@curatedcarrentals.com', 'CHANGE_ME_HASH', 'admin')
+values ('admin@curatedcarrentals.com', 'REPLACE_WITH_BCRYPT_HASH', 'admin')
 on conflict (email) do nothing;

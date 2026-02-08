@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery, getDbPool } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
+import { requireCsrf } from "@/lib/security/csrf";
 
 function calcDays(start: string, end: string) {
   const startDate = new Date(`${start}T00:00:00Z`);
@@ -17,6 +18,10 @@ export async function POST(
   const session = await getSessionFromRequest();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (!(await requireCsrf(request))) {
+    return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
   }
 
   const { id } = await params;

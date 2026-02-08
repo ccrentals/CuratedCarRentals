@@ -45,3 +45,23 @@ export function sanitizeText(value: unknown, maxLength = 200) {
   if (typeof value !== "string") return "";
   return value.trim().slice(0, maxLength);
 }
+
+export function parseImageUrls(value: unknown) {
+  if (Array.isArray(value)) {
+    return value.filter((item) => typeof item === "string");
+  }
+  if (typeof value === "string" && value.trim() !== "") {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((item) => typeof item === "string");
+      }
+    } catch {
+      return value
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+    }
+  }
+  return [];
+}

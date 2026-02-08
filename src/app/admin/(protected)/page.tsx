@@ -68,7 +68,7 @@ export default async function AdminDashboardPage() {
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-10">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-3xl font-bold text-[var(--ccr-primary)]">Admin Dashboard</h1>
+        <h1 className="text-3xl font-bold text-[var(--ccr-text)]">Admin Dashboard</h1>
         <div className="flex gap-3">
           <Link
             href="/admin/bookings"
@@ -93,7 +93,7 @@ export default async function AdminDashboardPage() {
             className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-[var(--ccr-primary)] hover:shadow-md"
           >
             <p className="text-sm text-[var(--ccr-muted)]">{card.label}</p>
-            <p className="mt-2 text-2xl font-bold text-[var(--ccr-primary)]">{card.value}</p>
+            <p className="mt-2 text-2xl font-bold text-[var(--ccr-text)]">{card.value}</p>
           </Link>
         ))}
       </div>
@@ -101,8 +101,8 @@ export default async function AdminDashboardPage() {
       <div className="mt-8 grid gap-6 lg:grid-cols-2">
         <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-bold text-[var(--ccr-primary)]">Recent Bookings</h2>
-            <Link href="/admin/bookings" className="text-xs font-semibold text-[var(--ccr-primary)]">
+            <h2 className="text-lg font-bold text-[var(--ccr-text)]">Recent Bookings</h2>
+            <Link href="/admin/bookings" className="text-xs font-semibold text-[var(--ccr-text)]">
               View all
             </Link>
           </div>
@@ -124,7 +124,7 @@ export default async function AdminDashboardPage() {
                     <div>
                       <Link
                         href={`/admin/bookings/${booking.id}`}
-                        className="font-semibold text-[var(--ccr-primary)]"
+                        className="font-semibold text-[var(--ccr-text)]"
                       >
                         {booking.id.slice(0, 8)}
                       </Link>
@@ -147,8 +147,8 @@ export default async function AdminDashboardPage() {
 
         <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-bold text-[var(--ccr-primary)]">Recent Vehicles</h2>
-            <Link href="/admin/vehicles" className="text-xs font-semibold text-[var(--ccr-primary)]">
+            <h2 className="text-lg font-bold text-[var(--ccr-text)]">Recent Vehicles</h2>
+            <Link href="/admin/vehicles" className="text-xs font-semibold text-[var(--ccr-text)]">
               View all
             </Link>
           </div>
@@ -169,7 +169,7 @@ export default async function AdminDashboardPage() {
                     <div>
                       <Link
                         href={`/admin/vehicles/${vehicle.id}`}
-                        className="font-semibold text-[var(--ccr-primary)]"
+                        className="font-semibold text-[var(--ccr-text)]"
                       >
                         {vehicle.year} {vehicle.make} {vehicle.model}
                       </Link>

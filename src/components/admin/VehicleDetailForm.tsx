@@ -3,13 +3,18 @@
 import Link from "next/link";
 import { useState } from "react";
 
+import { ensureCsrfToken } from "@/lib/security/csrf-client";
+import { UploadcareImagesInput } from "@/components/admin/UploadcareImagesInput";
+
 type VehicleDetail = {
   id: string;
   make: string;
   model: string;
   year: number;
   daily_rate_cents: number;
+  deposit_cents?: number;
   status: string;
+  image_urls_json?: string[];
 };
 
 type VehicleDetailFormProps = {
@@ -30,6 +35,8 @@ function statusBadge(status: string) {
 
 export function VehicleDetailForm({ vehicle }: VehicleDetailFormProps) {
   const [dailyRate, setDailyRate] = useState(String(vehicle.daily_rate_cents ?? ""));
+  const [deposit, setDeposit] = useState(String(vehicle.deposit_cents ?? ""));
+  const [images, setImages] = useState<string[]>(vehicle.image_urls_json ?? []);
   const [status, setStatus] = useState(
     vehicle.status === "INACTIVE"
       ? "unavailable"
@@ -49,11 +56,17 @@ export function VehicleDetailForm({ vehicle }: VehicleDetailFormProps) {
     setMessage(null);
     setError(null);
 
+    const csrfToken = await ensureCsrfToken();
     const response = await fetch(`/api/admin/vehicles/${vehicle.id}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "x-csrf-token": csrfToken ?? "",
+      },
       body: JSON.stringify({
         daily_rate: Number(dailyRate),
+        deposit,
+        image_urls_json: images,
         status,
       }),
     });
@@ -77,7 +90,7 @@ export function VehicleDetailForm({ vehicle }: VehicleDetailFormProps) {
             Vehicle
           </p>
           <div className="mt-1 flex flex-wrap items-center gap-3">
-            <h1 className="text-2xl font-bold text-[var(--ccr-primary)]">
+            <h1 className="text-2xl font-bold text-[var(--ccr-text)]">
               {vehicle.year} {vehicle.make} {vehicle.model}
             </h1>
             <span
@@ -120,6 +133,17 @@ export function VehicleDetailForm({ vehicle }: VehicleDetailFormProps) {
           />
         </label>
         <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+          Deposit (JMD)
+          <input
+            type="number"
+            value={deposit}
+            min="0"
+            step="1"
+            onChange={(event) => setDeposit(event.target.value)}
+            className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+          />
+        </label>
+        <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
           Availability
           <select
             value={status}
@@ -131,6 +155,15 @@ export function VehicleDetailForm({ vehicle }: VehicleDetailFormProps) {
             <option value="maintenance">Maintenance</option>
           </select>
         </label>
+      </div>
+
+      <div className="mt-5">
+        <UploadcareImagesInput
+          value={images}
+          onChange={setImages}
+          label="Vehicle Images"
+          helperText="Upload photos that will appear on the fleet cards."
+        />
       </div>
 
       {message ? <p className="mt-3 text-xs text-green-700">{message}</p> : null}

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery } from "@/lib/db";
+import { requireCsrf } from "@/lib/security/csrf";
 
 function parseDate(value: string) {
   const date = new Date(value);
@@ -20,6 +21,9 @@ export async function PATCH(
   try {
     const { id } = await params;
     const body = await request.json().catch(() => null);
+    if (!(await requireCsrf(request))) {
+      return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
+    }
     const vehicleId = typeof body?.vehicleId === "string" ? body.vehicleId : "";
     const reason = typeof body?.reason === "string" ? body.reason.trim() : "";
     const notes = typeof body?.notes === "string" ? body.notes.trim() : "";
@@ -95,6 +99,9 @@ export async function DELETE(
   }
 
   try {
+    if (!(await requireCsrf(request))) {
+      return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
+    }
     const { id } = await params;
     await dbQuery("delete from blockouts where id = $1", [id]);
     return NextResponse.json({ ok: true });

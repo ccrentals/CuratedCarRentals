@@ -1,5 +1,28 @@
 import Link from "next/link";
 
+import PrintInvoiceButton from "@/components/payments/PrintInvoiceButton";
+import { dbQuery } from "@/lib/db";
+import { fmtDateOnly } from "@/lib/dateFormat";
+import { formatJmd } from "@/lib/money";
+import { buildInvoicePayload, generateInvoicePdf } from "@/lib/pdfmonkey";
+
+function daysInclusive(start?: string, end?: string) {
+  if (!start || !end) return 0;
+  const startDate = new Date(start);
+  const endDate = new Date(end);
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) return 0;
+  const diff = Math.floor((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+  return diff >= 0 ? diff + 1 : 0;
+}
+
+type PaymentRow = {
+  id: string;
+  provider: string;
+  status: string;
+  deposit_amount_cents: number;
+  created_at: string;
+};
+
 export default async function PaymentSuccessPage({
   searchParams,
 }: {
@@ -9,28 +32,198 @@ export default async function PaymentSuccessPage({
   const bookingId = typeof params.bookingId === "string" ? params.bookingId : "";
   const shortId = bookingId ? bookingId.slice(0, 8) : "";
 
+  const bookingResult = bookingId
+    ? await dbQuery<{
+        id: string;
+        start_date: string;
+        end_date: string;
+        pickup_location: string;
+        status: string;
+        pricing_json: Record<string, unknown> | null;
+        customer_name: string;
+        customer_email: string;
+        customer_phone: string;
+        vehicle_make: string;
+        vehicle_model: string;
+        vehicle_year: number;
+        daily_rate_cents: number;
+        deposit_cents: number;
+      }>(
+        "select b.id, b.start_date, b.end_date, b.pickup_location, b.status, b.pricing_json, c.full_name as customer_name, c.email as customer_email, c.phone as customer_phone, v.make as vehicle_make, v.model as vehicle_model, v.year as vehicle_year, v.daily_rate_cents, v.deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.id = $1",
+        [bookingId],
+      )
+    : null;
+
+  const booking = bookingResult?.rowCount ? bookingResult.rows[0] : null;
+
+  const paymentsResult = bookingId
+    ? await dbQuery<PaymentRow>(
+        "select id, provider, status, deposit_amount_cents, created_at from payments where booking_id = $1 order by created_at asc",
+        [bookingId],
+      )
+    : null;
+
+  const payments = (paymentsResult?.rows as PaymentRow[] | undefined) ?? [];
+  const depositAmount = booking
+    ? Number((booking.pricing_json as Record<string, unknown> | null)?.deposit_cents ?? booking.deposit_cents)
+    : 0;
+  const days = booking ? daysInclusive(booking.start_date, booking.end_date) : 0;
+  const total = booking ? days * Number(booking.daily_rate_cents || 0) : 0;
+  const paidToDate = payments.reduce((sum: number, payment: PaymentRow) => {
+    if (payment.status !== "DEPOSIT_PAID") return sum;
+    return sum + Number(payment.deposit_amount_cents || 0);
+  }, 0);
+  const balanceDue = Math.max(0, total - paidToDate);
+
+  let pdfPreviewUrl: string | undefined;
+  let pdfDownloadUrl: string | undefined;
+  let pdfError: string | null = null;
+
+  if (booking) {
+    try {
+      const payload = buildInvoicePayload({
+        bookingId: booking.id,
+        bookingStatus: booking.status,
+        startDate: booking.start_date,
+        endDate: booking.end_date,
+        pickupLocation: booking.pickup_location,
+        customerName: booking.customer_name,
+        customerEmail: booking.customer_email,
+        customerPhone: booking.customer_phone,
+        vehicleMake: booking.vehicle_make,
+        vehicleModel: booking.vehicle_model,
+        vehicleYear: booking.vehicle_year,
+        dailyRate: Number(booking.daily_rate_cents || 0),
+        deposit: depositAmount,
+        total,
+        paidToDate,
+        balanceDue,
+        payments: payments.map((payment) => ({
+          provider: payment.provider,
+          status: payment.status,
+          amount: Number(payment.deposit_amount_cents || 0),
+          date: payment.created_at,
+        })),
+      });
+      const pdf = await generateInvoicePdf(payload, booking.id);
+      pdfPreviewUrl = pdf?.previewUrl ?? undefined;
+      pdfDownloadUrl = pdf?.downloadUrl ?? undefined;
+    } catch (error) {
+      console.error("PDFMonkey preview failed", error);
+      pdfError =
+        error instanceof Error
+          ? "Invoice PDF is temporarily unavailable. We will email it shortly."
+          : "Invoice PDF is temporarily unavailable.";
+    }
+  }
+
   return (
-    <div className="mx-auto w-full max-w-3xl px-6 py-12">
-      <div className="rounded-3xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-8 shadow-sm">
-        <h1 className="text-3xl font-bold text-[var(--ccr-primary)]">Deposit received</h1>
-        <p className="mt-3 text-sm text-[var(--ccr-muted)]">
-          Your booking is confirmed. We will follow up with pickup details shortly.
-        </p>
-        {shortId ? (
-          <p className="mt-4 text-sm text-[var(--ccr-text)]">
-            Booking reference: <span className="font-semibold">{shortId}</span>
+    <div className="invoice-page mx-auto w-full max-w-3xl px-6 py-12">
+      <div className="rounded-3xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-8 shadow-sm print:border-none print:bg-white print:shadow-none">
+        <div className="print-hide">
+          <h1 className="text-3xl font-bold text-[var(--ccr-text)]">Deposit received</h1>
+          <p className="mt-3 text-sm text-[var(--ccr-muted)]">
+            Your booking is confirmed. We will follow up with pickup details shortly.
           </p>
+          {shortId ? (
+            <p className="mt-4 text-sm text-[var(--ccr-text)]">
+              Booking reference: <span className="font-semibold">{shortId}</span>
+            </p>
+          ) : null}
+        </div>
+        {booking ? (
+          <div className="invoice-card mt-8 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-6 print:border-none print:bg-white">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-lg font-semibold text-[var(--ccr-text)]">Invoice</h2>
+              <span className="text-xs text-[var(--ccr-muted)]">Booking #{shortId}</span>
+            </div>
+            {pdfPreviewUrl ? (
+              <div className="mt-4">
+                <iframe
+                  title="Invoice PDF"
+                  src={pdfPreviewUrl}
+                  className="h-[720px] w-full rounded-xl border border-[var(--ccr-border)]"
+                />
+              </div>
+            ) : (
+              <>
+                {pdfError ? (
+                  <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                    {pdfError}
+                  </div>
+                ) : null}
+                <div className="mt-4 grid gap-4 text-sm text-[var(--ccr-text)] sm:grid-cols-2">
+                  <div>
+                    <p className="text-xs uppercase text-[var(--ccr-muted)]">Customer</p>
+                    <p className="font-semibold">{booking.customer_name}</p>
+                    <p className="text-[var(--ccr-muted)]">{booking.customer_email}</p>
+                    <p className="text-[var(--ccr-muted)]">{booking.customer_phone}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase text-[var(--ccr-muted)]">Vehicle</p>
+                    <p className="font-semibold">
+                      {booking.vehicle_year} {booking.vehicle_make} {booking.vehicle_model}
+                    </p>
+                    <p className="text-[var(--ccr-muted)]">
+                      Daily rate: {formatJmd(booking.daily_rate_cents)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase text-[var(--ccr-muted)]">Rental</p>
+                    <p>
+                      {fmtDateOnly(booking.start_date)} → {fmtDateOnly(booking.end_date)} ({days}{" "}
+                      days)
+                    </p>
+                    <p className="text-[var(--ccr-muted)]">Pickup: {booking.pickup_location}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase text-[var(--ccr-muted)]">Charges</p>
+                    <p>Total rental: {formatJmd(total)}</p>
+                    <p>Deposit paid: {formatJmd(depositAmount)}</p>
+                    <p>Paid to date: {formatJmd(paidToDate)}</p>
+                    <p className="font-semibold">Balance on pickup: {formatJmd(balanceDue)}</p>
+                  </div>
+                </div>
+                <div className="mt-4 border-t border-[var(--ccr-border)] pt-4 text-sm text-[var(--ccr-muted)]">
+                  <p>Status: {booking.status}</p>
+                  {payments.length ? (
+                    <ul className="mt-2 space-y-1 text-xs">
+                      {payments.map((payment: PaymentRow) => (
+                        <li key={payment.id}>
+                          {payment.provider} · {payment.status} ·{" "}
+                          {formatJmd(payment.deposit_amount_cents)} ·{" "}
+                          {fmtDateOnly(payment.created_at)}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-2 text-xs">No payments recorded yet.</p>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
         ) : null}
-        <div className="mt-6 flex flex-wrap gap-3">
+
+        <div className="mt-6 flex flex-wrap gap-3 print-hide">
+          <PrintInvoiceButton className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] transition hover:border-[var(--ccr-accent)] hover:bg-[var(--ccr-accent)] hover:text-[var(--ccr-primary)]" />
+          {pdfDownloadUrl ? (
+            <a
+              href={pdfDownloadUrl}
+              className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] transition hover:border-[var(--ccr-accent)] hover:bg-[var(--ccr-accent)] hover:text-[var(--ccr-primary)]"
+            >
+              Download PDF
+            </a>
+          ) : null}
           <Link
             href="/fleet"
-            className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)]"
+            className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] transition hover:border-[var(--ccr-accent)] hover:bg-[var(--ccr-accent)] hover:text-[var(--ccr-primary)]"
           >
             View Fleet
           </Link>
           <Link
             href="/contact"
-            className="rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-sm font-semibold text-white"
+            className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] transition hover:border-[var(--ccr-accent)] hover:bg-[var(--ccr-accent)] hover:text-[var(--ccr-primary)]"
           >
             Contact Support
           </Link>

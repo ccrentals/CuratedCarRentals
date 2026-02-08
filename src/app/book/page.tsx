@@ -23,6 +23,11 @@ type PublicVehicle = {
 
 export default function BookPage() {
   const router = useRouter();
+  const todayKey = (() => {
+    const now = new Date();
+    const pad = (value: number) => String(value).padStart(2, "0");
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  })();
   const [vehicleOptions, setVehicleOptions] = useState<PublicVehicle[]>([]);
   const [vehicleId, setVehicleId] = useState("");
   const [fullName, setFullName] = useState("");
@@ -130,7 +135,7 @@ export default function BookPage() {
 
         <div className="mt-8 grid gap-8 lg:grid-cols-[1.2fr_1fr]">
           <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm">
-            <h2 className="text-xl font-bold text-[var(--ccr-primary)]">Reservation Details</h2>
+            <h2 className="text-xl font-bold text-[var(--ccr-text)]">Reservation Details</h2>
             <form className="mt-5 grid gap-4 md:grid-cols-2" onSubmit={handleSubmit}>
               <label className="text-sm text-[var(--ccr-muted)] md:col-span-2">
                 Vehicle
@@ -184,6 +189,7 @@ export default function BookPage() {
                 Pickup Date
                 <input
                   type="date"
+                  min={todayKey}
                   value={startDate}
                   onChange={(event) => setStartDate(event.target.value)}
                   className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-[var(--ccr-text)] outline-none ring-[var(--ccr-accent)] focus:ring-2"
@@ -194,6 +200,7 @@ export default function BookPage() {
                 Return Date
                 <input
                   type="date"
+                  min={startDate || todayKey}
                   value={endDate}
                   onChange={(event) => setEndDate(event.target.value)}
                   className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-[var(--ccr-text)] outline-none ring-[var(--ccr-accent)] focus:ring-2"
@@ -223,7 +230,7 @@ export default function BookPage() {
           </section>
 
           <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm">
-            <h2 className="text-xl font-bold text-[var(--ccr-primary)]">Estimate Guide</h2>
+            <h2 className="text-xl font-bold text-[var(--ccr-text)]">Estimate Guide</h2>
             <p className="mt-2 text-sm text-[var(--ccr-muted)]">
               Example pricing below uses a {sampleRentalDays}-day rental with a {Math.round(siteContent.bookingDepositRate * 100)}%
               deposit.
@@ -239,7 +246,7 @@ export default function BookPage() {
                     key={vehicle.id}
                     className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4"
                   >
-                    <p className="font-semibold text-[var(--ccr-primary)]">{vehicle.name}</p>
+                    <p className="font-semibold text-[var(--ccr-text)]">{vehicle.name}</p>
                     <p className="mt-1 text-sm text-[var(--ccr-muted)]">Total: {formatCurrency(total)}</p>
                     <p className="text-sm text-[var(--ccr-muted)]">Deposit: {formatCurrency(deposit)}</p>
                     <p className="text-sm text-[var(--ccr-muted)]">Balance on pickup: {formatCurrency(balance)}</p>

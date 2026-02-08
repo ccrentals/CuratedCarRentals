@@ -41,7 +41,7 @@ export default async function AdminDocumentationPage() {
           <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
             Admin
           </p>
-          <h1 className="text-3xl font-bold text-[var(--ccr-primary)]">Documentation</h1>
+          <h1 className="text-3xl font-bold text-[var(--ccr-text)]">Documentation</h1>
         </div>
         <Link
           href="/admin"
@@ -53,7 +53,7 @@ export default async function AdminDocumentationPage() {
 
       <div className="mt-6 space-y-6 text-sm text-[var(--ccr-text)]">
         <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
-          <h2 className="text-lg font-bold text-[var(--ccr-primary)]">Update Summary</h2>
+          <h2 className="text-lg font-bold text-[var(--ccr-text)]">Update Summary</h2>
           <p className="mt-2 text-[var(--ccr-muted)]">
             Last updated: <span className="font-semibold text-[var(--ccr-text)]">{updatedAt}</span>
           </p>
@@ -71,7 +71,7 @@ export default async function AdminDocumentationPage() {
         </section>
 
         <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
-          <h2 className="text-lg font-bold text-[var(--ccr-primary)]">Overview</h2>
+          <h2 className="text-lg font-bold text-[var(--ccr-text)]">Overview</h2>
           <p className="mt-2 text-[var(--ccr-muted)]">
             Curated Car Rentals provides a public booking flow with online deposit payments and an
             internal admin portal for fleet, bookings, and operational tracking.
@@ -79,7 +79,7 @@ export default async function AdminDocumentationPage() {
         </section>
 
         <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
-          <h2 className="text-lg font-bold text-[var(--ccr-primary)]">Customer Booking Flow</h2>
+          <h2 className="text-lg font-bold text-[var(--ccr-text)]">Customer Booking Flow</h2>
           <ul className="mt-3 list-disc space-y-2 pl-5 text-[var(--ccr-muted)]">
             <li>Customers browse fleet and create a booking request.</li>
             <li>Deposits are paid online (WiPay hosted checkout).</li>
@@ -88,7 +88,7 @@ export default async function AdminDocumentationPage() {
         </section>
 
         <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
-          <h2 className="text-lg font-bold text-[var(--ccr-primary)]">Admin Tools</h2>
+          <h2 className="text-lg font-bold text-[var(--ccr-text)]">Admin Tools</h2>
           <ul className="mt-3 list-disc space-y-2 pl-5 text-[var(--ccr-muted)]">
             <li>Dashboard with booking totals and quick links.</li>
             <li>Bookings list with filters and detailed booking management.</li>
@@ -100,7 +100,7 @@ export default async function AdminDocumentationPage() {
         </section>
 
         <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
-          <h2 className="text-lg font-bold text-[var(--ccr-primary)]">Blockouts & Maintenance</h2>
+          <h2 className="text-lg font-bold text-[var(--ccr-text)]">Blockouts & Maintenance</h2>
           <p className="mt-2 text-[var(--ccr-muted)]">
             Blockouts allow admins to mark vehicles as unavailable for maintenance or private use.
             Blockouts cannot overlap active bookings and will be blocked if they do.
@@ -108,7 +108,7 @@ export default async function AdminDocumentationPage() {
         </section>
 
         <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
-          <h2 className="text-lg font-bold text-[var(--ccr-primary)]">Notes & Audit Trail</h2>
+          <h2 className="text-lg font-bold text-[var(--ccr-text)]">Notes & Audit Trail</h2>
           <p className="mt-2 text-[var(--ccr-muted)]">
             Admin notes are stored on bookings and should be used for internal updates. Key admin
             actions are recorded in the audit log for accountability.
@@ -116,7 +116,7 @@ export default async function AdminDocumentationPage() {
         </section>
 
         <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
-          <h2 className="text-lg font-bold text-[var(--ccr-primary)]">Known Limitations</h2>
+          <h2 className="text-lg font-bold text-[var(--ccr-text)]">Known Limitations</h2>
           <ul className="mt-3 list-disc space-y-2 pl-5 text-[var(--ccr-muted)]">
             <li>Refund workflow is not automated yet (manual handling required).</li>
             <li>Blockouts require the blockouts table to be installed in the database.</li>
@@ -125,7 +125,7 @@ export default async function AdminDocumentationPage() {
         </section>
 
         <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
-          <h2 className="text-lg font-bold text-[var(--ccr-primary)]">Update Notes</h2>
+          <h2 className="text-lg font-bold text-[var(--ccr-text)]">Update Notes</h2>
           <p className="mt-2 text-[var(--ccr-muted)]">
             Keep this page updated as new features ship. Add release notes, operational policies,
             and any changes to payment or booking workflows.

@@ -50,10 +50,27 @@ type CalendarViewProps = {
   };
 };
 
-function parseDateKey(value: string) {
-  const [year, month, day] = value.split("-").map(Number);
-  if (!year || !month || !day) return null;
-  return new Date(year, month - 1, day);
+function parseDateKey(value: unknown) {
+  if (!value) return null;
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return null;
+    return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+  }
+  if (typeof value === "number") {
+    const numeric = new Date(value);
+    if (!Number.isNaN(numeric.getTime())) {
+      return new Date(numeric.getFullYear(), numeric.getMonth(), numeric.getDate());
+    }
+  }
+  const text = String(value);
+  const match = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    const [, year, month, day] = match;
+    return new Date(Number(year), Number(month) - 1, Number(day));
+  }
+  const parsed = new Date(text);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
 }
 
 function formatDateKey(date: Date) {
@@ -424,7 +441,7 @@ export function CalendarView({
             <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
               Day view
             </p>
-            <h3 className="text-lg font-bold text-[var(--ccr-primary)]">
+            <h3 className="text-lg font-bold text-[var(--ccr-text)]">
               {new Date(`${selectedDate}T00:00:00`).toLocaleDateString()}
             </h3>
           </div>

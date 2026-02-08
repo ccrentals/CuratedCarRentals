@@ -19,8 +19,9 @@ export default async function BookingSummaryPage({
     pricing_json: Record<string, unknown> | null;
     vehicle_make: string;
     vehicle_model: string;
+    paid_to_date: number;
   }>(
-    "select b.id, b.status, b.start_date, b.end_date, b.pricing_json, v.make as vehicle_make, v.model as vehicle_model, v.daily_rate_cents, v.deposit_cents from bookings b join vehicles v on v.id = b.vehicle_id where b.id = $1",
+    "select b.id, b.status, b.start_date, b.end_date, b.pricing_json, v.make as vehicle_make, v.model as vehicle_model, v.daily_rate_cents, v.deposit_cents, coalesce(sum(p.deposit_amount_cents), 0) as paid_to_date from bookings b join vehicles v on v.id = b.vehicle_id left join payments p on p.booking_id = b.id and p.status = 'DEPOSIT_PAID' where b.id = $1 group by b.id, v.make, v.model, v.daily_rate_cents, v.deposit_cents",
     [id],
   );
 
@@ -48,12 +49,15 @@ export default async function BookingSummaryPage({
 
   const days = daysInclusive(booking.start_date, booking.end_date);
   const total = dailyRate * days;
-  const balance = Math.max(0, total - deposit);
+  const paidToDate = Number(booking.paid_to_date ?? 0);
+  const balance = Math.max(0, total - paidToDate);
+  const canPayDeposit = paidToDate < deposit;
+  const canPayBalance = paidToDate >= deposit && balance > 0;
 
   return (
     <div className="mx-auto w-full max-w-3xl px-6 py-12">
       <div className="rounded-3xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-8 shadow-sm">
-        <h1 className="text-3xl font-bold text-[var(--ccr-primary)]">Booking Summary</h1>
+        <h1 className="text-3xl font-bold text-[var(--ccr-text)]">Booking Summary</h1>
         <p className="mt-2 text-sm text-[var(--ccr-muted)]">Booking ID: {booking.id}</p>
 
         <div className="mt-4 space-y-2 text-sm text-[var(--ccr-muted)]">
@@ -67,7 +71,7 @@ export default async function BookingSummaryPage({
             Status: <span className="font-semibold text-[var(--ccr-text)]">{booking.status}</span>
           </p>
           <p className="text-xs text-[var(--ccr-muted)]">
-            Deposit paid online, balance paid on pickup.
+            Deposit paid online, balance paid on pickup (or pay online anytime).
           </p>
         </div>
 
@@ -77,17 +81,39 @@ export default async function BookingSummaryPage({
             <p>Days: <span className="font-semibold">{days}</span></p>
             <p>Total rental: <span className="font-semibold">{formatJmd(total)}</span></p>
             <p>Deposit online: <span className="font-semibold">{formatJmd(deposit)}</span></p>
+            <p>Paid to date: <span className="font-semibold">{formatJmd(paidToDate)}</span></p>
             <p>Balance on pickup: <span className="font-semibold">{formatJmd(balance)}</span></p>
           </div>
         </div>
 
+        <div className="mt-6 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+            Policies & Payment Instructions
+          </h3>
+          <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-[var(--ccr-text)]">
+            <li>Deposit secures the booking. Balance is due by pickup.</li>
+            <li>Please bring a valid driver’s license and your booking reference.</li>
+            <li>Cancellations within 24 hours of pickup may be non-refundable.</li>
+          </ul>
+        </div>
+
         <div className="mt-6 flex flex-wrap gap-3">
-          <Link
-            href={`/bookings/${booking.id}/pay`}
-            className="rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-sm font-semibold text-white"
-          >
-            Pay Deposit
-          </Link>
+          {canPayDeposit ? (
+            <Link
+              href={`/bookings/${booking.id}/pay`}
+              className="rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-sm font-semibold text-white"
+            >
+              Pay Deposit
+            </Link>
+          ) : null}
+          {canPayBalance ? (
+            <Link
+              href={`/bookings/${booking.id}/balance`}
+              className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)]"
+            >
+              Pay Balance
+            </Link>
+          ) : null}
           <Link
             href="/contact"
             className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)]"
