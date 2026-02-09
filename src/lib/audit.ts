@@ -1,4 +1,5 @@
 import { dbQuery } from "@/lib/db";
+import { logWarn } from "@/lib/log";
 
 type AuditLogInput = {
   userId?: string | null;
@@ -23,10 +24,7 @@ export async function writeAuditLog({
 }: AuditLogInput) {
   const normalizedUserId = normalizeUserId(userId);
   if (userId && !normalizedUserId) {
-    console.warn(`Audit log user_id invalid, storing null for ${action}`, {
-      entityType,
-      entityId,
-    });
+    logWarn("audit.invalidUserId", { action, entityType, entityId });
   }
   await dbQuery(
     "insert into audit_logs (user_id, action, entity_type, entity_id, details_json) values ($1, $2, $3, $4, $5)",

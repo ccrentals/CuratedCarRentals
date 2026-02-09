@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { dbQuery } from "@/lib/db";
 import { formatJmd } from "@/lib/money";
+import { calcDaysInclusive, dateOnlyUtc } from "@/lib/payments/dateMath";
 
 type VehicleRow = {
   id: string;
@@ -33,32 +34,31 @@ type PaymentRow = {
 
 function formatDateKey(date: Date) {
   const pad = (num: number) => String(num).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}`;
 }
 
 function parseDateParam(value: string | undefined, fallback: Date) {
   if (!value) return fallback;
   const match = /^\d{4}-\d{2}-\d{2}$/.test(value);
   if (!match) return fallback;
-  const date = new Date(`${value}T00:00:00`);
-  return Number.isNaN(date.getTime()) ? fallback : date;
+  const date = dateOnlyUtc(`${value}T00:00:00Z`);
+  return date ?? fallback;
 }
 
 function startOfMonth(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth(), 1);
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
 }
 
-function daysInclusive(start: Date, end: Date) {
-  const s = new Date(start.getFullYear(), start.getMonth(), start.getDate());
-  const e = new Date(end.getFullYear(), end.getMonth(), end.getDate());
-  const diff = Math.floor((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24));
-  return diff >= 0 ? diff + 1 : 0;
-}
+function overlapDays(rangeStart: unknown, rangeEnd: unknown, bookingStart: unknown, bookingEnd: unknown) {
+  const rs = dateOnlyUtc(rangeStart);
+  const re = dateOnlyUtc(rangeEnd);
+  const bs = dateOnlyUtc(bookingStart);
+  const be = dateOnlyUtc(bookingEnd);
+  if (!rs || !re || !bs || !be) return 0;
 
-function overlapDays(rangeStart: Date, rangeEnd: Date, bookingStart: Date, bookingEnd: Date) {
-  const start = bookingStart > rangeStart ? bookingStart : rangeStart;
-  const end = bookingEnd < rangeEnd ? bookingEnd : rangeEnd;
-  return daysInclusive(start, end);
+  const start = bs > rs ? bs : rs;
+  const end = be < re ? be : re;
+  return calcDaysInclusive(start, end);
 }
 
 export default async function AdminReportsPage({
@@ -67,9 +67,9 @@ export default async function AdminReportsPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = await searchParams;
-  const today = new Date();
+  const today = dateOnlyUtc(new Date()) ?? new Date();
   const defaultFrom = startOfMonth(today);
-  const defaultTo = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const defaultTo = today;
 
   const dateFrom = parseDateParam(typeof params.dateFrom === "string" ? params.dateFrom : undefined, defaultFrom);
   const dateTo = parseDateParam(typeof params.dateTo === "string" ? params.dateTo : undefined, defaultTo);
@@ -120,14 +120,12 @@ export default async function AdminReportsPage({
     paidByBooking.set(payment.booking_id, current + Number(payment.deposit_amount_cents ?? 0));
   });
 
-  const daysInRange = daysInclusive(dateFrom, dateTo);
+  const daysInRange = calcDaysInclusive(dateFrom, dateTo);
   const utilizationByVehicle = new Map<string, number>();
 
   bookingRows.forEach((booking: BookingRow) => {
     if (booking.status === "CANCELLED") return;
-    const bookingStart = new Date(`${booking.start_date}T00:00:00`);
-    const bookingEnd = new Date(`${booking.end_date}T00:00:00`);
-    const bookedDays = overlapDays(dateFrom, dateTo, bookingStart, bookingEnd);
+    const bookedDays = overlapDays(dateFrom, dateTo, booking.start_date, booking.end_date);
     if (bookedDays <= 0) return;
     const current = utilizationByVehicle.get(booking.vehicle_id) ?? 0;
     utilizationByVehicle.set(booking.vehicle_id, current + bookedDays);
@@ -158,7 +156,7 @@ export default async function AdminReportsPage({
   for (let cursor = new Date(dateFrom); cursor <= dateTo; ) {
     const key = formatDateKey(cursor);
     revenueByDate.set(key, { bookings: 0, revenue: 0 });
-    cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 1);
+    cursor = new Date(cursor.getTime() + 1000 * 60 * 60 * 24);
   }
 
   bookingRows.forEach((booking: BookingRow) => {
@@ -171,7 +169,7 @@ export default async function AdminReportsPage({
     const pricing = booking.pricing_json ?? {};
     const days =
       Number((pricing as { days?: number }).days ?? 0) ||
-      daysInclusive(new Date(`${booking.start_date}T00:00:00`), new Date(`${booking.end_date}T00:00:00`));
+      calcDaysInclusive(booking.start_date, booking.end_date);
     const dailyRate = Number(
       (pricing as { daily_rate_cents?: number }).daily_rate_cents ?? booking.daily_rate_cents ?? 0,
     );

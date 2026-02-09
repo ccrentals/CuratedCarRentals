@@ -12,6 +12,7 @@ const actionLabels = {
   deposit: "Mark Deposit Paid",
   full: "Mark Balance Paid",
   cancel: "Cancel Booking",
+  archive: "Archive Booking",
 } as const;
 
 type ActionKey = keyof typeof actionLabels;
@@ -19,15 +20,15 @@ type ActionKey = keyof typeof actionLabels;
 type BookingActionsProps = {
   bookingId: string;
   bookingStatus?: string;
-  hasPayments?: boolean;
   isPaidInFull?: boolean;
+  canAdmin?: boolean;
 };
 
 export function BookingActions({
   bookingId,
   bookingStatus,
-  hasPayments,
   isPaidInFull,
+  canAdmin,
 }: BookingActionsProps) {
   const router = useRouter();
   const [message, setMessage] = useState<string | null>(null);
@@ -36,18 +37,46 @@ export function BookingActions({
   const [emailLoading, setEmailLoading] = useState<"booking_created" | "deposit_receipt" | null>(
     null,
   );
-  const normalizedStatus = bookingStatus?.toUpperCase();
+  const normalizedStatus = bookingStatus?.trim().toUpperCase();
   const canConfirm = !normalizedStatus || ["PENDING_PAYMENT", "PENDING"].includes(normalizedStatus);
   const canComplete = !normalizedStatus || ["CONFIRMED", "PICKED_UP"].includes(normalizedStatus);
+  const canArchive = Boolean(canAdmin) && normalizedStatus === "RETURNED";
+  const canCancel = !normalizedStatus || !["CANCELLED", "RETURNED"].includes(normalizedStatus);
 
   async function runAction(actionKey: ActionKey) {
     setMessage(null);
     setError(null);
     setLoadingKey(actionKey);
 
+    if (actionKey === "cancel" && !canCancel) {
+      setError(
+        normalizedStatus === "RETURNED"
+          ? "Returned bookings cannot be cancelled"
+          : "Booking is already cancelled",
+      );
+      setLoadingKey(null);
+      return;
+    }
+
     if (actionKey === "cancel") {
       const confirmed = window.confirm("Cancel this booking?");
       if (!confirmed) {
+        setLoadingKey(null);
+        return;
+      }
+    }
+
+    let archiveReason: string | null = null;
+    if (actionKey === "archive") {
+      const defaultReason =
+        normalizedStatus === "RETURNED" ? "Completed/Returned" : "Manual archive";
+      archiveReason = window.prompt("Archive reason (required):", defaultReason);
+      if (archiveReason === null) {
+        setLoadingKey(null);
+        return;
+      }
+      if (!archiveReason.trim()) {
+        setError("Archive reason is required.");
         setLoadingKey(null);
         return;
       }
@@ -60,11 +89,13 @@ export function BookingActions({
     };
 
     const response =
-      actionKey === "confirm" || actionKey === "complete"
+      actionKey === "confirm" || actionKey === "complete" || actionKey === "archive"
         ? await fetch(`/api/admin/bookings/${bookingId}`, {
             method: "PATCH",
             headers,
-            body: JSON.stringify({ action: actionKey }),
+            body: JSON.stringify(
+              actionKey === "archive" ? { action: actionKey, reason: archiveReason } : { action: actionKey },
+            ),
           })
         : await fetch(`/api/admin/bookings/${bookingId}/${actionKey === "full" ? "mark-fully-paid" : actionKey === "deposit" ? "mark-deposit-paid" : "cancel"}`, {
             method: "POST",
@@ -148,13 +179,29 @@ export function BookingActions({
         <button
           type="button"
           onClick={() => runAction("cancel")}
-          disabled={loadingKey === "cancel"}
-          className="rounded-xl bg-red-600 px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
+          disabled={loadingKey === "cancel" || !canCancel}
+          title={
+            !canCancel
+              ? normalizedStatus === "RETURNED"
+                ? "Returned bookings cannot be cancelled"
+                : "Already cancelled"
+              : undefined
+          }
+          className="rounded-xl bg-red-600 px-4 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
         >
           {loadingKey === "cancel" ? "Working..." : actionLabels.cancel}
         </button>
+        {canArchive ? (
+          <button
+            type="button"
+            onClick={() => runAction("archive")}
+            disabled={loadingKey === "archive"}
+            className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
+          >
+            {loadingKey === "archive" ? "Working..." : actionLabels.archive}
+          </button>
+        ) : null}
       </div>
-      {hasPayments ? <span className="text-xs text-red-600">Refund required</span> : null}
 
       <div className="flex flex-wrap items-center gap-2 text-xs">
         <span className="text-[var(--ccr-muted)]">Email</span>

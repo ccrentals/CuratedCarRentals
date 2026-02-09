@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery } from "@/lib/db";
+import { logError } from "@/lib/log";
 import { requireCsrf } from "@/lib/security/csrf";
 
 function parseDate(value: string) {
@@ -15,12 +16,12 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  try {
-    const { searchParams } = new URL(request.url);
-    const start = searchParams.get("start");
-    const end = searchParams.get("end");
-    const vehicleId = searchParams.get("vehicleId");
+  const { searchParams } = new URL(request.url);
+  const start = searchParams.get("start");
+  const end = searchParams.get("end");
+  const vehicleId = searchParams.get("vehicleId");
 
+  try {
     if (!start || !end) {
       return NextResponse.json({ error: "start and end are required" }, { status: 400 });
     }
@@ -56,7 +57,7 @@ export async function GET(request: Request) {
         { status: 500 },
       );
     }
-    console.error("Blockouts GET failed", error);
+    logError("api.admin.blockouts.GET", error, { userId: session.userId, start, end, vehicleId });
     return NextResponse.json({ error: "Failed to load blockouts" }, { status: 500 });
   }
 }
@@ -67,12 +68,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  let vehicleId = "";
+
   try {
     const body = await request.json().catch(() => null);
     if (!(await requireCsrf(request))) {
       return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
     }
-    const vehicleId = typeof body?.vehicleId === "string" ? body.vehicleId : "";
+    vehicleId = typeof body?.vehicleId === "string" ? body.vehicleId : "";
     const reason = typeof body?.reason === "string" ? body.reason.trim() : "";
     const notes = typeof body?.notes === "string" ? body.notes.trim() : "";
     const startAtRaw = typeof body?.startAt === "string" ? body.startAt : "";
@@ -128,7 +131,7 @@ export async function POST(request: Request) {
         { status: 500 },
       );
     }
-    console.error("Blockouts POST failed", error);
+    logError("api.admin.blockouts.POST", error, { userId: session.userId, vehicleId });
     return NextResponse.json({ error: "Failed to create blockout" }, { status: 500 });
   }
 }

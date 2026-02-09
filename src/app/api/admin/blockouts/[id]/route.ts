@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery } from "@/lib/db";
+import { logError } from "@/lib/log";
 import { requireCsrf } from "@/lib/security/csrf";
 
 function parseDate(value: string) {
@@ -84,7 +85,7 @@ export async function PATCH(
         { status: 500 },
       );
     }
-    console.error("Blockouts PATCH failed", error);
+    logError("api.admin.blockouts.PATCH", error, { userId: session.userId });
     return NextResponse.json({ error: "Failed to update blockout" }, { status: 500 });
   }
 }
@@ -119,7 +120,7 @@ export async function DELETE(
         { status: 500 },
       );
     }
-    console.error("Blockouts DELETE failed", error);
+    logError("api.admin.blockouts.DELETE", error, { userId: session.userId });
     return NextResponse.json({ error: "Failed to delete blockout" }, { status: 500 });
   }
 }

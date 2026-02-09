@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { dbQuery } from "@/lib/db";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { buildInvoicePayload } from "@/lib/pdfmonkey";
+import { computeBookingPricing, fetchNetPaidToDate } from "@/lib/payments/pricing";
 
 export async function GET(
   _request: Request,
@@ -39,30 +40,64 @@ export async function GET(
     return NextResponse.json({ error: "Booking not found" }, { status: 404 });
   }
 
-  const paymentResult = await dbQuery<{ amount: number }>(
-    "select coalesce(sum(deposit_amount_cents), 0) as amount from payments where booking_id = $1 and status = 'DEPOSIT_PAID'",
-    [id],
-  );
-
   const pricing = booking.pricing_json ?? {};
-  const deposit = Number((pricing as Record<string, unknown>).deposit_cents ?? booking.deposit_cents);
-  const days = (() => {
-    const startDate = new Date(booking.start_date);
-    const endDate = new Date(booking.end_date);
-    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) return 0;
-    const diff = Math.floor((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-    return diff >= 0 ? diff + 1 : 0;
-  })();
-  const dailyRate = Number(booking.daily_rate_cents || 0);
-  const total = days * dailyRate;
-  const paidToDate = Number(paymentResult.rows[0]?.amount ?? 0);
-  const balanceDue = Math.max(0, total - paidToDate);
-
-  const payload = buildInvoicePayload({
+  const dailyRate = Number((pricing as Record<string, unknown>).daily_rate_cents ?? booking.daily_rate_cents ?? 0);
+  const deposit = Number((pricing as Record<string, unknown>).deposit_cents ?? booking.deposit_cents ?? 0);
+  const netPaidToDate = await fetchNetPaidToDate(booking.id);
+  const summary = computeBookingPricing({
     bookingId: booking.id,
     bookingStatus: booking.status,
     startDate: booking.start_date,
     endDate: booking.end_date,
+    dailyRate,
+    deposit,
+    netPaidToDate,
+  });
+
+  type PaymentLine = {
+    provider: string;
+    status: string;
+    deposit_amount_cents: number;
+    created_at: string | Date;
+    deleted_at?: string | null;
+  };
+
+  const paymentsRows: PaymentLine[] = await (async () => {
+    try {
+      const result = await dbQuery<PaymentLine>(
+        "select provider, status, deposit_amount_cents, created_at, deleted_at from payments where booking_id = $1 and deleted_at is null and status in ('DEPOSIT_PAID','REFUNDED') order by created_at asc",
+        [booking.id],
+      );
+      return result.rows;
+    } catch (error) {
+      const code = (error as { code?: string } | null)?.code;
+      const message = String((error as { message?: unknown } | null)?.message ?? "");
+      if (code === "42703" && message.includes("\"deleted_at\"") && message.includes("does not exist")) {
+        const result = await dbQuery<PaymentLine>(
+          "select provider, status, deposit_amount_cents, created_at from payments where booking_id = $1 and status in ('DEPOSIT_PAID','REFUNDED') order by created_at asc",
+          [booking.id],
+        );
+        return result.rows;
+      }
+      throw error;
+    }
+  })();
+
+  const payments = paymentsRows.map((row: PaymentLine) => ({
+    provider: row.provider,
+    status: row.status,
+    amount: Number(row.deposit_amount_cents ?? 0),
+    date:
+      row.created_at instanceof Date
+        ? row.created_at.toISOString()
+        : String(row.created_at ?? ""),
+  }));
+
+  const payload = buildInvoicePayload({
+    bookingId: booking.id,
+    bookingStatus: booking.status,
+    startDate: booking.start_date instanceof Date ? booking.start_date.toISOString() : String(booking.start_date),
+    endDate: booking.end_date instanceof Date ? booking.end_date.toISOString() : String(booking.end_date),
     pickupLocation: booking.pickup_location,
     customerName: booking.customer_name,
     customerEmail: booking.customer_email,
@@ -71,11 +106,11 @@ export async function GET(
     vehicleModel: booking.vehicle_model,
     vehicleYear: booking.vehicle_year,
     dailyRate,
-    deposit,
-    total,
-    paidToDate,
-    balanceDue,
-    payments: [],
+    deposit: summary.deposit,
+    total: summary.total,
+    paidToDate: summary.netPaidToDate,
+    balanceDue: summary.balanceDue,
+    payments,
   });
 
   return NextResponse.json({ payload });

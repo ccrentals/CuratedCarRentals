@@ -5,10 +5,12 @@ import { BookingActions } from "@/components/admin/BookingActions";
 import { BookingNotes } from "@/components/admin/BookingNotes";
 import { ManualPaymentForm } from "@/components/admin/ManualPaymentForm";
 import { PaymentRowActions } from "@/components/admin/PaymentRowActions";
+import { RefundRequiredToast } from "@/components/admin/RefundRequiredToast";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { fmtDate } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
 import { formatPaymentStatus } from "@/lib/payments/formatPaymentStatus";
+import { computeBookingPricing, fetchNetPaidToDate } from "@/lib/payments/pricing";
 
 type BookingDetails = {
   id: string;
@@ -49,14 +51,6 @@ function isUndefinedColumn(error: unknown, column: string) {
   const code = (error as { code?: string } | null)?.code;
   const message = String((error as { message?: unknown } | null)?.message ?? "");
   return code === "42703" && message.includes(`"${column}"`) && message.includes("does not exist");
-}
-
-function calcDays(start: string, end: string) {
-  const startDate = new Date(`${start}T00:00:00Z`);
-  const endDate = new Date(`${end}T00:00:00Z`);
-  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) return 0;
-  const diff = Math.floor((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-  return diff >= 0 ? diff + 1 : 0;
 }
 
 function statusBadge(status: string) {
@@ -111,21 +105,24 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
   }
 
   const pricing = booking.pricing_json ?? {};
-  const days = Number(pricing.days ?? calcDays(booking.start_date, booking.end_date));
   const dailyRate = Number(pricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
   const deposit = Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0);
-  const total = Number(pricing.subtotal_cents ?? dailyRate * days);
-  const paymentRows = payments.rows as PaymentRow[];
-  const paidToDate = paymentRows.reduce(
-    (sum: number, payment: PaymentRow) =>
-      sum +
-      (!payment.deleted_at && (payment.status === "DEPOSIT_PAID" || payment.status === "REFUNDED")
-        ? Number(payment.deposit_amount_cents ?? 0)
-        : 0),
-    0,
-  );
-  const balanceDue = Math.max(0, total - paidToDate);
-  const isPaidInFull = balanceDue <= 0;
+  const netPaidToDate = await fetchNetPaidToDate(booking.id);
+  const summary = computeBookingPricing({
+    bookingId: booking.id,
+    bookingStatus: booking.status,
+    startDate: booking.start_date,
+    endDate: booking.end_date,
+    dailyRate,
+    deposit,
+    netPaidToDate,
+  });
+  const days = summary.days;
+  const total = summary.total;
+  const paidToDate = summary.netPaidToDate;
+  const balanceDue = summary.balanceDue;
+  const isPaidInFull = summary.paymentStatus === "PAID_IN_FULL";
+  const refundRequired = summary.refundRequired;
 
   const notesRaw = (pricing as { admin_notes?: AdminNote[] }).admin_notes;
   const notes = Array.isArray(notesRaw) ? [...notesRaw] : [];
@@ -137,6 +134,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
 
   return (
     <div className="mx-auto w-full max-w-5xl px-6 py-10">
+      <RefundRequiredToast refundRequired={refundRequired} />
       <Link href="/admin/bookings" className="text-sm font-semibold text-[var(--ccr-text)]">
         Back to bookings
       </Link>
@@ -158,8 +156,8 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
         <BookingActions
           bookingId={booking.id}
           bookingStatus={booking.status}
-          hasPayments={paidToDate > 0}
           isPaidInFull={isPaidInFull}
+          canAdmin={canAdmin}
         />
       </div>
 
@@ -205,7 +203,14 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
       </div>
 
       <section className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm">
-        <h2 className="text-lg font-bold text-[var(--ccr-text)]">Charges Summary</h2>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-lg font-bold text-[var(--ccr-text)]">Charges Summary</h2>
+          {refundRequired ? (
+            <span className="rounded-full border border-amber-400/40 bg-amber-500/15 px-3 py-1 text-xs font-semibold text-amber-100">
+              Refund required
+            </span>
+          ) : null}
+        </div>
         <div className="mt-4 grid gap-3 text-sm text-[var(--ccr-muted)] md:grid-cols-2">
           <div className="flex items-center justify-between">
             <span>Days</span>

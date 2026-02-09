@@ -4,11 +4,26 @@ import PaymentLogToggle from "@/components/admin/PaymentLogToggle";
 import { dbQuery } from "@/lib/db";
 import { fmtDate } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
+import { formatPaymentStatus } from "@/lib/payments/formatPaymentStatus";
 
 function maskValue(value: string | undefined, visible = 4) {
   if (!value) return "missing";
   if (value.length <= visible) return value;
   return `${"*".repeat(Math.max(0, value.length - visible))}${value.slice(-visible)}`;
+}
+
+function extractPaymentType(meta: Record<string, unknown> | null) {
+  const type = meta?.payment_type;
+  return typeof type === "string" ? type : null;
+}
+
+function displayProvider(provider: string, meta: Record<string, unknown> | null) {
+  if (provider !== "MANUAL") return provider;
+  const label = meta?.method_label;
+  if (typeof label === "string" && label.trim()) return label.trim();
+  const method = meta?.method;
+  if (typeof method === "string" && method.trim()) return method.trim();
+  return "MANUAL";
 }
 
 function extractError(meta: Record<string, unknown> | null) {
@@ -230,6 +245,9 @@ export default async function AdminPaymentsPage({
             <ul className="mt-4 space-y-3 text-sm">
               {wipayRecent.rows.map((row: WipayRow) => {
                 const errorMessage = extractError(row.metadata_json);
+                const statusLabel = formatPaymentStatus(row.status, {
+                  paymentType: extractPaymentType(row.metadata_json),
+                });
                 return (
                   <li
                     key={row.id}
@@ -237,7 +255,7 @@ export default async function AdminPaymentsPage({
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="font-semibold text-[var(--ccr-text)]">
-                        {row.status} · {formatJmd(row.deposit_amount_cents)}
+                        {statusLabel} · {formatJmd(row.deposit_amount_cents)}
                       </div>
                       <div className="text-xs text-[var(--ccr-muted)]">{fmtDate(row.created_at)}</div>
                     </div>
@@ -283,6 +301,10 @@ export default async function AdminPaymentsPage({
             <tbody>
               {payments.rows.map((payment: PaymentRow) => {
                 const errorMessage = extractError(payment.metadata_json);
+                const statusLabel = formatPaymentStatus(payment.status, {
+                  paymentType: extractPaymentType(payment.metadata_json),
+                });
+                const providerLabel = displayProvider(payment.provider, payment.metadata_json);
                 return (
                   <tr key={payment.id} className="border-b border-[var(--ccr-border)] last:border-b-0">
                     <td className="px-4 py-3 font-mono text-xs text-[var(--ccr-text)]">
@@ -303,8 +325,8 @@ export default async function AdminPaymentsPage({
                     <td className="px-4 py-3 text-[var(--ccr-text)]">
                       {payment.vehicle_make} {payment.vehicle_model}
                     </td>
-                    <td className="px-4 py-3 text-[var(--ccr-text)]">{payment.provider}</td>
-                    <td className="px-4 py-3 text-[var(--ccr-text)]">{payment.status}</td>
+                    <td className="px-4 py-3 text-[var(--ccr-text)]">{providerLabel}</td>
+                    <td className="px-4 py-3 text-[var(--ccr-text)]">{statusLabel}</td>
                     <td className="px-4 py-3 text-[var(--ccr-text)]">
                       {formatJmd(payment.deposit_amount_cents)}
                     </td>

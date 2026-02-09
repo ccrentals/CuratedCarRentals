@@ -23,10 +23,11 @@ export function formatPaymentStatus(
   if (normalized === "PAID_IN_FULL") return "Payment Complete";
 
   // We store successful payments as `DEPOSIT_PAID` in the DB, but distinguish meaning via `payment_type`.
-  if (normalized === "DEPOSIT_PAID" && paymentType === "balance") return "Payment Complete";
+  if (normalized === "DEPOSIT_PAID" && (paymentType === "balance" || paymentType === "full")) {
+    return "Payment Complete";
+  }
   if (normalized === "DEPOSIT_PAID") return "Deposit Paid";
 
   if (!normalized) return "";
   return titleCase(normalized.replace(/_/g, " ").toLowerCase());
 }
-

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery } from "@/lib/db";
+import { logError } from "@/lib/log";
 import { requireCsrf } from "@/lib/security/csrf";
 
 const DOC_KEY = "documentation";
@@ -39,7 +40,7 @@ export async function GET() {
   } catch (error) {
     const response = handleMissingTable(error);
     if (response) return response;
-    console.error("docs GET failed", error);
+    logError("api.admin.docs.GET", error, { docKey: DOC_KEY });
     return NextResponse.json({ error: "Failed to load documentation" }, { status: 500 });
   }
 }
@@ -70,7 +71,7 @@ export async function PATCH(request: Request) {
   } catch (error) {
     const response = handleMissingTable(error);
     if (response) return response;
-    console.error("docs PATCH failed", error);
+    logError("api.admin.docs.PATCH", error, { docKey: DOC_KEY, userId: session.userId });
     return NextResponse.json({ error: "Failed to update documentation" }, { status: 500 });
   }
 }

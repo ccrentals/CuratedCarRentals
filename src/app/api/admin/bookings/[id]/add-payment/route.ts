@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getSessionFromRequest } from "@/lib/auth/session";
-import { dbQuery, getDbPool } from "@/lib/db";
+import { getDbPool } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
 import { requireCsrf } from "@/lib/security/csrf";
 import {
@@ -9,14 +9,7 @@ import {
   sendPaymentUpdateEmail,
 } from "@/lib/notifications/email";
 import { recalculateBookingPayments } from "@/lib/payments/recalculateBooking";
-
-function calcDays(start: string, end: string) {
-  const startDate = new Date(`${start}T00:00:00Z`);
-  const endDate = new Date(`${end}T00:00:00Z`);
-  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) return 0;
-  const diff = Math.floor((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-  return diff >= 0 ? diff + 1 : 0;
-}
+import { logError } from "@/lib/log";
 
 const METHOD_ALLOWLIST = new Set(["CASH", "BANK_TRANSFER", "POS_CARD", "CHEQUE", "OTHER"]);
 const METHOD_LABELS: Record<string, string> = {
@@ -77,12 +70,6 @@ export async function POST(
       await client.query("rollback");
       return NextResponse.json({ error: "Cancelled booking cannot be paid" }, { status: 400 });
     }
-
-    const pricing = booking.pricing_json ?? {};
-    const days = Number(pricing.days ?? calcDays(booking.start_date, booking.end_date));
-    const dailyRate = Number(pricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
-    const deposit = Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0);
-    const total = Number(pricing.subtotal_cents ?? dailyRate * days);
 
     const providerRef = reference || `${method}_${Date.now()}`;
 
@@ -157,9 +144,9 @@ export async function POST(
         startDate: booking.start_date,
         endDate: booking.end_date,
         pickupLocation: booking.pickup_location,
-        dailyRate,
-        deposit,
-        total,
+        dailyRate: summary.dailyRate,
+        deposit: summary.depositAmount,
+        total: summary.totalAmount,
         paidToDate: summary.netPaidToDate,
         balanceDue: summary.balanceDue,
         paymentAmount: amount,
@@ -176,9 +163,9 @@ export async function POST(
         startDate: booking.start_date,
         endDate: booking.end_date,
         pickupLocation: booking.pickup_location,
-        dailyRate,
-        deposit,
-        total,
+        dailyRate: summary.dailyRate,
+        deposit: summary.depositAmount,
+        total: summary.totalAmount,
         paidToDate: summary.netPaidToDate,
         balanceDue: summary.balanceDue,
         paymentAmount: amount,
@@ -196,7 +183,7 @@ export async function POST(
     });
   } catch (error) {
     await client.query("rollback");
-    console.error("add-payment failed", error);
+    logError("admin_add_payment_failed", error, { bookingId: id });
     return NextResponse.json({ error: "Failed to add payment" }, { status: 500 });
   } finally {
     client.release();

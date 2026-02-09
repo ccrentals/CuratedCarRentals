@@ -9,6 +9,45 @@ type DocRow = {
   updated_by_email: string | null;
 };
 
+const DOCUMENTATION_SECTIONS = [
+  {
+    href: "/admin/documentation/prd",
+    label: "PRD / Specification",
+    description: "Project goals, scope, requirements, sitemap, and user stories.",
+    topics: ["Purpose & goals", "Personas", "Functional + non-functional requirements", "Sitemap", "User stories"],
+  },
+  {
+    href: "/admin/documentation/design",
+    label: "Design Documentation",
+    description: "Brand tokens, UI patterns, accessibility standards, and layout guidance.",
+    topics: ["Brand guidelines", "Wireframes & mockups", "UI style guide", "WCAG accessibility"],
+  },
+  {
+    href: "/admin/documentation/technical",
+    label: "Technical Documentation",
+    description: "System architecture, APIs, database schema, and deployment environment.",
+    topics: ["Technology stack", "API endpoints", "Database schema", "Hosting & deployment", "Repo structure"],
+  },
+  {
+    href: "/admin/documentation/operations",
+    label: "Operational & User Documentation",
+    description: "Runbooks for content, roles, maintenance, and troubleshooting.",
+    topics: ["Content updates", "User roles", "Maintenance plan", "Troubleshooting"],
+  },
+  {
+    href: "/admin/documentation/legal",
+    label: "Legal & Compliance",
+    description: "Policy templates and third-party processor disclosures.",
+    topics: ["Privacy policy", "Terms & conditions", "Cookie policy", "PCI considerations"],
+  },
+  {
+    href: "/admin/documentation/project-management",
+    label: "Project Management",
+    description: "Milestones, change log process, and resourcing templates.",
+    topics: ["Timeline", "Milestones", "Budget & resources", "Change log"],
+  },
+] as const;
+
 export default async function AdminDocumentationPage() {
   let doc: DocRow | null = null;
   let tableMissing = false;
@@ -31,7 +70,7 @@ export default async function AdminDocumentationPage() {
   }
 
   const updatedAt = doc?.updated_at ? new Date(doc.updated_at).toLocaleDateString() : "Not yet set";
-  const updatedBy = "System";
+  const updatedBy = doc?.updated_by_email ?? "System";
   const notesContent = doc?.content ?? "";
 
   return (
@@ -53,82 +92,55 @@ export default async function AdminDocumentationPage() {
 
       <div className="mt-6 space-y-6 text-sm text-[var(--ccr-text)]">
         <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
-          <h2 className="text-lg font-bold text-[var(--ccr-text)]">Update Summary</h2>
+          <h2 className="text-lg font-bold text-[var(--ccr-text)]">Documentation</h2>
           <p className="mt-2 text-[var(--ccr-muted)]">
-            Last updated: <span className="font-semibold text-[var(--ccr-text)]">{updatedAt}</span>
+            This area is the source of truth for product, design, technical, and operational notes. Use the
+            section pages below for detailed documentation, and use the notes panel at the bottom for quick
+            release notes / reminders.
           </p>
-          <p className="mt-1 text-[var(--ccr-muted)]">
-            Last updated by: <span className="font-semibold text-[var(--ccr-text)]">{updatedBy}</span>
+        </section>
+
+        <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
+          <h2 className="text-lg font-bold text-[var(--ccr-text)]">Sections</h2>
+          <p className="mt-2 text-[var(--ccr-muted)]">
+            Child links are grouped by main headings (not per-topic). Each section page includes multiple
+            topics.
           </p>
-          <div className="mt-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-              Changelog
-            </p>
-            <ul className="mt-2 list-disc space-y-2 pl-5 text-[var(--ccr-muted)]">
-              <li>Added admin calendar, reports, and documentation overview.</li>
-            </ul>
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            {DOCUMENTATION_SECTIONS.map((section) => (
+              <Link
+                key={section.href}
+                href={section.href}
+                className="group rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-5 transition hover:bg-[var(--ccr-surface-soft)]"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-base font-bold text-[var(--ccr-text)]">{section.label}</h3>
+                    <p className="mt-1 text-sm text-[var(--ccr-muted)]">{section.description}</p>
+                  </div>
+                  <span className="mt-0.5 rounded-full border border-[var(--ccr-border)] px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)] group-hover:text-[var(--ccr-text)]">
+                    Open
+                  </span>
+                </div>
+                <ul className="mt-3 list-disc space-y-1 pl-5 text-xs text-[var(--ccr-muted)]">
+                  {section.topics.map((topic) => (
+                    <li key={topic}>{topic}</li>
+                  ))}
+                </ul>
+              </Link>
+            ))}
           </div>
         </section>
 
         <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
-          <h2 className="text-lg font-bold text-[var(--ccr-text)]">Overview</h2>
+          <h2 className="text-lg font-bold text-[var(--ccr-text)]">Notes & Change Log</h2>
           <p className="mt-2 text-[var(--ccr-muted)]">
-            Curated Car Rentals provides a public booking flow with online deposit payments and an
-            internal admin portal for fleet, bookings, and operational tracking.
+            Last updated: <span className="font-semibold text-[var(--ccr-text)]">{updatedAt}</span> ·
+            Last updated by: <span className="font-semibold text-[var(--ccr-text)]">{updatedBy}</span>
           </p>
-        </section>
-
-        <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
-          <h2 className="text-lg font-bold text-[var(--ccr-text)]">Customer Booking Flow</h2>
-          <ul className="mt-3 list-disc space-y-2 pl-5 text-[var(--ccr-muted)]">
-            <li>Customers browse fleet and create a booking request.</li>
-            <li>Deposits are paid online (WiPay hosted checkout).</li>
-            <li>Balance is collected on pickup and recorded by admin.</li>
-          </ul>
-        </section>
-
-        <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
-          <h2 className="text-lg font-bold text-[var(--ccr-text)]">Admin Tools</h2>
-          <ul className="mt-3 list-disc space-y-2 pl-5 text-[var(--ccr-muted)]">
-            <li>Dashboard with booking totals and quick links.</li>
-            <li>Bookings list with filters and detailed booking management.</li>
-            <li>Vehicles list plus per-vehicle edit and blockout management.</li>
-            <li>Payments list with booking links.</li>
-            <li>Calendar view for bookings + blockouts.</li>
-            <li>Reports dashboard for revenue, utilization, and outstanding balances.</li>
-          </ul>
-        </section>
-
-        <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
-          <h2 className="text-lg font-bold text-[var(--ccr-text)]">Blockouts & Maintenance</h2>
           <p className="mt-2 text-[var(--ccr-muted)]">
-            Blockouts allow admins to mark vehicles as unavailable for maintenance or private use.
-            Blockouts cannot overlap active bookings and will be blocked if they do.
-          </p>
-        </section>
-
-        <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
-          <h2 className="text-lg font-bold text-[var(--ccr-text)]">Notes & Audit Trail</h2>
-          <p className="mt-2 text-[var(--ccr-muted)]">
-            Admin notes are stored on bookings and should be used for internal updates. Key admin
-            actions are recorded in the audit log for accountability.
-          </p>
-        </section>
-
-        <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
-          <h2 className="text-lg font-bold text-[var(--ccr-text)]">Known Limitations</h2>
-          <ul className="mt-3 list-disc space-y-2 pl-5 text-[var(--ccr-muted)]">
-            <li>Refund workflow is not automated yet (manual handling required).</li>
-            <li>Blockouts require the blockouts table to be installed in the database.</li>
-            <li>Admin password hashing is still basic and should be upgraded before production.</li>
-          </ul>
-        </section>
-
-        <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
-          <h2 className="text-lg font-bold text-[var(--ccr-text)]">Update Notes</h2>
-          <p className="mt-2 text-[var(--ccr-muted)]">
-            Keep this page updated as new features ship. Add release notes, operational policies,
-            and any changes to payment or booking workflows.
+            Use this notes area for high-level release notes, operational reminders, and any changes that
+            should be shared quickly across the team.
           </p>
           <div className="mt-4 whitespace-pre-wrap rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4 text-sm text-[var(--ccr-text)]">
             {notesContent || "No notes yet."}

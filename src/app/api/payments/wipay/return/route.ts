@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { reconcileWiPayPayment } from "@/lib/payments/wipayReconcile";
+import { logError } from "@/lib/log";
 
 function safeRedirect(url: string) {
   return NextResponse.redirect(url);
@@ -21,16 +22,26 @@ export async function GET(request: Request) {
     return safeRedirect(`${origin}/payment/failed?reason=notfound`);
   }
 
-  const result = await reconcileWiPayPayment({
-    orderId,
-    transactionId,
-    status,
-    message,
-    total,
-    currency,
-    hash,
-    source: "return",
-  });
+  let result: Awaited<ReturnType<typeof reconcileWiPayPayment>>;
+  try {
+    result = await reconcileWiPayPayment({
+      orderId,
+      transactionId,
+      status,
+      message,
+      total,
+      currency,
+      hash,
+      source: "return",
+    });
+  } catch (error) {
+    logError("wipay_return_reconcile_failed", error, {
+      orderId,
+      transactionId,
+      status,
+    });
+    return safeRedirect(`${origin}/payment/failed?reason=db_error&order_id=${encodeURIComponent(orderId)}`);
+  }
 
   if (!result.ok) {
     const reason = result.reason ?? "failed";
@@ -49,7 +60,17 @@ export async function GET(request: Request) {
         `${origin}/payment/failed?reason=bad_hash&order_id=${encodeURIComponent(orderId)}`,
       );
     }
-    return safeRedirect(`${origin}/payment/failed?order_id=${encodeURIComponent(orderId)}`);
+    if (reason === "db_error") {
+      return safeRedirect(
+        `${origin}/payment/failed?reason=db_error&order_id=${encodeURIComponent(orderId)}`,
+      );
+    }
+    if (reason === "failed_status") {
+      return safeRedirect(
+        `${origin}/payment/failed?reason=provider_error&order_id=${encodeURIComponent(orderId)}`,
+      );
+    }
+    return safeRedirect(`${origin}/payment/failed?reason=payment_failed&order_id=${encodeURIComponent(orderId)}`);
   }
 
   return safeRedirect(

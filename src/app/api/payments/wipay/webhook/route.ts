@@ -24,7 +24,12 @@ export async function POST(request: Request) {
   const total = pick(body, ["total"]);
   const currency = pick(body, ["currency"]);
   const hash = pick(body, ["hash"]);
-  const eventId = pick(body, ["event_id", "eventId"]) || transactionId || orderId;
+  const statusNormalized = status.toLowerCase();
+  const rawEventId = pick(body, ["event_id", "eventId"]);
+  // Some providers omit event IDs; derive a stable ID per transaction + status to
+  // avoid treating "pending" and "success" as the same event.
+  const eventId =
+    rawEventId || (transactionId || orderId ? `${transactionId || orderId}:${statusNormalized || "unknown"}` : "");
 
   if (!orderId) {
     return NextResponse.json({ ok: false, error: "Missing order_id" }, { status: 400 });
@@ -32,10 +37,14 @@ export async function POST(request: Request) {
 
   if (eventId) {
     try {
-      await dbQuery(
-        "insert into webhook_events (provider, event_id) values ($1, $2) on conflict (provider, event_id) do nothing",
+      // Gate: if this event has already been received, short-circuit and do not reconcile again.
+      const inserted = await dbQuery<{ id: string }>(
+        "insert into webhook_events (provider, event_id) values ($1, $2) on conflict (provider, event_id) do nothing returning id",
         ["WIPAY", eventId],
       );
+      if (inserted.rowCount === 0) {
+        return NextResponse.json({ ok: true, duplicate: true });
+      }
     } catch (error) {
       logError("wipay_webhook_event_insert_failed", error, { eventId });
     }

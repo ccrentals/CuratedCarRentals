@@ -1,5 +1,6 @@
 import { buildInvoicePayload, downloadPdfBase64, generateInvoicePdf } from "@/lib/pdfmonkey";
 import { logError, logWarn, redactText, safeErrorMessage } from "@/lib/log";
+import { computeBookingPricing } from "@/lib/payments/pricing";
 
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
 
@@ -24,14 +25,6 @@ function formatDateTime(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString("en-JM");
-}
-
-function daysInclusive(start: string, end: string) {
-  const startDate = new Date(start);
-  const endDate = new Date(end);
-  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) return 0;
-  const diff = Math.floor((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-  return diff >= 0 ? diff + 1 : 0;
 }
 
 type SendEmailInput = {
@@ -153,9 +146,18 @@ export async function sendBookingCreatedEmail(input: {
   dailyRate: number;
   deposit: number;
 }) {
-  const days = daysInclusive(input.startDate, input.endDate);
-  const total = days * input.dailyRate;
-  const balance = Math.max(0, total - input.deposit);
+  const summary = computeBookingPricing({
+    bookingId: input.bookingId,
+    bookingStatus: "PENDING_PAYMENT",
+    startDate: input.startDate,
+    endDate: input.endDate,
+    dailyRate: input.dailyRate,
+    deposit: input.deposit,
+    netPaidToDate: 0,
+  });
+  const days = summary.days;
+  const total = summary.total;
+  const balance = Math.max(0, summary.total - summary.deposit);
   const bookingLink = `${baseUrl()}/bookings/${input.bookingId}`;
   const invoiceLink = `${baseUrl()}/bookings/${input.bookingId}/invoice`;
 
@@ -221,9 +223,18 @@ export async function sendDepositReceiptEmail(input: {
   deposit: number;
   paidToDate: number;
 }) {
-  const days = daysInclusive(input.startDate, input.endDate);
-  const total = days * input.dailyRate;
-  const balance = Math.max(0, total - input.paidToDate);
+  const summary = computeBookingPricing({
+    bookingId: input.bookingId,
+    bookingStatus: "CONFIRMED",
+    startDate: input.startDate,
+    endDate: input.endDate,
+    dailyRate: input.dailyRate,
+    deposit: input.deposit,
+    netPaidToDate: input.paidToDate,
+  });
+  const days = summary.days;
+  const total = summary.total;
+  const balance = summary.balanceDue;
   const bookingLink = `${baseUrl()}/bookings/${input.bookingId}`;
   const invoiceLink = `${baseUrl()}/bookings/${input.bookingId}/invoice`;
 

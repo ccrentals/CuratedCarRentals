@@ -8,7 +8,7 @@ import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
 export default function AdminLoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [toast, setToast] = useState<{ message: string; tone: "error" | "success" } | null>(null);
@@ -34,7 +34,7 @@ export default function AdminLoginPage() {
         "Content-Type": "application/json",
         "x-csrf-token": csrfToken ?? "",
       },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ identifier, password }),
     });
 
     const data = await response.json().catch(() => ({}));
@@ -72,11 +72,12 @@ export default function AdminLoginPage() {
 
         <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
           <label className="block text-sm text-[var(--ccr-muted)]">
-            Email
+            Email or username
             <input
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
+              type="text"
+              value={identifier}
+              onChange={(event) => setIdentifier(event.target.value)}
+              placeholder="admin@curatedcarrentals.com or john.smith"
               className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-[var(--ccr-text)] outline-none ring-[var(--ccr-accent)] focus:ring-2"
               required
             />

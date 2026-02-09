@@ -15,7 +15,7 @@ export function PayInFullButton({ bookingId }: { bookingId: string }) {
 
     const csrfToken = await ensureCsrfToken();
 
-    const response = await fetch("/api/payments/wipay/balance/start", {
+    const response = await fetch("/api/payments/wipay/full/start", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -65,4 +65,3 @@ export function PayInFullButton({ bookingId }: { bookingId: string }) {
     </div>
   );
 }
-

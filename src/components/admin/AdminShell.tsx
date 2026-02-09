@@ -2,13 +2,34 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { UserMenu } from "@/components/admin/UserMenu";
 
 const SIDEBAR_STORAGE_KEY = "adminSidebarCollapsed";
 
-const NAV_ITEMS = [
+type NavChild = {
+  label: string;
+  href: string;
+};
+
+type NavItem = {
+  label: string;
+  href: string;
+  icon: (className: string) => ReactNode;
+  children?: NavChild[];
+};
+
+const DOCUMENTATION_CHILDREN: NavChild[] = [
+  { label: "PRD / Specification", href: "/admin/documentation/prd" },
+  { label: "Design", href: "/admin/documentation/design" },
+  { label: "Technical", href: "/admin/documentation/technical" },
+  { label: "Operations", href: "/admin/documentation/operations" },
+  { label: "Legal & Compliance", href: "/admin/documentation/legal" },
+  { label: "Project Management", href: "/admin/documentation/project-management" },
+];
+
+const NAV_ITEMS: NavItem[] = [
   {
     label: "Dashboard",
     href: "/admin",
@@ -172,6 +193,7 @@ const NAV_ITEMS = [
   {
     label: "Documentation",
     href: "/admin/documentation",
+    children: DOCUMENTATION_CHILDREN,
     icon: (className: string) => (
       <svg
         viewBox="0 0 24 24"
@@ -186,6 +208,27 @@ const NAV_ITEMS = [
         <path d="M6 4h9l3 3v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" />
         <path d="M15 4v4h4" />
         <path d="M8 11h8M8 15h8" />
+      </svg>
+    ),
+  },
+  {
+    label: "Users",
+    href: "/admin/users",
+    icon: (className: string) => (
+      <svg
+        viewBox="0 0 24 24"
+        className={className}
+        aria-hidden="true"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M16 21c0-3-2.7-5-6-5s-6 2-6 5" />
+        <circle cx="10" cy="8" r="3.2" />
+        <path d="M20 21c0-2.1-1.2-3.7-3-4.4" />
+        <path d="M17 3.6a3.2 3.2 0 0 1 0 6.2" />
       </svg>
     ),
   },
@@ -263,34 +306,59 @@ export function AdminShell({
     <nav className={`mt-6 flex flex-col gap-1 text-sm font-semibold ${collapsedState ? "items-center" : ""}`}>
       {NAV_ITEMS.map((item) => {
         const active = isActivePath(pathname, item.href);
+        const showChildren = Boolean(item.children?.length) && Boolean(active) && !collapsedState;
         return (
-          <Link
-            key={item.href}
-            href={item.href}
-            onClick={onNavigate}
-            title={item.label}
-            aria-current={active ? "page" : undefined}
-            className={`flex items-center gap-3 rounded-xl py-2 transition ${
-              collapsedState ? "justify-center px-2" : "px-3"
-            } ${
-              active
-                ? "bg-[var(--ccr-primary)] text-white"
-                : "text-[var(--ccr-text)] hover:bg-[var(--ccr-surface-soft)]"
-            }`}
-          >
-            <span
-              className={`flex h-9 w-9 items-center justify-center rounded-lg ${
+          <div key={item.href} className={`flex flex-col ${collapsedState ? "items-center" : ""}`}>
+            <Link
+              href={item.href}
+              onClick={onNavigate}
+              title={item.label}
+              aria-current={active ? "page" : undefined}
+              className={`flex items-center gap-3 rounded-xl py-2 transition ${
+                collapsedState ? "justify-center px-2" : "px-3"
+              } ${
                 active
-                  ? "bg-white/20 text-white"
-                  : "bg-[var(--ccr-surface-soft)] text-[var(--ccr-text)]"
+                  ? "bg-[var(--ccr-primary)] text-white"
+                  : "text-[var(--ccr-text)] hover:bg-[var(--ccr-surface-soft)]"
               }`}
             >
-              {item.icon(
-                `h-5 w-5 ${active ? "text-white" : "text-[var(--ccr-text)]"}`,
-              )}
-            </span>
-            {collapsedState ? null : <span>{item.label}</span>}
-          </Link>
+              <span
+                className={`flex h-9 w-9 items-center justify-center rounded-lg ${
+                  active
+                    ? "bg-white/20 text-white"
+                    : "bg-[var(--ccr-surface-soft)] text-[var(--ccr-text)]"
+                }`}
+              >
+                {item.icon(
+                  `h-5 w-5 ${active ? "text-white" : "text-[var(--ccr-text)]"}`,
+                )}
+              </span>
+              {collapsedState ? null : <span>{item.label}</span>}
+            </Link>
+
+            {showChildren ? (
+              <div className="mt-1 flex flex-col gap-1 pl-12">
+                {item.children?.map((child) => {
+                  const childActive = pathname.startsWith(child.href);
+                  return (
+                    <Link
+                      key={child.href}
+                      href={child.href}
+                      onClick={onNavigate}
+                      aria-current={childActive ? "page" : undefined}
+                      className={`rounded-lg px-3 py-2 text-xs font-semibold ${
+                        childActive
+                          ? "bg-[var(--ccr-surface-soft)] text-[var(--ccr-text)]"
+                          : "text-[var(--ccr-muted)] hover:bg-[var(--ccr-surface-soft)] hover:text-[var(--ccr-text)]"
+                      }`}
+                    >
+                      {child.label}
+                    </Link>
+                  );
+                })}
+              </div>
+            ) : null}
+          </div>
         );
       })}
     </nav>

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { dbQuery } from "@/lib/db";
+import { logError } from "@/lib/log";
 
 export async function GET() {
   try {
@@ -9,7 +10,7 @@ export async function GET() {
     );
     return NextResponse.json({ vehicles: result.rows });
   } catch (error) {
-    console.error("GET /api/public/vehicles failed", error);
+    logError("api.public.vehicles.GET", error);
     return NextResponse.json({ error: "Failed to load vehicles" }, { status: 500 });
   }
 }

@@ -44,6 +44,18 @@ Notes:
 - The admin lockout feature uses `users.locked_at` and `admin_login_attempts`.
 - Vehicles store image URLs in `vehicles.image_urls_json` (files are not stored in Neon).
 
+### Migrations
+
+We use versioned SQL migrations in `migrations/` and track applied migrations in the `schema_migrations` table.
+
+Apply migrations locally (or against Neon) with:
+
+```bash
+npm run migrate
+```
+
+This applies pending files in filename order (e.g. `001_...sql`, `002_...sql`) and is safe to re-run.
+
 ## Admin users
 
 The app expects bcrypt password hashes.
@@ -65,6 +77,15 @@ values ('admin@curatedcarrentals.com', '<PASTE_BCRYPT_HASH>', 'ADMIN');
 
 `*_cents` columns currently store **JMD dollars as integers** (naming legacy).
 Example: `3000` is treated as **JMD 3,000.00**.
+
+## Postgres SSL mode
+
+To keep current secure behavior (and avoid pg warnings), set `sslmode=verify-full` on `DATABASE_URL`.
+
+If you explicitly want libpq-compatible semantics now, set:
+- `uselibpqcompat=true&sslmode=require`
+
+The app also normalizes `sslmode=require|prefer|verify-ca` to `verify-full` unless `uselibpqcompat=true` is set.
 
 ## Payments (WiPay)
 

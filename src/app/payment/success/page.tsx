@@ -5,16 +5,8 @@ import { dbQuery } from "@/lib/db";
 import { fmtDateOnly } from "@/lib/dateFormat";
 import { logError } from "@/lib/log";
 import { formatJmd } from "@/lib/money";
+import { computeBookingPricing, fetchNetPaidToDate } from "@/lib/payments/pricing";
 import { buildInvoicePayload, generateInvoicePdf } from "@/lib/pdfmonkey";
-
-function daysInclusive(start?: string, end?: string) {
-  if (!start || !end) return 0;
-  const startDate = new Date(start);
-  const endDate = new Date(end);
-  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) return 0;
-  const diff = Math.floor((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-  return diff >= 0 ? diff + 1 : 0;
-}
 
 type PaymentRow = {
   id: string;
@@ -58,31 +50,73 @@ export default async function PaymentSuccessPage({
 
   const booking = bookingResult?.rowCount ? bookingResult.rows[0] : null;
 
-  const paymentsResult = bookingId
-    ? await dbQuery<PaymentRow>(
-        "select id, provider, status, deposit_amount_cents, created_at, metadata_json from payments where booking_id = $1 order by created_at asc",
+  let payments: PaymentRow[] = [];
+  if (bookingId) {
+    try {
+      const paymentsResult = await dbQuery<PaymentRow>(
+        "select id, provider, status, deposit_amount_cents, created_at, metadata_json from payments where booking_id = $1 and deleted_at is null order by created_at asc",
         [bookingId],
-      )
+      );
+      payments = (paymentsResult.rows as PaymentRow[]) ?? [];
+    } catch (error) {
+      const code = (error as { code?: string } | null)?.code;
+      const message = String((error as { message?: unknown } | null)?.message ?? "");
+      // Graceful fallback if DB hasn't been migrated yet.
+      if (code === "42703" && message.includes("\"deleted_at\"") && message.includes("does not exist")) {
+        const paymentsResult = await dbQuery<PaymentRow>(
+          "select id, provider, status, deposit_amount_cents, created_at, metadata_json from payments where booking_id = $1 order by created_at asc",
+          [bookingId],
+        );
+        payments = (paymentsResult.rows as PaymentRow[]) ?? [];
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  const pricing = booking?.pricing_json ?? {};
+  const dailyRate = booking ? Number(pricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0) : 0;
+  const depositPolicy = booking ? Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0) : 0;
+  const netPaidToDate = booking ? await fetchNetPaidToDate(booking.id) : 0;
+  const summary = booking
+    ? computeBookingPricing({
+        bookingId: booking.id,
+        bookingStatus: booking.status,
+        startDate: booking.start_date,
+        endDate: booking.end_date,
+        dailyRate,
+        deposit: depositPolicy,
+        netPaidToDate,
+      })
     : null;
 
-  const payments = (paymentsResult?.rows as PaymentRow[] | undefined) ?? [];
-  const days = booking ? daysInclusive(booking.start_date, booking.end_date) : 0;
-  const total = booking ? days * Number(booking.daily_rate_cents || 0) : 0;
-  const paidToDate = payments.reduce((sum: number, payment: PaymentRow) => {
-    if (payment.status !== "DEPOSIT_PAID") return sum;
-    return sum + Number(payment.deposit_amount_cents || 0);
-  }, 0);
+  const days = summary?.days ?? 0;
+  const total = summary?.total ?? 0;
+  const paidToDate = summary?.netPaidToDate ?? 0;
+  const balanceDue = summary?.balanceDue ?? 0;
+
   const depositPaid = payments.reduce((sum: number, payment: PaymentRow) => {
     if (payment.status !== "DEPOSIT_PAID") return sum;
     const metadata = payment.metadata_json ?? {};
-    const paymentType =
-      typeof metadata.payment_type === "string" ? String(metadata.payment_type) : "deposit";
-    // Balance/full payments are recorded with payment_type='balance'. Deposit paid should reflect
-    // actual deposit payments only.
-    if (paymentType === "balance") return sum;
+    const paymentType = typeof metadata.payment_type === "string" ? String(metadata.payment_type) : "";
+    // Only count explicit deposit payments (avoid defaulting older rows into "deposit").
+    if (paymentType !== "deposit") return sum;
     return sum + Number(payment.deposit_amount_cents || 0);
   }, 0);
-  const balanceDue = Math.max(0, total - paidToDate);
+
+  const latestSuccessfulPayment = [...payments]
+    .reverse()
+    .find((payment) => payment.status === "DEPOSIT_PAID" && payment.provider === "WIPAY");
+  const latestPaymentType =
+    latestSuccessfulPayment?.metadata_json &&
+    typeof latestSuccessfulPayment.metadata_json.payment_type === "string"
+      ? String(latestSuccessfulPayment.metadata_json.payment_type)
+      : "";
+  const headline = latestPaymentType === "deposit" ? "Deposit received" : "Payment received";
+  const subheadline =
+    balanceDue === 0
+      ? "Your booking is now paid in full."
+      : "Your booking is confirmed. We will follow up with pickup details shortly.";
 
   let pdfPreviewUrl: string | undefined;
   let pdfDownloadUrl: string | undefined;
@@ -128,10 +162,10 @@ export default async function PaymentSuccessPage({
       if (rawMessage.includes("quota")) {
         pdfError = "Invoice PDF is temporarily unavailable (quota reached). We will email it shortly.";
       } else {
-      pdfError =
-        error instanceof Error
-          ? "Invoice PDF is temporarily unavailable. We will email it shortly."
-          : "Invoice PDF is temporarily unavailable.";
+        pdfError =
+          error instanceof Error
+            ? "Invoice PDF is temporarily unavailable. We will email it shortly."
+            : "Invoice PDF is temporarily unavailable.";
       }
     }
   }
@@ -140,10 +174,8 @@ export default async function PaymentSuccessPage({
     <div className="invoice-page mx-auto w-full max-w-3xl px-6 py-12">
       <div className="rounded-3xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-8 shadow-sm print:border-none print:bg-white print:shadow-none">
         <div className="print-hide">
-          <h1 className="text-3xl font-bold text-[var(--ccr-text)]">Deposit received</h1>
-          <p className="mt-3 text-sm text-[var(--ccr-muted)]">
-            Your booking is confirmed. We will follow up with pickup details shortly.
-          </p>
+          <h1 className="text-3xl font-bold text-[var(--ccr-text)]">{headline}</h1>
+          <p className="mt-3 text-sm text-[var(--ccr-muted)]">{subheadline}</p>
           {shortId ? (
             <p className="mt-4 text-sm text-[var(--ccr-text)]">
               Booking reference: <span className="font-semibold">{shortId}</span>

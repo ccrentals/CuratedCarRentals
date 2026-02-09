@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { dbQuery, getDbPool } from "@/lib/db";
 import { sendBalanceDueReminderEmail } from "@/lib/notifications/email";
 import { writeAuditLog } from "@/lib/audit";
+import { computeBookingPricing } from "@/lib/payments/pricing";
 
 function getTodayKey() {
   return new Date().toISOString().slice(0, 10);
@@ -37,7 +38,7 @@ export async function POST(request: Request) {
     deposit_cents: number;
     paid_to_date: number;
   }>(
-    "select b.id, b.status, b.start_date, b.end_date, b.pickup_location, b.pricing_json, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model, v.year as vehicle_year, v.daily_rate_cents, v.deposit_cents, coalesce(sum(p.deposit_amount_cents), 0) as paid_to_date from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id left join payments p on p.booking_id = b.id and p.status = 'DEPOSIT_PAID' where b.start_date <= $1 and b.status in ('CONFIRMED','PICKED_UP') group by b.id, c.full_name, c.email, v.make, v.model, v.year, v.daily_rate_cents, v.deposit_cents",
+    "select b.id, b.status, b.start_date, b.end_date, b.pickup_location, b.pricing_json, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model, v.year as vehicle_year, v.daily_rate_cents, v.deposit_cents, coalesce(sum(p.deposit_amount_cents), 0) as paid_to_date from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id left join payments p on p.booking_id = b.id and p.deleted_at is null and p.status in ('DEPOSIT_PAID','REFUNDED') where b.start_date <= $1 and b.status in ('CONFIRMED','PICKED_UP') group by b.id, c.full_name, c.email, v.make, v.model, v.year, v.daily_rate_cents, v.deposit_cents",
     [today],
   );
 
@@ -48,19 +49,19 @@ export async function POST(request: Request) {
 
   for (const booking of bookingsResult.rows) {
     const pricing = booking.pricing_json ?? {};
-    const start = new Date(booking.start_date);
-    const end = new Date(booking.end_date);
-    const days =
-      Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())
-        ? 1
-        : Math.max(
-            1,
-            Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1,
-          );
     const dailyRate = Number(pricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
-    const total = Number(pricing.subtotal_cents ?? dailyRate * days);
+    const deposit = Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0);
     const paidToDate = Number(booking.paid_to_date ?? 0);
-    const balanceDue = Math.max(0, total - paidToDate);
+    const summary = computeBookingPricing({
+      bookingId: booking.id,
+      bookingStatus: booking.status,
+      startDate: booking.start_date,
+      endDate: booking.end_date,
+      dailyRate,
+      deposit,
+      netPaidToDate: paidToDate,
+    });
+    const balanceDue = summary.balanceDue;
 
     if (balanceDue <= 0) {
       skipped += 1;

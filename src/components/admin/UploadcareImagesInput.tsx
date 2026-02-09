@@ -160,7 +160,7 @@ export function UploadcareImagesInput({
               <button
                 type="button"
                 onClick={() => removeUrl(url)}
-                className="w-full border-t border-[var(--ccr-border)] bg-white px-2 py-1 text-xs font-semibold text-[var(--ccr-text)] hover:bg-[var(--ccr-surface)]"
+                className="w-full border-t border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-2 py-1 text-xs font-semibold text-[var(--ccr-text)] hover:bg-[var(--ccr-surface-soft)]"
               >
                 Remove
               </button>

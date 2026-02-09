@@ -4,19 +4,10 @@ import { sendBookingCreatedEmail } from "@/lib/notifications/email";
 import { dbQuery, getDbPool } from "@/lib/db";
 import { logError } from "@/lib/log";
 import { isEmail, isISODate, isNonEmptyString } from "@/lib/validators";
+import { calcDaysInclusive, dateOnlyUtc } from "@/lib/payments/dateMath";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-function toUtcDate(value: string) {
-  return new Date(`${value}T00:00:00Z`);
-}
-
-function todayUtc() {
-  const now = new Date();
-  now.setUTCHours(0, 0, 0, 0);
-  return now;
-}
 
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
@@ -48,9 +39,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid pickupLocation" }, { status: 400 });
   }
 
-  const start = toUtcDate(startDate);
-  const end = toUtcDate(endDate);
-  const today = todayUtc();
+  const start = dateOnlyUtc(startDate);
+  const end = dateOnlyUtc(endDate);
+  const today = dateOnlyUtc(new Date());
+
+  if (!start || !end || !today) {
+    return NextResponse.json({ error: "Invalid dates" }, { status: 400 });
+  }
 
   if (start < today) {
     return NextResponse.json({ error: "startDate must be today or later" }, { status: 400 });
@@ -60,7 +55,7 @@ export async function POST(request: Request) {
   }
 
   // Pricing/UI treats end_date as inclusive (e.g. 3/19 -> 3/20 is 2 days).
-  const days = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+  const days = calcDaysInclusive(start, end);
   if (days <= 0) {
     return NextResponse.json({ error: "Invalid rental duration" }, { status: 400 });
   }

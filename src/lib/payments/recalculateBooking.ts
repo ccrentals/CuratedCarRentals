@@ -1,11 +1,10 @@
 import { dbQuery } from "@/lib/db";
-
-type Queryable = {
-  query: (text: string, params?: unknown[]) => Promise<{ rows: any[]; rowCount: number }>;
-};
+import { calcDaysInclusive, fetchNetPaidToDate, type Queryable } from "@/lib/payments/pricing";
 
 export type BookingPaymentSummary = {
   bookingId: string;
+  days: number;
+  dailyRate: number;
   totalAmount: number;
   depositAmount: number;
   netPaidToDate: number;
@@ -13,14 +12,6 @@ export type BookingPaymentSummary = {
   paymentStatus: "UNPAID" | "DEPOSIT_PAID" | "PAID_IN_FULL";
   refundRequired: boolean;
 };
-
-function calcDays(start: string, end: string) {
-  const startDate = new Date(`${start}T00:00:00Z`);
-  const endDate = new Date(`${end}T00:00:00Z`);
-  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) return 0;
-  const diff = Math.floor((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-  return diff >= 0 ? diff + 1 : 0;
-}
 
 function getQueryable(client?: Queryable) {
   if (client) return client;
@@ -55,34 +46,13 @@ export async function recalculateBookingPayments(
   };
 
   const pricing = booking.pricing_json ?? {};
-  const days = Number(pricing.days ?? calcDays(booking.start_date, booking.end_date));
+  // Always compute days from booking dates so UI + payment charges stay consistent.
+  const days = calcDaysInclusive(booking.start_date, booking.end_date);
   const dailyRate = Number(pricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
   const depositAmount = Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0);
-  const totalAmount = Number(pricing.subtotal_cents ?? dailyRate * days);
+  const totalAmount = dailyRate * days;
 
-  // "Successful" money movements:
-  // - DEPOSIT_PAID: any captured payment (deposit/balance/manual)
-  // - REFUNDED: refund rows (should be stored as negative amounts)
-  let paidResult: { rows: any[]; rowCount: number };
-  try {
-    paidResult = await db.query(
-      "select coalesce(sum(deposit_amount_cents), 0) as amount from payments where booking_id = $1 and deleted_at is null and status in ('DEPOSIT_PAID','REFUNDED')",
-      [bookingId],
-    );
-  } catch (error) {
-    const code = (error as { code?: string } | null)?.code;
-    const message = String((error as { message?: unknown } | null)?.message ?? "");
-    // Graceful fallback if DB hasn't been migrated yet.
-    if (code === "42703" && message.includes("\"deleted_at\"") && message.includes("does not exist")) {
-      paidResult = await db.query(
-        "select coalesce(sum(deposit_amount_cents), 0) as amount from payments where booking_id = $1 and status in ('DEPOSIT_PAID','REFUNDED')",
-        [bookingId],
-      );
-    } else {
-      throw error;
-    }
-  }
-  const netPaidToDate = Number(paidResult.rows[0]?.amount ?? 0);
+  const netPaidToDate = await fetchNetPaidToDate(bookingId, options);
 
   const balanceDue = Math.max(0, totalAmount - netPaidToDate);
   const paymentStatus: BookingPaymentSummary["paymentStatus"] =
@@ -115,6 +85,8 @@ export async function recalculateBookingPayments(
 
   return {
     bookingId,
+    days,
+    dailyRate,
     totalAmount,
     depositAmount,
     netPaidToDate,

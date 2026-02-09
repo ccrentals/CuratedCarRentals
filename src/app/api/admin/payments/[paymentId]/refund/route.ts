@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { getDbPool } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
+import { logError } from "@/lib/log";
 import { requireCsrf } from "@/lib/security/csrf";
 import { recalculateBookingPayments } from "@/lib/payments/recalculateBooking";
 
@@ -126,10 +127,9 @@ export async function POST(
     return NextResponse.json({ ok: true, message: "Refund recorded", summary });
   } catch (error) {
     await client.query("rollback");
-    console.error("refund payment failed", error);
+    logError("api.admin.payments.refund.POST", error, { userId: session.userId, paymentId });
     return NextResponse.json({ error: "Failed to record refund" }, { status: 500 });
   } finally {
     client.release();
   }
 }
-

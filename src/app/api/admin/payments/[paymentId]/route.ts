@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { getDbPool } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
+import { logError } from "@/lib/log";
 import { requireCsrf } from "@/lib/security/csrf";
 import { recalculateBookingPayments } from "@/lib/payments/recalculateBooking";
 
@@ -124,7 +125,7 @@ export async function PATCH(
         { status: 500 },
       );
     }
-    console.error("payment PATCH failed", error);
+    logError("api.admin.payments.PATCH", error, { userId: session.userId, paymentId, action });
     return NextResponse.json({ error: "Failed to update payment" }, { status: 500 });
   } finally {
     client.release();

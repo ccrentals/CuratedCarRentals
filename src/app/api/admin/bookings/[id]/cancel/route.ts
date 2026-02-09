@@ -34,6 +34,10 @@ export async function POST(
     return NextResponse.json({ error: "Returned bookings cannot be cancelled" }, { status: 400 });
   }
 
+  if (status === "CANCELLED") {
+    return NextResponse.json({ ok: true, message: "Already cancelled" });
+  }
+
   await dbQuery("update bookings set status = 'CANCELLED', updated_at = now() where id = $1", [id]);
 
   await writeAuditLog({

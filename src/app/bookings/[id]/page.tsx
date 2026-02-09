@@ -3,6 +3,7 @@ import Link from "next/link";
 import { dbQuery } from "@/lib/db";
 import { fmtDateOnly } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
+import { computeBookingPricing, fetchNetPaidToDate } from "@/lib/payments/pricing";
 
 export default async function BookingSummaryPage({
   params,
@@ -19,9 +20,10 @@ export default async function BookingSummaryPage({
     pricing_json: Record<string, unknown> | null;
     vehicle_make: string;
     vehicle_model: string;
-    paid_to_date: number;
+    daily_rate_cents: number;
+    deposit_cents: number;
   }>(
-    "select b.id, b.status, b.start_date, b.end_date, b.pricing_json, v.make as vehicle_make, v.model as vehicle_model, v.daily_rate_cents, v.deposit_cents, coalesce(sum(p.deposit_amount_cents), 0) as paid_to_date from bookings b join vehicles v on v.id = b.vehicle_id left join payments p on p.booking_id = b.id and p.status = 'DEPOSIT_PAID' where b.id = $1 group by b.id, v.make, v.model, v.daily_rate_cents, v.deposit_cents",
+    "select b.id, b.status, b.start_date, b.end_date, b.pricing_json, v.make as vehicle_make, v.model as vehicle_model, v.daily_rate_cents, v.deposit_cents from bookings b join vehicles v on v.id = b.vehicle_id where b.id = $1",
     [id],
   );
 
@@ -37,22 +39,19 @@ export default async function BookingSummaryPage({
   const pricing = booking.pricing_json ?? {};
   const dailyRate = Number(pricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
   const deposit = Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0);
-
-  function daysInclusive(start: unknown, end: unknown) {
-    if (!start || !end) return 0;
-    const s = new Date(String(start));
-    const e = new Date(String(end));
-    if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return 0;
-    const diff = Math.floor((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24));
-    return diff >= 0 ? diff + 1 : 0;
-  }
-
-  const days = daysInclusive(booking.start_date, booking.end_date);
-  const total = dailyRate * days;
-  const paidToDate = Number(booking.paid_to_date ?? 0);
-  const balance = Math.max(0, total - paidToDate);
-  const canPayDeposit = paidToDate < deposit;
-  const canPayBalance = paidToDate >= deposit && balance > 0;
+  const netPaidToDate = await fetchNetPaidToDate(booking.id);
+  const summary = computeBookingPricing({
+    bookingId: booking.id,
+    bookingStatus: booking.status,
+    startDate: booking.start_date,
+    endDate: booking.end_date,
+    dailyRate,
+    deposit,
+    netPaidToDate,
+  });
+  const depositDue = Math.max(0, summary.deposit - summary.netPaidToDate);
+  const canPayDeposit = depositDue > 0;
+  const canPayBalance = depositDue <= 0 && summary.balanceDue > 0;
 
   return (
     <div className="mx-auto w-full max-w-3xl px-6 py-12">
@@ -78,11 +77,11 @@ export default async function BookingSummaryPage({
         <div className="mt-6 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
           <h3 className="text-sm font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Pricing Summary</h3>
           <div className="mt-3 grid gap-2 text-sm text-[var(--ccr-text)]">
-            <p>Days: <span className="font-semibold">{days}</span></p>
-            <p>Total rental: <span className="font-semibold">{formatJmd(total)}</span></p>
-            <p>Deposit online: <span className="font-semibold">{formatJmd(deposit)}</span></p>
-            <p>Paid to date: <span className="font-semibold">{formatJmd(paidToDate)}</span></p>
-            <p>Balance on pickup: <span className="font-semibold">{formatJmd(balance)}</span></p>
+            <p>Days: <span className="font-semibold">{summary.days}</span></p>
+            <p>Total rental: <span className="font-semibold">{formatJmd(summary.total)}</span></p>
+            <p>Deposit online: <span className="font-semibold">{formatJmd(summary.deposit)}</span></p>
+            <p>Paid to date: <span className="font-semibold">{formatJmd(summary.netPaidToDate)}</span></p>
+            <p>Balance due: <span className="font-semibold">{formatJmd(summary.balanceDue)}</span></p>
           </div>
         </div>
 
@@ -113,6 +112,11 @@ export default async function BookingSummaryPage({
             >
               Pay Balance
             </Link>
+          ) : null}
+          {!canPayDeposit && !canPayBalance ? (
+            <span className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)]">
+              Payment complete
+            </span>
           ) : null}
           <Link
             href="/contact"

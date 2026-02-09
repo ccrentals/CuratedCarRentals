@@ -4,15 +4,7 @@ import PrintInvoiceButton from "@/components/payments/PrintInvoiceButton";
 import { dbQuery } from "@/lib/db";
 import { fmtDateOnly } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
-
-function daysInclusive(start?: string, end?: string) {
-  if (!start || !end) return 0;
-  const startDate = new Date(start);
-  const endDate = new Date(end);
-  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) return 0;
-  const diff = Math.floor((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-  return diff >= 0 ? diff + 1 : 0;
-}
+import { computeBookingPricing, fetchNetPaidToDate } from "@/lib/payments/pricing";
 
 type PaymentRow = {
   id: string;
@@ -20,6 +12,7 @@ type PaymentRow = {
   status: string;
   deposit_amount_cents: number;
   created_at: string;
+  metadata_json: Record<string, unknown> | null;
 };
 
 export default async function BookingInvoicePage({
@@ -58,21 +51,41 @@ export default async function BookingInvoicePage({
     );
   }
 
-  const paymentsResult = await dbQuery<PaymentRow>(
-    "select id, provider, status, deposit_amount_cents, created_at from payments where booking_id = $1 order by created_at asc",
-    [id],
-  );
+  let payments: PaymentRow[] = [];
+  try {
+    const paymentsResult = await dbQuery<PaymentRow>(
+      "select id, provider, status, deposit_amount_cents, created_at, metadata_json from payments where booking_id = $1 and deleted_at is null order by created_at asc",
+      [id],
+    );
+    payments = (paymentsResult.rows as PaymentRow[]) ?? [];
+  } catch (error) {
+    const code = (error as { code?: string } | null)?.code;
+    const message = String((error as { message?: unknown } | null)?.message ?? "");
+    // Graceful fallback if DB hasn't been migrated yet.
+    if (code === "42703" && message.includes("\"deleted_at\"") && message.includes("does not exist")) {
+      const paymentsResult = await dbQuery<PaymentRow>(
+        "select id, provider, status, deposit_amount_cents, created_at, metadata_json from payments where booking_id = $1 order by created_at asc",
+        [id],
+      );
+      payments = (paymentsResult.rows as PaymentRow[]) ?? [];
+    } else {
+      throw error;
+    }
+  }
 
-  const payments = (paymentsResult.rows as PaymentRow[]) ?? [];
   const pricing = booking.pricing_json ?? {};
-  const depositAmount = Number((pricing as Record<string, unknown>).deposit_cents ?? booking.deposit_cents);
-  const days = daysInclusive(booking.start_date, booking.end_date);
-  const total = days * Number(booking.daily_rate_cents || 0);
-  const paidToDate = payments.reduce((sum: number, payment: PaymentRow) => {
-    if (payment.status !== "DEPOSIT_PAID") return sum;
-    return sum + Number(payment.deposit_amount_cents || 0);
-  }, 0);
-  const balanceDue = Math.max(0, total - paidToDate);
+  const dailyRate = Number((pricing as Record<string, unknown>).daily_rate_cents ?? booking.daily_rate_cents ?? 0);
+  const deposit = Number((pricing as Record<string, unknown>).deposit_cents ?? booking.deposit_cents ?? 0);
+  const netPaidToDate = await fetchNetPaidToDate(booking.id);
+  const summary = computeBookingPricing({
+    bookingId: booking.id,
+    bookingStatus: booking.status,
+    startDate: booking.start_date,
+    endDate: booking.end_date,
+    dailyRate,
+    deposit,
+    netPaidToDate,
+  });
 
   return (
     <div className="invoice-page mx-auto w-full max-w-3xl px-6 py-12">
@@ -115,16 +128,16 @@ export default async function BookingInvoicePage({
             <div>
               <p className="text-xs uppercase text-[var(--ccr-muted)]">Rental</p>
               <p>
-                {fmtDateOnly(booking.start_date)} → {fmtDateOnly(booking.end_date)} ({days} days)
+                {fmtDateOnly(booking.start_date)} → {fmtDateOnly(booking.end_date)} ({summary.days} days)
               </p>
               <p className="text-[var(--ccr-muted)]">Pickup: {booking.pickup_location}</p>
             </div>
             <div>
               <p className="text-xs uppercase text-[var(--ccr-muted)]">Charges</p>
-              <p>Total rental: {formatJmd(total)}</p>
-              <p>Deposit paid: {formatJmd(depositAmount)}</p>
-              <p>Paid to date: {formatJmd(paidToDate)}</p>
-              <p className="font-semibold">Balance on pickup: {formatJmd(balanceDue)}</p>
+              <p>Total rental: {formatJmd(summary.total)}</p>
+              <p>Deposit online (required): {formatJmd(summary.deposit)}</p>
+              <p>Paid to date: {formatJmd(summary.netPaidToDate)}</p>
+              <p className="font-semibold">Balance due: {formatJmd(summary.balanceDue)}</p>
             </div>
           </div>
           <div className="mt-4 border-t border-[var(--ccr-border)] pt-4 text-sm text-[var(--ccr-muted)]">

@@ -10,6 +10,7 @@ import { siteContent } from "@/data/content";
 import { vehicles } from "@/data/vehicles";
 import { formatCurrency } from "@/lib/utils";
 import { formatJmd } from "@/lib/money";
+import { calcDaysInclusive } from "@/lib/payments/dateMath";
 
 const sampleRentalDays = 5;
 
@@ -38,16 +39,6 @@ export default function BookPage() {
   const [pickupLocation, setPickupLocation] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-
-  function daysInclusive(start: string, end: string) {
-    if (!start || !end) return 0;
-    const s = new Date(start);
-    const e = new Date(end);
-    if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return 0;
-    const diff = Math.floor((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24));
-    return diff >= 0 ? diff + 1 : 0;
-  }
-
 
   useEffect(() => {
     fetch("/api/public/vehicles")
@@ -102,7 +93,7 @@ export default function BookPage() {
   }
 
   const selectedVehicle = vehicleOptions.find((option) => option.id === vehicleId);
-  const days = daysInclusive(startDate, endDate);
+  const days = calcDaysInclusive(startDate, endDate);
   const total = selectedVehicle ? selectedVehicle.daily_rate_cents * days : 0;
   const deposit = selectedVehicle ? selectedVehicle.deposit_cents : 0;
   const balance = Math.max(0, total - deposit);

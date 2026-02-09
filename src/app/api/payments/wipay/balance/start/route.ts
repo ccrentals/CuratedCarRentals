@@ -4,10 +4,8 @@ import { dbQuery } from "@/lib/db";
 import { logError, logWarn } from "@/lib/log";
 import { requireCsrf } from "@/lib/security/csrf";
 import { buildRequestParams, requestHostedPageUrl } from "@/lib/wipay";
-
-function amountToDecimal(amount: number) {
-  return Number(amount).toFixed(2);
-}
+import { computeBookingPricing, fetchNetPaidToDate } from "@/lib/payments/pricing";
+import { formatJmdDecimal } from "@/lib/money";
 
 function buildOrderId() {
   const timePart = Date.now().toString(36).slice(-6);
@@ -15,17 +13,27 @@ function buildOrderId() {
   return `BK${timePart}${randomPart}`.slice(0, 16);
 }
 
-function daysInclusive(start: string, end: string) {
-  const startDate = new Date(start);
-  const endDate = new Date(end);
-  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) return 0;
-  const diff = Math.floor((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-  return diff >= 0 ? diff + 1 : 0;
+function jsonError(
+  status: number,
+  code: string,
+  error: string,
+  debug?: Record<string, unknown>,
+) {
+  const isProd = process.env.NODE_ENV === "production";
+  return NextResponse.json(
+    {
+      ok: false,
+      code,
+      error,
+      ...(isProd ? {} : debug ? { debug } : {}),
+    },
+    { status },
+  );
 }
 
 export async function POST(request: Request) {
   if (!(await requireCsrf(request))) {
-    return NextResponse.json({ ok: false, error: "Invalid CSRF token" }, { status: 403 });
+    return jsonError(403, "invalid_csrf", "Invalid CSRF token");
   }
 
   const requiredEnv = [
@@ -37,29 +45,26 @@ export async function POST(request: Request) {
   for (const key of requiredEnv) {
     if (!process.env[key]) {
       logWarn("wipay_balance_start_missing_env", { missing: key });
-      return NextResponse.json({ ok: false, error: `Missing ${key}` }, { status: 400 });
+      return jsonError(400, "env_missing", `Missing ${key}`);
     }
   }
 
   const accountNumber = (process.env.WIPAY_ACCOUNT_NUMBER ?? "").trim();
   if (!/^\d+$/.test(accountNumber)) {
     logWarn("wipay_balance_start_invalid_account_number");
-    return NextResponse.json(
-      { ok: false, error: "Invalid WIPAY_ACCOUNT_NUMBER: must be digits only" },
-      { status: 400 },
-    );
+    return jsonError(400, "env_invalid", "Invalid WIPAY_ACCOUNT_NUMBER: must be digits only");
   }
 
   if (!["sandbox", "live"].includes(process.env.WIPAY_ENV ?? "")) {
     logWarn("wipay_balance_start_invalid_env", { env: process.env.WIPAY_ENV });
-    return NextResponse.json({ ok: false, error: "Invalid WIPAY_ENV" }, { status: 400 });
+    return jsonError(400, "env_invalid", "Invalid WIPAY_ENV", { env: process.env.WIPAY_ENV });
   }
 
   const body = await request.json().catch(() => null);
   const bookingId = body?.bookingId as string | undefined;
 
   if (!bookingId) {
-    return NextResponse.json({ error: "bookingId is required" }, { status: 400 });
+    return jsonError(400, "invalid_request", "bookingId is required");
   }
 
   const bookingResult = await dbQuery<{
@@ -73,44 +78,41 @@ export async function POST(request: Request) {
     customer_phone: string;
     daily_rate_cents: number;
     deposit_cents: number;
-    paid_to_date: number;
   }>(
-    "select b.id, b.status, b.start_date, b.end_date, b.pricing_json, c.full_name as customer_name, c.email as customer_email, c.phone as customer_phone, v.daily_rate_cents, v.deposit_cents, coalesce(sum(p.deposit_amount_cents), 0) as paid_to_date from bookings b join vehicles v on v.id = b.vehicle_id join customers c on c.id = b.customer_id left join payments p on p.booking_id = b.id and p.status = 'DEPOSIT_PAID' where b.id = $1 group by b.id, c.full_name, c.email, c.phone, v.daily_rate_cents, v.deposit_cents",
+    "select b.id, b.status, b.start_date, b.end_date, b.pricing_json, c.full_name as customer_name, c.email as customer_email, c.phone as customer_phone, v.daily_rate_cents, v.deposit_cents from bookings b join vehicles v on v.id = b.vehicle_id join customers c on c.id = b.customer_id where b.id = $1",
     [bookingId],
   );
 
   if (bookingResult.rowCount === 0) {
-    return NextResponse.json({ error: "Booking not found" }, { status: 404 });
+    return jsonError(404, "not_found", "Booking not found");
   }
 
   const booking = bookingResult.rows[0];
   if (["CANCELLED", "RETURNED"].includes(booking.status)) {
-    return NextResponse.json({ error: "Booking cannot be paid" }, { status: 400 });
+    return jsonError(400, "invalid_booking_state", "Booking cannot be paid", { status: booking.status });
   }
 
   const pricing = booking.pricing_json ?? {};
-  // Always compute days from booking dates so what we charge matches what the UI shows.
-  // We keep dailyRate from pricing_json when present so rate changes on the vehicle do not change existing bookings.
-  const days = daysInclusive(booking.start_date, booking.end_date);
   const dailyRate = Number(pricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
-  const total = dailyRate * days;
-  const paidToDate = Number(booking.paid_to_date ?? 0);
-  const balanceDue = Math.max(0, total - paidToDate);
+  const deposit = Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0);
+  const netPaidToDate = await fetchNetPaidToDate(booking.id);
+  const summary = computeBookingPricing({
+    bookingId: booking.id,
+    bookingStatus: booking.status,
+    startDate: booking.start_date,
+    endDate: booking.end_date,
+    dailyRate,
+    deposit,
+    netPaidToDate,
+  });
+  const balanceDue = summary.balanceDue;
 
   if (balanceDue <= 0) {
-    return NextResponse.json({ error: "Balance already paid" }, { status: 409 });
-  }
-
-  const existingPayment = await dbQuery<{ id: string }>(
-    "select id from payments where booking_id = $1 and provider = 'WIPAY' and status = 'DEPOSIT_PAID' and metadata_json ->> 'payment_type' = 'balance' limit 1",
-    [booking.id],
-  );
-  if (existingPayment.rowCount > 0) {
-    return NextResponse.json({ error: "Balance already paid" }, { status: 409 });
+    return jsonError(409, "already_paid", "Balance already paid");
   }
 
   const orderId = buildOrderId();
-  const totalDecimal = amountToDecimal(balanceDue);
+  const totalDecimal = formatJmdDecimal(balanceDue);
 
   const origin = process.env.SITE_URL ?? new URL(request.url).origin;
   const responseUrl = `${origin}/api/payments/wipay/return`;
@@ -134,10 +136,14 @@ export async function POST(request: Request) {
         orderId,
         {
           bookingId: booking.id,
+          deposit_cents: summary.deposit,
+          days: summary.days,
+          daily_rate_cents: summary.dailyRate,
+          total_amount: summary.total,
+          paid_to_date: summary.netPaidToDate,
+          balance_due: summary.balanceDue,
           total_decimal: totalDecimal,
           payment_type: "balance",
-          balance_due: balanceDue,
-          paid_to_date: paidToDate,
           env: process.env.WIPAY_ENV ?? "sandbox",
           created_at: new Date().toISOString(),
         },
@@ -147,7 +153,8 @@ export async function POST(request: Request) {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Insert failed";
     logError("wipay_balance_start_db_insert_failed", error, { bookingId: booking.id, orderId });
-    return NextResponse.json({ ok: false, error: `DB error: ${message}` }, { status: 500 });
+    const safe = process.env.NODE_ENV === "production" ? "Could not start payment. Please try again." : `DB error: ${message}`;
+    return jsonError(500, "db_error", safe, { bookingId: booking.id, orderId });
   }
 
   try {
@@ -168,7 +175,8 @@ export async function POST(request: Request) {
     } catch (dbError) {
       const msg = dbError instanceof Error ? dbError.message : "Update failed";
       logError("wipay_balance_start_db_update_failed", dbError, { bookingId: booking.id, orderId, paymentId });
-      return NextResponse.json({ ok: false, error: `DB error: ${msg}` }, { status: 500 });
+      const safe = process.env.NODE_ENV === "production" ? "Could not start payment. Please try again." : `DB error: ${msg}`;
+      return jsonError(500, "db_error", safe, { bookingId: booking.id, orderId, paymentId });
     }
 
     logError("wipay_balance_start_request_failed", error, {
@@ -178,18 +186,15 @@ export async function POST(request: Request) {
       env: process.env.WIPAY_ENV ?? "sandbox",
       paymentId,
     });
-    return NextResponse.json(
-      {
-        ok: false,
-        error: `WiPay request failed: ${reason}`,
-        debug: {
-          bookingId: booking.id,
-          orderId,
-          amountDecimal: totalDecimal,
-          env: process.env.WIPAY_ENV ?? "sandbox",
-        },
-      },
-      { status: 502 },
-    );
+    const safe =
+      process.env.NODE_ENV === "production"
+        ? "Payment provider is temporarily unavailable. Please try again."
+        : `WiPay request failed: ${reason}`;
+    return jsonError(502, "provider_error", safe, {
+      bookingId: booking.id,
+      orderId,
+      amountDecimal: totalDecimal,
+      env: process.env.WIPAY_ENV ?? "sandbox",
+    });
   }
 }

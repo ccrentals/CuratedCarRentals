@@ -1,6 +1,8 @@
 import { cookies } from "next/headers";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 
+import { logWarn } from "@/lib/log";
+
 const COOKIE_NAME = "ccr_csrf";
 const MAX_AGE_SECONDS = 60 * 60 * 2;
 function getSecret() {
@@ -8,7 +10,7 @@ function getSecret() {
   if (secret) return secret;
   if (process.env.NODE_ENV !== "production") {
     const fallback = process.env.ADMIN_SESSION_SECRET ?? "dev-csrf-secret";
-    console.warn("CSRF_SECRET is not set. Using a development fallback secret.");
+    logWarn("security.csrf.missingSecret", {});
     return fallback;
   }
   throw new Error("CSRF_SECRET is not set");
