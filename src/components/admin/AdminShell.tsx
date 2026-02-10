@@ -71,6 +71,26 @@ const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    label: "Payments",
+    href: "/admin/payments",
+    icon: (className: string) => (
+      <svg
+        viewBox="0 0 24 24"
+        className={className}
+        aria-hidden="true"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <rect x="3" y="5" width="18" height="14" rx="2" />
+        <path d="M3 10h18" />
+        <path d="M7 15h4" />
+      </svg>
+    ),
+  },
+  {
     label: "Calendar",
     href: "/admin/calendar",
     icon: (className: string) => (
@@ -108,26 +128,6 @@ const NAV_ITEMS: NavItem[] = [
         <rect x="3" y="12" width="18" height="6" rx="2" />
         <circle cx="7" cy="18" r="2" />
         <circle cx="17" cy="18" r="2" />
-      </svg>
-    ),
-  },
-  {
-    label: "Payments",
-    href: "/admin/payments",
-    icon: (className: string) => (
-      <svg
-        viewBox="0 0 24 24"
-        className={className}
-        aria-hidden="true"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <rect x="3" y="5" width="18" height="14" rx="2" />
-        <path d="M3 10h18" />
-        <path d="M7 15h4" />
       </svg>
     ),
   },
@@ -469,8 +469,8 @@ export function AdminShell({
               </button>
               {activeItem ? (
                 <div className="flex items-center gap-2 text-lg font-semibold text-[var(--ccr-text)]">
-                  <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--ccr-surface-soft)]">
-                    {activeItem.icon("h-5 w-5 text-[var(--ccr-text)]")}
+                  <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--ccr-surface-soft)] shadow-sm ring-1 ring-[var(--ccr-accent)]">
+                    {activeItem.icon("h-5 w-5 text-[var(--ccr-accent)]")}
                   </span>
                   <span>{activeItem.label}</span>
                 </div>

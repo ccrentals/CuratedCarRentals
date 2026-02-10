@@ -17,16 +17,13 @@ function applyTheme(theme: Theme) {
 }
 
 export function ThemeToggle({ className, variant = "default" }: ThemeToggleProps) {
-  const [theme, setTheme] = useState<Theme>(() => {
-    // Align initial button label to the pre-hydration theme bootstrap (if present).
-    if (typeof document !== "undefined") {
-      const attr = document.documentElement.getAttribute("data-theme");
-      if (attr === "light" || attr === "dark") return attr;
-    }
-    return "light";
-  });
+  // NOTE: Keep the initial render deterministic to avoid hydration mismatch.
+  // We apply the real theme in the effect below (and also bootstrap it in RootLayout).
+  const [theme, setTheme] = useState<Theme>("light");
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
     const savedTheme = localStorage.getItem(THEME_KEY) as Theme | null;
 
     if (savedTheme === "light" || savedTheme === "dark") {
@@ -62,7 +59,8 @@ export function ThemeToggle({ className, variant = "default" }: ThemeToggleProps
       )}
       aria-label="Toggle site theme"
     >
-      {theme === "dark" ? "Light Mode" : "Dark Mode"}
+      {/* Avoid hydration mismatch by only rendering the dynamic label after mount. */}
+      {mounted ? (theme === "dark" ? "Light Mode" : "Dark Mode") : "Theme"}
     </button>
   );
 }

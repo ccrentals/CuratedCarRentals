@@ -11,6 +11,7 @@ type PaymentRowActionsProps = {
   status: string;
   amount: number;
   deletedAt?: string | null;
+  isRefunded?: boolean;
   canAdmin: boolean;
 };
 
@@ -22,6 +23,7 @@ export function PaymentRowActions({
   status,
   amount,
   deletedAt,
+  isRefunded,
   canAdmin,
 }: PaymentRowActionsProps) {
   const router = useRouter();
@@ -32,6 +34,7 @@ export function PaymentRowActions({
   const [error, setError] = useState<string | null>(null);
 
   const isDeleted = Boolean(deletedAt);
+  const refunded = Boolean(isRefunded);
   const showManualActions = canAdmin && provider === "MANUAL";
   const showRefundAction = canAdmin && provider === "WIPAY" && status === "DEPOSIT_PAID" && amount > 0;
 
@@ -49,6 +52,12 @@ export function PaymentRowActions({
     setError(null);
 
     if (action === "delete" && !reason.trim()) {
+      setError("Reason is required.");
+      setLoading(false);
+      return;
+    }
+
+    if (action === "restore" && !note.trim()) {
       setError("Reason is required.");
       setLoading(false);
       return;
@@ -89,6 +98,12 @@ export function PaymentRowActions({
     if (loading) return;
     setLoading(true);
     setError(null);
+
+    if (refunded) {
+      setError("Already refunded.");
+      setLoading(false);
+      return;
+    }
 
     if (!reason.trim()) {
       setError("Reason is required.");
@@ -147,12 +162,14 @@ export function PaymentRowActions({
         <button
           type="button"
           onClick={() => {
+            if (refunded) return;
             setError(null);
             setReason("");
             setMode("refund");
           }}
-          title={title}
-          className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+          disabled={refunded}
+          title={refunded ? "Already refunded" : title}
+          className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:cursor-not-allowed disabled:opacity-60"
         >
           Refund/Void
         </button>
@@ -161,7 +178,7 @@ export function PaymentRowActions({
       {mode ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
           <div
-            className="absolute inset-0 bg-black/60"
+            className="absolute inset-0 bg-black/80 backdrop-blur-sm"
             onClick={() => {
               if (loading) return;
               setMode(null);
@@ -196,7 +213,7 @@ export function PaymentRowActions({
               </label>
             ) : mode === "restore" ? (
               <label className="mt-4 block text-xs text-[var(--ccr-muted)]">
-                Note (optional)
+                Reason (required)
                 <textarea
                   value={note}
                   onChange={(event) => setNote(event.target.value)}

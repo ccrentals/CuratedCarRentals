@@ -123,6 +123,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
   const balanceDue = summary.balanceDue;
   const isPaidInFull = summary.paymentStatus === "PAID_IN_FULL";
   const refundRequired = summary.refundRequired;
+  const isDepositPaid = deposit > 0 ? paidToDate >= deposit : paidToDate > 0;
 
   const notesRaw = (pricing as { admin_notes?: AdminNote[] }).admin_notes;
   const notes = Array.isArray(notesRaw) ? [...notesRaw] : [];
@@ -131,6 +132,17 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
     const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
     return bTime - aTime;
   });
+
+  const refundedOriginalIds = new Set<string>();
+  for (const payment of payments.rows) {
+    const paymentType = payment.metadata_json?.payment_type;
+    const originalPaymentId = payment.metadata_json?.original_payment_id;
+    if (paymentType === "refund" && typeof originalPaymentId === "string" && originalPaymentId) {
+      refundedOriginalIds.add(originalPaymentId);
+    }
+  }
+
+  const shortBookingId = booking.id.slice(-5);
 
   return (
     <div className="mx-auto w-full max-w-5xl px-6 py-10">
@@ -143,7 +155,21 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Booking</p>
           <div className="mt-1 flex flex-wrap items-center gap-3">
-            <h1 className="text-3xl font-bold text-[var(--ccr-text)]">{booking.id}</h1>
+            <div className="flex items-center gap-3">
+              <h1 className="text-3xl font-bold text-[var(--ccr-text)]">
+                <details className="group inline-block">
+                  <summary className="flex cursor-pointer list-none items-center gap-2">
+                    <span className="font-mono">…{shortBookingId}</span>
+                    <span className="text-sm font-semibold text-[var(--ccr-accent)] transition-transform group-open:rotate-180">
+                      ▾
+                    </span>
+                  </summary>
+                  <div className="mt-2 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 font-mono text-sm text-[var(--ccr-text)]">
+                    {booking.id}
+                  </div>
+                </details>
+              </h1>
+            </div>
             <span
               className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${statusBadge(
                 booking.status,
@@ -157,6 +183,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
           bookingId={booking.id}
           bookingStatus={booking.status}
           isPaidInFull={isPaidInFull}
+          isDepositPaid={isDepositPaid}
           canAdmin={canAdmin}
         />
       </div>
@@ -205,36 +232,47 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
       <section className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-lg font-bold text-[var(--ccr-text)]">Charges Summary</h2>
-          {refundRequired ? (
-            <span className="rounded-full border border-amber-400/40 bg-amber-500/15 px-3 py-1 text-xs font-semibold text-amber-100">
-              Refund required
-            </span>
-          ) : null}
+          <div className="flex flex-wrap items-center gap-2">
+            {!isPaidInFull && total > 0 ? (
+              <span className="rounded-full border border-[var(--ccr-accent)]/40 bg-[var(--ccr-accent)]/15 px-3 py-1 text-xs font-semibold text-[var(--ccr-text)]">
+                Payment incomplete
+              </span>
+            ) : null}
+            {refundRequired ? (
+              <span className="rounded-full border border-amber-400/40 bg-amber-500/15 px-3 py-1 text-xs font-semibold text-amber-100">
+                Refund required
+              </span>
+            ) : null}
+          </div>
         </div>
-        <div className="mt-4 grid gap-3 text-sm text-[var(--ccr-muted)] md:grid-cols-2">
-          <div className="flex items-center justify-between">
-            <span>Days</span>
-            <span className="font-semibold text-[var(--ccr-text)]">{days}</span>
+        <div className="mt-4 grid gap-6 text-sm text-[var(--ccr-muted)] md:grid-cols-2">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span>Confirmed Booked Days</span>
+              <span className="font-semibold text-[var(--ccr-text)]">{days}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span>Paid to date</span>
+              <span className="font-semibold text-[var(--ccr-text)]">{formatJmd(paidToDate)}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span>Total of Booking</span>
+              <span className="font-semibold text-[var(--ccr-text)]">{formatJmd(total)}</span>
+            </div>
           </div>
-          <div className="flex items-center justify-between">
-            <span>Daily Rate</span>
-            <span className="font-semibold text-[var(--ccr-text)]">{formatJmd(dailyRate)}</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span>Total</span>
-            <span className="font-semibold text-[var(--ccr-text)]">{formatJmd(total)}</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span>Deposit</span>
-            <span className="font-semibold text-[var(--ccr-text)]">{formatJmd(deposit)}</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span>Paid to date</span>
-            <span className="font-semibold text-[var(--ccr-text)]">{formatJmd(paidToDate)}</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span>Balance due</span>
-            <span className="font-semibold text-[var(--ccr-text)]">{formatJmd(balanceDue)}</span>
+          <div className="space-y-3 border-t border-[var(--ccr-border)] pt-5 md:border-l md:border-t-0 md:pl-6 md:pt-0">
+            <div className="flex items-center justify-between">
+              <span>Daily Rate</span>
+              <span className="font-semibold text-[var(--ccr-text)]">{formatJmd(dailyRate)}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span>Deposit</span>
+              <span className="font-semibold text-[var(--ccr-text)]">{formatJmd(deposit)}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span>Balance due</span>
+              <span className="font-semibold text-[var(--ccr-text)]">{formatJmd(balanceDue)}</span>
+            </div>
           </div>
         </div>
       </section>
@@ -310,6 +348,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
                         status={payment.status}
                         amount={Number(payment.deposit_amount_cents ?? 0)}
                         deletedAt={payment.deleted_at}
+                        isRefunded={refundedOriginalIds.has(payment.id)}
                         canAdmin={canAdmin}
                       />
                     </td>

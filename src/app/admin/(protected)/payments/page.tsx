@@ -249,10 +249,12 @@ export default async function AdminPaymentsPage({
                   paymentType: extractPaymentType(row.metadata_json),
                 });
                 return (
-                  <li
-                    key={row.id}
-                    className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3"
-                  >
+                  <li key={row.id}>
+                    <Link
+                      href={`/admin/bookings/${row.booking_id}`}
+                      className="block rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3 transition hover:border-[var(--ccr-accent)] hover:bg-[var(--ccr-surface-soft)]"
+                      title="Open booking"
+                    >
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="font-semibold text-[var(--ccr-text)]">
                         {statusLabel} · {formatJmd(row.deposit_amount_cents)}
@@ -260,7 +262,11 @@ export default async function AdminPaymentsPage({
                       <div className="text-xs text-[var(--ccr-muted)]">{fmtDate(row.created_at)}</div>
                     </div>
                     <div className="mt-2 text-xs text-[var(--ccr-muted)]">
-                      Booking: {row.booking_id.slice(0, 8)} · Order: {row.provider_ref ?? "-"}
+                      Booking:{" "}
+                      <span className="font-mono font-semibold text-[var(--ccr-text)]">
+                        {row.booking_id.slice(0, 8)}
+                      </span>{" "}
+                      · Order: {row.provider_ref ?? "-"}
                     </div>
                     {row.provider_transaction_id ? (
                       <div className="mt-1 text-xs text-[var(--ccr-muted)]">
@@ -270,6 +276,7 @@ export default async function AdminPaymentsPage({
                     {errorMessage ? (
                       <div className="mt-2 text-xs text-red-300">{errorMessage}</div>
                     ) : null}
+                    </Link>
                   </li>
                 );
               })}
@@ -308,7 +315,13 @@ export default async function AdminPaymentsPage({
                 return (
                   <tr key={payment.id} className="border-b border-[var(--ccr-border)] last:border-b-0">
                     <td className="px-4 py-3 font-mono text-xs text-[var(--ccr-text)]">
-                      {payment.id.slice(0, 8)}
+                      <Link
+                        href={`/admin/bookings/${payment.booking_id}`}
+                        className="inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-[11px] font-bold text-[var(--ccr-accent)] transition hover:bg-[var(--ccr-accent)] hover:text-[var(--ccr-primary)]"
+                        title="Open booking"
+                      >
+                        {payment.id.slice(0, 8)}
+                      </Link>
                     </td>
                     <td className="px-4 py-3">
                       <Link

@@ -9,6 +9,7 @@ type BookingRow = {
   id: string;
   start_date: string;
   end_date: string;
+  created_at: string;
   status: string;
   customer_name: string;
   customer_email: string;
@@ -106,13 +107,13 @@ export default async function AdminBookingsPage({
 
   const whereSql = whereClauses.length ? `where ${whereClauses.join(" and ")}` : "";
   const queryText =
-    "select b.id, b.start_date, b.end_date, b.status, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id " +
+    "select b.id, b.start_date, b.end_date, b.created_at, b.status, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id " +
     whereSql +
     " order by b.created_at desc";
 
   let archiveNotConfigured = false;
   const queryTextWithoutArchive =
-    "select b.id, b.start_date, b.end_date, b.status, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id " +
+    "select b.id, b.start_date, b.end_date, b.created_at, b.status, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id " +
     (whereClauses.filter((clause) => clause !== "b.archived_at is null").length
       ? `where ${whereClauses.filter((clause) => clause !== "b.archived_at is null").join(" and ")}`
       : "") +
@@ -181,6 +182,7 @@ export default async function AdminBookingsPage({
                 <th className="px-4 py-3">Vehicle</th>
                 <th className="px-4 py-3">Dates</th>
                 <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">Created</th>
                 <th className="px-4 py-3">Details</th>
               </tr>
             </thead>
@@ -188,7 +190,13 @@ export default async function AdminBookingsPage({
               {bookings.rows.map((booking: BookingRow) => (
                 <tr key={booking.id} className="border-b border-[var(--ccr-border)] last:border-b-0">
                   <td className="px-4 py-3 font-mono text-xs text-[var(--ccr-text)]">
-                    {booking.id.slice(0, 8)}
+                    <Link
+                      href={`/admin/bookings/${booking.id}`}
+                      className="inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-[11px] font-bold text-[var(--ccr-accent)] transition hover:bg-[var(--ccr-accent)] hover:text-[var(--ccr-primary)]"
+                      title="Open booking"
+                    >
+                      {booking.id.slice(0, 8)}
+                    </Link>
                   </td>
                   <td className="px-4 py-3">
                     <p className="font-semibold text-[var(--ccr-text)]">{booking.customer_name}</p>
@@ -201,6 +209,7 @@ export default async function AdminBookingsPage({
                     {fmtDate(booking.start_date)} → {fmtDate(booking.end_date)}
                   </td>
                   <td className="px-4 py-3 text-[var(--ccr-text)]">{booking.status}</td>
+                  <td className="px-4 py-3 text-[var(--ccr-muted)]">{fmtDate(booking.created_at)}</td>
                   <td className="px-4 py-3">
                     <Link
                       href={`/admin/bookings/${booking.id}`}

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
@@ -21,6 +21,7 @@ type BookingActionsProps = {
   bookingId: string;
   bookingStatus?: string;
   isPaidInFull?: boolean;
+  isDepositPaid?: boolean;
   canAdmin?: boolean;
 };
 
@@ -28,6 +29,7 @@ export function BookingActions({
   bookingId,
   bookingStatus,
   isPaidInFull,
+  isDepositPaid,
   canAdmin,
 }: BookingActionsProps) {
   const router = useRouter();
@@ -43,10 +45,21 @@ export function BookingActions({
   const canArchive = Boolean(canAdmin) && normalizedStatus === "RETURNED";
   const canCancel = !normalizedStatus || !["CANCELLED", "RETURNED"].includes(normalizedStatus);
 
+  // Prevent stale status-related errors lingering after a refresh/action.
+  useEffect(() => {
+    setError(null);
+  }, [normalizedStatus]);
+
   async function runAction(actionKey: ActionKey) {
     setMessage(null);
     setError(null);
     setLoadingKey(actionKey);
+
+    if (actionKey === "deposit" && (isDepositPaid || isPaidInFull)) {
+      setError(isPaidInFull ? "Booking is already fully paid" : "Deposit is already recorded");
+      setLoadingKey(null);
+      return;
+    }
 
     if (actionKey === "cancel" && !canCancel) {
       setError(
@@ -162,7 +175,8 @@ export function BookingActions({
         <button
           type="button"
           onClick={() => runAction("deposit")}
-          disabled={loadingKey === "deposit"}
+          disabled={loadingKey === "deposit" || Boolean(isDepositPaid) || Boolean(isPaidInFull)}
+          title={isPaidInFull ? "Already fully paid" : isDepositPaid ? "Deposit already recorded" : undefined}
           className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
         >
           {loadingKey === "deposit" ? "Working..." : actionLabels.deposit}
@@ -229,7 +243,7 @@ export function BookingActions({
         </Link>
       </div>
 
-      {message ? <p className="text-xs text-green-700">{message}</p> : null}
+      {message ? <p className="text-xs font-semibold text-[var(--ccr-text)]">{message}</p> : null}
       {error ? <p className="text-xs text-red-600">{error}</p> : null}
     </div>
   );
