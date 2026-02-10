@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { Container } from "@/components/site/Container";
@@ -21,6 +22,9 @@ const navLinks = [
 ];
 
 export function Header() {
+  const pathname = usePathname();
+  if (pathname?.startsWith("/admin")) return null;
+
   const [isCompact, setIsCompact] = useState(false);
   const lastScrollYRef = useRef(0);
   const isCompactRef = useRef(false);

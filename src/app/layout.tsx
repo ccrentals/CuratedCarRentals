@@ -1,10 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import Script from "next/script";
 
-import { AdminRouteFlag } from "@/components/site/AdminRouteFlag";
 import { CsrfBootstrap } from "@/components/site/CsrfBootstrap";
-import { Footer } from "@/components/site/Footer";
-import { Header } from "@/components/site/Header";
 import { assertProductionEnv } from "@/lib/env";
 
 import "./globals.css";
@@ -33,14 +31,33 @@ export default function RootLayout({
 
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        <div className="flex min-h-screen flex-col bg-[var(--ccr-bg)] text-[var(--ccr-text)]">
-          <AdminRouteFlag />
-          <CsrfBootstrap />
-          <Header />
-          <main className="flex-1">{children}</main>
-          <Footer />
-        </div>
+      <head>
+        <Script
+          id="ccr-theme-init"
+          // Apply theme before hydration to avoid flashes on refresh.
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{
+            __html: `
+(function () {
+  try {
+    var key = "ccr-theme";
+    var theme = localStorage.getItem(key);
+    if (theme !== "light" && theme !== "dark") {
+      theme = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+    document.documentElement.setAttribute("data-theme", theme);
+  } catch (e) {
+    // Best-effort only.
+  }
+})();`,
+          }}
+        />
+      </head>
+      <body
+        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-[var(--ccr-bg)] text-[var(--ccr-text)]`}
+      >
+        <CsrfBootstrap />
+        {children}
       </body>
     </html>
   );

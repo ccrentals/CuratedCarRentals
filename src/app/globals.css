@@ -43,11 +43,6 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
-html[data-admin="true"] .site-header,
-html[data-admin="true"] .site-footer {
-  display: none;
-}
-
 .logo-light-img {
   display: inline-block;
 }

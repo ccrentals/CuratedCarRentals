@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 import { Container } from "@/components/site/Container";
 import { siteContent } from "@/data/content";
@@ -14,6 +15,9 @@ const footerLinks = [
 ];
 
 export function Footer() {
+  const pathname = usePathname();
+  if (pathname?.startsWith("/admin")) return null;
+
   return (
     <footer className="site-footer mt-16 border-t border-[var(--ccr-border)] bg-[var(--ccr-primary)] text-[var(--ccr-muted)]">
       <Container className="py-10">

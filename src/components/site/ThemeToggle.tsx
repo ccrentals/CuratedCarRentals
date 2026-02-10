@@ -17,7 +17,14 @@ function applyTheme(theme: Theme) {
 }
 
 export function ThemeToggle({ className, variant = "default" }: ThemeToggleProps) {
-  const [theme, setTheme] = useState<Theme>("light");
+  const [theme, setTheme] = useState<Theme>(() => {
+    // Align initial button label to the pre-hydration theme bootstrap (if present).
+    if (typeof document !== "undefined") {
+      const attr = document.documentElement.getAttribute("data-theme");
+      if (attr === "light" || attr === "dark") return attr;
+    }
+    return "light";
+  });
 
   useEffect(() => {
     const savedTheme = localStorage.getItem(THEME_KEY) as Theme | null;

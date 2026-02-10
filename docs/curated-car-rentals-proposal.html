@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Curated Car Rentals – Website Proposal</title>
+    <style>
+      :root {
+        --text: #111827;
+        --muted: #4b5563;
+        --border: #d1d5db;
+        --table-header: #f3f4f6;
+      }
+
+      body {
+        color: var(--text);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+        font-size: 11pt;
+        line-height: 1.45;
+        margin: 0;
+        padding: 24pt;
+      }
+
+      h1 {
+        font-size: 22pt;
+        margin: 0 0 6pt 0;
+      }
+
+      h2 {
+        font-size: 14pt;
+        margin: 18pt 0 6pt 0;
+      }
+
+      h3 {
+        font-size: 12pt;
+        margin: 12pt 0 6pt 0;
+      }
+
+      p {
+        margin: 6pt 0;
+      }
+
+      .meta {
+        color: var(--muted);
+        margin-bottom: 16pt;
+      }
+
+      .meta strong {
+        color: var(--text);
+      }
+
+      ul {
+        margin: 6pt 0 6pt 18pt;
+      }
+
+      li {
+        margin: 3pt 0;
+      }
+
+      table {
+        border-collapse: collapse;
+        margin-top: 8pt;
+        width: 100%;
+      }
+
+      th,
+      td {
+        border: 1px solid var(--border);
+        padding: 8pt 8pt;
+        vertical-align: top;
+      }
+
+      th {
+        background: var(--table-header);
+        text-align: left;
+      }
+
+      .small {
+        color: var(--muted);
+        font-size: 9.5pt;
+      }
+
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        font-size: 10pt;
+      }
+
+      .callout {
+        border: 1px solid var(--border);
+        border-left: 4px solid #111827;
+        padding: 10pt 12pt;
+        margin-top: 10pt;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Curated Car Rentals – Website Proposal</h1>
+    <div class="meta">
+      <p><strong>Date:</strong> February 9, 2026</p>
+      <p><strong>Prepared for:</strong> [Client / Stakeholder Name]</p>
+      <p><strong>Prepared by:</strong> [Your Name / Company]</p>
+    </div>
+
+    <h2>1) Executive Summary</h2>
+    <p>
+      This proposal outlines the high-level features, functionality, and third-party service costs for the Curated Car
+      Rentals website. The goal is to deliver a professional, conversion-focused rental experience with a secure booking
+      and operations workflow (including deposit payments, confirmations, and an admin portal).
+    </p>
+
+    <h2>2) High-Level Features &amp; Functionality</h2>
+
+    <h3>Public Website (Customer-Facing)</h3>
+    <ul>
+      <li>Modern marketing pages: Home, Fleet, Services, Tourist Destinations, About, Contact.</li>
+      <li>Fleet browsing with clear pricing, deposit information, and calls-to-action.</li>
+      <li>Mobile-first responsive layout with fast performance and SEO-friendly structure.</li>
+    </ul>
+
+    <h3>Booking Flow</h3>
+    <ul>
+      <li>Booking form collects key details (vehicle, name, email, phone, dates, pickup location).</li>
+      <li>Pricing breakdown shows <strong>deposit due now</strong> and <strong>balance due on pickup</strong> (with optional online balance payment).</li>
+      <li>Booking summary page with payment options (deposit, balance, or pay-in-full) and booking reference.</li>
+      <li>Payment result pages (success / failed) and customer support link.</li>
+    </ul>
+
+    <h3>Payments (Deposit + Balance)</h3>
+    <ul>
+      <li>Payment gateway integration for deposit and additional payments (balance / pay-in-full).</li>
+      <li>Webhook handling to confirm payments and keep booking status in sync.</li>
+      <li>Configurable fee handling (merchant-absorb vs other structures) depending on gateway agreement.</li>
+    </ul>
+
+    <h3>Emails + Invoices</h3>
+    <ul>
+      <li>Transactional emails for booking confirmations and reminders.</li>
+      <li>Invoice PDF generation and delivery (with graceful fallback if a PDF provider is unavailable or over quota).</li>
+    </ul>
+
+    <h3>Uploads (Vehicle Images)</h3>
+    <ul>
+      <li>Upload and manage vehicle images via a dedicated upload service/CDN.</li>
+      <li>Optimized delivery for faster Fleet browsing and improved user experience.</li>
+    </ul>
+
+    <h3>Admin Portal (Operations)</h3>
+    <ul>
+      <li>Secure admin authentication (sessions + CSRF protection; account lockout support).</li>
+      <li>Admin dashboard for day-to-day operations.</li>
+      <li>Manage vehicles, bookings, users, payments, reports, calendar/blockouts.</li>
+      <li>Operational tooling: readiness/health checks, and cron-triggered reminders (pickup / balance).</li>
+    </ul>
+
+    <div class="callout small">
+      <strong>Note:</strong> The current implementation includes public routes (e.g., <code>/</code>, <code>/fleet</code>, <code>/book</code>) and admin routes (e.g., <code>/admin</code>, <code>/admin/bookings</code>, <code>/admin/vehicles</code>) as well as API endpoints for vehicles, bookings, health checks, and reminders.
+    </div>
+
+    <h2>3) Technology Overview (High-Level)</h2>
+    <ul>
+      <li><strong>Frontend:</strong> Next.js (App Router) + TypeScript + Tailwind.</li>
+      <li><strong>Backend (server routes):</strong> Next.js Route Handlers for public/admin APIs.</li>
+      <li><strong>Database:</strong> Neon (Postgres).</li>
+      <li><strong>Hosting/Deploy:</strong> Netlify (supports Next.js deployments + serverless/edge capabilities).</li>
+    </ul>
+
+    <h2>4) Third-Party Services &amp; Pricing (as of February 9, 2026)</h2>
+    <p class="small">
+      Pricing changes frequently. The figures below are a snapshot from vendor pricing pages on the date above. Actual
+      monthly cost depends on usage (traffic, storage, emails sent, PDFs generated, etc.).
+    </p>
+
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 18%">Service</th>
+          <th style="width: 26%">Used for</th>
+          <th style="width: 34%">Pricing summary</th>
+          <th style="width: 22%">Notes</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Netlify</strong></td>
+          <td>Hosting, deployments, CDN, serverless/edge runtime</td>
+          <td>
+            <ul>
+              <li>Free: $0 (300 credit limit / month)</li>
+              <li>Personal: $9 / month (1,000 credits / month)</li>
+              <li>Pro: $20 per member / month (3,000 credits / month)</li>
+              <li>Enterprise: Custom</li>
+            </ul>
+          </td>
+          <td class="small">
+            Netlify usage is credit-based; recommended to use Netlify’s pricing calculator for expected traffic and
+            bandwidth.
+          </td>
+        </tr>
+        <tr>
+          <td><strong>Neon</strong></td>
+          <td>Postgres database for vehicles, bookings, payments, admin</td>
+          <td>
+            <ul>
+              <li>Free: $0</li>
+              <li>Launch: usage-based, no monthly minimum (compute: $0.106 per CU-hour; storage: $0.35 per GB-month)</li>
+              <li>Scale: usage-based, no monthly minimum (compute: $0.222 per CU-hour; storage: $0.35 per GB-month)</li>
+              <li>Egress: 100 GB included, then $0.10 per GB</li>
+            </ul>
+          </td>
+          <td class="small">Best for predictable Postgres with good dev experience; final cost depends on compute + storage.</td>
+        </tr>
+        <tr>
+          <td><strong>Resend</strong></td>
+          <td>Transactional email (booking confirmations, reminders)</td>
+          <td>
+            <ul>
+              <li>Free: $0 / month (3,000 emails / month)</li>
+              <li>Pro: $20 / month (50,000 emails / month)</li>
+              <li>Scale: $90 / month (100,000 emails / month)</li>
+              <li>Additional emails: $0.90 per 1,000</li>
+              <li>Dedicated IP add-on: $30 / month</li>
+            </ul>
+          </td>
+          <td class="small">Good default for transactional email; dedicated IP is optional for higher-volume deliverability control.</td>
+        </tr>
+        <tr>
+          <td><strong>PDFMonkey</strong></td>
+          <td>Invoice PDF generation</td>
+          <td>
+            <ul>
+              <li>Starter: €5 / month (300 documents / month)</li>
+              <li>Pro: €15 / month (3,000 documents / month)</li>
+              <li>Pro+: €60 / month (5,000 documents / month)</li>
+              <li>Premium: €300 / month (60,000 documents / month)</li>
+            </ul>
+          </td>
+          <td class="small">
+            EU pricing shown; vendor also offers annual billing discounts and free trial options.
+          </td>
+        </tr>
+        <tr>
+          <td><strong>Uploadcare</strong></td>
+          <td>Vehicle image uploads, storage, and delivery</td>
+          <td>
+            <ul>
+              <li>Trial: $0 / month (3 GB storage + 3 GB bandwidth)</li>
+              <li>Pay as you go: $25 / month (150 GB storage + 150 GB bandwidth)</li>
+              <li>Startups: $49 / month (300 GB storage + 300 GB bandwidth)</li>
+              <li>Business: $239 / month (1 TB storage + 1 TB bandwidth)</li>
+              <li>Overages: storage $0.05/GB, bandwidth $0.22/GB, uploads $0.05/1,000, transformations $0.15/1,000</li>
+            </ul>
+          </td>
+          <td class="small">Offloads image storage/optimization; cost depends mainly on storage + bandwidth.</td>
+        </tr>
+        <tr>
+          <td><strong>WiPay</strong></td>
+          <td>Online payments (deposit and optional balance payments)</td>
+          <td>
+            <p class="small">
+              Pricing/fees depend on merchant agreement, country, payment method, and volume. A quote is typically
+              required.
+            </p>
+          </td>
+          <td class="small">
+            Payment processing fees are generally per-transaction (percentage + fixed components). Confirm exact terms
+            with WiPay.
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>5) Assumptions &amp; Notes</h2>
+    <ul>
+      <li>All vendor prices are subject to change; validate during implementation/go-live.</li>
+      <li>Payment processing is handled by the payment gateway; the site should not store raw card data.</li>
+      <li>Final ongoing costs depend heavily on traffic, booking volume, emails, PDF invoices, and image bandwidth.</li>
+    </ul>
+
+    <h2>6) Sources (Pricing Pages)</h2>
+    <ul class="small">
+      <li>Netlify Pricing: https://www.netlify.com/pricing/</li>
+      <li>Neon Pricing: https://neon.com/pricing</li>
+      <li>Resend Pricing: https://resend.com/pricing</li>
+      <li>PDFMonkey Pricing: https://pdfmonkey.io/pricing/</li>
+      <li>Uploadcare Pricing: https://uploadcare.com/pricing/</li>
+      <li>WiPay Caribbean (pricing varies): https://wipaycaribbean.com/pricing</li>
+    </ul>
+  </body>
+</html>
