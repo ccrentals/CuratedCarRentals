@@ -42,6 +42,7 @@ type CalendarViewProps = {
   bookings: BookingEvent[];
   blockouts: BlockoutEvent[];
   vehicles: VehicleOption[];
+  dayViewBookingLimit: number | "all";
   filters: {
     vehicleId?: string;
     showBookings: boolean;
@@ -49,6 +50,9 @@ type CalendarViewProps = {
     status?: string;
   };
 };
+
+const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const DEFAULT_DAY_BOOKING_LIMIT = 5;
 
 function parseDateKey(value: unknown) {
   if (!value) return null;
@@ -111,12 +115,14 @@ export function CalendarView({
   bookings,
   blockouts,
   vehicles,
+  dayViewBookingLimit,
   filters,
 }: CalendarViewProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [selectedDate, setSelectedDate] = useState<string>(baseDate);
+  const [showAllDayBookings, setShowAllDayBookings] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [activeBlockout, setActiveBlockout] = useState<BlockoutEvent | null>(null);
 
@@ -127,6 +133,10 @@ export function CalendarView({
       setSelectedDate(baseDate);
     }
   }, [baseDate, days, selectedDate]);
+
+  useEffect(() => {
+    setShowAllDayBookings(false);
+  }, [selectedDate]);
 
   const updateParams = (updates: Record<string, string | null | undefined>) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -178,6 +188,22 @@ export function CalendarView({
     bookings: filters.showBookings ? rawSelectedEvents.bookings : [],
     blockouts: filters.showBlockouts ? rawSelectedEvents.blockouts : [],
   };
+  const normalizedDayViewLimit =
+    dayViewBookingLimit === "all"
+      ? "all"
+      : Number.isInteger(dayViewBookingLimit) && dayViewBookingLimit > 0
+        ? dayViewBookingLimit
+        : DEFAULT_DAY_BOOKING_LIMIT;
+
+  const visibleDayBookings = showAllDayBookings
+    ? selectedEvents.bookings
+    : normalizedDayViewLimit === "all"
+    ? selectedEvents.bookings
+    : selectedEvents.bookings.slice(0, normalizedDayViewLimit);
+  const hiddenDayBookingCount = Math.max(
+    0,
+    selectedEvents.bookings.length - visibleDayBookings.length,
+  );
 
   const handlePrev = () => {
     const next = view === "month" ? addMonths(base, -1) : addDays(base, -7);
@@ -372,11 +398,23 @@ export function CalendarView({
           </div>
         </div>
 
-        <div
-          className={`mt-6 grid gap-2 ${
-            view === "month" ? "grid-cols-7" : "grid-cols-1 md:grid-cols-7"
-          }`}
-        >
+        <div className="mt-6">
+          <div
+            className={`mb-2 hidden text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)] ${
+              view === "month" ? "grid grid-cols-7" : "md:grid md:grid-cols-7"
+            }`}
+          >
+            {WEEKDAY_LABELS.map((label) => (
+              <span key={label} className="px-1">
+                {label}
+              </span>
+            ))}
+          </div>
+          <div
+            className={`grid gap-2 ${
+              view === "month" ? "grid-cols-7" : "grid-cols-1 md:grid-cols-7"
+            }`}
+          >
           {days.map((day) => {
             const events = dayEvents.get(day) ?? { bookings: [], blockouts: [] };
             const bookingEvents = filters.showBookings ? events.bookings : [];
@@ -399,12 +437,23 @@ export function CalendarView({
                       day: "numeric",
                     })}
                   </span>
-                  <span className="text-[11px] text-[var(--ccr-muted)]">{total}</span>
+                  {total > 0 ? (
+                    <span className="rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-semibold text-amber-900">
+                      {total}
+                    </span>
+                  ) : null}
                 </div>
-                <div className="mt-1 text-[10px] text-[var(--ccr-muted)]">
-                  {filters.showBookings ? `Bookings: ${bookingEvents.length}` : null}
-                  {filters.showBookings && filters.showBlockouts ? " · " : ""}
-                  {filters.showBlockouts ? `Blockouts: ${blockoutEvents.length}` : null}
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {filters.showBookings && bookingEvents.length > 0 ? (
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
+                      Bookings {bookingEvents.length}
+                    </span>
+                  ) : null}
+                  {filters.showBlockouts && blockoutEvents.length > 0 ? (
+                    <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                      Blockouts {blockoutEvents.length}
+                    </span>
+                  ) : null}
                 </div>
                 <div className="mt-2 space-y-1">
                   {topEvents.map((event, index) => {
@@ -432,6 +481,7 @@ export function CalendarView({
               </button>
             );
           })}
+          </div>
         </div>
       </div>
 
@@ -463,7 +513,7 @@ export function CalendarView({
               <p className="mt-2 text-sm text-[var(--ccr-muted)]">No bookings.</p>
             ) : (
               <ul className="mt-2 space-y-2">
-                {selectedEvents.bookings.map((booking) => (
+                {visibleDayBookings.map((booking) => (
                   <li key={booking.id}>
                     <Link
                       href={`/admin/bookings/${booking.id}`}
@@ -475,6 +525,24 @@ export function CalendarView({
                 ))}
               </ul>
             )}
+            {hiddenDayBookingCount > 0 ? (
+              <button
+                type="button"
+                onClick={() => setShowAllDayBookings(true)}
+                className="mt-2 text-xs font-semibold text-[var(--ccr-primary)] hover:underline"
+              >
+                Show {hiddenDayBookingCount} more
+              </button>
+            ) : null}
+            {showAllDayBookings && selectedEvents.bookings.length > DEFAULT_DAY_BOOKING_LIMIT ? (
+              <button
+                type="button"
+                onClick={() => setShowAllDayBookings(false)}
+                className="mt-2 text-xs font-semibold text-[var(--ccr-primary)] hover:underline"
+              >
+                Show less
+              </button>
+            ) : null}
           </div>
 
           <div>

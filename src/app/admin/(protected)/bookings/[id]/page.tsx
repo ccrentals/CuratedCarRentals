@@ -47,6 +47,10 @@ type AdminNote = {
   user_id?: string;
 };
 
+type SettingsRow = {
+  content: string;
+};
+
 function isUndefinedColumn(error: unknown, column: string) {
   const code = (error as { code?: string } | null)?.code;
   const message = String((error as { message?: unknown } | null)?.message ?? "");
@@ -71,6 +75,27 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
   const canAdmin = String(session?.role ?? "")
     .trim()
     .toUpperCase() === "ADMIN";
+  let requireRestoreReason = true;
+
+  if (canAdmin) {
+    try {
+      const settingsResult = await dbQuery<SettingsRow>(
+        "select content from admin_documents where key = 'settings' limit 1",
+      );
+      const content = settingsResult.rows[0]?.content;
+      if (typeof content === "string" && content.trim()) {
+        const parsed = JSON.parse(content) as Record<string, unknown>;
+        if (typeof parsed.requireRestoreReason === "boolean") {
+          requireRestoreReason = parsed.requireRestoreReason;
+        }
+      }
+    } catch (error) {
+      const code = (error as { code?: string } | null)?.code;
+      if (code !== "42P01") {
+        throw error;
+      }
+    }
+  }
 
   const bookingResult = await dbQuery<BookingDetails>(
     "select b.id, b.start_date, b.end_date, b.pickup_location, b.status, b.pricing_json, c.full_name as customer_name, c.email as customer_email, c.phone as customer_phone, v.make as vehicle_make, v.model as vehicle_model, v.year as vehicle_year, v.daily_rate_cents, v.deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.id = $1",
@@ -151,41 +176,45 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
         Back to bookings
       </Link>
 
-      <div className="mt-3 flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Booking</p>
-          <div className="mt-1 flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-3">
-              <h1 className="text-3xl font-bold text-[var(--ccr-text)]">
-                <details className="group inline-block">
-                  <summary className="flex cursor-pointer list-none items-center gap-2">
-                    <span className="font-mono">…{shortBookingId}</span>
-                    <span className="text-sm font-semibold text-[var(--ccr-accent)] transition-transform group-open:rotate-180">
-                      ▾
-                    </span>
-                  </summary>
-                  <div className="mt-2 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 font-mono text-sm text-[var(--ccr-text)]">
-                    {booking.id}
-                  </div>
-                </details>
-              </h1>
+      <div className="mt-3">
+        <details className="group mt-1 max-w-4xl">
+          <summary className="cursor-pointer list-none">
+            <div className="flex flex-wrap items-center gap-3 md:gap-4">
+              <span className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                Booking
+              </span>
+              <span className="font-mono text-2xl font-bold leading-none text-[var(--ccr-text)] md:text-3xl">
+                …{shortBookingId}
+              </span>
+              <span
+                className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full border border-[var(--ccr-border)] text-sm font-semibold leading-none text-[var(--ccr-accent)] transition-transform group-open:rotate-180"
+                aria-hidden
+              >
+                ▾
+              </span>
+              <span
+                className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${statusBadge(
+                  booking.status,
+                )}`}
+              >
+                {booking.status.replace("_", " ")}
+              </span>
             </div>
-            <span
-              className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${statusBadge(
-                booking.status,
-              )}`}
-            >
-              {booking.status.replace("_", " ")}
-            </span>
+          </summary>
+          <div className="mt-2 w-full max-w-full overflow-x-auto whitespace-nowrap rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 font-mono text-sm text-[var(--ccr-text)]">
+            {booking.id}
           </div>
+        </details>
+
+        <div className="mt-5 w-full">
+          <BookingActions
+            bookingId={booking.id}
+            bookingStatus={booking.status}
+            isPaidInFull={isPaidInFull}
+            isDepositPaid={isDepositPaid}
+            canAdmin={canAdmin}
+          />
         </div>
-        <BookingActions
-          bookingId={booking.id}
-          bookingStatus={booking.status}
-          isPaidInFull={isPaidInFull}
-          isDepositPaid={isDepositPaid}
-          canAdmin={canAdmin}
-        />
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[1.2fr_1fr]">
@@ -313,7 +342,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
                   <tr
                     key={payment.id}
                     className={`border-b border-[var(--ccr-border)] last:border-b-0 ${
-                      payment.deleted_at ? "opacity-60" : ""
+                      payment.deleted_at ? "bg-[var(--ccr-surface-soft)]" : ""
                     }`}
                     title={payment.deleted_reason ? `Deleted: ${payment.deleted_reason}` : undefined}
                   >
@@ -350,6 +379,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
                         deletedAt={payment.deleted_at}
                         isRefunded={refundedOriginalIds.has(payment.id)}
                         canAdmin={canAdmin}
+                        requireRestoreReason={requireRestoreReason}
                       />
                     </td>
                   </tr>

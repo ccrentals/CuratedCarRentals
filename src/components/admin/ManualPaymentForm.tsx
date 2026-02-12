@@ -144,7 +144,18 @@ export function ManualPaymentForm({
         <div>
           <p className="text-sm font-semibold text-[var(--ccr-text)]">Add Manual Payment</p>
           <p className="text-xs text-[var(--ccr-muted)]">
-            Total {formatJmd(total)} · Paid {formatJmd(paidToDate)} · Balance {formatJmd(balanceDue)}
+            Total{" "}
+            <span className="font-semibold text-[color:var(--ccr-money-emphasis)]">
+              {formatJmd(total)}
+            </span>{" "}
+            · Paid{" "}
+            <span className="font-semibold text-[color:var(--ccr-money-emphasis)]">
+              {formatJmd(paidToDate)}
+            </span>{" "}
+            · Balance{" "}
+            <span className="font-semibold text-[color:var(--ccr-money-emphasis)]">
+              {formatJmd(balanceDue)}
+            </span>
           </p>
         </div>
       </div>
@@ -169,7 +180,9 @@ export function ManualPaymentForm({
         </select>
       </label>
 
-      {message ? <p className="mt-2 text-xs text-emerald-600">{message}</p> : null}
+      {message ? (
+        <p className="mt-2 text-sm font-semibold text-[var(--ccr-text)]">{message}</p>
+      ) : null}
       {error && !drawerOpen ? <p className="mt-2 text-xs text-red-600">{error}</p> : null}
 
       <div className={`fixed inset-0 z-50 ${drawerOpen ? "" : "pointer-events-none"}`}>

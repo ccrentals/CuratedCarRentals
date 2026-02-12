@@ -4,6 +4,7 @@ import { dbQuery, getDbPool } from "@/lib/db";
 import { sendPickupReminderEmail } from "@/lib/notifications/email";
 import { writeAuditLog } from "@/lib/audit";
 import { computeBookingPricing } from "@/lib/payments/pricing";
+import { loadAdminSettings } from "@/lib/adminSettings";
 
 function dateKey(date: Date) {
   return date.toISOString().slice(0, 10);
@@ -24,6 +25,17 @@ export async function POST(request: Request) {
   const provided = request.headers.get("x-cron-secret");
   if (provided !== secret) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { settings, source } = await loadAdminSettings();
+  if (!settings.sendPickupReminder) {
+    return NextResponse.json({
+      ok: true,
+      sent: 0,
+      skipped: 0,
+      reason: "Pickup reminders disabled in admin settings",
+      settingsSource: source,
+    });
   }
 
   const targetDate = tomorrowKey();
@@ -113,5 +125,5 @@ export async function POST(request: Request) {
     sent += 1;
   }
 
-  return NextResponse.json({ ok: true, sent, skipped });
+  return NextResponse.json({ ok: true, sent, skipped, settingsSource: source });
 }

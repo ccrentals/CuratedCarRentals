@@ -45,7 +45,6 @@ export default function AdminLoginPage() {
       return;
     }
 
-    showToast("Welcome back!", "success");
     router.push("/admin");
   }
 

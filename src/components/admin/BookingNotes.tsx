@@ -26,6 +26,11 @@ function fmtClientDate(value?: string) {
 export function BookingNotes({ bookingId, notes }: BookingNotesProps) {
   const router = useRouter();
   const [note, setNote] = useState("");
+  const [noteEmailTarget, setNoteEmailTarget] = useState<"none" | "customer" | "internal" | "both">(
+    "none",
+  );
+  const [noteSendMode, setNoteSendMode] = useState<"immediate" | "scheduled">("immediate");
+  const [noteScheduledFor, setNoteScheduledFor] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -37,9 +42,19 @@ export function BookingNotes({ bookingId, notes }: BookingNotesProps) {
       return;
     }
 
+    if (noteEmailTarget !== "none" && noteSendMode === "scheduled" && !noteScheduledFor) {
+      setError("Choose a date/time for the scheduled note email.");
+      return;
+    }
+
     setSaving(true);
     setMessage(null);
     setError(null);
+
+    const scheduledForIso =
+      noteEmailTarget !== "none" && noteSendMode === "scheduled" && noteScheduledFor
+        ? new Date(noteScheduledFor).toISOString()
+        : null;
 
     const csrfToken = await ensureCsrfToken();
     const response = await fetch(`/api/admin/bookings/${bookingId}`, {
@@ -48,7 +63,13 @@ export function BookingNotes({ bookingId, notes }: BookingNotesProps) {
         "Content-Type": "application/json",
         "x-csrf-token": csrfToken ?? "",
       },
-      body: JSON.stringify({ action: "add_note", note: trimmed }),
+      body: JSON.stringify({
+        action: "add_note",
+        note: trimmed,
+        noteEmailTarget,
+        noteSendMode: noteEmailTarget === "none" ? null : noteSendMode,
+        noteScheduledFor: scheduledForIso,
+      }),
     });
 
     setSaving(false);
@@ -60,7 +81,9 @@ export function BookingNotes({ bookingId, notes }: BookingNotesProps) {
     }
 
     setNote("");
-    setMessage("Note saved.");
+    setNoteScheduledFor("");
+    const data = await response.json().catch(() => ({}));
+    setMessage(typeof data.message === "string" ? data.message : "Note saved.");
     router.refresh();
   }
 
@@ -92,6 +115,57 @@ export function BookingNotes({ bookingId, notes }: BookingNotesProps) {
           className="mt-2 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
           placeholder="Add an internal note for this booking..."
         />
+        <div className="mt-3 grid gap-3 md:grid-cols-3">
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+              Email target
+            </label>
+            <select
+              value={noteEmailTarget}
+              onChange={(event) =>
+                setNoteEmailTarget(
+                  event.target.value as "none" | "customer" | "internal" | "both",
+                )
+              }
+              className="mt-2 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+            >
+              <option value="none">Save note only</option>
+              <option value="both">Send to customer + internal</option>
+              <option value="customer">Send to customer only</option>
+              <option value="internal">Send to internal only</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+              Send mode
+            </label>
+            <select
+              value={noteSendMode}
+              onChange={(event) =>
+                setNoteSendMode(event.target.value as "immediate" | "scheduled")
+              }
+              disabled={noteEmailTarget === "none"}
+              className="mt-2 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)] disabled:opacity-50"
+            >
+              <option value="immediate">Send now</option>
+              <option value="scheduled">Send at specific date/time</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+              Scheduled for
+            </label>
+            <input
+              type="datetime-local"
+              value={noteScheduledFor}
+              onChange={(event) => setNoteScheduledFor(event.target.value)}
+              disabled={noteEmailTarget === "none" || noteSendMode !== "scheduled"}
+              className="mt-2 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)] disabled:opacity-50"
+            />
+          </div>
+        </div>
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <button
             type="button"

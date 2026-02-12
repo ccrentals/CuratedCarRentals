@@ -63,6 +63,17 @@ export function BlockoutModal({
     setError(null);
   }, [initial]);
 
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open, onClose]);
+
   if (!open) return null;
 
   const isEditing = Boolean(draft.id);
@@ -138,8 +149,14 @@ export function BlockoutModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-10">
-      <div className="w-full max-w-xl rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-xl">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-10"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-xl rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-xl"
+        onClick={(event) => event.stopPropagation()}
+      >
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-bold text-[var(--ccr-text)]">
             {isEditing ? "Edit Blockout" : "Add Blockout"}
@@ -249,7 +266,14 @@ export function BlockoutModal({
               Delete
             </button>
           ) : null}
-          {error ? <p className="text-xs text-red-600">{error}</p> : null}
+          {error ? (
+            <div
+              role="alert"
+              className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700"
+            >
+              {error}
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

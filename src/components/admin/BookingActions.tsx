@@ -44,6 +44,9 @@ export function BookingActions({
   const canComplete = !normalizedStatus || ["CONFIRMED", "PICKED_UP"].includes(normalizedStatus);
   const canArchive = Boolean(canAdmin) && normalizedStatus === "RETURNED";
   const canCancel = !normalizedStatus || !["CANCELLED", "RETURNED"].includes(normalizedStatus);
+  const cancelButtonClass = canCancel
+    ? "rounded-xl bg-red-600 px-4 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+    : "rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-xs font-semibold text-[var(--ccr-muted)] disabled:cursor-not-allowed";
 
   // Prevent stale status-related errors lingering after a refresh/action.
   useEffect(() => {
@@ -201,7 +204,7 @@ export function BookingActions({
                 : "Already cancelled"
               : undefined
           }
-          className="rounded-xl bg-red-600 px-4 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+          className={cancelButtonClass}
         >
           {loadingKey === "cancel" ? "Working..." : actionLabels.cancel}
         </button>

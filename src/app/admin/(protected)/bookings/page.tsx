@@ -3,6 +3,7 @@ import Link from "next/link";
 import { dbQuery } from "@/lib/db";
 import { fmtDate } from "@/lib/dateFormat";
 import BookingFilters from "@/components/admin/BookingFilters";
+import { AdminCreateBookingModal } from "@/components/admin/AdminCreateBookingModal";
 import { getSessionFromRequest } from "@/lib/auth/session";
 
 type BookingRow = {
@@ -15,6 +16,13 @@ type BookingRow = {
   customer_email: string;
   vehicle_make: string;
   vehicle_model: string;
+};
+
+type VehicleOption = {
+  id: string;
+  year: number;
+  make: string;
+  model: string;
 };
 
 function isAdminRole(role: string | undefined) {
@@ -131,6 +139,15 @@ export default async function AdminBookingsPage({
     }
   })();
 
+  const vehicles = await dbQuery<VehicleOption>(
+    "select id, year, make, model from vehicles where status <> 'INACTIVE' order by year desc, make asc, model asc",
+  );
+
+  const vehicleOptions = vehicles.rows.map((vehicle: VehicleOption) => ({
+    id: vehicle.id,
+    label: `${vehicle.year} ${vehicle.make} ${vehicle.model}`.trim(),
+  }));
+
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-10">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -139,6 +156,7 @@ export default async function AdminBookingsPage({
           <h1 className="text-3xl font-bold text-[var(--ccr-text)]">Bookings</h1>
         </div>
         <div className="flex items-center gap-2">
+          <AdminCreateBookingModal vehicles={vehicleOptions} />
           {canAdmin ? (
             <Link
               href="/admin/bookings/archive"

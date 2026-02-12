@@ -504,6 +504,146 @@ export async function sendBalanceDueReminderEmail(input: {
   });
 }
 
+export async function sendDropoffReminderEmail(input: {
+  bookingId: string;
+  customerEmail: string;
+  customerName: string;
+  vehicleLabel: string;
+  startDate: string;
+  endDate: string;
+  pickupLocation: string;
+  balanceDue: number;
+}) {
+  const bookingLink = `${baseUrl()}/bookings/${input.bookingId}`;
+  const balanceLink = `${baseUrl()}/bookings/${input.bookingId}/balance`;
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; color: #0f172a;">
+      <h2>Dropoff reminder</h2>
+      <p>Hi ${input.customerName},</p>
+      <p>Today is your dropoff date and there is still a balance outstanding.</p>
+      <p><strong>Booking reference:</strong> ${input.bookingId.slice(0, 8)}</p>
+      <p><strong>Vehicle:</strong> ${input.vehicleLabel}</p>
+      <p><strong>Dates:</strong> ${formatDateOnly(input.startDate)} → ${formatDateOnly(input.endDate)}</p>
+      <p><strong>Pickup location:</strong> ${input.pickupLocation}</p>
+      <hr />
+      <p><strong>Balance due:</strong> ${formatAmount(input.balanceDue)}</p>
+      <p style="margin-top: 16px;">
+        <a href="${bookingLink}" style="background:#1f2d4d; color:#fff; padding:10px 16px; border-radius:8px; text-decoration:none;">View Booking</a>
+        <a href="${balanceLink}" style="margin-left:12px; background:#e2a100; color:#111827; padding:10px 16px; border-radius:8px; text-decoration:none;">Pay Balance</a>
+      </p>
+      ${policyHtml()}
+      <p style="font-size:12px; color:#64748b;">Need help? Reply to this email.</p>
+    </div>
+  `;
+
+  return sendResendEmail({
+    to: input.customerEmail,
+    subject: "Dropoff day reminder — balance due",
+    html,
+  });
+}
+
+export async function sendLateDropoffAlertEmail(input: {
+  bookingId: string;
+  customerEmail: string;
+  customerName: string;
+  vehicleLabel: string;
+  startDate: string;
+  endDate: string;
+  pickupLocation: string;
+  balanceDue: number;
+}) {
+  const bookingLink = `${baseUrl()}/bookings/${input.bookingId}`;
+  const balanceLink = `${baseUrl()}/bookings/${input.bookingId}/balance`;
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; color: #0f172a;">
+      <h2>Late dropoff notice</h2>
+      <p>Hi ${input.customerName},</p>
+      <p>Your scheduled dropoff date has passed and a balance is still outstanding.</p>
+      <p><strong>Booking reference:</strong> ${input.bookingId.slice(0, 8)}</p>
+      <p><strong>Vehicle:</strong> ${input.vehicleLabel}</p>
+      <p><strong>Dates:</strong> ${formatDateOnly(input.startDate)} → ${formatDateOnly(input.endDate)}</p>
+      <p><strong>Pickup location:</strong> ${input.pickupLocation}</p>
+      <hr />
+      <p><strong>Balance due:</strong> ${formatAmount(input.balanceDue)}</p>
+      <p style="margin-top: 16px;">
+        <a href="${bookingLink}" style="background:#1f2d4d; color:#fff; padding:10px 16px; border-radius:8px; text-decoration:none;">View Booking</a>
+        <a href="${balanceLink}" style="margin-left:12px; background:#e2a100; color:#111827; padding:10px 16px; border-radius:8px; text-decoration:none;">Pay Balance</a>
+      </p>
+      ${policyHtml()}
+      <p style="font-size:12px; color:#64748b;">Need help? Reply to this email.</p>
+    </div>
+  `;
+
+  return sendResendEmail({
+    to: input.customerEmail,
+    subject: "Late dropoff alert — balance required",
+    html,
+  });
+}
+
+export function getInternalNotesRecipient() {
+  return (
+    process.env.INTERNAL_NOTES_EMAIL?.trim() ||
+    process.env.RESEND_FROM?.trim() ||
+    DEFAULT_FROM
+  );
+}
+
+export async function sendBookingNoteEmail(input: {
+  bookingId: string;
+  recipientEmail: string;
+  recipientType: "customer" | "internal";
+  customerName: string;
+  customerEmail: string;
+  vehicleLabel: string;
+  startDate: string;
+  endDate: string;
+  pickupLocation: string;
+  noteMessage: string;
+  sentByUserId?: string;
+  scheduledFor?: string | null;
+}) {
+  const bookingLink = `${baseUrl()}/admin/bookings/${input.bookingId}`;
+  const notePrefix = input.recipientType === "internal" ? "[Internal] " : "";
+  const scheduleLine = input.scheduledFor
+    ? `<p><strong>Scheduled send:</strong> ${formatDateTime(input.scheduledFor)}</p>`
+    : "";
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; color: #0f172a;">
+      <h2>${notePrefix}Booking note update</h2>
+      <p><strong>Booking reference:</strong> ${input.bookingId.slice(0, 8)}</p>
+      <p><strong>Customer:</strong> ${input.customerName} (${input.customerEmail})</p>
+      <p><strong>Vehicle:</strong> ${input.vehicleLabel}</p>
+      <p><strong>Dates:</strong> ${formatDateOnly(input.startDate)} → ${formatDateOnly(input.endDate)}</p>
+      <p><strong>Pickup location:</strong> ${input.pickupLocation}</p>
+      ${scheduleLine}
+      <div style="margin-top:12px; padding:12px; border:1px solid #e2e8f0; border-radius:10px; background:#f8fafc;">
+        <p style="margin:0 0 6px; font-weight:600;">Note</p>
+        <p style="margin:0; white-space:pre-wrap;">${input.noteMessage}</p>
+      </div>
+      ${
+        input.sentByUserId
+          ? `<p style="margin-top:10px;"><strong>Recorded by user ID:</strong> ${input.sentByUserId}</p>`
+          : ""
+      }
+      <p style="margin-top: 16px;">
+        <a href="${bookingLink}" style="background:#1f2d4d; color:#fff; padding:10px 16px; border-radius:8px; text-decoration:none;">View Booking</a>
+      </p>
+      <p style="font-size:12px; color:#64748b;">This is an operational update from Curated Car Rentals.</p>
+    </div>
+  `;
+
+  return sendResendEmail({
+    to: input.recipientEmail,
+    subject: `${notePrefix}Booking note — ${input.bookingId.slice(0, 8)}`,
+    html,
+  });
+}
+
 export async function sendPickupReminderEmail(input: {
   bookingId: string;
   customerEmail: string;

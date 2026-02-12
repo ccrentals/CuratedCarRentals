@@ -43,9 +43,9 @@ export function Footer() {
           <div>
             <p className="text-sm font-semibold uppercase tracking-wide text-[var(--ccr-accent)]">Contact</p>
             <ul className="mt-3 space-y-2 text-sm">
-              <li>{siteContent.phone}</li>
-              <li>{siteContent.email}</li>
-              <li>{siteContent.address}</li>
+              <li className="break-words">{siteContent.phone}</li>
+              <li className="break-words">{siteContent.email}</li>
+              <li className="break-words">{siteContent.address}</li>
             </ul>
           </div>
         </div>

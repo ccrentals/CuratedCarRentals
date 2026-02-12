@@ -286,13 +286,9 @@ export default async function AdminDashboardPage() {
           <div className="flex items-center justify-between gap-4">
             <h2 className="text-lg font-bold text-[var(--ccr-text)]">Quick actions</h2>
           </div>
-          <p className="mt-2 text-sm text-[var(--ccr-muted)]">
-            Quick create booking is coming next; for now, you can use the customer booking form.
-          </p>
           <div className="mt-4 flex flex-wrap gap-3">
             <Link
               href="/book"
-              target="_blank"
               className="rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] shadow-sm transition hover:border-[var(--ccr-accent-strong)] hover:bg-[var(--ccr-surface-soft)]"
             >
               Quick create booking

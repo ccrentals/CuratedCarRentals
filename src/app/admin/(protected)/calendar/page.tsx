@@ -1,5 +1,6 @@
 import { CalendarView } from "@/components/admin/CalendarView";
 import { CopySqlButton } from "@/components/admin/CopySqlButton";
+import { loadAdminSettings } from "@/lib/adminSettings";
 import { dbQuery } from "@/lib/db";
 
 type VehicleRow = {
@@ -120,6 +121,7 @@ create index if not exists blockouts_range_idx on blockouts(start_at, end_at);`;
   const endDate = formatDateKey(rangeEnd);
 
   const vehicles = await dbQuery<VehicleRow>("select id, make, model from vehicles order by make, model");
+  const { settings: adminSettings } = await loadAdminSettings();
 
   let statusFilter: string | undefined;
   if (statusParam && statusParam !== "all") {
@@ -228,6 +230,7 @@ create index if not exists blockouts_range_idx on blockouts(start_at, end_at);`;
         bookings={bookings.rows}
         blockouts={blockouts.rows}
         vehicles={vehicles.rows}
+        dayViewBookingLimit={adminSettings.dayViewBookingLimit}
         filters={{
           vehicleId,
           showBookings,

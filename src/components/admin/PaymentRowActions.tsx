@@ -13,6 +13,7 @@ type PaymentRowActionsProps = {
   deletedAt?: string | null;
   isRefunded?: boolean;
   canAdmin: boolean;
+  requireRestoreReason?: boolean;
 };
 
 type Mode = "delete" | "restore" | "refund" | null;
@@ -25,6 +26,7 @@ export function PaymentRowActions({
   deletedAt,
   isRefunded,
   canAdmin,
+  requireRestoreReason = true,
 }: PaymentRowActionsProps) {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>(null);
@@ -57,7 +59,7 @@ export function PaymentRowActions({
       return;
     }
 
-    if (action === "restore" && !note.trim()) {
+    if (action === "restore" && requireRestoreReason && !note.trim()) {
       setError("Reason is required.");
       setLoading(false);
       return;
@@ -74,7 +76,7 @@ export function PaymentRowActions({
         body: JSON.stringify({
           action,
           reason: action === "delete" ? reason.trim() : undefined,
-          note: action === "restore" ? note.trim() : undefined,
+          note: action === "restore" ? note.trim() || undefined : undefined,
         }),
       },
     );
@@ -213,7 +215,7 @@ export function PaymentRowActions({
               </label>
             ) : mode === "restore" ? (
               <label className="mt-4 block text-xs text-[var(--ccr-muted)]">
-                Reason (required)
+                {requireRestoreReason ? "Reason (required)" : "Reason (optional)"}
                 <textarea
                   value={note}
                   onChange={(event) => setNote(event.target.value)}

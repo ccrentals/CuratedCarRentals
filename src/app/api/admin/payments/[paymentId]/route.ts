@@ -13,6 +13,19 @@ function isAdminRole(role: string | undefined) {
     .toUpperCase() === "ADMIN";
 }
 
+function parseRequireRestoreReason(content: unknown) {
+  if (typeof content !== "string" || !content.trim()) return true;
+  try {
+    const parsed = JSON.parse(content) as Record<string, unknown>;
+    if (typeof parsed.requireRestoreReason === "boolean") {
+      return parsed.requireRestoreReason;
+    }
+    return true;
+  } catch {
+    return true;
+  }
+}
+
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ paymentId: string }> },
@@ -53,6 +66,23 @@ export async function PATCH(
   const client = await pool.connect();
 
   try {
+    let requireRestoreReason = true;
+    try {
+      const settingsResult = await client.query(
+        "select content from admin_documents where key = 'settings' limit 1",
+      );
+      requireRestoreReason = parseRequireRestoreReason(settingsResult.rows[0]?.content);
+    } catch (settingsError) {
+      const settingsCode = (settingsError as { code?: string } | null)?.code;
+      if (settingsCode !== "42P01") {
+        throw settingsError;
+      }
+    }
+
+    if (action === "restore" && requireRestoreReason && !note) {
+      return NextResponse.json({ error: "Reason is required" }, { status: 400 });
+    }
+
     await client.query("begin");
 
     const paymentResult = await client.query(
