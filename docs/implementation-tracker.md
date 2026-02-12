@@ -48,7 +48,7 @@ Last updated: 2026-02-11
   - note metadata updates (`email_customer_sent_at`, `email_internal_sent_at`, `email_last_error`) persisted on send attempts
 
 ## Remaining
-- `TODO` Blockout supersede automation controlled by settings:
+- `DONE` Blockout supersede automation controlled by settings:
   - auto-cancel overlapping bookings when enabled
   - block future bookings when enabled
   - cancellation email/log workflow

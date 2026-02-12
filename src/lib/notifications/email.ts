@@ -584,6 +584,62 @@ export async function sendLateDropoffAlertEmail(input: {
   });
 }
 
+export async function sendBookingCancelledByBlockoutEmail(input: {
+  recipientType: "customer" | "internal";
+  recipientEmail: string;
+  bookingId: string;
+  customerName: string;
+  customerEmail: string;
+  vehicleLabel: string;
+  startDate: string;
+  endDate: string;
+  pickupLocation: string;
+  blockoutReason: string;
+  blockoutStart: string;
+  blockoutEnd: string;
+}) {
+  const isInternal = input.recipientType === "internal";
+  const bookingLink = isInternal
+    ? `${baseUrl()}/admin/bookings/${input.bookingId}`
+    : `${baseUrl()}/bookings/${input.bookingId}`;
+  const greeting = isInternal ? "Operations update" : `Hi ${input.customerName},`;
+  const intro = isInternal
+    ? "A booking was cancelled automatically because a vehicle blockout now supersedes it."
+    : "Your booking was cancelled because the vehicle became unavailable during your selected dates.";
+  const reasonLabel = input.blockoutReason || "Unavailable";
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; color: #0f172a;">
+      <h2>${isInternal ? "[Internal] Booking cancelled by blockout" : "Booking cancellation notice"}</h2>
+      <p>${greeting}</p>
+      <p>${intro}</p>
+      <p><strong>Booking reference:</strong> ${input.bookingId.slice(0, 8)}</p>
+      <p><strong>Customer:</strong> ${input.customerName} (${input.customerEmail})</p>
+      <p><strong>Vehicle:</strong> ${input.vehicleLabel}</p>
+      <p><strong>Dates:</strong> ${formatDateOnly(input.startDate)} → ${formatDateOnly(input.endDate)}</p>
+      <p><strong>Pickup location:</strong> ${input.pickupLocation}</p>
+      <hr />
+      <p><strong>Blockout reason:</strong> ${reasonLabel}</p>
+      <p><strong>Blockout window:</strong> ${formatDateTime(input.blockoutStart)} → ${formatDateTime(input.blockoutEnd)}</p>
+      <p style="margin-top: 16px;">
+        <a href="${bookingLink}" style="background:#1f2d4d; color:#fff; padding:10px 16px; border-radius:8px; text-decoration:none;">${
+          isInternal ? "Open Booking" : "View Booking"
+        }</a>
+      </p>
+      ${isInternal ? "" : policyHtml()}
+      <p style="font-size:12px; color:#64748b;">${isInternal ? "This is an internal operations alert." : "Need help? Reply to this email."}</p>
+    </div>
+  `;
+
+  return sendResendEmail({
+    to: input.recipientEmail,
+    subject: isInternal
+      ? `[Internal] Blockout cancellation — ${input.bookingId.slice(0, 8)}`
+      : "Booking cancelled due to vehicle unavailability",
+    html,
+  });
+}
+
 export function getInternalNotesRecipient() {
   return (
     process.env.INTERNAL_NOTES_EMAIL?.trim() ||

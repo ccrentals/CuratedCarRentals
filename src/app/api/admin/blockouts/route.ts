@@ -143,7 +143,9 @@ export async function POST(request: Request) {
           for (const booking of overlap.rows) {
             const pricing = booking.pricing_json ?? {};
             const existingNotes = Array.isArray(pricing.admin_notes)
-              ? pricing.admin_notes.filter((value): value is string => typeof value === "string")
+              ? pricing.admin_notes.filter(
+                  (value: unknown): value is string => typeof value === "string",
+                )
               : [];
             const updatedPricing = {
               ...pricing,

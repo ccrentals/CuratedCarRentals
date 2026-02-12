@@ -176,13 +176,12 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
         Back to bookings
       </Link>
 
-      <div className="mt-3">
-        <details className="group mt-1 max-w-4xl">
-          <summary className="cursor-pointer list-none">
-            <div className="flex flex-wrap items-center gap-3 md:gap-4">
-              <span className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-                Booking
-              </span>
+      <div className="mt-3 space-y-4">
+        <div className="flex flex-wrap items-center gap-3 md:gap-4">
+          <span className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Booking</span>
+
+          <details className="group relative">
+            <summary className="flex cursor-pointer list-none items-center gap-2">
               <span className="font-mono text-2xl font-bold leading-none text-[var(--ccr-text)] md:text-3xl">
                 …{shortBookingId}
               </span>
@@ -192,21 +191,22 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
               >
                 ▾
               </span>
-              <span
-                className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${statusBadge(
-                  booking.status,
-                )}`}
-              >
-                {booking.status.replace("_", " ")}
-              </span>
+            </summary>
+            <div className="absolute left-0 top-full z-20 mt-2 w-max max-w-[90vw] overflow-x-auto whitespace-nowrap rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 font-mono text-sm text-[var(--ccr-text)] shadow-lg">
+              {booking.id}
             </div>
-          </summary>
-          <div className="mt-2 w-full max-w-full overflow-x-auto whitespace-nowrap rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 font-mono text-sm text-[var(--ccr-text)]">
-            {booking.id}
-          </div>
-        </details>
+          </details>
 
-        <div className="mt-5 w-full">
+          <span
+            className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${statusBadge(
+              booking.status,
+            )}`}
+          >
+            {booking.status.replace("_", " ")}
+          </span>
+        </div>
+
+        <div className="w-full pt-2">
           <BookingActions
             bookingId={booking.id}
             bookingStatus={booking.status}
