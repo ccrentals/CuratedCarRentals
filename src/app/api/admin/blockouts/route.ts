@@ -1,8 +1,15 @@
 import { NextResponse } from "next/server";
 
+import { writeAuditLog } from "@/lib/audit";
+import { loadAdminSettings } from "@/lib/adminSettings";
 import { getSessionFromRequest } from "@/lib/auth/session";
-import { dbQuery } from "@/lib/db";
+import { dbQuery, getDbPool } from "@/lib/db";
 import { logError } from "@/lib/log";
+import {
+  getInternalNotesRecipient,
+  sendBookingCancelledByBlockoutEmail,
+} from "@/lib/notifications/email";
+import { recalculateBookingPayments } from "@/lib/payments/recalculateBooking";
 import { requireCsrf } from "@/lib/security/csrf";
 
 function parseDate(value: string) {
@@ -91,12 +98,138 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid date range" }, { status: 400 });
     }
 
-    const overlap = await dbQuery(
-      "select id, start_date, end_date from bookings where vehicle_id = $1 and status <> 'CANCELLED' and tstzrange($2::timestamptz, $3::timestamptz, '[)') && tstzrange(start_date::timestamptz, (end_date + interval '1 day')::timestamptz, '[)')",
+    const overlap = await dbQuery<{
+      id: string;
+      start_date: string;
+      end_date: string;
+      status: string;
+      pickup_location: string;
+      pricing_json: Record<string, unknown> | null;
+      customer_name: string;
+      customer_email: string;
+      vehicle_make: string;
+      vehicle_model: string;
+    }>(
+      "select b.id, b.start_date, b.end_date, b.status, b.pickup_location, b.pricing_json, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.vehicle_id = $1 and b.status not in ('CANCELLED','RETURNED') and tstzrange($2::timestamptz, $3::timestamptz, '[)') && tstzrange(b.start_date::timestamptz, (b.end_date + interval '1 day')::timestamptz, '[)') order by b.start_date asc",
       [vehicleId, startAt.toISOString(), endAt.toISOString()],
     );
 
+    const { settings } = await loadAdminSettings();
+
     if (overlap.rowCount > 0) {
+      if (settings.blockoutSupersedesBookings) {
+        const db = getDbPool();
+        const client = await db.connect();
+        const nowIso = new Date().toISOString();
+        const cancellationReason = `Cancelled automatically due to blockout (${reason}) ${startAt.toISOString()} to ${endAt.toISOString()}`;
+        const cancelledBookings: Array<{
+          id: string;
+          customerName: string;
+          customerEmail: string;
+          vehicleLabel: string;
+          startDate: string;
+          endDate: string;
+          pickupLocation: string;
+        }> = [];
+
+        try {
+          await client.query("begin");
+
+          const insert = await client.query(
+            "insert into blockouts (vehicle_id, start_at, end_at, reason, notes, created_by) values ($1, $2, $3, $4, $5, $6) returning *",
+            [vehicleId, startAt.toISOString(), endAt.toISOString(), reason, notes || null, session.userId],
+          );
+
+          for (const booking of overlap.rows) {
+            const pricing = booking.pricing_json ?? {};
+            const existingNotes = Array.isArray(pricing.admin_notes)
+              ? pricing.admin_notes.filter((value): value is string => typeof value === "string")
+              : [];
+            const updatedPricing = {
+              ...pricing,
+              cancelled_by_blockout: true,
+              cancelled_by_blockout_at: nowIso,
+              cancelled_by_blockout_reason: cancellationReason,
+              admin_notes: [...existingNotes, `[${nowIso}] ${cancellationReason}`],
+            };
+
+            await client.query(
+              "update bookings set status = 'CANCELLED', pricing_json = $1, updated_at = now() where id = $2",
+              [updatedPricing, booking.id],
+            );
+
+            await recalculateBookingPayments(booking.id, { client });
+
+            cancelledBookings.push({
+              id: booking.id,
+              customerName: booking.customer_name,
+              customerEmail: booking.customer_email,
+              vehicleLabel: `${booking.vehicle_make} ${booking.vehicle_model}`,
+              startDate: booking.start_date,
+              endDate: booking.end_date,
+              pickupLocation: booking.pickup_location,
+            });
+          }
+
+          await client.query("commit");
+
+          for (const booking of cancelledBookings) {
+            await writeAuditLog({
+              userId: session.userId,
+              action: "BOOKING_CANCELLED_BY_BLOCKOUT",
+              entityType: "booking",
+              entityId: booking.id,
+              details: {
+                reason: cancellationReason,
+                blockoutVehicleId: vehicleId,
+                blockoutStartAt: startAt.toISOString(),
+                blockoutEndAt: endAt.toISOString(),
+              },
+            });
+
+            await sendBookingCancelledByBlockoutEmail({
+              recipientType: "customer",
+              recipientEmail: booking.customerEmail,
+              bookingId: booking.id,
+              customerName: booking.customerName,
+              customerEmail: booking.customerEmail,
+              vehicleLabel: booking.vehicleLabel,
+              startDate: booking.startDate,
+              endDate: booking.endDate,
+              pickupLocation: booking.pickupLocation,
+              blockoutReason: reason,
+              blockoutStart: startAt.toISOString(),
+              blockoutEnd: endAt.toISOString(),
+            });
+
+            await sendBookingCancelledByBlockoutEmail({
+              recipientType: "internal",
+              recipientEmail: getInternalNotesRecipient(),
+              bookingId: booking.id,
+              customerName: booking.customerName,
+              customerEmail: booking.customerEmail,
+              vehicleLabel: booking.vehicleLabel,
+              startDate: booking.startDate,
+              endDate: booking.endDate,
+              pickupLocation: booking.pickupLocation,
+              blockoutReason: reason,
+              blockoutStart: startAt.toISOString(),
+              blockoutEnd: endAt.toISOString(),
+            });
+          }
+
+          return NextResponse.json({
+            blockout: insert.rows[0],
+            autoCancelledBookings: cancelledBookings.length,
+          });
+        } catch (error) {
+          await client.query("rollback");
+          throw error;
+        } finally {
+          client.release();
+        }
+      }
+
       const booking = overlap.rows[0];
       return NextResponse.json(
         {
