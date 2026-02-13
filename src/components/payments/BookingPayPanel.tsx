@@ -8,6 +8,7 @@ import { formatJmd } from "@/lib/money";
 import { PayBalanceButton } from "@/components/payments/PayBalanceButton";
 import { PayDepositButton } from "@/components/payments/PayDepositButton";
 import { PayInFullButton } from "@/components/payments/PayInFullButton";
+import { PayOnPickupButton } from "@/components/payments/PayOnPickupButton";
 
 type BookingPaySummary = {
   days: number;
@@ -18,6 +19,8 @@ type BookingPaySummary = {
   balanceDue: number;
   promoCode: string | null;
   promoDiscount: number;
+  paymentStatus: "UNPAID" | "DUE_ON_PICKUP" | "DEPOSIT_PAID" | "PAID_IN_FULL";
+  paymentOption: "DEPOSIT" | "FULL" | "PAY_ON_PICKUP";
 };
 
 type PromoResponse = {
@@ -125,6 +128,22 @@ export function BookingPayPanel({
         <p className="mt-2 text-sm text-[var(--ccr-muted)]">
           Final payment step. Apply promo codes here before you continue to payment.
         </p>
+        <div className="mt-4 rounded-xl border border-amber-300/40 bg-amber-200/15 p-4 text-sm text-amber-100">
+          <p className="font-semibold">Important</p>
+          <p className="mt-1 text-amber-100/90">
+            Bookings without payment do not reserve the vehicle. If another customer pays for the
+            same dates first, unpaid bookings may be cancelled.
+          </p>
+        </div>
+        {summary.paymentOption === "PAY_ON_PICKUP" ? (
+          <div className="mt-4 rounded-xl border border-red-300/40 bg-red-500/15 p-4 text-sm text-red-100">
+            <p className="font-semibold">Pay on Pickup selected</p>
+            <p className="mt-1 text-red-100/90">
+              This booking is currently non-blocking and can be cancelled if another customer pays
+              for the same vehicle dates before you do.
+            </p>
+          </div>
+        ) : null}
 
         <div className="mt-4 space-y-2 text-sm text-[var(--ccr-muted)]">
           <p>
@@ -184,7 +203,7 @@ export function BookingPayPanel({
           </div>
         </div>
 
-        <div className="mt-6 grid gap-4 sm:grid-cols-2">
+        <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <div className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
             <p className="text-sm font-semibold text-[var(--ccr-text)]">Pay Deposit</p>
             <p className="mt-1 text-sm text-[var(--ccr-muted)]">
@@ -201,6 +220,29 @@ export function BookingPayPanel({
                 <span className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)]">
                   Deposit paid
                 </span>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
+            <p className="text-sm font-semibold text-[var(--ccr-text)]">Pay on Pickup</p>
+            <p className="mt-1 text-sm text-[var(--ccr-muted)]">
+              Pay {formatJmd(0)} now. Total of {formatJmd(summary.total)} due on pickup.
+            </p>
+            <div className="mt-2 rounded-lg border border-amber-300/40 bg-amber-200/15 p-3 text-xs text-amber-100">
+              Selecting this option does not reserve the vehicle until a payment is made.
+            </div>
+            <div className="mt-3">
+              {summary.netPaidToDate > 0 ? (
+                <span className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)]">
+                  Payment already started
+                </span>
+              ) : summary.paymentOption === "PAY_ON_PICKUP" && summary.paymentStatus === "DUE_ON_PICKUP" ? (
+                <span className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)]">
+                  Selected
+                </span>
+              ) : (
+                <PayOnPickupButton bookingId={bookingId} />
               )}
             </div>
           </div>

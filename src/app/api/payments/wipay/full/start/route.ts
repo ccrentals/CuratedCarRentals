@@ -99,6 +99,7 @@ export async function POST(request: Request) {
     endDate: booking.end_date,
     dailyRate,
     deposit,
+    paymentOption: "FULL",
     netPaidToDate,
     promoCode,
     promoDiscount,
@@ -131,6 +132,20 @@ export async function POST(request: Request) {
   let paymentId: string | null = null;
 
   try {
+    await dbQuery("update bookings set pricing_json = $2, updated_at = now() where id = $1", [
+      booking.id,
+      {
+        ...pricing,
+        payment_option_selected: "FULL",
+        payment_status: summary.paymentStatus,
+        amount_paid: summary.netPaidToDate,
+        paid_to_date: summary.netPaidToDate,
+        balance_due: summary.balanceDue,
+        total_amount: summary.total,
+        total_cents: summary.total,
+      },
+    ]);
+
     const insertResult = await dbQuery(
       "insert into payments (booking_id, provider, deposit_amount_cents, currency, status, provider_ref, metadata_json) values ($1, 'WIPAY', $2, 'JMD', 'INITIATED', $3, $4) returning id",
       [

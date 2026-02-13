@@ -658,6 +658,65 @@ export async function sendBookingCancelledByBlockoutEmail(input: {
   });
 }
 
+export async function sendBookingOverriddenByPaidBookingEmail(input: {
+  recipientType: "customer" | "internal";
+  recipientEmail: string;
+  bookingId: string;
+  customerName: string;
+  customerEmail: string;
+  vehicleLabel: string;
+  startDate: string;
+  endDate: string;
+  pickupLocation: string;
+  overriddenByBookingId: string;
+}) {
+  const isInternal = input.recipientType === "internal";
+  const bookingLink = isInternal
+    ? `${baseUrl()}/admin/bookings/${input.bookingId}`
+    : `${baseUrl()}/bookings/${input.bookingId}`;
+  const overridingBookingLink = isInternal
+    ? `${baseUrl()}/admin/bookings/${input.overriddenByBookingId}`
+    : `${baseUrl()}/bookings/${input.overriddenByBookingId}`;
+
+  const greeting = isInternal ? "Operations update" : `Hi ${input.customerName},`;
+  const intro = isInternal
+    ? "A non-blocking booking was automatically cancelled because another booking for the same vehicle and dates became paid."
+    : "Your unpaid booking was cancelled because another customer completed payment for the same vehicle and dates.";
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; color: #0f172a;">
+      <h2>${isInternal ? "[Internal] Booking overridden by paid booking" : "Booking cancellation notice"}</h2>
+      <p>${greeting}</p>
+      <p>${intro}</p>
+      <p><strong>Booking reference:</strong> ${input.bookingId.slice(0, 8)}</p>
+      <p><strong>Customer:</strong> ${input.customerName} (${input.customerEmail})</p>
+      <p><strong>Vehicle:</strong> ${input.vehicleLabel}</p>
+      <p><strong>Dates:</strong> ${formatDateOnly(input.startDate)} → ${formatDateOnly(input.endDate)}</p>
+      <p><strong>Pickup location:</strong> ${input.pickupLocation}</p>
+      <hr />
+      <p><strong>Overridden by booking:</strong> ${input.overriddenByBookingId.slice(0, 8)}</p>
+      <p style="margin-top: 16px;">
+        <a href="${bookingLink}" style="background:#1f2d4d; color:#fff; padding:10px 16px; border-radius:8px; text-decoration:none;">${
+          isInternal ? "Open Overridden Booking" : "View Booking"
+        }</a>
+        <a href="${overridingBookingLink}" style="margin-left:12px; color:#1f2d4d; text-decoration:underline;">${
+          isInternal ? "Open Paid Booking" : "View Paid Booking"
+        }</a>
+      </p>
+      ${isInternal ? "" : policyHtml()}
+      <p style="font-size:12px; color:#64748b;">${isInternal ? "This is an internal operations alert." : "Need help? Reply to this email."}</p>
+    </div>
+  `;
+
+  return sendResendEmail({
+    to: input.recipientEmail,
+    subject: isInternal
+      ? `[Internal] Booking overridden — ${input.bookingId.slice(0, 8)}`
+      : "Booking cancelled — vehicle reserved by another paid booking",
+    html,
+  });
+}
+
 export function getInternalNotesRecipient() {
   return (
     process.env.INTERNAL_NOTES_EMAIL?.trim() ||

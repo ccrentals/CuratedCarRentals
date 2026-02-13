@@ -6,6 +6,11 @@ import { writeAuditLog } from "@/lib/audit";
 import { logError } from "@/lib/log";
 import { requireCsrf } from "@/lib/security/csrf";
 import { recalculateBookingPayments } from "@/lib/payments/recalculateBooking";
+import { overrideOverlappingNonBlockingBookings } from "@/lib/bookings/holds";
+import {
+  getInternalNotesRecipient,
+  sendBookingOverriddenByPaidBookingEmail,
+} from "@/lib/notifications/email";
 
 function isAdminRole(role: string | undefined) {
   return String(role ?? "")
@@ -124,6 +129,49 @@ export async function PATCH(
     }
 
     const summary = await recalculateBookingPayments(payment.booking_id, { client });
+    let overriddenBookings: Array<{
+      id: string;
+      customerName: string;
+      customerEmail: string;
+      vehicleLabel: string;
+      startDate: string;
+      endDate: string;
+      pickupLocation: string;
+    }> = [];
+
+    if (action === "restore" && summary.netPaidToDate > 0) {
+      const bookingResult = await client.query(
+        "select b.id, b.vehicle_id, b.start_date, b.end_date from bookings b where b.id = $1 for update",
+        [payment.booking_id],
+      );
+
+      if (bookingResult.rowCount > 0) {
+        const booking = bookingResult.rows[0] as {
+          id: string;
+          vehicle_id: string;
+          start_date: string;
+          end_date: string;
+        };
+
+        const overrideOutcome = await overrideOverlappingNonBlockingBookings(client, {
+          paidBookingId: booking.id,
+          vehicleId: booking.vehicle_id,
+          startDate: booking.start_date,
+          endDate: booking.end_date,
+          overrideReason: "Overridden by paid booking",
+        });
+
+        if (overrideOutcome.blockingConflictIds.length > 0) {
+          await client.query("rollback");
+          return NextResponse.json(
+            { error: "Vehicle is no longer available for these dates" },
+            { status: 409 },
+          );
+        }
+
+        overriddenBookings = overrideOutcome.overridden;
+      }
+    }
 
     await client.query("commit");
 
@@ -138,8 +186,48 @@ export async function PATCH(
         status: payment.status,
         reason: action === "delete" ? reason : undefined,
         note: action === "restore" ? note || undefined : undefined,
+        overriddenBookings: overriddenBookings.map((item) => item.id),
       },
     });
+
+    for (const overriddenBooking of overriddenBookings) {
+      await writeAuditLog({
+        userId: session.userId,
+        action: "BOOKING_OVERRIDDEN_BY_PAID_BOOKING",
+        entityType: "booking",
+        entityId: overriddenBooking.id,
+        details: {
+          overriddenByBookingId: payment.booking_id,
+          overrideReason: "Overridden by paid booking",
+        },
+      });
+
+      await sendBookingOverriddenByPaidBookingEmail({
+        recipientType: "customer",
+        recipientEmail: overriddenBooking.customerEmail,
+        bookingId: overriddenBooking.id,
+        customerName: overriddenBooking.customerName,
+        customerEmail: overriddenBooking.customerEmail,
+        vehicleLabel: overriddenBooking.vehicleLabel,
+        startDate: overriddenBooking.startDate,
+        endDate: overriddenBooking.endDate,
+        pickupLocation: overriddenBooking.pickupLocation,
+        overriddenByBookingId: payment.booking_id,
+      });
+
+      await sendBookingOverriddenByPaidBookingEmail({
+        recipientType: "internal",
+        recipientEmail: getInternalNotesRecipient(),
+        bookingId: overriddenBooking.id,
+        customerName: overriddenBooking.customerName,
+        customerEmail: overriddenBooking.customerEmail,
+        vehicleLabel: overriddenBooking.vehicleLabel,
+        startDate: overriddenBooking.startDate,
+        endDate: overriddenBooking.endDate,
+        pickupLocation: overriddenBooking.pickupLocation,
+        overriddenByBookingId: payment.booking_id,
+      });
+    }
 
     return NextResponse.json({ ok: true, summary });
   } catch (error) {

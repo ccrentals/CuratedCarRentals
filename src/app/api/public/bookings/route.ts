@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { sendBookingCreatedEmail } from "@/lib/notifications/email";
 import { getDbPool } from "@/lib/db";
 import { logError } from "@/lib/log";
+import { findOverlappingBlockingBookingIds } from "@/lib/bookings/holds";
 import { isEmail, isISODate, isNonEmptyString } from "@/lib/validators";
 import { calcDaysInclusive, dateOnlyUtc } from "@/lib/payments/dateMath";
 import { upsertCustomerForBooking } from "@/lib/customers";
@@ -77,12 +78,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Vehicle not found" }, { status: 404 });
     }
 
-    const availability = await client.query(
-      "select id from bookings where vehicle_id = $1 and status in ('CONFIRMED','PICKED_UP') and not ($3 < start_date or $2 > end_date) for update",
-      [vehicleId, startDate, endDate],
-    );
+    const blockingOverlaps = await findOverlappingBlockingBookingIds(client, {
+      vehicleId,
+      startDate,
+      endDate,
+      forUpdate: true,
+    });
 
-    if (availability.rowCount > 0) {
+    if (blockingOverlaps.length > 0) {
       await client.query("rollback");
       return NextResponse.json({ error: "Vehicle unavailable for selected dates" }, { status: 409 });
     }

@@ -1,7 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { computeBookingPricing } from "@/lib/payments/pricing";
+import {
+  computeBookingPricing,
+  isBlockingBookingHold,
+  isNonBlockingBookingHold,
+} from "@/lib/payments/pricing";
 
 test("computeBookingPricing: totals align with inclusive days * daily rate", () => {
   const summary = computeBookingPricing({
@@ -84,3 +88,60 @@ test("computeBookingPricing: cancelled + any paid amount triggers refundRequired
   assert.equal(summary.refundRequired, true);
 });
 
+test("computeBookingPricing: pay on pickup keeps booking unpaid with full balance due", () => {
+  const summary = computeBookingPricing({
+    bookingId: "b1",
+    bookingStatus: "PENDING_PAYMENT",
+    startDate: "2026-03-19",
+    endDate: "2026-03-21",
+    dailyRate: 10000,
+    deposit: 4000,
+    paymentOption: "PAY_ON_PICKUP",
+    netPaidToDate: 0,
+  });
+
+  assert.equal(summary.total, 30000);
+  assert.equal(summary.netPaidToDate, 0);
+  assert.equal(summary.balanceDue, 30000);
+  assert.equal(summary.paymentOption, "PAY_ON_PICKUP");
+  assert.equal(summary.paymentStatus, "DUE_ON_PICKUP");
+});
+
+test("hold classification: bookings block only after hold minimum is met", () => {
+  assert.equal(
+    isNonBlockingBookingHold({
+      paymentStatus: "UNPAID",
+      amountPaid: 0,
+      holdMinimumAmount: 3000,
+    }),
+    true,
+  );
+  assert.equal(
+    isNonBlockingBookingHold({
+      paymentStatus: "DUE_ON_PICKUP",
+      amountPaid: 0,
+      holdMinimumAmount: 3000,
+    }),
+    true,
+  );
+  assert.equal(
+    isNonBlockingBookingHold({
+      paymentStatus: "DEPOSIT_PAID",
+      amountPaid: 1500,
+      holdMinimumAmount: 3000,
+    }),
+    true,
+  );
+  assert.equal(
+    isBlockingBookingHold({
+      paymentStatus: "DEPOSIT_PAID",
+      amountPaid: 3000,
+      holdMinimumAmount: 3000,
+    }),
+    true,
+  );
+  assert.equal(
+    isBlockingBookingHold({ paymentStatus: "UNPAID", amountPaid: 2500 }),
+    true,
+  );
+});

@@ -1,5 +1,11 @@
 import { dbQuery } from "@/lib/db";
-import { calcDaysInclusive, fetchNetPaidToDate, type Queryable } from "@/lib/payments/pricing";
+import {
+  computeBookingPricing,
+  fetchNetPaidToDate,
+  readPaymentOption,
+  readPromoPricingFields,
+  type Queryable,
+} from "@/lib/payments/pricing";
 
 export type BookingPaymentSummary = {
   bookingId: string;
@@ -10,9 +16,10 @@ export type BookingPaymentSummary = {
   promoDiscount: number;
   totalAmount: number;
   depositAmount: number;
+  paymentOption: "DEPOSIT" | "FULL" | "PAY_ON_PICKUP";
   netPaidToDate: number;
   balanceDue: number;
-  paymentStatus: "UNPAID" | "DEPOSIT_PAID" | "PAID_IN_FULL";
+  paymentStatus: "UNPAID" | "DUE_ON_PICKUP" | "DEPOSIT_PAID" | "PAID_IN_FULL";
   refundRequired: boolean;
 };
 
@@ -49,47 +56,43 @@ export async function recalculateBookingPayments(
   };
 
   const pricing = booking.pricing_json ?? {};
-  // Always compute days from booking dates so UI + payment charges stay consistent.
-  const days = calcDaysInclusive(booking.start_date, booking.end_date);
   const dailyRate = Number(pricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
   const depositAmount = Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0);
-  const subtotalAmount = dailyRate * days;
-  const promoCode =
-    typeof pricing.promo_code === "string" && pricing.promo_code.trim().length > 0
-      ? String(pricing.promo_code).trim().toUpperCase()
-      : null;
-  const promoDiscountRaw = Number(pricing.promo_discount_cents ?? 0);
-  const promoDiscount = Math.max(0, Math.min(subtotalAmount, promoDiscountRaw));
-  const totalAmount = Math.max(0, subtotalAmount - promoDiscount);
+  const paymentOption = readPaymentOption(pricing);
+  const { promoCode, promoDiscount } = readPromoPricingFields(pricing);
 
   const netPaidToDate = await fetchNetPaidToDate(bookingId, options);
 
-  const balanceDue = Math.max(0, totalAmount - netPaidToDate);
-  const paymentStatus: BookingPaymentSummary["paymentStatus"] =
-    balanceDue === 0 && totalAmount > 0
-      ? "PAID_IN_FULL"
-      : netPaidToDate > 0
-        ? "DEPOSIT_PAID"
-        : "UNPAID";
-
-  const refundRequired =
-    netPaidToDate > totalAmount || (String(booking.status).toUpperCase() === "CANCELLED" && netPaidToDate > 0);
+  const summary = computeBookingPricing({
+    bookingId: booking.id,
+    bookingStatus: booking.status,
+    startDate: booking.start_date,
+    endDate: booking.end_date,
+    dailyRate,
+    deposit: depositAmount,
+    paymentOption,
+    netPaidToDate,
+    promoCode,
+    promoDiscount,
+  });
 
   const updatedPricing = {
     ...pricing,
-    days,
-    daily_rate_cents: dailyRate,
-    deposit_cents: depositAmount,
-    subtotal_cents: subtotalAmount,
-    promo_code: promoCode,
-    promo_discount_cents: promoDiscount,
-    paid_to_date: netPaidToDate,
-    balance_due: balanceDue,
-    total_amount: totalAmount,
-    total_cents: totalAmount,
-    paid_in_full: paymentStatus === "PAID_IN_FULL",
-    payment_status: paymentStatus,
-    refund_required: refundRequired,
+    days: summary.days,
+    daily_rate_cents: summary.dailyRate,
+    deposit_cents: summary.deposit,
+    subtotal_cents: summary.subtotal,
+    promo_code: summary.promoCode,
+    promo_discount_cents: summary.promoDiscount,
+    paid_to_date: summary.netPaidToDate,
+    amount_paid: summary.netPaidToDate,
+    balance_due: summary.balanceDue,
+    total_amount: summary.total,
+    total_cents: summary.total,
+    paid_in_full: summary.paymentStatus === "PAID_IN_FULL",
+    payment_status: summary.paymentStatus,
+    payment_option_selected: summary.paymentOption,
+    refund_required: summary.refundRequired,
   };
 
   await db.query("update bookings set pricing_json = $1, updated_at = now() where id = $2", [
@@ -99,16 +102,17 @@ export async function recalculateBookingPayments(
 
   return {
     bookingId,
-    days,
-    dailyRate,
-    subtotalAmount,
-    promoCode,
-    promoDiscount,
-    totalAmount,
-    depositAmount,
-    netPaidToDate,
-    balanceDue,
-    paymentStatus,
-    refundRequired,
+    days: summary.days,
+    dailyRate: summary.dailyRate,
+    subtotalAmount: summary.subtotal,
+    promoCode: summary.promoCode,
+    promoDiscount: summary.promoDiscount,
+    totalAmount: summary.total,
+    depositAmount: summary.deposit,
+    paymentOption: summary.paymentOption,
+    netPaidToDate: summary.netPaidToDate,
+    balanceDue: summary.balanceDue,
+    paymentStatus: summary.paymentStatus,
+    refundRequired: summary.refundRequired,
   };
 }

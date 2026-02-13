@@ -5,11 +5,14 @@ import { getDbPool } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
 import { requireCsrf } from "@/lib/security/csrf";
 import {
+  getInternalNotesRecipient,
+  sendBookingOverriddenByPaidBookingEmail,
   sendPaymentCompleteEmail,
   sendPaymentUpdateEmail,
 } from "@/lib/notifications/email";
 import { recalculateBookingPayments } from "@/lib/payments/recalculateBooking";
 import { logError } from "@/lib/log";
+import { overrideOverlappingNonBlockingBookings } from "@/lib/bookings/holds";
 
 const METHOD_ALLOWLIST = new Set(["CASH", "BANK_TRANSFER", "POS_CARD", "CHEQUE", "OTHER"]);
 const METHOD_LABELS: Record<string, string> = {
@@ -108,18 +111,26 @@ export async function POST(
     const shouldConfirm =
       String(booking.status).toUpperCase() === "PENDING_PAYMENT" &&
       summary.netPaidToDate >= summary.depositAmount;
+    const overrideOutcome = await overrideOverlappingNonBlockingBookings(client, {
+      paidBookingId: booking.id,
+      vehicleId: booking.vehicle_id,
+      startDate: booking.start_date,
+      endDate: booking.end_date,
+      overrideReason: "Overridden by paid booking",
+    });
+
+    if (overrideOutcome.blockingConflictIds.length > 0) {
+      await client.query("rollback");
+      return NextResponse.json(
+        { error: "Vehicle is no longer available for these dates" },
+        { status: 409 },
+      );
+    }
 
     if (shouldConfirm) {
-      const overlapResult = await client.query(
-        "select id from bookings where vehicle_id = $1 and status in ('CONFIRMED','PICKED_UP') and id <> $2 and not ($4 < start_date or $3 > end_date)",
-        [booking.vehicle_id, booking.id, booking.start_date, booking.end_date],
-      );
-
-      if (overlapResult.rowCount === 0) {
-        await client.query("update bookings set status = 'CONFIRMED', updated_at = now() where id = $1", [
-          booking.id,
-        ]);
-      }
+      await client.query("update bookings set status = 'CONFIRMED', updated_at = now() where id = $1", [
+        booking.id,
+      ]);
     }
 
     await client.query("commit");
@@ -129,8 +140,53 @@ export async function POST(
       action: "BOOKING_MANUAL_PAYMENT_ADDED",
       entityType: "booking",
       entityId: booking.id,
-      details: { amount, method, reference: reference || undefined, confirmed: shouldConfirm },
+      details: {
+        amount,
+        method,
+        reference: reference || undefined,
+        confirmed: shouldConfirm,
+        overriddenBookings: overrideOutcome.overridden.map((item) => item.id),
+      },
     });
+
+    for (const overriddenBooking of overrideOutcome.overridden) {
+      await writeAuditLog({
+        userId: session.userId,
+        action: "BOOKING_OVERRIDDEN_BY_PAID_BOOKING",
+        entityType: "booking",
+        entityId: overriddenBooking.id,
+        details: {
+          overriddenByBookingId: booking.id,
+          overrideReason: "Overridden by paid booking",
+        },
+      });
+
+      await sendBookingOverriddenByPaidBookingEmail({
+        recipientType: "customer",
+        recipientEmail: overriddenBooking.customerEmail,
+        bookingId: overriddenBooking.id,
+        customerName: overriddenBooking.customerName,
+        customerEmail: overriddenBooking.customerEmail,
+        vehicleLabel: overriddenBooking.vehicleLabel,
+        startDate: overriddenBooking.startDate,
+        endDate: overriddenBooking.endDate,
+        pickupLocation: overriddenBooking.pickupLocation,
+        overriddenByBookingId: booking.id,
+      });
+
+      await sendBookingOverriddenByPaidBookingEmail({
+        recipientType: "internal",
+        recipientEmail: getInternalNotesRecipient(),
+        bookingId: overriddenBooking.id,
+        customerName: overriddenBooking.customerName,
+        customerEmail: overriddenBooking.customerEmail,
+        vehicleLabel: overriddenBooking.vehicleLabel,
+        startDate: overriddenBooking.startDate,
+        endDate: overriddenBooking.endDate,
+        pickupLocation: overriddenBooking.pickupLocation,
+        overriddenByBookingId: booking.id,
+      });
+    }
 
     const vehicleLabel = `${booking.vehicle_year} ${booking.vehicle_make} ${booking.vehicle_model}`.trim();
     const methodLabel = METHOD_LABELS[method] ?? method;

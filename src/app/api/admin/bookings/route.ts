@@ -4,6 +4,12 @@ import { getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery, getDbPool } from "@/lib/db";
 import { sendBookingCreatedEmail } from "@/lib/notifications/email";
 import { calcDaysInclusive, dateOnlyUtc } from "@/lib/payments/dateMath";
+import {
+  findOverlappingBlockingBookingIds,
+  readBookingOverrideInfo,
+  isNonBlockingPricing,
+} from "@/lib/bookings/holds";
+import { normalizePaymentStatus, readAmountPaid, readPaymentOption } from "@/lib/payments/pricing";
 import { requireCsrf } from "@/lib/security/csrf";
 import { isEmail, isISODate, isNonEmptyString } from "@/lib/validators";
 import { logError } from "@/lib/log";
@@ -32,17 +38,36 @@ export async function GET(request: Request) {
   const query = status
     ? {
         text:
-          "select b.id, b.start_date, b.end_date, b.status, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.status = $1 order by b.created_at desc",
+          "select b.id, b.start_date, b.end_date, b.status, b.pricing_json, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.status = $1 order by b.created_at desc",
         values: [status],
       }
     : {
         text:
-          "select b.id, b.start_date, b.end_date, b.status, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id order by b.created_at desc",
+          "select b.id, b.start_date, b.end_date, b.status, b.pricing_json, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id order by b.created_at desc",
         values: [],
       };
 
   const result = await dbQuery(query.text, query.values);
-  return NextResponse.json({ bookings: result.rows });
+  const bookings = result.rows.map((row: unknown) => {
+    const bookingRow = row as Record<string, unknown>;
+    const pricing =
+      bookingRow.pricing_json && typeof bookingRow.pricing_json === "object" && !Array.isArray(bookingRow.pricing_json)
+        ? (bookingRow.pricing_json as Record<string, unknown>)
+        : {};
+    const overrideInfo = readBookingOverrideInfo(pricing);
+    return {
+      ...bookingRow,
+      payment_option: readPaymentOption(pricing),
+      payment_status: normalizePaymentStatus(pricing.payment_status),
+      amount_paid: readAmountPaid(pricing),
+      non_blocking: isNonBlockingPricing(pricing),
+      overridden_by_booking_id: overrideInfo.overriddenByBookingId,
+      overridden_at: overrideInfo.overriddenAt,
+      override_reason: overrideInfo.overrideReason,
+    };
+  });
+
+  return NextResponse.json({ bookings });
 }
 
 export async function POST(request: Request) {
@@ -127,12 +152,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Vehicle not found" }, { status: 404 });
     }
 
-    const availability = await client.query(
-      "select id from bookings where vehicle_id = $1 and status in ('CONFIRMED','PICKED_UP') and not ($3 < start_date or $2 > end_date) for update",
-      [vehicleId, startDate, endDate],
-    );
+    const blockingOverlaps = await findOverlappingBlockingBookingIds(client, {
+      vehicleId,
+      startDate,
+      endDate,
+      forUpdate: true,
+    });
 
-    if (availability.rowCount > 0) {
+    if (blockingOverlaps.length > 0) {
       await client.query("rollback");
       return NextResponse.json({ error: "Vehicle unavailable for selected dates" }, { status: 409 });
     }

@@ -6,6 +6,11 @@ import { writeAuditLog } from "@/lib/audit";
 import { logError } from "@/lib/log";
 import { requireCsrf } from "@/lib/security/csrf";
 import { recalculateBookingPayments } from "@/lib/payments/recalculateBooking";
+import {
+  getInternalNotesRecipient,
+  sendBookingOverriddenByPaidBookingEmail,
+} from "@/lib/notifications/email";
+import { overrideOverlappingNonBlockingBookings } from "@/lib/bookings/holds";
 
 export async function POST(
   request: Request,
@@ -62,19 +67,6 @@ export async function POST(
       );
     }
 
-    const overlapResult = await client.query(
-      "select id from bookings where vehicle_id = $1 and status in ('CONFIRMED','PICKED_UP') and id <> $2 and not ($4 < start_date or $3 > end_date)",
-      [booking.vehicle_id, booking.id, booking.start_date, booking.end_date],
-    );
-
-    if (overlapResult.rowCount > 0) {
-      await client.query("rollback");
-      return NextResponse.json(
-        { error: "Vehicle is no longer available for these dates" },
-        { status: 409 },
-      );
-    }
-
     const depositCents = Number(booking.pricing_json?.deposit_cents ?? booking.deposit_cents ?? 0);
     if (!Number.isFinite(depositCents) || depositCents <= 0) {
       await client.query("rollback");
@@ -107,6 +99,22 @@ export async function POST(
       ],
     );
 
+    const overrideOutcome = await overrideOverlappingNonBlockingBookings(client, {
+      paidBookingId: booking.id,
+      vehicleId: booking.vehicle_id,
+      startDate: booking.start_date,
+      endDate: booking.end_date,
+      overrideReason: "Overridden by paid booking",
+    });
+
+    if (overrideOutcome.blockingConflictIds.length > 0) {
+      await client.query("rollback");
+      return NextResponse.json(
+        { error: "Vehicle is no longer available for these dates" },
+        { status: 409 },
+      );
+    }
+
     await client.query("update bookings set status = 'CONFIRMED', updated_at = now() where id = $1", [
       booking.id,
     ]);
@@ -125,8 +133,48 @@ export async function POST(
         amount_cents: depositCents,
         netPaidToDate: recalculated.netPaidToDate,
         balanceDue: recalculated.balanceDue,
+        overriddenBookings: overrideOutcome.overridden.map((item) => item.id),
       },
     });
+
+    for (const overriddenBooking of overrideOutcome.overridden) {
+      await writeAuditLog({
+        userId: session.userId,
+        action: "BOOKING_OVERRIDDEN_BY_PAID_BOOKING",
+        entityType: "booking",
+        entityId: overriddenBooking.id,
+        details: {
+          overriddenByBookingId: booking.id,
+          overrideReason: "Overridden by paid booking",
+        },
+      });
+
+      await sendBookingOverriddenByPaidBookingEmail({
+        recipientType: "customer",
+        recipientEmail: overriddenBooking.customerEmail,
+        bookingId: overriddenBooking.id,
+        customerName: overriddenBooking.customerName,
+        customerEmail: overriddenBooking.customerEmail,
+        vehicleLabel: overriddenBooking.vehicleLabel,
+        startDate: overriddenBooking.startDate,
+        endDate: overriddenBooking.endDate,
+        pickupLocation: overriddenBooking.pickupLocation,
+        overriddenByBookingId: booking.id,
+      });
+
+      await sendBookingOverriddenByPaidBookingEmail({
+        recipientType: "internal",
+        recipientEmail: getInternalNotesRecipient(),
+        bookingId: overriddenBooking.id,
+        customerName: overriddenBooking.customerName,
+        customerEmail: overriddenBooking.customerEmail,
+        vehicleLabel: overriddenBooking.vehicleLabel,
+        startDate: overriddenBooking.startDate,
+        endDate: overriddenBooking.endDate,
+        pickupLocation: overriddenBooking.pickupLocation,
+        overriddenByBookingId: booking.id,
+      });
+    }
 
     return NextResponse.json({ ok: true });
   } catch (error) {

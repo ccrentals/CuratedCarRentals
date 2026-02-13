@@ -4,7 +4,10 @@ import { dbQuery } from "@/lib/db";
 import { fmtDate } from "@/lib/dateFormat";
 import BookingFilters from "@/components/admin/BookingFilters";
 import { AdminCreateBookingModal } from "@/components/admin/AdminCreateBookingModal";
+import { InfoTooltipIcon } from "@/components/admin/InfoTooltipIcon";
 import { getSessionFromRequest } from "@/lib/auth/session";
+import { readBookingOverrideInfo } from "@/lib/bookings/holds";
+import { isNonBlockingBookingHold, readAmountPaid, readHoldMinimumAmount } from "@/lib/payments/pricing";
 
 type BookingRow = {
   id: string;
@@ -12,6 +15,8 @@ type BookingRow = {
   end_date: string;
   created_at: string;
   status: string;
+  pricing_json: Record<string, unknown> | null;
+  vehicle_deposit_cents: number;
   customer_name: string;
   customer_email: string;
   vehicle_make: string;
@@ -45,6 +50,11 @@ function isUndefinedColumn(error: unknown, column: string) {
   const haystack = message.toLowerCase();
   const needle = column.toLowerCase();
   return haystack.includes("does not exist") && (haystack.includes(`"${needle}"`) || haystack.includes(`.${needle}`) || haystack.includes(needle));
+}
+
+function asMoneyLike(value: unknown) {
+  const amount = Number(value);
+  return Number.isFinite(amount) ? amount : 0;
 }
 
 export default async function AdminBookingsPage({
@@ -125,12 +135,12 @@ export default async function AdminBookingsPage({
 
   const whereSql = whereClauses.length ? `where ${whereClauses.join(" and ")}` : "";
   const queryText =
-    "select b.id, b.start_date, b.end_date, b.created_at, b.status, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id " +
+    "select b.id, b.start_date, b.end_date, b.created_at, b.status, b.pricing_json, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model, v.deposit_cents as vehicle_deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id " +
     whereSql +
     " order by b.created_at desc";
 
   const queryTextWithoutArchive =
-    "select b.id, b.start_date, b.end_date, b.created_at, b.status, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id " +
+    "select b.id, b.start_date, b.end_date, b.created_at, b.status, b.pricing_json, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model, v.deposit_cents as vehicle_deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id " +
     (whereClauses.filter((clause) => clause !== "b.archived_at is null").length
       ? `where ${whereClauses.filter((clause) => clause !== "b.archived_at is null").join(" and ")}`
       : "") +
@@ -157,6 +167,18 @@ export default async function AdminBookingsPage({
   })();
   const bookings = bookingQuery.result;
   const archiveNotConfigured = bookingQuery.archiveNotConfigured;
+  const bookingIds = bookings.rows.map((row: BookingRow) => row.id);
+  const paidToDateByBookingId = new Map<string, number>();
+
+  if (bookingIds.length > 0) {
+    const paymentTotals = await dbQuery<{ booking_id: string; paid_to_date: unknown }>(
+      "select booking_id, coalesce(sum(deposit_amount_cents), 0) as paid_to_date from payments where booking_id = any($1::uuid[]) and status in ('DEPOSIT_PAID', 'REFUNDED') group by booking_id",
+      [bookingIds],
+    );
+    for (const row of paymentTotals.rows) {
+      paidToDateByBookingId.set(row.booking_id, asMoneyLike(row.paid_to_date));
+    }
+  }
 
   const vehicles = await dbQuery<VehicleOption>(
     "select id, year, make, model from vehicles where status <> 'INACTIVE' order by year desc, make asc, model asc",
@@ -251,39 +273,78 @@ export default async function AdminBookingsPage({
               </tr>
             </thead>
             <tbody>
-              {bookings.rows.map((booking: BookingRow) => (
-                <tr key={booking.id} className="border-b border-[var(--ccr-border)] last:border-b-0">
-                  <td className="px-4 py-3 font-mono text-xs text-[var(--ccr-text)]">
-                    <Link
-                      href={`/admin/bookings/${booking.id}`}
-                      className="inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-[11px] font-bold text-[var(--ccr-accent)] transition hover:bg-[var(--ccr-accent)] hover:text-[var(--ccr-primary)]"
-                      title="Open booking"
-                    >
-                      {booking.id.slice(0, 8)}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-3">
-                    <p className="font-semibold text-[var(--ccr-text)]">{booking.customer_name}</p>
-                    <p className="text-xs text-[var(--ccr-muted)]">{booking.customer_email}</p>
-                  </td>
-                  <td className="px-4 py-3 text-[var(--ccr-text)]">
-                    {booking.vehicle_make} {booking.vehicle_model}
-                  </td>
-                  <td className="px-4 py-3 text-[var(--ccr-muted)]">
-                    {fmtDate(booking.start_date)} → {fmtDate(booking.end_date)}
-                  </td>
-                  <td className="px-4 py-3 text-[var(--ccr-text)]">{booking.status}</td>
-                  <td className="px-4 py-3 text-[var(--ccr-muted)]">{fmtDate(booking.created_at)}</td>
-                  <td className="px-4 py-3">
-                    <Link
-                      href={`/admin/bookings/${booking.id}`}
-                      className="text-sm font-semibold text-[var(--ccr-text)]"
-                    >
-                      View
-                    </Link>
-                  </td>
-                </tr>
-              ))}
+              {bookings.rows.map((booking: BookingRow) => {
+                const pricing = booking.pricing_json ?? {};
+                const livePaidToDate = paidToDateByBookingId.has(booking.id)
+                  ? paidToDateByBookingId.get(booking.id) ?? 0
+                  : readAmountPaid(pricing);
+                const holdMinimum = readHoldMinimumAmount({
+                  ...pricing,
+                  deposit_cents: pricing.deposit_cents ?? booking.vehicle_deposit_cents,
+                });
+                const nonBlocking =
+                  isNonBlockingBookingHold({
+                    paymentStatus: pricing.payment_status,
+                    amountPaid: livePaidToDate,
+                    holdMinimumAmount: holdMinimum,
+                  }) && !["CANCELLED", "RETURNED"].includes(booking.status.toUpperCase());
+
+                return (
+                  <tr key={booking.id} className="border-b border-[var(--ccr-border)] last:border-b-0">
+                    <td className="px-4 py-3 font-mono text-xs text-[var(--ccr-text)]">
+                      <Link
+                        href={`/admin/bookings/${booking.id}`}
+                        className="inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-[11px] font-bold text-[var(--ccr-accent)] transition hover:bg-[var(--ccr-accent)] hover:text-[var(--ccr-primary)]"
+                        title="Open booking"
+                      >
+                        {booking.id.slice(0, 8)}
+                      </Link>
+                    </td>
+                    <td className="px-4 py-3">
+                      <p className="font-semibold text-[var(--ccr-text)]">{booking.customer_name}</p>
+                      <p className="text-xs text-[var(--ccr-muted)]">{booking.customer_email}</p>
+                    </td>
+                    <td className="px-4 py-3 text-[var(--ccr-text)]">
+                      {booking.vehicle_make} {booking.vehicle_model}
+                    </td>
+                    <td className="px-4 py-3 text-[var(--ccr-muted)]">
+                      {fmtDate(booking.start_date)} → {fmtDate(booking.end_date)}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <p className="text-[var(--ccr-text)]">{booking.status}</p>
+                        {nonBlocking ? (
+                          <InfoTooltipIcon message="UNPAID - Not holding vehicle" />
+                        ) : null}
+                      </div>
+                      {(() => {
+                        const overrideInfo = readBookingOverrideInfo(booking.pricing_json);
+                        if (!overrideInfo.isOverridden || !overrideInfo.overriddenByBookingId) return null;
+                        return (
+                          <span className="mt-1 inline-flex flex-wrap items-center gap-1 rounded-full border border-red-300/40 bg-red-500/15 px-2 py-0.5 text-[11px] font-semibold text-red-100">
+                            OVERRIDDEN
+                            <Link
+                              href={`/admin/bookings/${overrideInfo.overriddenByBookingId}`}
+                              className="underline underline-offset-2"
+                            >
+                              by {overrideInfo.overriddenByBookingId.slice(0, 8)}
+                            </Link>
+                          </span>
+                        );
+                      })()}
+                    </td>
+                    <td className="px-4 py-3 text-[var(--ccr-muted)]">{fmtDate(booking.created_at)}</td>
+                    <td className="px-4 py-3">
+                      <Link
+                        href={`/admin/bookings/${booking.id}`}
+                        className="text-sm font-semibold text-[var(--ccr-text)]"
+                      >
+                        View
+                      </Link>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}

@@ -3,7 +3,12 @@ import { NextResponse } from "next/server";
 import { getDbPool } from "@/lib/db";
 import { logError } from "@/lib/log";
 import { clearPromoRedemptionForBooking, normalizePromoInputCode, upsertPromoRedemption, validatePromoForBooking } from "@/lib/promos";
-import { computeBookingPricing, fetchNetPaidToDate, readPromoPricingFields } from "@/lib/payments/pricing";
+import {
+  computeBookingPricing,
+  fetchNetPaidToDate,
+  readPaymentOption,
+  readPromoPricingFields,
+} from "@/lib/payments/pricing";
 import { requireCsrf } from "@/lib/security/csrf";
 
 type BookingRow = {
@@ -34,6 +39,7 @@ function mapSummaryForResponse(summary: ReturnType<typeof computeBookingPricing>
     promoCode: summary.promoCode,
     promoDiscount: summary.promoDiscount,
     paymentStatus: summary.paymentStatus,
+    paymentOption: summary.paymentOption,
   };
 }
 
@@ -56,7 +62,7 @@ function buildPricingSnapshot(
     amount_paid: summary.netPaidToDate,
     balance_due: summary.balanceDue,
     payment_status: summary.paymentStatus,
-    payment_option_selected: summary.paymentStatus === "UNPAID" ? "DEPOSIT" : summary.paymentStatus === "PAID_IN_FULL" ? "FULL" : "DEPOSIT",
+    payment_option_selected: summary.paymentOption,
     currency: "JMD",
   };
 }
@@ -74,6 +80,7 @@ async function computeCurrentSummary(db: Queryable, booking: BookingRow) {
   const pricing = booking.pricing_json ?? {};
   const dailyRate = Number(pricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
   const deposit = Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0);
+  const paymentOption = readPaymentOption(pricing);
   const { promoCode, promoDiscount } = readPromoPricingFields(pricing);
   const netPaidToDate = await fetchNetPaidToDate(booking.id, { client: db });
   return computeBookingPricing({
@@ -83,6 +90,7 @@ async function computeCurrentSummary(db: Queryable, booking: BookingRow) {
     endDate: booking.end_date,
     dailyRate,
     deposit,
+    paymentOption,
     netPaidToDate,
     promoCode,
     promoDiscount,
@@ -144,6 +152,7 @@ export async function POST(
       endDate: booking.end_date,
       dailyRate: currentSummary.dailyRate,
       deposit: currentSummary.deposit,
+      paymentOption: currentSummary.paymentOption,
       netPaidToDate: currentSummary.netPaidToDate,
       promoCode: validation.code,
       promoDiscount: validation.discountAmountCents,
@@ -211,6 +220,7 @@ export async function DELETE(
       endDate: booking.end_date,
       dailyRate: currentSummary.dailyRate,
       deposit: currentSummary.deposit,
+      paymentOption: currentSummary.paymentOption,
       netPaidToDate: currentSummary.netPaidToDate,
       promoCode: null,
       promoDiscount: 0,

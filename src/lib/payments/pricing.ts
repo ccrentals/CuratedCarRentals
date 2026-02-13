@@ -5,7 +5,8 @@ export type Queryable = {
   query: (text: string, params?: unknown[]) => Promise<{ rows: unknown[]; rowCount: number }>;
 };
 
-export type PaymentStatus = "UNPAID" | "DEPOSIT_PAID" | "PAID_IN_FULL";
+export type PaymentOption = "DEPOSIT" | "FULL" | "PAY_ON_PICKUP";
+export type PaymentStatus = "UNPAID" | "DUE_ON_PICKUP" | "DEPOSIT_PAID" | "PAID_IN_FULL";
 
 export type BookingPricingSummary = {
   bookingId: string;
@@ -19,12 +20,97 @@ export type BookingPricingSummary = {
   promoDiscount: number;
   total: number;
   deposit: number;
+  paymentOption: PaymentOption;
   netPaidToDate: number;
   balanceDue: number;
   paymentStatus: PaymentStatus;
   refundRequired: boolean;
 };
 export { calcDaysInclusive, dateOnlyUtc };
+
+const NON_BLOCKING_PAYMENT_STATUSES = new Set<PaymentStatus>([
+  "UNPAID",
+  "DUE_ON_PICKUP",
+  "DEPOSIT_PAID",
+]);
+
+function toMoneyLike(value: unknown) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return 0;
+  return amount;
+}
+
+export function normalizePaymentOption(value: unknown): PaymentOption {
+  const normalized = String(value ?? "")
+    .trim()
+    .toUpperCase();
+  if (normalized === "FULL") return "FULL";
+  if (normalized === "PAY_ON_PICKUP") return "PAY_ON_PICKUP";
+  return "DEPOSIT";
+}
+
+export function normalizePaymentStatus(value: unknown): PaymentStatus {
+  const normalized = String(value ?? "")
+    .trim()
+    .toUpperCase();
+  if (normalized === "PAID_IN_FULL") return "PAID_IN_FULL";
+  if (normalized === "DEPOSIT_PAID") return "DEPOSIT_PAID";
+  if (normalized === "DUE_ON_PICKUP") return "DUE_ON_PICKUP";
+  return "UNPAID";
+}
+
+export function readPaymentOption(pricing: Record<string, unknown> | null | undefined): PaymentOption {
+  const source = pricing ?? {};
+  return normalizePaymentOption(source.payment_option_selected);
+}
+
+export function readAmountPaid(
+  pricing: Record<string, unknown> | null | undefined,
+): number {
+  const source = pricing ?? {};
+  return toMoneyLike(source.amount_paid ?? source.paid_to_date ?? 0);
+}
+
+export function readHoldMinimumAmount(
+  pricing: Record<string, unknown> | null | undefined,
+): number {
+  const source = pricing ?? {};
+  const explicitMinimum = toMoneyLike(source.hold_minimum_cents);
+  if (explicitMinimum > 0) return explicitMinimum;
+  const depositAmount = toMoneyLike(source.deposit_cents);
+  if (depositAmount > 0) return depositAmount;
+  return 0;
+}
+
+export function isBlockingBookingHold(input: {
+  paymentStatus: unknown;
+  amountPaid: unknown;
+  holdMinimumAmount?: unknown;
+}) {
+  const amountPaid = toMoneyLike(input.amountPaid);
+  const paymentStatus = normalizePaymentStatus(input.paymentStatus);
+  const holdMinimumAmount = Math.max(0, toMoneyLike(input.holdMinimumAmount));
+
+  if (paymentStatus === "PAID_IN_FULL") return true;
+  if (amountPaid <= 0) return false;
+
+  if (holdMinimumAmount > 0) {
+    return amountPaid >= holdMinimumAmount;
+  }
+
+  // Legacy fallback: if no hold minimum is stored, preserve historical behavior.
+  return paymentStatus === "DEPOSIT_PAID" || amountPaid > 0;
+}
+
+export function isNonBlockingBookingHold(input: {
+  paymentStatus: unknown;
+  amountPaid: unknown;
+  holdMinimumAmount?: unknown;
+}) {
+  const paymentStatus = normalizePaymentStatus(input.paymentStatus);
+  if (isBlockingBookingHold(input)) return false;
+  return NON_BLOCKING_PAYMENT_STATUSES.has(paymentStatus);
+}
 
 export function readPromoPricingFields(pricing: Record<string, unknown> | null | undefined) {
   const source = pricing ?? {};
@@ -43,6 +129,7 @@ export function computeBookingPricing(input: {
   endDate: unknown;
   dailyRate: number;
   deposit: number;
+  paymentOption?: PaymentOption | null | undefined;
   netPaidToDate: number;
   promoCode?: string | null;
   promoDiscount?: number;
@@ -56,13 +143,20 @@ export function computeBookingPricing(input: {
     typeof input.promoCode === "string" && input.promoCode.trim().length > 0
       ? input.promoCode.trim().toUpperCase()
       : null;
+  const paymentOption = normalizePaymentOption(input.paymentOption);
   const promoDiscountRaw = Number.isFinite(input.promoDiscount) ? Number(input.promoDiscount) : 0;
   const promoDiscount = Math.max(0, Math.min(subtotal, promoDiscountRaw));
   const total = Math.max(0, subtotal - promoDiscount);
 
   const balanceDue = Math.max(0, total - netPaidToDate);
   const paymentStatus: PaymentStatus =
-    balanceDue === 0 && total > 0 ? "PAID_IN_FULL" : netPaidToDate > 0 ? "DEPOSIT_PAID" : "UNPAID";
+    balanceDue === 0 && total > 0
+      ? "PAID_IN_FULL"
+      : netPaidToDate > 0
+        ? "DEPOSIT_PAID"
+        : paymentOption === "PAY_ON_PICKUP"
+          ? "DUE_ON_PICKUP"
+          : "UNPAID";
 
   const statusUpper = String(input.bookingStatus || "").toUpperCase();
   const refundRequired = netPaidToDate > total || (statusUpper === "CANCELLED" && netPaidToDate > 0);
@@ -82,6 +176,7 @@ export function computeBookingPricing(input: {
     promoDiscount,
     total,
     deposit,
+    paymentOption,
     netPaidToDate,
     balanceDue,
     paymentStatus,
@@ -152,6 +247,7 @@ export async function getBookingPricingSummary(
   const pricing = booking.pricing_json ?? {};
   const dailyRate = Number(pricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
   const deposit = Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0);
+  const paymentOption = readPaymentOption(pricing);
   const { promoCode, promoDiscount } = readPromoPricingFields(pricing);
   const netPaidToDate = await fetchNetPaidToDate(bookingId, options);
 
@@ -162,6 +258,7 @@ export async function getBookingPricingSummary(
     endDate: booking.end_date,
     dailyRate,
     deposit,
+    paymentOption,
     netPaidToDate,
     promoCode,
     promoDiscount,

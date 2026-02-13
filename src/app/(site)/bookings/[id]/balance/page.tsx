@@ -1,10 +1,16 @@
 import Link from "next/link";
 
 import { PayBalanceButton } from "@/components/payments/PayBalanceButton";
+import { readBookingOverrideInfo } from "@/lib/bookings/holds";
 import { dbQuery } from "@/lib/db";
 import { fmtDateOnly } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
-import { computeBookingPricing, fetchNetPaidToDate, readPromoPricingFields } from "@/lib/payments/pricing";
+import {
+  computeBookingPricing,
+  fetchNetPaidToDate,
+  readPaymentOption,
+  readPromoPricingFields,
+} from "@/lib/payments/pricing";
 
 export default async function BookingBalancePage({
   params,
@@ -39,8 +45,31 @@ export default async function BookingBalancePage({
   }
 
   const pricing = booking.pricing_json ?? {};
+  const overrideInfo = readBookingOverrideInfo(pricing);
+  const isCancelled = String(booking.status).toUpperCase() === "CANCELLED";
+
+  if (isCancelled) {
+    return (
+      <div className="mx-auto w-full max-w-3xl px-6 py-12">
+        <div className="rounded-3xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-8 shadow-sm">
+          <h1 className="text-3xl font-bold text-[var(--ccr-text)]">Balance payment unavailable</h1>
+          <p className="mt-2 text-sm text-[var(--ccr-muted)]">This booking is no longer active.</p>
+          {overrideInfo.isOverridden ? (
+            <div className="mt-4 rounded-xl border border-red-300/40 bg-red-500/15 p-4 text-sm text-red-100">
+              <p className="font-semibold">Overridden</p>
+              <p className="mt-1 text-red-100/90">
+                Another customer completed payment for the same vehicle and dates first.
+              </p>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
   const dailyRate = Number(pricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
   const deposit = Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0);
+  const paymentOption = readPaymentOption(pricing);
   const { promoCode, promoDiscount } = readPromoPricingFields(pricing);
 
   const netPaidToDate = await fetchNetPaidToDate(booking.id);
@@ -51,6 +80,7 @@ export default async function BookingBalancePage({
     endDate: booking.end_date,
     dailyRate,
     deposit,
+    paymentOption,
     netPaidToDate,
     promoCode,
     promoDiscount,

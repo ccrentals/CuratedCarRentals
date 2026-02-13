@@ -1,10 +1,16 @@
 import { computeHash } from "@/lib/wipay";
-import { sendDepositReceiptEmail, sendPaymentCompleteEmail } from "@/lib/notifications/email";
+import {
+  getInternalNotesRecipient,
+  sendBookingOverriddenByPaidBookingEmail,
+  sendDepositReceiptEmail,
+  sendPaymentCompleteEmail,
+} from "@/lib/notifications/email";
 import { dbQuery, getDbPool } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
 import { recalculateBookingPayments } from "@/lib/payments/recalculateBooking";
 import { logError } from "@/lib/log";
 import { readPromoPricingFields } from "@/lib/payments/pricing";
+import { overrideOverlappingNonBlockingBookings } from "@/lib/bookings/holds";
 
 type ReconcileInput = {
   orderId: string;
@@ -174,47 +180,48 @@ export async function reconcileWiPayPayment(input: ReconcileInput): Promise<Reco
 
     const booking = bookingResult.rows[0];
     const shouldConfirmBooking = booking.status === "PENDING_PAYMENT";
+    const overrideOutcome = await overrideOverlappingNonBlockingBookings(client, {
+      paidBookingId: booking.id,
+      vehicleId: booking.vehicle_id,
+      startDate: booking.start_date,
+      endDate: booking.end_date,
+      overrideReason: "Overridden by paid booking",
+    });
 
-    if (shouldConfirmBooking) {
-      await client.query("select pg_advisory_xact_lock(hashtext($1))", [booking.vehicle_id]);
-
-      const overlapResult = await client.query(
-        "select id from bookings where vehicle_id = $1 and status in ('CONFIRMED','PICKED_UP') and id <> $2 and not ($4 < start_date or $3 > end_date)",
-        [booking.vehicle_id, booking.id, booking.start_date, booking.end_date],
+    if (overrideOutcome.blockingConflictIds.length > 0) {
+      await client.query(
+        "update payments set metadata_json = jsonb_set(metadata_json, '{overlap_review}', 'true'::jsonb, true), updated_at = now() where id = $1",
+        [payment.id],
       );
 
-      if (overlapResult.rowCount > 0) {
-        await client.query(
-          "update payments set metadata_json = jsonb_set(metadata_json, '{overlap_review}', 'true'::jsonb, true), updated_at = now() where id = $1",
-          [payment.id],
-        );
+      // Keep payment as DEPOSIT_PAID, but do not confirm booking.
+      const recalculated = await recalculateBookingPayments(booking.id, { client });
 
-        // Keep payment as DEPOSIT_PAID, but do not confirm booking.
-        const recalculated = await recalculateBookingPayments(booking.id, { client });
+      await client.query("commit");
+      await writeAuditLog({
+        userId: "system",
+        action:
+          paymentType === "full"
+            ? "PAYMENT_FULL_OVERLAP_REVIEW"
+            : paymentType === "balance"
+              ? "PAYMENT_BALANCE_OVERLAP_REVIEW"
+              : "PAYMENT_DEPOSIT_OVERLAP_REVIEW",
+        entityType: "booking",
+        entityId: booking.id,
+        details: {
+          paymentId: payment.id,
+          orderId: input.orderId,
+          transactionId: input.transactionId,
+          source: input.source,
+          netPaidToDate: recalculated.netPaidToDate,
+          balanceDue: recalculated.balanceDue,
+          blockingConflictIds: overrideOutcome.blockingConflictIds,
+        },
+      });
+      return { ok: false, reason: "overlap", bookingId: booking.id };
+    }
 
-        await client.query("commit");
-        await writeAuditLog({
-          userId: "system",
-          action:
-            paymentType === "full"
-              ? "PAYMENT_FULL_OVERLAP_REVIEW"
-              : paymentType === "balance"
-                ? "PAYMENT_BALANCE_OVERLAP_REVIEW"
-                : "PAYMENT_DEPOSIT_OVERLAP_REVIEW",
-          entityType: "booking",
-          entityId: booking.id,
-          details: {
-            paymentId: payment.id,
-            orderId: input.orderId,
-            transactionId: input.transactionId,
-            source: input.source,
-            netPaidToDate: recalculated.netPaidToDate,
-            balanceDue: recalculated.balanceDue,
-          },
-        });
-        return { ok: false, reason: "overlap", bookingId: booking.id };
-      }
-
+    if (shouldConfirmBooking) {
       await client.query("update bookings set status = 'CONFIRMED', updated_at = now() where id = $1", [
         booking.id,
       ]);
@@ -241,8 +248,48 @@ export async function reconcileWiPayPayment(input: ReconcileInput): Promise<Reco
         source: input.source,
         netPaidToDate: recalculated.netPaidToDate,
         balanceDue: recalculated.balanceDue,
+        overriddenBookings: overrideOutcome.overridden.map((bookingRow) => bookingRow.id),
       },
     });
+
+    for (const overriddenBooking of overrideOutcome.overridden) {
+      await writeAuditLog({
+        userId: "system",
+        action: "BOOKING_OVERRIDDEN_BY_PAID_BOOKING",
+        entityType: "booking",
+        entityId: overriddenBooking.id,
+        details: {
+          overriddenByBookingId: booking.id,
+          overrideReason: "Overridden by paid booking",
+        },
+      });
+
+      await sendBookingOverriddenByPaidBookingEmail({
+        recipientType: "customer",
+        recipientEmail: overriddenBooking.customerEmail,
+        bookingId: overriddenBooking.id,
+        customerName: overriddenBooking.customerName,
+        customerEmail: overriddenBooking.customerEmail,
+        vehicleLabel: overriddenBooking.vehicleLabel,
+        startDate: overriddenBooking.startDate,
+        endDate: overriddenBooking.endDate,
+        pickupLocation: overriddenBooking.pickupLocation,
+        overriddenByBookingId: booking.id,
+      });
+
+      await sendBookingOverriddenByPaidBookingEmail({
+        recipientType: "internal",
+        recipientEmail: getInternalNotesRecipient(),
+        bookingId: overriddenBooking.id,
+        customerName: overriddenBooking.customerName,
+        customerEmail: overriddenBooking.customerEmail,
+        vehicleLabel: overriddenBooking.vehicleLabel,
+        startDate: overriddenBooking.startDate,
+        endDate: overriddenBooking.endDate,
+        pickupLocation: overriddenBooking.pickupLocation,
+        overriddenByBookingId: booking.id,
+      });
+    }
 
     if (!receiptSent) {
       try {

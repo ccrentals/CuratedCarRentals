@@ -3,7 +3,13 @@ import Link from "next/link";
 import { dbQuery } from "@/lib/db";
 import { fmtDateOnly } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
-import { computeBookingPricing, fetchNetPaidToDate, readPromoPricingFields } from "@/lib/payments/pricing";
+import { readBookingOverrideInfo } from "@/lib/bookings/holds";
+import {
+  computeBookingPricing,
+  fetchNetPaidToDate,
+  readPaymentOption,
+  readPromoPricingFields,
+} from "@/lib/payments/pricing";
 
 export default async function BookingSummaryPage({
   params,
@@ -39,7 +45,9 @@ export default async function BookingSummaryPage({
   const pricing = booking.pricing_json ?? {};
   const dailyRate = Number(pricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
   const deposit = Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0);
+  const paymentOption = readPaymentOption(pricing);
   const { promoCode, promoDiscount } = readPromoPricingFields(pricing);
+  const overrideInfo = readBookingOverrideInfo(pricing);
   const netPaidToDate = await fetchNetPaidToDate(booking.id);
   const summary = computeBookingPricing({
     bookingId: booking.id,
@@ -48,6 +56,7 @@ export default async function BookingSummaryPage({
     endDate: booking.end_date,
     dailyRate,
     deposit,
+    paymentOption,
     netPaidToDate,
     promoCode,
     promoDiscount,
@@ -55,12 +64,33 @@ export default async function BookingSummaryPage({
   const depositDue = Math.max(0, summary.deposit - summary.netPaidToDate);
   const canPayDeposit = depositDue > 0;
   const canPayBalance = depositDue <= 0 && summary.balanceDue > 0;
+  const isNonBlocking = summary.netPaidToDate <= 0;
+  const isOverridden = overrideInfo.isOverridden;
+  const isCancelled = String(booking.status).toUpperCase() === "CANCELLED";
 
   return (
     <div className="mx-auto w-full max-w-3xl px-6 py-12">
       <div className="rounded-3xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-8 shadow-sm">
         <h1 className="text-3xl font-bold text-[var(--ccr-text)]">Booking Summary</h1>
         <p className="mt-2 text-sm text-[var(--ccr-muted)]">Booking ID: {booking.id}</p>
+        {isOverridden ? (
+          <div className="mt-4 rounded-xl border border-red-300/40 bg-red-500/15 p-4 text-sm text-red-100">
+            <p className="font-semibold">Overridden</p>
+            <p className="mt-1 text-red-100/90">
+              This booking was cancelled because another customer completed payment for the same
+              vehicle and dates.
+            </p>
+          </div>
+        ) : null}
+        {!isOverridden && isNonBlocking ? (
+          <div className="mt-4 rounded-xl border border-amber-300/40 bg-amber-400/10 p-4 text-sm text-amber-100">
+            <p className="font-semibold">Unpaid bookings are non-blocking</p>
+            <p className="mt-1 text-amber-100/90">
+              Bookings without payment do not reserve the vehicle. If another customer pays first
+              for the same dates, this booking may be cancelled.
+            </p>
+          </div>
+        ) : null}
 
         <div className="mt-4 space-y-2 text-sm text-[var(--ccr-muted)]">
           <p>
@@ -71,6 +101,9 @@ export default async function BookingSummaryPage({
           </p>
           <p>
             Status: <span className="font-semibold text-[var(--ccr-text)]">{booking.status}</span>
+          </p>
+          <p>
+            Payment option: <span className="font-semibold text-[var(--ccr-text)]">{summary.paymentOption.replace(/_/g, " ")}</span>
           </p>
           <p className="text-xs text-[var(--ccr-muted)]">
             Deposit paid online, balance paid on pickup (or pay online anytime).
@@ -106,7 +139,7 @@ export default async function BookingSummaryPage({
         </div>
 
         <div className="mt-6 flex flex-wrap gap-3">
-          {canPayDeposit ? (
+          {!isCancelled && canPayDeposit ? (
             <Link
               href={`/bookings/${booking.id}/pay`}
               className="rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-sm font-semibold text-white"
@@ -114,7 +147,7 @@ export default async function BookingSummaryPage({
               Make Payment
             </Link>
           ) : null}
-          {canPayBalance ? (
+          {!isCancelled && canPayBalance ? (
             <Link
               href={`/bookings/${booking.id}/balance`}
               className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)]"
@@ -122,9 +155,14 @@ export default async function BookingSummaryPage({
               Pay Balance
             </Link>
           ) : null}
-          {!canPayDeposit && !canPayBalance ? (
+          {!canPayDeposit && !canPayBalance && !isCancelled ? (
             <span className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)]">
               Payment complete
+            </span>
+          ) : null}
+          {isCancelled ? (
+            <span className="rounded-xl border border-red-300/40 bg-red-500/10 px-4 py-2 text-sm font-semibold text-red-100">
+              Booking cancelled
             </span>
           ) : null}
           <Link

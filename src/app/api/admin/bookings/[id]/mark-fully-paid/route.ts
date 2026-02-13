@@ -6,6 +6,11 @@ import { writeAuditLog } from "@/lib/audit";
 import { requireCsrf } from "@/lib/security/csrf";
 import { recalculateBookingPayments } from "@/lib/payments/recalculateBooking";
 import { logError } from "@/lib/log";
+import {
+  getInternalNotesRecipient,
+  sendBookingOverriddenByPaidBookingEmail,
+} from "@/lib/notifications/email";
+import { overrideOverlappingNonBlockingBookings } from "@/lib/bookings/holds";
 
 export async function POST(
   request: Request,
@@ -78,23 +83,32 @@ export async function POST(
     );
 
     const after = await recalculateBookingPayments(booking.id, { client });
+    const overrideOutcome = await overrideOverlappingNonBlockingBookings(client, {
+      paidBookingId: booking.id,
+      vehicleId: booking.vehicle_id,
+      startDate: booking.start_date,
+      endDate: booking.end_date,
+      overrideReason: "Overridden by paid booking",
+    });
+
+    if (overrideOutcome.blockingConflictIds.length > 0) {
+      await client.query("rollback");
+      return NextResponse.json(
+        { error: "Vehicle is no longer available for these dates" },
+        { status: 409 },
+      );
+    }
+
     const shouldConfirm =
       String(booking.status).toUpperCase() === "PENDING_PAYMENT" &&
       after.netPaidToDate >= after.depositAmount;
 
     let confirmed = false;
     if (shouldConfirm) {
-      await client.query("select pg_advisory_xact_lock(hashtext($1))", [booking.vehicle_id]);
-      const overlapResult = await client.query(
-        "select id from bookings where vehicle_id = $1 and status in ('CONFIRMED','PICKED_UP') and id <> $2 and not ($4 < start_date or $3 > end_date)",
-        [booking.vehicle_id, booking.id, booking.start_date, booking.end_date],
-      );
-      if (overlapResult.rowCount === 0) {
-        await client.query("update bookings set status = 'CONFIRMED', updated_at = now() where id = $1", [
-          booking.id,
-        ]);
-        confirmed = true;
-      }
+      await client.query("update bookings set status = 'CONFIRMED', updated_at = now() where id = $1", [
+        booking.id,
+      ]);
+      confirmed = true;
     }
 
     await client.query("commit");
@@ -104,8 +118,51 @@ export async function POST(
       action: "BOOKING_MARK_FULLY_PAID",
       entityType: "booking",
       entityId: booking.id,
-      details: { balance_cents: balanceDue, confirmed },
+      details: {
+        balance_cents: balanceDue,
+        confirmed,
+        overriddenBookings: overrideOutcome.overridden.map((item) => item.id),
+      },
     });
+
+    for (const overriddenBooking of overrideOutcome.overridden) {
+      await writeAuditLog({
+        userId: session.userId,
+        action: "BOOKING_OVERRIDDEN_BY_PAID_BOOKING",
+        entityType: "booking",
+        entityId: overriddenBooking.id,
+        details: {
+          overriddenByBookingId: booking.id,
+          overrideReason: "Overridden by paid booking",
+        },
+      });
+
+      await sendBookingOverriddenByPaidBookingEmail({
+        recipientType: "customer",
+        recipientEmail: overriddenBooking.customerEmail,
+        bookingId: overriddenBooking.id,
+        customerName: overriddenBooking.customerName,
+        customerEmail: overriddenBooking.customerEmail,
+        vehicleLabel: overriddenBooking.vehicleLabel,
+        startDate: overriddenBooking.startDate,
+        endDate: overriddenBooking.endDate,
+        pickupLocation: overriddenBooking.pickupLocation,
+        overriddenByBookingId: booking.id,
+      });
+
+      await sendBookingOverriddenByPaidBookingEmail({
+        recipientType: "internal",
+        recipientEmail: getInternalNotesRecipient(),
+        bookingId: overriddenBooking.id,
+        customerName: overriddenBooking.customerName,
+        customerEmail: overriddenBooking.customerEmail,
+        vehicleLabel: overriddenBooking.vehicleLabel,
+        startDate: overriddenBooking.startDate,
+        endDate: overriddenBooking.endDate,
+        pickupLocation: overriddenBooking.pickupLocation,
+        overriddenByBookingId: booking.id,
+      });
+    }
 
     return NextResponse.json({ ok: true, message: "Balance payment recorded" });
   } catch (error) {

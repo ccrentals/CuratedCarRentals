@@ -3,6 +3,7 @@ import Link from "next/link";
 import { dbQuery } from "@/lib/db";
 import { BookingActions } from "@/components/admin/BookingActions";
 import { BookingNotes } from "@/components/admin/BookingNotes";
+import { InfoTooltipIcon } from "@/components/admin/InfoTooltipIcon";
 import { BookingUpdateForm } from "@/components/admin/BookingUpdateForm";
 import { ManualPaymentForm } from "@/components/admin/ManualPaymentForm";
 import { PaymentRowActions } from "@/components/admin/PaymentRowActions";
@@ -11,7 +12,14 @@ import { getSessionFromRequest } from "@/lib/auth/session";
 import { fmtDate } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
 import { formatPaymentStatus } from "@/lib/payments/formatPaymentStatus";
-import { computeBookingPricing, fetchNetPaidToDate, readPromoPricingFields } from "@/lib/payments/pricing";
+import {
+  computeBookingPricing,
+  fetchNetPaidToDate,
+  isNonBlockingBookingHold,
+  readPaymentOption,
+  readPromoPricingFields,
+} from "@/lib/payments/pricing";
+import { readBookingOverrideInfo } from "@/lib/bookings/holds";
 
 type BookingDetails = {
   id: string;
@@ -50,6 +58,13 @@ type AdminNote = {
 
 type SettingsRow = {
   content: string;
+};
+
+type OverriddenByThisBooking = {
+  id: string;
+  start_date: string;
+  end_date: string;
+  customer_name: string;
 };
 
 function isUndefinedColumn(error: unknown, column: string) {
@@ -133,7 +148,9 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
   const pricing = booking.pricing_json ?? {};
   const dailyRate = Number(pricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
   const deposit = Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0);
+  const paymentOption = readPaymentOption(pricing);
   const { promoCode, promoDiscount } = readPromoPricingFields(pricing);
+  const overrideInfo = readBookingOverrideInfo(pricing);
   const netPaidToDate = await fetchNetPaidToDate(booking.id);
   const summary = computeBookingPricing({
     bookingId: booking.id,
@@ -142,6 +159,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
     endDate: booking.end_date,
     dailyRate,
     deposit,
+    paymentOption,
     netPaidToDate,
     promoCode,
     promoDiscount,
@@ -153,6 +171,13 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
   const isPaidInFull = summary.paymentStatus === "PAID_IN_FULL";
   const refundRequired = summary.refundRequired;
   const isDepositPaid = deposit > 0 ? paidToDate >= deposit : paidToDate > 0;
+  const isNonBlocking =
+    isNonBlockingBookingHold({
+      paymentStatus: summary.paymentStatus,
+      amountPaid: summary.netPaidToDate,
+      holdMinimumAmount: summary.deposit,
+    }) && !["CANCELLED", "RETURNED"].includes(booking.status.toUpperCase());
+  const overriddenByBookingId = overrideInfo.overriddenByBookingId;
 
   const notesRaw = (pricing as { admin_notes?: AdminNote[] }).admin_notes;
   const notes = Array.isArray(notesRaw) ? [...notesRaw] : [];
@@ -170,6 +195,12 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
       refundedOriginalIds.add(originalPaymentId);
     }
   }
+
+  const overriddenByThis = await dbQuery<OverriddenByThisBooking>(
+    "select b.id, b.start_date, b.end_date, c.full_name as customer_name from bookings b join customers c on c.id = b.customer_id where coalesce(b.pricing_json->>'overridden_by_booking_id', '') = $1 order by b.updated_at desc",
+    [booking.id],
+  );
+  const overriddenByThisRows = overriddenByThis.rows as OverriddenByThisBooking[];
 
   const shortBookingId = booking.id.slice(-5);
 
@@ -206,6 +237,12 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
           >
             {booking.status.replace("_", " ")}
           </span>
+          {isNonBlocking ? <InfoTooltipIcon message="UNPAID - Not holding vehicle" /> : null}
+          {overrideInfo.isOverridden ? (
+            <span className="inline-flex items-center rounded-full border border-red-300/40 bg-red-500/15 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-red-100">
+              OVERRIDDEN
+            </span>
+          ) : null}
         </div>
 
         <div className="w-full pt-1">
@@ -241,6 +278,12 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
               <dd className="font-semibold text-[var(--ccr-text)]">{booking.status}</dd>
             </div>
             <div>
+              <dt className="text-xs uppercase tracking-wide">Payment Option</dt>
+              <dd className="font-semibold text-[var(--ccr-text)]">
+                {summary.paymentOption.replace(/_/g, " ")}
+              </dd>
+            </div>
+            <div>
               <dt className="text-xs uppercase tracking-wide">Dates</dt>
               <dd className="font-semibold text-[var(--ccr-text)]">
                 {fmtDate(booking.start_date)} → {fmtDate(booking.end_date)}
@@ -272,6 +315,59 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
           </div>
         </section>
       </div>
+
+      <section className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm">
+        <h2 className="text-lg font-bold text-[var(--ccr-text)]">Override info</h2>
+        <dl className="mt-4 grid gap-3 text-sm text-[var(--ccr-muted)] md:grid-cols-2">
+          <div>
+            <dt className="text-xs uppercase tracking-wide">Current state</dt>
+            <dd className="font-semibold text-[var(--ccr-text)]">
+              {overrideInfo.isOverridden ? "Overridden" : "Active"}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs uppercase tracking-wide">Overridden by</dt>
+            <dd className="font-semibold text-[var(--ccr-text)]">
+              {overriddenByBookingId ? (
+                <Link href={`/admin/bookings/${overriddenByBookingId}`} className="underline underline-offset-2">
+                  {overriddenByBookingId}
+                </Link>
+              ) : (
+                "N/A"
+              )}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs uppercase tracking-wide">Overridden at</dt>
+            <dd className="font-semibold text-[var(--ccr-text)]">
+              {overrideInfo.overriddenAt ? fmtDate(overrideInfo.overriddenAt) : "N/A"}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs uppercase tracking-wide">Reason</dt>
+            <dd className="font-semibold text-[var(--ccr-text)]">{overrideInfo.overrideReason ?? "N/A"}</dd>
+          </div>
+        </dl>
+
+        <div className="mt-5">
+          <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Bookings overridden by this booking</p>
+          {overriddenByThis.rowCount === 0 ? (
+            <p className="mt-2 text-sm text-[var(--ccr-muted)]">None.</p>
+          ) : (
+            <ul className="mt-2 space-y-2 text-sm">
+              {overriddenByThisRows.map((item: OverriddenByThisBooking) => (
+                <li key={item.id} className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-2">
+                  <Link href={`/admin/bookings/${item.id}`} className="font-mono text-xs text-[var(--ccr-text)] underline underline-offset-2">
+                    {item.id}
+                  </Link>
+                  <p className="mt-1 text-[var(--ccr-text)]">{item.customer_name}</p>
+                  <p className="text-[var(--ccr-muted)]">{fmtDate(item.start_date)} → {fmtDate(item.end_date)}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </section>
 
       <section className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -322,6 +418,10 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
             <div className="flex items-center justify-between">
               <span>Balance due</span>
               <span className="font-semibold text-[var(--ccr-text)]">{formatJmd(balanceDue)}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span>Payment status</span>
+              <span className="font-semibold text-[var(--ccr-text)]">{summary.paymentStatus.replace(/_/g, " ")}</span>
             </div>
           </div>
         </div>

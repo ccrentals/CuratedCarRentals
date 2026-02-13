@@ -4,7 +4,17 @@ import { getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery, getDbPool } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
 import { getInternalNotesRecipient, sendBookingNoteEmail } from "@/lib/notifications/email";
-import { computeBookingPricing, fetchNetPaidToDate, readPromoPricingFields } from "@/lib/payments/pricing";
+import {
+  findOverlappingBlockingBookingIds,
+  isNonBlockingPricing,
+  readBookingOverrideInfo,
+} from "@/lib/bookings/holds";
+import {
+  computeBookingPricing,
+  fetchNetPaidToDate,
+  readPaymentOption,
+  readPromoPricingFields,
+} from "@/lib/payments/pricing";
 import { requireCsrf } from "@/lib/security/csrf";
 
 function isAdminRole(role: string | undefined) {
@@ -56,7 +66,7 @@ export async function GET(
   const { id } = await params;
 
   const bookingResult = await dbQuery(
-    "select b.*, c.full_name as customer_name, c.email as customer_email, c.phone as customer_phone, v.make as vehicle_make, v.model as vehicle_model, v.year as vehicle_year from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.id = $1",
+    "select b.*, c.full_name as customer_name, c.email as customer_email, c.phone as customer_phone, v.make as vehicle_make, v.model as vehicle_model, v.year as vehicle_year, v.daily_rate_cents, v.deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.id = $1",
     [id],
   );
 
@@ -70,6 +80,25 @@ export async function GET(
   );
 
   const booking = bookingResult.rows[0];
+  const pricing = (booking.pricing_json ?? {}) as Record<string, unknown>;
+  const paymentOption = readPaymentOption(pricing);
+  const { promoCode, promoDiscount } = readPromoPricingFields(pricing);
+  const dailyRate = Number(pricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
+  const deposit = Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0);
+  const netPaidToDate = await fetchNetPaidToDate(booking.id);
+  const paymentSummary = computeBookingPricing({
+    bookingId: booking.id,
+    bookingStatus: booking.status,
+    startDate: booking.start_date,
+    endDate: booking.end_date,
+    dailyRate,
+    deposit,
+    paymentOption,
+    netPaidToDate,
+    promoCode,
+    promoDiscount,
+  });
+  const overrideInfo = readBookingOverrideInfo(pricing);
 
   return NextResponse.json({
     booking: {
@@ -79,6 +108,14 @@ export async function GET(
       pickup_location: booking.pickup_location,
       status: booking.status,
       pricing_json: booking.pricing_json,
+      payment_option: paymentSummary.paymentOption,
+      payment_status: paymentSummary.paymentStatus,
+      amount_paid: paymentSummary.netPaidToDate,
+      balance_due: paymentSummary.balanceDue,
+      non_blocking: isNonBlockingPricing(pricing),
+      overridden_by_booking_id: overrideInfo.overriddenByBookingId,
+      overridden_at: overrideInfo.overriddenAt,
+      override_reason: overrideInfo.overrideReason,
     },
     customer: {
       full_name: booking.customer_name,
@@ -331,12 +368,15 @@ export async function PATCH(
         );
       }
 
-      const overlapResult = await client.query(
-        "select id from bookings where vehicle_id = $1 and status in ('CONFIRMED','PICKED_UP') and id <> $2 and not ($4 < start_date or $3 > end_date) limit 1",
-        [booking.vehicle_id, booking.id, startDate, endDate],
-      );
+      const blockingOverlaps = await findOverlappingBlockingBookingIds(client, {
+        vehicleId: booking.vehicle_id,
+        startDate,
+        endDate,
+        excludeBookingId: booking.id,
+        forUpdate: true,
+      });
 
-      if (overlapResult.rowCount > 0) {
+      if (blockingOverlaps.length > 0) {
         await client.query("rollback");
         return NextResponse.json(
           { error: "Vehicle is no longer available for the updated dates" },
@@ -347,6 +387,7 @@ export async function PATCH(
       const currentPricing = booking.pricing_json ?? {};
       const dailyRate = Number(currentPricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
       const deposit = Number(currentPricing.deposit_cents ?? booking.deposit_cents ?? 0);
+      const paymentOption = readPaymentOption(currentPricing);
       const { promoCode, promoDiscount } = readPromoPricingFields(currentPricing);
       const netPaidToDate = await fetchNetPaidToDate(booking.id, { client });
       const pricingSummary = computeBookingPricing({
@@ -356,6 +397,7 @@ export async function PATCH(
         endDate,
         dailyRate,
         deposit,
+        paymentOption,
         netPaidToDate,
         promoCode,
         promoDiscount,
@@ -372,8 +414,10 @@ export async function PATCH(
         total_cents: pricingSummary.total,
         total_amount: pricingSummary.total,
         paid_to_date: pricingSummary.netPaidToDate,
+        amount_paid: pricingSummary.netPaidToDate,
         balance_due: pricingSummary.balanceDue,
         payment_status: pricingSummary.paymentStatus,
+        payment_option_selected: pricingSummary.paymentOption,
         refund_required: pricingSummary.refundRequired,
       };
 
