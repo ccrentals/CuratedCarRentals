@@ -1,6 +1,14 @@
 import { Pool } from "pg";
 
-let pool: any = null;
+function createPool(connectionString: string) {
+  return new Pool({
+    connectionString,
+    max: 5,
+    idleTimeoutMillis: 10000,
+  });
+}
+
+let pool: ReturnType<typeof createPool> | null = null;
 
 function normalizeDatabaseUrl(connectionString: string) {
   // pg/pg-connection-string currently treats sslmode=require|prefer|verify-ca as aliases for verify-full.
@@ -57,11 +65,7 @@ export function getDbPool() {
     throw new Error("DATABASE_URL is not set");
   }
 
-  pool = new Pool({
-    connectionString: normalizeDatabaseUrl(connectionString),
-    max: 5,
-    idleTimeoutMillis: 10000,
-  });
+  pool = createPool(normalizeDatabaseUrl(connectionString));
 
   return pool;
 }

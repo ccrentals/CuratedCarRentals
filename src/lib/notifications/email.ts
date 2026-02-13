@@ -1,5 +1,5 @@
 import { buildInvoicePayload, downloadPdfBase64, generateInvoicePdf } from "@/lib/pdfmonkey";
-import { logError, logWarn, redactText, safeErrorMessage } from "@/lib/log";
+import { logError, logWarn, redactText } from "@/lib/log";
 import { computeBookingPricing } from "@/lib/payments/pricing";
 
 const RESEND_ENDPOINT = "https://api.resend.com/emails";

@@ -4,15 +4,22 @@ import { dbQuery } from "@/lib/db";
 import { reconcileWiPayPayment } from "@/lib/payments/wipayReconcile";
 import { logError } from "@/lib/log";
 
-function pick(body: Record<string, any>, keys: string[]) {
+function parseJsonObject(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function pick(body: Record<string, unknown>, keys: string[]) {
   for (const key of keys) {
-    if (body[key]) return String(body[key]);
+    const value = body[key];
+    if (typeof value === "string" && value.trim()) return value;
+    if (typeof value === "number" || typeof value === "boolean") return String(value);
   }
   return "";
 }
 
 export async function POST(request: Request) {
-  const body = (await request.json().catch(() => null)) as Record<string, any> | null;
+  const body = parseJsonObject(await request.json().catch(() => null));
   if (!body) {
     return NextResponse.json({ ok: false, error: "Invalid payload" }, { status: 400 });
   }

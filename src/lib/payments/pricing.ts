@@ -2,7 +2,7 @@ import { dbQuery } from "@/lib/db";
 import { calcDaysInclusive, dateOnlyUtc } from "@/lib/payments/dateMath";
 
 export type Queryable = {
-  query: (text: string, params?: unknown[]) => Promise<{ rows: any[]; rowCount: number }>;
+  query: (text: string, params?: unknown[]) => Promise<{ rows: unknown[]; rowCount: number }>;
 };
 
 export type PaymentStatus = "UNPAID" | "DEPOSIT_PAID" | "PAID_IN_FULL";

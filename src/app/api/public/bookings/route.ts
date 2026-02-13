@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { sendBookingCreatedEmail } from "@/lib/notifications/email";
-import { dbQuery, getDbPool } from "@/lib/db";
+import { getDbPool } from "@/lib/db";
 import { logError } from "@/lib/log";
 import { isEmail, isISODate, isNonEmptyString } from "@/lib/validators";
 import { calcDaysInclusive, dateOnlyUtc } from "@/lib/payments/dateMath";

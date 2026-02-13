@@ -5,9 +5,10 @@ export async function GET() {
   try {
     const r = await dbQuery<{ ok: number }>("select 1 as ok");
     return NextResponse.json({ ok: true, result: r.rows[0]?.ok ?? null });
-  } catch (err: any) {
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json(
-      { ok: false, error: err?.message ?? "Unknown error" },
+      { ok: false, error: message },
       { status: 500 }
     );
   }

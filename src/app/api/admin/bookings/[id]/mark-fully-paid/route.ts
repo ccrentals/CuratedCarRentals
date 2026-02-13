@@ -78,7 +78,6 @@ export async function POST(
     );
 
     const after = await recalculateBookingPayments(booking.id, { client });
-    const balanceDueAfter = after.balanceDue;
     const shouldConfirm =
       String(booking.status).toUpperCase() === "PENDING_PAYMENT" &&
       after.netPaidToDate >= after.depositAmount;

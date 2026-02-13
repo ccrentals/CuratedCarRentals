@@ -81,18 +81,27 @@ export async function requestHostedPageUrl(params: Record<string, string | undef
     throw new Error(`HTTP ${response.status}: ${snippet || "WiPay request failed"}`);
   }
 
-  let payload: any = null;
+  let payload: unknown = null;
   try {
     payload = responseText ? JSON.parse(responseText) : {};
   } catch {
     payload = null;
   }
 
+  const payloadObject =
+    payload && typeof payload === "object" && !Array.isArray(payload)
+      ? (payload as Record<string, unknown>)
+      : null;
+  const payloadData =
+    payloadObject?.data && typeof payloadObject.data === "object" && !Array.isArray(payloadObject.data)
+      ? (payloadObject.data as Record<string, unknown>)
+      : null;
+
   const redirectUrl =
-    payload?.url ??
-    payload?.data?.url ??
-    payload?.data?.payment_url ??
-    payload?.payment_url;
+    (typeof payloadObject?.url === "string" ? payloadObject.url : undefined) ??
+    (typeof payloadData?.url === "string" ? payloadData.url : undefined) ??
+    (typeof payloadData?.payment_url === "string" ? payloadData.payment_url : undefined) ??
+    (typeof payloadObject?.payment_url === "string" ? payloadObject.payment_url : undefined);
 
   if (redirectUrl) {
     return { url: redirectUrl, raw: payload ?? responseText };
