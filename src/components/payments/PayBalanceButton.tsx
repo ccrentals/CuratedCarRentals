@@ -4,6 +4,12 @@ import { useState } from "react";
 
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
+type PaymentStartResponse = {
+  ok?: boolean;
+  error?: string;
+  redirectUrl?: string;
+};
+
 export function PayBalanceButton({ bookingId }: { bookingId: string }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -24,9 +30,9 @@ export function PayBalanceButton({ bookingId }: { bookingId: string }) {
       body: JSON.stringify({ bookingId }),
     });
 
-    let data: any = {};
+    let data: PaymentStartResponse = {};
     try {
-      data = await response.json();
+      data = (await response.json()) as PaymentStartResponse;
     } catch {
       data = {};
     }

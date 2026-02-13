@@ -22,6 +22,18 @@ type PublicVehicle = {
   deposit_cents: number;
 };
 
+type PublicVehiclesApiResponse = {
+  vehicles?: Array<{
+    id?: unknown;
+    make?: unknown;
+    model?: unknown;
+    daily_rate_cents?: unknown;
+    deposit_cents?: unknown;
+  }>;
+};
+
+type RawPublicVehicle = NonNullable<PublicVehiclesApiResponse["vehicles"]>[number];
+
 export default function BookPage() {
   const router = useRouter();
   const todayKey = (() => {
@@ -44,14 +56,23 @@ export default function BookPage() {
     fetch("/api/public/vehicles")
       .then((response) => response.json())
       .then((data) => {
-        const list = Array.isArray(data?.vehicles) ? data.vehicles : [];
-        const simplified = list.map((item: any) => ({
-          id: item.id,
-          make: item.make,
-          model: item.model,
-          daily_rate_cents: item.daily_rate_cents ?? 0,
-          deposit_cents: item.deposit_cents ?? 0,
-        }));
+        const payload = (data ?? null) as PublicVehiclesApiResponse | null;
+        const list = Array.isArray(payload?.vehicles) ? payload.vehicles : [];
+        const simplified = list
+          .filter(
+            (item): item is RawPublicVehicle & Required<Pick<PublicVehicle, "id" | "make" | "model">> =>
+              typeof item.id === "string" &&
+              typeof item.make === "string" &&
+              typeof item.model === "string",
+          )
+          .map((item) => ({
+            id: item.id,
+            make: item.make,
+            model: item.model,
+            daily_rate_cents:
+              typeof item.daily_rate_cents === "number" ? item.daily_rate_cents : 0,
+            deposit_cents: typeof item.deposit_cents === "number" ? item.deposit_cents : 0,
+          }));
         setVehicleOptions(simplified);
         if (simplified.length > 0) {
           setVehicleId((current) => current || simplified[0].id);

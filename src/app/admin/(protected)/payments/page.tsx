@@ -142,12 +142,13 @@ export default async function AdminPaymentsPage({
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <a
+          <Link
             href={exportHref}
+            prefetch={false}
             className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
           >
             Export CSV
-          </a>
+          </Link>
           {bookingId || normalizedType ? (
             <Link
               href="/admin/payments"
