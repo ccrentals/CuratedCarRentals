@@ -4,7 +4,7 @@ import { getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery, getDbPool } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
 import { getInternalNotesRecipient, sendBookingNoteEmail } from "@/lib/notifications/email";
-import { computeBookingPricing, fetchNetPaidToDate } from "@/lib/payments/pricing";
+import { computeBookingPricing, fetchNetPaidToDate, readPromoPricingFields } from "@/lib/payments/pricing";
 import { requireCsrf } from "@/lib/security/csrf";
 
 function isAdminRole(role: string | undefined) {
@@ -37,6 +37,11 @@ function normalizeDateInput(value: unknown): string | null {
   const trimmed = value.trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return null;
   return trimmed;
+}
+
+function asObject(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
 }
 
 export async function GET(
@@ -342,6 +347,7 @@ export async function PATCH(
       const currentPricing = booking.pricing_json ?? {};
       const dailyRate = Number(currentPricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
       const deposit = Number(currentPricing.deposit_cents ?? booking.deposit_cents ?? 0);
+      const { promoCode, promoDiscount } = readPromoPricingFields(currentPricing);
       const netPaidToDate = await fetchNetPaidToDate(booking.id, { client });
       const pricingSummary = computeBookingPricing({
         bookingId: booking.id,
@@ -351,6 +357,8 @@ export async function PATCH(
         dailyRate,
         deposit,
         netPaidToDate,
+        promoCode,
+        promoDiscount,
       });
 
       const nextPricing = {
@@ -358,8 +366,11 @@ export async function PATCH(
         days: pricingSummary.days,
         daily_rate_cents: pricingSummary.dailyRate,
         deposit_cents: pricingSummary.deposit,
-        subtotal_cents: pricingSummary.total,
+        subtotal_cents: pricingSummary.subtotal,
+        promo_code: pricingSummary.promoCode,
+        promo_discount_cents: pricingSummary.promoDiscount,
         total_cents: pricingSummary.total,
+        total_amount: pricingSummary.total,
         paid_to_date: pricingSummary.netPaidToDate,
         balance_due: pricingSummary.balanceDue,
         payment_status: pricingSummary.paymentStatus,
@@ -470,6 +481,7 @@ export async function PATCH(
     const sentTargets: ("customer" | "internal")[] = [];
 
     const newNote: Record<string, unknown> = {
+      note_id: crypto.randomUUID(),
       message: note,
       created_at: createdAt,
       user_id: session.userId,
@@ -478,6 +490,9 @@ export async function PATCH(
       email_scheduled_for: noteScheduledFor,
       email_customer_sent_at: null,
       email_internal_sent_at: null,
+      email_cancelled_at: null,
+      email_cancelled_by: null,
+      email_cancel_reason: null,
       email_last_error: null,
     };
 
@@ -576,6 +591,124 @@ export async function PATCH(
     }
 
     return NextResponse.json({ ok: true, message });
+  }
+
+  if (action === "cancel_scheduled_note_email") {
+    const noteId =
+      typeof body?.noteId === "string" && body.noteId.trim() ? body.noteId.trim() : null;
+    const noteCreatedAt =
+      typeof body?.noteCreatedAt === "string" && body.noteCreatedAt.trim()
+        ? body.noteCreatedAt.trim()
+        : null;
+    const noteMessage =
+      typeof body?.noteMessage === "string" && body.noteMessage.trim() ? body.noteMessage.trim() : null;
+    const cancelReason =
+      typeof body?.cancelReason === "string" && body.cancelReason.trim() ? body.cancelReason.trim() : null;
+
+    if (!noteId && !noteCreatedAt) {
+      return NextResponse.json({ error: "Note identifier is required" }, { status: 400 });
+    }
+
+    const bookingResult = await dbQuery<{ pricing_json: Record<string, unknown> | null }>(
+      "select pricing_json from bookings where id = $1",
+      [id],
+    );
+
+    if (bookingResult.rowCount === 0) {
+      return NextResponse.json({ error: "Booking not found" }, { status: 404 });
+    }
+
+    const pricing = bookingResult.rows[0].pricing_json ?? {};
+    const existingNotes = Array.isArray((pricing as { admin_notes?: unknown }).admin_notes)
+      ? ((pricing as { admin_notes: unknown[] }).admin_notes as unknown[])
+      : [];
+
+    let foundIndex = -1;
+    let matchedNote: Record<string, unknown> | null = null;
+
+    for (let index = 0; index < existingNotes.length; index += 1) {
+      const entry = asObject(existingNotes[index]);
+      if (!entry) continue;
+
+      const entryId =
+        typeof entry.note_id === "string" && entry.note_id.trim() ? entry.note_id.trim() : null;
+      const entryCreatedAt =
+        typeof entry.created_at === "string" && entry.created_at.trim()
+          ? entry.created_at.trim()
+          : null;
+      const entryMessage =
+        typeof entry.message === "string" && entry.message.trim() ? entry.message.trim() : null;
+
+      const matchesById = Boolean(noteId && entryId && entryId === noteId);
+      const matchesByCreatedAt =
+        !noteId &&
+        noteCreatedAt &&
+        entryCreatedAt === noteCreatedAt &&
+        (!noteMessage || noteMessage === entryMessage);
+
+      if (!matchesById && !matchesByCreatedAt) continue;
+
+      foundIndex = index;
+      matchedNote = { ...entry };
+      break;
+    }
+
+    if (!matchedNote || foundIndex < 0) {
+      return NextResponse.json({ error: "Scheduled note not found" }, { status: 404 });
+    }
+
+    const target = normalizeNoteTarget(matchedNote.email_target);
+    const sendMode = String(matchedNote.email_send_mode ?? "").toLowerCase();
+    if (target === "none" || sendMode !== "scheduled") {
+      return NextResponse.json({ error: "This note is not scheduled for email." }, { status: 400 });
+    }
+
+    if (typeof matchedNote.email_cancelled_at === "string" && matchedNote.email_cancelled_at.trim()) {
+      return NextResponse.json({ ok: true, message: "Scheduled email already cancelled." });
+    }
+
+    const customerOutstanding =
+      (target === "customer" || target === "both") && !matchedNote.email_customer_sent_at;
+    const internalOutstanding =
+      (target === "internal" || target === "both") && !matchedNote.email_internal_sent_at;
+
+    if (!customerOutstanding && !internalOutstanding) {
+      return NextResponse.json(
+        { error: "Scheduled email has already been sent." },
+        { status: 400 },
+      );
+    }
+
+    const nowIso = new Date().toISOString();
+    matchedNote.email_cancelled_at = nowIso;
+    matchedNote.email_cancelled_by = session.userId;
+    matchedNote.email_cancel_reason = cancelReason;
+    matchedNote.email_last_error = null;
+
+    const nextNotes = [...existingNotes];
+    nextNotes[foundIndex] = matchedNote;
+    const updatedPricing = { ...pricing, admin_notes: nextNotes };
+
+    await dbQuery("update bookings set pricing_json = $1, updated_at = now() where id = $2", [
+      updatedPricing,
+      id,
+    ]);
+
+    await writeAuditLog({
+      userId: session.userId,
+      action: "BOOKING_NOTE_EMAIL_CANCELLED",
+      entityType: "booking",
+      entityId: id,
+      details: {
+        note_id: matchedNote.note_id ?? null,
+        note_created_at: matchedNote.created_at ?? null,
+        note_email_target: target,
+        note_scheduled_for: matchedNote.email_scheduled_for ?? null,
+        reason: cancelReason,
+      },
+    });
+
+    return NextResponse.json({ ok: true, message: "Scheduled note email cancelled." });
   }
 
   return NextResponse.json({ error: "Unsupported action" }, { status: 400 });

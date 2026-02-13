@@ -5,6 +5,10 @@ import { fmtDate } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
 
 export default async function AdminDashboardPage() {
+  // Shared gold-ring quick action treatment for visual consistency.
+  const quickActionClass =
+    "rounded-full bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] shadow-sm ring-2 ring-[var(--ccr-accent)] ring-offset-2 ring-offset-[var(--ccr-surface)] transition hover:bg-[var(--ccr-surface-soft)] hover:ring-[var(--ccr-accent-strong)]";
+
   const vehiclesResult = await dbQuery<{ count: string }>("select count(*) from vehicles");
   const availableVehiclesResult = await dbQuery<{ count: string }>(
     "select count(*) from vehicles where status = 'AVAILABLE'",
@@ -173,7 +177,7 @@ export default async function AdminDashboardPage() {
                     <div>
                       <Link
                         href={`/admin/bookings/${booking.id}`}
-                        className="inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-bold text-[var(--ccr-accent)] transition hover:bg-[var(--ccr-accent)] hover:text-[var(--ccr-primary)]"
+                        className="inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-bold text-[var(--ccr-accent)] transition hover:bg-[var(--ccr-accent)] hover:text-[var(--ccr-muted)]"
                         title="Open booking"
                       >
                         {booking.id.slice(0, 8)}
@@ -224,7 +228,7 @@ export default async function AdminDashboardPage() {
                       <div>
                         <Link
                           href={`/admin/bookings/${booking.id}`}
-                          className="inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-bold text-[var(--ccr-accent)] transition hover:bg-[var(--ccr-accent)] hover:text-[var(--ccr-primary)]"
+                          className="inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-bold text-[var(--ccr-accent)] transition hover:bg-[var(--ccr-accent)] hover:text-[var(--ccr-muted)]"
                           title="Open booking"
                         >
                           {booking.id.slice(0, 8)}
@@ -297,13 +301,13 @@ export default async function AdminDashboardPage() {
           <div className="mt-4 flex flex-wrap gap-3">
             <Link
               href="/admin/bookings?create=1"
-              className="rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] shadow-sm transition hover:border-[var(--ccr-accent-strong)] hover:bg-[var(--ccr-surface-soft)]"
+              className={quickActionClass}
             >
               Quick create booking
             </Link>
             <Link
               href="/admin/calendar"
-              className="rounded-full bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] shadow-sm ring-2 ring-[var(--ccr-accent)] ring-offset-2 ring-offset-[var(--ccr-surface)] transition hover:bg-[var(--ccr-surface-soft)] hover:ring-[var(--ccr-accent-strong)]"
+              className={quickActionClass}
             >
               Add blockout
             </Link>
@@ -338,7 +342,7 @@ export default async function AdminDashboardPage() {
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <span className="inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-bold text-[var(--ccr-accent)] transition group-hover:bg-[var(--ccr-accent)] group-hover:text-[var(--ccr-primary)]">
+                        <span className="inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-bold text-[var(--ccr-accent)] transition group-hover:bg-[var(--ccr-accent)] group-hover:text-[var(--ccr-muted)]">
                           {booking.id.slice(0, 8)}
                         </span>
                         <p className="mt-1 text-xs text-[var(--ccr-muted)]">

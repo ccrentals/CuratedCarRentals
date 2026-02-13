@@ -25,6 +25,13 @@ type VehicleOption = {
   model: string;
 };
 
+type CustomerPrefill = {
+  id: string;
+  full_name: string;
+  email: string;
+  phone: string;
+};
+
 function isAdminRole(role: string | undefined) {
   return String(role ?? "")
     .trim()
@@ -78,6 +85,8 @@ export default async function AdminBookingsPage({
 
   const includeArchived = typeof params.archived === "string" && params.archived === "1";
   const openCreateModal = typeof params.create === "string" && params.create === "1";
+  const requestedCustomerId =
+    typeof params.customerId === "string" ? params.customerId.trim() : "";
   if (!includeArchived) {
     whereClauses.push("b.archived_at is null");
   }
@@ -158,6 +167,28 @@ export default async function AdminBookingsPage({
     label: `${vehicle.year} ${vehicle.make} ${vehicle.model}`.trim(),
   }));
 
+  let initialCustomer: {
+    id: string;
+    fullName: string;
+    email: string;
+    phone: string;
+  } | null = null;
+  if (requestedCustomerId) {
+    const customer = await dbQuery<CustomerPrefill>(
+      "select id, full_name, email, phone from customers where id = $1 limit 1",
+      [requestedCustomerId],
+    );
+    const row = customer.rows[0];
+    if (row) {
+      initialCustomer = {
+        id: row.id,
+        fullName: row.full_name,
+        email: row.email,
+        phone: row.phone,
+      };
+    }
+  }
+
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-10">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -170,6 +201,7 @@ export default async function AdminBookingsPage({
             vehicles={vehicleOptions}
             initialOpen={openCreateModal}
             clearOpenHref={openCreateModal ? "/admin/bookings" : undefined}
+            initialCustomer={initialCustomer}
           />
           {canAdmin ? (
             <Link

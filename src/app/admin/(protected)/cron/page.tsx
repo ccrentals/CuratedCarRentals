@@ -13,7 +13,16 @@ type AuditRow = {
 
 const ACTION_LABELS: Record<string, string> = {
   BOOKING_PICKUP_REMINDER_SENT: "Pickup reminder sent",
+  BOOKING_PICKUP_REMINDER_FAILED: "Pickup reminder failed",
   BOOKING_BALANCE_REMINDER_SENT: "Balance reminder sent",
+  BOOKING_BALANCE_REMINDER_FAILED: "Balance reminder failed",
+  BOOKING_DROPOFF_REMINDER_SENT: "Dropoff reminder sent",
+  BOOKING_DROPOFF_REMINDER_FAILED: "Dropoff reminder failed",
+  BOOKING_LATE_DROPOFF_ALERT_SENT: "Late dropoff alert sent",
+  BOOKING_LATE_DROPOFF_ALERT_FAILED: "Late dropoff alert failed",
+  BOOKING_NOTE_EMAIL_SENT: "Scheduled note email sent",
+  BOOKING_NOTE_EMAIL_FAILED: "Scheduled note email failed",
+  BOOKING_NOTE_EMAIL_CANCELLED: "Scheduled note email cancelled",
 };
 
 function toTitleLabel(key: string) {
@@ -74,7 +83,7 @@ export default async function AdminCronPage() {
   const cronConfigured = Boolean(process.env.CRON_SECRET);
 
   const auditRows = await dbQuery<AuditRow>(
-    "select action, entity_id, details_json, created_at from audit_logs where action in ('BOOKING_PICKUP_REMINDER_SENT','BOOKING_BALANCE_REMINDER_SENT') order by created_at desc limit 20",
+    "select action, entity_id, details_json, created_at from audit_logs where action in ('BOOKING_PICKUP_REMINDER_SENT','BOOKING_PICKUP_REMINDER_FAILED','BOOKING_BALANCE_REMINDER_SENT','BOOKING_BALANCE_REMINDER_FAILED','BOOKING_DROPOFF_REMINDER_SENT','BOOKING_DROPOFF_REMINDER_FAILED','BOOKING_LATE_DROPOFF_ALERT_SENT','BOOKING_LATE_DROPOFF_ALERT_FAILED','BOOKING_NOTE_EMAIL_SENT','BOOKING_NOTE_EMAIL_FAILED','BOOKING_NOTE_EMAIL_CANCELLED') order by created_at desc limit 60",
   );
 
   const rows = auditRows.rows as AuditRow[];
@@ -93,7 +102,7 @@ export default async function AdminCronPage() {
           <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Admin</p>
           <h1 className="text-3xl font-bold text-[var(--ccr-text)]">Cron Status</h1>
           <p className="mt-2 text-sm text-[var(--ccr-muted)]">
-            Scheduled reminders for pickup and balance due.
+            Scheduled reminders for pickup, balance due, and note emails.
           </p>
         </div>
         <Link
@@ -119,6 +128,9 @@ export default async function AdminCronPage() {
             </li>
             <li>
               Balance reminders: <span className="font-semibold">13:00 UTC daily</span>
+            </li>
+            <li>
+              Note emails: <span className="font-semibold">Every 15 minutes</span>
             </li>
           </ul>
           <CronRunButtons />

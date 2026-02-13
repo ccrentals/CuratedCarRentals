@@ -4,7 +4,7 @@ import { PayBalanceButton } from "@/components/payments/PayBalanceButton";
 import { dbQuery } from "@/lib/db";
 import { fmtDateOnly } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
-import { computeBookingPricing, fetchNetPaidToDate } from "@/lib/payments/pricing";
+import { computeBookingPricing, fetchNetPaidToDate, readPromoPricingFields } from "@/lib/payments/pricing";
 
 export default async function BookingBalancePage({
   params,
@@ -41,6 +41,7 @@ export default async function BookingBalancePage({
   const pricing = booking.pricing_json ?? {};
   const dailyRate = Number(pricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
   const deposit = Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0);
+  const { promoCode, promoDiscount } = readPromoPricingFields(pricing);
 
   const netPaidToDate = await fetchNetPaidToDate(booking.id);
   const summary = computeBookingPricing({
@@ -51,6 +52,8 @@ export default async function BookingBalancePage({
     dailyRate,
     deposit,
     netPaidToDate,
+    promoCode,
+    promoDiscount,
   });
 
   return (
@@ -89,6 +92,12 @@ export default async function BookingBalancePage({
               <p>
                 Total rental: <span className="font-semibold">{formatJmd(summary.total)}</span>
               </p>
+              {summary.promoDiscount > 0 ? (
+                <p>
+                  Promo{summary.promoCode ? ` (${summary.promoCode})` : ""}:{" "}
+                  <span className="font-semibold">-{formatJmd(summary.promoDiscount)}</span>
+                </p>
+              ) : null}
               <p>
                 Deposit online: <span className="font-semibold">{formatJmd(summary.deposit)}</span>
               </p>

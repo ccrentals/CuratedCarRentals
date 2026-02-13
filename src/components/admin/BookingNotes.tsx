@@ -6,9 +6,18 @@ import { useState } from "react";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
 type AdminNote = {
+  note_id?: string;
   message: string;
   created_at?: string;
   user_id?: string;
+  email_target?: "none" | "customer" | "internal" | "both";
+  email_send_mode?: "immediate" | "scheduled" | string | null;
+  email_scheduled_for?: string | null;
+  email_customer_sent_at?: string | null;
+  email_internal_sent_at?: string | null;
+  email_cancelled_at?: string | null;
+  email_cancel_reason?: string | null;
+  email_last_error?: string | null;
 };
 
 type BookingNotesProps = {
@@ -23,6 +32,39 @@ function fmtClientDate(value?: string) {
   return date.toLocaleString();
 }
 
+function normalizeTarget(value: unknown): "none" | "customer" | "internal" | "both" {
+  if (value === "customer" || value === "internal" || value === "both" || value === "none") {
+    return value;
+  }
+  return "none";
+}
+
+function pendingScheduledTargets(note: AdminNote) {
+  if (note.email_send_mode !== "scheduled") return [] as Array<"customer" | "internal">;
+  if (note.email_cancelled_at) return [] as Array<"customer" | "internal">;
+
+  const target = normalizeTarget(note.email_target);
+  const pending: Array<"customer" | "internal"> = [];
+  if ((target === "customer" || target === "both") && !note.email_customer_sent_at) {
+    pending.push("customer");
+  }
+  if ((target === "internal" || target === "both") && !note.email_internal_sent_at) {
+    pending.push("internal");
+  }
+  return pending;
+}
+
+function scheduleStatusLabel(note: AdminNote) {
+  if (note.email_send_mode !== "scheduled") return null;
+  if (note.email_cancelled_at) return "Email schedule cancelled";
+  const pending = pendingScheduledTargets(note);
+  if (pending.length > 0) {
+    const scheduled = note.email_scheduled_for ? fmtClientDate(note.email_scheduled_for) : "Scheduled";
+    return `Scheduled for ${scheduled}`;
+  }
+  return "Scheduled email sent";
+}
+
 export function BookingNotes({ bookingId, notes }: BookingNotesProps) {
   const router = useRouter();
   const [note, setNote] = useState("");
@@ -32,6 +74,7 @@ export function BookingNotes({ bookingId, notes }: BookingNotesProps) {
   const [noteSendMode, setNoteSendMode] = useState<"immediate" | "scheduled">("immediate");
   const [noteScheduledFor, setNoteScheduledFor] = useState("");
   const [saving, setSaving] = useState(false);
+  const [cancellingNoteKey, setCancellingNoteKey] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -59,6 +102,7 @@ export function BookingNotes({ bookingId, notes }: BookingNotesProps) {
     const csrfToken = await ensureCsrfToken();
     const response = await fetch(`/api/admin/bookings/${bookingId}`, {
       method: "PATCH",
+      credentials: "include",
       headers: {
         "Content-Type": "application/json",
         "x-csrf-token": csrfToken ?? "",
@@ -74,6 +118,11 @@ export function BookingNotes({ bookingId, notes }: BookingNotesProps) {
 
     setSaving(false);
 
+    if (response.status === 401) {
+      setError("Session expired. Please sign in again.");
+      return;
+    }
+
     if (!response.ok) {
       const data = await response.json().catch(() => ({}));
       setError(data.error ?? "Failed to save note");
@@ -87,20 +136,90 @@ export function BookingNotes({ bookingId, notes }: BookingNotesProps) {
     router.refresh();
   }
 
+  async function cancelScheduledEmail(entry: AdminNote, index: number) {
+    const noteKey = entry.note_id ?? `${entry.created_at ?? "note"}-${index}`;
+    setCancellingNoteKey(noteKey);
+    setMessage(null);
+    setError(null);
+
+    const csrfToken = await ensureCsrfToken();
+    const response = await fetch(`/api/admin/bookings/${bookingId}`, {
+      method: "PATCH",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+        "x-csrf-token": csrfToken ?? "",
+      },
+      body: JSON.stringify({
+        action: "cancel_scheduled_note_email",
+        noteId: entry.note_id ?? null,
+        noteCreatedAt: entry.created_at ?? null,
+        noteMessage: entry.message ?? null,
+      }),
+    });
+
+    setCancellingNoteKey(null);
+    if (response.status === 401) {
+      setError("Session expired. Please sign in again.");
+      return;
+    }
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      setError(data.error ?? "Failed to cancel scheduled email.");
+      return;
+    }
+
+    const data = await response.json().catch(() => ({}));
+    setMessage(
+      typeof data.message === "string"
+        ? data.message
+        : "Scheduled note email cancelled.",
+    );
+    router.refresh();
+  }
+
   return (
     <div className="mt-4 space-y-4">
       {notes.length === 0 ? (
         <p className="text-sm text-[var(--ccr-muted)]">No notes added yet.</p>
       ) : (
         <ul className="space-y-3">
-          {notes.map((entry, index) => (
-            <li key={`${entry.created_at ?? "note"}-${index}`} className="rounded-xl bg-[var(--ccr-surface-soft)] p-3">
-              <p className="text-sm text-[var(--ccr-text)]">{entry.message}</p>
-              {entry.created_at ? (
-                <p className="mt-2 text-xs text-[var(--ccr-muted)]">{fmtClientDate(entry.created_at)}</p>
-              ) : null}
-            </li>
-          ))}
+          {notes.map((entry, index) => {
+            const noteKey = entry.note_id ?? `${entry.created_at ?? "note"}-${index}`;
+            const scheduleStatus = scheduleStatusLabel(entry);
+            const canCancel = pendingScheduledTargets(entry).length > 0;
+
+            return (
+              <li key={noteKey} className="rounded-xl bg-[var(--ccr-surface-soft)] p-3">
+                <p className="text-sm text-[var(--ccr-text)]">{entry.message}</p>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  {entry.created_at ? (
+                    <p className="text-xs text-[var(--ccr-muted)]">{fmtClientDate(entry.created_at)}</p>
+                  ) : null}
+                  {scheduleStatus ? (
+                    <span className="inline-flex items-center rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-2 py-0.5 text-[11px] font-semibold text-[var(--ccr-text)]">
+                      {scheduleStatus}
+                    </span>
+                  ) : null}
+                  {entry.email_last_error ? (
+                    <span className="inline-flex items-center rounded-full border border-red-300 bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700">
+                      Last error: {entry.email_last_error}
+                    </span>
+                  ) : null}
+                  {canCancel ? (
+                    <button
+                      type="button"
+                      onClick={() => cancelScheduledEmail(entry, index)}
+                      disabled={cancellingNoteKey === noteKey}
+                      className="cursor-pointer rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-2 py-1 text-[11px] font-semibold text-[var(--ccr-text)] transition hover:border-[var(--ccr-accent)] hover:text-[var(--ccr-accent)] disabled:opacity-60"
+                    >
+                      {cancellingNoteKey === noteKey ? "Cancelling..." : "Cancel scheduled email"}
+                    </button>
+                  ) : null}
+                </div>
+              </li>
+            );
+          })}
         </ul>
       )}
 
@@ -171,7 +290,7 @@ export function BookingNotes({ bookingId, notes }: BookingNotesProps) {
             type="button"
             onClick={saveNote}
             disabled={saving}
-            className="rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
+            className="cursor-pointer rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
           >
             {saving ? "Saving..." : "Save Note"}
           </button>

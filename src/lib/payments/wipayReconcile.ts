@@ -4,6 +4,7 @@ import { dbQuery, getDbPool } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
 import { recalculateBookingPayments } from "@/lib/payments/recalculateBooking";
 import { logError } from "@/lib/log";
+import { readPromoPricingFields } from "@/lib/payments/pricing";
 
 type ReconcileInput = {
   orderId: string;
@@ -245,6 +246,13 @@ export async function reconcileWiPayPayment(input: ReconcileInput): Promise<Reco
 
     if (!receiptSent) {
       try {
+        const bookingPricing = (
+          booking.pricing_json && typeof booking.pricing_json === "object"
+            ? (booking.pricing_json as Record<string, unknown>)
+            : null
+        );
+        const { promoCode, promoDiscount } = readPromoPricingFields(bookingPricing);
+
         if (paymentType !== "deposit") {
           await sendPaymentCompleteEmail({
             bookingId: booking.id,
@@ -273,6 +281,8 @@ export async function reconcileWiPayPayment(input: ReconcileInput): Promise<Reco
             dailyRate: Number(booking.daily_rate_cents || 0),
             deposit: depositValue,
             paidToDate: recalculated.netPaidToDate,
+            promoCode,
+            promoDiscount,
           });
         }
 

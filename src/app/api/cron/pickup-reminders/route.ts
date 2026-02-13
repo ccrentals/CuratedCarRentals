@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { dbQuery, getDbPool } from "@/lib/db";
 import { sendPickupReminderEmail } from "@/lib/notifications/email";
 import { writeAuditLog } from "@/lib/audit";
-import { computeBookingPricing } from "@/lib/payments/pricing";
+import { computeBookingPricing, readPromoPricingFields } from "@/lib/payments/pricing";
 import { loadAdminSettings } from "@/lib/adminSettings";
 
 function dateKey(date: Date) {
@@ -63,6 +63,7 @@ export async function POST(request: Request) {
 
   let sent = 0;
   let skipped = 0;
+  let failures = 0;
 
   const pool = getDbPool();
 
@@ -76,6 +77,7 @@ export async function POST(request: Request) {
 
     const dailyRate = Number(pricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
     const deposit = Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0);
+    const { promoCode, promoDiscount } = readPromoPricingFields(pricing);
     const paidToDate = Number(booking.paid_to_date ?? 0);
     const summary = computeBookingPricing({
       bookingId: booking.id,
@@ -85,10 +87,12 @@ export async function POST(request: Request) {
       dailyRate,
       deposit,
       netPaidToDate: paidToDate,
+      promoCode,
+      promoDiscount,
     });
     const balanceDue = summary.balanceDue;
 
-    await sendPickupReminderEmail({
+    const sendResult = await sendPickupReminderEmail({
       bookingId: booking.id,
       customerEmail: booking.customer_email,
       customerName: booking.customer_name,
@@ -98,6 +102,21 @@ export async function POST(request: Request) {
       pickupLocation: booking.pickup_location,
       balanceDue,
     });
+    if (!sendResult.ok) {
+      await writeAuditLog({
+        userId: "system",
+        action: "BOOKING_PICKUP_REMINDER_FAILED",
+        entityType: "booking",
+        entityId: booking.id,
+        details: {
+          balance_due: balanceDue,
+          pickup_date: booking.start_date,
+          error: sendResult.error ?? "delivery failed",
+        },
+      });
+      failures += 1;
+      continue;
+    }
 
     const updatedPricing = {
       ...pricing,
@@ -125,5 +144,5 @@ export async function POST(request: Request) {
     sent += 1;
   }
 
-  return NextResponse.json({ ok: true, sent, skipped, settingsSource: source });
+  return NextResponse.json({ ok: true, sent, skipped, failures, settingsSource: source });
 }

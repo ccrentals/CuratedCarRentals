@@ -5,6 +5,9 @@ export type BookingPaymentSummary = {
   bookingId: string;
   days: number;
   dailyRate: number;
+  subtotalAmount: number;
+  promoCode: string | null;
+  promoDiscount: number;
   totalAmount: number;
   depositAmount: number;
   netPaidToDate: number;
@@ -50,7 +53,14 @@ export async function recalculateBookingPayments(
   const days = calcDaysInclusive(booking.start_date, booking.end_date);
   const dailyRate = Number(pricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
   const depositAmount = Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0);
-  const totalAmount = dailyRate * days;
+  const subtotalAmount = dailyRate * days;
+  const promoCode =
+    typeof pricing.promo_code === "string" && pricing.promo_code.trim().length > 0
+      ? String(pricing.promo_code).trim().toUpperCase()
+      : null;
+  const promoDiscountRaw = Number(pricing.promo_discount_cents ?? 0);
+  const promoDiscount = Math.max(0, Math.min(subtotalAmount, promoDiscountRaw));
+  const totalAmount = Math.max(0, subtotalAmount - promoDiscount);
 
   const netPaidToDate = await fetchNetPaidToDate(bookingId, options);
 
@@ -70,9 +80,13 @@ export async function recalculateBookingPayments(
     days,
     daily_rate_cents: dailyRate,
     deposit_cents: depositAmount,
-    subtotal_cents: totalAmount,
+    subtotal_cents: subtotalAmount,
+    promo_code: promoCode,
+    promo_discount_cents: promoDiscount,
     paid_to_date: netPaidToDate,
     balance_due: balanceDue,
+    total_amount: totalAmount,
+    total_cents: totalAmount,
     paid_in_full: paymentStatus === "PAID_IN_FULL",
     payment_status: paymentStatus,
     refund_required: refundRequired,
@@ -87,6 +101,9 @@ export async function recalculateBookingPayments(
     bookingId,
     days,
     dailyRate,
+    subtotalAmount,
+    promoCode,
+    promoDiscount,
     totalAmount,
     depositAmount,
     netPaidToDate,

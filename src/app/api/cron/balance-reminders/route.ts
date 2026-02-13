@@ -6,7 +6,7 @@ import {
   sendLateDropoffAlertEmail,
 } from "@/lib/notifications/email";
 import { writeAuditLog } from "@/lib/audit";
-import { computeBookingPricing } from "@/lib/payments/pricing";
+import { computeBookingPricing, readPromoPricingFields } from "@/lib/payments/pricing";
 import { loadAdminSettings } from "@/lib/adminSettings";
 
 function getTodayKey() {
@@ -65,6 +65,7 @@ export async function POST(request: Request) {
   let sentDropoff = 0;
   let sentLate = 0;
   let skipped = 0;
+  let failures = 0;
 
   const pool = getDbPool();
 
@@ -72,6 +73,7 @@ export async function POST(request: Request) {
     const pricing = booking.pricing_json ?? {};
     const dailyRate = Number(pricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
     const deposit = Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0);
+    const { promoCode, promoDiscount } = readPromoPricingFields(pricing);
     const paidToDate = Number(booking.paid_to_date ?? 0);
     const summary = computeBookingPricing({
       bookingId: booking.id,
@@ -81,6 +83,8 @@ export async function POST(request: Request) {
       dailyRate,
       deposit,
       netPaidToDate: paidToDate,
+      promoCode,
+      promoDiscount,
     });
     const balanceDue = summary.balanceDue;
     const endDateKey = toDateKey(booking.end_date);
@@ -119,7 +123,7 @@ export async function POST(request: Request) {
     }
 
     if (isDropoffDay) {
-      await sendDropoffReminderEmail({
+      const sendResult = await sendDropoffReminderEmail({
         bookingId: booking.id,
         customerEmail: booking.customer_email,
         customerName: booking.customer_name,
@@ -129,8 +133,24 @@ export async function POST(request: Request) {
         pickupLocation: booking.pickup_location,
         balanceDue,
       });
+      if (!sendResult.ok) {
+        await writeAuditLog({
+          userId: "system",
+          action: "BOOKING_DROPOFF_REMINDER_FAILED",
+          entityType: "booking",
+          entityId: booking.id,
+          details: {
+            balance_due: balanceDue,
+            dropoff_date: booking.end_date,
+            reminder_type: "dropoff",
+            error: sendResult.error ?? "delivery failed",
+          },
+        });
+        failures += 1;
+        continue;
+      }
     } else {
-      await sendLateDropoffAlertEmail({
+      const sendResult = await sendLateDropoffAlertEmail({
         bookingId: booking.id,
         customerEmail: booking.customer_email,
         customerName: booking.customer_name,
@@ -140,6 +160,22 @@ export async function POST(request: Request) {
         pickupLocation: booking.pickup_location,
         balanceDue,
       });
+      if (!sendResult.ok) {
+        await writeAuditLog({
+          userId: "system",
+          action: "BOOKING_LATE_DROPOFF_ALERT_FAILED",
+          entityType: "booking",
+          entityId: booking.id,
+          details: {
+            balance_due: balanceDue,
+            dropoff_date: booking.end_date,
+            reminder_type: "late_dropoff",
+            error: sendResult.error ?? "delivery failed",
+          },
+        });
+        failures += 1;
+        continue;
+      }
     }
 
     const updatedPricing = {
@@ -186,6 +222,7 @@ export async function POST(request: Request) {
     sentDropoff,
     sentLate,
     skipped,
+    failures,
     settingsSource: source,
   });
 }

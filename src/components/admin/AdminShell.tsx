@@ -79,6 +79,27 @@ const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    label: "Customers",
+    href: "/admin/customers",
+    icon: (className: string) => (
+      <svg
+        viewBox="0 0 24 24"
+        className={className}
+        aria-hidden="true"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M16 21c0-3-2.7-5-6-5s-6 2-6 5" />
+        <circle cx="10" cy="8" r="3.2" />
+        <path d="M20 21c0-2.1-1.2-3.7-3-4.4" />
+        <path d="M17 3.6a3.2 3.2 0 0 1 0 6.2" />
+      </svg>
+    ),
+  },
+  {
     label: "Payments",
     href: "/admin/payments",
     icon: (className: string) => (
@@ -95,6 +116,25 @@ const NAV_ITEMS: NavItem[] = [
         <rect x="3" y="5" width="18" height="14" rx="2" />
         <path d="M3 10h18" />
         <path d="M7 15h4" />
+      </svg>
+    ),
+  },
+  {
+    label: "Promo Codes",
+    href: "/admin/promo-codes",
+    icon: (className: string) => (
+      <svg
+        viewBox="0 0 24 24"
+        className={className}
+        aria-hidden="true"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M20.6 13.4L13.4 20.6a2 2 0 0 1-2.8 0L3.4 13.4a2 2 0 0 1 0-2.8l7.2-7.2a2 2 0 0 1 2.8 0l7.2 7.2a2 2 0 0 1 0 2.8z" />
+        <circle cx="9" cy="9" r="1.5" />
       </svg>
     ),
   },
@@ -443,6 +483,7 @@ export function AdminShell({
     }
   };
 
+  // Keep desktop collapse smooth while preserving mobile off-canvas behavior.
   const sidebarWidth = collapsed ? "lg:w-20" : "lg:w-64";
   const contentPadding = collapsed ? "lg:pl-20" : "lg:pl-64";
   const brandLabel = collapsed ? "CCR" : "Curated Admin";
@@ -450,7 +491,7 @@ export function AdminShell({
   return (
     <div className="min-h-screen bg-[var(--ccr-bg)] text-[var(--ccr-text)]">
       <aside
-        className={`hidden lg:fixed lg:inset-y-0 lg:left-0 lg:flex lg:flex-col lg:border-r lg:border-[var(--ccr-border)] lg:bg-[var(--ccr-surface)] lg:px-4 lg:py-6 ${sidebarWidth}`}
+        className={`hidden overflow-hidden lg:fixed lg:inset-y-0 lg:left-0 lg:flex lg:flex-col lg:border-r lg:border-[var(--ccr-border)] lg:bg-[var(--ccr-surface)] lg:px-4 lg:py-6 lg:transition-[width] lg:duration-300 lg:ease-in-out ${sidebarWidth}`}
       >
         <div className={`flex items-center gap-2 ${collapsed ? "justify-center" : ""}`}>
           <button
@@ -518,7 +559,8 @@ export function AdminShell({
         />
       </aside>
 
-      <div className={contentPadding}>
+      {/* Match the sidebar animation so content does not jump during collapse/expand. */}
+      <div className={`transition-[padding] duration-300 ease-in-out ${contentPadding}`}>
         <header className="sticky top-0 z-30 border-b border-[var(--ccr-border)] bg-[var(--ccr-surface)]">
           <div className="mx-auto flex w-full max-w-none items-center justify-between gap-4 py-3 pl-2 pr-4 sm:pl-3 sm:pr-5">
             <div className="flex items-center gap-3">

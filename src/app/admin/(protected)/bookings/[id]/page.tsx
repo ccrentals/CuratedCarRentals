@@ -11,7 +11,7 @@ import { getSessionFromRequest } from "@/lib/auth/session";
 import { fmtDate } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
 import { formatPaymentStatus } from "@/lib/payments/formatPaymentStatus";
-import { computeBookingPricing, fetchNetPaidToDate } from "@/lib/payments/pricing";
+import { computeBookingPricing, fetchNetPaidToDate, readPromoPricingFields } from "@/lib/payments/pricing";
 
 type BookingDetails = {
   id: string;
@@ -133,6 +133,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
   const pricing = booking.pricing_json ?? {};
   const dailyRate = Number(pricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
   const deposit = Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0);
+  const { promoCode, promoDiscount } = readPromoPricingFields(pricing);
   const netPaidToDate = await fetchNetPaidToDate(booking.id);
   const summary = computeBookingPricing({
     bookingId: booking.id,
@@ -142,6 +143,8 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
     dailyRate,
     deposit,
     netPaidToDate,
+    promoCode,
+    promoDiscount,
   });
   const days = summary.days;
   const total = summary.total;
@@ -300,6 +303,12 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
               <span>Total of Booking</span>
               <span className="font-semibold text-[var(--ccr-text)]">{formatJmd(total)}</span>
             </div>
+            {summary.promoDiscount > 0 ? (
+              <div className="flex items-center justify-between">
+                <span>Promo{summary.promoCode ? ` (${summary.promoCode})` : ""}</span>
+                <span className="font-semibold text-[var(--ccr-text)]">-{formatJmd(summary.promoDiscount)}</span>
+              </div>
+            ) : null}
           </div>
           <div className="space-y-3 border-t border-[var(--ccr-border)] pt-5 md:border-l md:border-t-0 md:pl-6 md:pt-0">
             <div className="flex items-center justify-between">

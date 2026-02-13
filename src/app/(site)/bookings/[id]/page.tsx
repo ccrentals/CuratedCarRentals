@@ -3,7 +3,7 @@ import Link from "next/link";
 import { dbQuery } from "@/lib/db";
 import { fmtDateOnly } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
-import { computeBookingPricing, fetchNetPaidToDate } from "@/lib/payments/pricing";
+import { computeBookingPricing, fetchNetPaidToDate, readPromoPricingFields } from "@/lib/payments/pricing";
 
 export default async function BookingSummaryPage({
   params,
@@ -39,6 +39,7 @@ export default async function BookingSummaryPage({
   const pricing = booking.pricing_json ?? {};
   const dailyRate = Number(pricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
   const deposit = Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0);
+  const { promoCode, promoDiscount } = readPromoPricingFields(pricing);
   const netPaidToDate = await fetchNetPaidToDate(booking.id);
   const summary = computeBookingPricing({
     bookingId: booking.id,
@@ -48,6 +49,8 @@ export default async function BookingSummaryPage({
     dailyRate,
     deposit,
     netPaidToDate,
+    promoCode,
+    promoDiscount,
   });
   const depositDue = Math.max(0, summary.deposit - summary.netPaidToDate);
   const canPayDeposit = depositDue > 0;
@@ -79,6 +82,12 @@ export default async function BookingSummaryPage({
           <div className="mt-3 grid gap-2 text-sm text-[var(--ccr-text)]">
             <p>Days: <span className="font-semibold">{summary.days}</span></p>
             <p>Total rental: <span className="font-semibold">{formatJmd(summary.total)}</span></p>
+            {summary.promoDiscount > 0 ? (
+              <p>
+                Promo{summary.promoCode ? ` (${summary.promoCode})` : ""}:{" "}
+                <span className="font-semibold">-{formatJmd(summary.promoDiscount)}</span>
+              </p>
+            ) : null}
             <p>Deposit online: <span className="font-semibold">{formatJmd(summary.deposit)}</span></p>
             <p>Paid to date: <span className="font-semibold">{formatJmd(summary.netPaidToDate)}</span></p>
             <p>Balance due: <span className="font-semibold">{formatJmd(summary.balanceDue)}</span></p>

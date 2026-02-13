@@ -54,6 +54,7 @@ export async function POST(request: Request) {
   let dueNotes = 0;
   let emailsSent = 0;
   let emailFailures = 0;
+  let cancelledNotesSkipped = 0;
 
   for (const booking of bookingsResult.rows) {
     const pricing = booking.pricing_json ?? {};
@@ -73,6 +74,10 @@ export async function POST(request: Request) {
       const target = normalizeTarget(note.email_target);
       const sendMode = String(note.email_send_mode ?? "").toLowerCase();
       if (target === "none" || sendMode !== "scheduled") continue;
+      if (typeof note.email_cancelled_at === "string" && note.email_cancelled_at.trim()) {
+        cancelledNotesSkipped += 1;
+        continue;
+      }
 
       const scheduledFor = typeof note.email_scheduled_for === "string" ? note.email_scheduled_for : null;
       if (!scheduledFor) continue;
@@ -207,5 +212,6 @@ export async function POST(request: Request) {
     dueNotes,
     emailsSent,
     emailFailures,
+    cancelledNotesSkipped,
   });
 }

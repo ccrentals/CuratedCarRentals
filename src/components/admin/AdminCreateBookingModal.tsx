@@ -14,6 +14,12 @@ type AdminCreateBookingModalProps = {
   vehicles: VehicleOption[];
   initialOpen?: boolean;
   clearOpenHref?: string;
+  initialCustomer?: {
+    id: string;
+    fullName: string;
+    email: string;
+    phone: string;
+  } | null;
 };
 
 const PAYMENT_METHODS = [
@@ -44,13 +50,15 @@ export function AdminCreateBookingModal({
   vehicles,
   initialOpen = false,
   clearOpenHref,
+  initialCustomer = null,
 }: AdminCreateBookingModalProps) {
   const router = useRouter();
   const [open, setOpen] = useState(initialOpen);
   const [vehicleId, setVehicleId] = useState("");
-  const [fullName, setFullName] = useState("");
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
+  const [fullName, setFullName] = useState(initialCustomer?.fullName ?? "");
+  const [email, setEmail] = useState(initialCustomer?.email ?? "");
+  const [phone, setPhone] = useState(initialCustomer?.phone ?? "");
+  const [selectedCustomerId] = useState(initialCustomer?.id ?? "");
   const [pickupLocation, setPickupLocation] = useState("");
   const [startDate, setStartDate] = useState(todayIso());
   const [endDate, setEndDate] = useState("");
@@ -111,6 +119,7 @@ export function AdminCreateBookingModal({
       },
       body: JSON.stringify({
         vehicleId,
+        customerId: selectedCustomerId || undefined,
         fullName,
         email,
         phone,
@@ -200,6 +209,11 @@ export function AdminCreateBookingModal({
                 <h3 className="mt-1 text-lg font-bold text-[var(--ccr-text)]">
                   Add a booking in admin
                 </h3>
+                {selectedCustomerId ? (
+                  <p className="mt-1 text-xs text-[var(--ccr-muted)]">
+                    Booking on behalf of existing customer
+                  </p>
+                ) : null}
               </div>
               <button
                 type="button"

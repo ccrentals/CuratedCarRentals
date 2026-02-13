@@ -7,6 +7,7 @@ import {
   sendBookingCreatedEmail,
   sendDepositReceiptEmail,
 } from "@/lib/notifications/email";
+import { readPromoPricingFields } from "@/lib/payments/pricing";
 
 const ALLOWED_TYPES = ["booking_created", "deposit_receipt"] as const;
 
@@ -57,6 +58,7 @@ export async function POST(
   }
 
   const pricing = booking.pricing_json ?? {};
+  const { promoCode, promoDiscount } = readPromoPricingFields(pricing);
   const depositValue = Number(
     (pricing as Record<string, unknown>).deposit_cents ?? booking.deposit_cents,
   );
@@ -72,6 +74,8 @@ export async function POST(
       pickupLocation: booking.pickup_location,
       dailyRate: Number(booking.daily_rate_cents || 0),
       deposit: depositValue,
+      promoCode,
+      promoDiscount,
     });
 
     if (!result.ok) {
@@ -102,6 +106,8 @@ export async function POST(
     dailyRate: Number(booking.daily_rate_cents || 0),
     deposit: depositValue,
     paidToDate,
+    promoCode,
+    promoDiscount,
   });
 
   if (!receiptResult.ok) {

@@ -5,6 +5,7 @@ import { getDbPool } from "@/lib/db";
 import { logError } from "@/lib/log";
 import { isEmail, isISODate, isNonEmptyString } from "@/lib/validators";
 import { calcDaysInclusive, dateOnlyUtc } from "@/lib/payments/dateMath";
+import { upsertCustomerForBooking } from "@/lib/customers";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -86,34 +87,42 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Vehicle unavailable for selected dates" }, { status: 409 });
     }
 
-    const customerResult = await client.query(
-      "select id from customers where email = $1 limit 1",
-      [email.trim().toLowerCase()],
+    const normalizedEmail = email.trim().toLowerCase();
+    const customerUpsert = await upsertCustomerForBooking(
+      {
+        fullName: fullName.trim(),
+        email: normalizedEmail,
+        phone: phone.trim(),
+        bookedAt: new Date().toISOString(),
+      },
+      { client },
     );
-
-    let customerId = customerResult.rows[0]?.id;
-    if (!customerId) {
-      const insertedCustomer = await client.query(
-        "insert into customers (full_name, email, phone) values ($1, $2, $3) returning id",
-        [fullName.trim(), email.trim().toLowerCase(), phone.trim()],
-      );
-      customerId = insertedCustomer.rows[0].id;
-    }
 
     const dailyRate = vehicleResult.rows[0].daily_rate_cents as number;
     const depositCents = vehicleResult.rows[0].deposit_cents as number;
     const subtotalCents = dailyRate * days;
+    const totalAfterDiscount = subtotalCents;
 
     const pricing = {
       daily_rate_cents: dailyRate,
       deposit_cents: depositCents,
       days,
       subtotal_cents: subtotalCents,
+      promo_code: null,
+      promo_code_id: null,
+      promo_discount_cents: 0,
+      total_cents: totalAfterDiscount,
+      total_amount: totalAfterDiscount,
+      amount_paid: 0,
+      balance_due: totalAfterDiscount,
+      payment_status: "UNPAID",
+      payment_option_selected: "DEPOSIT",
+      currency: "JMD",
     };
 
     const bookingInsert = await client.query(
       "insert into bookings (vehicle_id, customer_id, start_date, end_date, pickup_location, status, pricing_json) values ($1, $2, $3, $4, $5, 'PENDING_PAYMENT', $6) returning id, status",
-      [vehicleId, customerId, startDate, endDate, pickupLocation.trim(), pricing],
+      [vehicleId, customerUpsert.customerId, startDate, endDate, pickupLocation.trim(), pricing],
     );
 
     await client.query("commit");
@@ -122,7 +131,7 @@ export async function POST(request: Request) {
       const vehicle = vehicleResult.rows[0];
       await sendBookingCreatedEmail({
         bookingId: bookingInsert.rows[0].id,
-        customerEmail: email.trim().toLowerCase(),
+        customerEmail: normalizedEmail,
         customerName: fullName.trim(),
         vehicleLabel: `${vehicle.year} ${vehicle.make} ${vehicle.model}`.trim(),
         startDate,
@@ -130,6 +139,8 @@ export async function POST(request: Request) {
         pickupLocation: pickupLocation.trim(),
         dailyRate,
         deposit: depositCents,
+        promoCode: null,
+        promoDiscount: 0,
       });
     } catch (error) {
       logError("public_booking_email_failed", error, {
@@ -143,6 +154,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       bookingId: bookingInsert.rows[0].id,
       status: bookingInsert.rows[0].status,
+      promoApplied: false,
     });
   } catch (error) {
     await client.query("rollback");

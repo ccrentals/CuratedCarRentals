@@ -4,7 +4,7 @@ import { dbQuery } from "@/lib/db";
 import { logError, logWarn } from "@/lib/log";
 import { requireCsrf } from "@/lib/security/csrf";
 import { buildRequestParams, requestHostedPageUrl } from "@/lib/wipay";
-import { computeBookingPricing, fetchNetPaidToDate } from "@/lib/payments/pricing";
+import { computeBookingPricing, fetchNetPaidToDate, readPromoPricingFields } from "@/lib/payments/pricing";
 import { formatJmdDecimal } from "@/lib/money";
 
 function buildOrderId() {
@@ -96,6 +96,7 @@ export async function POST(request: Request) {
   const pricing = booking.pricing_json ?? {};
   const dailyRate = Number(pricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
   const deposit = Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0);
+  const { promoCode, promoDiscount } = readPromoPricingFields(pricing);
   const netPaidToDate = await fetchNetPaidToDate(booking.id);
   const summary = computeBookingPricing({
     bookingId: booking.id,
@@ -105,6 +106,8 @@ export async function POST(request: Request) {
     dailyRate,
     deposit,
     netPaidToDate,
+    promoCode,
+    promoDiscount,
   });
 
   if (!Number.isFinite(summary.deposit) || summary.deposit <= 0) {
@@ -146,6 +149,8 @@ export async function POST(request: Request) {
           paid_to_date: summary.netPaidToDate,
           days: summary.days,
           daily_rate_cents: summary.dailyRate,
+          promo_code: summary.promoCode,
+          promo_discount_cents: summary.promoDiscount,
           total_amount: summary.total,
           total_decimal: totalDecimal,
           payment_type: "deposit",

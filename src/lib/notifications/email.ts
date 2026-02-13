@@ -145,6 +145,8 @@ export async function sendBookingCreatedEmail(input: {
   pickupLocation: string;
   dailyRate: number;
   deposit: number;
+  promoCode?: string | null;
+  promoDiscount?: number;
 }) {
   const summary = computeBookingPricing({
     bookingId: input.bookingId,
@@ -154,6 +156,8 @@ export async function sendBookingCreatedEmail(input: {
     dailyRate: input.dailyRate,
     deposit: input.deposit,
     netPaidToDate: 0,
+    promoCode: input.promoCode ?? null,
+    promoDiscount: input.promoDiscount ?? 0,
   });
   const days = summary.days;
   const total = summary.total;
@@ -172,6 +176,11 @@ export async function sendBookingCreatedEmail(input: {
       <p><strong>Pickup location:</strong> ${input.pickupLocation}</p>
       <hr />
       <p><strong>Total rental:</strong> ${formatAmount(total)}</p>
+      ${
+        summary.promoDiscount > 0
+          ? `<p><strong>Promo${summary.promoCode ? ` (${summary.promoCode})` : ""}:</strong> -${formatAmount(summary.promoDiscount)}</p>`
+          : ""
+      }
       <p><strong>Deposit online:</strong> ${formatAmount(input.deposit)}</p>
       <p><strong>Balance on pickup:</strong> ${formatAmount(balance)}</p>
       <p style="margin-top: 16px;">
@@ -222,6 +231,8 @@ export async function sendDepositReceiptEmail(input: {
   dailyRate: number;
   deposit: number;
   paidToDate: number;
+  promoCode?: string | null;
+  promoDiscount?: number;
 }) {
   const summary = computeBookingPricing({
     bookingId: input.bookingId,
@@ -231,6 +242,8 @@ export async function sendDepositReceiptEmail(input: {
     dailyRate: input.dailyRate,
     deposit: input.deposit,
     netPaidToDate: input.paidToDate,
+    promoCode: input.promoCode ?? null,
+    promoDiscount: input.promoDiscount ?? 0,
   });
   const days = summary.days;
   const total = summary.total;
@@ -249,6 +262,11 @@ export async function sendDepositReceiptEmail(input: {
       <p><strong>Pickup location:</strong> ${input.pickupLocation}</p>
       <hr />
       <p><strong>Total rental:</strong> ${formatAmount(total)}</p>
+      ${
+        summary.promoDiscount > 0
+          ? `<p><strong>Promo${summary.promoCode ? ` (${summary.promoCode})` : ""}:</strong> -${formatAmount(summary.promoDiscount)}</p>`
+          : ""
+      }
       <p><strong>Deposit paid:</strong> ${formatAmount(input.deposit)}</p>
       <p><strong>Paid to date:</strong> ${formatAmount(input.paidToDate)}</p>
       <p><strong>Balance on pickup:</strong> ${formatAmount(balance)}</p>

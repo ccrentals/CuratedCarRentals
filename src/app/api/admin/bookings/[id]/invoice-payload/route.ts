@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { dbQuery } from "@/lib/db";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { buildInvoicePayload } from "@/lib/pdfmonkey";
-import { computeBookingPricing, fetchNetPaidToDate } from "@/lib/payments/pricing";
+import { computeBookingPricing, fetchNetPaidToDate, readPromoPricingFields } from "@/lib/payments/pricing";
 
 export async function GET(
   _request: Request,
@@ -43,6 +43,7 @@ export async function GET(
   const pricing = booking.pricing_json ?? {};
   const dailyRate = Number((pricing as Record<string, unknown>).daily_rate_cents ?? booking.daily_rate_cents ?? 0);
   const deposit = Number((pricing as Record<string, unknown>).deposit_cents ?? booking.deposit_cents ?? 0);
+  const { promoCode, promoDiscount } = readPromoPricingFields(pricing);
   const netPaidToDate = await fetchNetPaidToDate(booking.id);
   const summary = computeBookingPricing({
     bookingId: booking.id,
@@ -52,6 +53,8 @@ export async function GET(
     dailyRate,
     deposit,
     netPaidToDate,
+    promoCode,
+    promoDiscount,
   });
 
   type PaymentLine = {

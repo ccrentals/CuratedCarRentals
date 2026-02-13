@@ -14,6 +14,9 @@ export type BookingPricingSummary = {
   endDate: string;
   days: number;
   dailyRate: number;
+  subtotal: number;
+  promoCode: string | null;
+  promoDiscount: number;
   total: number;
   deposit: number;
   netPaidToDate: number;
@@ -23,6 +26,16 @@ export type BookingPricingSummary = {
 };
 export { calcDaysInclusive, dateOnlyUtc };
 
+export function readPromoPricingFields(pricing: Record<string, unknown> | null | undefined) {
+  const source = pricing ?? {};
+  const promoCode =
+    typeof source.promo_code === "string" && source.promo_code.trim().length > 0
+      ? source.promo_code.trim().toUpperCase()
+      : null;
+  const promoDiscount = Number(source.promo_discount_cents ?? 0);
+  return { promoCode, promoDiscount };
+}
+
 export function computeBookingPricing(input: {
   bookingId: string;
   bookingStatus: string;
@@ -31,12 +44,21 @@ export function computeBookingPricing(input: {
   dailyRate: number;
   deposit: number;
   netPaidToDate: number;
+  promoCode?: string | null;
+  promoDiscount?: number;
 }): Omit<BookingPricingSummary, "startDate" | "endDate"> & { startDate: string; endDate: string } {
   const days = calcDaysInclusive(input.startDate, input.endDate);
   const dailyRate = Number.isFinite(input.dailyRate) ? Number(input.dailyRate) : 0;
   const deposit = Number.isFinite(input.deposit) ? Number(input.deposit) : 0;
   const netPaidToDate = Number.isFinite(input.netPaidToDate) ? Number(input.netPaidToDate) : 0;
-  const total = dailyRate * days;
+  const subtotal = dailyRate * days;
+  const promoCode =
+    typeof input.promoCode === "string" && input.promoCode.trim().length > 0
+      ? input.promoCode.trim().toUpperCase()
+      : null;
+  const promoDiscountRaw = Number.isFinite(input.promoDiscount) ? Number(input.promoDiscount) : 0;
+  const promoDiscount = Math.max(0, Math.min(subtotal, promoDiscountRaw));
+  const total = Math.max(0, subtotal - promoDiscount);
 
   const balanceDue = Math.max(0, total - netPaidToDate);
   const paymentStatus: PaymentStatus =
@@ -55,6 +77,9 @@ export function computeBookingPricing(input: {
     endDate,
     days,
     dailyRate,
+    subtotal,
+    promoCode,
+    promoDiscount,
     total,
     deposit,
     netPaidToDate,
@@ -127,6 +152,7 @@ export async function getBookingPricingSummary(
   const pricing = booking.pricing_json ?? {};
   const dailyRate = Number(pricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
   const deposit = Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0);
+  const { promoCode, promoDiscount } = readPromoPricingFields(pricing);
   const netPaidToDate = await fetchNetPaidToDate(bookingId, options);
 
   return computeBookingPricing({
@@ -137,5 +163,7 @@ export async function getBookingPricingSummary(
     dailyRate,
     deposit,
     netPaidToDate,
+    promoCode,
+    promoDiscount,
   });
 }

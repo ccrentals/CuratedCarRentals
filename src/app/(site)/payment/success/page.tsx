@@ -5,7 +5,7 @@ import { dbQuery } from "@/lib/db";
 import { fmtDateOnly } from "@/lib/dateFormat";
 import { logError } from "@/lib/log";
 import { formatJmd } from "@/lib/money";
-import { computeBookingPricing, fetchNetPaidToDate } from "@/lib/payments/pricing";
+import { computeBookingPricing, fetchNetPaidToDate, readPromoPricingFields } from "@/lib/payments/pricing";
 import { buildInvoicePayload, generateInvoicePdf } from "@/lib/pdfmonkey";
 
 type PaymentRow = {
@@ -77,6 +77,7 @@ export default async function PaymentSuccessPage({
   const pricing = booking?.pricing_json ?? {};
   const dailyRate = booking ? Number(pricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0) : 0;
   const depositPolicy = booking ? Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0) : 0;
+  const { promoCode, promoDiscount } = readPromoPricingFields(pricing);
   const netPaidToDate = booking ? await fetchNetPaidToDate(booking.id) : 0;
   const summary = booking
     ? computeBookingPricing({
@@ -87,6 +88,8 @@ export default async function PaymentSuccessPage({
         dailyRate,
         deposit: depositPolicy,
         netPaidToDate,
+        promoCode,
+        promoDiscount,
       })
     : null;
 
@@ -230,6 +233,11 @@ export default async function PaymentSuccessPage({
                   <div>
                     <p className="text-xs uppercase text-[var(--ccr-muted)]">Charges</p>
                     <p>Total rental: {formatJmd(total)}</p>
+                    {summary?.promoDiscount ? (
+                      <p>
+                        Promo{summary.promoCode ? ` (${summary.promoCode})` : ""}: -{formatJmd(summary.promoDiscount)}
+                      </p>
+                    ) : null}
                     <p>Deposit paid: {formatJmd(depositPaid)}</p>
                     <p>Paid to date: {formatJmd(paidToDate)}</p>
                     <p className="font-semibold">Balance on pickup: {formatJmd(balanceDue)}</p>
