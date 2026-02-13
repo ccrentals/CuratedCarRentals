@@ -36,7 +36,10 @@ export function Header() {
   }, [isCompact]);
 
   useEffect(() => {
-    setMobileNavOpen(false);
+    const timeout = window.setTimeout(() => {
+      setMobileNavOpen(false);
+    }, 0);
+    return () => window.clearTimeout(timeout);
   }, [pathname]);
 
   useEffect(() => {

@@ -38,6 +38,20 @@ function toLocalInput(value: string) {
   )}:${pad(date.getMinutes())}`;
 }
 
+function normalizeInitialDraft(initial: BlockoutDraft) {
+  const knownReasons = ["Maintenance", "Unavailable", "Private Use", "Cleaning", "Other"];
+  if (initial.reason && !knownReasons.includes(initial.reason)) {
+    return {
+      draft: { ...initial, reason: "Other" },
+      customReason: initial.reason,
+    };
+  }
+  return {
+    draft: initial,
+    customReason: "",
+  };
+}
+
 export function BlockoutModal({
   open,
   vehicles,
@@ -46,22 +60,10 @@ export function BlockoutModal({
   onSaved,
   onDeleted,
 }: BlockoutModalProps) {
-  const [draft, setDraft] = useState<BlockoutDraft>(initial);
-  const [customReason, setCustomReason] = useState("");
+  const [draft, setDraft] = useState<BlockoutDraft>(() => normalizeInitialDraft(initial).draft);
+  const [customReason, setCustomReason] = useState(() => normalizeInitialDraft(initial).customReason);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const knownReasons = ["Maintenance", "Unavailable", "Private Use", "Cleaning", "Other"];
-    if (initial.reason && !knownReasons.includes(initial.reason)) {
-      setDraft({ ...initial, reason: "Other" });
-      setCustomReason(initial.reason);
-    } else {
-      setDraft(initial);
-      setCustomReason("");
-    }
-    setError(null);
-  }, [initial]);
 
   useEffect(() => {
     if (!open) return;

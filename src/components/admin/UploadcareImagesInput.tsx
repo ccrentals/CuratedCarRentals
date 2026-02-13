@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 type UploadcareImagesInputProps = {
   label?: string;
@@ -12,12 +12,61 @@ type UploadcareImagesInputProps = {
 
 declare global {
   interface Window {
-    uploadcare?: any;
+    uploadcare?: UploadcareApi;
     UPLOADCARE_PUBLIC_KEY?: string;
   }
 }
 
 const WIDGET_SRC = "https://ucarecdn.com/libs/widget/3.x/uploadcare.full.min.js";
+
+type UploadcareFileInfo = {
+  cdnUrl?: string;
+};
+
+type UploadcareSingleFile = {
+  promise?: () => Promise<UploadcareFileInfo>;
+  done?: (callback: (file: UploadcareFileInfo) => void) => void;
+};
+
+type UploadcareFileGroup = {
+  files: () => UploadcareSingleFile[];
+};
+
+type UploadcareDialog = {
+  done: (callback: (file: UploadcareSingleFile | UploadcareFileGroup) => void) => void;
+  fail: (callback: (error: { message?: string }) => void) => void;
+};
+
+type UploadcareApi = {
+  openDialog: (
+    _file: null,
+    options: { publicKey: string; multiple: boolean; imagesOnly: boolean },
+  ) => UploadcareDialog | null;
+};
+
+function resolveWithDone<T>(entry: { done?: (callback: (value: T) => void) => void }) {
+  return new Promise<T>((resolve) => {
+    entry.done?.(resolve);
+  });
+}
+
+function isUploadcareGroup(file: UploadcareSingleFile | UploadcareFileGroup): file is UploadcareFileGroup {
+  return "files" in file && typeof file.files === "function";
+}
+
+function hasUploadcarePromise(
+  file: UploadcareSingleFile | UploadcareFileGroup,
+): file is UploadcareSingleFile & { promise: () => Promise<UploadcareFileInfo> } {
+  return typeof (file as UploadcareSingleFile).promise === "function";
+}
+
+function hasUploadcareDone(
+  file: UploadcareSingleFile | UploadcareFileGroup,
+): file is UploadcareSingleFile & {
+  done: (callback: (file: UploadcareFileInfo) => void) => void;
+} {
+  return typeof (file as UploadcareSingleFile).done === "function";
+}
 
 function loadUploadcareScript() {
   if (typeof window === "undefined") return Promise.resolve();
@@ -40,30 +89,30 @@ function loadUploadcareScript() {
   });
 }
 
-async function resolveUploadcareUrls(file: any) {
+async function resolveUploadcareUrls(file: UploadcareSingleFile | UploadcareFileGroup | null) {
   if (!file) return [];
-  if (typeof file.files === "function") {
+  if (isUploadcareGroup(file)) {
     const files = file.files();
     const infos = await Promise.all(
-      files.map((entry: any) =>
+      files.map((entry) =>
         typeof entry.promise === "function"
           ? entry.promise()
-          : new Promise((resolve) => entry.done(resolve)),
+          : resolveWithDone<UploadcareFileInfo>(entry),
       ),
     );
     return infos
-      .map((info: any) => info?.cdnUrl)
+      .map((info) => info?.cdnUrl)
       .filter((url: string | undefined) => typeof url === "string");
   }
 
-  if (typeof file.promise === "function") {
+  if (hasUploadcarePromise(file)) {
     const info = await file.promise();
     return info?.cdnUrl ? [info.cdnUrl] : [];
   }
 
-  if (typeof file.done === "function") {
-    const info = await new Promise((resolve) => file.done(resolve));
-    return (info as any)?.cdnUrl ? [(info as any).cdnUrl] : [];
+  if (hasUploadcareDone(file)) {
+    const info = await resolveWithDone<UploadcareFileInfo>(file);
+    return info?.cdnUrl ? [info.cdnUrl] : [];
   }
 
   return [];
@@ -76,17 +125,13 @@ export function UploadcareImagesInput({
   value,
   onChange,
 }: UploadcareImagesInputProps) {
-  const [internal, setInternal] = useState<string[]>(value ?? []);
+  const [internal, setInternal] = useState<string[]>(() => value ?? []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const urls = value ?? internal;
-  const setUrls = onChange ?? setInternal;
+  const setUrls = onChange ?? ((nextUrls: string[]) => setInternal(nextUrls));
   const publicKey = process.env.NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY ?? "";
-
-  useEffect(() => {
-    if (value) setInternal(value);
-  }, [value]);
 
   const canUpload = useMemo(() => Boolean(publicKey), [publicKey]);
 
@@ -110,12 +155,12 @@ export function UploadcareImagesInput({
         setLoading(false);
         return;
       }
-      dialog.done(async (file: any) => {
+      dialog.done(async (file) => {
         const nextUrls = await resolveUploadcareUrls(file);
         setUrls(nextUrls);
         setLoading(false);
       });
-      dialog.fail((err: any) => {
+      dialog.fail((err) => {
         setError(err?.message ?? "Upload cancelled.");
         setLoading(false);
       });
@@ -156,6 +201,7 @@ export function UploadcareImagesInput({
         <div className="mt-3 grid gap-2 sm:grid-cols-3">
           {urls.map((url) => (
             <div key={url} className="overflow-hidden rounded-lg border border-[var(--ccr-border)]">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={url} alt="Vehicle upload" className="h-24 w-full object-cover" />
               <button
                 type="button"

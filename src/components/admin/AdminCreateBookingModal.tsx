@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
@@ -64,7 +64,7 @@ export function AdminCreateBookingModal({
   const [error, setError] = useState<string | null>(null);
   const [paymentWarning, setPaymentWarning] = useState<string | null>(null);
 
-  function closeModal() {
+  const closeModal = useCallback(() => {
     if (loading) return;
     setOpen(false);
     setError(null);
@@ -72,7 +72,7 @@ export function AdminCreateBookingModal({
     if (clearOpenHref) {
       router.replace(clearOpenHref, { scroll: false });
     }
-  }
+  }, [clearOpenHref, loading, router]);
 
   useEffect(() => {
     if (!open) return;
@@ -91,7 +91,7 @@ export function AdminCreateBookingModal({
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [open, loading]);
+  }, [closeModal, open]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

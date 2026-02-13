@@ -6,7 +6,7 @@ import { useState } from "react";
 import { ThemeToggle } from "@/components/site/ThemeToggle";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
-export function UserMenu({ email, role }: { email: string; role: string }) {
+export function UserMenu({ email }: { email: string }) {
   const [loading, setLoading] = useState(false);
 
   async function handleSignOut() {

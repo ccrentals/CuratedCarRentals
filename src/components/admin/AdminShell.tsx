@@ -550,7 +550,7 @@ export function AdminShell({
                 </div>
               ) : null}
             </div>
-            <UserMenu email={user.email} role={(user.role ?? "Admin").toUpperCase()} />
+            <UserMenu email={user.email} />
           </div>
         </header>
         {children}

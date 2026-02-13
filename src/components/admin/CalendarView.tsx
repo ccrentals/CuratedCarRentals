@@ -671,6 +671,7 @@ export function CalendarView({
       </aside>
 
       <BlockoutModal
+        key={`${modalDraft.id ?? "new"}:${modalDraft.vehicleId}:${modalDraft.startAt}:${modalDraft.endAt}`}
         open={modalOpen}
         vehicles={vehicles}
         initial={modalDraft}

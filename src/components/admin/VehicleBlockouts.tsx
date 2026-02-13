@@ -224,6 +224,7 @@ export function VehicleBlockouts({ vehicle }: VehicleBlockoutsProps) {
       ) : null}
 
       <BlockoutModal
+        key={`${modalInitial.id ?? "new"}:${modalInitial.vehicleId}:${modalInitial.startAt}:${modalInitial.endAt}`}
         open={modalOpen}
         vehicles={[vehicle]}
         initial={modalInitial}
