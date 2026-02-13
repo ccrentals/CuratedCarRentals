@@ -1,11 +1,15 @@
 import { VehicleCard } from "@/components/sections/VehicleCard";
 import { Container } from "@/components/site/Container";
 import { Button } from "@/components/ui/Button";
-import { vehicles } from "@/data/vehicles";
+import { getPublicVehicles } from "@/lib/publicVehicles";
 
 const fleetHighlights = ["Compact Cars", "Sedans", "SUVs", "Automatic Options"];
 
-export default function FleetPage() {
+export const dynamic = "force-dynamic";
+
+export default async function FleetPage() {
+  const vehicles = await getPublicVehicles();
+
   return (
     <div className="py-10 md:py-14">
       <Container>
@@ -38,9 +42,13 @@ export default function FleetPage() {
 
         <section className="mt-8 rounded-3xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4 md:p-6">
           <div className="grid gap-5 md:grid-cols-2">
-            {vehicles.map((vehicle) => (
-              <VehicleCard key={vehicle.id} vehicle={vehicle} />
-            ))}
+            {vehicles.length === 0 ? (
+              <article className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm text-sm text-[var(--ccr-muted)]">
+                No vehicles are currently published. Add and publish vehicles from the Admin portal.
+              </article>
+            ) : (
+              vehicles.map((vehicle) => <VehicleCard key={vehicle.id} vehicle={vehicle} />)
+            )}
           </div>
         </section>
       </Container>

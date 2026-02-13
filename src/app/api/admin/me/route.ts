@@ -4,7 +4,7 @@ import { getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery } from "@/lib/db";
 import { logError } from "@/lib/log";
 import { requireCsrf } from "@/lib/security/csrf";
-import { type AppTheme, isAppTheme } from "@/lib/theme";
+import { type AppTheme, isAppTheme, THEME_COOKIE_NAME } from "@/lib/theme";
 
 type UserRow = {
   email: string;
@@ -125,7 +125,15 @@ export async function PATCH(request: Request) {
       "insert into admin_documents (key, content, updated_by) values ($1, $2, $3) on conflict (key) do update set content = excluded.content, updated_by = excluded.updated_by, updated_at = now()",
       [profileKey(session.userId), JSON.stringify({ theme: nextTheme }), session.userId],
     );
-    return NextResponse.json({ ok: true, theme: nextTheme });
+    const response = NextResponse.json({ ok: true, theme: nextTheme });
+    response.cookies.set(THEME_COOKIE_NAME, nextTheme, {
+      httpOnly: false,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 60 * 60 * 24 * 365,
+      path: "/",
+    });
+    return response;
   } catch (error) {
     const code = (error as { code?: string } | null)?.code;
     if (code === "42P01") {

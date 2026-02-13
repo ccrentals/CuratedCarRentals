@@ -7,8 +7,8 @@
   --ccr-surface-soft: #eef2fb;
   --ccr-border: #d4dced;
   --ccr-muted: #5e6e8d;
-  --ccr-accent: #f5b41b;
-  --ccr-accent-strong: #d69305;
+  --ccr-accent: #8a5b00;
+  --ccr-accent-strong: #6e4800;
   /* Use for highlighting money amounts; kept subtle in light theme. */
   --ccr-money-emphasis: var(--ccr-muted);
   --ccr-primary: #1f2d4d;
@@ -40,8 +40,8 @@
   --ccr-surface-soft: #173553;
   --ccr-border: #2b4f70;
   --ccr-muted: #9fc0da;
-  --ccr-accent: #f2c14e;
-  --ccr-accent-strong: #d6a632;
+  --ccr-accent: #2ea6a0;
+  --ccr-accent-strong: #1c9a90;
   --ccr-money-emphasis: var(--ccr-accent);
   --ccr-primary: #0d2136;
   --ccr-primary-soft: #18344f;
@@ -56,8 +56,8 @@
   --ccr-surface-soft: #f2e6d3;
   --ccr-border: #ddc8a9;
   --ccr-muted: #746048;
-  --ccr-accent: #b8860b;
-  --ccr-accent-strong: #946c08;
+  --ccr-accent: #9a6500;
+  --ccr-accent-strong: #7a4f00;
   --ccr-money-emphasis: #7f6124;
   --ccr-primary: #3a2f1f;
   --ccr-primary-soft: #4a3b27;
@@ -72,8 +72,8 @@
   --ccr-surface-soft: #1f372c;
   --ccr-border: #345445;
   --ccr-muted: #a4c1b1;
-  --ccr-accent: #e6bc53;
-  --ccr-accent-strong: #c6972f;
+  --ccr-accent: #c99a35;
+  --ccr-accent-strong: #b38a2a;
   --ccr-money-emphasis: var(--ccr-accent);
   --ccr-primary: #122219;
   --ccr-primary-soft: #1f3528;

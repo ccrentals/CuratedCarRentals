@@ -3,13 +3,15 @@ import { VehicleCard } from "@/components/sections/VehicleCard";
 import { Container } from "@/components/site/Container";
 import { Button } from "@/components/ui/Button";
 import { siteContent } from "@/data/content";
-import { vehicles } from "@/data/vehicles";
+import { getPublicVehicles } from "@/lib/publicVehicles";
 
-const explicitlyFeaturedVehicles = vehicles.filter((vehicle) => vehicle.featured);
-const fallbackVehicles = vehicles.filter((vehicle) => !vehicle.featured);
-const featuredVehicles = [...explicitlyFeaturedVehicles, ...fallbackVehicles].slice(0, 3);
+export const dynamic = "force-dynamic";
 
-export default function HomePage() {
+export default async function HomePage() {
+  const vehicles = await getPublicVehicles();
+  const explicitlyFeaturedVehicles = vehicles.filter((vehicle) => vehicle.featured);
+  const fallbackVehicles = vehicles.filter((vehicle) => !vehicle.featured);
+  const featuredVehicles = [...explicitlyFeaturedVehicles, ...fallbackVehicles].slice(0, 3);
   const todayKey = (() => {
     const now = new Date();
     const pad = (value: number) => String(value).padStart(2, "0");
@@ -60,6 +62,7 @@ export default function HomePage() {
                 <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
                   Vehicle
                   <select className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] px-3 py-2 text-sm text-[var(--ccr-text)]">
+                    {vehicles.length === 0 ? <option>No vehicles currently available</option> : null}
                     {vehicles.map((vehicle) => (
                       <option key={vehicle.id}>{vehicle.name}</option>
                     ))}
@@ -120,9 +123,13 @@ export default function HomePage() {
           />
 
           <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-            {featuredVehicles.map((vehicle) => (
-              <VehicleCard key={vehicle.id} vehicle={vehicle} />
-            ))}
+            {featuredVehicles.length === 0 ? (
+              <article className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm text-sm text-[var(--ccr-muted)]">
+                Vehicles will appear here once published in Admin.
+              </article>
+            ) : (
+              featuredVehicles.map((vehicle) => <VehicleCard key={vehicle.id} vehicle={vehicle} />)
+            )}
           </div>
         </section>
       </Container>

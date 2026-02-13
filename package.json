@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "migrate": "node scripts/migrate.js",
+    "seed:public-vehicles": "tsx scripts/seed-public-vehicles.ts",
     "test": "tsx --test",
     "lint": "eslint"
   },

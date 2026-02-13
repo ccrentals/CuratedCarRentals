@@ -2,14 +2,14 @@
 
 import { useState } from "react";
 
+import { ensureCsrfToken } from "@/lib/security/csrf-client";
 import { cn } from "@/lib/utils";
-import { type AppTheme, isAppTheme } from "@/lib/theme";
-
-const THEME_KEY = "ccr-theme";
+import { type AppTheme, isAppTheme, THEME_STORAGE_KEY } from "@/lib/theme";
 
 type ThemeToggleProps = {
   className?: string;
   variant?: "default" | "inverse";
+  persistence?: "local" | "user";
 };
 
 function applyTheme(theme: AppTheme) {
@@ -20,19 +20,39 @@ function getCurrentTheme() {
   if (typeof document === "undefined") return "light" as AppTheme;
   const current = document.documentElement.getAttribute("data-theme");
   if (isAppTheme(current)) return current;
-  const savedTheme = typeof window !== "undefined" ? localStorage.getItem(THEME_KEY) : null;
+  const savedTheme =
+    typeof window !== "undefined" ? localStorage.getItem(THEME_STORAGE_KEY) : null;
   if (isAppTheme(savedTheme)) return savedTheme;
   return "light" as AppTheme;
 }
 
-export function ThemeToggle({ className, variant = "default" }: ThemeToggleProps) {
+async function persistThemeForUser(theme: AppTheme) {
+  const csrfToken = await ensureCsrfToken();
+  await fetch("/api/admin/me", {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      "x-csrf-token": csrfToken ?? "",
+    },
+    body: JSON.stringify({ theme }),
+  });
+}
+
+export function ThemeToggle({
+  className,
+  variant = "default",
+  persistence = "local",
+}: ThemeToggleProps) {
   const [, setRefreshKey] = useState(0);
   const theme = getCurrentTheme();
 
   function toggleTheme() {
     const nextTheme: AppTheme = theme === "dark" ? "light" : "dark";
-    localStorage.setItem(THEME_KEY, nextTheme);
+    localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
     applyTheme(nextTheme);
+    if (persistence === "user") {
+      void persistThemeForUser(nextTheme);
+    }
     setRefreshKey((value) => value + 1);
   }
 

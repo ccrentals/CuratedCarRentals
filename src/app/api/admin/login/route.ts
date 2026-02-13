@@ -7,6 +7,7 @@ import { verifyPassword } from "@/lib/auth/password";
 import { requireCsrf } from "@/lib/security/csrf";
 import { writeAuditLog } from "@/lib/audit";
 import { logWarn } from "@/lib/log";
+import { isAppTheme, type AppTheme, THEME_COOKIE_NAME } from "@/lib/theme";
 
 function getClientIp(request: Request) {
   const forwarded = request.headers.get("x-forwarded-for");
@@ -20,6 +21,24 @@ function isUndefinedColumn(error: unknown, column: string) {
   const code = (error as { code?: string } | null)?.code;
   const message = String((error as { message?: unknown } | null)?.message ?? "");
   return code === "42703" && message.includes(`\"${column}\"`) && message.includes("does not exist");
+}
+
+const PROFILE_KEY_PREFIX = "user_profile:";
+
+function profileKey(userId: string) {
+  return `${PROFILE_KEY_PREFIX}${userId}`;
+}
+
+function parseThemePreference(content: unknown): AppTheme | null {
+  if (typeof content !== "string" || !content.trim()) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(content) as { theme?: unknown };
+    return isAppTheme(parsed.theme) ? parsed.theme : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function POST(request: Request) {
@@ -241,5 +260,32 @@ export async function POST(request: Request) {
     }
   }
 
-  return NextResponse.json({ ok: true, mustChangePassword: Boolean(user.must_change_password) });
+  let theme: AppTheme = "light";
+  try {
+    const profileResult = await dbQuery<{ content: string | null }>(
+      "select content from admin_documents where key = $1 limit 1",
+      [profileKey(user.id)],
+    );
+    theme = parseThemePreference(profileResult.rows[0]?.content ?? null) ?? "light";
+  } catch (error) {
+    // Allow login if settings storage isn't configured yet.
+    const code = (error as { code?: string } | null)?.code;
+    if (code !== "42P01") {
+      logWarn("api.admin.login.theme", { code });
+    }
+  }
+
+  const response = NextResponse.json({
+    ok: true,
+    mustChangePassword: Boolean(user.must_change_password),
+    theme,
+  });
+  response.cookies.set(THEME_COOKIE_NAME, theme, {
+    httpOnly: false,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    maxAge: 60 * 60 * 24 * 365,
+    path: "/",
+  });
+  return response;
 }

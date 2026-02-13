@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
-import { APP_THEMES, type AppTheme, isAppTheme } from "@/lib/theme";
+import { APP_THEMES, type AppTheme, isAppTheme, THEME_STORAGE_KEY } from "@/lib/theme";
 
 type MeResponse = {
   ok: boolean;
@@ -27,8 +27,6 @@ const THEME_LABELS: Record<AppTheme, string> = {
   sand: "Sand",
   forest: "Forest",
 };
-
-const THEME_KEY = "ccr-theme";
 
 function formatDate(value: string | null | undefined) {
   if (!value) return "—";
@@ -58,7 +56,7 @@ export function ProfileManager() {
           return;
         }
         const savedTheme = data.preferences?.theme;
-        const fallbackTheme = localStorage.getItem(THEME_KEY);
+        const fallbackTheme = localStorage.getItem(THEME_STORAGE_KEY);
         const initialTheme = isAppTheme(savedTheme)
           ? savedTheme
           : isAppTheme(fallbackTheme)
@@ -117,7 +115,7 @@ export function ProfileManager() {
       }
 
       document.documentElement.setAttribute("data-theme", theme);
-      localStorage.setItem(THEME_KEY, theme);
+      localStorage.setItem(THEME_STORAGE_KEY, theme);
       setSaveMessage("Profile preferences saved.");
       setSaving(false);
     } catch {
@@ -208,4 +206,3 @@ export function ProfileManager() {
     </div>
   );
 }
-

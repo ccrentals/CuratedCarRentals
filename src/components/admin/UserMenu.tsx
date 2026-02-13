@@ -31,7 +31,7 @@ export function UserMenu({ email }: { email: string }) {
       >
         Profile
       </Link>
-      <ThemeToggle className="py-1.5" />
+      <ThemeToggle className="py-1.5" persistence="user" />
       <button
         type="button"
         onClick={handleSignOut}

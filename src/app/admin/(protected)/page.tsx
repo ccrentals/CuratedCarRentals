@@ -340,7 +340,6 @@ export default async function AdminDashboardPage() {
                       <div>
                         <span className="inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-bold text-[var(--ccr-accent)] transition group-hover:bg-[var(--ccr-accent)] group-hover:text-[var(--ccr-primary)]">
                           {booking.id.slice(0, 8)}
-                          <span className="ml-1 text-[10px] font-black opacity-70">&gt;</span>
                         </span>
                         <p className="mt-1 text-xs text-[var(--ccr-muted)]">
                           {booking.customer_name} • {booking.vehicle_make} {booking.vehicle_model}

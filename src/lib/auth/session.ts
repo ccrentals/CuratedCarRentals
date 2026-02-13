@@ -2,8 +2,10 @@ import { cookies } from "next/headers";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 const COOKIE_NAME = "ccr_admin_session";
-const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 8; // 8 hours
-const SESSION_ROTATION_WINDOW_SECONDS = 60 * 60; // rotate if within 1 hour of expiry
+const IDLE_TIMEOUT_SECONDS = 60 * 20; // 20 minutes
+const COOKIE_MAX_AGE_SECONDS = IDLE_TIMEOUT_SECONDS;
+// Refresh on every authenticated request (when mutation is allowed) to enforce idle timeout semantics.
+const SESSION_ROTATION_WINDOW_SECONDS = IDLE_TIMEOUT_SECONDS;
 
 export type AdminSession = {
   userId: string;
@@ -86,6 +88,9 @@ export async function getSessionFromRequest(): Promise<AdminSession | null> {
 
     const nowSeconds = Math.floor(Date.now() / 1000);
     if (payload.exp < nowSeconds) return null;
+    const issuedAtSeconds = payload.iat ?? payload.exp - COOKIE_MAX_AGE_SECONDS;
+    // Invalidate legacy long-lived tokens so all active sessions honor the 20-minute idle policy.
+    if (payload.exp - issuedAtSeconds > COOKIE_MAX_AGE_SECONDS + 30) return null;
 
     if (payload.exp - nowSeconds <= SESSION_ROTATION_WINDOW_SECONDS) {
       const refreshed = createSessionToken(payload.sub, payload.role);
@@ -100,7 +105,7 @@ export async function getSessionFromRequest(): Promise<AdminSession | null> {
       userId: payload.sub,
       role: payload.role,
       expiresAt: payload.exp,
-      issuedAt: payload.iat ?? payload.exp - COOKIE_MAX_AGE_SECONDS,
+      issuedAt: issuedAtSeconds,
     };
   } catch {
     return null;

@@ -7,7 +7,6 @@ import { SectionHeading } from "@/components/sections/SectionHeading";
 import { Container } from "@/components/site/Container";
 import { Button } from "@/components/ui/Button";
 import { siteContent } from "@/data/content";
-import { vehicles } from "@/data/vehicles";
 import { formatCurrency } from "@/lib/utils";
 import { formatJmd } from "@/lib/money";
 import { calcDaysInclusive } from "@/lib/payments/dateMath";
@@ -16,6 +15,7 @@ const sampleRentalDays = 5;
 
 type PublicVehicle = {
   id: string;
+  name: string;
   make: string;
   model: string;
   daily_rate_cents: number;
@@ -25,6 +25,7 @@ type PublicVehicle = {
 type PublicVehiclesApiResponse = {
   vehicles?: Array<{
     id?: unknown;
+    name?: unknown;
     make?: unknown;
     model?: unknown;
     daily_rate_cents?: unknown;
@@ -67,6 +68,10 @@ export default function BookPage() {
           )
           .map((item) => ({
             id: item.id,
+            name:
+              typeof item.name === "string" && item.name.trim().length > 0
+                ? item.name
+                : `${item.make} ${item.model}`.trim(),
             make: item.make,
             model: item.model,
             daily_rate_cents:
@@ -248,8 +253,8 @@ export default function BookPage() {
               deposit.
             </p>
             <div className="mt-5 space-y-3">
-              {vehicles.map((vehicle) => {
-                const total = vehicle.pricePerDay * sampleRentalDays;
+              {vehicleOptions.map((vehicle) => {
+                const total = vehicle.daily_rate_cents * sampleRentalDays;
                 const deposit = Math.round(total * siteContent.bookingDepositRate);
                 const balance = total - deposit;
 
@@ -265,6 +270,9 @@ export default function BookPage() {
                   </div>
                 );
               })}
+              {vehicleOptions.length === 0 ? (
+                <p className="text-sm text-[var(--ccr-muted)]">No vehicles currently available.</p>
+              ) : null}
             </div>
 
             <div className="mt-6 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">

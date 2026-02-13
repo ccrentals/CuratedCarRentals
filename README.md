@@ -56,6 +56,17 @@ npm run migrate
 
 This applies pending files in filename order (e.g. `001_...sql`, `002_...sql`) and is safe to re-run.
 
+### Public fleet vehicle import (one-time)
+
+The public Fleet/Home pages now read from Admin vehicles in Neon.
+To import the legacy frontend vehicles (`src/data/vehicles.ts`) into Admin as published records:
+
+```bash
+npm run seed:public-vehicles
+```
+
+The import is idempotent (safe to re-run). It updates existing rows by `features_json.legacy_id` and inserts missing ones.
+
 ## Admin users
 
 The app expects bcrypt password hashes.

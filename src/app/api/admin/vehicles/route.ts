@@ -11,6 +11,56 @@ function validateStatus(value: unknown) {
   return typeof value === "string" && allowedStatuses.includes(value);
 }
 
+function parseFeaturesInput(value: unknown): Record<string, unknown> {
+  if (!value) return {};
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+      return {};
+    } catch {
+      return {};
+    }
+  }
+  if (typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return {};
+}
+
+function toStringValue(value: unknown, fallback = ""): string {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : fallback;
+}
+
+function toNumberValue(value: unknown, fallback: number): number {
+  if (typeof value === "number" && Number.isFinite(value)) return Math.round(value);
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return Math.round(parsed);
+  }
+  return fallback;
+}
+
+function toBooleanValue(value: unknown, fallback = false): boolean {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["true", "1", "yes", "y"].includes(normalized)) return true;
+    if (["false", "0", "no", "n"].includes(normalized)) return false;
+  }
+  return fallback;
+}
+
+function slugify(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
+}
+
 export async function GET() {
   const session = await getSessionFromRequest();
   if (!session) {
@@ -58,6 +108,7 @@ export async function POST(request: Request) {
       : parseMoneyToCents(body.deposit_jmd ?? body.deposit);
   const status = body.status ?? "AVAILABLE";
   const imageUrls = parseImageUrls(body.image_urls_json);
+  const parsedFeatures = parseFeaturesInput(body.features_json);
 
   const currentYear = new Date().getFullYear() + 1;
 
@@ -77,16 +128,36 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid status" }, { status: 400 });
   }
 
+  const makeValue = String(make).trim();
+  const modelValue = String(model).trim();
+  const vehicleName = `${makeValue} ${modelValue}`.trim();
+  const features = {
+    ...parsedFeatures,
+    name: toStringValue(parsedFeatures.name, vehicleName),
+    slug: toStringValue(parsedFeatures.slug, slugify(vehicleName)),
+    category: toStringValue(parsedFeatures.category, "Vehicle"),
+    transmission: toStringValue(parsedFeatures.transmission, "Automatic"),
+    seats: Math.max(1, toNumberValue(parsedFeatures.seats, 5)),
+    bags: Math.max(0, toNumberValue(parsedFeatures.bags, 2)),
+    description: toStringValue(
+      parsedFeatures.description,
+      `Reliable ${year} ${vehicleName} rental option for Jamaica travel.`,
+    ),
+    featured: toBooleanValue(parsedFeatures.featured, false),
+    public_visible: toBooleanValue(parsedFeatures.public_visible, true),
+  };
+
   const result = await dbQuery(
-    "insert into vehicles (make, model, year, daily_rate_cents, deposit_cents, status, image_urls_json) values ($1, $2, $3, $4, $5, $6, $7) returning id, make, model, year, daily_rate_cents, deposit_cents, status, created_at",
+    "insert into vehicles (make, model, year, daily_rate_cents, deposit_cents, status, image_urls_json, features_json) values ($1, $2, $3, $4, $5, $6, $7, $8) returning id, make, model, year, daily_rate_cents, deposit_cents, status, created_at",
     [
-      String(make).trim(),
-      String(model).trim(),
+      makeValue,
+      modelValue,
       year,
       dailyRate,
       deposit,
       status,
       imageUrls,
+      features,
     ],
   );
 
