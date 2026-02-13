@@ -31,6 +31,13 @@ Last updated: 2026-02-13
 - `IN_PROGRESS` None.
 
 ## Newly Completed
+- `DONE` Cron reminder observability hardening:
+  - canonical reminder event type constants centralized in `src/lib/cron/reminderTypes.ts`
+  - durable run logging added for cron jobs in `audit_logs` (`entity_type=cron_run`, `action=CRON_REMINDER_RUN`)
+  - `/admin/cron` Last Runs now reads latest durable run per event type and falls back safely to latest reminder event timestamp
+  - `/admin/cron` Recent Reminder Events now scopes to booking reminder events only (`entity_type=booking`)
+  - admin-only simulation endpoint added: `POST /api/admin/cron/simulate-reminders` (writes run/event records without external send)
+  - tests added for run parsing and latest-run aggregation (`test/reminderRuns.test.ts`)
 - `DONE` Booking update form runtime hardening:
   - fixed date field initialization to support `string | Date` values without runtime `.slice()` errors.
 - `DONE` Admin shell stability pass:

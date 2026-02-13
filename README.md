@@ -134,6 +134,19 @@ Reminders are exposed as routes and can be run from the admin UI:
 Required:
 - `CRON_SECRET`
 
+Routes:
+- `POST /api/cron/pickup-reminders`
+- `POST /api/cron/balance-reminders`
+- `POST /api/cron/note-emails`
+
+Admin-only test/simulation route (no external email send):
+- `POST /api/admin/cron/simulate-reminders`
+
+Observability:
+- `Last Runs` on `/admin/cron` is driven by durable run records in `audit_logs` (`entity_type=cron_run`, `action=CRON_REMINDER_RUN`).
+- `Recent Reminder Events` on `/admin/cron` is driven by reminder event rows in `audit_logs` (`entity_type=booking`).
+- If a reminder job runs and sends zero emails, a run record is still written so the UI does not show stale “No runs yet”.
+
 ## Go-live readiness
 
 Use `/admin/health` as the checklist.

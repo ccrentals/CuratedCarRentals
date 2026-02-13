@@ -330,7 +330,8 @@ PENDING_PAYMENT -> CONFIRMED -> PICKED_UP -> RETURNED
 
 Reminders (cron)
 - Pickup reminder: 1 day before start_date (for CONFIRMED/PICKED_UP)
-- Balance reminder: on/after start_date while balance_due > 0 (for CONFIRMED/PICKED_UP)`;
+- Balance reminder: on/after start_date while balance_due > 0 (for CONFIRMED/PICKED_UP)
+- Note emails: due_at <= now() and not yet sent/cancelled`;
 
 const DATA_PROCESSING_DIAGRAM = `Data processing map (high level)
 
@@ -1088,6 +1089,8 @@ const DOCS: Record<string, DocSection> = {
             <ul className="mt-1 list-disc space-y-1 pl-5">
               <li><code>POST /api/cron/pickup-reminders</code> → sends pickup reminder emails (requires <code>x-cron-secret</code>).</li>
               <li><code>POST /api/cron/balance-reminders</code> → sends balance reminder emails (requires <code>x-cron-secret</code>).</li>
+              <li><code>POST /api/cron/note-emails</code> → sends scheduled note emails due at/earlier than current time.</li>
+              <li><code>POST /api/admin/cron/simulate-reminders</code> → admin-only simulation mode for validating Last Runs + Recent Reminder Events without sending provider traffic.</li>
             </ul>
 
             <details className="mt-4 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-4 py-3">
@@ -1456,7 +1459,8 @@ Cron
               </li>
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">Monitoring:</span> Check <code>/admin/health</code>{" "}
-                regularly; use Netlify logs for runtime errors.
+                regularly; use Netlify logs for runtime errors and validate cron outcomes from the{" "}
+                <code>/admin/cron</code> Last Runs/Recent Reminder Events panels.
               </li>
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">Updates:</span> Keep dependencies updated; validate
@@ -1494,7 +1498,8 @@ Cron
               </li>
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">Cron reminders:</span> Validate <code>CRON_SECRET</code>{" "}
-                and Netlify scheduled functions; run from <code>/admin/cron</code> for manual verification.
+                and Netlify scheduled functions; use <code>/admin/cron</code> manual run buttons or the simulate button
+                to verify both Last Runs and Recent Reminder Events update.
               </li>
             </ul>
           </>
