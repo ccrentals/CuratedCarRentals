@@ -1,20 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 export function RefundRequiredToast({ refundRequired }: { refundRequired: boolean }) {
-  const [open, setOpen] = useState(false);
-  const hasShown = useRef(false);
+  const [open, setOpen] = useState(refundRequired);
 
   useEffect(() => {
-    if (!refundRequired) return;
-    if (hasShown.current) return;
-    hasShown.current = true;
-
-    setOpen(true);
+    if (!open) return;
     const timer = window.setTimeout(() => setOpen(false), 9000);
     return () => window.clearTimeout(timer);
-  }, [refundRequired]);
+  }, [open]);
 
   if (!open) return null;
 
@@ -41,4 +36,3 @@ export function RefundRequiredToast({ refundRequired }: { refundRequired: boolea
     </div>
   );
 }
-

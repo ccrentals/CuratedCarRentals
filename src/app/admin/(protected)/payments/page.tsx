@@ -226,12 +226,12 @@ export default async function AdminPaymentsPage({
             </div>
           </dl>
           <p className="mt-4 text-xs text-[var(--ccr-muted)]">
-            <a
+            <Link
               href="/api/admin/payments/diagnostics"
               className="font-semibold text-[var(--ccr-text)] underline-offset-4 hover:underline"
             >
               View raw diagnostics JSON
-            </a>
+            </Link>
           </p>
         </div>
 

@@ -75,30 +75,43 @@ export default async function AdminUsersPage({
   const queryBasic =
     "select id, email, role, locked_at, created_at from users " + (q ? "where email ilike $1" : "") + " order by created_at desc";
 
-  let lifecycleNotConfigured = false;
-  let usernamesNotConfigured = false;
-  type UsersResult = { rows: UserRow[] };
-
-  const users: UsersResult = await (async (): Promise<UsersResult> => {
+  const usersQuery = await (async (): Promise<{
+    result: Awaited<ReturnType<typeof dbQuery<UserRow>>>;
+    lifecycleNotConfigured: boolean;
+    usernamesNotConfigured: boolean;
+  }> => {
     try {
-      return await dbQuery<UserRow>(queryWithLifecycle, values);
+      return {
+        result: await dbQuery<UserRow>(queryWithLifecycle, values),
+        lifecycleNotConfigured: false,
+        usernamesNotConfigured: false,
+      };
     } catch (error) {
       if (isUndefinedColumn(error, "username")) {
-        usernamesNotConfigured = true;
-        return await dbQuery<UserRow>(
-          "select id, email, full_name, role, is_active, deactivated_at, locked_at, created_at, last_login_at from users " +
-            whereSql.replace("username ilike $1 or ", "") +
-            " order by created_at desc",
-          values,
-        );
+        return {
+          result: await dbQuery<UserRow>(
+            "select id, email, full_name, role, is_active, deactivated_at, locked_at, created_at, last_login_at from users " +
+              whereSql.replace("username ilike $1 or ", "") +
+              " order by created_at desc",
+            values,
+          ),
+          lifecycleNotConfigured: false,
+          usernamesNotConfigured: true,
+        };
       }
       if (isUndefinedColumn(error, "is_active") || isUndefinedColumn(error, "full_name")) {
-        lifecycleNotConfigured = true;
-        return await dbQuery<UserRow>(queryBasic, q ? values : []);
+        return {
+          result: await dbQuery<UserRow>(queryBasic, q ? values : []),
+          lifecycleNotConfigured: true,
+          usernamesNotConfigured: false,
+        };
       }
       throw error;
     }
   })();
+  const users = usersQuery.result;
+  const lifecycleNotConfigured = usersQuery.lifecycleNotConfigured;
+  const usernamesNotConfigured = usersQuery.usernamesNotConfigured;
 
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-10">

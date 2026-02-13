@@ -42,7 +42,8 @@ export default function RootLayout({
   try {
     var key = "ccr-theme";
     var theme = localStorage.getItem(key);
-    if (theme !== "light" && theme !== "dark") {
+    var allowed = ["light", "dark", "ocean", "sand", "forest"];
+    if (!theme || allowed.indexOf(theme) === -1) {
       theme = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
     }
     document.documentElement.setAttribute("data-theme", theme);

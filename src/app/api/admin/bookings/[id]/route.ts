@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 
 import { getSessionFromRequest } from "@/lib/auth/session";
-import { dbQuery } from "@/lib/db";
+import { dbQuery, getDbPool } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
 import { getInternalNotesRecipient, sendBookingNoteEmail } from "@/lib/notifications/email";
+import { computeBookingPricing, fetchNetPaidToDate } from "@/lib/payments/pricing";
 import { requireCsrf } from "@/lib/security/csrf";
 
 function isAdminRole(role: string | undefined) {
@@ -29,6 +30,13 @@ function normalizeNoteTarget(value: unknown): "none" | "customer" | "internal" |
 function normalizeNoteSendMode(value: unknown): "immediate" | "scheduled" {
   if (typeof value === "string" && value === "scheduled") return "scheduled";
   return "immediate";
+}
+
+function normalizeDateInput(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return null;
+  return trimmed;
 }
 
 export async function GET(
@@ -246,6 +254,164 @@ export async function PATCH(
     });
 
     return NextResponse.json({ ok: true });
+  }
+
+  if (action === "update_details") {
+    const startDate = normalizeDateInput(body?.startDate);
+    const endDate = normalizeDateInput(body?.endDate);
+    const pickupLocation = typeof body?.pickupLocation === "string" ? body.pickupLocation.trim() : "";
+    const customerName = typeof body?.customerName === "string" ? body.customerName.trim() : "";
+    const customerEmail = typeof body?.customerEmail === "string" ? body.customerEmail.trim() : "";
+    const customerPhone = typeof body?.customerPhone === "string" ? body.customerPhone.trim() : "";
+
+    if (!startDate || !endDate) {
+      return NextResponse.json({ error: "Valid start and end dates are required" }, { status: 400 });
+    }
+
+    if (endDate <= startDate) {
+      return NextResponse.json({ error: "End date must be after start date" }, { status: 400 });
+    }
+
+    if (!pickupLocation) {
+      return NextResponse.json({ error: "Pickup location is required" }, { status: 400 });
+    }
+
+    if (!customerName) {
+      return NextResponse.json({ error: "Customer name is required" }, { status: 400 });
+    }
+
+    if (!customerEmail || !customerEmail.includes("@")) {
+      return NextResponse.json({ error: "Valid customer email is required" }, { status: 400 });
+    }
+
+    if (!customerPhone) {
+      return NextResponse.json({ error: "Customer phone is required" }, { status: 400 });
+    }
+
+    const pool = getDbPool();
+    const client = await pool.connect();
+    try {
+      await client.query("begin");
+
+      const bookingResult = await client.query(
+        "select b.id, b.customer_id, b.vehicle_id, b.status, b.start_date, b.end_date, b.pickup_location, b.pricing_json, v.daily_rate_cents, v.deposit_cents, c.full_name as customer_name, c.email as customer_email, c.phone as customer_phone from bookings b join vehicles v on v.id = b.vehicle_id join customers c on c.id = b.customer_id where b.id = $1 for update",
+        [id],
+      );
+
+      if (bookingResult.rowCount === 0) {
+        await client.query("rollback");
+        return NextResponse.json({ error: "Booking not found" }, { status: 404 });
+      }
+
+      const booking = bookingResult.rows[0] as {
+        id: string;
+        customer_id: string;
+        vehicle_id: string;
+        status: string;
+        start_date: string;
+        end_date: string;
+        pickup_location: string;
+        pricing_json: Record<string, unknown> | null;
+        daily_rate_cents: number;
+        deposit_cents: number;
+        customer_name: string;
+        customer_email: string;
+        customer_phone: string;
+      };
+      if (["RETURNED", "CANCELLED"].includes(booking.status)) {
+        await client.query("rollback");
+        return NextResponse.json(
+          { error: "Cancelled or returned bookings cannot be updated" },
+          { status: 400 },
+        );
+      }
+
+      const overlapResult = await client.query(
+        "select id from bookings where vehicle_id = $1 and status in ('CONFIRMED','PICKED_UP') and id <> $2 and not ($4 < start_date or $3 > end_date) limit 1",
+        [booking.vehicle_id, booking.id, startDate, endDate],
+      );
+
+      if (overlapResult.rowCount > 0) {
+        await client.query("rollback");
+        return NextResponse.json(
+          { error: "Vehicle is no longer available for the updated dates" },
+          { status: 409 },
+        );
+      }
+
+      const currentPricing = booking.pricing_json ?? {};
+      const dailyRate = Number(currentPricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
+      const deposit = Number(currentPricing.deposit_cents ?? booking.deposit_cents ?? 0);
+      const netPaidToDate = await fetchNetPaidToDate(booking.id, { client });
+      const pricingSummary = computeBookingPricing({
+        bookingId: booking.id,
+        bookingStatus: booking.status,
+        startDate,
+        endDate,
+        dailyRate,
+        deposit,
+        netPaidToDate,
+      });
+
+      const nextPricing = {
+        ...currentPricing,
+        days: pricingSummary.days,
+        daily_rate_cents: pricingSummary.dailyRate,
+        deposit_cents: pricingSummary.deposit,
+        subtotal_cents: pricingSummary.total,
+        total_cents: pricingSummary.total,
+        paid_to_date: pricingSummary.netPaidToDate,
+        balance_due: pricingSummary.balanceDue,
+        payment_status: pricingSummary.paymentStatus,
+        refund_required: pricingSummary.refundRequired,
+      };
+
+      await client.query(
+        "update customers set full_name = $2, email = $3, phone = $4 where id = $1",
+        [booking.customer_id, customerName, customerEmail, customerPhone],
+      );
+
+      await client.query(
+        "update bookings set start_date = $2, end_date = $3, pickup_location = $4, pricing_json = $5, updated_at = now() where id = $1",
+        [booking.id, startDate, endDate, pickupLocation, nextPricing],
+      );
+
+      await client.query("commit");
+
+      await writeAuditLog({
+        userId: session.userId,
+        action: "BOOKING_UPDATED",
+        entityType: "booking",
+        entityId: id,
+        details: {
+          previous_start_date: booking.start_date,
+          previous_end_date: booking.end_date,
+          previous_pickup_location: booking.pickup_location,
+          previous_customer_name: booking.customer_name,
+          previous_customer_email: booking.customer_email,
+          previous_customer_phone: booking.customer_phone,
+          next_start_date: startDate,
+          next_end_date: endDate,
+          next_pickup_location: pickupLocation,
+          next_customer_name: customerName,
+          next_customer_email: customerEmail,
+          next_customer_phone: customerPhone,
+          total: pricingSummary.total,
+          balance_due: pricingSummary.balanceDue,
+          refund_required: pricingSummary.refundRequired,
+        },
+      });
+
+      return NextResponse.json({
+        ok: true,
+        message: "Booking updated and repriced successfully.",
+      });
+    } catch {
+      await client.query("rollback");
+      return NextResponse.json({ error: "Failed to update booking details" }, { status: 500 });
+    } finally {
+      client.release();
+    }
   }
 
   if (action === "add_note") {

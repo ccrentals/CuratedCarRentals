@@ -77,6 +77,7 @@ export default async function AdminBookingsPage({
   let index = 1;
 
   const includeArchived = typeof params.archived === "string" && params.archived === "1";
+  const openCreateModal = typeof params.create === "string" && params.create === "1";
   if (!includeArchived) {
     whereClauses.push("b.archived_at is null");
   }
@@ -119,7 +120,6 @@ export default async function AdminBookingsPage({
     whereSql +
     " order by b.created_at desc";
 
-  let archiveNotConfigured = false;
   const queryTextWithoutArchive =
     "select b.id, b.start_date, b.end_date, b.created_at, b.status, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id " +
     (whereClauses.filter((clause) => clause !== "b.archived_at is null").length
@@ -127,17 +127,27 @@ export default async function AdminBookingsPage({
       : "") +
     " order by b.created_at desc";
 
-  const bookings = await (async () => {
+  const bookingQuery = await (async (): Promise<{
+    result: Awaited<ReturnType<typeof dbQuery<BookingRow>>>;
+    archiveNotConfigured: boolean;
+  }> => {
     try {
-      return await dbQuery<BookingRow>(queryText, values);
+      return {
+        result: await dbQuery<BookingRow>(queryText, values),
+        archiveNotConfigured: false,
+      };
     } catch (error) {
       if (isUndefinedColumn(error, "archived_at")) {
-        archiveNotConfigured = true;
-        return await dbQuery<BookingRow>(queryTextWithoutArchive, values);
+        return {
+          result: await dbQuery<BookingRow>(queryTextWithoutArchive, values),
+          archiveNotConfigured: true,
+        };
       }
       throw error;
     }
   })();
+  const bookings = bookingQuery.result;
+  const archiveNotConfigured = bookingQuery.archiveNotConfigured;
 
   const vehicles = await dbQuery<VehicleOption>(
     "select id, year, make, model from vehicles where status <> 'INACTIVE' order by year desc, make asc, model asc",
@@ -156,7 +166,11 @@ export default async function AdminBookingsPage({
           <h1 className="text-3xl font-bold text-[var(--ccr-text)]">Bookings</h1>
         </div>
         <div className="flex items-center gap-2">
-          <AdminCreateBookingModal vehicles={vehicleOptions} />
+          <AdminCreateBookingModal
+            vehicles={vehicleOptions}
+            initialOpen={openCreateModal}
+            clearOpenHref={openCreateModal ? "/admin/bookings" : undefined}
+          />
           {canAdmin ? (
             <Link
               href="/admin/bookings/archive"

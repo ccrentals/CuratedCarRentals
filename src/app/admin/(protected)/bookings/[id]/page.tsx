@@ -3,6 +3,7 @@ import Link from "next/link";
 import { dbQuery } from "@/lib/db";
 import { BookingActions } from "@/components/admin/BookingActions";
 import { BookingNotes } from "@/components/admin/BookingNotes";
+import { BookingUpdateForm } from "@/components/admin/BookingUpdateForm";
 import { ManualPaymentForm } from "@/components/admin/ManualPaymentForm";
 import { PaymentRowActions } from "@/components/admin/PaymentRowActions";
 import { RefundRequiredToast } from "@/components/admin/RefundRequiredToast";
@@ -176,17 +177,16 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
         Back to bookings
       </Link>
 
-      <div className="mt-3 space-y-4">
+      <div className="mt-3 space-y-3">
         <div className="flex flex-wrap items-center gap-3 md:gap-4">
           <span className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Booking</span>
-
           <details className="group relative">
             <summary className="flex cursor-pointer list-none items-center gap-2">
-              <span className="font-mono text-2xl font-bold leading-none text-[var(--ccr-text)] md:text-3xl">
+              <span className="font-mono text-2xl font-bold leading-none text-[var(--ccr-text)] md:text-[2.2rem]">
                 …{shortBookingId}
               </span>
               <span
-                className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full border border-[var(--ccr-border)] text-sm font-semibold leading-none text-[var(--ccr-accent)] transition-transform group-open:rotate-180"
+                className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-[var(--ccr-border)] text-sm font-semibold leading-none text-[var(--ccr-accent)] transition-transform group-open:rotate-180"
                 aria-hidden
               >
                 ▾
@@ -196,7 +196,6 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
               {booking.id}
             </div>
           </details>
-
           <span
             className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${statusBadge(
               booking.status,
@@ -206,7 +205,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
           </span>
         </div>
 
-        <div className="w-full pt-2">
+        <div className="w-full pt-1">
           <BookingActions
             bookingId={booking.id}
             bookingStatus={booking.status}
@@ -215,6 +214,19 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
             canAdmin={canAdmin}
           />
         </div>
+      </div>
+
+      <div className="mt-4">
+        <BookingUpdateForm
+          bookingId={booking.id}
+          startDate={booking.start_date}
+          endDate={booking.end_date}
+          pickupLocation={booking.pickup_location}
+          customerName={booking.customer_name}
+          customerEmail={booking.customer_email}
+          customerPhone={booking.customer_phone}
+          disabled={["RETURNED", "CANCELLED"].includes(booking.status.toUpperCase())}
+        />
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[1.2fr_1fr]">

@@ -16,6 +16,9 @@ export default async function AdminDashboardPage() {
   const confirmedResult = await dbQuery<{ count: string }>(
     "select count(*) from bookings where status = 'CONFIRMED'",
   );
+  const upcomingPickupsResult = await dbQuery<{ count: string }>(
+    "select count(*) from bookings where start_date between current_date and (current_date + interval '7 days') and status not in ('CANCELLED','RETURNED')",
+  );
 
   const pickupsToday = await dbQuery<{
     id: string;
@@ -100,6 +103,11 @@ export default async function AdminDashboardPage() {
       label: "Available Vehicles",
       value: availableVehiclesResult.rows[0]?.count ?? "0",
       href: "/admin/vehicles?availability=available",
+    },
+    {
+      label: "Upcoming Pickups (7d)",
+      value: upcomingPickupsResult.rows[0]?.count ?? "0",
+      href: "/admin/bookings",
     },
   ];
 
@@ -288,14 +296,14 @@ export default async function AdminDashboardPage() {
           </div>
           <div className="mt-4 flex flex-wrap gap-3">
             <Link
-              href="/book"
+              href="/admin/bookings?create=1"
               className="rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] shadow-sm transition hover:border-[var(--ccr-accent-strong)] hover:bg-[var(--ccr-surface-soft)]"
             >
               Quick create booking
             </Link>
             <Link
               href="/admin/calendar"
-              className="rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] shadow-sm transition hover:bg-[var(--ccr-surface-soft)]"
+              className="rounded-full bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] shadow-sm ring-2 ring-[var(--ccr-accent)] ring-offset-2 ring-offset-[var(--ccr-surface)] transition hover:bg-[var(--ccr-surface-soft)] hover:ring-[var(--ccr-accent-strong)]"
             >
               Add blockout
             </Link>
@@ -384,7 +392,13 @@ export default async function AdminDashboardPage() {
                         Added {fmtDate(vehicle.created_at)}
                       </p>
                     </div>
-                    <span className="rounded-full bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-semibold text-[var(--ccr-text)]">
+                    <span
+                      className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                        vehicle.status === "ACTIVE"
+                          ? "bg-[var(--ccr-surface-soft)] text-[var(--ccr-accent)] ring-2 ring-[var(--ccr-accent)] ring-offset-2 ring-offset-[var(--ccr-surface)]"
+                          : "bg-[var(--ccr-surface-soft)] text-[var(--ccr-text)]"
+                      }`}
+                    >
                       {vehicle.status}
                     </span>
                   </div>

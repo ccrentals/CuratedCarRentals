@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { AdminVehicleForm } from "@/components/admin/AdminVehicleForm";
+import { SlideDownPanel } from "@/components/admin/SlideDownPanel";
 import { dbQuery } from "@/lib/db";
 import { fmtDate } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
@@ -25,10 +26,15 @@ export default async function AdminVehiclesPage() {
     <div className="mx-auto w-full max-w-6xl px-6 py-10">
       <h1 className="text-3xl font-bold text-[var(--ccr-text)]">Vehicles</h1>
 
-      <section className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm">
-        <h2 className="text-lg font-bold text-[var(--ccr-text)]">Add Vehicle</h2>
-        <AdminVehicleForm />
-      </section>
+      <div className="mt-6">
+        <SlideDownPanel
+          title="Add Vehicle"
+          description="Create a vehicle record for the fleet."
+          defaultOpen={false}
+        >
+          <AdminVehicleForm />
+        </SlideDownPanel>
+      </div>
 
       <div className="mt-6 overflow-x-auto rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)]">
         <table className="min-w-full text-left text-sm">

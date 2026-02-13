@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { BlockoutModal } from "@/components/admin/BlockoutModal";
@@ -45,6 +45,7 @@ type CalendarViewProps = {
   dayViewBookingLimit: number | "all";
   filters: {
     vehicleId?: string;
+    customerQuery?: string;
     showBookings: boolean;
     showBlockouts: boolean;
     status?: string;
@@ -123,20 +124,12 @@ export function CalendarView({
   const searchParams = useSearchParams();
   const [selectedDate, setSelectedDate] = useState<string>(baseDate);
   const [showAllDayBookings, setShowAllDayBookings] = useState(false);
+  const [showAllDayBlockouts, setShowAllDayBlockouts] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [activeBlockout, setActiveBlockout] = useState<BlockoutEvent | null>(null);
 
   const base = parseDateKey(baseDate) ?? new Date();
-
-  useEffect(() => {
-    if (!days.includes(selectedDate)) {
-      setSelectedDate(baseDate);
-    }
-  }, [baseDate, days, selectedDate]);
-
-  useEffect(() => {
-    setShowAllDayBookings(false);
-  }, [selectedDate]);
+  const activeSelectedDate = days.includes(selectedDate) ? selectedDate : baseDate;
 
   const updateParams = (updates: Record<string, string | null | undefined>) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -154,8 +147,15 @@ export function CalendarView({
   const dayEvents = useMemo(() => {
     const map = new Map<string, { bookings: BookingEvent[]; blockouts: BlockoutEvent[] }>();
     days.forEach((day) => map.set(day, { bookings: [], blockouts: [] }));
+    const normalizedCustomerQuery = (filters.customerQuery ?? "").trim().toLowerCase();
 
     bookings.forEach((booking) => {
+      if (
+        normalizedCustomerQuery &&
+        !booking.customer_name.toLowerCase().includes(normalizedCustomerQuery)
+      ) {
+        return;
+      }
       days.forEach((day) => {
         const dayDate = parseDateKey(day);
         if (!dayDate) return;
@@ -181,9 +181,21 @@ export function CalendarView({
     });
 
     return map;
-  }, [bookings, blockouts, days]);
+  }, [bookings, blockouts, days, filters.customerQuery]);
 
-  const rawSelectedEvents = dayEvents.get(selectedDate) ?? { bookings: [], blockouts: [] };
+  const customerSuggestions = useMemo(() => {
+    const query = (filters.customerQuery ?? "").trim().toLowerCase();
+    if (query.length < 3) return [];
+    const names = new Set<string>();
+    bookings.forEach((booking) => {
+      if (booking.customer_name.toLowerCase().includes(query)) {
+        names.add(booking.customer_name);
+      }
+    });
+    return Array.from(names).slice(0, 8);
+  }, [bookings, filters.customerQuery]);
+
+  const rawSelectedEvents = dayEvents.get(activeSelectedDate) ?? { bookings: [], blockouts: [] };
   const selectedEvents = {
     bookings: filters.showBookings ? rawSelectedEvents.bookings : [],
     blockouts: filters.showBlockouts ? rawSelectedEvents.blockouts : [],
@@ -194,6 +206,7 @@ export function CalendarView({
       : Number.isInteger(dayViewBookingLimit) && dayViewBookingLimit > 0
         ? dayViewBookingLimit
         : DEFAULT_DAY_BOOKING_LIMIT;
+  const hasDayViewLimit = typeof normalizedDayViewLimit === "number";
 
   const visibleDayBookings = showAllDayBookings
     ? selectedEvents.bookings
@@ -204,23 +217,42 @@ export function CalendarView({
     0,
     selectedEvents.bookings.length - visibleDayBookings.length,
   );
+  const visibleDayBlockouts = showAllDayBlockouts
+    ? selectedEvents.blockouts
+    : normalizedDayViewLimit === "all"
+    ? selectedEvents.blockouts
+    : selectedEvents.blockouts.slice(0, normalizedDayViewLimit);
+  const hiddenDayBlockoutCount = Math.max(
+    0,
+    selectedEvents.blockouts.length - visibleDayBlockouts.length,
+  );
 
   const handlePrev = () => {
     const next = view === "month" ? addMonths(base, -1) : addDays(base, -7);
+    setSelectedDate(formatDateKey(next));
+    setShowAllDayBookings(false);
+    setShowAllDayBlockouts(false);
     updateParams({ date: formatDateKey(next) });
   };
 
   const handleNext = () => {
     const next = view === "month" ? addMonths(base, 1) : addDays(base, 7);
+    setSelectedDate(formatDateKey(next));
+    setShowAllDayBookings(false);
+    setShowAllDayBlockouts(false);
     updateParams({ date: formatDateKey(next) });
   };
 
   const handleToday = () => {
-    updateParams({ date: formatDateKey(new Date()) });
+    const today = formatDateKey(new Date());
+    setSelectedDate(today);
+    setShowAllDayBookings(false);
+    setShowAllDayBlockouts(false);
+    updateParams({ date: today });
   };
 
   const openNewBlockout = () => {
-    const day = selectedDate || formatDateKey(new Date());
+    const day = activeSelectedDate || formatDateKey(new Date());
     const start = `${day}T08:00`;
     const end = `${day}T17:00`;
     setActiveBlockout({
@@ -307,74 +339,97 @@ export function CalendarView({
           </button>
         </div>
 
-        <div className="mt-4 flex flex-wrap gap-3 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
-          <div>
-            <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-              View
-            </label>
-            <div className="mt-2 flex gap-2">
-              <button
-                type="button"
-                onClick={() => updateParams({ view: "month" })}
-                className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
-                  view === "month"
-                    ? "bg-[var(--ccr-primary)] text-white"
-                    : "border border-[var(--ccr-border)] text-[var(--ccr-text)]"
-                }`}
-              >
-                Month
-              </button>
-              <button
-                type="button"
-                onClick={() => updateParams({ view: "week" })}
-                className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
-                  view === "week"
-                    ? "bg-[var(--ccr-primary)] text-white"
-                    : "border border-[var(--ccr-border)] text-[var(--ccr-text)]"
-                }`}
-              >
-                Week
-              </button>
+        <div className="mt-4 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
+          <div className="grid gap-3 md:grid-cols-[220px_1fr_1fr_1fr] md:items-end">
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                View
+              </label>
+              <div className="mt-2 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => updateParams({ view: "month" })}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
+                    view === "month"
+                      ? "bg-[var(--ccr-primary)] text-white"
+                      : "border border-[var(--ccr-border)] text-[var(--ccr-text)]"
+                  }`}
+                >
+                  Month
+                </button>
+                <button
+                  type="button"
+                  onClick={() => updateParams({ view: "week" })}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
+                    view === "week"
+                      ? "bg-[var(--ccr-primary)] text-white"
+                      : "border border-[var(--ccr-border)] text-[var(--ccr-text)]"
+                  }`}
+                >
+                  Week
+                </button>
+              </div>
             </div>
+
+            <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+              Vehicle
+              <select
+                value={filters.vehicleId ?? ""}
+                onChange={(event) =>
+                  updateParams({ vehicleId: event.target.value || null })
+                }
+                className="mt-2 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+              >
+                <option value="">All vehicles</option>
+                {vehicles.map((vehicle) => (
+                  <option key={vehicle.id} value={vehicle.id}>
+                    {vehicle.make} {vehicle.model}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+              Booking Status
+              <select
+                value={filters.status ?? "all"}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  updateParams({ status: value === "all" ? null : value });
+                }}
+                className="mt-2 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+              >
+                {statusOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+              Customer
+              <input
+                type="text"
+                value={filters.customerQuery ?? ""}
+                onChange={(event) =>
+                  updateParams({
+                    customerQ: event.target.value.trim() ? event.target.value : null,
+                  })
+                }
+                list="calendar-customer-suggestions"
+                placeholder="Type 3+ chars"
+                className="mt-2 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+              />
+              <datalist id="calendar-customer-suggestions">
+                {customerSuggestions.map((name) => (
+                  <option key={name} value={name} />
+                ))}
+              </datalist>
+            </label>
           </div>
 
-          <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-            Vehicle
-            <select
-              value={filters.vehicleId ?? ""}
-              onChange={(event) =>
-                updateParams({ vehicleId: event.target.value || null })
-              }
-              className="mt-2 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
-            >
-              <option value="">All vehicles</option>
-              {vehicles.map((vehicle) => (
-                <option key={vehicle.id} value={vehicle.id}>
-                  {vehicle.make} {vehicle.model}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-            Booking Status
-            <select
-              value={filters.status ?? "all"}
-              onChange={(event) => {
-                const value = event.target.value;
-                updateParams({ status: value === "all" ? null : value });
-              }}
-              className="mt-2 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
-            >
-              {statusOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <div className="flex items-center gap-4">
+          <div className="mt-3 flex items-center gap-4">
             <label className="flex items-center gap-2 text-xs font-semibold text-[var(--ccr-text)]">
               <input
                 type="checkbox"
@@ -421,15 +476,20 @@ export function CalendarView({
             const blockoutEvents = filters.showBlockouts ? events.blockouts : [];
             const total = bookingEvents.length + blockoutEvents.length;
             const topEvents = [...bookingEvents, ...blockoutEvents].slice(0, 2);
+            const monthMode = view === "month";
             return (
-              <button
-                type="button"
-                key={day}
-                onClick={() => setSelectedDate(day)}
-                className={`min-h-[120px] rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-2 text-left transition ${
-                  selectedDate === day ? "border-[var(--ccr-primary)] shadow-sm" : ""
-                }`}
-              >
+                <button
+                  type="button"
+                  key={day}
+                  onClick={() => {
+                    setSelectedDate(day);
+                    setShowAllDayBookings(false);
+                    setShowAllDayBlockouts(false);
+                  }}
+                  className={`min-h-[120px] rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-2 text-left transition ${
+                    activeSelectedDate === day ? "border-[var(--ccr-primary)] shadow-sm" : ""
+                  }`}
+                >
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold text-[var(--ccr-muted)]">
                     {new Date(`${day}T00:00:00`).toLocaleDateString(undefined, {
@@ -443,41 +503,57 @@ export function CalendarView({
                     </span>
                   ) : null}
                 </div>
-                <div className="mt-1 flex flex-wrap gap-1">
-                  {filters.showBookings && bookingEvents.length > 0 ? (
-                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
-                      Bookings {bookingEvents.length}
-                    </span>
-                  ) : null}
-                  {filters.showBlockouts && blockoutEvents.length > 0 ? (
-                    <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
-                      Blockouts {blockoutEvents.length}
-                    </span>
-                  ) : null}
-                </div>
-                <div className="mt-2 space-y-1">
-                  {topEvents.map((event, index) => {
-                    const isBooking = "customer_name" in event;
-                    const label = isBooking
-                      ? `${(event as BookingEvent).vehicle_make} ${(event as BookingEvent).vehicle_model}`
-                      : (event as BlockoutEvent).reason;
-                    return (
-                      <div
-                        key={`${day}-${index}-${label}`}
-                        className={`truncate rounded-md px-2 py-1 text-[10px] font-semibold ${
-                          isBooking
-                            ? "bg-emerald-100 text-emerald-800"
-                            : "bg-amber-100 text-amber-800"
-                        }`}
-                      >
-                        {isBooking ? "Booking" : "Blockout"} • {label}
-                      </div>
-                    );
-                  })}
-                  {total > 2 ? (
-                    <p className="text-[10px] text-[var(--ccr-muted)]">+{total - 2} more</p>
-                  ) : null}
-                </div>
+                {!monthMode ? (
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {filters.showBookings && bookingEvents.length > 0 ? (
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
+                        Bookings {bookingEvents.length}
+                      </span>
+                    ) : null}
+                    {filters.showBlockouts && blockoutEvents.length > 0 ? (
+                      <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                        Blockouts {blockoutEvents.length}
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
+                {monthMode ? (
+                  <div className="mt-2 flex items-center gap-1">
+                    {Array.from({ length: Math.min(total, 3) }).map((_, index) => (
+                      <span
+                        key={`${day}-dot-${index}`}
+                        className="h-1.5 w-1.5 rounded-full bg-[var(--ccr-accent)]"
+                      />
+                    ))}
+                    {total > 3 ? (
+                      <span className="text-[10px] text-[var(--ccr-muted)]">+{total - 3}</span>
+                    ) : null}
+                  </div>
+                ) : (
+                  <div className="mt-2 space-y-1">
+                    {topEvents.map((event, index) => {
+                      const isBooking = "customer_name" in event;
+                      const label = isBooking
+                        ? `${(event as BookingEvent).vehicle_make} ${(event as BookingEvent).vehicle_model}`
+                        : (event as BlockoutEvent).reason;
+                      return (
+                        <div
+                          key={`${day}-${index}-${label}`}
+                          className={`truncate rounded-md px-2 py-1 text-[10px] font-semibold ${
+                            isBooking
+                              ? "bg-emerald-100 text-emerald-800"
+                              : "bg-amber-100 text-amber-800"
+                          }`}
+                        >
+                          {isBooking ? "Booking" : "Blockout"} • {label}
+                        </div>
+                      );
+                    })}
+                    {total > 2 ? (
+                      <p className="text-[10px] text-[var(--ccr-muted)]">+{total - 2} more</p>
+                    ) : null}
+                  </div>
+                )}
               </button>
             );
           })}
@@ -492,7 +568,7 @@ export function CalendarView({
               Day view
             </p>
             <h3 className="text-lg font-bold text-[var(--ccr-text)]">
-              {new Date(`${selectedDate}T00:00:00`).toLocaleDateString()}
+              {new Date(`${activeSelectedDate}T00:00:00`).toLocaleDateString()}
             </h3>
           </div>
           <button
@@ -531,16 +607,16 @@ export function CalendarView({
                 onClick={() => setShowAllDayBookings(true)}
                 className="mt-2 text-xs font-semibold text-[var(--ccr-primary)] hover:underline"
               >
-                Show {hiddenDayBookingCount} more
+                See {hiddenDayBookingCount} more
               </button>
             ) : null}
-            {showAllDayBookings && selectedEvents.bookings.length > DEFAULT_DAY_BOOKING_LIMIT ? (
+            {showAllDayBookings && hasDayViewLimit && selectedEvents.bookings.length > normalizedDayViewLimit ? (
               <button
                 type="button"
                 onClick={() => setShowAllDayBookings(false)}
                 className="mt-2 text-xs font-semibold text-[var(--ccr-primary)] hover:underline"
               >
-                Show less
+                See less
               </button>
             ) : null}
           </div>
@@ -553,14 +629,17 @@ export function CalendarView({
               <p className="mt-2 text-sm text-[var(--ccr-muted)]">No blockouts.</p>
             ) : (
               <ul className="mt-2 space-y-2">
-                {selectedEvents.blockouts.map((blockout) => (
+                {visibleDayBlockouts.map((blockout) => (
                   <li key={blockout.id}>
                     <button
                       type="button"
                       onClick={() => {
-                        setActiveBlockout(blockout);
-                        setModalOpen(true);
-                      }}
+                    setSelectedDate(activeSelectedDate);
+                    setShowAllDayBookings(false);
+                    setShowAllDayBlockouts(false);
+                    setActiveBlockout(blockout);
+                    setModalOpen(true);
+                  }}
                       className="w-full rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-left text-xs font-semibold text-amber-800"
                     >
                       {blockout.reason} • {blockout.vehicle_make} {blockout.vehicle_model}
@@ -569,6 +648,24 @@ export function CalendarView({
                 ))}
               </ul>
             )}
+            {hiddenDayBlockoutCount > 0 ? (
+              <button
+                type="button"
+                onClick={() => setShowAllDayBlockouts(true)}
+                className="mt-2 text-xs font-semibold text-[var(--ccr-primary)] hover:underline"
+              >
+                See {hiddenDayBlockoutCount} more
+              </button>
+            ) : null}
+            {showAllDayBlockouts && hasDayViewLimit && selectedEvents.blockouts.length > normalizedDayViewLimit ? (
+              <button
+                type="button"
+                onClick={() => setShowAllDayBlockouts(false)}
+                className="mt-2 text-xs font-semibold text-[var(--ccr-primary)] hover:underline"
+              >
+                See less
+              </button>
+            ) : null}
           </div>
         </div>
       </aside>

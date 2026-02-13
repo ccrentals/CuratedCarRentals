@@ -51,38 +51,48 @@ export default async function AdminBookingsArchivePage() {
   const session = await getSessionFromRequest();
   const canAdmin = isAdminRole(session?.role);
 
-  let archiveNotConfigured = false;
-  let deletedPaymentsNotConfigured = false;
-
-  type RowsResult<T> = { rows: T[] };
-
-  const archivedBookings: RowsResult<ArchivedBookingRow> = await (async () => {
+  const archivedQuery = await (async (): Promise<{
+    result: { rows: ArchivedBookingRow[] };
+    archiveNotConfigured: boolean;
+  }> => {
     try {
-      return await dbQuery<ArchivedBookingRow>(
-        "select b.id, b.start_date, b.end_date, b.status, b.archived_at, b.archived_reason, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.archived_at is not null order by b.archived_at desc nulls last, b.created_at desc",
-      );
+      return {
+        result: await dbQuery<ArchivedBookingRow>(
+          "select b.id, b.start_date, b.end_date, b.status, b.archived_at, b.archived_reason, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.archived_at is not null order by b.archived_at desc nulls last, b.created_at desc",
+        ),
+        archiveNotConfigured: false,
+      };
     } catch (error) {
       if (isUndefinedColumn(error, "archived_at")) {
-        archiveNotConfigured = true;
-        return { rows: [] };
+        return { result: { rows: [] }, archiveNotConfigured: true };
       }
       throw error;
     }
   })();
 
-  const deletedPayments: RowsResult<DeletedPaymentRow> = await (async () => {
+  const deletedPaymentsQuery = await (async (): Promise<{
+    result: { rows: DeletedPaymentRow[] };
+    deletedPaymentsNotConfigured: boolean;
+  }> => {
     try {
-      return await dbQuery<DeletedPaymentRow>(
-        "select p.id, p.booking_id, p.provider, p.status, p.deposit_amount_cents, p.currency, p.created_at, p.deleted_at, p.deleted_reason, u.email as deleted_by_email from payments p join bookings b on b.id = p.booking_id left join users u on u.id = p.deleted_by_user_id where p.deleted_at is not null and p.provider = 'MANUAL' order by p.deleted_at desc nulls last, p.created_at desc",
-      );
+      return {
+        result: await dbQuery<DeletedPaymentRow>(
+          "select p.id, p.booking_id, p.provider, p.status, p.deposit_amount_cents, p.currency, p.created_at, p.deleted_at, p.deleted_reason, u.email as deleted_by_email from payments p join bookings b on b.id = p.booking_id left join users u on u.id = p.deleted_by_user_id where p.deleted_at is not null and p.provider = 'MANUAL' order by p.deleted_at desc nulls last, p.created_at desc",
+        ),
+        deletedPaymentsNotConfigured: false,
+      };
     } catch (error) {
       if (isUndefinedColumn(error, "deleted_at")) {
-        deletedPaymentsNotConfigured = true;
-        return { rows: [] };
+        return { result: { rows: [] }, deletedPaymentsNotConfigured: true };
       }
       throw error;
     }
   })();
+
+  const archivedBookings = archivedQuery.result;
+  const archiveNotConfigured = archivedQuery.archiveNotConfigured;
+  const deletedPayments = deletedPaymentsQuery.result;
+  const deletedPaymentsNotConfigured = deletedPaymentsQuery.deletedPaymentsNotConfigured;
 
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-10">

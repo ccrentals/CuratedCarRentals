@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
+import { SlideDownPanel } from "@/components/admin/SlideDownPanel";
 
 type CreateUserResult = {
   ok: true;
@@ -113,122 +114,132 @@ export function CreateUserForm({ disabled }: { disabled?: boolean }) {
   }
 
   return (
-    <div className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold text-[var(--ccr-text)]">Create user</p>
-          <p className="mt-1 text-xs text-[var(--ccr-muted)]">
-            Creates an account with a temporary password (expires in 3 days). The user will be prompted to set a permanent password after first login.
-          </p>
-        </div>
-      </div>
-
-      <div className="mt-4 grid gap-3 md:grid-cols-4">
-        <label className="text-xs text-[var(--ccr-muted)]">
-          First name
-          <input
-            value={firstName}
-            onChange={(e) => setFirstName(e.target.value)}
-            disabled={disabled || loading}
-            className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)] disabled:opacity-60"
-          />
-        </label>
-        <label className="text-xs text-[var(--ccr-muted)]">
-          Last name
-          <input
-            value={lastName}
-            onChange={(e) => setLastName(e.target.value)}
-            disabled={disabled || loading}
-            className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)] disabled:opacity-60"
-          />
-        </label>
-        <label className="text-xs text-[var(--ccr-muted)]">
-          Email
-          <input
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            disabled={disabled || loading}
-            className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)] disabled:opacity-60"
-          />
-        </label>
-        <label className="text-xs text-[var(--ccr-muted)]">
-          Role
-          <select
-            value={role}
-            onChange={(e) => setRole(roleLabel(e.target.value) as "ADMIN" | "USER")}
-            disabled={disabled || loading}
-            className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)] disabled:opacity-60"
-          >
-            <option value="USER">USER</option>
-            <option value="ADMIN">ADMIN</option>
-          </select>
-        </label>
-      </div>
-
-      {error ? <p className="mt-3 text-xs text-red-300">{error}</p> : null}
-
-      <div className="mt-4 flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          onClick={submit}
-          disabled={disabled || loading}
-          className="rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
-        >
-          {loading ? "Creating..." : "Create user"}
-        </button>
-      </div>
-
-      {tempPassword ? (
-        <div className="mt-4 rounded-xl border border-[var(--ccr-border)] border-l-4 border-l-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] p-4 text-sm text-[var(--ccr-text)]">
-          <p className="font-semibold text-[var(--ccr-text)]">Temporary password created</p>
-          <p className="mt-1 text-xs text-[var(--ccr-muted)]">
-            Share this password securely with the user. It is shown once and will expire in 3 days.
-          </p>
-          {createdUsername ? (
-            <p className="mt-2 text-xs text-[var(--ccr-muted)]">
-              Username:{" "}
-              <span className="font-mono text-[var(--ccr-text)]">{createdUsername}</span>
-            </p>
-          ) : null}
-          <p className="mt-3 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 font-mono text-sm text-[var(--ccr-text)]">
-            {tempPassword}
-          </p>
-          {tempPasswordExpiresAt ? (
-            <p className="mt-2 text-[11px] text-[var(--ccr-muted)]">
-              Expires: {new Date(tempPasswordExpiresAt).toLocaleString()}
-            </p>
-          ) : null}
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={async () => {
-                try {
-                  await navigator.clipboard.writeText(tempPassword);
-                  showCopyToast("Copied", "success");
-                } catch {
-                  showCopyToast("Copy failed", "error");
-                }
-              }}
-              className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] hover:bg-[var(--ccr-bg)]"
+    <div className="mt-6">
+      <SlideDownPanel
+        title="Create user"
+        description="Creates an account with a temporary password (expires in 3 days). The user will be prompted to set a permanent password after first login."
+        defaultOpen={false}
+      >
+        <div className="grid gap-3 md:grid-cols-4">
+          <label className="text-xs text-[var(--ccr-muted)]">
+            First name
+            <input
+              value={firstName}
+              onChange={(e) => setFirstName(e.target.value)}
+              disabled={disabled || loading}
+              className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)] disabled:opacity-60"
+            />
+          </label>
+          <label className="text-xs text-[var(--ccr-muted)]">
+            Last name
+            <input
+              value={lastName}
+              onChange={(e) => setLastName(e.target.value)}
+              disabled={disabled || loading}
+              className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)] disabled:opacity-60"
+            />
+          </label>
+          <label className="text-xs text-[var(--ccr-muted)]">
+            Email
+            <input
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              disabled={disabled || loading}
+              className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)] disabled:opacity-60"
+            />
+          </label>
+          <label className="text-xs text-[var(--ccr-muted)]">
+            Role
+            <select
+              value={role}
+              onChange={(e) => setRole(roleLabel(e.target.value) as "ADMIN" | "USER")}
+              disabled={disabled || loading}
+              className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)] disabled:opacity-60"
             >
-              Copy
-            </button>
-            {copyToast ? (
-              <span
-                className={`rounded-lg border px-2 py-1 text-[11px] font-semibold ${
-                  copyToast.tone === "success"
-                    ? "border-[var(--ccr-accent)] bg-[var(--ccr-bg)] text-[var(--ccr-accent)]"
-                    : "border-red-400/40 bg-[var(--ccr-bg)] text-red-200"
-                }`}
-                role="status"
-                aria-live="polite"
-              >
-                {copyToast.message}
-              </span>
-            ) : null}
-          </div>
+              <option value="USER">USER</option>
+              <option value="ADMIN">ADMIN</option>
+            </select>
+          </label>
         </div>
-      ) : null}
+
+        {error ? <p className="mt-3 text-xs text-red-300">{error}</p> : null}
+
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={submit}
+            disabled={disabled || loading}
+            className="rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+          >
+            {loading ? "Creating..." : "Create user"}
+          </button>
+        </div>
+
+        {tempPassword ? (
+          <div className="mt-4 rounded-xl border border-[var(--ccr-border)] border-l-4 border-l-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] p-4 text-sm text-[var(--ccr-text)]">
+            <p className="font-semibold text-[var(--ccr-text)]">Temporary password created</p>
+            <p className="mt-1 text-xs text-[var(--ccr-muted)]">
+              Share this password securely with the user. It is shown once and will expire in 3 days.
+            </p>
+            {createdUsername ? (
+              <p className="mt-2 text-xs text-[var(--ccr-muted)]">
+                Username:{" "}
+                <span className="font-mono text-[var(--ccr-text)]">{createdUsername}</span>
+              </p>
+            ) : null}
+            <p className="mt-3 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 font-mono text-sm text-[var(--ccr-text)]">
+              {tempPassword}
+            </p>
+            {tempPasswordExpiresAt ? (
+              <p className="mt-2 text-[11px] text-[var(--ccr-muted)]">
+                Expires: {new Date(tempPasswordExpiresAt).toLocaleString()}
+              </p>
+            ) : null}
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(tempPassword);
+                    showCopyToast("Copied", "success");
+                  } catch {
+                    showCopyToast("Copy failed", "error");
+                  }
+                }}
+                className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] hover:bg-[var(--ccr-bg)]"
+              >
+                Copy
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setTempPassword(null);
+                  setTempPasswordExpiresAt(null);
+                  setCreatedUsername(null);
+                  setCopyToast(null);
+                }}
+                aria-label="Dismiss temporary password"
+                className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] hover:bg-[var(--ccr-bg)]"
+              >
+                X
+              </button>
+              {copyToast ? (
+                <span
+                  className={`rounded-lg border px-2 py-1 text-[11px] font-semibold ${
+                    copyToast.tone === "success"
+                      ? "border-[var(--ccr-accent)] bg-[var(--ccr-bg)] text-[var(--ccr-accent)]"
+                      : "border-red-400/40 bg-[var(--ccr-bg)] text-red-200"
+                  }`}
+                  role="status"
+                  aria-live="polite"
+                >
+                  {copyToast.message}
+                </span>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+      </SlideDownPanel>
     </div>
   );
 }

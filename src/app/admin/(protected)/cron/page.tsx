@@ -7,7 +7,7 @@ import { fmtDate } from "@/lib/dateFormat";
 type AuditRow = {
   action: string;
   entity_id: string;
-  details_json: Record<string, unknown> | null;
+  details_json: unknown;
   created_at: string;
 };
 
@@ -15,6 +15,60 @@ const ACTION_LABELS: Record<string, string> = {
   BOOKING_PICKUP_REMINDER_SENT: "Pickup reminder sent",
   BOOKING_BALANCE_REMINDER_SENT: "Balance reminder sent",
 };
+
+function toTitleLabel(key: string) {
+  return key
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .trim()
+    .split(/\s+/)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function parseDetails(details: unknown): Array<{ key: string; value: string }> | null {
+  if (!details) return null;
+  if (typeof details === "string") {
+    try {
+      const parsed = JSON.parse(details) as unknown;
+      return parseDetails(parsed);
+    } catch {
+      return [{ key: "Details", value: details }];
+    }
+  }
+
+  if (Array.isArray(details)) {
+    return [
+      {
+        key: "Details",
+        value: details
+          .map((item) => {
+            if (typeof item === "string" || typeof item === "number" || typeof item === "boolean") {
+              return String(item);
+            }
+            return JSON.stringify(item);
+          })
+          .join(", "),
+      },
+    ];
+  }
+
+  if (typeof details === "object") {
+    const entries = Object.entries(details as Record<string, unknown>);
+    if (entries.length === 0) return null;
+    return entries.map(([key, value]) => {
+      if (value === null || value === undefined) {
+        return { key: toTitleLabel(key), value: "—" };
+      }
+      if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+        return { key: toTitleLabel(key), value: String(value) };
+      }
+      return { key: toTitleLabel(key), value: JSON.stringify(value) };
+    });
+  }
+
+  return [{ key: "Details", value: String(details) }];
+}
 
 export default async function AdminCronPage() {
   const cronConfigured = Boolean(process.env.CRON_SECRET);
@@ -113,7 +167,20 @@ export default async function AdminCronPage() {
                       {row.entity_id ? row.entity_id.slice(0, 8) : "—"}
                     </td>
                     <td className="px-3 py-2 text-xs text-[var(--ccr-muted)]">
-                      {row.details_json ? JSON.stringify(row.details_json) : "—"}
+                      {(() => {
+                        const details = parseDetails(row.details_json);
+                        if (!details || details.length === 0) return "—";
+                        return (
+                          <div className="space-y-1">
+                            {details.map((item) => (
+                              <p key={`${row.action}-${row.created_at}-${item.key}`}>
+                                <span className="font-semibold text-[var(--ccr-text)]">{item.key}:</span>{" "}
+                                {item.value}
+                              </p>
+                            ))}
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td className="px-3 py-2 text-[var(--ccr-muted)]">{fmtDate(row.created_at)}</td>
                   </tr>

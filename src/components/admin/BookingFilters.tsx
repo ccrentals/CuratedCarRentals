@@ -97,7 +97,7 @@ export default function BookingFilters({ canAdmin }: { canAdmin?: boolean }) {
               }}
               className={`rounded-full border px-4 py-1.5 text-xs font-semibold transition ${
                 isActive
-                  ? "border-[var(--ccr-primary)] bg-[var(--ccr-primary)] text-white"
+                  ? "border-[var(--ccr-primary)] bg-[var(--ccr-primary)] text-white ring-2 ring-[var(--ccr-accent)] ring-offset-2 ring-offset-[var(--ccr-surface)]"
                   : "border-[var(--ccr-border)] bg-transparent text-[var(--ccr-text)] hover:border-[var(--ccr-primary)]"
               }`}
             >

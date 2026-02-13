@@ -108,6 +108,7 @@ create index if not exists blockouts_range_idx on blockouts(start_at, end_at);`;
   const view = params.view === "week" ? "week" : "month";
   const baseDate = parseDate(typeof params.date === "string" ? params.date : undefined) ?? new Date();
   const vehicleId = typeof params.vehicleId === "string" ? params.vehicleId : undefined;
+  const customerQuery = typeof params.customerQ === "string" ? params.customerQ.trim() : "";
   const showBookings = params.showBookings !== "0";
   const showBlockouts = params.showBlockouts !== "0";
   const statusParam = typeof params.status === "string" ? params.status.toLowerCase() : undefined;
@@ -162,7 +163,7 @@ create index if not exists blockouts_range_idx on blockouts(start_at, end_at);`;
 
   const blockoutClauses: string[] = ["b.start_at < $2", "b.end_at > $1"];
   const blockoutValues: string[] = [rangeStart.toISOString(), rangeEnd.toISOString()];
-  let blockoutParamIndex = 3;
+  const blockoutParamIndex = 3;
 
   if (vehicleId) {
     blockoutClauses.push(`b.vehicle_id = $${blockoutParamIndex}`);
@@ -233,6 +234,7 @@ create index if not exists blockouts_range_idx on blockouts(start_at, end_at);`;
         dayViewBookingLimit={adminSettings.dayViewBookingLimit}
         filters={{
           vehicleId,
+          customerQuery,
           showBookings,
           showBlockouts,
           status: statusParam ?? "all",

@@ -257,6 +257,14 @@ export default async function PaymentSuccessPage({
         ) : null}
 
         <div className="mt-6 flex flex-wrap gap-3 print-hide">
+          {booking ? (
+            <Link
+              href={`/bookings/${booking.id}/invoice`}
+              className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] transition hover:border-[var(--ccr-accent)] hover:bg-[var(--ccr-accent)] hover:text-[var(--ccr-primary)]"
+            >
+              View Invoice
+            </Link>
+          ) : null}
           <PrintInvoiceButton className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] transition hover:border-[var(--ccr-accent)] hover:bg-[var(--ccr-accent)] hover:text-[var(--ccr-primary)]" />
           {pdfDownloadUrl ? (
             <a

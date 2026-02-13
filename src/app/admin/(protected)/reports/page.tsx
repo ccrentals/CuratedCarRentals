@@ -32,6 +32,45 @@ type PaymentRow = {
   created_at: string;
 };
 
+const RECOMMENDED_REPORTS = [
+  {
+    title: "Revenue by Period",
+    description:
+      "Track gross revenue by day/week/month with booking and payment breakdowns.",
+    readiness: "Ready to wire",
+  },
+  {
+    title: "Vehicle Utilization",
+    description:
+      "Compare booked days vs available days per vehicle to identify top performers and idle units.",
+    readiness: "Ready to wire",
+  },
+  {
+    title: "Outstanding Balances",
+    description:
+      "Prioritize collections using balance due, days to pickup, and customer contact status.",
+    readiness: "Ready to wire",
+  },
+  {
+    title: "Booking Status Funnel",
+    description:
+      "Measure conversion from pending to confirmed to completed, with cancellation rates.",
+    readiness: "Ready to wire",
+  },
+  {
+    title: "Upcoming Pickups & Returns",
+    description:
+      "Operational view for handoff planning, staffing, and vehicle readiness windows.",
+    readiness: "Ready to wire",
+  },
+  {
+    title: "Cancellation & Refund Impact",
+    description:
+      "Track cancelled bookings, refund totals, and refund-required exposure over time.",
+    readiness: "Ready to wire",
+  },
+];
+
 function formatDateKey(date: Date) {
   const pad = (num: number) => String(num).padStart(2, "0");
   return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}`;
@@ -294,6 +333,34 @@ export default async function AdminReportsPage({
         Revenue uses payment dates when available (otherwise booking created date for confirmed/returned
         bookings with no payments). Utilization uses pickup/return overlap.
       </p>
+
+      <section className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-lg font-bold text-[var(--ccr-text)]">Recommended Reports</h2>
+          <span className="rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-accent)]">
+            Planning board
+          </span>
+        </div>
+        <p className="mt-2 text-sm text-[var(--ccr-muted)]">
+          These report templates are laid out for future data wiring and export workflows.
+        </p>
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          {RECOMMENDED_REPORTS.map((report) => (
+            <article
+              key={report.title}
+              className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-4"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <h3 className="text-sm font-semibold text-[var(--ccr-text)]">{report.title}</h3>
+                <span className="rounded-full border border-[var(--ccr-border)] px-2 py-0.5 text-[10px] font-semibold text-[var(--ccr-muted)]">
+                  {report.readiness}
+                </span>
+              </div>
+              <p className="mt-2 text-xs text-[var(--ccr-muted)]">{report.description}</p>
+            </article>
+          ))}
+        </div>
+      </section>
 
       <div className="mt-6 grid gap-4 md:grid-cols-4">
         <div className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">

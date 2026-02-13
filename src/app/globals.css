@@ -33,6 +33,54 @@
   --foreground: var(--ccr-text);
 }
 
+[data-theme="ocean"] {
+  --ccr-bg: #0a1b2d;
+  --ccr-text: #e8f5ff;
+  --ccr-surface: #102840;
+  --ccr-surface-soft: #173553;
+  --ccr-border: #2b4f70;
+  --ccr-muted: #9fc0da;
+  --ccr-accent: #f2c14e;
+  --ccr-accent-strong: #d6a632;
+  --ccr-money-emphasis: var(--ccr-accent);
+  --ccr-primary: #0d2136;
+  --ccr-primary-soft: #18344f;
+  --background: var(--ccr-bg);
+  --foreground: var(--ccr-text);
+}
+
+[data-theme="sand"] {
+  --ccr-bg: #f5efe4;
+  --ccr-text: #2c2216;
+  --ccr-surface: #fff8ee;
+  --ccr-surface-soft: #f2e6d3;
+  --ccr-border: #ddc8a9;
+  --ccr-muted: #746048;
+  --ccr-accent: #b8860b;
+  --ccr-accent-strong: #946c08;
+  --ccr-money-emphasis: #7f6124;
+  --ccr-primary: #3a2f1f;
+  --ccr-primary-soft: #4a3b27;
+  --background: var(--ccr-bg);
+  --foreground: var(--ccr-text);
+}
+
+[data-theme="forest"] {
+  --ccr-bg: #0f1d17;
+  --ccr-text: #e9f4ec;
+  --ccr-surface: #162921;
+  --ccr-surface-soft: #1f372c;
+  --ccr-border: #345445;
+  --ccr-muted: #a4c1b1;
+  --ccr-accent: #e6bc53;
+  --ccr-accent-strong: #c6972f;
+  --ccr-money-emphasis: var(--ccr-accent);
+  --ccr-primary: #122219;
+  --ccr-primary-soft: #1f3528;
+  --background: var(--ccr-bg);
+  --foreground: var(--ccr-text);
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -46,6 +94,19 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+a,
+button,
+[role="button"],
+summary {
+  cursor: pointer;
+}
+
+button:disabled,
+[role="button"][aria-disabled="true"],
+a[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
 .logo-light-img {
   display: inline-block;
 }
@@ -54,11 +115,15 @@ body {
   display: none;
 }
 
-[data-theme="dark"] .logo-light-img {
+[data-theme="dark"] .logo-light-img,
+[data-theme="ocean"] .logo-light-img,
+[data-theme="forest"] .logo-light-img {
   display: none;
 }
 
-[data-theme="dark"] .logo-dark-img {
+[data-theme="dark"] .logo-dark-img,
+[data-theme="ocean"] .logo-dark-img,
+[data-theme="forest"] .logo-dark-img {
   display: inline-block;
 }
 

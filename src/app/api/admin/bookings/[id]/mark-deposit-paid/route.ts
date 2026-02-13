@@ -38,9 +38,28 @@ export async function POST(
     }
 
     const booking = bookingResult.rows[0];
-    if (["CONFIRMED", "PICKED_UP", "RETURNED", "CANCELLED"].includes(booking.status)) {
+    if (booking.status === "CANCELLED") {
       await client.query("rollback");
-      return NextResponse.json({ error: "Booking cannot be confirmed" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Cancelled bookings cannot accept deposit payments" },
+        { status: 400 },
+      );
+    }
+
+    if (booking.status === "RETURNED") {
+      await client.query("rollback");
+      return NextResponse.json(
+        { error: "Returned bookings cannot accept deposit payments" },
+        { status: 400 },
+      );
+    }
+
+    if (["CONFIRMED", "PICKED_UP"].includes(booking.status)) {
+      await client.query("rollback");
+      return NextResponse.json(
+        { error: "Deposit cannot be recorded for this booking status" },
+        { status: 400 },
+      );
     }
 
     const overlapResult = await client.query(

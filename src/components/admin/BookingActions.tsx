@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
@@ -47,11 +47,6 @@ export function BookingActions({
   const cancelButtonClass = canCancel
     ? "rounded-xl bg-red-600 px-4 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
     : "rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-xs font-semibold text-[var(--ccr-muted)] disabled:cursor-not-allowed";
-
-  // Prevent stale status-related errors lingering after a refresh/action.
-  useEffect(() => {
-    setError(null);
-  }, [normalizedStatus]);
 
   async function runAction(actionKey: ActionKey) {
     setMessage(null);
@@ -122,7 +117,12 @@ export function BookingActions({
     setLoadingKey(null);
 
     if (!response.ok) {
-      setError(data.error ?? "Action failed");
+      const apiError = String(data.error ?? "Action failed");
+      if (actionKey === "deposit" && apiError === "Booking cannot be confirmed") {
+        setError("Deposit cannot be recorded for this booking.");
+        return;
+      }
+      setError(apiError);
       return;
     }
 

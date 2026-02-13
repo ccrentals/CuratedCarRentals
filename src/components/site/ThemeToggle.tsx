@@ -1,48 +1,39 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { cn } from "@/lib/utils";
+import { type AppTheme, isAppTheme } from "@/lib/theme";
 
 const THEME_KEY = "ccr-theme";
 
-type Theme = "light" | "dark";
 type ThemeToggleProps = {
   className?: string;
   variant?: "default" | "inverse";
 };
 
-function applyTheme(theme: Theme) {
+function applyTheme(theme: AppTheme) {
   document.documentElement.setAttribute("data-theme", theme);
 }
 
+function getCurrentTheme() {
+  if (typeof document === "undefined") return "light" as AppTheme;
+  const current = document.documentElement.getAttribute("data-theme");
+  if (isAppTheme(current)) return current;
+  const savedTheme = typeof window !== "undefined" ? localStorage.getItem(THEME_KEY) : null;
+  if (isAppTheme(savedTheme)) return savedTheme;
+  return "light" as AppTheme;
+}
+
 export function ThemeToggle({ className, variant = "default" }: ThemeToggleProps) {
-  // NOTE: Keep the initial render deterministic to avoid hydration mismatch.
-  // We apply the real theme in the effect below (and also bootstrap it in RootLayout).
-  const [theme, setTheme] = useState<Theme>("light");
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-    const savedTheme = localStorage.getItem(THEME_KEY) as Theme | null;
-
-    if (savedTheme === "light" || savedTheme === "dark") {
-      setTheme(savedTheme);
-      applyTheme(savedTheme);
-      return;
-    }
-
-    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    const initialTheme: Theme = prefersDark ? "dark" : "light";
-    setTheme(initialTheme);
-    applyTheme(initialTheme);
-  }, []);
+  const [, setRefreshKey] = useState(0);
+  const theme = getCurrentTheme();
 
   function toggleTheme() {
-    const nextTheme: Theme = theme === "light" ? "dark" : "light";
-    setTheme(nextTheme);
+    const nextTheme: AppTheme = theme === "dark" ? "light" : "dark";
     localStorage.setItem(THEME_KEY, nextTheme);
     applyTheme(nextTheme);
+    setRefreshKey((value) => value + 1);
   }
 
   return (
@@ -59,8 +50,7 @@ export function ThemeToggle({ className, variant = "default" }: ThemeToggleProps
       )}
       aria-label="Toggle site theme"
     >
-      {/* Avoid hydration mismatch by only rendering the dynamic label after mount. */}
-      {mounted ? (theme === "dark" ? "Light Mode" : "Dark Mode") : "Theme"}
+      <span suppressHydrationWarning>{theme === "dark" ? "Light Mode" : "Dark Mode"}</span>
     </button>
   );
 }

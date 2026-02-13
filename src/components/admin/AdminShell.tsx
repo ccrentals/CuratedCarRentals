@@ -20,6 +20,14 @@ type NavItem = {
   children?: NavChild[];
 };
 
+type AdminNavLinksProps = {
+  pathname: string;
+  collapsedState?: boolean;
+  expandedItems: Record<string, boolean>;
+  setExpandedItems: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+  onNavigate?: () => void;
+};
+
 const DOCUMENTATION_CHILDREN: NavChild[] = [
   { label: "PRD / Specification", href: "/admin/documentation/prd" },
   { label: "Design", href: "/admin/documentation/design" },
@@ -279,81 +287,76 @@ function isActivePath(pathname: string, href: string) {
   return pathname.startsWith(href);
 }
 
-export function AdminShell({
-  children,
-  user,
-}: {
-  children: React.ReactNode;
-  user: { email: string; role: string };
-}) {
-  const pathname = usePathname() ?? "/admin";
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
-
-  useEffect(() => {
-    const stored = typeof window !== "undefined" ? localStorage.getItem(SIDEBAR_STORAGE_KEY) : null;
-    if (stored === "true") {
-      setCollapsed(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!drawerOpen) return;
-    const handleKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setDrawerOpen(false);
-    };
-    window.addEventListener("keydown", handleKey);
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      window.removeEventListener("keydown", handleKey);
-      document.body.style.overflow = previous;
-    };
-  }, [drawerOpen]);
-
-  const activeItem = useMemo(() => {
-    return NAV_ITEMS.find((nav) => isActivePath(pathname, nav.href));
-  }, [pathname]);
-
-  const NavLinks = ({
-    onNavigate,
-    collapsedState,
-  }: {
-    onNavigate?: () => void;
-    collapsedState?: boolean;
-  }) => (
+function AdminNavLinks({
+  pathname,
+  collapsedState,
+  expandedItems,
+  setExpandedItems,
+  onNavigate,
+}: AdminNavLinksProps) {
+  return (
     <nav className={`mt-6 flex flex-col gap-1 text-sm font-semibold ${collapsedState ? "items-center" : ""}`}>
       {NAV_ITEMS.map((item) => {
         const active = isActivePath(pathname, item.href);
-        const showChildren = Boolean(item.children?.length) && Boolean(active) && !collapsedState;
+        const hasChildren = Boolean(item.children?.length) && !collapsedState;
+        const isExpanded = hasChildren && Boolean(expandedItems[item.href]);
+        const showChildren = hasChildren && isExpanded;
         return (
           <div key={item.href} className={`flex flex-col ${collapsedState ? "items-center" : ""}`}>
-            <Link
-              href={item.href}
-              onClick={onNavigate}
-              title={item.label}
-              aria-current={active ? "page" : undefined}
-              className={`flex items-center gap-3 rounded-xl py-2 transition ${
-                collapsedState ? "justify-center px-2" : "px-3"
-              } ${
-                active
-                  ? "bg-[var(--ccr-primary)] text-white"
-                  : "text-[var(--ccr-text)] hover:bg-[var(--ccr-surface-soft)]"
-              }`}
-            >
-              <span
-                className={`flex h-9 w-9 items-center justify-center rounded-lg ${
+            <div className={`flex items-center gap-2 ${collapsedState ? "w-full justify-center" : "w-full"}`}>
+              <Link
+                href={item.href}
+                onClick={onNavigate}
+                title={item.label}
+                aria-current={active ? "page" : undefined}
+                className={`flex items-center gap-3 rounded-xl py-2 transition ${
+                  collapsedState ? "justify-center px-2" : "flex-1 px-3"
+                } ${
                   active
-                    ? "bg-white/20 text-white"
-                    : "bg-[var(--ccr-surface-soft)] text-[var(--ccr-text)]"
+                    ? "bg-[var(--ccr-primary)] text-white"
+                    : "text-[var(--ccr-text)] hover:bg-[var(--ccr-surface-soft)]"
                 }`}
               >
-                {item.icon(
-                  `h-5 w-5 ${active ? "text-white" : "text-[var(--ccr-text)]"}`,
-                )}
-              </span>
-              {collapsedState ? null : <span>{item.label}</span>}
-            </Link>
+                <span
+                  className={`flex h-9 w-9 items-center justify-center rounded-lg ${
+                    active
+                      ? "bg-white/20 text-white"
+                      : "bg-[var(--ccr-surface-soft)] text-[var(--ccr-text)]"
+                  }`}
+                >
+                  {item.icon(
+                    `h-5 w-5 ${active ? "text-white" : "text-[var(--ccr-text)]"}`,
+                  )}
+                </span>
+                {collapsedState ? null : <span>{item.label}</span>}
+              </Link>
+              {hasChildren ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setExpandedItems((current) => ({
+                      ...current,
+                      [item.href]: !current[item.href],
+                    }))
+                  }
+                  aria-label={`${isExpanded ? "Collapse" : "Expand"} ${item.label}`}
+                  className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-1.5 text-[var(--ccr-text)] transition hover:border-[var(--ccr-accent)]"
+                >
+                  <svg
+                    viewBox="0 0 20 20"
+                    className={`h-3.5 w-3.5 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                    aria-hidden="true"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M5 7l5 6 5-6" />
+                  </svg>
+                </button>
+              ) : null}
+            </div>
 
             {showChildren ? (
               <div className="mt-1 flex flex-col gap-1 pl-12">
@@ -382,6 +385,48 @@ export function AdminShell({
       })}
     </nav>
   );
+}
+
+export function AdminShell({
+  children,
+  user,
+}: {
+  children: React.ReactNode;
+  user: { email: string; role: string };
+}) {
+  const pathname = usePathname() ?? "/admin";
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem(SIDEBAR_STORAGE_KEY) === "true";
+  });
+  const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>(() => {
+    const initial: Record<string, boolean> = {};
+    NAV_ITEMS.forEach((item) => {
+      if (item.children?.length) {
+        initial[item.href] = pathname.startsWith(item.href);
+      }
+    });
+    return initial;
+  });
+
+  useEffect(() => {
+    if (!drawerOpen) return;
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setDrawerOpen(false);
+    };
+    window.addEventListener("keydown", handleKey);
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", handleKey);
+      document.body.style.overflow = previous;
+    };
+  }, [drawerOpen]);
+
+  const activeItem = useMemo(() => {
+    return NAV_ITEMS.find((nav) => isActivePath(pathname, nav.href));
+  }, [pathname]);
 
   const handleMenuToggle = () => {
     if (typeof window === "undefined") return;
@@ -433,7 +478,12 @@ export function AdminShell({
             </Link>
           )}
         </div>
-        <NavLinks collapsedState={collapsed} />
+        <AdminNavLinks
+          pathname={pathname}
+          collapsedState={collapsed}
+          expandedItems={expandedItems}
+          setExpandedItems={setExpandedItems}
+        />
       </aside>
 
       <div
@@ -460,12 +510,17 @@ export function AdminShell({
             Close
           </button>
         </div>
-        <NavLinks onNavigate={() => setDrawerOpen(false)} />
+        <AdminNavLinks
+          pathname={pathname}
+          expandedItems={expandedItems}
+          setExpandedItems={setExpandedItems}
+          onNavigate={() => setDrawerOpen(false)}
+        />
       </aside>
 
       <div className={contentPadding}>
         <header className="sticky top-0 z-30 border-b border-[var(--ccr-border)] bg-[var(--ccr-surface)]">
-          <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-6 py-3">
+          <div className="mx-auto flex w-full max-w-none items-center justify-between gap-4 py-3 pl-2 pr-4 sm:pl-3 sm:pr-5">
             <div className="flex items-center gap-3">
               <button
                 type="button"
@@ -487,7 +542,7 @@ export function AdminShell({
                 </svg>
               </button>
               {activeItem ? (
-                <div className="flex items-center gap-2 text-lg font-semibold text-[var(--ccr-text)]">
+                <div className="flex items-center gap-5 text-lg font-semibold text-[var(--ccr-text)]">
                   <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--ccr-surface-soft)] shadow-sm ring-2 ring-[var(--ccr-accent)] ring-offset-2 ring-offset-[var(--ccr-surface)]">
                     {activeItem.icon("h-5 w-5 text-[var(--ccr-accent)]")}
                   </span>

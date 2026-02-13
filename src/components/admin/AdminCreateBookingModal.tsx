@@ -12,6 +12,8 @@ type VehicleOption = {
 
 type AdminCreateBookingModalProps = {
   vehicles: VehicleOption[];
+  initialOpen?: boolean;
+  clearOpenHref?: string;
 };
 
 const PAYMENT_METHODS = [
@@ -38,9 +40,13 @@ function toDateTimeLocalValue(date: Date) {
   return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
 }
 
-export function AdminCreateBookingModal({ vehicles }: AdminCreateBookingModalProps) {
+export function AdminCreateBookingModal({
+  vehicles,
+  initialOpen = false,
+  clearOpenHref,
+}: AdminCreateBookingModalProps) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(initialOpen);
   const [vehicleId, setVehicleId] = useState("");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -63,6 +69,9 @@ export function AdminCreateBookingModal({ vehicles }: AdminCreateBookingModalPro
     setOpen(false);
     setError(null);
     setPaymentWarning(null);
+    if (clearOpenHref) {
+      router.replace(clearOpenHref, { scroll: false });
+    }
   }
 
   useEffect(() => {
