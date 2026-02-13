@@ -4,7 +4,7 @@ import { useState } from "react";
 
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 import { cn } from "@/lib/utils";
-import { type AppTheme, isAppTheme, THEME_STORAGE_KEY } from "@/lib/theme";
+import { APP_THEMES, type AppTheme, isAppTheme, THEME_LABELS, THEME_STORAGE_KEY } from "@/lib/theme";
 
 type ThemeToggleProps = {
   className?: string;
@@ -43,34 +43,52 @@ export function ThemeToggle({
   variant = "default",
   persistence = "local",
 }: ThemeToggleProps) {
-  const [, setRefreshKey] = useState(0);
-  const theme = getCurrentTheme();
+  const [theme, setTheme] = useState<AppTheme>(() => getCurrentTheme());
 
-  function toggleTheme() {
-    const nextTheme: AppTheme = theme === "dark" ? "light" : "dark";
+  function selectTheme(nextTheme: AppTheme) {
     localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
     applyTheme(nextTheme);
+    setTheme(nextTheme);
     if (persistence === "user") {
       void persistThemeForUser(nextTheme);
     }
-    setRefreshKey((value) => value + 1);
   }
 
   return (
-    <button
-      type="button"
-      onClick={toggleTheme}
-      className={cn(
-        "rounded-xl px-3 py-2 text-xs font-semibold transition-colors",
-        variant === "default" &&
-          "border border-[var(--ccr-border)] bg-[var(--ccr-surface)] text-[var(--ccr-muted)] hover:bg-[var(--ccr-surface-soft)]",
-        variant === "inverse" &&
-          "border border-white/35 bg-[var(--ccr-primary-soft)] text-white hover:bg-white hover:text-[var(--ccr-primary)]",
-        className,
-      )}
-      aria-label="Toggle site theme"
-    >
-      <span suppressHydrationWarning>{theme === "dark" ? "Light Mode" : "Dark Mode"}</span>
-    </button>
+    <label className="inline-flex items-center gap-2">
+      <span
+        className={cn(
+          "text-xs font-semibold uppercase tracking-wide",
+          variant === "default" && "text-[var(--ccr-muted)]",
+          variant === "inverse" && "text-white",
+        )}
+      >
+        Theme
+      </span>
+      <select
+        value={theme}
+        onChange={(event) => {
+          const value = event.target.value;
+          if (!isAppTheme(value)) return;
+          selectTheme(value);
+        }}
+        suppressHydrationWarning
+        aria-label="Theme"
+        className={cn(
+          "rounded-xl px-3 py-2 text-xs font-semibold transition-colors",
+          variant === "default" &&
+            "border border-[var(--ccr-border)] bg-[var(--ccr-surface)] text-[var(--ccr-text)] hover:bg-[var(--ccr-surface-soft)]",
+          variant === "inverse" &&
+            "border border-white/35 bg-[var(--ccr-primary-soft)] text-white hover:bg-white hover:text-[var(--ccr-primary)]",
+          className,
+        )}
+      >
+        {APP_THEMES.map((item) => (
+          <option key={item} value={item}>
+            {THEME_LABELS[item]}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }

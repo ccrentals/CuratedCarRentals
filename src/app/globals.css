@@ -33,6 +33,22 @@
   --foreground: var(--ccr-text);
 }
 
+[data-theme="midnight"] {
+  --ccr-bg: #040507;
+  --ccr-text: #f2f5ff;
+  --ccr-surface: #0a0d13;
+  --ccr-surface-soft: #131927;
+  --ccr-border: #242f47;
+  --ccr-muted: #a2afc8;
+  --ccr-accent: #5bc3ff;
+  --ccr-accent-strong: #36b4f7;
+  --ccr-money-emphasis: #73cbff;
+  --ccr-primary: #060910;
+  --ccr-primary-soft: #121a2b;
+  --background: var(--ccr-bg);
+  --foreground: var(--ccr-text);
+}
+
 [data-theme="ocean"] {
   --ccr-bg: #0a1b2d;
   --ccr-text: #e8f5ff;
@@ -107,6 +123,24 @@ a[aria-disabled="true"] {
   cursor: not-allowed;
 }
 
+input.promo-date-time-input {
+  color-scheme: light;
+}
+
+[data-theme="dark"] input.promo-date-time-input,
+[data-theme="midnight"] input.promo-date-time-input,
+[data-theme="ocean"] input.promo-date-time-input,
+[data-theme="forest"] input.promo-date-time-input {
+  color-scheme: dark;
+}
+
+[data-theme="dark"] input.promo-date-time-input::-webkit-calendar-picker-indicator,
+[data-theme="midnight"] input.promo-date-time-input::-webkit-calendar-picker-indicator,
+[data-theme="ocean"] input.promo-date-time-input::-webkit-calendar-picker-indicator,
+[data-theme="forest"] input.promo-date-time-input::-webkit-calendar-picker-indicator {
+  filter: invert(1) brightness(1.2);
+}
+
 .logo-light-img {
   display: inline-block;
 }
@@ -116,12 +150,14 @@ a[aria-disabled="true"] {
 }
 
 [data-theme="dark"] .logo-light-img,
+[data-theme="midnight"] .logo-light-img,
 [data-theme="ocean"] .logo-light-img,
 [data-theme="forest"] .logo-light-img {
   display: none;
 }
 
 [data-theme="dark"] .logo-dark-img,
+[data-theme="midnight"] .logo-dark-img,
 [data-theme="ocean"] .logo-dark-img,
 [data-theme="forest"] .logo-dark-img {
   display: inline-block;

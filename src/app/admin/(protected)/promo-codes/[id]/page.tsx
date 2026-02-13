@@ -53,12 +53,20 @@ function isVehicleRow(row: unknown): row is VehicleRow {
   );
 }
 
-function toDateTimeLocalValue(value: string | null) {
-  if (!value) return "";
+function toDateTimeParts(value: string | null) {
+  if (!value) return { date: "", time: "" };
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
+  if (Number.isNaN(date.getTime())) return { date: "", time: "" };
   const pad = (item: number) => String(item).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  return {
+    date: `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`,
+    time: `${pad(date.getHours())}:${pad(date.getMinutes())}`,
+  };
+}
+
+function toDateTimeLocalValue(date: string, time: string) {
+  if (!date) return null;
+  return `${date}T${time || "00:00"}`;
 }
 
 function fromCommaSeparated(value: string) {
@@ -104,8 +112,10 @@ export default function AdminPromoCodeDetailPage() {
   const [minSubtotal, setMinSubtotal] = useState("");
   const [maxRedemptions, setMaxRedemptions] = useState("");
   const [maxPerCustomer, setMaxPerCustomer] = useState("");
-  const [startAt, setStartAt] = useState("");
-  const [endAt, setEndAt] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [startTime, setStartTime] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [endTime, setEndTime] = useState("");
   const [allowedVehicleIds, setAllowedVehicleIds] = useState<string[]>([]);
   const [excludedVehicleIds, setExcludedVehicleIds] = useState<string[]>([]);
   const [blackoutDates, setBlackoutDates] = useState("");
@@ -140,8 +150,12 @@ export default function AdminPromoCodeDetailPage() {
         ? ""
         : String(promoData.max_redemptions_per_customer),
     );
-    setStartAt(toDateTimeLocalValue(promoData.start_at));
-    setEndAt(toDateTimeLocalValue(promoData.end_at));
+    const start = toDateTimeParts(promoData.start_at);
+    const end = toDateTimeParts(promoData.end_at);
+    setStartDate(start.date);
+    setStartTime(start.time);
+    setEndDate(end.date);
+    setEndTime(end.time);
     setAllowedVehicleIds(promoData.allowed_vehicle_ids_json ?? []);
     setExcludedVehicleIds(promoData.excluded_vehicle_ids_json ?? []);
     setBlackoutDates((promoData.blackout_dates_json ?? []).join(", "));
@@ -176,8 +190,12 @@ export default function AdminPromoCodeDetailPage() {
         setMaxPerCustomer(
           nextPromo.max_redemptions_per_customer === null ? "" : String(nextPromo.max_redemptions_per_customer),
         );
-        setStartAt(toDateTimeLocalValue(nextPromo.start_at));
-        setEndAt(toDateTimeLocalValue(nextPromo.end_at));
+        const start = toDateTimeParts(nextPromo.start_at);
+        const end = toDateTimeParts(nextPromo.end_at);
+        setStartDate(start.date);
+        setStartTime(start.time);
+        setEndDate(end.date);
+        setEndTime(end.time);
         setAllowedVehicleIds(nextPromo.allowed_vehicle_ids_json ?? []);
         setExcludedVehicleIds(nextPromo.excluded_vehicle_ids_json ?? []);
         setBlackoutDates((nextPromo.blackout_dates_json ?? []).join(", "));
@@ -224,8 +242,8 @@ export default function AdminPromoCodeDetailPage() {
         minSubtotalCents: minSubtotal.trim() ? Number(minSubtotal) : null,
         maxRedemptions: maxRedemptions.trim() ? Number(maxRedemptions) : null,
         maxRedemptionsPerCustomer: maxPerCustomer.trim() ? Number(maxPerCustomer) : null,
-        startAt: startAt || null,
-        endAt: endAt || null,
+        startAt: toDateTimeLocalValue(startDate, startTime),
+        endAt: toDateTimeLocalValue(endDate, endTime),
         allowedVehicleIds,
         excludedVehicleIds,
         blackoutDates: fromCommaSeparated(blackoutDates),
@@ -353,21 +371,39 @@ export default function AdminPromoCodeDetailPage() {
               </label>
               <label className="text-xs text-[var(--ccr-muted)]">
                 Start At
-                <input
-                  type="datetime-local"
-                  value={startAt}
-                  onChange={(event) => setStartAt(event.target.value)}
-                  className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
-                />
+                <div className="mt-1 grid gap-2 sm:grid-cols-2">
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={(event) => setStartDate(event.target.value)}
+                    className="promo-date-time-input w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+                  />
+                  <input
+                    type="time"
+                    step={60}
+                    value={startTime}
+                    onChange={(event) => setStartTime(event.target.value)}
+                    className="promo-date-time-input w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+                  />
+                </div>
               </label>
               <label className="text-xs text-[var(--ccr-muted)]">
                 End At
-                <input
-                  type="datetime-local"
-                  value={endAt}
-                  onChange={(event) => setEndAt(event.target.value)}
-                  className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
-                />
+                <div className="mt-1 grid gap-2 sm:grid-cols-2">
+                  <input
+                    type="date"
+                    value={endDate}
+                    onChange={(event) => setEndDate(event.target.value)}
+                    className="promo-date-time-input w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+                  />
+                  <input
+                    type="time"
+                    step={60}
+                    value={endTime}
+                    onChange={(event) => setEndTime(event.target.value)}
+                    className="promo-date-time-input w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+                  />
+                </div>
               </label>
               <label className="text-xs text-[var(--ccr-muted)] md:col-span-2">
                 Blackout dates (comma-separated YYYY-MM-DD)

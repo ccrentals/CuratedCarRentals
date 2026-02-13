@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
-import { APP_THEMES, type AppTheme, isAppTheme, THEME_STORAGE_KEY } from "@/lib/theme";
+import { APP_THEMES, type AppTheme, isAppTheme, THEME_LABELS, THEME_STORAGE_KEY } from "@/lib/theme";
 
 type MeResponse = {
   ok: boolean;
@@ -18,14 +18,6 @@ type MeResponse = {
   preferences?: {
     theme?: AppTheme | null;
   };
-};
-
-const THEME_LABELS: Record<AppTheme, string> = {
-  light: "Light",
-  dark: "Dark",
-  ocean: "Ocean",
-  sand: "Sand",
-  forest: "Forest",
 };
 
 function formatDate(value: string | null | undefined) {

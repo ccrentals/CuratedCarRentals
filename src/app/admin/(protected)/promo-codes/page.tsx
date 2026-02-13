@@ -50,6 +50,11 @@ function fromCommaSeparated(value: string) {
     .filter(Boolean);
 }
 
+function toDateTimeLocalValue(date: string, time: string) {
+  if (!date) return null;
+  return `${date}T${time || "00:00"}`;
+}
+
 function generatePromoCode() {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let code = "CCR-";
@@ -92,8 +97,10 @@ export default function AdminPromoCodesPage() {
   const [minSubtotal, setMinSubtotal] = useState("");
   const [maxRedemptions, setMaxRedemptions] = useState("");
   const [maxPerCustomer, setMaxPerCustomer] = useState("");
-  const [startAt, setStartAt] = useState("");
-  const [endAt, setEndAt] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [startTime, setStartTime] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [endTime, setEndTime] = useState("");
   const [allowedVehicleIds, setAllowedVehicleIds] = useState<string[]>([]);
   const [excludedVehicleIds, setExcludedVehicleIds] = useState<string[]>([]);
   const [blackoutDates, setBlackoutDates] = useState("");
@@ -175,8 +182,8 @@ export default function AdminPromoCodesPage() {
         minSubtotalCents: minSubtotal.trim() ? Number(minSubtotal) : null,
         maxRedemptions: maxRedemptions.trim() ? Number(maxRedemptions) : null,
         maxRedemptionsPerCustomer: maxPerCustomer.trim() ? Number(maxPerCustomer) : null,
-        startAt: startAt || null,
-        endAt: endAt || null,
+        startAt: toDateTimeLocalValue(startDate, startTime),
+        endAt: toDateTimeLocalValue(endDate, endTime),
         allowedVehicleIds,
         excludedVehicleIds,
         blackoutDates: fromCommaSeparated(blackoutDates),
@@ -196,8 +203,10 @@ export default function AdminPromoCodesPage() {
     setMinSubtotal("");
     setMaxRedemptions("");
     setMaxPerCustomer("");
-    setStartAt("");
-    setEndAt("");
+    setStartDate("");
+    setStartTime("");
+    setEndDate("");
+    setEndTime("");
     setAllowedVehicleIds([]);
     setExcludedVehicleIds([]);
     setBlackoutDates("");
@@ -325,21 +334,39 @@ export default function AdminPromoCodesPage() {
 
             <label className="text-xs text-[var(--ccr-muted)]">
               Start At
-              <input
-                type="datetime-local"
-                value={startAt}
-                onChange={(event) => setStartAt(event.target.value)}
-                className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
-              />
+              <div className="mt-1 grid gap-2 sm:grid-cols-2">
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(event) => setStartDate(event.target.value)}
+                  className="promo-date-time-input w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+                />
+                <input
+                  type="time"
+                  step={60}
+                  value={startTime}
+                  onChange={(event) => setStartTime(event.target.value)}
+                  className="promo-date-time-input w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+                />
+              </div>
             </label>
             <label className="text-xs text-[var(--ccr-muted)]">
               End At
-              <input
-                type="datetime-local"
-                value={endAt}
-                onChange={(event) => setEndAt(event.target.value)}
-                className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
-              />
+              <div className="mt-1 grid gap-2 sm:grid-cols-2">
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(event) => setEndDate(event.target.value)}
+                  className="promo-date-time-input w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+                />
+                <input
+                  type="time"
+                  step={60}
+                  value={endTime}
+                  onChange={(event) => setEndTime(event.target.value)}
+                  className="promo-date-time-input w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+                />
+              </div>
             </label>
 
             <label className="text-xs text-[var(--ccr-muted)] md:col-span-2">
