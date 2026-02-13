@@ -23,11 +23,12 @@ export function CronRunButtons() {
   const [pickupState, setPickupState] = useState<RunState>("idle");
   const [balanceState, setBalanceState] = useState<RunState>("idle");
   const [notesState, setNotesState] = useState<RunState>("idle");
+  const [simulateState, setSimulateState] = useState<RunState>("idle");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const handleRun = async (
-    type: "pickup" | "balance" | "notes",
+    type: "pickup" | "balance" | "notes" | "simulate",
     path: string,
     setState: (state: RunState) => void,
   ) => {
@@ -41,6 +42,12 @@ export function CronRunButtons() {
         setMessage(
           `Scheduled note emails ran. Due ${data?.dueNotes ?? 0}, sent ${data?.emailsSent ?? 0}, failures ${
             data?.emailFailures ?? 0
+          }.`,
+        );
+      } else if (type === "simulate") {
+        setMessage(
+          `Reminder simulation ran. Logged ${data?.simulatedEvents ?? 0} simulated events for mode ${
+            data?.mode ?? "all"
           }.`,
         );
       } else {
@@ -99,6 +106,20 @@ export function CronRunButtons() {
         className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
       >
         {notesState === "running" ? "Running..." : "Run Scheduled Note Emails Now"}
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          handleRun(
+            "simulate",
+            "/api/admin/cron/simulate-reminders",
+            setSimulateState,
+          )
+        }
+        disabled={simulateState === "running"}
+        className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
+      >
+        {simulateState === "running" ? "Running..." : "Simulate Reminder Logs"}
       </button>
       {message ? <p className="w-full text-xs text-emerald-600">{message}</p> : null}
       {error ? <p className="w-full text-xs text-red-600">{error}</p> : null}

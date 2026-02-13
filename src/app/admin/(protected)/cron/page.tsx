@@ -3,6 +3,8 @@ import Link from "next/link";
 import { CronRunButtons } from "@/components/admin/CronRunButtons";
 import { dbQuery } from "@/lib/db";
 import { fmtDate } from "@/lib/dateFormat";
+import { loadLatestReminderRuns } from "@/lib/cron/reminderRuns";
+import { REMINDER_EVENT_LABELS, REMINDER_EVENT_TYPES, type ReminderEventType } from "@/lib/cron/reminderTypes";
 
 type AuditRow = {
   action: string;
@@ -11,19 +13,7 @@ type AuditRow = {
   created_at: string;
 };
 
-const ACTION_LABELS: Record<string, string> = {
-  BOOKING_PICKUP_REMINDER_SENT: "Pickup reminder sent",
-  BOOKING_PICKUP_REMINDER_FAILED: "Pickup reminder failed",
-  BOOKING_BALANCE_REMINDER_SENT: "Balance reminder sent",
-  BOOKING_BALANCE_REMINDER_FAILED: "Balance reminder failed",
-  BOOKING_DROPOFF_REMINDER_SENT: "Dropoff reminder sent",
-  BOOKING_DROPOFF_REMINDER_FAILED: "Dropoff reminder failed",
-  BOOKING_LATE_DROPOFF_ALERT_SENT: "Late dropoff alert sent",
-  BOOKING_LATE_DROPOFF_ALERT_FAILED: "Late dropoff alert failed",
-  BOOKING_NOTE_EMAIL_SENT: "Scheduled note email sent",
-  BOOKING_NOTE_EMAIL_FAILED: "Scheduled note email failed",
-  BOOKING_NOTE_EMAIL_CANCELLED: "Scheduled note email cancelled",
-};
+const EVENT_TYPE_LIST = [...REMINDER_EVENT_TYPES];
 
 function toTitleLabel(key: string) {
   return key
@@ -72,7 +62,7 @@ function parseDetails(details: unknown): Array<{ key: string; value: string }> |
       if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
         return { key: toTitleLabel(key), value: String(value) };
       }
-      return { key: toTitleLabel(key), value: JSON.stringify(value) };
+      return { key: toTitleLabel(key), value: JSON.stringify(value, null, 2) };
     });
   }
 
@@ -81,13 +71,15 @@ function parseDetails(details: unknown): Array<{ key: string; value: string }> |
 
 export default async function AdminCronPage() {
   const cronConfigured = Boolean(process.env.CRON_SECRET);
+  const latestRuns = await loadLatestReminderRuns();
 
   const auditRows = await dbQuery<AuditRow>(
-    "select action, entity_id, details_json, created_at from audit_logs where action in ('BOOKING_PICKUP_REMINDER_SENT','BOOKING_PICKUP_REMINDER_FAILED','BOOKING_BALANCE_REMINDER_SENT','BOOKING_BALANCE_REMINDER_FAILED','BOOKING_DROPOFF_REMINDER_SENT','BOOKING_DROPOFF_REMINDER_FAILED','BOOKING_LATE_DROPOFF_ALERT_SENT','BOOKING_LATE_DROPOFF_ALERT_FAILED','BOOKING_NOTE_EMAIL_SENT','BOOKING_NOTE_EMAIL_FAILED','BOOKING_NOTE_EMAIL_CANCELLED') order by created_at desc limit 60",
+    "select action, entity_id, details_json, created_at from audit_logs where entity_type = 'booking' and action = any($1::text[]) order by created_at desc limit 60",
+    [EVENT_TYPE_LIST],
   );
 
   const rows = auditRows.rows as AuditRow[];
-  const latestByAction = rows.reduce(
+  const latestEventByAction = rows.reduce(
     (acc, row) => {
       if (!acc[row.action]) acc[row.action] = row;
       return acc;
@@ -139,13 +131,15 @@ export default async function AdminCronPage() {
         <div className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-5">
           <h2 className="text-lg font-semibold text-[var(--ccr-text)]">Last Runs</h2>
           <ul className="mt-3 space-y-2 text-sm text-[var(--ccr-text)]">
-            {Object.keys(ACTION_LABELS).map((action) => {
-              const row = latestByAction[action];
+            {EVENT_TYPE_LIST.map((eventType: ReminderEventType) => {
+              const run = latestRuns[eventType];
+              const fallbackEvent = latestEventByAction[eventType];
+              const displayTimestamp = run?.finishedAt || run?.startedAt || fallbackEvent?.created_at || null;
               return (
-                <li key={action} className="flex items-center justify-between gap-3">
-                  <span>{ACTION_LABELS[action]}</span>
+                <li key={eventType} className="flex items-center justify-between gap-3">
+                  <span>{REMINDER_EVENT_LABELS[eventType]}</span>
                   <span className="text-xs text-[var(--ccr-muted)]">
-                    {row ? fmtDate(row.created_at) : "No runs yet"}
+                    {displayTimestamp ? fmtDate(displayTimestamp) : "No runs yet"}
                   </span>
                 </li>
               );
@@ -173,7 +167,7 @@ export default async function AdminCronPage() {
                 {rows.map((row) => (
                   <tr key={`${row.action}-${row.created_at}`} className="border-b border-[var(--ccr-border)] last:border-b-0">
                     <td className="px-3 py-2 text-[var(--ccr-text)]">
-                      {ACTION_LABELS[row.action] ?? row.action}
+                      {REMINDER_EVENT_LABELS[row.action as ReminderEventType] ?? row.action}
                     </td>
                     <td className="px-3 py-2 text-[var(--ccr-text)]">
                       {row.entity_id ? row.entity_id.slice(0, 8) : "—"}
@@ -185,10 +179,16 @@ export default async function AdminCronPage() {
                         return (
                           <div className="space-y-1">
                             {details.map((item) => (
-                              <p key={`${row.action}-${row.created_at}-${item.key}`}>
+                              <div key={`${row.action}-${row.created_at}-${item.key}`}>
                                 <span className="font-semibold text-[var(--ccr-text)]">{item.key}:</span>{" "}
-                                {item.value}
-                              </p>
+                                {item.value.includes("\n") ? (
+                                  <pre className="mt-1 whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-[var(--ccr-muted)]">
+                                    {item.value}
+                                  </pre>
+                                ) : (
+                                  item.value
+                                )}
+                              </div>
                             ))}
                           </div>
                         );

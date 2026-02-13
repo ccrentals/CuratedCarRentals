@@ -5,6 +5,13 @@ import { sendPickupReminderEmail } from "@/lib/notifications/email";
 import { writeAuditLog } from "@/lib/audit";
 import { computeBookingPricing, readPromoPricingFields } from "@/lib/payments/pricing";
 import { loadAdminSettings } from "@/lib/adminSettings";
+import { logError } from "@/lib/log";
+import { writeReminderRun } from "@/lib/cron/reminderRuns";
+import {
+  PICKUP_REMINDER_EVENT_TYPES,
+  REMINDER_EVENTS,
+  type ReminderRunStatus,
+} from "@/lib/cron/reminderTypes";
 
 function dateKey(date: Date) {
   return date.toISOString().slice(0, 10);
@@ -17,6 +24,7 @@ function tomorrowKey() {
 }
 
 export async function POST(request: Request) {
+  const runStartedAt = new Date();
   const secret = process.env.CRON_SECRET;
   if (!secret) {
     return NextResponse.json({ error: "CRON_SECRET not set" }, { status: 500 });
@@ -29,6 +37,21 @@ export async function POST(request: Request) {
 
   const { settings, source } = await loadAdminSettings();
   if (!settings.sendPickupReminder) {
+    const runFinishedAt = new Date();
+    for (const eventType of PICKUP_REMINDER_EVENT_TYPES) {
+      await writeReminderRun({
+        eventType,
+        status: "CANCELLED",
+        startedAt: runStartedAt,
+        finishedAt: runFinishedAt,
+        attemptedCount: 0,
+        sentCount: 0,
+        failedCount: 0,
+        skippedCount: 0,
+        errorSummary: "Pickup reminders disabled in admin settings",
+        source: "cron",
+      });
+    }
     return NextResponse.json({
       ok: true,
       sent: 0,
@@ -64,85 +87,143 @@ export async function POST(request: Request) {
   let sent = 0;
   let skipped = 0;
   let failures = 0;
+  let attempted = 0;
 
   const pool = getDbPool();
+  try {
+    for (const booking of bookingsResult.rows) {
+      const pricing = booking.pricing_json ?? {};
+      const lastReminder = (pricing as Record<string, unknown>).pickup_reminder_sent_at;
+      if (typeof lastReminder === "string" && lastReminder.slice(0, 10) === todayKey) {
+        skipped += 1;
+        continue;
+      }
 
-  for (const booking of bookingsResult.rows) {
-    const pricing = booking.pricing_json ?? {};
-    const lastReminder = (pricing as Record<string, unknown>).pickup_reminder_sent_at;
-    if (typeof lastReminder === "string" && lastReminder.slice(0, 10) === todayKey) {
-      skipped += 1;
-      continue;
-    }
+      const dailyRate = Number(pricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
+      const deposit = Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0);
+      const { promoCode, promoDiscount } = readPromoPricingFields(pricing);
+      const paidToDate = Number(booking.paid_to_date ?? 0);
+      const summary = computeBookingPricing({
+        bookingId: booking.id,
+        bookingStatus: booking.status,
+        startDate: booking.start_date,
+        endDate: booking.end_date,
+        dailyRate,
+        deposit,
+        netPaidToDate: paidToDate,
+        promoCode,
+        promoDiscount,
+      });
+      const balanceDue = summary.balanceDue;
+      attempted += 1;
 
-    const dailyRate = Number(pricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
-    const deposit = Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0);
-    const { promoCode, promoDiscount } = readPromoPricingFields(pricing);
-    const paidToDate = Number(booking.paid_to_date ?? 0);
-    const summary = computeBookingPricing({
-      bookingId: booking.id,
-      bookingStatus: booking.status,
-      startDate: booking.start_date,
-      endDate: booking.end_date,
-      dailyRate,
-      deposit,
-      netPaidToDate: paidToDate,
-      promoCode,
-      promoDiscount,
-    });
-    const balanceDue = summary.balanceDue;
+      const sendResult = await sendPickupReminderEmail({
+        bookingId: booking.id,
+        customerEmail: booking.customer_email,
+        customerName: booking.customer_name,
+        vehicleLabel: `${booking.vehicle_year} ${booking.vehicle_make} ${booking.vehicle_model}`.trim(),
+        startDate: booking.start_date,
+        endDate: booking.end_date,
+        pickupLocation: booking.pickup_location,
+        balanceDue,
+      });
+      if (!sendResult.ok) {
+        await writeAuditLog({
+          userId: "system",
+          action: REMINDER_EVENTS.PICKUP_FAILED,
+          entityType: "booking",
+          entityId: booking.id,
+          details: {
+            balance_due: balanceDue,
+            pickup_date: booking.start_date,
+            error: sendResult.error ?? "delivery failed",
+          },
+        });
+        failures += 1;
+        continue;
+      }
 
-    const sendResult = await sendPickupReminderEmail({
-      bookingId: booking.id,
-      customerEmail: booking.customer_email,
-      customerName: booking.customer_name,
-      vehicleLabel: `${booking.vehicle_year} ${booking.vehicle_make} ${booking.vehicle_model}`.trim(),
-      startDate: booking.start_date,
-      endDate: booking.end_date,
-      pickupLocation: booking.pickup_location,
-      balanceDue,
-    });
-    if (!sendResult.ok) {
+      const updatedPricing = {
+        ...pricing,
+        pickup_reminder_sent_at: new Date().toISOString(),
+      };
+
+      const client = await pool.connect();
+      try {
+        await client.query("update bookings set pricing_json = $1 where id = $2", [
+          updatedPricing,
+          booking.id,
+        ]);
+      } finally {
+        client.release();
+      }
+
       await writeAuditLog({
         userId: "system",
-        action: "BOOKING_PICKUP_REMINDER_FAILED",
+        action: REMINDER_EVENTS.PICKUP_SENT,
         entityType: "booking",
         entityId: booking.id,
-        details: {
-          balance_due: balanceDue,
-          pickup_date: booking.start_date,
-          error: sendResult.error ?? "delivery failed",
-        },
+        details: { balance_due: balanceDue, pickup_date: booking.start_date },
       });
-      failures += 1;
-      continue;
+      sent += 1;
     }
 
-    const updatedPricing = {
-      ...pricing,
-      pickup_reminder_sent_at: new Date().toISOString(),
-    };
-
-    const client = await pool.connect();
-    try {
-      await client.query("update bookings set pricing_json = $1 where id = $2", [
-        updatedPricing,
-        booking.id,
-      ]);
-    } finally {
-      client.release();
-    }
-
-    await writeAuditLog({
-      userId: "system",
-      action: "BOOKING_PICKUP_REMINDER_SENT",
-      entityType: "booking",
-      entityId: booking.id,
-      details: { balance_due: balanceDue, pickup_date: booking.start_date },
+    const runFinishedAt = new Date();
+    await writeReminderRun({
+      eventType: REMINDER_EVENTS.PICKUP_SENT,
+      status: "SUCCESS",
+      startedAt: runStartedAt,
+      finishedAt: runFinishedAt,
+      attemptedCount: attempted,
+      sentCount: sent,
+      failedCount: failures,
+      skippedCount: skipped,
+      source: "cron",
+    });
+    await writeReminderRun({
+      eventType: REMINDER_EVENTS.PICKUP_FAILED,
+      status: failures > 0 ? "FAILED" : "SUCCESS",
+      startedAt: runStartedAt,
+      finishedAt: runFinishedAt,
+      attemptedCount: attempted,
+      sentCount: sent,
+      failedCount: failures,
+      skippedCount: skipped,
+      source: "cron",
     });
 
-    sent += 1;
-  }
+    return NextResponse.json({ ok: true, sent, skipped, failures, settingsSource: source });
+  } catch (error) {
+    const runFinishedAt = new Date();
+    const safeError = error instanceof Error ? error.message : "Pickup reminder job failed";
+    const failedStatus: ReminderRunStatus = "FAILED";
 
-  return NextResponse.json({ ok: true, sent, skipped, failures, settingsSource: source });
+    await writeReminderRun({
+      eventType: REMINDER_EVENTS.PICKUP_SENT,
+      status: failedStatus,
+      startedAt: runStartedAt,
+      finishedAt: runFinishedAt,
+      attemptedCount: attempted,
+      sentCount: sent,
+      failedCount: failures,
+      skippedCount: skipped,
+      errorSummary: safeError,
+      source: "cron",
+    });
+    await writeReminderRun({
+      eventType: REMINDER_EVENTS.PICKUP_FAILED,
+      status: failedStatus,
+      startedAt: runStartedAt,
+      finishedAt: runFinishedAt,
+      attemptedCount: attempted,
+      sentCount: sent,
+      failedCount: failures,
+      skippedCount: skipped,
+      errorSummary: safeError,
+      source: "cron",
+    });
+
+    logError("cron_pickup_reminders_failed", error, { attempted, sent, skipped, failures });
+    return NextResponse.json({ ok: false, error: "Failed to run pickup reminders" }, { status: 500 });
+  }
 }

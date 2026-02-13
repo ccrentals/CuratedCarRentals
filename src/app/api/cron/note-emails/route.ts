@@ -3,6 +3,9 @@ import { NextResponse } from "next/server";
 import { dbQuery } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
 import { getInternalNotesRecipient, sendBookingNoteEmail } from "@/lib/notifications/email";
+import { logError } from "@/lib/log";
+import { writeReminderRun } from "@/lib/cron/reminderRuns";
+import { REMINDER_EVENTS } from "@/lib/cron/reminderTypes";
 
 type BookingRow = {
   id: string;
@@ -33,6 +36,7 @@ function normalizeTarget(value: unknown): NoteTarget {
 }
 
 export async function POST(request: Request) {
+  const runStartedAt = new Date();
   const secret = process.env.CRON_SECRET;
   if (!secret) {
     return NextResponse.json({ error: "CRON_SECRET not set" }, { status: 500 });
@@ -55,163 +59,228 @@ export async function POST(request: Request) {
   let emailsSent = 0;
   let emailFailures = 0;
   let cancelledNotesSkipped = 0;
+  try {
+    for (const booking of bookingsResult.rows) {
+      const pricing = booking.pricing_json ?? {};
+      const notes = Array.isArray((pricing as { admin_notes?: unknown }).admin_notes)
+        ? ((pricing as { admin_notes: unknown[] }).admin_notes as unknown[])
+        : [];
+      if (notes.length === 0) continue;
 
-  for (const booking of bookingsResult.rows) {
-    const pricing = booking.pricing_json ?? {};
-    const notes = Array.isArray((pricing as { admin_notes?: unknown }).admin_notes)
-      ? ((pricing as { admin_notes: unknown[] }).admin_notes as unknown[])
-      : [];
-    if (notes.length === 0) continue;
+      let bookingChanged = false;
+      const nextNotes = [...notes];
+      const vehicleLabel = `${booking.vehicle_year} ${booking.vehicle_make} ${booking.vehicle_model}`.trim();
 
-    let bookingChanged = false;
-    const nextNotes = [...notes];
-    const vehicleLabel = `${booking.vehicle_year} ${booking.vehicle_make} ${booking.vehicle_model}`.trim();
+      for (let index = 0; index < nextNotes.length; index += 1) {
+        const note = asRecord(nextNotes[index]);
+        if (!note) continue;
 
-    for (let index = 0; index < nextNotes.length; index += 1) {
-      const note = asRecord(nextNotes[index]);
-      if (!note) continue;
+        const target = normalizeTarget(note.email_target);
+        const sendMode = String(note.email_send_mode ?? "").toLowerCase();
+        if (target === "none" || sendMode !== "scheduled") continue;
+        if (typeof note.email_cancelled_at === "string" && note.email_cancelled_at.trim()) {
+          cancelledNotesSkipped += 1;
+          continue;
+        }
 
-      const target = normalizeTarget(note.email_target);
-      const sendMode = String(note.email_send_mode ?? "").toLowerCase();
-      if (target === "none" || sendMode !== "scheduled") continue;
-      if (typeof note.email_cancelled_at === "string" && note.email_cancelled_at.trim()) {
-        cancelledNotesSkipped += 1;
-        continue;
-      }
+        const scheduledFor = typeof note.email_scheduled_for === "string" ? note.email_scheduled_for : null;
+        if (!scheduledFor) continue;
 
-      const scheduledFor = typeof note.email_scheduled_for === "string" ? note.email_scheduled_for : null;
-      if (!scheduledFor) continue;
+        const scheduledMs = Date.parse(scheduledFor);
+        if (Number.isNaN(scheduledMs) || scheduledMs > nowMs) continue;
 
-      const scheduledMs = Date.parse(scheduledFor);
-      if (Number.isNaN(scheduledMs) || scheduledMs > nowMs) continue;
+        dueNotes += 1;
 
-      dueNotes += 1;
+        const message = typeof note.message === "string" ? note.message.trim() : "";
+        if (!message) {
+          note.email_last_error = "Scheduled note has no message.";
+          bookingChanged = true;
+          emailFailures += 1;
+          nextNotes[index] = note;
+          continue;
+        }
 
-      const message = typeof note.message === "string" ? note.message.trim() : "";
-      if (!message) {
-        note.email_last_error = "Scheduled note has no message.";
+        const shouldCustomer =
+          (target === "customer" || target === "both") && !note.email_customer_sent_at;
+        const shouldInternal =
+          (target === "internal" || target === "both") && !note.email_internal_sent_at;
+
+        if (!shouldCustomer && !shouldInternal) {
+          continue;
+        }
+
+        const sentTargets: ("customer" | "internal")[] = [];
+        const errors: string[] = [];
+
+        if (shouldCustomer) {
+          try {
+            const sendResult = await sendBookingNoteEmail({
+              bookingId: booking.id,
+              recipientEmail: booking.customer_email,
+              recipientType: "customer",
+              customerName: booking.customer_name,
+              customerEmail: booking.customer_email,
+              vehicleLabel,
+              startDate: booking.start_date,
+              endDate: booking.end_date,
+              pickupLocation: booking.pickup_location,
+              noteMessage: message,
+              scheduledFor,
+            });
+            if (sendResult.ok) {
+              note.email_customer_sent_at = new Date().toISOString();
+              sentTargets.push("customer");
+            } else {
+              errors.push(sendResult.error ?? "customer delivery failed");
+            }
+          } catch {
+            errors.push("customer delivery failed");
+          }
+        }
+
+        if (shouldInternal) {
+          try {
+            const sendResult = await sendBookingNoteEmail({
+              bookingId: booking.id,
+              recipientEmail: getInternalNotesRecipient(),
+              recipientType: "internal",
+              customerName: booking.customer_name,
+              customerEmail: booking.customer_email,
+              vehicleLabel,
+              startDate: booking.start_date,
+              endDate: booking.end_date,
+              pickupLocation: booking.pickup_location,
+              noteMessage: message,
+              scheduledFor,
+            });
+            if (sendResult.ok) {
+              note.email_internal_sent_at = new Date().toISOString();
+              sentTargets.push("internal");
+            } else {
+              errors.push(sendResult.error ?? "internal delivery failed");
+            }
+          } catch {
+            errors.push("internal delivery failed");
+          }
+        }
+
+        emailsSent += sentTargets.length;
+        emailFailures += errors.length;
+        note.email_last_error = errors.length > 0 ? errors.join(" | ").slice(0, 400) : null;
         bookingChanged = true;
-        emailFailures += 1;
         nextNotes[index] = note;
-        continue;
-      }
 
-      const shouldCustomer =
-        (target === "customer" || target === "both") && !note.email_customer_sent_at;
-      const shouldInternal =
-        (target === "internal" || target === "both") && !note.email_internal_sent_at;
-
-      if (!shouldCustomer && !shouldInternal) {
-        continue;
-      }
-
-      const sentTargets: ("customer" | "internal")[] = [];
-      const errors: string[] = [];
-
-      if (shouldCustomer) {
-        try {
-          const sendResult = await sendBookingNoteEmail({
-            bookingId: booking.id,
-            recipientEmail: booking.customer_email,
-            recipientType: "customer",
-            customerName: booking.customer_name,
-            customerEmail: booking.customer_email,
-            vehicleLabel,
-            startDate: booking.start_date,
-            endDate: booking.end_date,
-            pickupLocation: booking.pickup_location,
-            noteMessage: message,
-            scheduledFor,
+        if (sentTargets.length > 0) {
+          await writeAuditLog({
+            userId: "system",
+            action: REMINDER_EVENTS.NOTE_SENT,
+            entityType: "booking",
+            entityId: booking.id,
+            details: {
+              targets: sentTargets,
+              mode: "scheduled",
+              scheduled_for: scheduledFor,
+            },
           });
-          if (sendResult.ok) {
-            note.email_customer_sent_at = new Date().toISOString();
-            sentTargets.push("customer");
-          } else {
-            errors.push(sendResult.error ?? "customer delivery failed");
-          }
-        } catch {
-          errors.push("customer delivery failed");
+        }
+
+        if (errors.length > 0) {
+          await writeAuditLog({
+            userId: "system",
+            action: REMINDER_EVENTS.NOTE_FAILED,
+            entityType: "booking",
+            entityId: booking.id,
+            details: {
+              mode: "scheduled",
+              scheduled_for: scheduledFor,
+              error_count: errors.length,
+            },
+          });
         }
       }
 
-      if (shouldInternal) {
-        try {
-          const sendResult = await sendBookingNoteEmail({
-            bookingId: booking.id,
-            recipientEmail: getInternalNotesRecipient(),
-            recipientType: "internal",
-            customerName: booking.customer_name,
-            customerEmail: booking.customer_email,
-            vehicleLabel,
-            startDate: booking.start_date,
-            endDate: booking.end_date,
-            pickupLocation: booking.pickup_location,
-            noteMessage: message,
-            scheduledFor,
-          });
-          if (sendResult.ok) {
-            note.email_internal_sent_at = new Date().toISOString();
-            sentTargets.push("internal");
-          } else {
-            errors.push(sendResult.error ?? "internal delivery failed");
-          }
-        } catch {
-          errors.push("internal delivery failed");
-        }
-      }
+      if (!bookingChanged) continue;
 
-      emailsSent += sentTargets.length;
-      emailFailures += errors.length;
-      note.email_last_error = errors.length > 0 ? errors.join(" | ").slice(0, 400) : null;
-      bookingChanged = true;
-      nextNotes[index] = note;
-
-      if (sentTargets.length > 0) {
-        await writeAuditLog({
-          userId: "system",
-          action: "BOOKING_NOTE_EMAIL_SENT",
-          entityType: "booking",
-          entityId: booking.id,
-          details: {
-            targets: sentTargets,
-            mode: "scheduled",
-            scheduled_for: scheduledFor,
-          },
-        });
-      }
-
-      if (errors.length > 0) {
-        await writeAuditLog({
-          userId: "system",
-          action: "BOOKING_NOTE_EMAIL_FAILED",
-          entityType: "booking",
-          entityId: booking.id,
-          details: {
-            mode: "scheduled",
-            scheduled_for: scheduledFor,
-            error_count: errors.length,
-          },
-        });
-      }
+      const updatedPricing = { ...pricing, admin_notes: nextNotes };
+      await dbQuery("update bookings set pricing_json = $1, updated_at = now() where id = $2", [
+        updatedPricing,
+        booking.id,
+      ]);
+      bookingsUpdated += 1;
     }
 
-    if (!bookingChanged) continue;
+    const runFinishedAt = new Date();
+    const attemptedCount = emailsSent + emailFailures;
+    await writeReminderRun({
+      eventType: REMINDER_EVENTS.NOTE_SENT,
+      status: "SUCCESS",
+      startedAt: runStartedAt,
+      finishedAt: runFinishedAt,
+      attemptedCount,
+      sentCount: emailsSent,
+      failedCount: emailFailures,
+      cancelledCount: cancelledNotesSkipped,
+      source: "cron",
+    });
+    await writeReminderRun({
+      eventType: REMINDER_EVENTS.NOTE_FAILED,
+      status: emailFailures > 0 ? "FAILED" : "SUCCESS",
+      startedAt: runStartedAt,
+      finishedAt: runFinishedAt,
+      attemptedCount,
+      sentCount: emailsSent,
+      failedCount: emailFailures,
+      cancelledCount: cancelledNotesSkipped,
+      source: "cron",
+    });
 
-    const updatedPricing = { ...pricing, admin_notes: nextNotes };
-    await dbQuery("update bookings set pricing_json = $1, updated_at = now() where id = $2", [
-      updatedPricing,
-      booking.id,
-    ]);
-    bookingsUpdated += 1;
+    return NextResponse.json({
+      ok: true,
+      bookingsScanned: bookingsResult.rows.length,
+      bookingsUpdated,
+      dueNotes,
+      emailsSent,
+      emailFailures,
+      cancelledNotesSkipped,
+    });
+  } catch (error) {
+    const runFinishedAt = new Date();
+    const attemptedCount = emailsSent + emailFailures;
+    const safeError = error instanceof Error ? error.message : "Scheduled note email job failed";
+
+    await writeReminderRun({
+      eventType: REMINDER_EVENTS.NOTE_SENT,
+      status: "FAILED",
+      startedAt: runStartedAt,
+      finishedAt: runFinishedAt,
+      attemptedCount,
+      sentCount: emailsSent,
+      failedCount: emailFailures,
+      cancelledCount: cancelledNotesSkipped,
+      errorSummary: safeError,
+      source: "cron",
+    });
+    await writeReminderRun({
+      eventType: REMINDER_EVENTS.NOTE_FAILED,
+      status: "FAILED",
+      startedAt: runStartedAt,
+      finishedAt: runFinishedAt,
+      attemptedCount,
+      sentCount: emailsSent,
+      failedCount: emailFailures,
+      cancelledCount: cancelledNotesSkipped,
+      errorSummary: safeError,
+      source: "cron",
+    });
+
+    logError("cron_note_emails_failed", error, {
+      bookingsScanned: bookingsResult.rows.length,
+      bookingsUpdated,
+      dueNotes,
+      emailsSent,
+      emailFailures,
+      cancelledNotesSkipped,
+    });
+    return NextResponse.json({ ok: false, error: "Failed to run scheduled note emails" }, { status: 500 });
   }
-
-  return NextResponse.json({
-    ok: true,
-    bookingsScanned: bookingsResult.rows.length,
-    bookingsUpdated,
-    dueNotes,
-    emailsSent,
-    emailFailures,
-    cancelledNotesSkipped,
-  });
 }
