@@ -1,15 +1,11 @@
 import { NextResponse } from "next/server";
 
 import { getSessionFromRequest } from "@/lib/auth/session";
-import { dbQuery, getDbPool } from "@/lib/db";
+import { fetchAdminBookingsPage } from "@/lib/bookings/adminBookingsList";
+import { getDbPool } from "@/lib/db";
 import { sendBookingCreatedEmail } from "@/lib/notifications/email";
 import { calcDaysInclusive, dateOnlyUtc } from "@/lib/payments/dateMath";
-import {
-  findOverlappingBlockingBookingIds,
-  readBookingOverrideInfo,
-  isNonBlockingPricing,
-} from "@/lib/bookings/holds";
-import { normalizePaymentStatus, readAmountPaid, readPaymentOption } from "@/lib/payments/pricing";
+import { findOverlappingBlockingBookingIds } from "@/lib/bookings/holds";
 import { requireCsrf } from "@/lib/security/csrf";
 import { isEmail, isISODate, isNonEmptyString } from "@/lib/validators";
 import { logError } from "@/lib/log";
@@ -33,41 +29,17 @@ export async function GET(request: Request) {
   }
 
   const { searchParams } = new URL(request.url);
-  const status = searchParams.get("status");
-
-  const query = status
-    ? {
-        text:
-          "select b.id, b.start_date, b.end_date, b.status, b.pricing_json, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.status = $1 order by b.created_at desc",
-        values: [status],
-      }
-    : {
-        text:
-          "select b.id, b.start_date, b.end_date, b.status, b.pricing_json, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id order by b.created_at desc",
-        values: [],
-      };
-
-  const result = await dbQuery(query.text, query.values);
-  const bookings = result.rows.map((row: unknown) => {
-    const bookingRow = row as Record<string, unknown>;
-    const pricing =
-      bookingRow.pricing_json && typeof bookingRow.pricing_json === "object" && !Array.isArray(bookingRow.pricing_json)
-        ? (bookingRow.pricing_json as Record<string, unknown>)
-        : {};
-    const overrideInfo = readBookingOverrideInfo(pricing);
-    return {
-      ...bookingRow,
-      payment_option: readPaymentOption(pricing),
-      payment_status: normalizePaymentStatus(pricing.payment_status),
-      amount_paid: readAmountPaid(pricing),
-      non_blocking: isNonBlockingPricing(pricing),
-      overridden_by_booking_id: overrideInfo.overriddenByBookingId,
-      overridden_at: overrideInfo.overriddenAt,
-      override_reason: overrideInfo.overrideReason,
-    };
+  const page = await fetchAdminBookingsPage({
+    status: searchParams.get("status"),
+    q: searchParams.get("q"),
+    dateFrom: searchParams.get("dateFrom"),
+    dateTo: searchParams.get("dateTo"),
+    archived: searchParams.get("archived"),
+    limit: searchParams.get("limit"),
+    cursor: searchParams.get("cursor"),
   });
 
-  return NextResponse.json({ bookings });
+  return NextResponse.json(page);
 }
 
 export async function POST(request: Request) {

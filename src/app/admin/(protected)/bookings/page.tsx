@@ -1,27 +1,12 @@
 import Link from "next/link";
 
-import { dbQuery } from "@/lib/db";
-import { fmtDate } from "@/lib/dateFormat";
-import BookingFilters from "@/components/admin/BookingFilters";
+import { AdminBookingsTable } from "@/components/admin/AdminBookingsTable";
 import { AdminCreateBookingModal } from "@/components/admin/AdminCreateBookingModal";
-import { InfoTooltipIcon } from "@/components/admin/InfoTooltipIcon";
+import BookingFilters from "@/components/admin/BookingFilters";
 import { getSessionFromRequest } from "@/lib/auth/session";
-import { readBookingOverrideInfo } from "@/lib/bookings/holds";
-import { isNonBlockingBookingHold, readAmountPaid, readHoldMinimumAmount } from "@/lib/payments/pricing";
-
-type BookingRow = {
-  id: string;
-  start_date: string;
-  end_date: string;
-  created_at: string;
-  status: string;
-  pricing_json: Record<string, unknown> | null;
-  vehicle_deposit_cents: number;
-  customer_name: string;
-  customer_email: string;
-  vehicle_make: string;
-  vehicle_model: string;
-};
+import { fetchAdminBookingsPage } from "@/lib/bookings/adminBookingsList";
+import { normalizeBookingPageSize } from "@/lib/bookings/adminBookingsPagination";
+import { dbQuery } from "@/lib/db";
 
 type VehicleOption = {
   id: string;
@@ -43,20 +28,6 @@ function isAdminRole(role: string | undefined) {
     .toUpperCase() === "ADMIN";
 }
 
-function isUndefinedColumn(error: unknown, column: string) {
-  const code = (error as { code?: string } | null)?.code;
-  const message = String((error as { message?: unknown } | null)?.message ?? "");
-  if (code !== "42703") return false;
-  const haystack = message.toLowerCase();
-  const needle = column.toLowerCase();
-  return haystack.includes("does not exist") && (haystack.includes(`"${needle}"`) || haystack.includes(`.${needle}`) || haystack.includes(needle));
-}
-
-function asMoneyLike(value: unknown) {
-  const amount = Number(value);
-  return Number.isFinite(amount) ? amount : 0;
-}
-
 export default async function AdminBookingsPage({
   searchParams,
 }: {
@@ -66,119 +37,32 @@ export default async function AdminBookingsPage({
   const canAdmin = isAdminRole(session?.role);
 
   const params = await searchParams;
-  const rawStatus = typeof params.status === "string" ? params.status : undefined;
-  const statusKey = rawStatus ? rawStatus.toLowerCase() : undefined;
-  const statusMap: Record<string, string[]> = {
-    pending_payment: ["PENDING_PAYMENT"],
-    confirmed: ["CONFIRMED"],
-    completed: ["RETURNED"],
-    cancelled: ["CANCELLED"],
-  };
-
-  const statusFilter =
-    statusKey && statusKey !== "all"
-      ? statusMap[statusKey] ?? [statusKey.toUpperCase()]
-      : undefined;
-
-  const q = typeof params.q === "string" ? params.q.trim() : "";
   const datePattern = /^\d{4}-\d{2}-\d{2}$/;
-  const dateFrom =
-    typeof params.dateFrom === "string" && datePattern.test(params.dateFrom)
-      ? params.dateFrom
-      : undefined;
-  const dateTo =
-    typeof params.dateTo === "string" && datePattern.test(params.dateTo) ? params.dateTo : undefined;
 
-  const whereClauses: string[] = [];
-  const values: Array<string | string[]> = [];
-  let index = 1;
-
+  const rawStatus = typeof params.status === "string" ? params.status : "";
+  const rawQuery = typeof params.q === "string" ? params.q.trim() : "";
+  const rawDateFrom =
+    typeof params.dateFrom === "string" && datePattern.test(params.dateFrom) ? params.dateFrom : "";
+  const rawDateTo =
+    typeof params.dateTo === "string" && datePattern.test(params.dateTo) ? params.dateTo : "";
   const includeArchived = typeof params.archived === "string" && params.archived === "1";
   const openCreateModal = typeof params.create === "string" && params.create === "1";
   const requestedCustomerId =
     typeof params.customerId === "string" ? params.customerId.trim() : "";
-  if (!includeArchived) {
-    whereClauses.push("b.archived_at is null");
-  }
+  const requestedPageSize = normalizeBookingPageSize(
+    typeof params.pageSize === "string" ? params.pageSize : undefined,
+  );
 
-  if (statusFilter) {
-    if (statusFilter.length === 1) {
-      whereClauses.push(`b.status = $${index}`);
-      values.push(statusFilter[0]);
-      index += 1;
-    } else {
-      whereClauses.push(`b.status = ANY($${index})`);
-      values.push(statusFilter);
-      index += 1;
-    }
-  }
-
-  if (q) {
-    whereClauses.push(
-      `(c.full_name ilike $${index} or c.email ilike $${index} or c.phone ilike $${index} or b.id::text ilike $${index})`,
-    );
-    values.push(`%${q}%`);
-    index += 1;
-  }
-
-  if (dateFrom) {
-    whereClauses.push(`b.start_date >= $${index}`);
-    values.push(dateFrom);
-    index += 1;
-  }
-
-  if (dateTo) {
-    whereClauses.push(`b.end_date <= $${index}`);
-    values.push(dateTo);
-    index += 1;
-  }
-
-  const whereSql = whereClauses.length ? `where ${whereClauses.join(" and ")}` : "";
-  const queryText =
-    "select b.id, b.start_date, b.end_date, b.created_at, b.status, b.pricing_json, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model, v.deposit_cents as vehicle_deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id " +
-    whereSql +
-    " order by b.created_at desc";
-
-  const queryTextWithoutArchive =
-    "select b.id, b.start_date, b.end_date, b.created_at, b.status, b.pricing_json, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model, v.deposit_cents as vehicle_deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id " +
-    (whereClauses.filter((clause) => clause !== "b.archived_at is null").length
-      ? `where ${whereClauses.filter((clause) => clause !== "b.archived_at is null").join(" and ")}`
-      : "") +
-    " order by b.created_at desc";
-
-  const bookingQuery = await (async (): Promise<{
-    result: Awaited<ReturnType<typeof dbQuery<BookingRow>>>;
-    archiveNotConfigured: boolean;
-  }> => {
-    try {
-      return {
-        result: await dbQuery<BookingRow>(queryText, values),
-        archiveNotConfigured: false,
-      };
-    } catch (error) {
-      if (isUndefinedColumn(error, "archived_at")) {
-        return {
-          result: await dbQuery<BookingRow>(queryTextWithoutArchive, values),
-          archiveNotConfigured: true,
-        };
-      }
-      throw error;
-    }
-  })();
-  const bookings = bookingQuery.result;
-  const archiveNotConfigured = bookingQuery.archiveNotConfigured;
-  const bookingIds = bookings.rows.map((row: BookingRow) => row.id);
-  const paidToDateByBookingId = new Map<string, number>();
-
-  if (bookingIds.length > 0) {
-    const paymentTotals = await dbQuery<{ booking_id: string; paid_to_date: unknown }>(
-      "select booking_id, coalesce(sum(deposit_amount_cents), 0) as paid_to_date from payments where booking_id = any($1::uuid[]) and status in ('DEPOSIT_PAID', 'REFUNDED') group by booking_id",
-      [bookingIds],
-    );
-    for (const row of paymentTotals.rows) {
-      paidToDateByBookingId.set(row.booking_id, asMoneyLike(row.paid_to_date));
-    }
-  }
+  const bookingsPage = await fetchAdminBookingsPage({
+    status: rawStatus || null,
+    q: rawQuery || null,
+    dateFrom: rawDateFrom || null,
+    dateTo: rawDateTo || null,
+    archived: includeArchived ? "1" : null,
+    includeArchived,
+    limit: requestedPageSize,
+    cursor: null,
+  });
 
   const vehicles = await dbQuery<VehicleOption>(
     "select id, year, make, model from vehicles where status <> 'INACTIVE' order by year desc, make asc, model asc",
@@ -211,6 +95,15 @@ export default async function AdminBookingsPage({
     }
   }
 
+  const stateKey = JSON.stringify({
+    status: rawStatus || "",
+    q: rawQuery || "",
+    dateFrom: rawDateFrom || "",
+    dateTo: rawDateTo || "",
+    archived: includeArchived ? "1" : "",
+    pageSize: bookingsPage.limit,
+  });
+
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-10">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -242,7 +135,7 @@ export default async function AdminBookingsPage({
         </div>
       </div>
 
-      {archiveNotConfigured ? (
+      {bookingsPage.archiveNotConfigured ? (
         <div className="mt-6 rounded-2xl border border-amber-400/40 bg-amber-500/10 p-4 text-sm text-amber-100">
           <p className="font-semibold">Archive not configured</p>
           <p className="mt-1 text-xs text-amber-100/80">
@@ -254,101 +147,21 @@ export default async function AdminBookingsPage({
 
       <BookingFilters canAdmin={canAdmin} />
 
-      <div className="mt-6 overflow-x-auto rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)]">
-        {bookings.rows.length === 0 ? (
-          <div className="px-6 py-10 text-center text-sm text-[var(--ccr-muted)]">
-            No bookings found for these filters.
-          </div>
-        ) : (
-          <table className="min-w-full text-left text-sm">
-            <thead className="border-b border-[var(--ccr-border)] text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
-              <tr>
-                <th className="px-4 py-3">Booking</th>
-                <th className="px-4 py-3">Customer</th>
-                <th className="px-4 py-3">Vehicle</th>
-                <th className="px-4 py-3">Dates</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Created</th>
-                <th className="px-4 py-3">Details</th>
-              </tr>
-            </thead>
-            <tbody>
-              {bookings.rows.map((booking: BookingRow) => {
-                const pricing = booking.pricing_json ?? {};
-                const livePaidToDate = paidToDateByBookingId.has(booking.id)
-                  ? paidToDateByBookingId.get(booking.id) ?? 0
-                  : readAmountPaid(pricing);
-                const holdMinimum = readHoldMinimumAmount({
-                  ...pricing,
-                  deposit_cents: pricing.deposit_cents ?? booking.vehicle_deposit_cents,
-                });
-                const nonBlocking =
-                  isNonBlockingBookingHold({
-                    paymentStatus: pricing.payment_status,
-                    amountPaid: livePaidToDate,
-                    holdMinimumAmount: holdMinimum,
-                  }) && !["CANCELLED", "RETURNED"].includes(booking.status.toUpperCase());
-
-                return (
-                  <tr key={booking.id} className="border-b border-[var(--ccr-border)] last:border-b-0">
-                    <td className="px-4 py-3 font-mono text-xs text-[var(--ccr-text)]">
-                      <Link
-                        href={`/admin/bookings/${booking.id}`}
-                        className="inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-[11px] font-bold text-[var(--ccr-accent)] transition hover:bg-[var(--ccr-accent)] hover:text-[var(--ccr-primary)]"
-                        title="Open booking"
-                      >
-                        {booking.id.slice(0, 8)}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-3">
-                      <p className="font-semibold text-[var(--ccr-text)]">{booking.customer_name}</p>
-                      <p className="text-xs text-[var(--ccr-muted)]">{booking.customer_email}</p>
-                    </td>
-                    <td className="px-4 py-3 text-[var(--ccr-text)]">
-                      {booking.vehicle_make} {booking.vehicle_model}
-                    </td>
-                    <td className="px-4 py-3 text-[var(--ccr-muted)]">
-                      {fmtDate(booking.start_date)} → {fmtDate(booking.end_date)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <p className="text-[var(--ccr-text)]">{booking.status}</p>
-                        {nonBlocking ? (
-                          <InfoTooltipIcon message="UNPAID - Not holding vehicle" />
-                        ) : null}
-                      </div>
-                      {(() => {
-                        const overrideInfo = readBookingOverrideInfo(booking.pricing_json);
-                        if (!overrideInfo.isOverridden || !overrideInfo.overriddenByBookingId) return null;
-                        return (
-                          <span className="mt-1 inline-flex flex-wrap items-center gap-1 rounded-full border border-red-300/40 bg-red-500/15 px-2 py-0.5 text-[11px] font-semibold text-red-100">
-                            OVERRIDDEN
-                            <Link
-                              href={`/admin/bookings/${overrideInfo.overriddenByBookingId}`}
-                              className="underline underline-offset-2"
-                            >
-                              by {overrideInfo.overriddenByBookingId.slice(0, 8)}
-                            </Link>
-                          </span>
-                        );
-                      })()}
-                    </td>
-                    <td className="px-4 py-3 text-[var(--ccr-muted)]">{fmtDate(booking.created_at)}</td>
-                    <td className="px-4 py-3">
-                      <Link
-                        href={`/admin/bookings/${booking.id}`}
-                        className="text-sm font-semibold text-[var(--ccr-text)]"
-                      >
-                        View
-                      </Link>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
-      </div>
+      <AdminBookingsTable
+        initialRows={bookingsPage.bookings}
+        initialNextCursor={bookingsPage.nextCursor}
+        initialHasMore={bookingsPage.hasMore}
+        initialTotalCount={bookingsPage.totalCount}
+        pageSize={bookingsPage.limit}
+        filters={{
+          status: rawStatus || undefined,
+          q: rawQuery || undefined,
+          dateFrom: rawDateFrom || undefined,
+          dateTo: rawDateTo || undefined,
+          archived: includeArchived ? "1" : undefined,
+        }}
+        stateKey={stateKey}
+      />
     </div>
   );
 }

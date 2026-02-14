@@ -1,6 +1,8 @@
 import Link from "next/link";
 
+import { CustomerSnapshotBookingsTable } from "@/components/admin/CustomerSnapshotBookingsTable";
 import { getSessionFromRequest } from "@/lib/auth/session";
+import { fetchCustomerSnapshotBookingsPage } from "@/lib/customers/customerSnapshotBookings";
 import { dbQuery } from "@/lib/db";
 import { fmtDate } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
@@ -19,33 +21,10 @@ type CustomerRow = {
   total_spend: number;
 };
 
-type CustomerBookingRow = {
-  id: string;
-  start_date: string;
-  end_date: string;
-  created_at: string;
-  status: string;
-  pickup_location: string;
-  vehicle_make: string;
-  vehicle_model: string;
-  pricing_json: Record<string, unknown> | null;
-};
-
 function isAdminRole(role: string | undefined) {
   return String(role ?? "")
     .trim()
     .toUpperCase() === "ADMIN";
-}
-
-function asRecord(value: unknown) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  return value as Record<string, unknown>;
-}
-
-function toMoney(value: unknown) {
-  const amount = Number(value ?? 0);
-  if (!Number.isFinite(amount)) return 0;
-  return amount;
 }
 
 function normalizeDateInput(value: string | undefined) {
@@ -78,9 +57,10 @@ export default async function AdminCustomerDetailPage({
   const statusFilter = typeof query.status === "string" ? query.status.trim().toUpperCase() : "";
   const dateFrom = normalizeDateInput(typeof query.dateFrom === "string" ? query.dateFrom : undefined);
   const dateTo = normalizeDateInput(typeof query.dateTo === "string" ? query.dateTo : undefined);
+  const pageSize = typeof query.pageSize === "string" ? query.pageSize : "";
 
   const customer = await dbQuery<CustomerRow>(
-    "select c.id, c.full_name, c.email, c.phone, c.address, c.notes, c.created_at, c.last_booked_at, count(distinct b.id)::int as total_bookings, coalesce(sum(case when p.status = 'SUCCESS' and p.deleted_at is null then p.deposit_amount_cents else 0 end), 0)::int as total_spend from customers c left join bookings b on b.customer_id = c.id left join payments p on p.booking_id = b.id where c.id = $1 group by c.id, c.full_name, c.email, c.phone, c.address, c.notes, c.created_at, c.last_booked_at",
+    "select c.id, c.full_name, c.email, c.phone, c.address, c.notes, c.created_at, c.last_booked_at, count(distinct b.id)::int as total_bookings, coalesce(sum(case when p.status in ('DEPOSIT_PAID', 'SUCCESS', 'REFUNDED') and p.deleted_at is null then p.deposit_amount_cents else 0 end), 0)::int as total_spend from customers c left join bookings b on b.customer_id = c.id left join payments p on p.booking_id = b.id where c.id = $1 group by c.id, c.full_name, c.email, c.phone, c.address, c.notes, c.created_at, c.last_booked_at",
     [id],
   );
 
@@ -93,32 +73,21 @@ export default async function AdminCustomerDetailPage({
     );
   }
 
-  const whereParts = ["b.customer_id = $1"];
-  const values: string[] = [id];
-  let paramIndex = 2;
+  const snapshotBookingsPage = await fetchCustomerSnapshotBookingsPage({
+    customerId: id,
+    status: statusFilter || null,
+    dateFrom: dateFrom || null,
+    dateTo: dateTo || null,
+    limit: pageSize || null,
+    cursor: null,
+  });
 
-  if (statusFilter) {
-    whereParts.push(`b.status = $${paramIndex}`);
-    values.push(statusFilter);
-    paramIndex += 1;
-  }
-  if (dateFrom) {
-    whereParts.push(`b.start_date >= $${paramIndex}`);
-    values.push(dateFrom);
-    paramIndex += 1;
-  }
-  if (dateTo) {
-    whereParts.push(`b.end_date <= $${paramIndex}`);
-    values.push(dateTo);
-    paramIndex += 1;
-  }
-
-  const bookings = await dbQuery<CustomerBookingRow>(
-    "select b.id, b.start_date, b.end_date, b.created_at, b.status, b.pickup_location, b.pricing_json, v.make as vehicle_make, v.model as vehicle_model from bookings b join vehicles v on v.id = b.vehicle_id where " +
-      whereParts.join(" and ") +
-      " order by b.created_at desc",
-    values,
-  );
+  const snapshotStateKey = JSON.stringify({
+    status: statusFilter || "",
+    dateFrom: dateFrom || "",
+    dateTo: dateTo || "",
+    pageSize: snapshotBookingsPage.limit,
+  });
 
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-10">
@@ -210,6 +179,7 @@ export default async function AdminCustomerDetailPage({
                 className="mt-2 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
               />
             </label>
+            <input type="hidden" name="pageSize" value={String(snapshotBookingsPage.limit)} />
             <button type="submit" className="mt-6 rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-xs font-semibold text-white">
               Apply
             </button>
@@ -221,50 +191,20 @@ export default async function AdminCustomerDetailPage({
             </Link>
           </form>
 
-          <div className="mt-5 overflow-x-auto rounded-xl border border-[var(--ccr-border)]">
-            {bookings.rows.length === 0 ? (
-              <div className="px-4 py-8 text-center text-sm text-[var(--ccr-muted)]">No bookings found for this filter.</div>
-            ) : (
-              <table className="min-w-full text-left text-sm">
-                <thead className="border-b border-[var(--ccr-border)] text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
-                  <tr>
-                    <th className="px-3 py-2">Booking</th>
-                    <th className="px-3 py-2">Vehicle</th>
-                    <th className="px-3 py-2">Dates</th>
-                    <th className="px-3 py-2">Status</th>
-                    <th className="px-3 py-2">Total</th>
-                    <th className="px-3 py-2">Balance</th>
-                    <th className="px-3 py-2">Created</th>
-                    <th className="px-3 py-2 text-right">Open</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {bookings.rows.map((booking: CustomerBookingRow) => {
-                    const pricing = asRecord(booking.pricing_json);
-                    const total =
-                      toMoney(pricing?.total_amount) || toMoney(pricing?.total_cents);
-                    const balance = toMoney(pricing?.balance_due);
-                    return (
-                      <tr key={booking.id} className="border-b border-[var(--ccr-border)] last:border-b-0">
-                        <td className="px-3 py-2 font-mono text-xs text-[var(--ccr-text)]">{booking.id.slice(0, 8)}</td>
-                        <td className="px-3 py-2 text-[var(--ccr-text)]">{booking.vehicle_make} {booking.vehicle_model}</td>
-                        <td className="px-3 py-2 text-[var(--ccr-muted)]">{fmtDate(booking.start_date)} → {fmtDate(booking.end_date)}</td>
-                        <td className="px-3 py-2 text-[var(--ccr-text)]">{booking.status.replaceAll("_", " ")}</td>
-                        <td className="px-3 py-2 text-[var(--ccr-text)]">{formatJmd(total)}</td>
-                        <td className="px-3 py-2 text-[var(--ccr-text)]">{formatJmd(balance)}</td>
-                        <td className="px-3 py-2 text-[var(--ccr-muted)]">{fmtDate(booking.created_at)}</td>
-                        <td className="px-3 py-2 text-right">
-                          <Link href={`/admin/bookings/${booking.id}`} className="text-xs font-semibold text-[var(--ccr-text)]">
-                            View
-                          </Link>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            )}
-          </div>
+          <CustomerSnapshotBookingsTable
+            customerId={customerRow.id}
+            initialRows={snapshotBookingsPage.bookings}
+            initialNextCursor={snapshotBookingsPage.nextCursor}
+            initialHasMore={snapshotBookingsPage.hasMore}
+            initialTotalCount={snapshotBookingsPage.totalCount}
+            pageSize={snapshotBookingsPage.limit}
+            filters={{
+              status: statusFilter || undefined,
+              dateFrom: dateFrom || undefined,
+              dateTo: dateTo || undefined,
+            }}
+            stateKey={snapshotStateKey}
+          />
         </section>
       </div>
     </div>
