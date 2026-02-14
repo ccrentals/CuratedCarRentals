@@ -54,7 +54,7 @@ async function fetchCustomers({
         : "order by coalesce(c.last_booked_at, max(b.created_at), c.created_at) desc";
 
   const queryWithDeletedColumn =
-    "select c.id, c.full_name, c.email, c.phone, c.created_at, c.last_booked_at, count(distinct b.id)::int as total_bookings, coalesce(sum(case when p.status = 'SUCCESS' and p.deleted_at is null then p.deposit_amount_cents else 0 end), 0)::int as total_spend from customers c left join bookings b on b.customer_id = c.id left join payments p on p.booking_id = b.id " +
+    "select c.id, c.full_name, c.email, c.phone, c.created_at, c.last_booked_at, count(distinct b.id)::int as total_bookings, coalesce(sum(case when p.status in ('DEPOSIT_PAID', 'SUCCESS', 'REFUNDED') and p.deleted_at is null then p.deposit_amount_cents else 0 end), 0)::int as total_spend from customers c left join bookings b on b.customer_id = c.id left join payments p on p.booking_id = b.id " +
     whereSql +
     " group by c.id, c.full_name, c.email, c.phone, c.created_at, c.last_booked_at " +
     orderBy;
@@ -64,7 +64,7 @@ async function fetchCustomers({
   } catch (error) {
     if (!isMissingColumn(error, "deleted_at")) throw error;
     const fallback =
-      "select c.id, c.full_name, c.email, c.phone, c.created_at, c.last_booked_at, count(distinct b.id)::int as total_bookings, coalesce(sum(case when p.status = 'SUCCESS' then p.deposit_amount_cents else 0 end), 0)::int as total_spend from customers c left join bookings b on b.customer_id = c.id left join payments p on p.booking_id = b.id " +
+      "select c.id, c.full_name, c.email, c.phone, c.created_at, c.last_booked_at, count(distinct b.id)::int as total_bookings, coalesce(sum(case when p.status in ('DEPOSIT_PAID', 'SUCCESS', 'REFUNDED') then p.deposit_amount_cents else 0 end), 0)::int as total_spend from customers c left join bookings b on b.customer_id = c.id left join payments p on p.booking_id = b.id " +
       whereSql +
       " group by c.id, c.full_name, c.email, c.phone, c.created_at, c.last_booked_at " +
       orderBy;
@@ -73,7 +73,7 @@ async function fetchCustomers({
     } catch (secondError) {
       if (!isMissingColumn(secondError, "last_booked_at")) throw secondError;
       const fallbackWithoutLastBooked =
-        "select c.id, c.full_name, c.email, c.phone, c.created_at, null::timestamptz as last_booked_at, count(distinct b.id)::int as total_bookings, coalesce(sum(case when p.status = 'SUCCESS' then p.deposit_amount_cents else 0 end), 0)::int as total_spend from customers c left join bookings b on b.customer_id = c.id left join payments p on p.booking_id = b.id " +
+        "select c.id, c.full_name, c.email, c.phone, c.created_at, null::timestamptz as last_booked_at, count(distinct b.id)::int as total_bookings, coalesce(sum(case when p.status in ('DEPOSIT_PAID', 'SUCCESS', 'REFUNDED') then p.deposit_amount_cents else 0 end), 0)::int as total_spend from customers c left join bookings b on b.customer_id = c.id left join payments p on p.booking_id = b.id " +
         whereSql +
         " group by c.id, c.full_name, c.email, c.phone, c.created_at " +
         orderBy.replace(/c\.last_booked_at, /g, "");

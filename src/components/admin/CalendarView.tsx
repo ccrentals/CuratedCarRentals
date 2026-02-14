@@ -296,6 +296,8 @@ export function CalendarView({
     { label: "Returned", value: "returned" },
     { label: "Cancelled", value: "cancelled" },
   ];
+  const dayViewMoreButtonClass =
+    "mt-2 cursor-pointer appearance-none border-0 bg-transparent text-xs font-semibold text-[var(--ccr-accent)] underline-offset-2 transition hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ccr-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--ccr-surface)]";
 
   return (
     <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_320px]">
@@ -487,7 +489,9 @@ export function CalendarView({
                     setShowAllDayBlockouts(false);
                   }}
                   className={`min-h-[120px] rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-2 text-left transition ${
-                    activeSelectedDate === day ? "border-[var(--ccr-primary)] shadow-sm" : ""
+                    activeSelectedDate === day
+                      ? "border-[var(--ccr-primary)] bg-[var(--ccr-surface-soft)] shadow-[inset_0_1px_2px_var(--ccr-border)] ring-1 ring-[var(--ccr-accent)]"
+                      : ""
                   }`}
                 >
                 <div className="flex items-center justify-between">
@@ -605,7 +609,7 @@ export function CalendarView({
               <button
                 type="button"
                 onClick={() => setShowAllDayBookings(true)}
-                className="mt-2 text-xs font-semibold text-[var(--ccr-primary)] hover:underline"
+                className={dayViewMoreButtonClass}
               >
                 See {hiddenDayBookingCount} more
               </button>
@@ -614,7 +618,7 @@ export function CalendarView({
               <button
                 type="button"
                 onClick={() => setShowAllDayBookings(false)}
-                className="mt-2 text-xs font-semibold text-[var(--ccr-primary)] hover:underline"
+                className={dayViewMoreButtonClass}
               >
                 See less
               </button>
@@ -652,7 +656,7 @@ export function CalendarView({
               <button
                 type="button"
                 onClick={() => setShowAllDayBlockouts(true)}
-                className="mt-2 text-xs font-semibold text-[var(--ccr-primary)] hover:underline"
+                className={dayViewMoreButtonClass}
               >
                 See {hiddenDayBlockoutCount} more
               </button>
@@ -661,7 +665,7 @@ export function CalendarView({
               <button
                 type="button"
                 onClick={() => setShowAllDayBlockouts(false)}
-                className="mt-2 text-xs font-semibold text-[var(--ccr-primary)] hover:underline"
+                className={dayViewMoreButtonClass}
               >
                 See less
               </button>
