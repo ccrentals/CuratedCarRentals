@@ -1,0 +1,1269 @@
+import { dbQuery } from "@/lib/db";
+import { dateOnlyUtc } from "@/lib/payments/dateMath";
+import {
+  isBlockingBookingHold,
+  isNonBlockingBookingHold,
+  normalizePaymentStatus,
+  readHoldMinimumAmount,
+  type Queryable,
+} from "@/lib/payments/pricing";
+
+export type ReportGranularity = "day" | "week" | "month";
+
+export type ReportsFilterInput = {
+  dateFrom?: string | null;
+  dateTo?: string | null;
+  vehicleId?: string | null;
+  revenueGranularity?: string | null;
+};
+
+export type ReportsFilters = {
+  dateFrom: string;
+  dateTo: string;
+  vehicleId: string;
+  revenueGranularity: ReportGranularity;
+};
+
+export type RevenuePoint = {
+  periodStart: string;
+  periodLabel: string;
+  grossRevenue: number;
+  refunds: number;
+  netRevenue: number;
+  paymentCount: number;
+  fallbackBookingCount: number;
+  fallbackRevenue: number;
+};
+
+export type RevenueReport = {
+  granularity: ReportGranularity;
+  totals: {
+    grossRevenue: number;
+    refunds: number;
+    netRevenue: number;
+    paymentCount: number;
+    fallbackBookingCount: number;
+  };
+  points: RevenuePoint[];
+};
+
+export type UtilizationRow = {
+  vehicleId: string;
+  vehicleLabel: string;
+  bookedDays: number;
+  blockoutDays: number;
+  availableDays: number;
+  utilizationPercent: number;
+};
+
+export type UtilizationReport = {
+  rangeDays: number;
+  includesBlockouts: boolean;
+  rows: UtilizationRow[];
+};
+
+export type OutstandingBalanceRow = {
+  bookingId: string;
+  customerName: string;
+  vehicleLabel: string;
+  pickupDate: string;
+  returnDate: string;
+  status: string;
+  paymentOption: string;
+  paymentStatus: string;
+  isNonBlocking: boolean;
+  total: number;
+  amountPaid: number;
+  balanceDue: number;
+  daysFromPickup: number;
+};
+
+export type OutstandingBalancesReport = {
+  totals: {
+    totalOutstandingAmount: number;
+    outstandingCount: number;
+  };
+  rows: OutstandingBalanceRow[];
+};
+
+export type FunnelReport = {
+  counts: {
+    pendingPayment: number;
+    confirmedActive: number;
+    completedReturned: number;
+    cancelled: number;
+    overridden: number;
+    totalCreated: number;
+  };
+  conversion: {
+    pendingToConfirmed: number | null;
+    confirmedToCompleted: number | null;
+    cancellationRate: number | null;
+  };
+};
+
+export type UpcomingRow = {
+  bookingId: string;
+  customerName: string;
+  vehicleLabel: string;
+  status: string;
+  paymentStatus: string;
+  paymentOption: string;
+  isNonBlocking: boolean;
+  pickupDate: string;
+  returnDate: string;
+  eventDate: string;
+  total: number;
+  amountPaid: number;
+  balanceDue: number;
+};
+
+export type UpcomingPickupsReturnsReport = {
+  pickups: UpcomingRow[];
+  returns: UpcomingRow[];
+};
+
+export type CancellationRow = {
+  bookingId: string;
+  customerName: string;
+  vehicleLabel: string;
+  status: string;
+  isOverridden: boolean;
+  cancelledAt: string;
+  cancellationReason: string;
+};
+
+export type RefundRow = {
+  paymentId: string;
+  bookingId: string;
+  customerName: string;
+  vehicleLabel: string;
+  refundedAt: string;
+  provider: string;
+  amount: number;
+};
+
+export type CancellationBreakdownPoint = {
+  periodStart: string;
+  periodLabel: string;
+  cancellations: number;
+  refundTotal: number;
+};
+
+export type CancellationRefundImpactReport = {
+  summary: {
+    cancelledCount: number;
+    refundCount: number;
+    refundTotal: number;
+    grossPayments: number;
+    netImpact: number;
+  };
+  breakdown: CancellationBreakdownPoint[];
+  cancellations: CancellationRow[];
+  refunds: RefundRow[];
+};
+
+export type AdminReportsPayload = {
+  filters: ReportsFilters;
+  generatedAt: string;
+  revenue: RevenueReport;
+  utilization: UtilizationReport;
+  outstandingBalances: OutstandingBalancesReport;
+  funnel: FunnelReport;
+  upcoming: UpcomingPickupsReturnsReport;
+  cancellationRefundImpact: CancellationRefundImpactReport;
+};
+
+type CsvExportReportKey = "outstanding_balances" | "pickups" | "returns" | "cancellations_refunds";
+
+const NUMERIC_PATTERN = "^-?[0-9]+(\\.[0-9]+)?$";
+const PAYMENT_SUCCESS_STATUSES = ["DEPOSIT_PAID", "SUCCESS"] as const;
+const PAYMENT_NET_STATUSES = ["DEPOSIT_PAID", "SUCCESS", "REFUNDED"] as const;
+
+const PROMO_DISCOUNT_SQL = `coalesce(
+  case
+    when coalesce(b.pricing_json->>'promo_discount_cents', '') ~ '${NUMERIC_PATTERN}' then (b.pricing_json->>'promo_discount_cents')::numeric
+    else 0
+  end,
+  0
+)`;
+
+const SUBTOTAL_SQL = `coalesce(
+  case
+    when coalesce(b.pricing_json->>'subtotal_cents', '') ~ '${NUMERIC_PATTERN}' then (b.pricing_json->>'subtotal_cents')::numeric
+    else null
+  end,
+  (v.daily_rate_cents::numeric * greatest((b.end_date - b.start_date + 1), 1))
+)`;
+
+const TOTAL_SQL = `greatest(
+  0,
+  coalesce(
+    case
+      when coalesce(b.pricing_json->>'total_cents', '') ~ '${NUMERIC_PATTERN}' then (b.pricing_json->>'total_cents')::numeric
+      else null
+    end,
+    ${SUBTOTAL_SQL} - ${PROMO_DISCOUNT_SQL}
+  )
+)`;
+
+function getQueryable(db?: Queryable) {
+  if (db) return db;
+  return {
+    query: (text: string, params: unknown[] = []) => dbQuery(text, params),
+  };
+}
+
+function normalizeGranularity(value: unknown): ReportGranularity {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase();
+  if (normalized === "week") return "week";
+  if (normalized === "month") return "month";
+  return "day";
+}
+
+function dateFromKey(value: unknown) {
+  const date = dateOnlyUtc(value);
+  if (!date) return "";
+  const pad = (num: number) => String(num).padStart(2, "0");
+  return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}`;
+}
+
+function startOfUtcMonth(date: Date) {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
+}
+
+function startOfUtcWeekMonday(date: Date) {
+  const copy = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  const weekday = copy.getUTCDay();
+  const shift = weekday === 0 ? -6 : 1 - weekday;
+  copy.setUTCDate(copy.getUTCDate() + shift);
+  return copy;
+}
+
+function startOfUtcBucket(date: Date, granularity: ReportGranularity) {
+  if (granularity === "month") {
+    return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
+  }
+  if (granularity === "week") {
+    return startOfUtcWeekMonday(date);
+  }
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
+
+function addUtcBucket(date: Date, granularity: ReportGranularity) {
+  const copy = new Date(date);
+  if (granularity === "month") {
+    copy.setUTCMonth(copy.getUTCMonth() + 1);
+    return copy;
+  }
+  if (granularity === "week") {
+    copy.setUTCDate(copy.getUTCDate() + 7);
+    return copy;
+  }
+  copy.setUTCDate(copy.getUTCDate() + 1);
+  return copy;
+}
+
+function bucketLabel(bucketStart: string, granularity: ReportGranularity) {
+  if (granularity === "day") return bucketStart;
+  if (granularity === "week") return `Week of ${bucketStart}`;
+  return bucketStart.slice(0, 7);
+}
+
+function bucketExpression(column: string, granularity: ReportGranularity) {
+  if (granularity === "month") return `date_trunc('month', ${column})::date`;
+  if (granularity === "week") return `date_trunc('week', ${column})::date`;
+  return `date_trunc('day', ${column})::date`;
+}
+
+function buildBucketSeries(dateFrom: string, dateTo: string, granularity: ReportGranularity) {
+  const fromDate = dateOnlyUtc(`${dateFrom}T00:00:00Z`);
+  const toDate = dateOnlyUtc(`${dateTo}T00:00:00Z`);
+  if (!fromDate || !toDate) return [] as string[];
+  const start = startOfUtcBucket(fromDate, granularity);
+  const end = startOfUtcBucket(toDate, granularity);
+  const buckets: string[] = [];
+  for (let cursor = new Date(start); cursor <= end; cursor = addUtcBucket(cursor, granularity)) {
+    buckets.push(dateFromKey(cursor));
+  }
+  return buckets;
+}
+
+function clampPercent(value: number) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(100, value));
+}
+
+function maybeText(value: unknown) {
+  if (typeof value !== "string") return "";
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : "";
+}
+
+function toDateOnlyText(value: unknown) {
+  const date = dateOnlyUtc(value);
+  if (date) return dateFromKey(date);
+  if (typeof value === "string") return value;
+  return "";
+}
+
+function toDateTimeText(value: unknown) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString();
+  if (typeof value === "string") return value;
+  return "";
+}
+
+function asNumber(value: unknown) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 0;
+  return numeric;
+}
+
+function csvEscape(value: unknown) {
+  const text = String(value ?? "");
+  if (text.includes(",") || text.includes('"') || text.includes("\n")) {
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+  return text;
+}
+
+export function overlapDaysInclusive(
+  rangeStart: unknown,
+  rangeEnd: unknown,
+  bookingStart: unknown,
+  bookingEnd: unknown,
+) {
+  const rs = dateOnlyUtc(rangeStart);
+  const re = dateOnlyUtc(rangeEnd);
+  const bs = dateOnlyUtc(bookingStart);
+  const be = dateOnlyUtc(bookingEnd);
+  if (!rs || !re || !bs || !be) return 0;
+  const start = bs > rs ? bs : rs;
+  const end = be < re ? be : re;
+  const days = Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+  return days > 0 ? days : 0;
+}
+
+export function isDateInInclusiveRange(dateValue: unknown, rangeStart: unknown, rangeEnd: unknown) {
+  const date = dateOnlyUtc(dateValue);
+  const start = dateOnlyUtc(rangeStart);
+  const end = dateOnlyUtc(rangeEnd);
+  if (!date || !start || !end) return false;
+  return date >= start && date <= end;
+}
+
+export function normalizeReportsFilters(input: ReportsFilterInput): ReportsFilters {
+  const today = dateOnlyUtc(new Date()) ?? new Date();
+  const defaultFrom = startOfUtcMonth(today);
+  const defaultTo = today;
+
+  const parsedFrom = dateOnlyUtc(
+    typeof input.dateFrom === "string" && /^\d{4}-\d{2}-\d{2}$/.test(input.dateFrom)
+      ? `${input.dateFrom}T00:00:00Z`
+      : defaultFrom,
+  ) ?? defaultFrom;
+
+  const parsedTo = dateOnlyUtc(
+    typeof input.dateTo === "string" && /^\d{4}-\d{2}-\d{2}$/.test(input.dateTo)
+      ? `${input.dateTo}T00:00:00Z`
+      : defaultTo,
+  ) ?? defaultTo;
+
+  const fromDate = parsedFrom <= parsedTo ? parsedFrom : parsedTo;
+  const toDate = parsedFrom <= parsedTo ? parsedTo : parsedFrom;
+
+  return {
+    dateFrom: dateFromKey(fromDate),
+    dateTo: dateFromKey(toDate),
+    vehicleId: maybeText(input.vehicleId),
+    revenueGranularity: normalizeGranularity(input.revenueGranularity),
+  };
+}
+
+function buildVehicleFilterClause(vehicleId: string, values: unknown[], prefix = "b.vehicle_id") {
+  if (!vehicleId) return "";
+  values.push(vehicleId);
+  return ` and ${prefix} = $${values.length} `;
+}
+
+async function buildRevenueReport(db: Queryable, filters: ReportsFilters): Promise<RevenueReport> {
+  const paymentValues: unknown[] = [filters.dateFrom, filters.dateTo, [...PAYMENT_SUCCESS_STATUSES], [...PAYMENT_NET_STATUSES]];
+  const paymentVehicleClause = buildVehicleFilterClause(filters.vehicleId, paymentValues, "b.vehicle_id");
+  const paymentBucketSql = bucketExpression("p.created_at", filters.revenueGranularity);
+
+  const paymentRows = await db.query(
+    "select " +
+      paymentBucketSql +
+      " as bucket_start, " +
+      "count(*) filter (where p.status = any($3::text[]) and p.deposit_amount_cents > 0)::int as payment_count, " +
+      "coalesce(sum(case when p.status = any($3::text[]) and p.deposit_amount_cents > 0 then p.deposit_amount_cents else 0 end), 0)::numeric as gross_revenue, " +
+      "coalesce(sum(case when p.status = 'REFUNDED' or p.deposit_amount_cents < 0 then abs(p.deposit_amount_cents) else 0 end), 0)::numeric as refunds, " +
+      "coalesce(sum(case when p.status = any($4::text[]) then p.deposit_amount_cents else 0 end), 0)::numeric as net_revenue " +
+      "from payments p join bookings b on b.id = p.booking_id " +
+      "where p.deleted_at is null and p.created_at::date between $1 and $2 " +
+      paymentVehicleClause +
+      "group by 1 order by 1",
+    paymentValues,
+  );
+
+  const fallbackValues: unknown[] = [filters.dateFrom, filters.dateTo];
+  const fallbackVehicleClause = buildVehicleFilterClause(filters.vehicleId, fallbackValues, "b.vehicle_id");
+  const fallbackStatusIndex = fallbackValues.length + 1;
+  fallbackValues.push([...PAYMENT_NET_STATUSES]);
+  const fallbackBucketSql = bucketExpression("b.created_at", filters.revenueGranularity);
+
+  const fallbackRows = await db.query(
+    "select " +
+      fallbackBucketSql +
+      " as bucket_start, " +
+      "count(*)::int as fallback_booking_count, " +
+      `coalesce(sum(${TOTAL_SQL}), 0)::numeric as fallback_revenue ` +
+      "from bookings b join vehicles v on v.id = b.vehicle_id " +
+      "where b.status in ('CONFIRMED','RETURNED','PICKED_UP') and b.created_at::date between $1 and $2 " +
+      fallbackVehicleClause +
+      "and not exists( " +
+      `  select 1 from payments p where p.booking_id = b.id and p.deleted_at is null and p.status = any($${fallbackStatusIndex}::text[])` +
+      ") " +
+      "group by 1 order by 1",
+    fallbackValues,
+  );
+
+  const buckets = buildBucketSeries(filters.dateFrom, filters.dateTo, filters.revenueGranularity);
+  const rowsByBucket = new Map<string, RevenuePoint>();
+
+  for (const bucket of buckets) {
+    rowsByBucket.set(bucket, {
+      periodStart: bucket,
+      periodLabel: bucketLabel(bucket, filters.revenueGranularity),
+      grossRevenue: 0,
+      refunds: 0,
+      netRevenue: 0,
+      paymentCount: 0,
+      fallbackBookingCount: 0,
+      fallbackRevenue: 0,
+    });
+  }
+
+  for (const row of paymentRows.rows as Array<{
+    bucket_start: string | Date;
+    payment_count: number;
+    gross_revenue: number;
+    refunds: number;
+    net_revenue: number;
+  }>) {
+    const bucket = dateFromKey(row.bucket_start);
+    if (!rowsByBucket.has(bucket)) {
+      rowsByBucket.set(bucket, {
+        periodStart: bucket,
+        periodLabel: bucketLabel(bucket, filters.revenueGranularity),
+        grossRevenue: 0,
+        refunds: 0,
+        netRevenue: 0,
+        paymentCount: 0,
+        fallbackBookingCount: 0,
+        fallbackRevenue: 0,
+      });
+    }
+    const current = rowsByBucket.get(bucket)!;
+    current.paymentCount += asNumber(row.payment_count);
+    current.grossRevenue += asNumber(row.gross_revenue);
+    current.refunds += asNumber(row.refunds);
+    current.netRevenue += asNumber(row.net_revenue);
+  }
+
+  for (const row of fallbackRows.rows as Array<{
+    bucket_start: string | Date;
+    fallback_booking_count: number;
+    fallback_revenue: number;
+  }>) {
+    const bucket = dateFromKey(row.bucket_start);
+    if (!rowsByBucket.has(bucket)) {
+      rowsByBucket.set(bucket, {
+        periodStart: bucket,
+        periodLabel: bucketLabel(bucket, filters.revenueGranularity),
+        grossRevenue: 0,
+        refunds: 0,
+        netRevenue: 0,
+        paymentCount: 0,
+        fallbackBookingCount: 0,
+        fallbackRevenue: 0,
+      });
+    }
+    const current = rowsByBucket.get(bucket)!;
+    current.fallbackBookingCount += asNumber(row.fallback_booking_count);
+    current.fallbackRevenue += asNumber(row.fallback_revenue);
+    current.grossRevenue += asNumber(row.fallback_revenue);
+    current.netRevenue += asNumber(row.fallback_revenue);
+  }
+
+  const points = Array.from(rowsByBucket.values()).sort((a, b) =>
+    a.periodStart.localeCompare(b.periodStart),
+  );
+
+  return {
+    granularity: filters.revenueGranularity,
+    totals: {
+      grossRevenue: points.reduce((sum, point) => sum + point.grossRevenue, 0),
+      refunds: points.reduce((sum, point) => sum + point.refunds, 0),
+      netRevenue: points.reduce((sum, point) => sum + point.netRevenue, 0),
+      paymentCount: points.reduce((sum, point) => sum + point.paymentCount, 0),
+      fallbackBookingCount: points.reduce((sum, point) => sum + point.fallbackBookingCount, 0),
+    },
+    points,
+  };
+}
+
+async function buildUtilizationReport(db: Queryable, filters: ReportsFilters): Promise<UtilizationReport> {
+  const rangeDays = overlapDaysInclusive(filters.dateFrom, filters.dateTo, filters.dateFrom, filters.dateTo);
+  const vehicleValues: unknown[] = [];
+  const vehicleClause = buildVehicleFilterClause(filters.vehicleId, vehicleValues, "v.id");
+
+  const vehicles = await db.query(
+    "select v.id, v.make, v.model from vehicles v where v.status <> 'INACTIVE' " +
+      vehicleClause +
+      "order by v.make, v.model",
+    vehicleValues,
+  );
+
+  const bookedValues: unknown[] = [filters.dateFrom, filters.dateTo];
+  const bookedVehicleClause = buildVehicleFilterClause(filters.vehicleId, bookedValues, "b.vehicle_id");
+  // Count a day as booked when any part of a booking touches that day boundary.
+  const bookedRows = await db.query(
+    "with range_days as (" +
+      "  select generate_series($1::date, $2::date, interval '1 day')::date as day" +
+      ") " +
+      "select b.vehicle_id, count(distinct d.day)::int as booked_days " +
+      "from bookings b " +
+      "join range_days d on d.day between b.start_date and b.end_date " +
+      "where b.status not in ('CANCELLED','OVERRIDDEN') " +
+      "and coalesce(b.pricing_json->>'overridden_by_booking_id', '') = '' " +
+      bookedVehicleClause +
+      "group by b.vehicle_id",
+    bookedValues,
+  );
+
+  let includesBlockouts = true;
+  let blockoutRows: { rows: unknown[] } = { rows: [] };
+  const blockoutValues: unknown[] = [filters.dateFrom, filters.dateTo];
+  const blockoutVehicleClause = buildVehicleFilterClause(filters.vehicleId, blockoutValues, "bo.vehicle_id");
+  try {
+    blockoutRows = await db.query(
+      "with range_days as (" +
+        "  select generate_series($1::date, $2::date, interval '1 day')::date as day" +
+        ") " +
+        "select bo.vehicle_id, count(distinct d.day)::int as blockout_days " +
+        "from blockouts bo " +
+        "join range_days d on d.day between bo.start_at::date and bo.end_at::date " +
+        "where true " +
+        blockoutVehicleClause +
+        "group by bo.vehicle_id",
+      blockoutValues,
+    );
+  } catch (error) {
+    const code = (error as { code?: string } | null)?.code;
+    if (code === "42P01") {
+      includesBlockouts = false;
+      blockoutRows = { rows: [] };
+    } else {
+      throw error;
+    }
+  }
+
+  const bookedByVehicle = new Map<string, number>();
+  for (const row of bookedRows.rows as Array<{ vehicle_id: string; booked_days: number }>) {
+    bookedByVehicle.set(row.vehicle_id, asNumber(row.booked_days));
+  }
+
+  const blockoutByVehicle = new Map<string, number>();
+  for (const row of blockoutRows.rows as Array<{ vehicle_id: string; blockout_days: number }>) {
+    blockoutByVehicle.set(row.vehicle_id, asNumber(row.blockout_days));
+  }
+
+  const rows: UtilizationRow[] = (vehicles.rows as Array<{ id: string; make: string; model: string }>).map(
+    (vehicle) => {
+      const bookedDays = bookedByVehicle.get(vehicle.id) ?? 0;
+      const blockoutDays = blockoutByVehicle.get(vehicle.id) ?? 0;
+      const availableDays = Math.max(0, rangeDays - blockoutDays);
+      const utilizationPercent =
+        availableDays > 0 ? clampPercent((bookedDays / availableDays) * 100) : 0;
+
+      return {
+        vehicleId: vehicle.id,
+        vehicleLabel: `${vehicle.make} ${vehicle.model}`.trim(),
+        bookedDays,
+        blockoutDays,
+        availableDays,
+        utilizationPercent,
+      };
+    },
+  );
+
+  return {
+    rangeDays,
+    includesBlockouts,
+    rows,
+  };
+}
+
+async function buildOutstandingBalancesReport(
+  db: Queryable,
+  filters: ReportsFilters,
+): Promise<OutstandingBalancesReport> {
+  const values: unknown[] = [filters.dateFrom, filters.dateTo, [...PAYMENT_NET_STATUSES]];
+  const vehicleClause = buildVehicleFilterClause(filters.vehicleId, values, "b.vehicle_id");
+
+  const rows = await db.query(
+    "with booking_financials as (" +
+      "  select b.id, b.status, b.start_date, b.end_date, b.created_at, b.pricing_json, " +
+      "    c.full_name as customer_name, v.make as vehicle_make, v.model as vehicle_model, " +
+      `    ${TOTAL_SQL} as total_amount, ` +
+      "    coalesce(( " +
+      "      select sum(p.deposit_amount_cents)::numeric " +
+      "      from payments p " +
+      "      where p.booking_id = b.id and p.deleted_at is null and p.status = any($3::text[])" +
+      "    ), 0) as amount_paid " +
+      "  from bookings b " +
+      "  join customers c on c.id = b.customer_id " +
+      "  join vehicles v on v.id = b.vehicle_id " +
+      "  where ((b.start_date <= $2 and b.end_date >= $1) or b.created_at::date between $1 and $2) " +
+      "    and b.status not in ('CANCELLED','OVERRIDDEN') " +
+      "    and coalesce(b.pricing_json->>'overridden_by_booking_id', '') = '' " +
+      vehicleClause +
+      ") " +
+      "select id, status, start_date, end_date, pricing_json, customer_name, vehicle_make, vehicle_model, " +
+      "  total_amount::numeric as total_amount, amount_paid::numeric as amount_paid, " +
+      "  greatest(total_amount - amount_paid, 0)::numeric as balance_due, " +
+      "  (start_date - current_date)::int as days_from_pickup " +
+      "from booking_financials " +
+      "where greatest(total_amount - amount_paid, 0) > 0 " +
+      "order by balance_due desc, start_date asc",
+    values,
+  );
+
+  const mappedRows = (rows.rows as Array<{
+    id: string;
+    status: string;
+    start_date: string | Date;
+    end_date: string | Date;
+    pricing_json: Record<string, unknown> | null;
+    customer_name: string;
+    vehicle_make: string;
+    vehicle_model: string;
+    total_amount: number;
+    amount_paid: number;
+    balance_due: number;
+    days_from_pickup: number;
+  }>).map((row) => {
+    const pricing = row.pricing_json ?? {};
+    const paymentStatus = normalizePaymentStatus(pricing.payment_status);
+    const paymentOption = maybeText(pricing.payment_option_selected || "DEPOSIT").toUpperCase() || "DEPOSIT";
+    const amountPaid = asNumber(row.amount_paid);
+    const holdMinimumAmount = readHoldMinimumAmount(pricing);
+    const isNonBlocking = isNonBlockingBookingHold({
+      paymentStatus,
+      amountPaid,
+      holdMinimumAmount,
+    });
+
+    return {
+      bookingId: row.id,
+      customerName: row.customer_name,
+      vehicleLabel: `${row.vehicle_make} ${row.vehicle_model}`.trim(),
+      pickupDate: toDateOnlyText(row.start_date),
+      returnDate: toDateOnlyText(row.end_date),
+      status: row.status,
+      paymentOption,
+      paymentStatus,
+      isNonBlocking,
+      total: asNumber(row.total_amount),
+      amountPaid,
+      balanceDue: asNumber(row.balance_due),
+      daysFromPickup: asNumber(row.days_from_pickup),
+    };
+  });
+
+  return {
+    totals: {
+      totalOutstandingAmount: mappedRows.reduce((sum, row) => sum + row.balanceDue, 0),
+      outstandingCount: mappedRows.length,
+    },
+    rows: mappedRows,
+  };
+}
+
+async function buildFunnelReport(db: Queryable, filters: ReportsFilters): Promise<FunnelReport> {
+  const values: unknown[] = [filters.dateFrom, filters.dateTo];
+  const vehicleClause = buildVehicleFilterClause(filters.vehicleId, values, "b.vehicle_id");
+
+  const result = await db.query(
+    "select " +
+      "count(*)::int as total_created, " +
+      "sum(case when upper(b.status) in ('PENDING_PAYMENT','PENDING') then 1 else 0 end)::int as pending_payment, " +
+      "sum(case when upper(b.status) in ('CONFIRMED','PICKED_UP','ACTIVE') then 1 else 0 end)::int as confirmed_active, " +
+      "sum(case when upper(b.status) in ('RETURNED','COMPLETED') then 1 else 0 end)::int as completed_returned, " +
+      "sum(case when upper(b.status) = 'CANCELLED' and coalesce(b.pricing_json->>'overridden_by_booking_id', '') = '' then 1 else 0 end)::int as cancelled, " +
+      "sum(case when upper(b.status) = 'OVERRIDDEN' or coalesce(b.pricing_json->>'overridden_by_booking_id', '') <> '' then 1 else 0 end)::int as overridden " +
+      "from bookings b " +
+      "where b.created_at::date between $1 and $2 " +
+      vehicleClause,
+    values,
+  );
+
+  const row = (result.rows[0] ?? {}) as {
+    total_created?: number;
+    pending_payment?: number;
+    confirmed_active?: number;
+    completed_returned?: number;
+    cancelled?: number;
+    overridden?: number;
+  };
+
+  const counts = {
+    pendingPayment: asNumber(row.pending_payment),
+    confirmedActive: asNumber(row.confirmed_active),
+    completedReturned: asNumber(row.completed_returned),
+    cancelled: asNumber(row.cancelled),
+    overridden: asNumber(row.overridden),
+    totalCreated: asNumber(row.total_created),
+  };
+
+  return {
+    counts,
+    conversion: {
+      pendingToConfirmed:
+        counts.pendingPayment > 0 ? clampPercent((counts.confirmedActive / counts.pendingPayment) * 100) : null,
+      confirmedToCompleted:
+        counts.confirmedActive > 0
+          ? clampPercent((counts.completedReturned / counts.confirmedActive) * 100)
+          : null,
+      cancellationRate:
+        counts.totalCreated > 0
+          ? clampPercent(((counts.cancelled + counts.overridden) / counts.totalCreated) * 100)
+          : null,
+    },
+  };
+}
+
+async function buildUpcomingPickupsReturnsReport(
+  db: Queryable,
+  filters: ReportsFilters,
+): Promise<UpcomingPickupsReturnsReport> {
+  const values: unknown[] = [filters.dateFrom, filters.dateTo, [...PAYMENT_NET_STATUSES]];
+  const vehicleClause = buildVehicleFilterClause(filters.vehicleId, values, "b.vehicle_id");
+
+  const baseSelect =
+    "select b.id, b.status, b.start_date, b.end_date, b.pricing_json, c.full_name as customer_name, v.make as vehicle_make, v.model as vehicle_model, " +
+    `  ${TOTAL_SQL} as total_amount, ` +
+    "  coalesce((select sum(p.deposit_amount_cents)::numeric from payments p where p.booking_id = b.id and p.deleted_at is null and p.status = any($3::text[])), 0) as amount_paid " +
+    "from bookings b " +
+    "join customers c on c.id = b.customer_id " +
+    "join vehicles v on v.id = b.vehicle_id " +
+    "where coalesce(b.pricing_json->>'overridden_by_booking_id', '') = '' " +
+    "and (upper(b.status) in ('CONFIRMED','PICKED_UP','RETURNED','ACTIVE') or (upper(b.status) = 'PENDING_PAYMENT' and upper(coalesce(b.pricing_json->>'payment_option_selected', '')) = 'PAY_ON_PICKUP')) " +
+    vehicleClause;
+
+  const pickups = await db.query(
+    baseSelect + " and b.start_date between $1 and $2 order by b.start_date asc, b.created_at asc",
+    values,
+  );
+  const returns = await db.query(
+    baseSelect + " and b.end_date between $1 and $2 order by b.end_date asc, b.created_at asc",
+    values,
+  );
+
+  const mapRows = (
+    rows: Array<{
+      id: string;
+      status: string;
+      start_date: string | Date;
+      end_date: string | Date;
+      pricing_json: Record<string, unknown> | null;
+      customer_name: string;
+      vehicle_make: string;
+      vehicle_model: string;
+      total_amount: number;
+      amount_paid: number;
+    }>,
+    eventType: "pickup" | "return",
+  ) =>
+    rows.map((row) => {
+      const pricing = row.pricing_json ?? {};
+      const amountPaid = asNumber(row.amount_paid);
+      const paymentStatus = normalizePaymentStatus(pricing.payment_status);
+      const paymentOption = maybeText(pricing.payment_option_selected || "DEPOSIT").toUpperCase() || "DEPOSIT";
+      const holdMinimumAmount = readHoldMinimumAmount(pricing);
+      const isNonBlocking = isNonBlockingBookingHold({
+        paymentStatus,
+        amountPaid,
+        holdMinimumAmount,
+      });
+      const total = asNumber(row.total_amount);
+      const balanceDue = Math.max(0, total - amountPaid);
+
+      return {
+        bookingId: row.id,
+        customerName: row.customer_name,
+        vehicleLabel: `${row.vehicle_make} ${row.vehicle_model}`.trim(),
+        status: row.status,
+        paymentStatus,
+        paymentOption,
+        isNonBlocking,
+        pickupDate: toDateOnlyText(row.start_date),
+        returnDate: toDateOnlyText(row.end_date),
+        eventDate: toDateOnlyText(eventType === "pickup" ? row.start_date : row.end_date),
+        total,
+        amountPaid,
+        balanceDue,
+      };
+    });
+
+  return {
+    pickups: mapRows(
+      pickups.rows as Array<{
+        id: string;
+        status: string;
+        start_date: string | Date;
+        end_date: string | Date;
+        pricing_json: Record<string, unknown> | null;
+        customer_name: string;
+        vehicle_make: string;
+        vehicle_model: string;
+        total_amount: number;
+        amount_paid: number;
+      }>,
+      "pickup",
+    ),
+    returns: mapRows(
+      returns.rows as Array<{
+        id: string;
+        status: string;
+        start_date: string | Date;
+        end_date: string | Date;
+        pricing_json: Record<string, unknown> | null;
+        customer_name: string;
+        vehicle_make: string;
+        vehicle_model: string;
+        total_amount: number;
+        amount_paid: number;
+      }>,
+      "return",
+    ),
+  };
+}
+
+async function buildCancellationRefundImpactReport(
+  db: Queryable,
+  filters: ReportsFilters,
+): Promise<CancellationRefundImpactReport> {
+  const cancellationValues: unknown[] = [filters.dateFrom, filters.dateTo];
+  const cancellationVehicleClause = buildVehicleFilterClause(filters.vehicleId, cancellationValues, "b.vehicle_id");
+
+  const cancellationRows = await db.query(
+    "select b.id, b.status, c.full_name as customer_name, v.make as vehicle_make, v.model as vehicle_model, " +
+      "coalesce( " +
+      "  case when coalesce(b.pricing_json->>'cancelled_at', '') ~ '^\\d{4}-\\d{2}-\\d{2}T' then (b.pricing_json->>'cancelled_at')::timestamptz end, " +
+      "  case when coalesce(b.pricing_json->>'overridden_at', '') ~ '^\\d{4}-\\d{2}-\\d{2}T' then (b.pricing_json->>'overridden_at')::timestamptz end, " +
+      "  b.updated_at " +
+      ") as cancelled_at, " +
+      "coalesce(nullif(b.pricing_json->>'override_reason', ''), nullif(b.pricing_json->>'cancel_reason', ''), '') as cancellation_reason, " +
+      "(upper(b.status) = 'OVERRIDDEN' or coalesce(b.pricing_json->>'overridden_by_booking_id', '') <> '') as is_overridden " +
+      "from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id " +
+      "where (upper(b.status) = 'CANCELLED' or upper(b.status) = 'OVERRIDDEN') " +
+      "and coalesce( " +
+      "  case when coalesce(b.pricing_json->>'cancelled_at', '') ~ '^\\d{4}-\\d{2}-\\d{2}T' then (b.pricing_json->>'cancelled_at')::timestamptz end, " +
+      "  case when coalesce(b.pricing_json->>'overridden_at', '') ~ '^\\d{4}-\\d{2}-\\d{2}T' then (b.pricing_json->>'overridden_at')::timestamptz end, " +
+      "  b.updated_at " +
+      ")::date between $1 and $2 " +
+      cancellationVehicleClause +
+      "order by cancelled_at desc",
+    cancellationValues,
+  );
+
+  const refundListValues: unknown[] = [filters.dateFrom, filters.dateTo];
+  const refundListVehicleClause = buildVehicleFilterClause(
+    filters.vehicleId,
+    refundListValues,
+    "b.vehicle_id",
+  );
+  const refunds = await db.query(
+    "select p.id, p.booking_id, p.provider, p.status, p.created_at, p.deposit_amount_cents, c.full_name as customer_name, v.make as vehicle_make, v.model as vehicle_model " +
+      "from payments p join bookings b on b.id = p.booking_id join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id " +
+      "where p.deleted_at is null and (p.status = 'REFUNDED' or p.deposit_amount_cents < 0) and p.created_at::date between $1 and $2 " +
+      refundListVehicleClause +
+      "order by p.created_at desc",
+    refundListValues,
+  );
+
+  const grossNetValues: unknown[] = [filters.dateFrom, filters.dateTo, [...PAYMENT_SUCCESS_STATUSES]];
+  const grossNetVehicleClause = buildVehicleFilterClause(
+    filters.vehicleId,
+    grossNetValues,
+    "b.vehicle_id",
+  );
+  const grossNet = await db.query(
+    "select " +
+      "coalesce(sum(case when p.status = any($3::text[]) and p.deposit_amount_cents > 0 then p.deposit_amount_cents else 0 end), 0)::numeric as gross_payments, " +
+      "coalesce(sum(case when p.status = 'REFUNDED' or p.deposit_amount_cents < 0 then abs(p.deposit_amount_cents) else 0 end), 0)::numeric as refund_total " +
+      "from payments p join bookings b on b.id = p.booking_id " +
+      "where p.deleted_at is null and p.created_at::date between $1 and $2 " +
+      grossNetVehicleClause,
+    grossNetValues,
+  );
+
+  const breakdownBuckets = buildBucketSeries(filters.dateFrom, filters.dateTo, filters.revenueGranularity);
+  const breakdownMap = new Map<string, CancellationBreakdownPoint>();
+  for (const bucket of breakdownBuckets) {
+    breakdownMap.set(bucket, {
+      periodStart: bucket,
+      periodLabel: bucketLabel(bucket, filters.revenueGranularity),
+      cancellations: 0,
+      refundTotal: 0,
+    });
+  }
+
+  const cancellationBreakdown = await db.query(
+    "select " +
+      bucketExpression(
+        "coalesce( " +
+          "case when coalesce(b.pricing_json->>'cancelled_at', '') ~ '^\\d{4}-\\d{2}-\\d{2}T' then (b.pricing_json->>'cancelled_at')::timestamptz end, " +
+          "case when coalesce(b.pricing_json->>'overridden_at', '') ~ '^\\d{4}-\\d{2}-\\d{2}T' then (b.pricing_json->>'overridden_at')::timestamptz end, " +
+          "b.updated_at" +
+          ")",
+        filters.revenueGranularity,
+      ) +
+      " as bucket_start, count(*)::int as cancellations " +
+      "from bookings b " +
+      "where (upper(b.status) = 'CANCELLED' or upper(b.status) = 'OVERRIDDEN') " +
+      "and coalesce( " +
+      "  case when coalesce(b.pricing_json->>'cancelled_at', '') ~ '^\\d{4}-\\d{2}-\\d{2}T' then (b.pricing_json->>'cancelled_at')::timestamptz end, " +
+      "  case when coalesce(b.pricing_json->>'overridden_at', '') ~ '^\\d{4}-\\d{2}-\\d{2}T' then (b.pricing_json->>'overridden_at')::timestamptz end, " +
+      "  b.updated_at " +
+      ")::date between $1 and $2 " +
+      (filters.vehicleId ? "and b.vehicle_id = $3 " : "") +
+      "group by 1 order by 1",
+    filters.vehicleId ? [filters.dateFrom, filters.dateTo, filters.vehicleId] : [filters.dateFrom, filters.dateTo],
+  );
+
+  const refundBreakdownValues: unknown[] = [filters.dateFrom, filters.dateTo];
+  const refundBreakdownVehicleClause = buildVehicleFilterClause(filters.vehicleId, refundBreakdownValues, "b.vehicle_id");
+  const refundBreakdown = await db.query(
+    "select " +
+      bucketExpression("p.created_at", filters.revenueGranularity) +
+      " as bucket_start, " +
+      "coalesce(sum(case when p.status = 'REFUNDED' or p.deposit_amount_cents < 0 then abs(p.deposit_amount_cents) else 0 end), 0)::numeric as refund_total " +
+      "from payments p join bookings b on b.id = p.booking_id " +
+      "where p.deleted_at is null and p.created_at::date between $1 and $2 " +
+      refundBreakdownVehicleClause +
+      "group by 1 order by 1",
+    refundBreakdownValues,
+  );
+
+  for (const row of cancellationBreakdown.rows as Array<{ bucket_start: string | Date; cancellations: number }>) {
+    const bucket = dateFromKey(row.bucket_start);
+    if (!breakdownMap.has(bucket)) {
+      breakdownMap.set(bucket, {
+        periodStart: bucket,
+        periodLabel: bucketLabel(bucket, filters.revenueGranularity),
+        cancellations: 0,
+        refundTotal: 0,
+      });
+    }
+    breakdownMap.get(bucket)!.cancellations += asNumber(row.cancellations);
+  }
+
+  for (const row of refundBreakdown.rows as Array<{ bucket_start: string | Date; refund_total: number }>) {
+    const bucket = dateFromKey(row.bucket_start);
+    if (!breakdownMap.has(bucket)) {
+      breakdownMap.set(bucket, {
+        periodStart: bucket,
+        periodLabel: bucketLabel(bucket, filters.revenueGranularity),
+        cancellations: 0,
+        refundTotal: 0,
+      });
+    }
+    breakdownMap.get(bucket)!.refundTotal += asNumber(row.refund_total);
+  }
+
+  const grossSummary = (grossNet.rows[0] ?? {}) as {
+    gross_payments?: number;
+    refund_total?: number;
+  };
+
+  const mappedCancellations: CancellationRow[] = (cancellationRows.rows as Array<{
+    id: string;
+    status: string;
+    customer_name: string;
+    vehicle_make: string;
+    vehicle_model: string;
+    cancelled_at: string | Date;
+    cancellation_reason: string;
+    is_overridden: boolean;
+  }>).map((row) => ({
+    bookingId: row.id,
+    customerName: row.customer_name,
+    vehicleLabel: `${row.vehicle_make} ${row.vehicle_model}`.trim(),
+    status: row.status,
+    isOverridden: Boolean(row.is_overridden),
+    cancelledAt: toDateTimeText(row.cancelled_at),
+    cancellationReason: maybeText(row.cancellation_reason),
+  }));
+
+  const mappedRefunds: RefundRow[] = (refunds.rows as Array<{
+    id: string;
+    booking_id: string;
+    provider: string;
+    status: string;
+    created_at: string | Date;
+    deposit_amount_cents: number;
+    customer_name: string;
+    vehicle_make: string;
+    vehicle_model: string;
+  }>).map((row) => ({
+    paymentId: row.id,
+    bookingId: row.booking_id,
+    customerName: row.customer_name,
+    vehicleLabel: `${row.vehicle_make} ${row.vehicle_model}`.trim(),
+    refundedAt: toDateTimeText(row.created_at),
+    provider: row.provider,
+    amount: Math.abs(asNumber(row.deposit_amount_cents)),
+  }));
+
+  const grossPayments = asNumber(grossSummary.gross_payments);
+  const refundTotal = asNumber(grossSummary.refund_total);
+
+  return {
+    summary: {
+      cancelledCount: mappedCancellations.length,
+      refundCount: mappedRefunds.length,
+      refundTotal,
+      grossPayments,
+      netImpact: grossPayments - refundTotal,
+    },
+    breakdown: Array.from(breakdownMap.values()).sort((a, b) =>
+      a.periodStart.localeCompare(b.periodStart),
+    ),
+    cancellations: mappedCancellations,
+    refunds: mappedRefunds,
+  };
+}
+
+export async function getAdminReportsPayload(
+  filtersInput: ReportsFilterInput,
+  options: { db?: Queryable } = {},
+): Promise<AdminReportsPayload> {
+  const filters = normalizeReportsFilters(filtersInput);
+  const db = getQueryable(options.db);
+
+  const [revenue, utilization, outstandingBalances, funnel, upcoming, cancellationRefundImpact] =
+    await Promise.all([
+      buildRevenueReport(db, filters),
+      buildUtilizationReport(db, filters),
+      buildOutstandingBalancesReport(db, filters),
+      buildFunnelReport(db, filters),
+      buildUpcomingPickupsReturnsReport(db, filters),
+      buildCancellationRefundImpactReport(db, filters),
+    ]);
+
+  return {
+    filters,
+    generatedAt: new Date().toISOString(),
+    revenue,
+    utilization,
+    outstandingBalances,
+    funnel,
+    upcoming,
+    cancellationRefundImpact,
+  };
+}
+
+function toCsv(header: string[], rows: Array<Array<unknown>>) {
+  const lines = [header.map(csvEscape).join(",")];
+  for (const row of rows) {
+    lines.push(row.map(csvEscape).join(","));
+  }
+  return lines.join("\n");
+}
+
+export function exportOutstandingBalancesCsv(payload: AdminReportsPayload) {
+  const rows = payload.outstandingBalances.rows.map((row) => [
+    row.bookingId,
+    row.customerName,
+    row.vehicleLabel,
+    row.pickupDate,
+    row.returnDate,
+    row.status,
+    row.paymentOption,
+    row.paymentStatus,
+    row.total,
+    row.amountPaid,
+    row.balanceDue,
+    row.daysFromPickup,
+  ]);
+
+  return toCsv(
+    [
+      "booking_id",
+      "customer_name",
+      "vehicle",
+      "pickup_date",
+      "return_date",
+      "status",
+      "payment_option",
+      "payment_status",
+      "total",
+      "amount_paid",
+      "balance_due",
+      "days_from_pickup",
+    ],
+    rows,
+  );
+}
+
+export function exportPickupsCsv(payload: AdminReportsPayload) {
+  const rows = payload.upcoming.pickups.map((row) => [
+    row.bookingId,
+    row.customerName,
+    row.vehicleLabel,
+    row.pickupDate,
+    row.returnDate,
+    row.status,
+    row.paymentOption,
+    row.paymentStatus,
+    row.isNonBlocking ? "yes" : "no",
+    row.total,
+    row.amountPaid,
+    row.balanceDue,
+  ]);
+
+  return toCsv(
+    [
+      "booking_id",
+      "customer_name",
+      "vehicle",
+      "pickup_date",
+      "return_date",
+      "status",
+      "payment_option",
+      "payment_status",
+      "non_blocking",
+      "total",
+      "amount_paid",
+      "balance_due",
+    ],
+    rows,
+  );
+}
+
+export function exportReturnsCsv(payload: AdminReportsPayload) {
+  const rows = payload.upcoming.returns.map((row) => [
+    row.bookingId,
+    row.customerName,
+    row.vehicleLabel,
+    row.pickupDate,
+    row.returnDate,
+    row.status,
+    row.paymentOption,
+    row.paymentStatus,
+    row.isNonBlocking ? "yes" : "no",
+    row.total,
+    row.amountPaid,
+    row.balanceDue,
+  ]);
+
+  return toCsv(
+    [
+      "booking_id",
+      "customer_name",
+      "vehicle",
+      "pickup_date",
+      "return_date",
+      "status",
+      "payment_option",
+      "payment_status",
+      "non_blocking",
+      "total",
+      "amount_paid",
+      "balance_due",
+    ],
+    rows,
+  );
+}
+
+export function exportCancellationsRefundsCsv(payload: AdminReportsPayload) {
+  const cancellationRows = payload.cancellationRefundImpact.cancellations.map((row) => [
+    "cancellation",
+    row.bookingId,
+    row.customerName,
+    row.vehicleLabel,
+    row.status,
+    row.isOverridden ? "yes" : "no",
+    row.cancelledAt,
+    row.cancellationReason,
+    "",
+    "",
+  ]);
+
+  const refundRows = payload.cancellationRefundImpact.refunds.map((row) => [
+    "refund",
+    row.bookingId,
+    row.customerName,
+    row.vehicleLabel,
+    "",
+    "",
+    row.refundedAt,
+    "",
+    row.paymentId,
+    row.amount,
+  ]);
+
+  return toCsv(
+    [
+      "row_type",
+      "booking_id",
+      "customer_name",
+      "vehicle",
+      "status",
+      "is_overridden",
+      "event_at",
+      "reason",
+      "payment_id",
+      "amount",
+    ],
+    [...cancellationRows, ...refundRows],
+  );
+}
+
+export function exportReportsCsvByKey(key: CsvExportReportKey, payload: AdminReportsPayload) {
+  if (key === "outstanding_balances") return exportOutstandingBalancesCsv(payload);
+  if (key === "pickups") return exportPickupsCsv(payload);
+  if (key === "returns") return exportReturnsCsv(payload);
+  return exportCancellationsRefundsCsv(payload);
+}
+
+export function isCsvExportReportKey(value: unknown): value is CsvExportReportKey {
+  return (
+    value === "outstanding_balances" ||
+    value === "pickups" ||
+    value === "returns" ||
+    value === "cancellations_refunds"
+  );
+}
+
+export function buildReportsFilterQueryString(filters: ReportsFilters) {
+  const params = new URLSearchParams();
+  params.set("dateFrom", filters.dateFrom);
+  params.set("dateTo", filters.dateTo);
+  if (filters.vehicleId) params.set("vehicleId", filters.vehicleId);
+  params.set("revenueGranularity", filters.revenueGranularity);
+  return params.toString();
+}
+
+export function isBlockingFromPricing(input: {
+  paymentStatus: unknown;
+  amountPaid: unknown;
+  holdMinimumAmount: unknown;
+}) {
+  return isBlockingBookingHold(input);
+}

@@ -1,8 +1,21 @@
 import Link from "next/link";
 
+import { InfoTooltipIcon } from "@/components/admin/InfoTooltipIcon";
+import { PaginationSummaryNav } from "@/components/admin/PaginationSummaryNav";
 import { dbQuery } from "@/lib/db";
+import { fmtDate, fmtDateOnly } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
-import { calcDaysInclusive, dateOnlyUtc } from "@/lib/payments/dateMath";
+import {
+  normalizePageSize,
+  paginateRows,
+  STANDARD_PAGE_SIZE_OPTIONS,
+  type StandardPageSize,
+} from "@/lib/pagination/sharedPagination";
+import {
+  buildReportsFilterQueryString,
+  getAdminReportsPayload,
+  type ReportGranularity,
+} from "@/lib/reports/adminReports";
 
 type VehicleRow = {
   id: string;
@@ -10,94 +23,138 @@ type VehicleRow = {
   model: string;
 };
 
-type BookingRow = {
-  id: string;
-  status: string;
-  start_date: string;
-  end_date: string;
-  created_at: string;
-  pricing_json: Record<string, unknown> | null;
-  customer_name: string;
-  vehicle_id: string;
-  vehicle_make: string;
-  vehicle_model: string;
-  daily_rate_cents: number;
-  deposit_cents: number;
-};
-
-type PaymentRow = {
-  booking_id: string;
-  deposit_amount_cents: number;
-  status: string;
-  created_at: string;
-};
-
-const RECOMMENDED_REPORTS = [
+const REPORT_CARDS = [
   {
+    key: "revenue",
     title: "Revenue by Period",
     description:
-      "Track gross revenue by day/week/month with booking and payment breakdowns.",
-    readiness: "Ready to wire",
+      "Gross/net revenue by period. Revenue uses payment dates when available, then booking created date fallback for confirmed/returned bookings with no payments.",
   },
   {
+    key: "utilization",
     title: "Vehicle Utilization",
     description:
-      "Compare booked days vs available days per vehicle to identify top performers and idle units.",
-    readiness: "Ready to wire",
+      "Booked days vs available days in the selected range. Booked-day overlap is counted by day boundary.",
   },
   {
+    key: "outstanding",
     title: "Outstanding Balances",
     description:
-      "Prioritize collections using balance due, days to pickup, and customer contact status.",
-    readiness: "Ready to wire",
+      "Bookings with balance due, including pickup urgency and payment status for collection prioritization.",
   },
   {
+    key: "funnel",
     title: "Booking Status Funnel",
     description:
-      "Measure conversion from pending to confirmed to completed, with cancellation rates.",
-    readiness: "Ready to wire",
+      "Conversion from pending to confirmed to completed, with cancellation and overridden booking visibility.",
   },
   {
+    key: "upcoming",
     title: "Upcoming Pickups & Returns",
     description:
-      "Operational view for handoff planning, staffing, and vehicle readiness windows.",
-    readiness: "Ready to wire",
+      "Operational pickup/return lists with status and outstanding balance indicators.",
   },
   {
+    key: "impact",
     title: "Cancellation & Refund Impact",
     description:
-      "Track cancelled bookings, refund totals, and refund-required exposure over time.",
-    readiness: "Ready to wire",
+      "Cancellation counts, refund totals, net impact, and period-based breakdown.",
   },
-];
+] as const;
 
-function formatDateKey(date: Date) {
-  const pad = (num: number) => String(num).padStart(2, "0");
-  return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}`;
+function formatPercent(value: number | null) {
+  if (value === null || !Number.isFinite(value)) return "—";
+  return `${value.toFixed(1)}%`;
 }
 
-function parseDateParam(value: string | undefined, fallback: Date) {
-  if (!value) return fallback;
-  const match = /^\d{4}-\d{2}-\d{2}$/.test(value);
-  if (!match) return fallback;
-  const date = dateOnlyUtc(`${value}T00:00:00Z`);
-  return date ?? fallback;
+function urgencyLabel(daysFromPickup: number) {
+  if (daysFromPickup >= 0) return `${daysFromPickup} day(s) until pickup`;
+  return `${Math.abs(daysFromPickup)} day(s) past pickup`;
 }
 
-function startOfMonth(date: Date) {
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
+function statusChipClass() {
+  return "border-sky-300/30 bg-sky-500/15 text-sky-100";
 }
 
-function overlapDays(rangeStart: unknown, rangeEnd: unknown, bookingStart: unknown, bookingEnd: unknown) {
-  const rs = dateOnlyUtc(rangeStart);
-  const re = dateOnlyUtc(rangeEnd);
-  const bs = dateOnlyUtc(bookingStart);
-  const be = dateOnlyUtc(bookingEnd);
-  if (!rs || !re || !bs || !be) return 0;
+const STATUS_PILL_BASE_CLASS =
+  "inline-flex min-h-7 shrink-0 items-center whitespace-nowrap rounded-full border px-3 py-1 text-xs font-semibold leading-none";
 
-  const start = bs > rs ? bs : rs;
-  const end = be < re ? be : re;
-  return calcDaysInclusive(start, end);
+function formatStatusLabel(status: string) {
+  const normalized = String(status ?? "")
+    .trim()
+    .toLowerCase();
+  if (!normalized) return "Unknown";
+  return normalized.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+type ReportSubstatusIndicator = {
+  key: string;
+  variant: "unpaid" | "due_on_pickup" | "overridden" | "refunded";
+  message: string;
+  priority: number;
+};
+
+function resolveReportSubstatusIndicators(input: {
+  status: string;
+  paymentOption?: string;
+  paymentStatus?: string;
+  isNonBlocking?: boolean;
+}) {
+  const indicators: ReportSubstatusIndicator[] = [];
+  const status = String(input.status ?? "")
+    .trim()
+    .toUpperCase();
+  const paymentOption = String(input.paymentOption ?? "")
+    .trim()
+    .toUpperCase();
+  const paymentStatus = String(input.paymentStatus ?? "")
+    .trim()
+    .toUpperCase();
+  const isClosed = ["CANCELLED", "RETURNED", "COMPLETED"].includes(status);
+
+  if (input.isNonBlocking) {
+    indicators.push({
+      key: "unpaid_non_blocking",
+      variant: "unpaid",
+      message: "Unpaid - Not holding vehicle",
+      priority: 1,
+    });
+  }
+
+  if (!isClosed && paymentOption === "PAY_ON_PICKUP") {
+    indicators.push({
+      key: "due_on_pickup",
+      variant: "due_on_pickup",
+      message: "Due on pickup",
+      priority: 2,
+    });
+  }
+
+  if (status === "OVERRIDDEN") {
+    indicators.push({
+      key: "overridden",
+      variant: "overridden",
+      message: "Overridden by paid booking",
+      priority: 3,
+    });
+  }
+
+  if (paymentStatus.includes("REFUND")) {
+    indicators.push({
+      key: "refunded",
+      variant: "refunded",
+      message: "Refunded payment activity",
+      priority: 4,
+    });
+  }
+
+  return indicators.sort((left, right) => left.priority - right.priority).slice(0, 2);
+}
+
+function granularityLabel(value: ReportGranularity) {
+  if (value === "week") return "Week";
+  if (value === "month") return "Month";
+  return "Day";
 }
 
 export default async function AdminReportsPage({
@@ -106,169 +163,98 @@ export default async function AdminReportsPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = await searchParams;
-  const today = dateOnlyUtc(new Date()) ?? new Date();
-  const defaultFrom = startOfMonth(today);
-  const defaultTo = today;
+  const rowsPerPage = normalizePageSize(
+    typeof params.rows === "string" ? params.rows : undefined,
+    STANDARD_PAGE_SIZE_OPTIONS,
+    10,
+  ) as StandardPageSize;
 
-  const dateFrom = parseDateParam(typeof params.dateFrom === "string" ? params.dateFrom : undefined, defaultFrom);
-  const dateTo = parseDateParam(typeof params.dateTo === "string" ? params.dateTo : undefined, defaultTo);
-  const vehicleId = typeof params.vehicleId === "string" ? params.vehicleId : "";
+  const report = await getAdminReportsPayload({
+    dateFrom: typeof params.dateFrom === "string" ? params.dateFrom : undefined,
+    dateTo: typeof params.dateTo === "string" ? params.dateTo : undefined,
+    vehicleId: typeof params.vehicleId === "string" ? params.vehicleId : undefined,
+    revenueGranularity:
+      typeof params.revenueGranularity === "string" ? params.revenueGranularity : undefined,
+  });
 
-  const fromKey = formatDateKey(dateFrom);
-  const toKey = formatDateKey(dateTo);
-
-  const vehicles = await dbQuery<VehicleRow>("select id, make, model from vehicles order by make, model");
-
-  const bookingClauses: string[] = ["b.start_date <= $2", "b.end_date >= $1"];
-  const bookingValues: Array<string> = [fromKey, toKey];
-  let bookingIndex = 3;
-
-  if (vehicleId) {
-    bookingClauses.push(`b.vehicle_id = $${bookingIndex}`);
-    bookingValues.push(vehicleId);
-    bookingIndex += 1;
+  const filters = report.filters;
+  const baseFilterQuery = buildReportsFilterQueryString(filters);
+  const baseUiQuery = new URLSearchParams(baseFilterQuery);
+  if (rowsPerPage !== 10) {
+    baseUiQuery.set("rows", String(rowsPerPage));
+  }
+  for (const key of [
+    "outstandingPage",
+    "pickupPage",
+    "returnPage",
+    "breakdownPage",
+    "cancelPage",
+    "refundPage",
+  ]) {
+    const raw = params[key];
+    if (typeof raw === "string" && raw.trim().length > 0) {
+      baseUiQuery.set(key, raw);
+    }
   }
 
-  const bookings = await dbQuery<BookingRow>(
-    "select b.id, b.status, b.start_date, b.end_date, b.created_at, b.pricing_json, c.full_name as customer_name, v.id as vehicle_id, v.make as vehicle_make, v.model as vehicle_model, v.daily_rate_cents, v.deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where " +
-      bookingClauses.join(" and ") +
-      " order by b.start_date asc",
-    bookingValues,
+  const vehicles = await dbQuery<VehicleRow>(
+    "select id, make, model from vehicles where status <> 'INACTIVE' order by make, model",
   );
 
-  const paymentsInRange = await dbQuery<PaymentRow>(
-    "select p.booking_id, p.deposit_amount_cents, p.status, p.created_at from payments p join bookings b on b.id = p.booking_id where p.status <> 'REFUNDED' and p.created_at::date between $1 and $2 " +
-      (vehicleId ? "and b.vehicle_id = $3 " : "") +
-      "order by p.created_at asc",
-    vehicleId ? [fromKey, toKey, vehicleId] : [fromKey, toKey],
-  );
-
-  const bookingRows = bookings.rows as BookingRow[];
-  const bookingIds = bookingRows.map((booking: BookingRow) => booking.id);
-  const paymentsAll = bookingIds.length
-    ? await dbQuery<PaymentRow>(
-        "select booking_id, deposit_amount_cents, status, created_at from payments where status <> 'REFUNDED' and booking_id = any($1::uuid[])",
-        [bookingIds],
-      )
-    : { rows: [] };
-
-  const paidByBooking = new Map<string, number>();
-  const paymentsAllRows = paymentsAll.rows as PaymentRow[];
-  paymentsAllRows.forEach((payment: PaymentRow) => {
-    const current = paidByBooking.get(payment.booking_id) ?? 0;
-    paidByBooking.set(payment.booking_id, current + Number(payment.deposit_amount_cents ?? 0));
-  });
-
-  const daysInRange = calcDaysInclusive(dateFrom, dateTo);
-  const utilizationByVehicle = new Map<string, number>();
-
-  bookingRows.forEach((booking: BookingRow) => {
-    if (booking.status === "CANCELLED") return;
-    const bookedDays = overlapDays(dateFrom, dateTo, booking.start_date, booking.end_date);
-    if (bookedDays <= 0) return;
-    const current = utilizationByVehicle.get(booking.vehicle_id) ?? 0;
-    utilizationByVehicle.set(booking.vehicle_id, current + bookedDays);
-  });
-
-  const statusCounts = {
-    pending: 0,
-    confirmed: 0,
-    returned: 0,
-    cancelled: 0,
+  const buildReportsHref = (updates: Record<string, string | null | undefined>) => {
+    const query = new URLSearchParams(baseUiQuery.toString());
+    for (const [key, value] of Object.entries(updates)) {
+      if (!value) {
+        query.delete(key);
+      } else {
+        query.set(key, value);
+      }
+    }
+    const search = query.toString();
+    return search ? `/admin/reports?${search}` : "/admin/reports";
   };
 
-  let bookingsCreatedCount = 0;
-  let depositDueCount = 0;
-  let depositDueSum = 0;
-  let outstandingBalanceSum = 0;
-  const outstandingBookings: Array<{
-    id: string;
-    customer_name: string;
-    vehicle_label: string;
-    total: number;
-    paid: number;
-    balance: number;
-    status: string;
-  }> = [];
+  const exportHref = (
+    reportKey: "outstanding_balances" | "pickups" | "returns" | "cancellations_refunds",
+  ) => `/api/admin/reports?${baseFilterQuery}&format=csv&report=${reportKey}`;
 
-  const revenueByDate = new Map<string, { bookings: number; revenue: number }>();
-  for (let cursor = new Date(dateFrom); cursor <= dateTo; ) {
-    const key = formatDateKey(cursor);
-    revenueByDate.set(key, { bookings: 0, revenue: 0 });
-    cursor = new Date(cursor.getTime() + 1000 * 60 * 60 * 24);
-  }
+  const visibleRevenuePoints = report.revenue.points.filter(
+    (point) =>
+      point.grossRevenue !== 0 ||
+      point.refunds !== 0 ||
+      point.netRevenue !== 0 ||
+      point.paymentCount !== 0 ||
+      point.fallbackBookingCount !== 0 ||
+      point.fallbackRevenue !== 0,
+  );
+  const maxRevenue = Math.max(1, ...visibleRevenuePoints.map((point) => point.grossRevenue));
 
-  bookingRows.forEach((booking: BookingRow) => {
-    const createdDate = formatDateKey(new Date(booking.created_at));
-    if (revenueByDate.has(createdDate)) {
-      revenueByDate.get(createdDate)!.bookings += 1;
-      bookingsCreatedCount += 1;
-    }
-
-    const pricing = booking.pricing_json ?? {};
-    const days =
-      Number((pricing as { days?: number }).days ?? 0) ||
-      calcDaysInclusive(booking.start_date, booking.end_date);
-    const dailyRate = Number(
-      (pricing as { daily_rate_cents?: number }).daily_rate_cents ?? booking.daily_rate_cents ?? 0,
-    );
-    const total = Number(
-      (pricing as { subtotal_cents?: number }).subtotal_cents ?? dailyRate * days,
-    );
-    const deposit = Number(
-      (pricing as { deposit_cents?: number }).deposit_cents ?? booking.deposit_cents ?? 0,
-    );
-    const paid = paidByBooking.get(booking.id) ?? 0;
-
-    if (paid === 0 && ["CONFIRMED", "RETURNED"].includes(booking.status) && revenueByDate.has(createdDate)) {
-      revenueByDate.get(createdDate)!.revenue += total;
-    }
-
-    const balance = Math.max(0, total - paid);
-    if (booking.status !== "CANCELLED" && balance > 0) {
-      outstandingBalanceSum += balance;
-      outstandingBookings.push({
-        id: booking.id,
-        customer_name: booking.customer_name,
-        vehicle_label: `${booking.vehicle_make} ${booking.vehicle_model}`,
-        total,
-        paid,
-        balance,
-        status: booking.status,
-      });
-    }
-
-    if (["PENDING_PAYMENT", "PENDING"].includes(booking.status) && deposit > paid) {
-      depositDueCount += 1;
-      depositDueSum += Math.max(0, deposit - paid);
-    }
-
-    if (booking.status === "PENDING_PAYMENT") statusCounts.pending += 1;
-    if (booking.status === "CONFIRMED") statusCounts.confirmed += 1;
-    if (booking.status === "RETURNED") statusCounts.returned += 1;
-    if (booking.status === "CANCELLED") statusCounts.cancelled += 1;
-  });
-
-  const paymentsInRangeRows = paymentsInRange.rows as PaymentRow[];
-  paymentsInRangeRows.forEach((payment: PaymentRow) => {
-    const dateKey = formatDateKey(new Date(payment.created_at));
-    if (!revenueByDate.has(dateKey)) return;
-    revenueByDate.get(dateKey)!.revenue += Number(payment.deposit_amount_cents ?? 0);
-  });
-
-  const revenueRows = Array.from(revenueByDate.entries()).map(([date, data]) => ({
-    date,
-    bookings: data.bookings,
-    revenue: data.revenue,
-  }));
-
-  const totalRevenue = revenueRows.reduce((sum, row) => sum + row.revenue, 0);
+  const outstandingPage = paginateRows(
+    report.outstandingBalances.rows,
+    params.outstandingPage,
+    rowsPerPage,
+  );
+  const pickupPage = paginateRows(report.upcoming.pickups, params.pickupPage, rowsPerPage);
+  const returnPage = paginateRows(report.upcoming.returns, params.returnPage, rowsPerPage);
+  const breakdownPage = paginateRows(
+    report.cancellationRefundImpact.breakdown,
+    params.breakdownPage,
+    rowsPerPage,
+  );
+  const cancellationPage = paginateRows(
+    report.cancellationRefundImpact.cancellations,
+    params.cancelPage,
+    rowsPerPage,
+  );
+  const refundPage = paginateRows(report.cancellationRefundImpact.refunds, params.refundPage, rowsPerPage);
 
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-10">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Admin</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+            Admin
+          </p>
           <h1 className="text-3xl font-bold text-[var(--ccr-text)]">Reports</h1>
         </div>
         <Link
@@ -280,13 +266,13 @@ export default async function AdminReportsPage({
       </div>
 
       <form className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
-        <div className="grid gap-4 md:grid-cols-[1fr_1fr_1.5fr_auto_auto]">
+        <div className="grid gap-4 md:grid-cols-[1fr_1fr_1.5fr_140px_auto_auto]">
           <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
             Date From
             <input
               type="date"
               name="dateFrom"
-              defaultValue={fromKey}
+              defaultValue={filters.dateFrom}
               className="mt-2 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
             />
           </label>
@@ -295,7 +281,7 @@ export default async function AdminReportsPage({
             <input
               type="date"
               name="dateTo"
-              defaultValue={toKey}
+              defaultValue={filters.dateTo}
               className="mt-2 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
             />
           </label>
@@ -303,13 +289,27 @@ export default async function AdminReportsPage({
             Vehicle
             <select
               name="vehicleId"
-              defaultValue={vehicleId}
+              defaultValue={filters.vehicleId}
               className="mt-2 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
             >
               <option value="">All vehicles</option>
-              {(vehicles.rows as VehicleRow[]).map((vehicle: VehicleRow) => (
+              {vehicles.rows.map((vehicle: VehicleRow) => (
                 <option key={vehicle.id} value={vehicle.id}>
                   {vehicle.make} {vehicle.model}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+            Rows
+            <select
+              name="rows"
+              defaultValue={String(rowsPerPage)}
+              className="mt-2 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+            >
+              {STANDARD_PAGE_SIZE_OPTIONS.map((size) => (
+                <option key={size} value={String(size)}>
+                  {size}
                 </option>
               ))}
             </select>
@@ -329,188 +329,800 @@ export default async function AdminReportsPage({
         </div>
       </form>
 
-      <p className="mt-3 text-xs text-[var(--ccr-muted)]">
-        Revenue uses payment dates when available (otherwise booking created date for confirmed/returned
-        bookings with no payments). Utilization uses pickup/return overlap.
-      </p>
-
-      <section className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="text-lg font-bold text-[var(--ccr-text)]">Recommended Reports</h2>
-          <span className="rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-accent)]">
-            Planning board
-          </span>
+      <section className="mt-6 grid gap-4 md:grid-cols-4">
+        <div className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
+          <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Gross Revenue</p>
+          <p className="mt-2 text-2xl font-bold text-[var(--ccr-text)]">
+            {formatJmd(report.revenue.totals.grossRevenue)}
+          </p>
         </div>
-        <p className="mt-2 text-sm text-[var(--ccr-muted)]">
-          These report templates are laid out for future data wiring and export workflows.
-        </p>
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
-          {RECOMMENDED_REPORTS.map((report) => (
-            <article
-              key={report.title}
-              className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-4"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <h3 className="text-sm font-semibold text-[var(--ccr-text)]">{report.title}</h3>
-                <span className="rounded-full border border-[var(--ccr-border)] px-2 py-0.5 text-[10px] font-semibold text-[var(--ccr-muted)]">
-                  {report.readiness}
-                </span>
-              </div>
-              <p className="mt-2 text-xs text-[var(--ccr-muted)]">{report.description}</p>
-            </article>
-          ))}
+        <div className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
+          <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Net Revenue</p>
+          <p className="mt-2 text-2xl font-bold text-[var(--ccr-text)]">
+            {formatJmd(report.revenue.totals.netRevenue)}
+          </p>
+        </div>
+        <div className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
+          <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
+            Outstanding Balance
+          </p>
+          <p className="mt-2 text-2xl font-bold text-[var(--ccr-text)]">
+            {formatJmd(report.outstandingBalances.totals.totalOutstandingAmount)}
+          </p>
+        </div>
+        <div className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
+          <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Outstanding Bookings</p>
+          <p className="mt-2 text-2xl font-bold text-[var(--ccr-text)]">
+            {report.outstandingBalances.totals.outstandingCount}
+          </p>
         </div>
       </section>
 
-      <div className="mt-6 grid gap-4 md:grid-cols-4">
-        <div className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
-          <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Total Revenue</p>
-          <p className="mt-2 text-2xl font-bold text-[var(--ccr-text)]">{formatJmd(totalRevenue)}</p>
+      <section className="mt-6">
+        <div className="flex items-center justify-between gap-3 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-6 py-4">
+          <h2 className="text-lg font-bold text-[var(--ccr-text)]">Recommended Reports</h2>
+          <span className="rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-accent)]">
+            Live
+          </span>
         </div>
-        <div className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
-          <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Bookings Count</p>
-          <p className="mt-2 text-2xl font-bold text-[var(--ccr-text)]">{bookingsCreatedCount}</p>
-        </div>
-        <div className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
-          <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Outstanding Balance</p>
-          <p className="mt-2 text-2xl font-bold text-[var(--ccr-text)]">
-            {formatJmd(outstandingBalanceSum)}
-          </p>
-        </div>
-        <div className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
-          <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Deposits Due</p>
-          <p className="mt-2 text-2xl font-bold text-[var(--ccr-text)]">
-            {depositDueCount}
-          </p>
-          <p className="text-xs text-[var(--ccr-muted)]">{formatJmd(depositDueSum)}</p>
-        </div>
-      </div>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-[1.5fr_1fr]">
-        <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
-          <h2 className="text-lg font-bold text-[var(--ccr-text)]">Revenue Breakdown</h2>
-          <div className="mt-4 overflow-x-auto">
-            <table className="min-w-full text-left text-sm">
-              <thead className="border-b border-[var(--ccr-border)] text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
-                <tr>
-                  <th className="px-3 py-2">Date</th>
-                  <th className="px-3 py-2">Bookings</th>
-                  <th className="px-3 py-2">Revenue</th>
-                </tr>
-              </thead>
-              <tbody>
-                {revenueRows.map((row) => (
-                  <tr key={row.date} className="border-b border-[var(--ccr-border)] last:border-b-0">
-                    <td className="px-3 py-2 text-[var(--ccr-text)]">{row.date}</td>
-                    <td className="px-3 py-2 text-[var(--ccr-text)]">{row.bookings}</td>
-                    <td className="px-3 py-2 text-[var(--ccr-text)]">{formatJmd(row.revenue)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
+        <div className="mt-4 space-y-4">
+          {REPORT_CARDS.map((card) => (
+            <article
+              key={card.key}
+              className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-bold text-[var(--ccr-text)]">{card.title}</h3>
+                  <p className="mt-1 text-sm text-[var(--ccr-muted)]">{card.description}</p>
+                </div>
+                {card.key === "outstanding" ? (
+                  <Link
+                    href={exportHref("outstanding_balances")}
+                    prefetch={false}
+                    className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+                  >
+                    Export CSV
+                  </Link>
+                ) : null}
+                {card.key === "upcoming" ? (
+                  <div className="flex flex-wrap gap-2">
+                    <Link
+                      href={exportHref("pickups")}
+                      prefetch={false}
+                      className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+                    >
+                      Export Pickups CSV
+                    </Link>
+                    <Link
+                      href={exportHref("returns")}
+                      prefetch={false}
+                      className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+                    >
+                      Export Returns CSV
+                    </Link>
+                  </div>
+                ) : null}
+                {card.key === "impact" ? (
+                  <Link
+                    href={exportHref("cancellations_refunds")}
+                    prefetch={false}
+                    className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+                  >
+                    Export CSV
+                  </Link>
+                ) : null}
+              </div>
 
-        <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
-          <h2 className="text-lg font-bold text-[var(--ccr-text)]">Booking Funnel</h2>
-          <div className="mt-4 grid gap-3 text-sm">
-            <div className="flex items-center justify-between">
-              <span>Pending payment</span>
-              <span className="font-semibold text-[var(--ccr-text)]">{statusCounts.pending}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span>Confirmed</span>
-              <span className="font-semibold text-[var(--ccr-text)]">{statusCounts.confirmed}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span>Returned / Completed</span>
-              <span className="font-semibold text-[var(--ccr-text)]">{statusCounts.returned}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span>Cancelled</span>
-              <span className="font-semibold text-[var(--ccr-text)]">{statusCounts.cancelled}</span>
-            </div>
-          </div>
-
-          <h2 className="mt-6 text-lg font-bold text-[var(--ccr-text)]">Utilization by Vehicle</h2>
-          <div className="mt-4 space-y-3 text-sm">
-            {(
-              vehicleId
-                ? (vehicles.rows as VehicleRow[]).filter((v: VehicleRow) => v.id === vehicleId)
-                : (vehicles.rows as VehicleRow[])
-            ).map((vehicle: VehicleRow) => {
-                const booked = utilizationByVehicle.get(vehicle.id) ?? 0;
-                const utilization = daysInRange > 0 ? (booked / daysInRange) * 100 : 0;
-                return (
-                  <div key={vehicle.id} className="rounded-xl border border-[var(--ccr-border)] px-3 py-2">
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold text-[var(--ccr-text)]">
-                        {vehicle.make} {vehicle.model}
-                      </span>
-                      <span className="text-xs text-[var(--ccr-muted)]">
-                        {booked} / {daysInRange} days
-                      </span>
+              {card.key === "revenue" ? (
+                <div className="mt-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex flex-wrap gap-2">
+                      {(["day", "week", "month"] as const).map((option) => {
+                        const active = report.revenue.granularity === option;
+                        return (
+                          <Link
+                            key={option}
+                            href={buildReportsHref({ revenueGranularity: option })}
+                            className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                              active
+                                ? "bg-[var(--ccr-primary)] text-white"
+                                : "border border-[var(--ccr-border)] text-[var(--ccr-text)]"
+                            }`}
+                          >
+                            {granularityLabel(option)}
+                          </Link>
+                        );
+                      })}
                     </div>
-                    <div className="mt-2 h-2 w-full rounded-full bg-[var(--ccr-surface-soft)]">
-                      <div
-                        className="h-2 rounded-full bg-[var(--ccr-primary)]"
-                        style={{ width: `${Math.min(100, utilization).toFixed(0)}%` }}
-                      />
-                    </div>
-                    <p className="mt-1 text-xs text-[var(--ccr-muted)]">
-                      Utilization: {utilization.toFixed(0)}%
+                    <p className="text-xs text-[var(--ccr-muted)]">
+                      Payments: {report.revenue.totals.paymentCount} · Fallback bookings:{" "}
+                      {report.revenue.totals.fallbackBookingCount}
                     </p>
                   </div>
-                );
-              },
-            )}
-          </div>
-        </section>
-      </div>
 
-      <section className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
-        <h2 className="text-lg font-bold text-[var(--ccr-text)]">Outstanding Balances</h2>
-        {outstandingBookings.length === 0 ? (
-          <p className="mt-3 text-sm text-[var(--ccr-muted)]">No outstanding balances.</p>
-        ) : (
-          <div className="mt-4 overflow-x-auto">
-            <table className="min-w-full text-left text-sm">
-              <thead className="border-b border-[var(--ccr-border)] text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
-                <tr>
-                  <th className="px-3 py-2">Booking</th>
-                  <th className="px-3 py-2">Customer</th>
-                  <th className="px-3 py-2">Vehicle</th>
-                  <th className="px-3 py-2">Total</th>
-                  <th className="px-3 py-2">Paid</th>
-                  <th className="px-3 py-2">Balance Due</th>
-                  <th className="px-3 py-2">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {outstandingBookings.map((booking) => (
-                  <tr key={booking.id} className="border-b border-[var(--ccr-border)] last:border-b-0">
-                    <td className="px-3 py-2">
-                      <Link
-                        href={`/admin/bookings/${booking.id}`}
-                        className="text-sm font-semibold text-[var(--ccr-text)]"
-                      >
-                        {booking.id.slice(0, 8)}
-                      </Link>
-                    </td>
-                    <td className="px-3 py-2 text-[var(--ccr-text)]">{booking.customer_name}</td>
-                    <td className="px-3 py-2 text-[var(--ccr-text)]">{booking.vehicle_label}</td>
-                    <td className="px-3 py-2 text-[var(--ccr-text)]">{formatJmd(booking.total)}</td>
-                    <td className="px-3 py-2 text-[var(--ccr-text)]">{formatJmd(booking.paid)}</td>
-                    <td className="px-3 py-2 text-[var(--ccr-text)]">
-                      {formatJmd(booking.balance)}
-                    </td>
-                    <td className="px-3 py-2 text-[var(--ccr-text)]">{booking.status}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                  {visibleRevenuePoints.length === 0 ? (
+                    <p className="mt-4 text-sm text-[var(--ccr-muted)]">
+                      No data for selected range.
+                    </p>
+                  ) : (
+                    <>
+                      <div className="mt-4 grid gap-3 md:grid-cols-4">
+                        <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3">
+                          <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
+                            Gross
+                          </p>
+                          <p className="mt-1 font-semibold text-[var(--ccr-text)]">
+                            {formatJmd(report.revenue.totals.grossRevenue)}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3">
+                          <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
+                            Refunds
+                          </p>
+                          <p className="mt-1 font-semibold text-[var(--ccr-text)]">
+                            {formatJmd(report.revenue.totals.refunds)}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3">
+                          <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Net</p>
+                          <p className="mt-1 font-semibold text-[var(--ccr-text)]">
+                            {formatJmd(report.revenue.totals.netRevenue)}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3">
+                          <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
+                            Payment Count
+                          </p>
+                          <p className="mt-1 font-semibold text-[var(--ccr-text)]">
+                            {report.revenue.totals.paymentCount}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 space-y-2 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-4">
+                        {visibleRevenuePoints.map((point) => (
+                          <div key={point.periodStart} className="grid grid-cols-[120px_1fr_130px] items-center gap-3">
+                            <span className="text-xs font-semibold text-[var(--ccr-text)]">
+                              {point.periodLabel}
+                            </span>
+                            <div className="h-2 rounded-full bg-[var(--ccr-surface-soft)]">
+                              <div
+                                className="h-2 rounded-full bg-[var(--ccr-primary)]"
+                                style={{ width: `${Math.max(2, (point.grossRevenue / maxRevenue) * 100)}%` }}
+                              />
+                            </div>
+                            <span className="text-right text-xs font-semibold text-[var(--ccr-text)]">
+                              {formatJmd(point.grossRevenue)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="mt-4 overflow-x-auto">
+                        <table className="min-w-full text-left text-sm">
+                          <thead className="border-b border-[var(--ccr-border)] text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
+                            <tr>
+                              <th className="px-3 py-2">Period</th>
+                              <th className="px-3 py-2">Gross</th>
+                              <th className="px-3 py-2">Refunds</th>
+                              <th className="px-3 py-2">Net</th>
+                              <th className="px-3 py-2">Payments</th>
+                              <th className="px-3 py-2">Fallback Bookings</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {visibleRevenuePoints.map((point) => (
+                              <tr
+                                key={`revenue-row-${point.periodStart}`}
+                                className="border-b border-[var(--ccr-border)] last:border-b-0"
+                              >
+                                <td className="px-3 py-2 text-[var(--ccr-text)]">{point.periodLabel}</td>
+                                <td className="px-3 py-2 text-[var(--ccr-text)]">{formatJmd(point.grossRevenue)}</td>
+                                <td className="px-3 py-2 text-[var(--ccr-text)]">{formatJmd(point.refunds)}</td>
+                                <td className="px-3 py-2 text-[var(--ccr-text)]">{formatJmd(point.netRevenue)}</td>
+                                <td className="px-3 py-2 text-[var(--ccr-text)]">{point.paymentCount}</td>
+                                <td className="px-3 py-2 text-[var(--ccr-text)]">{point.fallbackBookingCount}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
+                  )}
+                </div>
+              ) : null}
+
+              {card.key === "utilization" ? (
+                <div className="mt-4">
+                  {!report.utilization.includesBlockouts ? (
+                    <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                      Blockouts table not found. Utilization is currently based on booked days only.
+                    </div>
+                  ) : null}
+
+                  {report.utilization.rows.length === 0 ? (
+                    <p className="text-sm text-[var(--ccr-muted)]">No data for selected range.</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full text-left text-sm">
+                        <thead className="border-b border-[var(--ccr-border)] text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
+                          <tr>
+                            <th className="px-3 py-2">Vehicle</th>
+                            <th className="px-3 py-2">Booked Days</th>
+                            <th className="px-3 py-2">Available Days</th>
+                            <th className="px-3 py-2">Blockout Days</th>
+                            <th className="px-3 py-2">Utilization</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {report.utilization.rows.map((row) => (
+                            <tr
+                              key={`utilization-${row.vehicleId}`}
+                              className="border-b border-[var(--ccr-border)] last:border-b-0"
+                            >
+                              <td className="px-3 py-2 text-[var(--ccr-text)]">{row.vehicleLabel}</td>
+                              <td className="px-3 py-2 text-[var(--ccr-text)]">{row.bookedDays}</td>
+                              <td className="px-3 py-2 text-[var(--ccr-text)]">{row.availableDays}</td>
+                              <td className="px-3 py-2 text-[var(--ccr-text)]">{row.blockoutDays}</td>
+                              <td className="px-3 py-2 text-[var(--ccr-text)]">
+                                <div className="flex items-center gap-2">
+                                  <div className="h-2 w-24 rounded-full bg-[var(--ccr-surface-soft)]">
+                                    <div
+                                      className="h-2 rounded-full bg-[var(--ccr-primary)]"
+                                      style={{ width: `${Math.max(2, row.utilizationPercent)}%` }}
+                                    />
+                                  </div>
+                                  <span>{row.utilizationPercent.toFixed(1)}%</span>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              ) : null}
+
+              {card.key === "outstanding" ? (
+                <div className="mt-4">
+                  {report.outstandingBalances.rows.length === 0 ? (
+                    <p className="text-sm text-[var(--ccr-muted)]">No data for selected range.</p>
+                  ) : (
+                    <>
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full text-left text-sm">
+                          <thead className="border-b border-[var(--ccr-border)] text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
+                            <tr>
+                              <th className="px-3 py-2">Booking</th>
+                              <th className="px-3 py-2">Customer</th>
+                              <th className="px-3 py-2">Vehicle</th>
+                              <th className="px-3 py-2">Pickup</th>
+                              <th className="px-3 py-2">Return</th>
+                              <th className="px-3 py-2">Total</th>
+                              <th className="px-3 py-2">Paid</th>
+                              <th className="px-3 py-2">Balance</th>
+                              <th className="px-3 py-2">Timing</th>
+                              <th className="px-3 py-2">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {outstandingPage.rows.map((row) => (
+                              (() => {
+                                const substatusIndicators = resolveReportSubstatusIndicators({
+                                  status: row.status,
+                                  paymentOption: row.paymentOption,
+                                  paymentStatus: row.paymentStatus,
+                                  isNonBlocking: row.isNonBlocking,
+                                });
+
+                                return (
+                                  <tr
+                                    key={`outstanding-${row.bookingId}`}
+                                    className="border-b border-[var(--ccr-border)] last:border-b-0"
+                                  >
+                                    <td className="px-3 py-2">
+                                      <Link
+                                        href={`/admin/bookings/${row.bookingId}`}
+                                        className="font-semibold text-[var(--ccr-text)] hover:underline"
+                                      >
+                                        {row.bookingId.slice(0, 8)}
+                                      </Link>
+                                    </td>
+                                    <td className="px-3 py-2 text-[var(--ccr-text)]">{row.customerName}</td>
+                                    <td className="px-3 py-2 text-[var(--ccr-text)]">{row.vehicleLabel}</td>
+                                    <td className="px-3 py-2 text-[var(--ccr-text)]">{row.pickupDate}</td>
+                                    <td className="px-3 py-2 text-[var(--ccr-text)]">{row.returnDate}</td>
+                                    <td className="px-3 py-2 text-[var(--ccr-text)]">{formatJmd(row.total)}</td>
+                                    <td className="px-3 py-2 text-[var(--ccr-text)]">{formatJmd(row.amountPaid)}</td>
+                                    <td className="px-3 py-2 font-semibold text-[var(--ccr-text)]">
+                                      {formatJmd(row.balanceDue)}
+                                    </td>
+                                    <td className="px-3 py-2 text-[var(--ccr-text)]">
+                                      {urgencyLabel(row.daysFromPickup)}
+                                    </td>
+                                    <td className="px-3 py-2">
+                                      <div className="flex items-center gap-2">
+                                        <span className={`${STATUS_PILL_BASE_CLASS} ${statusChipClass()}`}>
+                                          {formatStatusLabel(row.status)}
+                                        </span>
+                                        {substatusIndicators.map((indicator) => (
+                                          <InfoTooltipIcon
+                                            key={`outstanding-${row.bookingId}-${indicator.key}`}
+                                            message={indicator.message}
+                                            variant={indicator.variant}
+                                          />
+                                        ))}
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })()
+                            ))}
+                            <tr className="bg-[var(--ccr-bg)]">
+                              <td className="px-3 py-2 font-semibold text-[var(--ccr-text)]" colSpan={7}>
+                                Totals
+                              </td>
+                              <td className="px-3 py-2 font-semibold text-[var(--ccr-text)]">
+                                {formatJmd(report.outstandingBalances.totals.totalOutstandingAmount)}
+                              </td>
+                              <td className="px-3 py-2 font-semibold text-[var(--ccr-text)]" colSpan={2}>
+                                {report.outstandingBalances.totals.outstandingCount} booking(s)
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <PaginationSummaryNav
+                        className="mt-3"
+                        from={outstandingPage.from}
+                        to={outstandingPage.to}
+                        totalCount={outstandingPage.totalCount}
+                        page={outstandingPage.page}
+                        totalPages={outstandingPage.totalPages}
+                        hasPrev={outstandingPage.hasPrev}
+                        hasNext={outstandingPage.hasNext}
+                        prevHref={buildReportsHref({
+                          outstandingPage:
+                            outstandingPage.hasPrev ? String(outstandingPage.page - 1) : null,
+                        })}
+                        nextHref={buildReportsHref({
+                          outstandingPage:
+                            outstandingPage.hasNext ? String(outstandingPage.page + 1) : null,
+                        })}
+                      />
+                    </>
+                  )}
+                </div>
+              ) : null}
+
+              {card.key === "funnel" ? (
+                <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_1fr]">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3">
+                      <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Pending</p>
+                      <p className="mt-1 text-xl font-bold text-[var(--ccr-text)]">
+                        {report.funnel.counts.pendingPayment}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3">
+                      <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
+                        Confirmed / Active
+                      </p>
+                      <p className="mt-1 text-xl font-bold text-[var(--ccr-text)]">
+                        {report.funnel.counts.confirmedActive}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3">
+                      <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
+                        Completed / Returned
+                      </p>
+                      <p className="mt-1 text-xl font-bold text-[var(--ccr-text)]">
+                        {report.funnel.counts.completedReturned}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3">
+                      <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
+                        Cancelled + Overridden
+                      </p>
+                      <p className="mt-1 text-xl font-bold text-[var(--ccr-text)]">
+                        {report.funnel.counts.cancelled + report.funnel.counts.overridden}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="space-y-3 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-4 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span>Pending → Confirmed</span>
+                      <span className="font-semibold text-[var(--ccr-text)]">
+                        {formatPercent(report.funnel.conversion.pendingToConfirmed)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span>Confirmed → Completed</span>
+                      <span className="font-semibold text-[var(--ccr-text)]">
+                        {formatPercent(report.funnel.conversion.confirmedToCompleted)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span>Cancellation Rate</span>
+                      <span className="font-semibold text-[var(--ccr-text)]">
+                        {formatPercent(report.funnel.conversion.cancellationRate)}
+                      </span>
+                    </div>
+                    <div className="pt-2 text-xs text-[var(--ccr-muted)]">
+                      Total created in range: {report.funnel.counts.totalCreated}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              {card.key === "upcoming" ? (
+                <div className="mt-4 grid gap-4 xl:grid-cols-2">
+                  <div>
+                    <h4 className="text-sm font-semibold text-[var(--ccr-text)]">Pickups in range</h4>
+                    {report.upcoming.pickups.length === 0 ? (
+                      <p className="mt-2 text-sm text-[var(--ccr-muted)]">No data for selected range.</p>
+                    ) : (
+                      <>
+                        <div className="mt-2 overflow-x-auto rounded-xl border border-[var(--ccr-border)]">
+                          <table className="min-w-full text-left text-sm">
+                            <thead className="border-b border-[var(--ccr-border)] text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
+                              <tr>
+                                <th className="px-3 py-2">Booking</th>
+                                <th className="px-3 py-2">Customer</th>
+                                <th className="px-3 py-2">Vehicle</th>
+                                <th className="px-3 py-2">Pickup</th>
+                                <th className="px-3 py-2">Status</th>
+                                <th className="px-3 py-2">Balance</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {pickupPage.rows.map((row) => (
+                                (() => {
+                                  const substatusIndicators = resolveReportSubstatusIndicators({
+                                    status: row.status,
+                                    paymentOption: row.paymentOption,
+                                    paymentStatus: row.paymentStatus,
+                                    isNonBlocking: row.isNonBlocking,
+                                  });
+
+                                  return (
+                                    <tr
+                                      key={`pickup-${row.bookingId}`}
+                                      className="border-b border-[var(--ccr-border)] last:border-b-0"
+                                    >
+                                      <td className="px-3 py-2">
+                                        <Link
+                                          href={`/admin/bookings/${row.bookingId}`}
+                                          className="font-semibold text-[var(--ccr-text)] hover:underline"
+                                        >
+                                          {row.bookingId.slice(0, 8)}
+                                        </Link>
+                                      </td>
+                                      <td className="px-3 py-2 text-[var(--ccr-text)]">{row.customerName}</td>
+                                      <td className="px-3 py-2 text-[var(--ccr-text)]">{row.vehicleLabel}</td>
+                                      <td className="px-3 py-2 text-[var(--ccr-text)]">{row.pickupDate}</td>
+                                      <td className="px-3 py-2">
+                                        <div className="flex items-center gap-2">
+                                          <span className={`${STATUS_PILL_BASE_CLASS} ${statusChipClass()}`}>
+                                            {formatStatusLabel(row.status)}
+                                          </span>
+                                          {substatusIndicators.map((indicator) => (
+                                            <InfoTooltipIcon
+                                              key={`pickup-${row.bookingId}-${indicator.key}`}
+                                              message={indicator.message}
+                                              variant={indicator.variant}
+                                            />
+                                          ))}
+                                        </div>
+                                      </td>
+                                      <td className="px-3 py-2 text-[var(--ccr-text)]">
+                                        {row.balanceDue > 0 ? formatJmd(row.balanceDue) : "Paid"}
+                                      </td>
+                                    </tr>
+                                  );
+                                })()
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        <PaginationSummaryNav
+                          from={pickupPage.from}
+                          to={pickupPage.to}
+                          totalCount={pickupPage.totalCount}
+                          page={pickupPage.page}
+                          totalPages={pickupPage.totalPages}
+                          hasPrev={pickupPage.hasPrev}
+                          hasNext={pickupPage.hasNext}
+                          prevHref={buildReportsHref({
+                            pickupPage: pickupPage.hasPrev ? String(pickupPage.page - 1) : null,
+                          })}
+                          nextHref={buildReportsHref({
+                            pickupPage: pickupPage.hasNext ? String(pickupPage.page + 1) : null,
+                          })}
+                        />
+                      </>
+                    )}
+                  </div>
+
+                  <div>
+                    <h4 className="text-sm font-semibold text-[var(--ccr-text)]">Returns in range</h4>
+                    {report.upcoming.returns.length === 0 ? (
+                      <p className="mt-2 text-sm text-[var(--ccr-muted)]">No data for selected range.</p>
+                    ) : (
+                      <>
+                        <div className="mt-2 overflow-x-auto rounded-xl border border-[var(--ccr-border)]">
+                          <table className="min-w-full text-left text-sm">
+                            <thead className="border-b border-[var(--ccr-border)] text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
+                              <tr>
+                                <th className="px-3 py-2">Booking</th>
+                                <th className="px-3 py-2">Customer</th>
+                                <th className="px-3 py-2">Vehicle</th>
+                                <th className="px-3 py-2">Return</th>
+                                <th className="px-3 py-2">Status</th>
+                                <th className="px-3 py-2">Balance</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {returnPage.rows.map((row) => (
+                                (() => {
+                                  const substatusIndicators = resolveReportSubstatusIndicators({
+                                    status: row.status,
+                                    paymentOption: row.paymentOption,
+                                    paymentStatus: row.paymentStatus,
+                                    isNonBlocking: row.isNonBlocking,
+                                  });
+
+                                  return (
+                                    <tr
+                                      key={`return-${row.bookingId}`}
+                                      className="border-b border-[var(--ccr-border)] last:border-b-0"
+                                    >
+                                      <td className="px-3 py-2">
+                                        <Link
+                                          href={`/admin/bookings/${row.bookingId}`}
+                                          className="font-semibold text-[var(--ccr-text)] hover:underline"
+                                        >
+                                          {row.bookingId.slice(0, 8)}
+                                        </Link>
+                                      </td>
+                                      <td className="px-3 py-2 text-[var(--ccr-text)]">{row.customerName}</td>
+                                      <td className="px-3 py-2 text-[var(--ccr-text)]">{row.vehicleLabel}</td>
+                                      <td className="px-3 py-2 text-[var(--ccr-text)]">{row.returnDate}</td>
+                                      <td className="px-3 py-2">
+                                        <div className="flex items-center gap-2">
+                                          <span className={`${STATUS_PILL_BASE_CLASS} ${statusChipClass()}`}>
+                                            {formatStatusLabel(row.status)}
+                                          </span>
+                                          {substatusIndicators.map((indicator) => (
+                                            <InfoTooltipIcon
+                                              key={`return-${row.bookingId}-${indicator.key}`}
+                                              message={indicator.message}
+                                              variant={indicator.variant}
+                                            />
+                                          ))}
+                                        </div>
+                                      </td>
+                                      <td className="px-3 py-2 text-[var(--ccr-text)]">
+                                        {row.balanceDue > 0 ? formatJmd(row.balanceDue) : "Paid"}
+                                      </td>
+                                    </tr>
+                                  );
+                                })()
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        <PaginationSummaryNav
+                          from={returnPage.from}
+                          to={returnPage.to}
+                          totalCount={returnPage.totalCount}
+                          page={returnPage.page}
+                          totalPages={returnPage.totalPages}
+                          hasPrev={returnPage.hasPrev}
+                          hasNext={returnPage.hasNext}
+                          prevHref={buildReportsHref({
+                            returnPage: returnPage.hasPrev ? String(returnPage.page - 1) : null,
+                          })}
+                          nextHref={buildReportsHref({
+                            returnPage: returnPage.hasNext ? String(returnPage.page + 1) : null,
+                          })}
+                        />
+                      </>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+
+              {card.key === "impact" ? (
+                <div className="mt-4">
+                  <div className="grid gap-3 md:grid-cols-5">
+                    <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3">
+                      <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Cancelled</p>
+                      <p className="mt-1 font-semibold text-[var(--ccr-text)]">
+                        {report.cancellationRefundImpact.summary.cancelledCount}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3">
+                      <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Refund Count</p>
+                      <p className="mt-1 font-semibold text-[var(--ccr-text)]">
+                        {report.cancellationRefundImpact.summary.refundCount}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3">
+                      <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Refund Total</p>
+                      <p className="mt-1 font-semibold text-[var(--ccr-text)]">
+                        {formatJmd(report.cancellationRefundImpact.summary.refundTotal)}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3">
+                      <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Gross Payments</p>
+                      <p className="mt-1 font-semibold text-[var(--ccr-text)]">
+                        {formatJmd(report.cancellationRefundImpact.summary.grossPayments)}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3">
+                      <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Net Impact</p>
+                      <p className="mt-1 font-semibold text-[var(--ccr-text)]">
+                        {formatJmd(report.cancellationRefundImpact.summary.netImpact)}
+                      </p>
+                    </div>
+                  </div>
+
+                  {report.cancellationRefundImpact.breakdown.length === 0 ? (
+                    <p className="mt-3 text-sm text-[var(--ccr-muted)]">No data for selected range.</p>
+                  ) : (
+                    <>
+                      <div className="mt-4 overflow-x-auto rounded-xl border border-[var(--ccr-border)]">
+                        <table className="min-w-full text-left text-sm">
+                          <thead className="border-b border-[var(--ccr-border)] text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
+                            <tr>
+                              <th className="px-3 py-2">Period</th>
+                              <th className="px-3 py-2">Cancellations</th>
+                              <th className="px-3 py-2">Refund Total</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {breakdownPage.rows.map((row) => (
+                              <tr
+                                key={`impact-breakdown-${row.periodStart}`}
+                                className="border-b border-[var(--ccr-border)] last:border-b-0"
+                              >
+                                <td className="px-3 py-2 text-[var(--ccr-text)]">{row.periodLabel}</td>
+                                <td className="px-3 py-2 text-[var(--ccr-text)]">{row.cancellations}</td>
+                                <td className="px-3 py-2 text-[var(--ccr-text)]">{formatJmd(row.refundTotal)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <PaginationSummaryNav
+                        from={breakdownPage.from}
+                        to={breakdownPage.to}
+                        totalCount={breakdownPage.totalCount}
+                        page={breakdownPage.page}
+                        totalPages={breakdownPage.totalPages}
+                        hasPrev={breakdownPage.hasPrev}
+                        hasNext={breakdownPage.hasNext}
+                        prevHref={buildReportsHref({
+                          breakdownPage:
+                            breakdownPage.hasPrev ? String(breakdownPage.page - 1) : null,
+                        })}
+                        nextHref={buildReportsHref({
+                          breakdownPage:
+                            breakdownPage.hasNext ? String(breakdownPage.page + 1) : null,
+                        })}
+                      />
+                    </>
+                  )}
+
+                  <div className="mt-4 grid gap-4 xl:grid-cols-2">
+                    <div>
+                      <h4 className="text-sm font-semibold text-[var(--ccr-text)]">Cancellations</h4>
+                      {report.cancellationRefundImpact.cancellations.length === 0 ? (
+                        <p className="mt-2 text-sm text-[var(--ccr-muted)]">No cancellations in range.</p>
+                      ) : (
+                        <>
+                          <ul className="mt-2 space-y-2">
+                            {cancellationPage.rows.map((row) => (
+                              <li
+                                key={`cancel-${row.bookingId}-${row.cancelledAt}`}
+                                className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2"
+                              >
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <p className="text-sm font-semibold text-[var(--ccr-text)]">
+                                    {row.bookingId.slice(0, 8)} · {row.vehicleLabel}
+                                  </p>
+                                  <span className="text-xs text-[var(--ccr-muted)]">
+                                    {fmtDate(row.cancelledAt)}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-[var(--ccr-muted)]">
+                                  {row.customerName} ·{" "}
+                                  {row.isOverridden ? "Overridden" : formatStatusLabel(row.status)}
+                                </p>
+                                {row.cancellationReason ? (
+                                  <p className="mt-1 text-xs text-[var(--ccr-muted)]">
+                                    Reason: {row.cancellationReason}
+                                  </p>
+                                ) : null}
+                              </li>
+                            ))}
+                          </ul>
+                          <PaginationSummaryNav
+                            from={cancellationPage.from}
+                            to={cancellationPage.to}
+                            totalCount={cancellationPage.totalCount}
+                            page={cancellationPage.page}
+                            totalPages={cancellationPage.totalPages}
+                            hasPrev={cancellationPage.hasPrev}
+                            hasNext={cancellationPage.hasNext}
+                            prevHref={buildReportsHref({
+                              cancelPage:
+                                cancellationPage.hasPrev ? String(cancellationPage.page - 1) : null,
+                            })}
+                            nextHref={buildReportsHref({
+                              cancelPage:
+                                cancellationPage.hasNext ? String(cancellationPage.page + 1) : null,
+                            })}
+                          />
+                        </>
+                      )}
+                    </div>
+
+                    <div>
+                      <h4 className="text-sm font-semibold text-[var(--ccr-text)]">Refunds</h4>
+                      {report.cancellationRefundImpact.refunds.length === 0 ? (
+                        <p className="mt-2 text-sm text-[var(--ccr-muted)]">No refunds in range.</p>
+                      ) : (
+                        <>
+                          <ul className="mt-2 space-y-2">
+                            {refundPage.rows.map((row) => (
+                              <li
+                                key={`refund-${row.paymentId}`}
+                                className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2"
+                              >
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <p className="text-sm font-semibold text-[var(--ccr-text)]">
+                                    {row.bookingId.slice(0, 8)} · {row.vehicleLabel}
+                                  </p>
+                                  <span className="text-sm font-semibold text-[var(--ccr-text)]">
+                                    {formatJmd(row.amount)}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-[var(--ccr-muted)]">
+                                  {row.customerName} · {row.provider} · {fmtDateOnly(row.refundedAt)}
+                                </p>
+                              </li>
+                            ))}
+                          </ul>
+                          <PaginationSummaryNav
+                            from={refundPage.from}
+                            to={refundPage.to}
+                            totalCount={refundPage.totalCount}
+                            page={refundPage.page}
+                            totalPages={refundPage.totalPages}
+                            hasPrev={refundPage.hasPrev}
+                            hasNext={refundPage.hasNext}
+                            prevHref={buildReportsHref({
+                              refundPage: refundPage.hasPrev ? String(refundPage.page - 1) : null,
+                            })}
+                            nextHref={buildReportsHref({
+                              refundPage: refundPage.hasNext ? String(refundPage.page + 1) : null,
+                            })}
+                          />
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </article>
+          ))}
+        </div>
       </section>
     </div>
   );
