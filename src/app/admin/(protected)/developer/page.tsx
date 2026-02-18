@@ -15,15 +15,16 @@ const DOCUMENTATION_LINKS = [
   { href: "/admin/documentation/operations", label: "Operational Documentation" },
 ];
 
-function isAdminRole(role: string | undefined) {
-  return String(role ?? "")
+function isDeveloperRole(role: string | undefined) {
+  const normalized = String(role ?? "")
     .trim()
-    .toUpperCase() === "ADMIN";
+    .toUpperCase();
+  return normalized === "DEVELOPER";
 }
 
 export default async function AdminDeveloperPage() {
   const session = await getSessionFromRequest();
-  const canAdmin = isAdminRole(session?.role);
+  const canAdmin = isDeveloperRole(session?.role);
 
   let initialContent = normalizeDeveloperChecklistDocument({});
   let updatedAt: string | null = null;
@@ -83,7 +84,7 @@ export default async function AdminDeveloperPage() {
         <section className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
           <h2 className="text-lg font-bold text-[var(--ccr-text)]">Restricted</h2>
           <p className="mt-2 text-sm text-[var(--ccr-muted)]">
-            Only ADMIN users can view and edit developer checklists.
+            Only DEVELOPER users can view and edit developer checklists.
           </p>
         </section>
       ) : (
@@ -129,4 +130,3 @@ export default async function AdminDeveloperPage() {
     </div>
   );
 }
-

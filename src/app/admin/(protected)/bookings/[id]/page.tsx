@@ -102,9 +102,10 @@ function readPaymentMetadataText(
 export default async function AdminBookingDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const session = await getSessionFromRequest();
-  const canAdmin = String(session?.role ?? "")
+  const normalizedRole = String(session?.role ?? "")
     .trim()
-    .toUpperCase() === "ADMIN";
+    .toUpperCase();
+  const canAdmin = normalizedRole === "ADMIN" || normalizedRole === "DEVELOPER";
   let requireRestoreReason = true;
 
   if (canAdmin) {

@@ -7,6 +7,12 @@ import { requireCsrf } from "@/lib/security/csrf";
 
 const DOC_KEY = "documentation";
 
+function isDeveloperRole(role: string | undefined) {
+  return String(role ?? "")
+    .trim()
+    .toUpperCase() === "DEVELOPER";
+}
+
 function handleMissingTable(error: unknown) {
   const code =
     typeof error === "object" && error !== null && "code" in error
@@ -29,6 +35,9 @@ export async function GET() {
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  if (!isDeveloperRole(session.role)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   try {
     const result = await dbQuery(
@@ -49,6 +58,9 @@ export async function PATCH(request: Request) {
   const session = await getSessionFromRequest();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (!isDeveloperRole(session.role)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const body = await request.json().catch(() => null);

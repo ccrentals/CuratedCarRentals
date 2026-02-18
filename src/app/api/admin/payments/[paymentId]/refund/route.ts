@@ -8,9 +8,10 @@ import { requireCsrf } from "@/lib/security/csrf";
 import { recalculateBookingPayments } from "@/lib/payments/recalculateBooking";
 
 function isAdminRole(role: string | undefined) {
-  return String(role ?? "")
+  const normalized = String(role ?? "")
     .trim()
-    .toUpperCase() === "ADMIN";
+    .toUpperCase();
+  return normalized === "ADMIN" || normalized === "DEVELOPER";
 }
 
 export async function POST(

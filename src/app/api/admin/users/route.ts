@@ -10,9 +10,16 @@ import { requireCsrf } from "@/lib/security/csrf";
 import { logError } from "@/lib/log";
 
 function isAdminRole(role: string | undefined) {
+  const normalized = String(role ?? "")
+    .trim()
+    .toUpperCase();
+  return normalized === "ADMIN" || normalized === "DEVELOPER";
+}
+
+function isDeveloperRole(role: string | undefined) {
   return String(role ?? "")
     .trim()
-    .toUpperCase() === "ADMIN";
+    .toUpperCase() === "DEVELOPER";
 }
 
 function normalizeUsername(value: string) {
@@ -74,7 +81,15 @@ export async function POST(request: Request) {
   let fullName = typeof body?.fullName === "string" ? body.fullName.trim() : "";
   const email = typeof body?.email === "string" ? body.email.trim() : "";
   const roleRaw = typeof body?.role === "string" ? body.role.trim().toUpperCase() : "USER";
-  const role = roleRaw === "ADMIN" ? "ADMIN" : "USER";
+  const role =
+    roleRaw === "DEVELOPER"
+      ? "DEVELOPER"
+      : roleRaw === "ADMIN"
+        ? "ADMIN"
+        : "USER";
+  if (role === "DEVELOPER" && !isDeveloperRole(session.role)) {
+    return NextResponse.json({ error: "Only developers can assign DEVELOPER role." }, { status: 403 });
+  }
 
   if (!firstName || !lastName) {
     // Backwards-compatible parsing if older clients still send a single fullName field.

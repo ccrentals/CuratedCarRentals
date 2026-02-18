@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 import { SlideDownPanel } from "@/components/admin/SlideDownPanel";
@@ -14,19 +14,42 @@ type CreateUserResult = {
   tempPasswordExpiresAt: string;
 };
 
-function roleLabel(value: string) {
+type UserRole = "USER" | "ADMIN" | "DEVELOPER";
+
+function normalizeRole(value: string): UserRole {
   const normalized = String(value ?? "")
     .trim()
     .toUpperCase();
-  return normalized === "ADMIN" ? "ADMIN" : "USER";
+  if (normalized === "DEVELOPER") return "DEVELOPER";
+  if (normalized === "ADMIN") return "ADMIN";
+  return "USER";
 }
 
-export function CreateUserForm({ disabled }: { disabled?: boolean }) {
+function isDeveloperRole(role: string | undefined) {
+  return normalizeRole(String(role ?? "")) === "DEVELOPER";
+}
+
+function mapSelectedRole(value: string, canAssignDeveloperRole: boolean): UserRole {
+  const normalized = normalizeRole(value);
+  if (!canAssignDeveloperRole && normalized === "DEVELOPER") {
+    return "USER";
+  }
+  return normalized;
+}
+
+export function CreateUserForm({
+  disabled,
+  actorRole,
+}: {
+  disabled?: boolean;
+  actorRole: string;
+}) {
   const router = useRouter();
+  const canAssignDeveloperRole = isDeveloperRole(actorRole);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState<"USER" | "ADMIN">("USER");
+  const [role, setRole] = useState<UserRole>("USER");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copyToast, setCopyToast] = useState<{ message: string; tone: "success" | "error" } | null>(
@@ -152,12 +175,13 @@ export function CreateUserForm({ disabled }: { disabled?: boolean }) {
             Role
             <select
               value={role}
-              onChange={(e) => setRole(roleLabel(e.target.value) as "ADMIN" | "USER")}
+              onChange={(e) => setRole(mapSelectedRole(e.target.value, canAssignDeveloperRole))}
               disabled={disabled || loading}
               className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)] disabled:opacity-60"
             >
               <option value="USER">USER</option>
               <option value="ADMIN">ADMIN</option>
+              {canAssignDeveloperRole ? <option value="DEVELOPER">DEVELOPER</option> : null}
             </select>
           </label>
         </div>
@@ -248,7 +272,10 @@ type UserRowActionsProps = {
   currentUserId: string;
   userId: string;
   email: string;
+  fullName?: string | null;
+  username?: string | null;
   role: string;
+  actorRole: string;
   isActive?: boolean | null;
   deactivatedAt?: string | null;
   lockedAt?: string | null;
@@ -256,22 +283,68 @@ type UserRowActionsProps = {
 
 type ResetResult = { tempPassword: string; tempPasswordExpiresAt?: string | null };
 
-type Mode = "set_role" | "deactivate" | "reactivate" | "unlock" | "lock" | "reset_password" | null;
+type Mode =
+  | "edit_profile"
+  | "set_role"
+  | "deactivate"
+  | "reactivate"
+  | "unlock"
+  | "lock"
+  | "reset_password"
+  | null;
+
+function ActionIconButton({
+  label,
+  title,
+  onClick,
+  disabled,
+  className = "",
+  children,
+}: {
+  label: string;
+  title?: string;
+  onClick: () => void;
+  disabled?: boolean;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={title ?? label}
+      aria-label={label}
+      className={`rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-2 text-[var(--ccr-text)] hover:border-[var(--ccr-accent)] hover:bg-[var(--ccr-bg)] disabled:opacity-60 ${className}`}
+    >
+      <span className="sr-only">{label}</span>
+      {children}
+    </button>
+  );
+}
 
 export function UserRowActions({
   currentUserId,
   userId,
   email,
+  fullName,
+  username,
   role,
+  actorRole,
   isActive,
   deactivatedAt,
   lockedAt,
 }: UserRowActionsProps) {
   const router = useRouter();
+  const canAssignDeveloperRole = isDeveloperRole(actorRole);
+  const currentRole = normalizeRole(role);
   const [mode, setMode] = useState<Mode>(null);
-  const [nextRole, setNextRole] = useState(roleLabel(role));
+  const [nextRole, setNextRole] = useState<UserRole>(currentRole);
   const [reason, setReason] = useState("");
   const [resetResult, setResetResult] = useState<ResetResult | null>(null);
+  const [editFullName, setEditFullName] = useState((fullName ?? "").trim() || email);
+  const [editEmail, setEditEmail] = useState(email);
+  const [editUsername, setEditUsername] = useState((username ?? "").trim());
   const [copyToast, setCopyToast] = useState<null | "Copied" | "Copy failed">(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -279,8 +352,10 @@ export function UserRowActions({
   const isDeactivated = isActive === false || Boolean(deactivatedAt);
   const self = currentUserId === userId;
   const isLocked = Boolean(lockedAt);
+  const canEditRole = canAssignDeveloperRole || currentRole !== "DEVELOPER";
 
   const title = useMemo(() => {
+    if (mode === "edit_profile") return "Edit user";
     if (mode === "set_role") return "Change role";
     if (mode === "deactivate") return "Deactivate user";
     if (mode === "reactivate") return "Reactivate user";
@@ -307,6 +382,24 @@ export function UserRowActions({
     setLoading(true);
     setError(null);
 
+    if (mode === "edit_profile") {
+      if (editFullName.trim().length < 2) {
+        setError("Name is required.");
+        setLoading(false);
+        return;
+      }
+      if (!editEmail.trim() || !editEmail.includes("@")) {
+        setError("A valid email is required.");
+        setLoading(false);
+        return;
+      }
+      if (editUsername.trim().length < 3) {
+        setError("Username must be at least 3 characters.");
+        setLoading(false);
+        return;
+      }
+    }
+
     if (
       (mode === "deactivate" ||
         mode === "reactivate" ||
@@ -320,7 +413,14 @@ export function UserRowActions({
     }
 
     const payload =
-      mode === "set_role"
+      mode === "edit_profile"
+        ? {
+            action: "update_profile",
+            fullName: editFullName.trim(),
+            email: editEmail.trim(),
+            username: editUsername.trim(),
+          }
+        : mode === "set_role"
         ? { action: "set_role", role: nextRole }
         : mode === "deactivate"
           ? { action: "deactivate", reason: reason.trim() }
@@ -368,36 +468,93 @@ export function UserRowActions({
 
   return (
     <div className="flex items-center justify-end gap-2">
-      <button
-        type="button"
-        onClick={() => {
-          setError(null);
-          setNextRole(roleLabel(role));
-          setMode("set_role");
-        }}
-        className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] hover:border-[var(--ccr-accent)] hover:bg-[var(--ccr-bg)]"
-      >
-        Role
-      </button>
+      {canEditRole ? (
+        <ActionIconButton
+          label="Edit user"
+          title="Edit user"
+          onClick={() => {
+            setError(null);
+            setResetResult(null);
+            setCopyToast(null);
+            setEditFullName((fullName ?? "").trim() || email);
+            setEditEmail(email);
+            setEditUsername((username ?? "").trim());
+            setMode("edit_profile");
+          }}
+        >
+          <svg
+            viewBox="0 0 24 24"
+            className="h-4 w-4"
+            aria-hidden="true"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M12 20h9" />
+            <path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+          </svg>
+        </ActionIconButton>
+      ) : null}
+
+      {canEditRole ? (
+        <ActionIconButton
+          label="Change role"
+          title="Change role"
+          onClick={() => {
+            setError(null);
+            setNextRole(currentRole);
+            setMode("set_role");
+          }}
+        >
+          <svg
+            viewBox="0 0 24 24"
+            className="h-4 w-4"
+            aria-hidden="true"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M12 3l7 4v5c0 5-3.5 7.7-7 9-3.5-1.3-7-4-7-9V7l7-4z" />
+            <path d="M9.5 12.5l2 2 3-3" />
+          </svg>
+        </ActionIconButton>
+      ) : null}
 
       {isLocked ? (
-        <button
-          type="button"
+        <ActionIconButton
+          label="Unlock account"
+          title="Unlock account"
           onClick={() => {
             setError(null);
             setReason("");
             setResetResult(null);
             setMode("unlock");
           }}
-          className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] hover:border-[var(--ccr-accent)] hover:bg-[var(--ccr-bg)]"
         >
-          Unlock
-        </button>
+          <svg
+            viewBox="0 0 24 24"
+            className="h-4 w-4"
+            aria-hidden="true"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <rect x="3" y="11" width="18" height="10" rx="2" />
+            <path d="M7 11V8a5 5 0 0 1 9.9-1" />
+          </svg>
+        </ActionIconButton>
       ) : null}
 
       {!isLocked && !isDeactivated ? (
-        <button
-          type="button"
+        <ActionIconButton
+          label="Lock account"
+          title={self ? "You cannot lock your own account." : "Lock account"}
           onClick={() => {
             if (self) return;
             setError(null);
@@ -406,15 +563,26 @@ export function UserRowActions({
             setMode("lock");
           }}
           disabled={self}
-          title={self ? "You cannot lock your own account." : "Lock account"}
-          className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] hover:border-[var(--ccr-accent)] hover:bg-[var(--ccr-bg)] disabled:opacity-60"
         >
-          Lock
-        </button>
+          <svg
+            viewBox="0 0 24 24"
+            className="h-4 w-4"
+            aria-hidden="true"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <rect x="3" y="11" width="18" height="10" rx="2" />
+            <path d="M7 11V8a5 5 0 0 1 10 0v3" />
+          </svg>
+        </ActionIconButton>
       ) : null}
 
-      <button
-        type="button"
+      <ActionIconButton
+        label="Reset password"
+        title={self ? "You cannot reset your own password here." : "Reset password"}
         onClick={() => {
           if (self) return;
           setError(null);
@@ -424,27 +592,51 @@ export function UserRowActions({
           setMode("reset_password");
         }}
         disabled={self}
-        title={self ? "You cannot reset your own password here." : "Reset password"}
-        className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] hover:border-[var(--ccr-accent)] hover:bg-[var(--ccr-bg)] disabled:opacity-60"
       >
-        Reset
-      </button>
+        <svg
+          viewBox="0 0 24 24"
+          className="h-4 w-4"
+          aria-hidden="true"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M20 11a8 8 0 1 0-2.34 5.66" />
+          <path d="M20 4v7h-7" />
+        </svg>
+      </ActionIconButton>
 
       {isDeactivated ? (
-        <button
-          type="button"
+        <ActionIconButton
+          label="Reactivate user"
+          title="Reactivate user"
           onClick={() => {
             setError(null);
             setReason("");
             setMode("reactivate");
           }}
-          className="rounded-lg border border-emerald-400/30 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-100 hover:border-emerald-300/60"
+          className="border-emerald-400/30 bg-emerald-500/10 text-emerald-100 hover:border-emerald-300/60"
         >
-          Reactivate
-        </button>
+          <svg
+            viewBox="0 0 24 24"
+            className="h-4 w-4"
+            aria-hidden="true"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M20 11a8 8 0 1 0-2.34 5.66" />
+            <path d="M20 4v7h-7" />
+          </svg>
+        </ActionIconButton>
       ) : (
-        <button
-          type="button"
+        <ActionIconButton
+          label="Deactivate user"
+          title={self ? "You cannot deactivate your own account." : "Deactivate user"}
           onClick={() => {
             if (self) return;
             setError(null);
@@ -452,11 +644,22 @@ export function UserRowActions({
             setMode("deactivate");
           }}
           disabled={self}
-          title={self ? "You cannot deactivate your own account." : "Deactivate user"}
-          className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] hover:border-[var(--ccr-accent)] hover:bg-[var(--ccr-bg)] disabled:opacity-60"
         >
-          Deactivate
-        </button>
+          <svg
+            viewBox="0 0 24 24"
+            className="h-4 w-4"
+            aria-hidden="true"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+            <circle cx="8.5" cy="7" r="4" />
+            <path d="M18 8l4 4M22 8l-4 4" />
+          </svg>
+        </ActionIconButton>
       )}
 
       {mode ? (
@@ -475,16 +678,44 @@ export function UserRowActions({
               {email}
             </p>
 
-            {mode === "set_role" ? (
+            {mode === "edit_profile" ? (
+              <div className="mt-4 grid gap-3">
+                <label className="block text-xs text-[var(--ccr-muted)]">
+                  Name
+                  <input
+                    value={editFullName}
+                    onChange={(e) => setEditFullName(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+                  />
+                </label>
+                <label className="block text-xs text-[var(--ccr-muted)]">
+                  Email
+                  <input
+                    value={editEmail}
+                    onChange={(e) => setEditEmail(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+                  />
+                </label>
+                <label className="block text-xs text-[var(--ccr-muted)]">
+                  Username
+                  <input
+                    value={editUsername}
+                    onChange={(e) => setEditUsername(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+                  />
+                </label>
+              </div>
+            ) : mode === "set_role" ? (
               <label className="mt-4 block text-xs text-[var(--ccr-muted)]">
                 Role
                 <select
                   value={nextRole}
-                  onChange={(e) => setNextRole(roleLabel(e.target.value))}
+                  onChange={(e) => setNextRole(mapSelectedRole(e.target.value, canAssignDeveloperRole))}
                   className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
                 >
                   <option value="USER">USER</option>
                   <option value="ADMIN">ADMIN</option>
+                  {canAssignDeveloperRole ? <option value="DEVELOPER">DEVELOPER</option> : null}
                 </select>
               </label>
             ) : mode === "unlock" ? (

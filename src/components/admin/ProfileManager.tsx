@@ -3,11 +3,18 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
-import { APP_THEMES, type AppTheme, isAppTheme, THEME_LABELS, THEME_STORAGE_KEY } from "@/lib/theme";
+import {
+  APP_THEMES,
+  type AppTheme,
+  isAppTheme,
+  THEME_LABELS,
+  THEME_STORAGE_KEY,
+} from "@/lib/theme";
 
 type MeResponse = {
   ok: boolean;
   error?: string;
+  userId?: string;
   email?: string;
   role?: string;
   fullName?: string | null;
@@ -25,6 +32,18 @@ function formatDate(value: string | null | undefined) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "—";
   return date.toLocaleString();
+}
+
+function initialsFromName(name: string, email: string) {
+  const trimmed = name.trim();
+  if (trimmed) {
+    const parts = trimmed.split(/\s+/).filter(Boolean);
+    return parts
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase() ?? "")
+      .join("");
+  }
+  return (email[0] ?? "U").toUpperCase();
 }
 
 export function ProfileManager() {
@@ -52,8 +71,8 @@ export function ProfileManager() {
         const initialTheme = isAppTheme(savedTheme)
           ? savedTheme
           : isAppTheme(fallbackTheme)
-          ? fallbackTheme
-          : "light";
+            ? fallbackTheme
+            : "light";
 
         setProfile(data);
         setTheme(initialTheme);
@@ -74,13 +93,17 @@ export function ProfileManager() {
     return {
       email: profile.email ?? "—",
       role: profile.role ?? "—",
-      fullName: profile.fullName ?? "—",
+      fullName: profile.fullName ?? "",
       username: profile.username ?? "—",
       createdAt: formatDate(profile.createdAt),
       lastLoginAt: formatDate(profile.lastLoginAt),
       status: profile.isActive === false ? "Inactive" : "Active",
+      userId: profile.userId ?? "—",
     };
   }, [profile]);
+
+  const displayName = userSummary?.fullName?.trim() || userSummary?.email || "Admin User";
+  const avatarInitials = initialsFromName(userSummary?.fullName ?? "", userSummary?.email ?? "");
 
   async function saveTheme() {
     if (!isAppTheme(theme)) return;
@@ -108,7 +131,7 @@ export function ProfileManager() {
 
       document.documentElement.setAttribute("data-theme", theme);
       localStorage.setItem(THEME_STORAGE_KEY, theme);
-      setSaveMessage("Profile preferences saved.");
+      setSaveMessage("Preferences saved.");
       setSaving(false);
     } catch {
       setError("Unable to save theme.");
@@ -126,74 +149,123 @@ export function ProfileManager() {
 
   return (
     <div className="mt-6 space-y-6">
-      <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
-        <h2 className="text-lg font-bold text-[var(--ccr-text)]">Account</h2>
-        {error ? <p className="mt-2 text-sm text-red-300">{error}</p> : null}
-        {userSummary ? (
-          <div className="mt-4 grid gap-4 text-sm text-[var(--ccr-muted)] md:grid-cols-2">
-            <div>
-              <p className="text-xs uppercase tracking-wide">Full name</p>
-              <p className="font-semibold text-[var(--ccr-text)]">{userSummary.fullName}</p>
+      {error ? (
+        <section className="rounded-2xl border border-red-400/40 bg-red-500/10 p-4">
+          <p className="text-sm font-semibold text-red-200">{error}</p>
+        </section>
+      ) : null}
+
+      <section className="rounded-2xl border border-[var(--ccr-border)] bg-gradient-to-br from-[var(--ccr-surface)] to-[var(--ccr-surface-soft)] p-6">
+        <div className="flex flex-wrap items-center justify-between gap-6">
+          <div className="flex items-center gap-4">
+            <div className="flex h-14 w-14 items-center justify-center rounded-xl border border-[var(--ccr-accent)] bg-[var(--ccr-bg)] text-lg font-bold text-[var(--ccr-accent)]">
+              {avatarInitials}
             </div>
             <div>
-              <p className="text-xs uppercase tracking-wide">Username</p>
-              <p className="font-semibold text-[var(--ccr-text)]">{userSummary.username}</p>
-            </div>
-            <div>
-              <p className="text-xs uppercase tracking-wide">Email</p>
-              <p className="font-semibold text-[var(--ccr-text)]">{userSummary.email}</p>
-            </div>
-            <div>
-              <p className="text-xs uppercase tracking-wide">Role</p>
-              <p className="font-semibold text-[var(--ccr-text)]">{userSummary.role}</p>
-            </div>
-            <div>
-              <p className="text-xs uppercase tracking-wide">Created</p>
-              <p className="font-semibold text-[var(--ccr-text)]">{userSummary.createdAt}</p>
-            </div>
-            <div>
-              <p className="text-xs uppercase tracking-wide">Last login</p>
-              <p className="font-semibold text-[var(--ccr-text)]">{userSummary.lastLoginAt}</p>
+              <p className="text-xl font-bold text-[var(--ccr-text)]">{displayName}</p>
+              <p className="text-sm text-[var(--ccr-muted)]">{userSummary?.email ?? "—"}</p>
             </div>
           </div>
-        ) : null}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-1 text-xs font-semibold text-[var(--ccr-text)]">
+              {userSummary?.role ?? "—"}
+            </span>
+            <span className="rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-bg)] px-3 py-1 text-xs font-semibold text-[var(--ccr-accent)]">
+              {userSummary?.status ?? "—"}
+            </span>
+          </div>
+        </div>
       </section>
 
-      <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
-        <h2 className="text-lg font-bold text-[var(--ccr-text)]">Theme Preferences</h2>
-        <p className="mt-1 text-sm text-[var(--ccr-muted)]">
-          Choose your personal admin theme. Your selection is saved to your profile and applied immediately.
-        </p>
-        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
-          <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-            Theme
-            <select
-              value={theme}
-              onChange={(event) => {
-                const value = event.target.value;
-                if (isAppTheme(value)) {
-                  setTheme(value);
-                }
-              }}
-              className="mt-2 w-full min-w-[220px] rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
-            >
-              {APP_THEMES.map((item) => (
-                <option key={item} value={item}>
+      <div className="grid gap-6 lg:grid-cols-2">
+        <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
+          <h2 className="text-lg font-bold text-[var(--ccr-text)]">Identity</h2>
+          <p className="mt-1 text-sm text-[var(--ccr-muted)]">
+            Core account details currently saved for your login.
+          </p>
+          <div className="mt-4 grid gap-4 text-sm">
+            <div>
+              <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Username</p>
+              <p className="font-semibold text-[var(--ccr-text)]">{userSummary?.username ?? "—"}</p>
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">User ID</p>
+              <p className="break-all font-mono text-xs text-[var(--ccr-text)]">{userSummary?.userId ?? "—"}</p>
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Member since</p>
+              <p className="font-semibold text-[var(--ccr-text)]">{userSummary?.createdAt ?? "—"}</p>
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Last login</p>
+              <p className="font-semibold text-[var(--ccr-text)]">{userSummary?.lastLoginAt ?? "—"}</p>
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
+          <h2 className="text-lg font-bold text-[var(--ccr-text)]">Theme Preferences</h2>
+          <p className="mt-1 text-sm text-[var(--ccr-muted)]">
+            Select your personal admin theme. This is saved per account.
+          </p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            {APP_THEMES.map((item) => {
+              const selected = theme === item;
+              return (
+                <button
+                  key={item}
+                  type="button"
+                  onClick={() => setTheme(item)}
+                  className={`rounded-xl border px-3 py-2 text-left text-sm font-semibold transition ${
+                    selected
+                      ? "border-[var(--ccr-accent)] bg-[var(--ccr-bg)] text-[var(--ccr-text)]"
+                      : "border-[var(--ccr-border)] bg-transparent text-[var(--ccr-muted)] hover:border-[var(--ccr-accent)] hover:text-[var(--ccr-text)]"
+                  }`}
+                >
                   {THEME_LABELS[item]}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button
-            type="button"
-            onClick={saveTheme}
-            disabled={saving}
-            className="rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
-          >
-            {saving ? "Saving..." : "Save Preferences"}
-          </button>
+                </button>
+              );
+            })}
+          </div>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={saveTheme}
+              disabled={saving}
+              className="rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+            >
+              {saving ? "Saving..." : "Save Preferences"}
+            </button>
+            {saveMessage ? (
+              <p className="text-sm font-semibold text-[var(--ccr-text)]" role="status" aria-live="polite">
+                {saveMessage}
+              </p>
+            ) : null}
+          </div>
+        </section>
+      </div>
+
+      <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
+        <h2 className="text-lg font-bold text-[var(--ccr-text)]">Security Snapshot</h2>
+        <p className="mt-1 text-sm text-[var(--ccr-muted)]">
+          Operational safeguards currently active for your account.
+        </p>
+        <div className="mt-4 grid gap-3 text-sm md:grid-cols-3">
+          <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3">
+            <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Session policy</p>
+            <p className="mt-1 font-semibold text-[var(--ccr-text)]">20 min idle timeout</p>
+          </div>
+          <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3">
+            <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Role protection</p>
+            <p className="mt-1 font-semibold text-[var(--ccr-text)]">
+              {userSummary?.role === "DEVELOPER" ? "Developer-level access" : "Role-scoped access"}
+            </p>
+          </div>
+          <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3">
+            <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Account state</p>
+            <p className="mt-1 font-semibold text-[var(--ccr-text)]">{userSummary?.status ?? "—"}</p>
+          </div>
         </div>
-        {saveMessage ? <p className="mt-3 text-sm font-semibold text-[var(--ccr-text)]">{saveMessage}</p> : null}
       </section>
     </div>
   );

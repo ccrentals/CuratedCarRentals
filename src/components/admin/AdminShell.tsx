@@ -29,6 +29,7 @@ type NavGroup = {
 
 type AdminNavLinksProps = {
   pathname: string;
+  currentRole: string | undefined;
   collapsedState?: boolean;
   expandedItems: Record<string, boolean>;
   setExpandedItems: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
@@ -362,6 +363,9 @@ const NAV_GROUPS: NavGroup[] = [
       "/admin/promo-codes",
       "/admin/calendar",
       "/admin/vehicles",
+      "/admin/settings",
+      "/admin/users",
+      "/admin/profile",
     ],
     defaultExpanded: true,
   },
@@ -374,12 +378,34 @@ const NAV_GROUPS: NavGroup[] = [
   {
     id: "administration",
     label: "Administration",
-    itemHrefs: ["/admin/documentation", "/admin/developer", "/admin/settings", "/admin/users", "/admin/profile"],
+    itemHrefs: ["/admin/documentation", "/admin/developer"],
     defaultExpanded: true,
   },
 ];
 
 const NAV_ITEM_BY_HREF = new Map<string, NavItem>(NAV_ITEMS.map((item) => [item.href, item]));
+
+function normalizeRole(role: string | undefined) {
+  return String(role ?? "")
+    .trim()
+    .toUpperCase();
+}
+
+function isDeveloperRole(role: string | undefined) {
+  return normalizeRole(role) === "DEVELOPER";
+}
+
+function isAdminRole(role: string | undefined) {
+  const normalized = normalizeRole(role);
+  return normalized === "ADMIN" || normalized === "DEVELOPER";
+}
+
+function getVisibleNavGroups(role: string | undefined) {
+  if (isDeveloperRole(role)) {
+    return NAV_GROUPS;
+  }
+  return NAV_GROUPS.filter((group) => group.id !== "administration");
+}
 
 function isActivePath(pathname: string, href: string) {
   if (href === "/admin") {
@@ -390,6 +416,7 @@ function isActivePath(pathname: string, href: string) {
 
 function AdminNavLinks({
   pathname,
+  currentRole,
   collapsedState,
   expandedItems,
   setExpandedItems,
@@ -397,6 +424,14 @@ function AdminNavLinks({
   setExpandedGroups,
   onNavigate,
 }: AdminNavLinksProps) {
+  const visibleGroups = getVisibleNavGroups(currentRole);
+  const canSeeUsers = isAdminRole(currentRole);
+  const visibleItemHrefs = new Set(visibleGroups.flatMap((group) => group.itemHrefs));
+  if (!canSeeUsers) {
+    visibleItemHrefs.delete("/admin/users");
+  }
+  const visibleItems = NAV_ITEMS.filter((item) => visibleItemHrefs.has(item.href));
+
   const renderItem = (item: NavItem) => {
     const active = isActivePath(pathname, item.href);
     const hasChildren = Boolean(item.children?.length) && !collapsedState;
@@ -488,14 +523,14 @@ function AdminNavLinks({
   if (collapsedState) {
     return (
       <nav className="mt-6 flex flex-col items-center gap-1 text-sm font-semibold">
-        {NAV_ITEMS.map(renderItem)}
+        {visibleItems.map(renderItem)}
       </nav>
     );
   }
 
   return (
     <nav className="mt-6 flex flex-col gap-2 text-sm font-semibold">
-      {NAV_GROUPS.map((group) => {
+      {visibleGroups.map((group) => {
         const groupItems = group.itemHrefs
           .map((href) => NAV_ITEM_BY_HREF.get(href))
           .filter((item): item is NavItem => Boolean(item));
@@ -564,7 +599,7 @@ export function AdminShell({
   });
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(() => {
     const initial: Record<string, boolean> = {};
-    NAV_GROUPS.forEach((group) => {
+    getVisibleNavGroups(user.role).forEach((group) => {
       const hasActiveRoute = group.itemHrefs.some((href) => isActivePath(pathname, href));
       initial[group.id] = hasActiveRoute || Boolean(group.defaultExpanded);
     });
@@ -606,13 +641,12 @@ export function AdminShell({
 
   // Keep desktop collapse smooth while preserving mobile off-canvas behavior.
   const sidebarWidth = collapsed ? "lg:w-20" : "lg:w-64";
-  const contentPadding = collapsed ? "lg:pl-20" : "lg:pl-64";
   const brandLabel = collapsed ? "CCR" : "Curated Admin";
 
   return (
-    <div className="min-h-screen bg-[var(--ccr-bg)] text-[var(--ccr-text)]">
+    <div className="min-h-screen bg-[var(--ccr-bg)] text-[var(--ccr-text)] lg:flex">
       <aside
-        className={`hidden overflow-hidden lg:fixed lg:inset-y-0 lg:left-0 lg:flex lg:flex-col lg:border-r lg:border-[var(--ccr-border)] lg:bg-[var(--ccr-surface)] lg:px-4 lg:py-6 lg:transition-[width] lg:duration-300 lg:ease-in-out ${sidebarWidth}`}
+        className={`hidden overflow-hidden lg:flex lg:flex-col lg:border-r lg:border-[var(--ccr-border)] lg:bg-[var(--ccr-surface)] lg:px-4 lg:py-6 lg:transition-[width] lg:duration-300 lg:ease-in-out ${sidebarWidth}`}
       >
         <div className={`flex items-center gap-2 ${collapsed ? "justify-center" : ""}`}>
           <button
@@ -642,6 +676,7 @@ export function AdminShell({
         </div>
         <AdminNavLinks
           pathname={pathname}
+          currentRole={user.role}
           collapsedState={collapsed}
           expandedItems={expandedItems}
           setExpandedItems={setExpandedItems}
@@ -676,6 +711,7 @@ export function AdminShell({
         </div>
         <AdminNavLinks
           pathname={pathname}
+          currentRole={user.role}
           expandedItems={expandedItems}
           setExpandedItems={setExpandedItems}
           expandedGroups={expandedGroups}
@@ -684,8 +720,7 @@ export function AdminShell({
         />
       </aside>
 
-      {/* Match the sidebar animation so content does not jump during collapse/expand. */}
-      <div className={`transition-[padding] duration-300 ease-in-out ${contentPadding}`}>
+      <div className="min-w-0 flex-1">
         <header className="sticky top-0 z-30 border-b border-[var(--ccr-border)] bg-[var(--ccr-surface)]">
           <div className="mx-auto flex w-full max-w-none items-center justify-between gap-4 py-3 pl-2 pr-4 sm:pl-3 sm:pr-5">
             <div className="flex items-center gap-3">

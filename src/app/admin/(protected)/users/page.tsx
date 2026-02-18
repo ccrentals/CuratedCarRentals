@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 import { dbQuery } from "@/lib/db";
 import { getSessionFromRequest } from "@/lib/auth/session";
@@ -19,9 +20,10 @@ type UserRow = {
 };
 
 function isAdminRole(role: string | undefined) {
-  return String(role ?? "")
+  const normalized = String(role ?? "")
     .trim()
-    .toUpperCase() === "ADMIN";
+    .toUpperCase();
+  return normalized === "ADMIN" || normalized === "DEVELOPER";
 }
 
 function isUndefinedColumn(error: unknown, column: string) {
@@ -51,14 +53,7 @@ export default async function AdminUsersPage({
   const q = typeof params.q === "string" ? params.q.trim() : "";
 
   if (!canAdmin) {
-    return (
-      <div className="mx-auto w-full max-w-4xl px-6 py-10">
-        <h1 className="text-2xl font-bold text-[var(--ccr-text)]">Users</h1>
-        <p className="mt-2 text-sm text-[var(--ccr-muted)]">
-          You do not have permission to view this page.
-        </p>
-      </div>
-    );
+    redirect("/admin");
   }
 
   const values: string[] = [];
@@ -183,7 +178,7 @@ export default async function AdminUsersPage({
         </form>
       </div>
 
-      <CreateUserForm disabled={lifecycleNotConfigured} />
+      <CreateUserForm disabled={lifecycleNotConfigured} actorRole={session?.role ?? "USER"} />
 
       <div className="mt-6 overflow-x-auto rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)]">
         {users.rows.length === 0 ? (
@@ -205,9 +200,19 @@ export default async function AdminUsersPage({
               {users.rows.map((user: UserRow) => (
                 <tr key={user.id} className="border-b border-[var(--ccr-border)] last:border-b-0">
                   <td className="px-4 py-3">
-                    <p className="font-semibold text-[var(--ccr-text)]">
-                      {(user.full_name ?? "").trim() || user.email}
-                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-semibold text-[var(--ccr-text)]">
+                        {(user.full_name ?? "").trim() || user.email}
+                      </p>
+                      <details className="relative">
+                        <summary className="list-none cursor-pointer rounded-md border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)] hover:border-[var(--ccr-accent)] hover:text-[var(--ccr-text)]">
+                          ID
+                        </summary>
+                        <div className="absolute left-0 top-full z-10 mt-1 w-56 break-all rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-2 py-1 font-mono text-[10px] text-[var(--ccr-text)] shadow-lg">
+                          {user.id}
+                        </div>
+                      </details>
+                    </div>
                     <p className="text-xs text-[var(--ccr-muted)]">{user.email}</p>
                     {user.username ? (
                       <p className="mt-1 text-xs text-[var(--ccr-muted)]">
@@ -215,9 +220,6 @@ export default async function AdminUsersPage({
                         <span className="font-mono text-[var(--ccr-text)]">{user.username}</span>
                       </p>
                     ) : null}
-                    <p className="mt-1 font-mono text-[10px] text-[var(--ccr-muted)]">
-                      {user.id.slice(0, 8)}
-                    </p>
                   </td>
                   <td className="px-4 py-3 text-[var(--ccr-text)]">{user.role}</td>
                   <td className="px-4 py-3 text-[var(--ccr-text)]">{statusLabel(user)}</td>
@@ -227,7 +229,10 @@ export default async function AdminUsersPage({
                       currentUserId={session?.userId ?? ""}
                       userId={user.id}
                       email={user.email}
+                      fullName={user.full_name ?? null}
+                      username={user.username ?? null}
                       role={user.role}
+                      actorRole={session?.role ?? "USER"}
                       isActive={user.is_active ?? null}
                       deactivatedAt={user.deactivated_at ?? null}
                       lockedAt={user.locked_at ?? null}

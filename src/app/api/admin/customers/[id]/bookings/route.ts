@@ -4,9 +4,10 @@ import { getSessionFromRequest } from "@/lib/auth/session";
 import { fetchCustomerSnapshotBookingsPage } from "@/lib/customers/customerSnapshotBookings";
 
 function isAdminRole(role: string | undefined) {
-  return String(role ?? "")
+  const normalized = String(role ?? "")
     .trim()
-    .toUpperCase() === "ADMIN";
+    .toUpperCase();
+  return normalized === "ADMIN" || normalized === "DEVELOPER";
 }
 
 export async function GET(

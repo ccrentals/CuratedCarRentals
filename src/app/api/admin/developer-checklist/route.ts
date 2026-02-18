@@ -11,10 +11,11 @@ import { requireCsrf } from "@/lib/security/csrf";
 
 const DOC_KEY = "developer_checklist";
 
-function isAdminRole(role: string | undefined) {
-  return String(role ?? "")
+function isDeveloperRole(role: string | undefined) {
+  const normalized = String(role ?? "")
     .trim()
-    .toUpperCase() === "ADMIN";
+    .toUpperCase();
+  return normalized === "DEVELOPER";
 }
 
 function handleMissingTable(error: unknown) {
@@ -39,7 +40,7 @@ export async function GET() {
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (!isAdminRole(session.role)) {
+  if (!isDeveloperRole(session.role)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -79,7 +80,7 @@ export async function PATCH(request: Request) {
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (!isAdminRole(session.role)) {
+  if (!isDeveloperRole(session.role)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -124,4 +125,3 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Failed to save developer checklist." }, { status: 500 });
   }
 }
-

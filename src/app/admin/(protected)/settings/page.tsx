@@ -13,9 +13,10 @@ type SettingRow = {
 };
 
 function isAdminRole(role: string | undefined) {
-  return String(role ?? "")
+  const normalized = String(role ?? "")
     .trim()
-    .toUpperCase() === "ADMIN";
+    .toUpperCase();
+  return normalized === "ADMIN" || normalized === "DEVELOPER";
 }
 
 function parseStoredSettings(content: unknown): AdminSettings {

@@ -15,9 +15,10 @@ type CustomerListRow = {
 };
 
 function isAdminRole(role: string | undefined) {
-  return String(role ?? "")
+  const normalized = String(role ?? "")
     .trim()
-    .toUpperCase() === "ADMIN";
+    .toUpperCase();
+  return normalized === "ADMIN" || normalized === "DEVELOPER";
 }
 
 function normalizeSort(value: string | null): "last_booked" | "total_bookings" | "total_spend" {

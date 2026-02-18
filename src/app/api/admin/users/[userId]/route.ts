@@ -7,16 +7,34 @@ import { requireCsrf } from "@/lib/security/csrf";
 import { writeAuditLog } from "@/lib/audit";
 import { hashPassword } from "@/lib/auth/password";
 import { logError } from "@/lib/log";
+import { isEmail, isNonEmptyString } from "@/lib/validators";
 
 function isAdminRole(role: string | undefined) {
+  const normalized = String(role ?? "")
+    .trim()
+    .toUpperCase();
+  return normalized === "ADMIN" || normalized === "DEVELOPER";
+}
+
+function isDeveloperRole(role: string | undefined) {
   return String(role ?? "")
     .trim()
-    .toUpperCase() === "ADMIN";
+    .toUpperCase() === "DEVELOPER";
 }
 
 function generateTempPassword() {
   // Short, copy-friendly, URL-safe, and strong enough as a temporary secret.
   return randomBytes(9).toString("base64url"); // ~12 chars
+}
+
+function normalizeUsername(value: string) {
+  const lower = value.trim().toLowerCase();
+  const replaced = lower.replace(/[^a-z0-9._-]+/g, "-");
+  const collapsed = replaced
+    .replace(/-+/g, "-")
+    .replace(/\.+/g, ".")
+    .replace(/^[-_.]+|[-_.]+$/g, "");
+  return collapsed.slice(0, 32);
 }
 
 function isUndefinedColumn(error: unknown, column: string) {
@@ -76,12 +94,129 @@ export async function PATCH(
       locked_at?: string | null;
     };
 
+    const actorIsDeveloper = isDeveloperRole(session.role);
+    const targetIsDeveloper = isDeveloperRole(existing.role);
+    if (targetIsDeveloper && !actorIsDeveloper) {
+      await client.query("rollback");
+      return NextResponse.json(
+        { error: "Only developers can modify developer accounts." },
+        { status: 403 },
+      );
+    }
+
+    if (action === "update_profile") {
+      const fullName = typeof body?.fullName === "string" ? body.fullName.trim() : "";
+      const emailRaw = typeof body?.email === "string" ? body.email.trim() : "";
+      const usernameRaw = typeof body?.username === "string" ? body.username.trim() : "";
+      const username = normalizeUsername(usernameRaw);
+
+      if (!isNonEmptyString(fullName, 2)) {
+        await client.query("rollback");
+        return NextResponse.json({ error: "A valid name is required." }, { status: 400 });
+      }
+      if (!isEmail(emailRaw)) {
+        await client.query("rollback");
+        return NextResponse.json({ error: "A valid email is required." }, { status: 400 });
+      }
+      if (!isNonEmptyString(username, 3)) {
+        await client.query("rollback");
+        return NextResponse.json(
+          {
+            error:
+              "Invalid username. Use 3+ characters: letters, numbers, dot, underscore, or dash.",
+          },
+          { status: 400 },
+        );
+      }
+
+      const email = emailRaw.toLowerCase();
+      const emailDup = await client.query(
+        "select id from users where lower(email) = lower($1) and id <> $2 limit 1",
+        [email, userId],
+      );
+      if (emailDup.rowCount > 0) {
+        await client.query("rollback");
+        return NextResponse.json({ error: "Email already exists." }, { status: 409 });
+      }
+
+      try {
+        const usernameDup = await client.query(
+          "select id from users where username is not null and lower(username) = lower($1) and id <> $2 limit 1",
+          [username, userId],
+        );
+        if (usernameDup.rowCount > 0) {
+          await client.query("rollback");
+          return NextResponse.json({ error: "Username already exists." }, { status: 409 });
+        }
+      } catch (error) {
+        if (isUndefinedColumn(error, "username")) {
+          await client.query("rollback");
+          return NextResponse.json(
+            {
+              error: "USER_PROFILE_NOT_CONFIGURED",
+              message:
+                "users.username column is missing. Apply schema.sql changes and redeploy.",
+            },
+            { status: 500 },
+          );
+        }
+        throw error;
+      }
+
+      try {
+        await client.query(
+          "update users set full_name = $2, email = $3, username = $4 where id = $1",
+          [userId, fullName, email, username],
+        );
+      } catch (error) {
+        if (isUndefinedColumn(error, "full_name") || isUndefinedColumn(error, "username")) {
+          await client.query("rollback");
+          return NextResponse.json(
+            {
+              error: "USER_PROFILE_NOT_CONFIGURED",
+              message:
+                "users.full_name/username columns are missing. Apply schema.sql changes and redeploy.",
+            },
+            { status: 500 },
+          );
+        }
+        throw error;
+      }
+
+      await client.query("commit");
+
+      await writeAuditLog({
+        userId: session.userId,
+        action: "USER_PROFILE_UPDATED",
+        entityType: "user",
+        entityId: userId,
+        details: {
+          fullName,
+          email,
+          username,
+        },
+      });
+
+      return NextResponse.json({ ok: true });
+    }
+
     if (action === "set_role") {
       const roleRaw = typeof body?.role === "string" ? body.role.trim().toUpperCase() : "";
-      const nextRole = roleRaw === "ADMIN" ? "ADMIN" : roleRaw === "USER" ? "USER" : "";
+      const nextRole =
+        roleRaw === "DEVELOPER"
+          ? "DEVELOPER"
+          : roleRaw === "ADMIN"
+            ? "ADMIN"
+            : roleRaw === "USER"
+              ? "USER"
+              : "";
       if (!nextRole) {
         await client.query("rollback");
         return NextResponse.json({ error: "Invalid role" }, { status: 400 });
+      }
+      if (nextRole === "DEVELOPER" && !actorIsDeveloper) {
+        await client.query("rollback");
+        return NextResponse.json({ error: "Only developers can assign DEVELOPER role." }, { status: 403 });
       }
 
       await client.query("update users set role = $2 where id = $1", [userId, nextRole]);

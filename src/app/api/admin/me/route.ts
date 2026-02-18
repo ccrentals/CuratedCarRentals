@@ -55,7 +55,12 @@ export async function GET() {
           [session.userId],
         );
       } catch (error) {
-        if (isUndefinedColumn(error, "username") || isUndefinedColumn(error, "full_name")) {
+        if (
+          isUndefinedColumn(error, "username") ||
+          isUndefinedColumn(error, "full_name") ||
+          isUndefinedColumn(error, "last_login_at") ||
+          isUndefinedColumn(error, "is_active")
+        ) {
           return await dbQuery<UserRow>(
             "select email, role, created_at from users where id = $1 limit 1",
             [session.userId],

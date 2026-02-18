@@ -13,9 +13,10 @@ import {
 } from "@/lib/notifications/email";
 
 function isAdminRole(role: string | undefined) {
-  return String(role ?? "")
+  const normalized = String(role ?? "")
     .trim()
-    .toUpperCase() === "ADMIN";
+    .toUpperCase();
+  return normalized === "ADMIN" || normalized === "DEVELOPER";
 }
 
 function parseRequireRestoreReason(content: unknown) {

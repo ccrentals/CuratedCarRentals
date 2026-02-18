@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { DocumentationEditor } from "@/components/admin/DocumentationEditor";
+import { getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery } from "@/lib/db";
 
 type DocRow = {
@@ -48,7 +49,30 @@ const DOCUMENTATION_SECTIONS = [
   },
 ] as const;
 
+function isDeveloperRole(role: string | undefined) {
+  return String(role ?? "")
+    .trim()
+    .toUpperCase() === "DEVELOPER";
+}
+
 export default async function AdminDocumentationPage() {
+  const session = await getSessionFromRequest();
+  const canDeveloper = isDeveloperRole(session?.role);
+
+  if (!canDeveloper) {
+    return (
+      <div className="mx-auto w-full max-w-5xl px-6 py-10">
+        <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Admin</p>
+          <h1 className="mt-2 text-2xl font-bold text-[var(--ccr-text)]">Documentation</h1>
+          <p className="mt-2 text-sm text-[var(--ccr-muted)]">
+            Only DEVELOPER users can view administration documentation.
+          </p>
+        </section>
+      </div>
+    );
+  }
+
   let doc: DocRow | null = null;
   let tableMissing = false;
 
