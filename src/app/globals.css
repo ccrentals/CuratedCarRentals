@@ -142,6 +142,12 @@ input.promo-date-time-input {
   cursor: pointer;
 }
 
+/* Booking edit dates use a controlled calendar button; hide the native icon only there. */
+input.booking-edit-date-input::-webkit-calendar-picker-indicator {
+  opacity: 0;
+  pointer-events: none;
+}
+
 .logo-light-img {
   display: inline-block;
 }

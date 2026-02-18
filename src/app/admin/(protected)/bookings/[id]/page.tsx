@@ -21,6 +21,7 @@ import {
 } from "@/lib/payments/pricing";
 import { readBookingOverrideInfo } from "@/lib/bookings/holds";
 import { formatBookingStatusLabel } from "@/lib/bookings/formatBookingStatusLabel";
+import { refundRequiredStyles } from "@/lib/refundRequiredStyles";
 
 type BookingDetails = {
   id: string;
@@ -52,6 +53,7 @@ type PaymentRow = {
 };
 
 type AdminNote = {
+  note_id?: string;
   message: string;
   created_at?: string;
   user_id?: string;
@@ -85,6 +87,16 @@ function statusBadge(status: string) {
     CANCELLED: "bg-red-100 text-red-700",
   };
   return styles[normalized] ?? "bg-slate-100 text-slate-700";
+}
+
+function readPaymentMetadataText(
+  metadata: PaymentRow["metadata_json"],
+  key: string,
+): string | null {
+  const value = metadata?.[key];
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length ? trimmed : null;
 }
 
 export default async function AdminBookingDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -185,6 +197,31 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
 
   const notesRaw = (pricing as { admin_notes?: AdminNote[] }).admin_notes;
   const notes = Array.isArray(notesRaw) ? [...notesRaw] : [];
+  const paymentNotes: AdminNote[] = payments.rows.flatMap((payment) => {
+    const reference = readPaymentMetadataText(payment.metadata_json, "reference");
+    const note = readPaymentMetadataText(payment.metadata_json, "note");
+    if (!reference && !note) return [];
+
+    const providerLabel =
+      payment.provider === "MANUAL"
+        ? (payment.metadata_json?.method_label as string | undefined) ??
+          (payment.metadata_json?.method as string | undefined) ??
+          "Manual"
+        : payment.provider;
+
+    const parts = [`Payment ${payment.id.slice(0, 8)} (${providerLabel})`];
+    if (reference) parts.push(`Ref: ${reference}`);
+    if (note) parts.push(`Note: ${note}`);
+
+    return [
+      {
+        note_id: `payment-${payment.id}`,
+        message: parts.join(" • "),
+        created_at: payment.created_at,
+      },
+    ];
+  });
+  notes.push(...paymentNotes);
   notes.sort((a, b) => {
     const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
     const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
@@ -330,7 +367,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
               </span>
             ) : null}
             {refundRequired ? (
-              <span className="rounded-full border border-amber-400/40 bg-amber-500/15 px-3 py-1 text-xs font-semibold text-amber-100">
+              <span className={refundRequiredStyles.badge}>
                 Refund required
               </span>
             ) : null}
@@ -410,52 +447,76 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
                 </tr>
               </thead>
               <tbody>
-                {payments.rows.map((payment: PaymentRow) => (
-                  <tr
-                    key={payment.id}
-                    className={`border-b border-[var(--ccr-border)] last:border-b-0 ${
-                      payment.deleted_at ? "bg-[var(--ccr-surface-soft)]" : ""
-                    }`}
-                    title={payment.deleted_reason ? `Deleted: ${payment.deleted_reason}` : undefined}
-                  >
-                    <td className="px-3 py-2 font-mono text-xs text-[var(--ccr-text)]">
-                      {payment.id.slice(0, 8)}
-                    </td>
-                    <td className="px-3 py-2 text-[var(--ccr-text)]">
-                      {payment.provider === "MANUAL"
-                        ? (payment.metadata_json?.method_label as string | undefined) ??
-                          (payment.metadata_json?.method as string | undefined) ??
-                          "MANUAL"
-                        : payment.provider}
-                    </td>
-                    <td className="px-3 py-2 text-[var(--ccr-text)]">
-                      {formatPaymentStatus(payment.status, {
-                        paymentType:
-                          typeof payment.metadata_json?.payment_type === "string"
-                            ? String(payment.metadata_json.payment_type)
-                            : null,
-                      })}
-                    </td>
-                    <td className="px-3 py-2 text-[var(--ccr-text)]">
-                      {formatJmd(payment.deposit_amount_cents)}
-                    </td>
-                    <td className="px-3 py-2 text-[var(--ccr-muted)]">
-                      {fmtDate(payment.created_at)}
-                    </td>
-                    <td className="px-3 py-2">
-                      <PaymentRowActions
-                        paymentId={payment.id}
-                        provider={payment.provider}
-                        status={payment.status}
-                        amount={Number(payment.deposit_amount_cents ?? 0)}
-                        deletedAt={payment.deleted_at}
-                        isRefunded={refundedOriginalIds.has(payment.id)}
-                        canAdmin={canAdmin}
-                        requireRestoreReason={requireRestoreReason}
-                      />
-                    </td>
-                  </tr>
-                ))}
+                {payments.rows.map((payment: PaymentRow) => {
+                  const paymentReference = readPaymentMetadataText(payment.metadata_json, "reference");
+                  const paymentNote = readPaymentMetadataText(payment.metadata_json, "note");
+
+                  return (
+                    <tr
+                      key={payment.id}
+                      className={`border-b border-[var(--ccr-border)] last:border-b-0 ${
+                        payment.deleted_at ? "bg-[var(--ccr-surface-soft)]" : ""
+                      }`}
+                      title={payment.deleted_reason ? `Deleted: ${payment.deleted_reason}` : undefined}
+                    >
+                      <td className="px-3 py-2 font-mono text-xs text-[var(--ccr-text)]">
+                        {payment.id.slice(0, 8)}
+                      </td>
+                      <td className="px-3 py-2 text-[var(--ccr-text)]">
+                        <div className="flex items-center gap-2">
+                          <span className="whitespace-nowrap">
+                            {payment.provider === "MANUAL"
+                              ? (payment.metadata_json?.method_label as string | undefined) ??
+                                (payment.metadata_json?.method as string | undefined) ??
+                                "MANUAL"
+                              : payment.provider}
+                          </span>
+                          {paymentReference || paymentNote ? (
+                            <details className="group relative">
+                              <summary
+                                className="inline-flex h-6 w-6 cursor-pointer list-none items-center justify-center rounded-full border border-[var(--ccr-border)] text-[10px] font-bold leading-none text-[var(--ccr-accent)] transition group-open:rotate-180"
+                                title="View payment note"
+                                aria-label="View payment note"
+                              >
+                                ▾
+                              </summary>
+                              <div className="absolute left-0 top-full z-20 mt-2 w-max max-w-[20rem] rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-2 text-xs text-[var(--ccr-muted)] shadow-sm">
+                                {paymentReference ? <p className="break-words">Ref: {paymentReference}</p> : null}
+                                {paymentNote ? <p className="mt-1 break-words">Note: {paymentNote}</p> : null}
+                              </div>
+                            </details>
+                          ) : null}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 text-[var(--ccr-text)]">
+                        {formatPaymentStatus(payment.status, {
+                          paymentType:
+                            typeof payment.metadata_json?.payment_type === "string"
+                              ? String(payment.metadata_json.payment_type)
+                              : null,
+                        })}
+                      </td>
+                      <td className="px-3 py-2 text-[var(--ccr-text)]">
+                        {formatJmd(payment.deposit_amount_cents)}
+                      </td>
+                      <td className="px-3 py-2 text-[var(--ccr-muted)]">
+                        {fmtDate(payment.created_at)}
+                      </td>
+                      <td className="px-3 py-2">
+                        <PaymentRowActions
+                          paymentId={payment.id}
+                          provider={payment.provider}
+                          status={payment.status}
+                          amount={Number(payment.deposit_amount_cents ?? 0)}
+                          deletedAt={payment.deleted_at}
+                          isRefunded={refundedOriginalIds.has(payment.id)}
+                          canAdmin={canAdmin}
+                          requireRestoreReason={requireRestoreReason}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

@@ -20,11 +20,20 @@ type NavItem = {
   children?: NavChild[];
 };
 
+type NavGroup = {
+  id: string;
+  label: string;
+  itemHrefs: string[];
+  defaultExpanded?: boolean;
+};
+
 type AdminNavLinksProps = {
   pathname: string;
   collapsedState?: boolean;
   expandedItems: Record<string, boolean>;
   setExpandedItems: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+  expandedGroups: Record<string, boolean>;
+  setExpandedGroups: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
   onNavigate?: () => void;
 };
 
@@ -262,6 +271,25 @@ const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    label: "Developer",
+    href: "/admin/developer",
+    icon: (className: string) => (
+      <svg
+        viewBox="0 0 24 24"
+        className={className}
+        aria-hidden="true"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M16 18l6-6-6-6" />
+        <path d="M8 6l-6 6 6 6" />
+      </svg>
+    ),
+  },
+  {
     label: "Settings",
     href: "/admin/settings",
     icon: (className: string) => (
@@ -322,6 +350,37 @@ const NAV_ITEMS: NavItem[] = [
   },
 ];
 
+const NAV_GROUPS: NavGroup[] = [
+  {
+    id: "operations",
+    label: "Operations",
+    itemHrefs: [
+      "/admin",
+      "/admin/bookings",
+      "/admin/customers",
+      "/admin/payments",
+      "/admin/promo-codes",
+      "/admin/calendar",
+      "/admin/vehicles",
+    ],
+    defaultExpanded: true,
+  },
+  {
+    id: "monitoring",
+    label: "Monitoring",
+    itemHrefs: ["/admin/reports", "/admin/cron", "/admin/health"],
+    defaultExpanded: true,
+  },
+  {
+    id: "administration",
+    label: "Administration",
+    itemHrefs: ["/admin/documentation", "/admin/developer", "/admin/settings", "/admin/users", "/admin/profile"],
+    defaultExpanded: true,
+  },
+];
+
+const NAV_ITEM_BY_HREF = new Map<string, NavItem>(NAV_ITEMS.map((item) => [item.href, item]));
+
 function isActivePath(pathname: string, href: string) {
   if (href === "/admin") {
     return pathname === "/admin";
@@ -334,95 +393,147 @@ function AdminNavLinks({
   collapsedState,
   expandedItems,
   setExpandedItems,
+  expandedGroups,
+  setExpandedGroups,
   onNavigate,
 }: AdminNavLinksProps) {
-  return (
-    <nav className={`mt-6 flex flex-col gap-1 text-sm font-semibold ${collapsedState ? "items-center" : ""}`}>
-      {NAV_ITEMS.map((item) => {
-        const active = isActivePath(pathname, item.href);
-        const hasChildren = Boolean(item.children?.length) && !collapsedState;
-        const isExpanded = hasChildren && Boolean(expandedItems[item.href]);
-        const showChildren = hasChildren && isExpanded;
-        return (
-          <div key={item.href} className={`flex flex-col ${collapsedState ? "items-center" : ""}`}>
-            <div className={`flex items-center gap-2 ${collapsedState ? "w-full justify-center" : "w-full"}`}>
-              <Link
-                href={item.href}
-                onClick={onNavigate}
-                title={item.label}
-                aria-current={active ? "page" : undefined}
-                className={`flex items-center gap-3 rounded-xl py-2 transition ${
-                  collapsedState ? "justify-center px-2" : "flex-1 px-3"
-                } ${
-                  active
-                    ? "bg-[var(--ccr-primary)] text-white"
-                    : `text-[var(--ccr-text)] hover:bg-[var(--ccr-surface-soft)] ${ADMIN_HOVER_TEXT_CLASS}`
-                }`}
+  const renderItem = (item: NavItem) => {
+    const active = isActivePath(pathname, item.href);
+    const hasChildren = Boolean(item.children?.length) && !collapsedState;
+    const isExpanded = hasChildren && Boolean(expandedItems[item.href]);
+    const showChildren = hasChildren && isExpanded;
+    return (
+      <div key={item.href} className={`flex flex-col ${collapsedState ? "items-center" : ""}`}>
+        <div className={`flex items-center gap-2 ${collapsedState ? "w-full justify-center" : "w-full"}`}>
+          <Link
+            href={item.href}
+            onClick={onNavigate}
+            title={item.label}
+            aria-current={active ? "page" : undefined}
+            className={`flex items-center gap-3 rounded-xl py-2 transition ${
+              collapsedState ? "justify-center px-2" : "flex-1 px-3"
+            } ${
+              active
+                ? "bg-[var(--ccr-primary)] text-white"
+                : `text-[var(--ccr-text)] hover:bg-[var(--ccr-surface-soft)] ${ADMIN_HOVER_TEXT_CLASS}`
+            }`}
+          >
+            <span
+              className={`flex h-9 w-9 items-center justify-center rounded-lg ${
+                active
+                  ? "bg-white/20 text-white"
+                  : "bg-[var(--ccr-surface-soft)] text-[var(--ccr-text)]"
+              }`}
+            >
+              {item.icon(
+                `h-5 w-5 ${active ? "text-white" : "text-[var(--ccr-text)]"}`,
+              )}
+            </span>
+            {collapsedState ? null : <span>{item.label}</span>}
+          </Link>
+          {hasChildren ? (
+            <button
+              type="button"
+              onClick={() =>
+                setExpandedItems((current) => ({
+                  ...current,
+                  [item.href]: !current[item.href],
+                }))
+              }
+              aria-label={`${isExpanded ? "Collapse" : "Expand"} ${item.label}`}
+              className={`rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-1.5 text-[var(--ccr-text)] transition hover:border-[var(--ccr-accent)] ${ADMIN_HOVER_TEXT_CLASS}`}
+            >
+              <svg
+                viewBox="0 0 20 20"
+                className={`h-3.5 w-3.5 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                aria-hidden="true"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
               >
-                <span
-                  className={`flex h-9 w-9 items-center justify-center rounded-lg ${
-                    active
-                      ? "bg-white/20 text-white"
-                      : "bg-[var(--ccr-surface-soft)] text-[var(--ccr-text)]"
+                <path d="M5 7l5 6 5-6" />
+              </svg>
+            </button>
+          ) : null}
+        </div>
+
+        {showChildren ? (
+          <div className="mt-1 flex flex-col gap-1 pl-12">
+            {item.children?.map((child) => {
+              const childActive = pathname.startsWith(child.href);
+              return (
+                <Link
+                  key={child.href}
+                  href={child.href}
+                  onClick={onNavigate}
+                  aria-current={childActive ? "page" : undefined}
+                  className={`rounded-lg px-3 py-2 text-xs font-semibold ${
+                    childActive
+                      ? "bg-[var(--ccr-surface-soft)] text-[var(--ccr-text)]"
+                      : `text-[var(--ccr-muted)] hover:bg-[var(--ccr-surface-soft)] ${ADMIN_HOVER_TEXT_CLASS}`
                   }`}
                 >
-                  {item.icon(
-                    `h-5 w-5 ${active ? "text-white" : "text-[var(--ccr-text)]"}`,
-                  )}
-                </span>
-                {collapsedState ? null : <span>{item.label}</span>}
-              </Link>
-              {hasChildren ? (
-                <button
-                  type="button"
-                  onClick={() =>
-                    setExpandedItems((current) => ({
-                      ...current,
-                      [item.href]: !current[item.href],
-                    }))
-                  }
-                  aria-label={`${isExpanded ? "Collapse" : "Expand"} ${item.label}`}
-                  className={`rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-1.5 text-[var(--ccr-text)] transition hover:border-[var(--ccr-accent)] ${ADMIN_HOVER_TEXT_CLASS}`}
-                >
-                  <svg
-                    viewBox="0 0 20 20"
-                    className={`h-3.5 w-3.5 transition-transform ${isExpanded ? "rotate-180" : ""}`}
-                    aria-hidden="true"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M5 7l5 6 5-6" />
-                  </svg>
-                </button>
-              ) : null}
-            </div>
+                  {child.label}
+                </Link>
+              );
+            })}
+          </div>
+        ) : null}
+      </div>
+    );
+  };
 
-            {showChildren ? (
-              <div className="mt-1 flex flex-col gap-1 pl-12">
-                {item.children?.map((child) => {
-                  const childActive = pathname.startsWith(child.href);
-                  return (
-                    <Link
-                      key={child.href}
-                      href={child.href}
-                      onClick={onNavigate}
-                      aria-current={childActive ? "page" : undefined}
-                      className={`rounded-lg px-3 py-2 text-xs font-semibold ${
-                        childActive
-                          ? "bg-[var(--ccr-surface-soft)] text-[var(--ccr-text)]"
-                          : `text-[var(--ccr-muted)] hover:bg-[var(--ccr-surface-soft)] ${ADMIN_HOVER_TEXT_CLASS}`
-                      }`}
-                    >
-                      {child.label}
-                    </Link>
-                  );
-                })}
+  if (collapsedState) {
+    return (
+      <nav className="mt-6 flex flex-col items-center gap-1 text-sm font-semibold">
+        {NAV_ITEMS.map(renderItem)}
+      </nav>
+    );
+  }
+
+  return (
+    <nav className="mt-6 flex flex-col gap-2 text-sm font-semibold">
+      {NAV_GROUPS.map((group) => {
+        const groupItems = group.itemHrefs
+          .map((href) => NAV_ITEM_BY_HREF.get(href))
+          .filter((item): item is NavItem => Boolean(item));
+        const groupExpanded = Boolean(expandedGroups[group.id]);
+        return (
+          <section key={group.id} className="rounded-xl border border-[var(--ccr-border)]/60 bg-[var(--ccr-surface-soft)]/40 p-2">
+            <button
+              type="button"
+              onClick={() =>
+                setExpandedGroups((current) => ({
+                  ...current,
+                  [group.id]: !current[group.id],
+                }))
+              }
+              aria-label={`${groupExpanded ? "Collapse" : "Expand"} ${group.label}`}
+              className={`flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-[11px] font-bold uppercase tracking-wide text-[var(--ccr-muted)] transition hover:bg-[var(--ccr-surface-soft)] ${ADMIN_HOVER_TEXT_CLASS}`}
+            >
+              <span>{group.label}</span>
+              <svg
+                viewBox="0 0 20 20"
+                className={`h-3.5 w-3.5 transition-transform ${groupExpanded ? "rotate-180" : ""}`}
+                aria-hidden="true"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M5 7l5 6 5-6" />
+              </svg>
+            </button>
+
+            {groupExpanded ? (
+              <div className="mt-1 flex flex-col gap-1">
+                {groupItems.map(renderItem)}
               </div>
             ) : null}
-          </div>
+          </section>
         );
       })}
     </nav>
@@ -448,6 +559,14 @@ export function AdminShell({
       if (item.children?.length) {
         initial[item.href] = pathname.startsWith(item.href);
       }
+    });
+    return initial;
+  });
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(() => {
+    const initial: Record<string, boolean> = {};
+    NAV_GROUPS.forEach((group) => {
+      const hasActiveRoute = group.itemHrefs.some((href) => isActivePath(pathname, href));
+      initial[group.id] = hasActiveRoute || Boolean(group.defaultExpanded);
     });
     return initial;
   });
@@ -526,6 +645,8 @@ export function AdminShell({
           collapsedState={collapsed}
           expandedItems={expandedItems}
           setExpandedItems={setExpandedItems}
+          expandedGroups={expandedGroups}
+          setExpandedGroups={setExpandedGroups}
         />
       </aside>
 
@@ -557,6 +678,8 @@ export function AdminShell({
           pathname={pathname}
           expandedItems={expandedItems}
           setExpandedItems={setExpandedItems}
+          expandedGroups={expandedGroups}
+          setExpandedGroups={setExpandedGroups}
           onNavigate={() => setDrawerOpen(false)}
         />
       </aside>

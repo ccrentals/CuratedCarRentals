@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
@@ -41,6 +41,8 @@ export function BookingUpdateForm({
   disabled,
 }: BookingUpdateFormProps) {
   const router = useRouter();
+  const startDateRef = useRef<HTMLInputElement | null>(null);
+  const endDateRef = useRef<HTMLInputElement | null>(null);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,6 +65,27 @@ export function BookingUpdateForm({
     setError(null);
     setMessage(null);
     setOpen(true);
+  }
+
+  function openNativePicker(ref: React.RefObject<HTMLInputElement | null>) {
+    const input = ref.current;
+    if (!input) return;
+
+    const pickerInput = input as HTMLInputElement & {
+      showPicker?: () => void;
+    };
+
+    if (typeof pickerInput.showPicker === "function") {
+      try {
+        pickerInput.showPicker();
+        return;
+      } catch {
+        // Fallback below for browsers or states where showPicker is blocked.
+      }
+    }
+
+    input.focus();
+    input.click();
   }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -128,25 +151,77 @@ export function BookingUpdateForm({
         <form className="mt-4 grid gap-3 md:grid-cols-2" onSubmit={onSubmit}>
           <label className="text-xs text-[var(--ccr-muted)]">
             Start date
-            <input
-              type="date"
-              value={nextStartDate}
-              onChange={(event) => setNextStartDate(event.target.value)}
-              required
-              className="promo-date-time-input mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
-            />
+            <div className="relative mt-1">
+              <input
+                ref={startDateRef}
+                type="date"
+                value={nextStartDate}
+                onChange={(event) => setNextStartDate(event.target.value)}
+                required
+                className="booking-edit-date-input promo-date-time-input w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 pr-10 text-sm text-[var(--ccr-text)]"
+              />
+              <button
+                type="button"
+                onClick={() => openNativePicker(startDateRef)}
+                className="absolute right-2 top-1/2 inline-flex -translate-y-1/2 items-center justify-center rounded-md p-1 text-[color:var(--ccr-text)] opacity-80 transition-opacity hover:opacity-100"
+                aria-label="Open start date calendar"
+                title="Open calendar"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  className="h-4 w-4"
+                  aria-hidden="true"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                  <line x1="16" y1="2" x2="16" y2="6" />
+                  <line x1="8" y1="2" x2="8" y2="6" />
+                  <line x1="3" y1="10" x2="21" y2="10" />
+                </svg>
+              </button>
+            </div>
           </label>
 
           <label className="text-xs text-[var(--ccr-muted)]">
             End date
-            <input
-              type="date"
-              value={nextEndDate}
-              onChange={(event) => setNextEndDate(event.target.value)}
-              min={nextStartDate}
-              required
-              className="promo-date-time-input mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
-            />
+            <div className="relative mt-1">
+              <input
+                ref={endDateRef}
+                type="date"
+                value={nextEndDate}
+                onChange={(event) => setNextEndDate(event.target.value)}
+                min={nextStartDate}
+                required
+                className="booking-edit-date-input promo-date-time-input w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 pr-10 text-sm text-[var(--ccr-text)]"
+              />
+              <button
+                type="button"
+                onClick={() => openNativePicker(endDateRef)}
+                className="absolute right-2 top-1/2 inline-flex -translate-y-1/2 items-center justify-center rounded-md p-1 text-[color:var(--ccr-text)] opacity-80 transition-opacity hover:opacity-100"
+                aria-label="Open end date calendar"
+                title="Open calendar"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  className="h-4 w-4"
+                  aria-hidden="true"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                  <line x1="16" y1="2" x2="16" y2="6" />
+                  <line x1="8" y1="2" x2="8" y2="6" />
+                  <line x1="3" y1="10" x2="21" y2="10" />
+                </svg>
+              </button>
+            </div>
           </label>
 
           <label className="text-xs text-[var(--ccr-muted)] md:col-span-2">
