@@ -8,6 +8,7 @@ import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
 const actionLabels = {
   confirm: "Confirm Booking",
+  pickup: "Mark Picked Up",
   complete: "Complete Booking",
   deposit: "Mark Deposit Paid",
   full: "Mark Balance Paid",
@@ -41,6 +42,8 @@ export function BookingActions({
   );
   const normalizedStatus = bookingStatus?.trim().toUpperCase();
   const canConfirm = !normalizedStatus || ["PENDING_PAYMENT", "PENDING"].includes(normalizedStatus);
+  const canPickup =
+    Boolean(normalizedStatus) && normalizedStatus === "CONFIRMED" && Boolean(isPaidInFull);
   const canComplete = !normalizedStatus || ["CONFIRMED", "PICKED_UP"].includes(normalizedStatus);
   const canArchive = Boolean(canAdmin) && normalizedStatus === "RETURNED";
   const canCancel = !normalizedStatus || !["CANCELLED", "RETURNED"].includes(normalizedStatus);
@@ -100,7 +103,10 @@ export function BookingActions({
     };
 
     const response =
-      actionKey === "confirm" || actionKey === "complete" || actionKey === "archive"
+      actionKey === "confirm" ||
+      actionKey === "pickup" ||
+      actionKey === "complete" ||
+      actionKey === "archive"
         ? await fetch(`/api/admin/bookings/${bookingId}`, {
             method: "PATCH",
             headers,
@@ -166,6 +172,23 @@ export function BookingActions({
           className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
         >
           {loadingKey === "confirm" ? "Working..." : actionLabels.confirm}
+        </button>
+        <button
+          type="button"
+          onClick={() => runAction("pickup")}
+          disabled={loadingKey === "pickup" || !canPickup}
+          title={
+            !canPickup
+              ? !isPaidInFull
+                ? "Full payment is required before pickup"
+                : normalizedStatus === "PICKED_UP"
+                  ? "Already picked up"
+                  : "Booking must be confirmed before pickup"
+              : undefined
+          }
+          className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
+        >
+          {loadingKey === "pickup" ? "Working..." : actionLabels.pickup}
         </button>
         <button
           type="button"

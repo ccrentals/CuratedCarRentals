@@ -139,6 +139,7 @@ input.promo-date-time-input {
 [data-theme="ocean"] input.promo-date-time-input::-webkit-calendar-picker-indicator,
 [data-theme="forest"] input.promo-date-time-input::-webkit-calendar-picker-indicator {
   filter: invert(1) brightness(1.2);
+  cursor: pointer;
 }
 
 .logo-light-img {

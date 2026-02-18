@@ -252,7 +252,7 @@ export function AdminCreateBookingModal({
                       type="date"
                       min={todayIso()}
                       required
-                      className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+                      className="promo-date-time-input mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
                     />
                   </label>
                   <label className="text-xs text-[var(--ccr-muted)]">
@@ -263,7 +263,7 @@ export function AdminCreateBookingModal({
                       type="date"
                       min={startDate || todayIso()}
                       required
-                      className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+                      className="promo-date-time-input mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
                     />
                   </label>
                 </div>
@@ -355,13 +355,13 @@ export function AdminCreateBookingModal({
 
                     <label className="text-xs text-[var(--ccr-muted)]">
                       Payment date/time
-                      <input
-                        value={paymentDateTime}
-                        onChange={(event) => setPaymentDateTime(event.target.value)}
-                        type="datetime-local"
-                        required={recordPaymentNow}
-                        className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
-                      />
+                    <input
+                      value={paymentDateTime}
+                      onChange={(event) => setPaymentDateTime(event.target.value)}
+                      type="datetime-local"
+                      required={recordPaymentNow}
+                      className="promo-date-time-input mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+                    />
                     </label>
 
                     <label className="text-xs text-[var(--ccr-muted)]">

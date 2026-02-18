@@ -56,15 +56,9 @@ export async function POST(
       return NextResponse.json({ ok: true, message: "Already fully paid" });
     }
 
-    const providerRef = `MANUAL_BALANCE_${booking.id}`;
-    const existing = await client.query(
-      "select id from payments where booking_id = $1 and provider = 'MANUAL' and provider_ref = $2 and status = 'DEPOSIT_PAID' limit 1",
-      [booking.id, providerRef],
-    );
-    if (existing.rowCount > 0) {
-      await client.query("commit");
-      return NextResponse.json({ ok: true, message: "Balance payment already recorded" });
-    }
+    // Use a unique provider reference per captured balance payment.
+    // This allows legitimate additional balance captures if the booking is later extended.
+    const providerRef = `MANUAL_BALANCE_${booking.id}_${crypto.randomUUID()}`;
 
     await client.query(
       "insert into payments (booking_id, provider, deposit_amount_cents, currency, status, provider_ref, metadata_json) values ($1, 'MANUAL', $2, 'JMD', 'DEPOSIT_PAID', $3, $4)",

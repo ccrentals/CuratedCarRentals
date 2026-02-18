@@ -231,6 +231,82 @@ export async function PATCH(
     return NextResponse.json({ ok: true });
   }
 
+  if (action === "pickup") {
+    const bookingResult = await dbQuery<{
+      status: string;
+      start_date: string;
+      end_date: string;
+      pricing_json: Record<string, unknown> | null;
+      daily_rate_cents: number;
+      deposit_cents: number;
+    }>(
+      "select b.status, b.start_date, b.end_date, b.pricing_json, v.daily_rate_cents, v.deposit_cents from bookings b join vehicles v on v.id = b.vehicle_id where b.id = $1",
+      [id],
+    );
+
+    if (bookingResult.rowCount === 0) {
+      return NextResponse.json({ error: "Booking not found" }, { status: 404 });
+    }
+
+    const booking = bookingResult.rows[0];
+    const statusUpper = booking.status.toUpperCase();
+
+    if (statusUpper === "PICKED_UP") {
+      return NextResponse.json({ ok: true, message: "Booking is already marked as picked up." });
+    }
+
+    if (statusUpper !== "CONFIRMED") {
+      return NextResponse.json(
+        { error: "Only confirmed bookings can be marked as picked up." },
+        { status: 400 },
+      );
+    }
+
+    const pricing = booking.pricing_json ?? {};
+    const paymentOption = readPaymentOption(pricing);
+    const { promoCode, promoDiscount } = readPromoPricingFields(pricing);
+    const dailyRate = Number(pricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
+    const deposit = Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0);
+    const netPaidToDate = await fetchNetPaidToDate(id);
+    const paymentSummary = computeBookingPricing({
+      bookingId: id,
+      bookingStatus: booking.status,
+      startDate: booking.start_date,
+      endDate: booking.end_date,
+      dailyRate,
+      deposit,
+      paymentOption,
+      netPaidToDate,
+      promoCode,
+      promoDiscount,
+    });
+
+    if (paymentSummary.paymentStatus !== "PAID_IN_FULL" || paymentSummary.balanceDue > 0) {
+      return NextResponse.json(
+        { error: "Booking must be fully paid before pickup." },
+        { status: 400 },
+      );
+    }
+
+    await dbQuery("update bookings set status = 'PICKED_UP', updated_at = now() where id = $1", [
+      id,
+    ]);
+
+    await writeAuditLog({
+      userId: session.userId,
+      action: "BOOKING_PICKED_UP",
+      entityType: "booking",
+      entityId: id,
+      details: {
+        previous_status: booking.status,
+        net_paid_to_date: paymentSummary.netPaidToDate,
+        balance_due: paymentSummary.balanceDue,
+      },
+    });
+
+    return NextResponse.json({ ok: true, message: "Booking marked as picked up." });
+  }
+
   if (action === "archive") {
     if (!isAdminRole(session.role)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });

@@ -13,6 +13,7 @@ import {
   readHoldMinimumAmount,
   readPaymentOption,
 } from "@/lib/payments/pricing";
+import { formatBookingStatusLabel } from "@/lib/bookings/formatBookingStatusLabel";
 
 type BookingDbRow = {
   id: string;
@@ -48,6 +49,7 @@ export type AdminBookingListItem = {
   statusLabel: string;
   substatusIndicators: BookingSubstatusIndicator[];
   overriddenByBookingId: string | null;
+  overriddenByCustomerName: string | null;
 };
 
 export type AdminBookingListPage = {
@@ -96,14 +98,6 @@ function asIsoTimestamp(value: unknown) {
 function asMoneyLike(value: unknown) {
   const amount = Number(value);
   return Number.isFinite(amount) ? amount : 0;
-}
-
-function formatBookingStatusLabel(status: string) {
-  const normalized = String(status ?? "")
-    .trim()
-    .toLowerCase();
-  if (!normalized) return "Unknown";
-  return normalized.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 function resolveSubstatusIndicators(input: {
@@ -348,6 +342,30 @@ export async function fetchAdminBookingsPage(input: AdminBookingListQueryInput):
     }
   }
 
+  const overriddenByBookingIds = Array.from(
+    new Set(
+      visibleRows
+        .map((row) => {
+          const pricing = row.pricing_json ?? {};
+          return readBookingOverrideInfo(pricing).overriddenByBookingId;
+        })
+        .filter((value): value is string => typeof value === "string" && value.length > 0),
+    ),
+  );
+  const overriddenByNameByBookingId = new Map<string, string>();
+  if (overriddenByBookingIds.length > 0) {
+    const overriddenBookings = await dbQuery<{ id: string; customer_name: string }>(
+      "select b.id::text as id, c.full_name as customer_name from bookings b join customers c on c.id = b.customer_id where b.id::text = any($1::text[])",
+      [overriddenByBookingIds],
+    );
+    for (const row of overriddenBookings.rows) {
+      const customerName = String(row.customer_name ?? "").trim();
+      if (customerName) {
+        overriddenByNameByBookingId.set(String(row.id), customerName);
+      }
+    }
+  }
+
   const bookings: AdminBookingListItem[] = visibleRows.map((row) => {
     const pricing = row.pricing_json ?? {};
     const livePaidToDate = paidToDateByBookingId.has(row.id)
@@ -374,7 +392,7 @@ export async function fetchAdminBookingsPage(input: AdminBookingListQueryInput):
       datesLabel: `${fmtDate(row.start_date)} → ${fmtDate(row.end_date)}`,
       createdAtLabel: fmtDate(row.created_at),
       status: row.status,
-      statusLabel: formatBookingStatusLabel(row.status),
+      statusLabel: formatBookingStatusLabel(row.status, String(pricing.payment_status ?? "")),
       substatusIndicators: resolveSubstatusIndicators({
         bookingStatus: row.status,
         pricing,
@@ -382,6 +400,9 @@ export async function fetchAdminBookingsPage(input: AdminBookingListQueryInput):
         overriddenByBookingId: overrideInfo.overriddenByBookingId,
       }),
       overriddenByBookingId: overrideInfo.overriddenByBookingId,
+      overriddenByCustomerName: overrideInfo.overriddenByBookingId
+        ? overriddenByNameByBookingId.get(overrideInfo.overriddenByBookingId) ?? null
+        : null,
     };
   });
 

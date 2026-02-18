@@ -42,7 +42,7 @@ export function PaymentRowActions({
 
   const title = useMemo(() => {
     if (showManualActions) {
-      return isDeleted ? "Restore payment" : "Delete payment";
+      return isDeleted ? "Restore payment" : "Cancel payment";
     }
     if (showRefundAction) return "Refund/Void payment";
     return "";
@@ -156,7 +156,7 @@ export function PaymentRowActions({
               : "rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white"
           }
         >
-          {isDeleted ? "Restore" : "Delete"}
+          {isDeleted ? "Restore" : "Cancel"}
         </button>
       ) : null}
 
@@ -190,14 +190,14 @@ export function PaymentRowActions({
           <div className="relative w-full max-w-md rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-5 shadow-2xl">
             <h3 className="text-lg font-bold text-[var(--ccr-text)]">
               {mode === "delete"
-                ? "Delete manual payment"
+                ? "Cancel manual payment"
                 : mode === "restore"
                   ? "Restore manual payment"
                   : "Refund/Void WiPay payment"}
             </h3>
             <p className="mt-1 text-sm text-[var(--ccr-muted)]">
               {mode === "delete"
-                ? "This will hide the payment and roll totals back." 
+                ? "This will cancel the payment entry and roll totals back."
                 : mode === "restore"
                   ? "This will restore the payment and re-apply totals."
                   : "This records a refund/void in the system and adjusts totals. It does not call WiPay automatically."}
@@ -270,7 +270,7 @@ export function PaymentRowActions({
                 {loading
                   ? "Saving..."
                   : mode === "delete"
-                    ? "Delete"
+                    ? "Cancel payment"
                     : mode === "restore"
                       ? "Restore"
                       : "Record refund"}

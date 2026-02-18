@@ -20,6 +20,7 @@ import {
   readPromoPricingFields,
 } from "@/lib/payments/pricing";
 import { readBookingOverrideInfo } from "@/lib/bookings/holds";
+import { formatBookingStatusLabel } from "@/lib/bookings/formatBookingStatusLabel";
 
 type BookingDetails = {
   id: string;
@@ -77,6 +78,7 @@ function statusBadge(status: string) {
   const normalized = status.toUpperCase();
   const styles: Record<string, string> = {
     PENDING_PAYMENT: "bg-amber-100 text-amber-800",
+    BOOKED: "bg-amber-100 text-amber-800",
     CONFIRMED: "bg-emerald-100 text-emerald-800",
     PICKED_UP: "bg-blue-100 text-blue-800",
     RETURNED: "bg-slate-200 text-slate-800",
@@ -168,9 +170,11 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
   const total = summary.total;
   const paidToDate = summary.netPaidToDate;
   const balanceDue = summary.balanceDue;
+  const depositDue = Math.max(0, Math.max(0, deposit) - Math.max(0, paidToDate));
   const isPaidInFull = summary.paymentStatus === "PAID_IN_FULL";
   const refundRequired = summary.refundRequired;
   const isDepositPaid = deposit > 0 ? paidToDate >= deposit : paidToDate > 0;
+  const displayStatus = formatBookingStatusLabel(booking.status, summary.paymentStatus).toUpperCase();
   const isNonBlocking =
     isNonBlockingBookingHold({
       paymentStatus: summary.paymentStatus,
@@ -232,10 +236,10 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
           </details>
           <span
             className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${statusBadge(
-              booking.status,
+              displayStatus,
             )}`}
           >
-            {booking.status.replace("_", " ")}
+            {displayStatus.replace(/_/g, " ")}
           </span>
           {isNonBlocking ? <InfoTooltipIcon message="UNPAID - Not holding vehicle" /> : null}
           {overrideInfo.isOverridden ? (
@@ -275,7 +279,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
           <dl className="mt-4 grid gap-3 text-sm text-[var(--ccr-muted)]">
             <div>
               <dt className="text-xs uppercase tracking-wide">Status</dt>
-              <dd className="font-semibold text-[var(--ccr-text)]">{booking.status}</dd>
+              <dd className="font-semibold text-[var(--ccr-text)]">{displayStatus.replace(/_/g, " ")}</dd>
             </div>
             <div>
               <dt className="text-xs uppercase tracking-wide">Payment Option</dt>
@@ -315,59 +319,6 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
           </div>
         </section>
       </div>
-
-      <section className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm">
-        <h2 className="text-lg font-bold text-[var(--ccr-text)]">Override info</h2>
-        <dl className="mt-4 grid gap-3 text-sm text-[var(--ccr-muted)] md:grid-cols-2">
-          <div>
-            <dt className="text-xs uppercase tracking-wide">Current state</dt>
-            <dd className="font-semibold text-[var(--ccr-text)]">
-              {overrideInfo.isOverridden ? "Overridden" : "Active"}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs uppercase tracking-wide">Overridden by</dt>
-            <dd className="font-semibold text-[var(--ccr-text)]">
-              {overriddenByBookingId ? (
-                <Link href={`/admin/bookings/${overriddenByBookingId}`} className="underline underline-offset-2">
-                  {overriddenByBookingId}
-                </Link>
-              ) : (
-                "N/A"
-              )}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs uppercase tracking-wide">Overridden at</dt>
-            <dd className="font-semibold text-[var(--ccr-text)]">
-              {overrideInfo.overriddenAt ? fmtDate(overrideInfo.overriddenAt) : "N/A"}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs uppercase tracking-wide">Reason</dt>
-            <dd className="font-semibold text-[var(--ccr-text)]">{overrideInfo.overrideReason ?? "N/A"}</dd>
-          </div>
-        </dl>
-
-        <div className="mt-5">
-          <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Bookings overridden by this booking</p>
-          {overriddenByThis.rowCount === 0 ? (
-            <p className="mt-2 text-sm text-[var(--ccr-muted)]">None.</p>
-          ) : (
-            <ul className="mt-2 space-y-2 text-sm">
-              {overriddenByThisRows.map((item: OverriddenByThisBooking) => (
-                <li key={item.id} className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-2">
-                  <Link href={`/admin/bookings/${item.id}`} className="font-mono text-xs text-[var(--ccr-text)] underline underline-offset-2">
-                    {item.id}
-                  </Link>
-                  <p className="mt-1 text-[var(--ccr-text)]">{item.customer_name}</p>
-                  <p className="text-[var(--ccr-muted)]">{fmtDate(item.start_date)} → {fmtDate(item.end_date)}</p>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </section>
 
       <section className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -412,8 +363,8 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
               <span className="font-semibold text-[var(--ccr-text)]">{formatJmd(dailyRate)}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span>Deposit</span>
-              <span className="font-semibold text-[var(--ccr-text)]">{formatJmd(deposit)}</span>
+              <span>Deposit due</span>
+              <span className="font-semibold text-[var(--ccr-text)]">{formatJmd(depositDue)}</span>
             </div>
             <div className="flex items-center justify-between">
               <span>Balance due</span>
@@ -514,6 +465,59 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
       <section className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm">
         <h2 className="text-lg font-bold text-[var(--ccr-text)]">Admin Notes</h2>
         <BookingNotes bookingId={booking.id} notes={notes} />
+      </section>
+
+      <section className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm">
+        <h2 className="text-lg font-bold text-[var(--ccr-text)]">Override info</h2>
+        <dl className="mt-4 grid gap-3 text-sm text-[var(--ccr-muted)] md:grid-cols-2">
+          <div>
+            <dt className="text-xs uppercase tracking-wide">Current state</dt>
+            <dd className="font-semibold text-[var(--ccr-text)]">
+              {overrideInfo.isOverridden ? "Overridden" : "Active"}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs uppercase tracking-wide">Overridden by</dt>
+            <dd className="font-semibold text-[var(--ccr-text)]">
+              {overriddenByBookingId ? (
+                <Link href={`/admin/bookings/${overriddenByBookingId}`} className="underline underline-offset-2">
+                  {overriddenByBookingId}
+                </Link>
+              ) : (
+                "N/A"
+              )}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs uppercase tracking-wide">Overridden at</dt>
+            <dd className="font-semibold text-[var(--ccr-text)]">
+              {overrideInfo.overriddenAt ? fmtDate(overrideInfo.overriddenAt) : "N/A"}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs uppercase tracking-wide">Reason</dt>
+            <dd className="font-semibold text-[var(--ccr-text)]">{overrideInfo.overrideReason ?? "N/A"}</dd>
+          </div>
+        </dl>
+
+        <div className="mt-5">
+          <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Bookings overridden by this booking</p>
+          {overriddenByThis.rowCount === 0 ? (
+            <p className="mt-2 text-sm text-[var(--ccr-muted)]">None.</p>
+          ) : (
+            <ul className="mt-2 space-y-2 text-sm">
+              {overriddenByThisRows.map((item: OverriddenByThisBooking) => (
+                <li key={item.id} className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-2">
+                  <Link href={`/admin/bookings/${item.id}`} className="font-mono text-xs text-[var(--ccr-text)] underline underline-offset-2">
+                    {item.id}
+                  </Link>
+                  <p className="mt-1 text-[var(--ccr-text)]">{item.customer_name}</p>
+                  <p className="text-[var(--ccr-muted)]">{fmtDate(item.start_date)} → {fmtDate(item.end_date)}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </section>
     </div>
   );

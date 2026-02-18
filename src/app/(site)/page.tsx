@@ -75,7 +75,7 @@ export default async function HomePage() {
                     <input
                       type="date"
                       min={todayKey}
-                      className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+                      className="promo-date-time-input mt-1 w-full rounded-lg border border-[var(--ccr-border)] px-3 py-2 text-sm text-[var(--ccr-text)]"
                     />
                   </label>
                   <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
@@ -83,7 +83,7 @@ export default async function HomePage() {
                     <input
                       type="date"
                       min={todayKey}
-                      className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+                      className="promo-date-time-input mt-1 w-full rounded-lg border border-[var(--ccr-border)] px-3 py-2 text-sm text-[var(--ccr-text)]"
                     />
                   </label>
                 </div>

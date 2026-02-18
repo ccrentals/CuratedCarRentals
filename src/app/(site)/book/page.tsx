@@ -209,7 +209,7 @@ export default function BookPage() {
                   min={todayKey}
                   value={startDate}
                   onChange={(event) => setStartDate(event.target.value)}
-                  className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-[var(--ccr-text)] outline-none ring-[var(--ccr-accent)] focus:ring-2"
+                  className="promo-date-time-input mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-[var(--ccr-text)] outline-none ring-[var(--ccr-accent)] focus:ring-2"
                   required
                 />
               </label>
@@ -220,7 +220,7 @@ export default function BookPage() {
                   min={startDate || todayKey}
                   value={endDate}
                   onChange={(event) => setEndDate(event.target.value)}
-                  className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-[var(--ccr-text)] outline-none ring-[var(--ccr-accent)] focus:ring-2"
+                  className="promo-date-time-input mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-[var(--ccr-text)] outline-none ring-[var(--ccr-accent)] focus:ring-2"
                   required
                 />
               </label>

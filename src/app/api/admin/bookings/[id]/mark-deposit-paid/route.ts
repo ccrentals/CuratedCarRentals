@@ -59,7 +59,7 @@ export async function POST(
       );
     }
 
-    if (["CONFIRMED", "PICKED_UP"].includes(booking.status)) {
+    if (booking.status === "PICKED_UP") {
       await client.query("rollback");
       return NextResponse.json(
         { error: "Deposit cannot be recorded for this booking status" },
@@ -75,7 +75,7 @@ export async function POST(
 
     const providerRef = `MANUAL_DEPOSIT_${booking.id}`;
     const existing = await client.query(
-      "select id from payments where booking_id = $1 and provider = 'MANUAL' and provider_ref = $2 and status = 'DEPOSIT_PAID' limit 1",
+      "select id from payments where booking_id = $1 and provider = 'MANUAL' and provider_ref = $2 and status = 'DEPOSIT_PAID' and deleted_at is null limit 1",
       [booking.id, providerRef],
     );
     if (existing.rowCount > 0) {

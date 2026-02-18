@@ -133,7 +133,7 @@ export function BookingUpdateForm({
               value={nextStartDate}
               onChange={(event) => setNextStartDate(event.target.value)}
               required
-              className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+              className="promo-date-time-input mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
             />
           </label>
 
@@ -145,7 +145,7 @@ export function BookingUpdateForm({
               onChange={(event) => setNextEndDate(event.target.value)}
               min={nextStartDate}
               required
-              className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+              className="promo-date-time-input mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
             />
           </label>
 

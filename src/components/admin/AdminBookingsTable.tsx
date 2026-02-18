@@ -205,13 +205,16 @@ export function AdminBookingsTable({
                     ) : null}
                   </div>
                   {booking.overriddenByBookingId ? (
-                    <span className="mt-1 inline-flex flex-wrap items-center gap-1 rounded-full border border-red-300/40 bg-red-500/15 px-2 py-0.5 text-[11px] font-semibold text-red-100">
-                      OVERRIDDEN
+                    <span
+                      className="mt-1 inline-flex flex-wrap items-center gap-1 rounded-full border border-red-300/40 bg-red-500/15 px-2 py-0.5 text-[11px] font-semibold text-red-100"
+                      title={`Overridden by booking ${booking.overriddenByBookingId}`}
+                    >
+                      Overridden
                       <Link
                         href={`/admin/bookings/${booking.overriddenByBookingId}`}
                         className="underline underline-offset-2"
                       >
-                        by {booking.overriddenByBookingId.slice(0, 8)}
+                        by {booking.overriddenByCustomerName ?? booking.overriddenByBookingId.slice(0, 8)}
                       </Link>
                     </span>
                   ) : null}

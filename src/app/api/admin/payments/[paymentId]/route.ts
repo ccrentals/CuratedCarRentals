@@ -109,6 +109,18 @@ export async function PATCH(
       deleted_at: string | null;
     };
 
+    const bookingStatusResult = await client.query(
+      "select id, status from bookings where id = $1 for update",
+      [payment.booking_id],
+    );
+
+    if (bookingStatusResult.rowCount === 0) {
+      await client.query("rollback");
+      return NextResponse.json({ error: "Booking not found" }, { status: 404 });
+    }
+
+    const bookingStatusBefore = String(bookingStatusResult.rows[0].status ?? "").toUpperCase();
+
     if (payment.provider !== "MANUAL") {
       await client.query("rollback");
       return NextResponse.json({ error: "Only MANUAL payments can be modified" }, { status: 400 });
@@ -129,6 +141,23 @@ export async function PATCH(
     }
 
     const summary = await recalculateBookingPayments(payment.booking_id, { client });
+    let bookingStatusTransition: { from: string; to: string } | null = null;
+
+    if (
+      bookingStatusBefore === "PICKED_UP" &&
+      (summary.paymentStatus !== "PAID_IN_FULL" || summary.balanceDue > 0)
+    ) {
+      const nextStatus = summary.paymentStatus === "UNPAID" ? "PENDING_PAYMENT" : "CONFIRMED";
+      await client.query("update bookings set status = $2, updated_at = now() where id = $1", [
+        payment.booking_id,
+        nextStatus,
+      ]);
+      bookingStatusTransition = {
+        from: bookingStatusBefore,
+        to: nextStatus,
+      };
+    }
+
     let overriddenBookings: Array<{
       id: string;
       customerName: string;
@@ -187,8 +216,26 @@ export async function PATCH(
         reason: action === "delete" ? reason : undefined,
         note: action === "restore" ? note || undefined : undefined,
         overriddenBookings: overriddenBookings.map((item) => item.id),
+        bookingStatusTransition,
       },
     });
+
+    if (bookingStatusTransition) {
+      await writeAuditLog({
+        userId: session.userId,
+        action: "BOOKING_STATUS_AUTO_REVERTED",
+        entityType: "booking",
+        entityId: payment.booking_id,
+        details: {
+          trigger: action === "delete" ? "manual_payment_cancelled" : "manual_payment_restored",
+          from: bookingStatusTransition.from,
+          to: bookingStatusTransition.to,
+          paymentStatus: summary.paymentStatus,
+          netPaidToDate: summary.netPaidToDate,
+          balanceDue: summary.balanceDue,
+        },
+      });
+    }
 
     for (const overriddenBooking of overriddenBookings) {
       await writeAuditLog({
