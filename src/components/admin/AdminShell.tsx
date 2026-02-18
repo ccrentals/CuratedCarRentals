@@ -28,6 +28,8 @@ type AdminNavLinksProps = {
   onNavigate?: () => void;
 };
 
+const ADMIN_HOVER_TEXT_CLASS = "hover:text-[var(--ccr-muted)]";
+
 const DOCUMENTATION_CHILDREN: NavChild[] = [
   { label: "PRD / Specification", href: "/admin/documentation/prd" },
   { label: "Design", href: "/admin/documentation/design" },
@@ -354,7 +356,7 @@ function AdminNavLinks({
                 } ${
                   active
                     ? "bg-[var(--ccr-primary)] text-white"
-                    : "text-[var(--ccr-text)] hover:bg-[var(--ccr-surface-soft)]"
+                    : `text-[var(--ccr-text)] hover:bg-[var(--ccr-surface-soft)] ${ADMIN_HOVER_TEXT_CLASS}`
                 }`}
               >
                 <span
@@ -380,7 +382,7 @@ function AdminNavLinks({
                     }))
                   }
                   aria-label={`${isExpanded ? "Collapse" : "Expand"} ${item.label}`}
-                  className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-1.5 text-[var(--ccr-text)] transition hover:border-[var(--ccr-accent)]"
+                  className={`rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-1.5 text-[var(--ccr-text)] transition hover:border-[var(--ccr-accent)] ${ADMIN_HOVER_TEXT_CLASS}`}
                 >
                   <svg
                     viewBox="0 0 20 20"
@@ -411,7 +413,7 @@ function AdminNavLinks({
                       className={`rounded-lg px-3 py-2 text-xs font-semibold ${
                         childActive
                           ? "bg-[var(--ccr-surface-soft)] text-[var(--ccr-text)]"
-                          : "text-[var(--ccr-muted)] hover:bg-[var(--ccr-surface-soft)] hover:text-[var(--ccr-text)]"
+                          : `text-[var(--ccr-muted)] hover:bg-[var(--ccr-surface-soft)] ${ADMIN_HOVER_TEXT_CLASS}`
                       }`}
                     >
                       {child.label}

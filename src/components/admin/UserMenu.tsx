@@ -8,6 +8,7 @@ import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
 export function UserMenu({ email }: { email: string }) {
   const [loading, setLoading] = useState(false);
+  const hoverTextClass = "transition hover:text-[var(--ccr-muted)]";
 
   async function handleSignOut() {
     if (loading) return;
@@ -27,7 +28,7 @@ export function UserMenu({ email }: { email: string }) {
       <p className="text-sm font-semibold text-[var(--ccr-text)]">{email}</p>
       <Link
         href="/admin/profile"
-        className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1.5 text-xs font-semibold text-[var(--ccr-text)]"
+        className={`rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1.5 text-xs font-semibold text-[var(--ccr-text)] ${hoverTextClass}`}
       >
         Profile
       </Link>
@@ -36,7 +37,7 @@ export function UserMenu({ email }: { email: string }) {
         type="button"
         onClick={handleSignOut}
         disabled={loading}
-        className="rounded-lg bg-[var(--ccr-primary)] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-70"
+        className={`rounded-lg bg-[var(--ccr-primary)] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-70 ${hoverTextClass}`}
       >
         {loading ? "Signing out..." : "Sign out"}
       </button>

@@ -5,9 +5,10 @@ import { fmtDate } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
 
 export default async function AdminDashboardPage() {
+  const hoverTextClass = "hover:text-[var(--ccr-muted)]";
   // Shared gold-ring quick action treatment for visual consistency.
   const quickActionClass =
-    "rounded-full bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] shadow-sm ring-2 ring-[var(--ccr-accent)] ring-offset-2 ring-offset-[var(--ccr-surface)] transition hover:bg-[var(--ccr-surface-soft)] hover:ring-[var(--ccr-accent-strong)]";
+    `rounded-full bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] shadow-sm ring-1 ring-[var(--ccr-accent)] ring-offset-1 ring-offset-[var(--ccr-surface)] transition hover:bg-[var(--ccr-surface-soft)] hover:ring-[var(--ccr-accent-strong)] ${hoverTextClass}`;
 
   const vehiclesResult = await dbQuery<{ count: string }>("select count(*) from vehicles");
   const availableVehiclesResult = await dbQuery<{ count: string }>(
@@ -122,13 +123,13 @@ export default async function AdminDashboardPage() {
         <div className="flex gap-3">
           <Link
             href="/admin/bookings"
-            className="rounded-full bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] shadow-sm ring-2 ring-[var(--ccr-accent)] ring-offset-2 ring-offset-[var(--ccr-bg)] transition hover:bg-[var(--ccr-surface-soft)] hover:ring-[var(--ccr-accent-strong)]"
+            className={`rounded-full bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] shadow-sm ring-2 ring-[var(--ccr-accent)] ring-offset-2 ring-offset-[var(--ccr-bg)] transition hover:bg-[var(--ccr-surface-soft)] hover:ring-[var(--ccr-accent-strong)] ${hoverTextClass}`}
           >
             View Bookings
           </Link>
           <Link
             href="/admin/vehicles"
-            className="rounded-full bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] shadow-sm ring-2 ring-[var(--ccr-accent)] ring-offset-2 ring-offset-[var(--ccr-bg)] transition hover:bg-[var(--ccr-surface-soft)] hover:ring-[var(--ccr-accent-strong)]"
+            className={`rounded-full bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] shadow-sm ring-2 ring-[var(--ccr-accent)] ring-offset-2 ring-offset-[var(--ccr-bg)] transition hover:bg-[var(--ccr-surface-soft)] hover:ring-[var(--ccr-accent-strong)] ${hoverTextClass}`}
           >
             Manage Vehicles
           </Link>
@@ -140,7 +141,7 @@ export default async function AdminDashboardPage() {
           <Link
             key={card.label}
             href={card.href}
-            className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-[var(--ccr-accent)] hover:shadow-md"
+            className={`rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-[var(--ccr-accent)] hover:shadow-md ${hoverTextClass}`}
           >
             <p className="text-sm text-[var(--ccr-muted)]">{card.label}</p>
             <p className="mt-2 text-2xl font-bold text-[var(--ccr-text)]">{card.value}</p>
@@ -154,7 +155,7 @@ export default async function AdminDashboardPage() {
             <h2 className="text-lg font-bold text-[var(--ccr-text)]">Upcoming pickups today</h2>
             <Link
               href={`/admin/bookings?dateFrom=${new Date().toISOString().slice(0, 10)}&dateTo=${new Date().toISOString().slice(0, 10)}`}
-              className="text-xs font-semibold text-[var(--ccr-text)]"
+              className={`text-xs font-semibold text-[var(--ccr-text)] ${hoverTextClass}`}
             >
               View all
             </Link>
@@ -177,7 +178,7 @@ export default async function AdminDashboardPage() {
                     <div>
                       <Link
                         href={`/admin/bookings/${booking.id}`}
-                        className="inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-bold text-[var(--ccr-accent)] transition hover:bg-[var(--ccr-accent)] hover:text-[var(--ccr-muted)]"
+                        className={`inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-bold text-[var(--ccr-accent)] transition hover:border-[var(--ccr-accent-strong)] hover:bg-[var(--ccr-surface)] ${hoverTextClass}`}
                         title="Open booking"
                       >
                         {booking.id.slice(0, 8)}
@@ -202,7 +203,7 @@ export default async function AdminDashboardPage() {
         <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm">
           <div className="flex items-center justify-between gap-4">
             <h2 className="text-lg font-bold text-[var(--ccr-text)]">Outstanding balances</h2>
-            <Link href="/admin/bookings" className="text-xs font-semibold text-[var(--ccr-text)]">
+            <Link href="/admin/bookings" className={`text-xs font-semibold text-[var(--ccr-text)] ${hoverTextClass}`}>
               View bookings
             </Link>
           </div>
@@ -228,7 +229,7 @@ export default async function AdminDashboardPage() {
                       <div>
                         <Link
                           href={`/admin/bookings/${booking.id}`}
-                          className="inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-bold text-[var(--ccr-accent)] transition hover:bg-[var(--ccr-accent)] hover:text-[var(--ccr-muted)]"
+                          className={`inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-bold text-[var(--ccr-accent)] transition hover:border-[var(--ccr-accent-strong)] hover:bg-[var(--ccr-surface)] ${hoverTextClass}`}
                           title="Open booking"
                         >
                           {booking.id.slice(0, 8)}
@@ -255,7 +256,7 @@ export default async function AdminDashboardPage() {
         <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm">
           <div className="flex items-center justify-between gap-4">
             <h2 className="text-lg font-bold text-[var(--ccr-text)]">Vehicles in maintenance</h2>
-            <Link href="/admin/vehicles" className="text-xs font-semibold text-[var(--ccr-text)]">
+            <Link href="/admin/vehicles" className={`text-xs font-semibold text-[var(--ccr-text)] ${hoverTextClass}`}>
               View vehicles
             </Link>
           </div>
@@ -276,7 +277,7 @@ export default async function AdminDashboardPage() {
                     <div>
                       <Link
                         href={`/admin/vehicles/${vehicle.id}`}
-                        className="font-semibold text-[var(--ccr-text)]"
+                        className={`font-semibold text-[var(--ccr-text)] ${hoverTextClass}`}
                       >
                         {vehicle.year} {vehicle.make} {vehicle.model}
                       </Link>
@@ -317,7 +318,7 @@ export default async function AdminDashboardPage() {
         <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-bold text-[var(--ccr-text)]">Recent Bookings</h2>
-            <Link href="/admin/bookings" className="text-xs font-semibold text-[var(--ccr-text)]">
+            <Link href="/admin/bookings" className={`text-xs font-semibold text-[var(--ccr-text)] ${hoverTextClass}`}>
               View all
             </Link>
           </div>
@@ -337,7 +338,7 @@ export default async function AdminDashboardPage() {
                 <li key={booking.id}>
                   <Link
                     href={`/admin/bookings/${booking.id}`}
-                    className="group block rounded-xl border border-[var(--ccr-border)] p-3 transition hover:border-[var(--ccr-accent)] hover:bg-[var(--ccr-surface-soft)]"
+                    className={`group block rounded-xl border border-[var(--ccr-border)] p-3 transition hover:border-[var(--ccr-accent)] hover:bg-[var(--ccr-surface-soft)] ${hoverTextClass}`}
                     title="Open booking"
                   >
                     <div className="flex items-start justify-between gap-3">
@@ -366,7 +367,7 @@ export default async function AdminDashboardPage() {
         <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-bold text-[var(--ccr-text)]">Recent Vehicles</h2>
-            <Link href="/admin/vehicles" className="text-xs font-semibold text-[var(--ccr-text)]">
+            <Link href="/admin/vehicles" className={`text-xs font-semibold text-[var(--ccr-text)] ${hoverTextClass}`}>
               View all
             </Link>
           </div>
@@ -387,7 +388,7 @@ export default async function AdminDashboardPage() {
                     <div>
                       <Link
                         href={`/admin/vehicles/${vehicle.id}`}
-                        className="font-semibold text-[var(--ccr-text)]"
+                        className={`font-semibold text-[var(--ccr-text)] ${hoverTextClass}`}
                       >
                         {vehicle.year} {vehicle.make} {vehicle.model}
                       </Link>
