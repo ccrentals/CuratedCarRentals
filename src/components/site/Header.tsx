@@ -126,9 +126,12 @@ export function Header() {
           aria-label="Site navigation"
         >
           <div className="flex items-center justify-between border-b border-[var(--ccr-border)] px-4 py-4">
-            <Link href="/" className="inline-flex items-center gap-3 text-base font-extrabold tracking-tight text-[var(--ccr-text)]">
+            <Link
+              href="/"
+              className="inline-flex min-w-0 items-center gap-3 text-base font-extrabold tracking-tight text-[var(--ccr-text)]"
+            >
               <SiteLogo size={32} className="h-8 w-8" />
-              <span>Curated Car Rentals</span>
+              <span className="truncate">Curated Car Rentals</span>
             </Link>
             <button
               type="button"
@@ -286,7 +289,7 @@ export function Header() {
                   <path d="M4 12h16" />
                   <path d="M4 18h16" />
                 </svg>
-                <span>Menu</span>
+                <span className="hidden min-[380px]:inline">Menu</span>
               </button>
 
               <nav className="hidden flex-wrap gap-x-5 gap-y-2 text-sm font-semibold uppercase tracking-wide text-[var(--ccr-primary)] lg:flex">
@@ -298,7 +301,7 @@ export function Header() {
               </nav>
             </div>
 
-          <div className="flex items-center gap-2">
+            <div className="flex shrink-0 items-center gap-2">
               <div className="lg:hidden">
                 <ThemeToggle className="whitespace-nowrap px-2.5 py-1.5 text-[11px] sm:px-3 sm:py-2 sm:text-xs" />
               </div>

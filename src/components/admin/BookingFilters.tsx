@@ -124,8 +124,8 @@ export default function BookingFilters({ canAdmin }: { canAdmin?: boolean }) {
         ) : null}
       </div>
 
-      <div className="mt-4 grid gap-3 md:grid-cols-[1.5fr_repeat(2,1fr)]">
-        <div>
+      <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-[1.5fr_repeat(2,1fr)]">
+        <div className="col-span-2 md:col-span-1">
           <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
             Search
           </label>

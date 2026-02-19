@@ -6,7 +6,7 @@ import { useState } from "react";
 import { ThemeToggle } from "@/components/site/ThemeToggle";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
-export function UserMenu({ email }: { email: string }) {
+export function UserMenu({ email, className }: { email: string; className?: string }) {
   const [loading, setLoading] = useState(false);
   const hoverTextClass = "transition hover:text-[var(--ccr-muted)]";
 
@@ -24,8 +24,10 @@ export function UserMenu({ email }: { email: string }) {
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-3">
-      <p className="text-sm font-semibold text-[var(--ccr-text)]">{email}</p>
+    <div className={`flex min-w-0 flex-wrap items-center gap-2 sm:gap-3 ${className ?? ""}`}>
+      <p className="w-full min-w-0 break-all text-xs font-semibold text-[var(--ccr-text)] sm:w-auto sm:max-w-[18rem] sm:truncate sm:break-normal sm:text-sm">
+        {email}
+      </p>
       <Link
         href="/admin/profile"
         className={`rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1.5 text-xs font-semibold text-[var(--ccr-text)] ${hoverTextClass}`}

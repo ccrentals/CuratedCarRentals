@@ -83,11 +83,11 @@ export function VehicleCard({ vehicle, showBookButton = true }: VehicleCardProps
       ) : null}
 
       <div className="flex items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">{vehicle.category}</p>
-          <h3 className="mt-1 text-xl font-bold text-[var(--ccr-text)]">{vehicle.name}</h3>
+          <h3 className="mt-1 break-words text-xl font-bold text-[var(--ccr-text)]">{vehicle.name}</h3>
         </div>
-        <p className="text-sm font-semibold text-[var(--ccr-text)]">{formatCurrency(vehicle.pricePerDay)}/day</p>
+        <p className="shrink-0 text-sm font-semibold text-[var(--ccr-text)]">{formatCurrency(vehicle.pricePerDay)}/day</p>
       </div>
 
       <p className="mt-4 text-sm text-[var(--ccr-muted)]">{vehicle.description}</p>
@@ -100,7 +100,9 @@ export function VehicleCard({ vehicle, showBookButton = true }: VehicleCardProps
 
       {showBookButton ? (
         <div className="mt-5">
-          <Button href={`/book?vehicle=${vehicle.id}`}>Reserve This Car</Button>
+          <Button href={`/book?vehicle=${vehicle.id}`} className="w-full sm:w-auto">
+            Reserve This Car
+          </Button>
         </div>
       ) : null}
     </article>

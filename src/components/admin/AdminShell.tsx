@@ -722,8 +722,8 @@ export function AdminShell({
 
       <div className="min-w-0 flex-1">
         <header className="sticky top-0 z-30 border-b border-[var(--ccr-border)] bg-[var(--ccr-surface)]">
-          <div className="mx-auto flex w-full max-w-none items-center justify-between gap-4 py-3 pl-2 pr-4 sm:pl-3 sm:pr-5">
-            <div className="flex items-center gap-3">
+          <div className="mx-auto flex w-full max-w-none flex-wrap items-start gap-3 py-3 pl-2 pr-4 sm:pl-3 sm:pr-5 lg:flex-nowrap lg:items-center lg:justify-between">
+            <div className="flex min-w-0 flex-1 items-center gap-3">
               <button
                 type="button"
                 onClick={handleMenuToggle}
@@ -744,15 +744,15 @@ export function AdminShell({
                 </svg>
               </button>
               {activeItem ? (
-                <div className="flex items-center gap-5 text-lg font-semibold text-[var(--ccr-text)]">
-                  <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--ccr-surface-soft)] shadow-sm ring-2 ring-[var(--ccr-accent)] ring-offset-2 ring-offset-[var(--ccr-surface)]">
+                <div className="flex min-w-0 items-center gap-3 text-lg font-semibold text-[var(--ccr-text)] sm:gap-5">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--ccr-surface-soft)] shadow-sm ring-2 ring-[var(--ccr-accent)] ring-offset-2 ring-offset-[var(--ccr-surface)]">
                     {activeItem.icon("h-5 w-5 text-[var(--ccr-accent)]")}
                   </span>
-                  <span>{activeItem.label}</span>
+                  <span className="truncate">{activeItem.label}</span>
                 </div>
               ) : null}
             </div>
-            <UserMenu email={user.email} />
+            <UserMenu email={user.email} className="w-full justify-start lg:w-auto lg:justify-end" />
           </div>
         </header>
         {children}

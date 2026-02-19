@@ -22,6 +22,7 @@ import {
 import { readBookingOverrideInfo } from "@/lib/bookings/holds";
 import { formatBookingStatusLabel } from "@/lib/bookings/formatBookingStatusLabel";
 import { refundRequiredStyles } from "@/lib/refundRequiredStyles";
+import { formatLegalIdTypeLabel } from "@/lib/customers/legalId";
 
 type BookingDetails = {
   id: string;
@@ -33,6 +34,9 @@ type BookingDetails = {
   customer_name: string;
   customer_email: string;
   customer_phone: string;
+  customer_legal_id_type: string | null;
+  customer_legal_id_number: string | null;
+  customer_legal_id_image_url: string | null;
   vehicle_make: string;
   vehicle_model: string;
   vehicle_year: number;
@@ -72,8 +76,11 @@ type OverriddenByThisBooking = {
 
 function isUndefinedColumn(error: unknown, column: string) {
   const code = (error as { code?: string } | null)?.code;
-  const message = String((error as { message?: unknown } | null)?.message ?? "");
-  return code === "42703" && message.includes(`"${column}"`) && message.includes("does not exist");
+  const message = String((error as { message?: unknown } | null)?.message ?? "").toLowerCase();
+  const normalizedColumn = column.toLowerCase();
+  const escapedColumn = normalizedColumn.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const columnPattern = new RegExp(`\\b${escapedColumn}\\b`);
+  return code === "42703" && message.includes("does not exist") && columnPattern.test(message);
 }
 
 function statusBadge(status: string) {
@@ -128,10 +135,39 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
     }
   }
 
-  const bookingResult = await dbQuery<BookingDetails>(
-    "select b.id, b.start_date, b.end_date, b.pickup_location, b.status, b.pricing_json, c.full_name as customer_name, c.email as customer_email, c.phone as customer_phone, v.make as vehicle_make, v.model as vehicle_model, v.year as vehicle_year, v.daily_rate_cents, v.deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.id = $1",
-    [id],
-  );
+  let bookingResult;
+  try {
+    bookingResult = await dbQuery<BookingDetails>(
+      "select b.id, b.start_date, b.end_date, b.pickup_location, b.status, b.pricing_json, c.full_name as customer_name, c.email as customer_email, c.phone as customer_phone, c.legal_id_type as customer_legal_id_type, c.legal_id_number as customer_legal_id_number, c.legal_id_image_url as customer_legal_id_image_url, v.make as vehicle_make, v.model as vehicle_model, v.year as vehicle_year, v.daily_rate_cents, v.deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.id = $1",
+      [id],
+    );
+  } catch (error) {
+    if (!isUndefinedColumn(error, "legal_id_type")) {
+      throw error;
+    }
+    const legacyBooking = await dbQuery<
+      Omit<BookingDetails, "customer_legal_id_type" | "customer_legal_id_number" | "customer_legal_id_image_url">
+    >(
+      "select b.id, b.start_date, b.end_date, b.pickup_location, b.status, b.pricing_json, c.full_name as customer_name, c.email as customer_email, c.phone as customer_phone, v.make as vehicle_make, v.model as vehicle_model, v.year as vehicle_year, v.daily_rate_cents, v.deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.id = $1",
+      [id],
+    );
+    bookingResult = {
+      ...legacyBooking,
+      rows: legacyBooking.rows.map(
+        (
+          row: Omit<
+            BookingDetails,
+            "customer_legal_id_type" | "customer_legal_id_number" | "customer_legal_id_image_url"
+          >,
+        ) => ({
+        ...row,
+        customer_legal_id_type: null,
+        customer_legal_id_number: null,
+        customer_legal_id_image_url: null,
+        }),
+      ),
+    };
+  }
 
   const booking = bookingResult.rows[0];
   if (!booking) {
@@ -257,12 +293,12 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
         <div className="flex flex-wrap items-center gap-3 md:gap-4">
           <span className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Booking</span>
           <details className="group relative">
-            <summary className="flex cursor-pointer list-none items-center gap-2">
-              <span className="font-mono text-2xl font-bold leading-none text-[var(--ccr-text)] md:text-[2.2rem]">
+            <summary className="flex cursor-pointer list-none items-center gap-1.5">
+              <span className="font-mono text-lg font-bold leading-none text-[var(--ccr-text)] md:text-xl">
                 …{shortBookingId}
               </span>
               <span
-                className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-[var(--ccr-border)] text-sm font-semibold leading-none text-[var(--ccr-accent)] transition-transform group-open:rotate-180"
+                className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-[var(--ccr-border)] text-xs font-semibold leading-none text-[var(--ccr-accent)] transition-transform group-open:rotate-180"
                 aria-hidden
               >
                 ▾
@@ -346,6 +382,24 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
               <p className="font-semibold text-[var(--ccr-text)]">{booking.customer_name}</p>
               <p className="text-[var(--ccr-muted)]">{booking.customer_email}</p>
               <p className="text-[var(--ccr-muted)]">{booking.customer_phone}</p>
+              <p className="mt-2 text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Legal ID</p>
+              {booking.customer_legal_id_type && booking.customer_legal_id_number ? (
+                <p className="text-[var(--ccr-muted)]">
+                  {formatLegalIdTypeLabel(booking.customer_legal_id_type)} · {booking.customer_legal_id_number}
+                </p>
+              ) : (
+                <p className="text-[var(--ccr-muted)]">Not provided</p>
+              )}
+              {booking.customer_legal_id_image_url ? (
+                <a
+                  href={booking.customer_legal_id_image_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex text-xs font-semibold text-[var(--ccr-accent)] underline"
+                >
+                  View ID image
+                </a>
+              ) : null}
             </div>
             <div>
               <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Vehicle</p>
@@ -531,18 +585,21 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
 
       <section className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm">
         <h2 className="text-lg font-bold text-[var(--ccr-text)]">Override info</h2>
-        <dl className="mt-4 grid gap-3 text-sm text-[var(--ccr-muted)] md:grid-cols-2">
-          <div>
+        <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm text-[var(--ccr-muted)]">
+          <div className="min-w-0">
             <dt className="text-xs uppercase tracking-wide">Current state</dt>
             <dd className="font-semibold text-[var(--ccr-text)]">
               {overrideInfo.isOverridden ? "Overridden" : "Active"}
             </dd>
           </div>
-          <div>
+          <div className="min-w-0">
             <dt className="text-xs uppercase tracking-wide">Overridden by</dt>
             <dd className="font-semibold text-[var(--ccr-text)]">
               {overriddenByBookingId ? (
-                <Link href={`/admin/bookings/${overriddenByBookingId}`} className="underline underline-offset-2">
+                <Link
+                  href={`/admin/bookings/${overriddenByBookingId}`}
+                  className="break-all underline underline-offset-2"
+                >
                   {overriddenByBookingId}
                 </Link>
               ) : (
@@ -550,15 +607,17 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
               )}
             </dd>
           </div>
-          <div>
+          <div className="min-w-0">
             <dt className="text-xs uppercase tracking-wide">Overridden at</dt>
             <dd className="font-semibold text-[var(--ccr-text)]">
               {overrideInfo.overriddenAt ? fmtDate(overrideInfo.overriddenAt) : "N/A"}
             </dd>
           </div>
-          <div>
+          <div className="min-w-0">
             <dt className="text-xs uppercase tracking-wide">Reason</dt>
-            <dd className="font-semibold text-[var(--ccr-text)]">{overrideInfo.overrideReason ?? "N/A"}</dd>
+            <dd className="break-words font-semibold text-[var(--ccr-text)]">
+              {overrideInfo.overrideReason ?? "N/A"}
+            </dd>
           </div>
         </dl>
 

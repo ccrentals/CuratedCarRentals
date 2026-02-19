@@ -117,19 +117,19 @@ export default async function AdminDashboardPage() {
   ];
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-6 py-10">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-3xl font-bold text-[var(--ccr-text)]">Admin Dashboard</h1>
-        <div className="flex gap-3">
+    <div className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <h1 className="text-2xl font-bold text-[var(--ccr-text)] sm:text-3xl">Admin Dashboard</h1>
+        <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:justify-end sm:gap-3">
           <Link
             href="/admin/bookings"
-            className={`rounded-full bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] shadow-sm ring-2 ring-[var(--ccr-accent)] ring-offset-2 ring-offset-[var(--ccr-bg)] transition hover:bg-[var(--ccr-surface-soft)] hover:ring-[var(--ccr-accent-strong)] ${hoverTextClass}`}
+            className={`inline-flex w-full items-center justify-center rounded-full bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] shadow-sm ring-2 ring-[var(--ccr-accent)] ring-offset-2 ring-offset-[var(--ccr-bg)] transition hover:bg-[var(--ccr-surface-soft)] hover:ring-[var(--ccr-accent-strong)] sm:w-auto ${hoverTextClass}`}
           >
             View Bookings
           </Link>
           <Link
             href="/admin/vehicles"
-            className={`rounded-full bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] shadow-sm ring-2 ring-[var(--ccr-accent)] ring-offset-2 ring-offset-[var(--ccr-bg)] transition hover:bg-[var(--ccr-surface-soft)] hover:ring-[var(--ccr-accent-strong)] ${hoverTextClass}`}
+            className={`inline-flex w-full items-center justify-center rounded-full bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] shadow-sm ring-2 ring-[var(--ccr-accent)] ring-offset-2 ring-offset-[var(--ccr-bg)] transition hover:bg-[var(--ccr-surface-soft)] hover:ring-[var(--ccr-accent-strong)] sm:w-auto ${hoverTextClass}`}
           >
             Manage Vehicles
           </Link>
@@ -151,7 +151,7 @@ export default async function AdminDashboardPage() {
 
       <div className="mt-8 grid gap-6 lg:grid-cols-2">
         <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm">
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-lg font-bold text-[var(--ccr-text)]">Upcoming pickups today</h2>
             <Link
               href={`/admin/bookings?dateFrom=${new Date().toISOString().slice(0, 10)}&dateTo=${new Date().toISOString().slice(0, 10)}`}
@@ -175,7 +175,7 @@ export default async function AdminDashboardPage() {
               }>).map((booking) => (
                 <li key={booking.id} className="rounded-xl border border-[var(--ccr-border)] p-3">
                   <div className="flex items-start justify-between gap-3">
-                    <div>
+                    <div className="min-w-0">
                       <Link
                         href={`/admin/bookings/${booking.id}`}
                         className={`inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-bold text-[var(--ccr-accent)] transition hover:border-[var(--ccr-accent-strong)] hover:bg-[var(--ccr-surface)] ${hoverTextClass}`}
@@ -183,14 +183,14 @@ export default async function AdminDashboardPage() {
                       >
                         {booking.id.slice(0, 8)}
                       </Link>
-                      <p className="mt-1 text-xs text-[var(--ccr-muted)]">
+                      <p className="mt-1 break-words text-xs text-[var(--ccr-muted)]">
                         {booking.customer_name} • {booking.vehicle_make} {booking.vehicle_model}
                       </p>
                       <p className="text-xs text-[var(--ccr-muted)]">
                         {fmtDate(booking.start_date)} → {fmtDate(booking.end_date)}
                       </p>
                     </div>
-                    <span className="rounded-full bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-semibold text-[var(--ccr-text)]">
+                    <span className="shrink-0 rounded-full bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-semibold text-[var(--ccr-text)]">
                       {booking.status}
                     </span>
                   </div>
@@ -201,7 +201,7 @@ export default async function AdminDashboardPage() {
         </section>
 
         <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm">
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-lg font-bold text-[var(--ccr-text)]">Outstanding balances</h2>
             <Link href="/admin/bookings" className={`text-xs font-semibold text-[var(--ccr-text)] ${hoverTextClass}`}>
               View bookings
@@ -226,7 +226,7 @@ export default async function AdminDashboardPage() {
                 return (
                   <li key={booking.id} className="rounded-xl border border-[var(--ccr-border)] p-3">
                     <div className="flex items-start justify-between gap-3">
-                      <div>
+                      <div className="min-w-0">
                         <Link
                           href={`/admin/bookings/${booking.id}`}
                           className={`inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-bold text-[var(--ccr-accent)] transition hover:border-[var(--ccr-accent-strong)] hover:bg-[var(--ccr-surface)] ${hoverTextClass}`}
@@ -234,14 +234,14 @@ export default async function AdminDashboardPage() {
                         >
                           {booking.id.slice(0, 8)}
                         </Link>
-                        <p className="mt-1 text-xs text-[var(--ccr-muted)]">
+                        <p className="mt-1 break-words text-xs text-[var(--ccr-muted)]">
                           {booking.customer_name} • {booking.vehicle_make} {booking.vehicle_model}
                         </p>
                         <p className="text-xs text-[var(--ccr-muted)]">
                           {fmtDate(booking.start_date)} → {fmtDate(booking.end_date)}
                         </p>
                       </div>
-                      <div className="text-right">
+                      <div className="shrink-0 text-right">
                         <p className="text-xs font-semibold text-[var(--ccr-muted)]">Balance</p>
                         <p className="font-bold text-[var(--ccr-text)]">{formatJmd(balanceDue)}</p>
                       </div>
@@ -254,7 +254,7 @@ export default async function AdminDashboardPage() {
         </section>
 
         <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm">
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-lg font-bold text-[var(--ccr-text)]">Vehicles in maintenance</h2>
             <Link href="/admin/vehicles" className={`text-xs font-semibold text-[var(--ccr-text)] ${hoverTextClass}`}>
               View vehicles
@@ -302,13 +302,13 @@ export default async function AdminDashboardPage() {
           <div className="mt-4 flex flex-wrap gap-3">
             <Link
               href="/admin/bookings?create=1"
-              className={quickActionClass}
+              className={`${quickActionClass} inline-flex w-full items-center justify-center sm:w-auto`}
             >
               Quick create booking
             </Link>
             <Link
               href="/admin/calendar"
-              className={quickActionClass}
+              className={`${quickActionClass} inline-flex w-full items-center justify-center sm:w-auto`}
             >
               Add blockout
             </Link>

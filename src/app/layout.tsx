@@ -2,7 +2,10 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import Script from "next/script";
 
+import { BreakpointOverlay } from "@/components/dev/BreakpointOverlay";
 import { CsrfBootstrap } from "@/components/site/CsrfBootstrap";
+import { Footer } from "@/components/site/Footer";
+import { Header } from "@/components/site/Header";
 import { assertProductionEnv } from "@/lib/env";
 import { APP_THEMES, THEME_COOKIE_NAME, THEME_STORAGE_KEY } from "@/lib/theme";
 
@@ -29,6 +32,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   assertProductionEnv();
+  const showBreakpointOverlay =
+    process.env.NODE_ENV !== "production" &&
+    process.env.NEXT_PUBLIC_DISABLE_BREAKPOINT_OVERLAY !== "1";
   const allowedThemesJson = JSON.stringify(APP_THEMES);
 
   return (
@@ -70,7 +76,12 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-[var(--ccr-bg)] text-[var(--ccr-text)]`}
       >
         <CsrfBootstrap />
-        {children}
+        <div className="flex min-h-screen flex-col">
+          <Header />
+          <main className="flex-1">{children}</main>
+          <Footer />
+        </div>
+        {showBreakpointOverlay ? <BreakpointOverlay /> : null}
       </body>
     </html>
   );
