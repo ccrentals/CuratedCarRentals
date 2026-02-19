@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useSyncExternalStore } from "react";
 
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 import { cn } from "@/lib/utils";
@@ -10,6 +10,7 @@ type ThemeToggleProps = {
   className?: string;
   variant?: "default" | "inverse";
   persistence?: "local" | "user";
+  showLabel?: boolean;
 };
 
 function applyTheme(theme: AppTheme) {
@@ -24,6 +25,29 @@ function getCurrentTheme() {
     typeof window !== "undefined" ? localStorage.getItem(THEME_STORAGE_KEY) : null;
   if (isAppTheme(savedTheme)) return savedTheme;
   return "light" as AppTheme;
+}
+
+function subscribeToTheme(callback: () => void) {
+  if (typeof window === "undefined" || typeof document === "undefined") {
+    return () => {};
+  }
+
+  const handleStorage = () => callback();
+  const observer = new MutationObserver(() => callback());
+  observer.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["data-theme"],
+  });
+  window.addEventListener("storage", handleStorage);
+
+  return () => {
+    window.removeEventListener("storage", handleStorage);
+    observer.disconnect();
+  };
+}
+
+function getThemeServerSnapshot(): AppTheme {
+  return "light";
 }
 
 async function persistThemeForUser(theme: AppTheme) {
@@ -42,13 +66,13 @@ export function ThemeToggle({
   className,
   variant = "default",
   persistence = "local",
+  showLabel = true,
 }: ThemeToggleProps) {
-  const [theme, setTheme] = useState<AppTheme>(() => getCurrentTheme());
+  const theme = useSyncExternalStore(subscribeToTheme, getCurrentTheme, getThemeServerSnapshot);
 
   function selectTheme(nextTheme: AppTheme) {
     localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
     applyTheme(nextTheme);
-    setTheme(nextTheme);
     if (persistence === "user") {
       void persistThemeForUser(nextTheme);
     }
@@ -56,15 +80,17 @@ export function ThemeToggle({
 
   return (
     <label className="inline-flex items-center gap-2">
-      <span
-        className={cn(
-          "text-xs font-semibold uppercase tracking-wide",
-          variant === "default" && "text-[var(--ccr-muted)]",
-          variant === "inverse" && "text-white",
-        )}
-      >
-        Theme
-      </span>
+      {showLabel ? (
+        <span
+          className={cn(
+            "text-xs font-semibold uppercase tracking-wide",
+            variant === "default" && "text-[var(--ccr-muted)]",
+            variant === "inverse" && "text-white",
+          )}
+        >
+          Theme
+        </span>
+      ) : null}
       <select
         value={theme}
         onChange={(event) => {

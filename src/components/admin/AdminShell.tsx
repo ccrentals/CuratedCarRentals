@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { UserMenu } from "@/components/admin/UserMenu";
 
@@ -584,6 +584,9 @@ export function AdminShell({
 }) {
   const pathname = usePathname() ?? "/admin";
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [mobileCompactHeader, setMobileCompactHeader] = useState(false);
+  const mobileHeaderRef = useRef<HTMLElement | null>(null);
+  const mobileCompactThresholdRef = useRef(72);
   const [collapsed, setCollapsed] = useState(() => {
     if (typeof window === "undefined") return false;
     return localStorage.getItem(SIDEBAR_STORAGE_KEY) === "true";
@@ -619,6 +622,56 @@ export function AdminShell({
       document.body.style.overflow = previous;
     };
   }, [drawerOpen]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const mobileMediaQuery = window.matchMedia("(max-width: 767px)");
+    let rafId = 0;
+
+    const recomputeThreshold = () => {
+      const measuredHeight = mobileHeaderRef.current?.getBoundingClientRect().height ?? 0;
+      mobileCompactThresholdRef.current = Math.max(16, Math.round(measuredHeight - 12));
+    };
+
+    const updateCompactHeader = () => {
+      if (!mobileMediaQuery.matches) {
+        setMobileCompactHeader((current) => (current ? false : current));
+        return;
+      }
+      const next = window.scrollY > mobileCompactThresholdRef.current;
+      setMobileCompactHeader((current) => (current === next ? current : next));
+    };
+
+    const scheduleUpdate = () => {
+      if (rafId !== 0) return;
+      rafId = window.requestAnimationFrame(() => {
+        rafId = 0;
+        updateCompactHeader();
+      });
+    };
+
+    const handleViewportChange = () => {
+      recomputeThreshold();
+      scheduleUpdate();
+    };
+
+    recomputeThreshold();
+    scheduleUpdate();
+
+    window.addEventListener("scroll", scheduleUpdate, { passive: true });
+    window.addEventListener("resize", handleViewportChange);
+    mobileMediaQuery.addEventListener("change", handleViewportChange);
+
+    return () => {
+      window.removeEventListener("scroll", scheduleUpdate);
+      window.removeEventListener("resize", handleViewportChange);
+      mobileMediaQuery.removeEventListener("change", handleViewportChange);
+      if (rafId !== 0) {
+        window.cancelAnimationFrame(rafId);
+      }
+    };
+  }, []);
 
   const activeItem = useMemo(() => {
     return NAV_ITEMS.find((nav) => isActivePath(pathname, nav.href));
@@ -692,11 +745,12 @@ export function AdminShell({
         onClick={() => setDrawerOpen(false)}
       />
       <aside
-        className={`fixed left-0 top-0 z-50 flex h-full w-64 flex-col border-r border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-6 shadow-xl transition-transform lg:hidden ${
+        data-admin-drawer
+        className={`fixed left-0 top-0 z-50 flex h-dvh w-64 flex-col border-r border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 pt-6 shadow-xl transition-transform lg:hidden ${
           drawerOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <div className="flex items-center justify-between">
+        <div className="shrink-0 flex items-center justify-between">
           <Link href="/admin" className="text-lg font-bold text-[var(--ccr-text)]">
             Curated Admin
           </Link>
@@ -709,19 +763,46 @@ export function AdminShell({
             Close
           </button>
         </div>
-        <AdminNavLinks
-          pathname={pathname}
-          currentRole={user.role}
-          expandedItems={expandedItems}
-          setExpandedItems={setExpandedItems}
-          expandedGroups={expandedGroups}
-          setExpandedGroups={setExpandedGroups}
-          onNavigate={() => setDrawerOpen(false)}
-        />
+        <div
+          data-admin-drawer-scroll
+          tabIndex={0}
+          aria-label="Admin sidebar navigation"
+          className="mt-4 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1 scrollbar-hidden"
+        >
+          <div className="flex min-h-full flex-col">
+            <AdminNavLinks
+              pathname={pathname}
+              currentRole={user.role}
+              expandedItems={expandedItems}
+              setExpandedItems={setExpandedItems}
+              expandedGroups={expandedGroups}
+              setExpandedGroups={setExpandedGroups}
+              onNavigate={() => setDrawerOpen(false)}
+            />
+            <footer
+              data-admin-drawer-account
+              className="mt-auto border-t border-[var(--ccr-border)] pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+            >
+              <UserMenu
+                email={user.email}
+                showEmail={false}
+                showThemeLabel={false}
+                compactSidebarLayout
+                className="w-full"
+              />
+            </footer>
+          </div>
+        </div>
       </aside>
 
       <div className="min-w-0 flex-1">
-        <header className="sticky top-0 z-30 border-b border-[var(--ccr-border)] bg-[var(--ccr-surface)]">
+        <header
+          ref={mobileHeaderRef}
+          data-admin-full-header
+          className={`border-b border-[var(--ccr-border)] bg-[var(--ccr-surface)] md:sticky md:top-0 md:z-30 ${
+            mobileCompactHeader ? "hidden md:block" : ""
+          }`}
+        >
           <div className="mx-auto flex w-full max-w-none flex-wrap items-start gap-3 py-3 pl-2 pr-4 sm:pl-3 sm:pr-5 lg:flex-nowrap lg:items-center lg:justify-between">
             <div className="flex min-w-0 flex-1 items-center gap-3">
               <button
@@ -752,9 +833,44 @@ export function AdminShell({
                 </div>
               ) : null}
             </div>
-            <UserMenu email={user.email} className="w-full justify-start lg:w-auto lg:justify-end" />
+            <UserMenu
+              email={user.email}
+              showEmail={false}
+              className="w-full justify-start lg:w-auto lg:justify-end"
+            />
           </div>
         </header>
+        <div
+          data-admin-compact-header
+          className={`sticky top-0 z-30 border-b border-[var(--ccr-border)] bg-[var(--ccr-surface)] md:hidden ${
+            mobileCompactHeader ? "block" : "hidden"
+          }`}
+        >
+          <div className="mx-auto flex w-full max-w-none items-center gap-3 py-2 pl-2 pr-4 sm:pl-3 sm:pr-5">
+            {activeItem ? (
+              <div className="flex min-w-0 items-center gap-3 text-base font-semibold text-[var(--ccr-text)]">
+                <button
+                  type="button"
+                  onClick={handleMenuToggle}
+                  aria-label="Open admin menu"
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--ccr-surface-soft)] shadow-sm ring-1 ring-[var(--ccr-accent)] ring-offset-1 ring-offset-[var(--ccr-surface)]"
+                >
+                  {activeItem.icon("h-4 w-4 text-[var(--ccr-accent)]")}
+                </button>
+                <span className="truncate">{activeItem.label}</span>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={handleMenuToggle}
+                aria-label="Open admin menu"
+                className="rounded-lg border border-[var(--ccr-border)] px-2 py-1 text-sm font-semibold text-[var(--ccr-text)]"
+              >
+                Menu
+              </button>
+            )}
+          </div>
+        </div>
         {children}
       </div>
     </div>

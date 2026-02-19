@@ -6,7 +6,19 @@ import { useState } from "react";
 import { ThemeToggle } from "@/components/site/ThemeToggle";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
-export function UserMenu({ email, className }: { email: string; className?: string }) {
+export function UserMenu({
+  email,
+  className,
+  showEmail = true,
+  showThemeLabel = true,
+  compactSidebarLayout = false,
+}: {
+  email: string;
+  className?: string;
+  showEmail?: boolean;
+  showThemeLabel?: boolean;
+  compactSidebarLayout?: boolean;
+}) {
   const [loading, setLoading] = useState(false);
   const hoverTextClass = "transition hover:text-[var(--ccr-muted)]";
 
@@ -23,18 +35,53 @@ export function UserMenu({ email, className }: { email: string; className?: stri
     window.location.href = "/admin/login";
   }
 
+  if (compactSidebarLayout) {
+    return (
+      <div className={`flex min-w-0 flex-col gap-2 ${className ?? ""}`}>
+        {showEmail ? (
+          <p className="w-full min-w-0 break-all text-xs font-semibold text-[var(--ccr-text)] sm:w-auto sm:max-w-[18rem] sm:truncate sm:break-normal sm:text-sm">
+            {email}
+          </p>
+        ) : null}
+        <div className="flex min-w-0 flex-nowrap items-center gap-1.5">
+          <Link
+            href="/admin/profile"
+            className={`shrink-0 whitespace-nowrap rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-2 py-1 text-[11px] font-semibold text-[var(--ccr-text)] ${hoverTextClass}`}
+          >
+            Profile
+          </Link>
+          <ThemeToggle
+            className="min-w-0 flex-1 px-2 py-1 text-[11px]"
+            persistence="user"
+            showLabel={showThemeLabel}
+          />
+          <button
+            type="button"
+            onClick={handleSignOut}
+            disabled={loading}
+            className={`shrink-0 whitespace-nowrap rounded-lg bg-[var(--ccr-primary)] px-2 py-1 text-[11px] font-semibold text-white disabled:opacity-70 ${hoverTextClass}`}
+          >
+            {loading ? "Signing out..." : "Sign out"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={`flex min-w-0 flex-wrap items-center gap-2 sm:gap-3 ${className ?? ""}`}>
-      <p className="w-full min-w-0 break-all text-xs font-semibold text-[var(--ccr-text)] sm:w-auto sm:max-w-[18rem] sm:truncate sm:break-normal sm:text-sm">
-        {email}
-      </p>
+      {showEmail ? (
+        <p className="w-full min-w-0 break-all text-xs font-semibold text-[var(--ccr-text)] sm:w-auto sm:max-w-[18rem] sm:truncate sm:break-normal sm:text-sm">
+          {email}
+        </p>
+      ) : null}
       <Link
         href="/admin/profile"
         className={`rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1.5 text-xs font-semibold text-[var(--ccr-text)] ${hoverTextClass}`}
       >
         Profile
       </Link>
-      <ThemeToggle className="py-1.5" persistence="user" />
+      <ThemeToggle className="py-1.5" persistence="user" showLabel={showThemeLabel} />
       <button
         type="button"
         onClick={handleSignOut}
