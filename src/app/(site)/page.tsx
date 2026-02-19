@@ -69,7 +69,7 @@ export default async function HomePage() {
                   </select>
                 </label>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
                     Pickup Date
                     <input

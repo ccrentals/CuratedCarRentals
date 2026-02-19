@@ -59,7 +59,7 @@ export default async function FleetVehicleDetailPage({
               </h1>
               <p className="mt-3 text-sm text-[var(--ccr-muted)]">{vehicle.description}</p>
 
-              <div className="mt-5 grid grid-cols-3 gap-2 text-sm text-[var(--ccr-muted)]">
+              <div className="mt-5 grid grid-cols-2 gap-2 text-sm text-[var(--ccr-muted)] sm:grid-cols-3">
                 <p>{vehicle.transmission}</p>
                 <p>{vehicle.seats} Seats</p>
                 <p>{vehicle.bags} Bags</p>

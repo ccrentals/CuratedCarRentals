@@ -47,7 +47,9 @@ export default function ContactPage() {
                 Message
                 <textarea className="mt-1 min-h-28 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-[var(--ccr-text)] outline-none ring-[var(--ccr-accent)] focus:ring-2" />
               </label>
-              <Button type="button">Send Inquiry</Button>
+              <Button type="button" className="w-full sm:w-auto">
+                Send Inquiry
+              </Button>
             </form>
           </section>
         </div>
