@@ -163,6 +163,7 @@ export function VehicleDetailForm({ vehicle }: VehicleDetailFormProps) {
           onChange={setImages}
           label="Vehicle Images"
           helperText="Upload photos that will appear on the fleet cards."
+          displayMode="carousel"
         />
       </div>
 

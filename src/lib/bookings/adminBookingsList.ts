@@ -6,7 +6,7 @@ import {
   type BookingPageSize,
 } from "@/lib/bookings/adminBookingsPagination";
 import { dbQuery } from "@/lib/db";
-import { fmtDate } from "@/lib/dateFormat";
+import { fmtDateNoSeconds } from "@/lib/dateFormat";
 import {
   isNonBlockingBookingHold,
   readAmountPaid,
@@ -389,8 +389,8 @@ export async function fetchAdminBookingsPage(input: AdminBookingListQueryInput):
       customerName: row.customer_name,
       customerEmail: row.customer_email,
       vehicleLabel: `${row.vehicle_make} ${row.vehicle_model}`.trim(),
-      datesLabel: `${fmtDate(row.start_date)} → ${fmtDate(row.end_date)}`,
-      createdAtLabel: fmtDate(row.created_at),
+      datesLabel: `${fmtDateNoSeconds(row.start_date)} → ${fmtDateNoSeconds(row.end_date)}`,
+      createdAtLabel: fmtDateNoSeconds(row.created_at),
       status: row.status,
       statusLabel: formatBookingStatusLabel(row.status, String(pricing.payment_status ?? "")),
       substatusIndicators: resolveSubstatusIndicators({

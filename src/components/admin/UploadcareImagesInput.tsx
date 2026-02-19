@@ -8,6 +8,7 @@ type UploadcareImagesInputProps = {
   name?: string;
   value?: string[];
   onChange?: (urls: string[]) => void;
+  displayMode?: "grid" | "carousel";
 };
 
 declare global {
@@ -124,8 +125,11 @@ export function UploadcareImagesInput({
   name,
   value,
   onChange,
+  displayMode = "grid",
 }: UploadcareImagesInputProps) {
   const [internal, setInternal] = useState<string[]>(() => value ?? []);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -158,6 +162,8 @@ export function UploadcareImagesInput({
       dialog.done(async (file) => {
         const nextUrls = await resolveUploadcareUrls(file);
         setUrls(nextUrls);
+        setCurrentIndex(0);
+        setIsLightboxOpen(false);
         setLoading(false);
       });
       dialog.fail((err) => {
@@ -170,8 +176,33 @@ export function UploadcareImagesInput({
     }
   };
 
-  const removeUrl = (target: string) => {
-    setUrls(urls.filter((url) => url !== target));
+  const removeUrlAtIndex = (targetIndex: number) => {
+    const nextUrls = urls.filter((_, index) => index !== targetIndex);
+    setUrls(nextUrls);
+    if (nextUrls.length === 0) {
+      setCurrentIndex(0);
+      setIsLightboxOpen(false);
+      return;
+    }
+    setCurrentIndex((index) => Math.min(index, nextUrls.length - 1));
+  };
+
+  const activeIndex = urls.length === 0 ? 0 : Math.min(currentIndex, urls.length - 1);
+  const activeUrl = urls[activeIndex];
+  const canNavigate = urls.length > 1;
+
+  const goPrev = () => {
+    setCurrentIndex((index) => {
+      const safe = Math.min(index, urls.length - 1);
+      return safe === 0 ? urls.length - 1 : safe - 1;
+    });
+  };
+
+  const goNext = () => {
+    setCurrentIndex((index) => {
+      const safe = Math.min(index, urls.length - 1);
+      return safe === urls.length - 1 ? 0 : safe + 1;
+    });
   };
 
   return (
@@ -198,21 +229,121 @@ export function UploadcareImagesInput({
       {error ? <p className="mt-2 text-xs text-red-600">{error}</p> : null}
 
       {urls.length > 0 ? (
-        <div className="mt-3 grid gap-2 sm:grid-cols-3">
-          {urls.map((url) => (
-            <div key={url} className="overflow-hidden rounded-lg border border-[var(--ccr-border)]">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={url} alt="Vehicle upload" className="h-24 w-full object-cover" />
+        displayMode === "carousel" ? (
+          <div className="mt-3 space-y-3">
+            <p className="text-xs text-[var(--ccr-muted)]">
+              Click a thumbnail to open the large carousel view.
+            </p>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex min-w-0 gap-2 overflow-x-auto pr-2">
+                {urls.map((url, index) => (
+                  <button
+                    key={`${url}-${index}`}
+                    type="button"
+                    onClick={() => {
+                      setCurrentIndex(index);
+                      setIsLightboxOpen(true);
+                    }}
+                    aria-label={`Open image ${index + 1}`}
+                    className={`shrink-0 overflow-hidden rounded-md border ${
+                      index === activeIndex
+                        ? "border-[var(--ccr-accent)]"
+                        : "border-[var(--ccr-border)]"
+                    }`}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={url} alt={`Vehicle thumbnail ${index + 1}`} className="h-14 w-20 object-cover" />
+                  </button>
+                ))}
+              </div>
               <button
                 type="button"
-                onClick={() => removeUrl(url)}
-                className="w-full border-t border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-2 py-1 text-xs font-semibold text-[var(--ccr-text)] hover:bg-[var(--ccr-surface-soft)]"
+                onClick={() => removeUrlAtIndex(activeIndex)}
+                className="shrink-0 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1.5 text-xs font-semibold text-[var(--ccr-text)] hover:bg-[var(--ccr-surface-soft)]"
               >
                 Remove
               </button>
             </div>
-          ))}
-        </div>
+
+            {isLightboxOpen ? (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
+                <button
+                  type="button"
+                  aria-label="Close image viewer"
+                  onClick={() => setIsLightboxOpen(false)}
+                  className="absolute inset-0"
+                />
+                <div className="relative z-10 w-full max-w-5xl rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3 shadow-2xl">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <p className="text-xs font-semibold text-[var(--ccr-muted)]">
+                      Image {activeIndex + 1} of {urls.length}
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => removeUrlAtIndex(activeIndex)}
+                        className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-1.5 text-xs font-semibold text-[var(--ccr-text)] hover:bg-[var(--ccr-surface)]"
+                      >
+                        Remove
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsLightboxOpen(false)}
+                        className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-1.5 text-xs font-semibold text-[var(--ccr-text)] hover:bg-[var(--ccr-surface)]"
+                      >
+                        Close
+                      </button>
+                    </div>
+                  </div>
+                  <div className="relative overflow-hidden rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)]">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={activeUrl}
+                      alt={`Vehicle upload ${activeIndex + 1}`}
+                      className="h-[60vh] w-full object-contain"
+                    />
+                    {canNavigate ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={goPrev}
+                          aria-label="Previous image"
+                          className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full border border-[var(--ccr-border)] bg-black/45 px-3 py-1 text-sm font-bold text-white hover:bg-black/65"
+                        >
+                          ‹
+                        </button>
+                        <button
+                          type="button"
+                          onClick={goNext}
+                          aria-label="Next image"
+                          className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full border border-[var(--ccr-border)] bg-black/45 px-3 py-1 text-sm font-bold text-white hover:bg-black/65"
+                        >
+                          ›
+                        </button>
+                      </>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <div className="mt-3 grid gap-2 sm:grid-cols-3">
+            {urls.map((url, index) => (
+              <div key={`${url}-${index}`} className="overflow-hidden rounded-lg border border-[var(--ccr-border)]">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={url} alt="Vehicle upload" className="h-24 w-full object-cover" />
+                <button
+                  type="button"
+                  onClick={() => removeUrlAtIndex(index)}
+                  className="w-full border-t border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-2 py-1 text-xs font-semibold text-[var(--ccr-text)] hover:bg-[var(--ccr-surface-soft)]"
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+          </div>
+        )
       ) : (
         <p className="mt-3 text-xs text-[var(--ccr-muted)]">No images uploaded yet.</p>
       )}
