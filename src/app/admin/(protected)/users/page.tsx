@@ -19,6 +19,10 @@ type UserRow = {
   last_login_at?: string | null;
 };
 
+type SessionRoleRow = {
+  role: string | null;
+};
+
 function isAdminRole(role: string | undefined) {
   const normalized = String(role ?? "")
     .trim()
@@ -47,7 +51,11 @@ export default async function AdminUsersPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const session = await getSessionFromRequest();
-  const canAdmin = isAdminRole(session?.role);
+  const sessionRoleResult = session
+    ? await dbQuery<SessionRoleRow>("select role from users where id = $1 limit 1", [session.userId])
+    : { rows: [] };
+  const effectiveSessionRole = sessionRoleResult.rows[0]?.role ?? session?.role ?? null;
+  const canAdmin = isAdminRole(effectiveSessionRole ?? undefined);
 
   const params = await searchParams;
   const q = typeof params.q === "string" ? params.q.trim() : "";
@@ -178,7 +186,7 @@ export default async function AdminUsersPage({
         </form>
       </div>
 
-      <CreateUserForm disabled={lifecycleNotConfigured} actorRole={session?.role ?? "USER"} />
+      <CreateUserForm disabled={lifecycleNotConfigured} actorRole={effectiveSessionRole ?? "USER"} />
 
       <div className="mt-6 overflow-x-auto rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)]">
         {users.rows.length === 0 ? (
@@ -232,7 +240,7 @@ export default async function AdminUsersPage({
                       fullName={user.full_name ?? null}
                       username={user.username ?? null}
                       role={user.role}
-                      actorRole={session?.role ?? "USER"}
+                      actorRole={effectiveSessionRole ?? "USER"}
                       isActive={user.is_active ?? null}
                       deactivatedAt={user.deactivated_at ?? null}
                       lockedAt={user.locked_at ?? null}
