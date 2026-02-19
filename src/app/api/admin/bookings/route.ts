@@ -9,7 +9,7 @@ import { findOverlappingBlockingBookingIds } from "@/lib/bookings/holds";
 import { requireCsrf } from "@/lib/security/csrf";
 import { isEmail, isISODate, isNonEmptyString } from "@/lib/validators";
 import { logError } from "@/lib/log";
-import { upsertCustomerForBooking } from "@/lib/customers";
+import { CustomerBlockedError, upsertCustomerForBooking } from "@/lib/customers";
 import { normalizePromoInputCode, upsertPromoRedemption, validatePromoForBooking } from "@/lib/promos";
 import { writeAuditLog } from "@/lib/audit";
 
@@ -138,16 +138,31 @@ export async function POST(request: Request) {
     }
 
     const normalizedEmail = String(email).trim().toLowerCase();
-    const customerUpsert = await upsertCustomerForBooking(
-      {
-        customerId: typeof customerId === "string" ? customerId : undefined,
-        fullName: String(fullName).trim(),
-        email: normalizedEmail,
-        phone: String(phone).trim(),
-        bookedAt: new Date().toISOString(),
-      },
-      { client },
-    );
+    let customerUpsert;
+    try {
+      customerUpsert = await upsertCustomerForBooking(
+        {
+          customerId: typeof customerId === "string" ? customerId : undefined,
+          fullName: String(fullName).trim(),
+          email: normalizedEmail,
+          phone: String(phone).trim(),
+          bookedAt: new Date().toISOString(),
+        },
+        { client },
+      );
+    } catch (error) {
+      if (error instanceof CustomerBlockedError) {
+        await client.query("rollback");
+        return NextResponse.json(
+          {
+            error:
+              "Customer is blocked from booking. Unblock this customer in Customers before creating a booking.",
+          },
+          { status: 409 },
+        );
+      }
+      throw error;
+    }
 
     const vehicle = vehicleResult.rows[0];
     const dailyRate = Number(vehicle.daily_rate_cents || 0);

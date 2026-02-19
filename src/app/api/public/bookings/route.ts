@@ -6,7 +6,8 @@ import { logError } from "@/lib/log";
 import { findOverlappingBlockingBookingIds } from "@/lib/bookings/holds";
 import { isEmail, isISODate, isNonEmptyString } from "@/lib/validators";
 import { calcDaysInclusive, dateOnlyUtc } from "@/lib/payments/dateMath";
-import { upsertCustomerForBooking } from "@/lib/customers";
+import { CustomerBlockedError, upsertCustomerForBooking } from "@/lib/customers";
+import { normalizeLegalIdType } from "@/lib/customers/legalId";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -21,6 +22,9 @@ export async function POST(request: Request) {
   const startDate = body?.startDate;
   const endDate = body?.endDate;
   const pickupLocation = body?.pickupLocation;
+  const legalIdType = normalizeLegalIdType(body?.legalIdType);
+  const legalIdNumber = typeof body?.legalIdNumber === "string" ? body.legalIdNumber.trim() : "";
+  const legalIdImageUrl = typeof body?.legalIdImageUrl === "string" ? body.legalIdImageUrl.trim() : "";
 
   if (!UUID_REGEX.test(vehicleId ?? "")) {
     return NextResponse.json({ error: "Invalid vehicleId" }, { status: 400 });
@@ -39,6 +43,15 @@ export async function POST(request: Request) {
   }
   if (!isNonEmptyString(pickupLocation, 3)) {
     return NextResponse.json({ error: "Invalid pickupLocation" }, { status: 400 });
+  }
+  if (!legalIdType) {
+    return NextResponse.json({ error: "Valid legalIdType is required" }, { status: 400 });
+  }
+  if (!isNonEmptyString(legalIdNumber, 4)) {
+    return NextResponse.json({ error: "Valid legalIdNumber is required" }, { status: 400 });
+  }
+  if (legalIdImageUrl && !/^https?:\/\//i.test(legalIdImageUrl)) {
+    return NextResponse.json({ error: "Invalid legalIdImageUrl" }, { status: 400 });
   }
 
   const start = dateOnlyUtc(startDate);
@@ -91,15 +104,35 @@ export async function POST(request: Request) {
     }
 
     const normalizedEmail = email.trim().toLowerCase();
-    const customerUpsert = await upsertCustomerForBooking(
-      {
-        fullName: fullName.trim(),
-        email: normalizedEmail,
-        phone: phone.trim(),
-        bookedAt: new Date().toISOString(),
-      },
-      { client },
-    );
+    const customerInput = {
+      fullName: fullName.trim(),
+      email: normalizedEmail,
+      phone: phone.trim(),
+      legalIdType,
+      legalIdNumber,
+      bookedAt: new Date().toISOString(),
+    } as const;
+    let customerUpsert;
+    try {
+      customerUpsert = await upsertCustomerForBooking(
+        legalIdImageUrl
+          ? {
+              ...customerInput,
+              legalIdImageUrl,
+            }
+          : customerInput,
+        { client },
+      );
+    } catch (error) {
+      if (error instanceof CustomerBlockedError) {
+        await client.query("rollback");
+        return NextResponse.json(
+          { error: "This customer profile is blocked from booking. Please contact support." },
+          { status: 403 },
+        );
+      }
+      throw error;
+    }
 
     const dailyRate = vehicleResult.rows[0].daily_rate_cents as number;
     const depositCents = vehicleResult.rows[0].deposit_cents as number;

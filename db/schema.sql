@@ -84,6 +84,13 @@ create table if not exists customers (
   full_name text not null,
   email text not null,
   phone text not null,
+  is_blocked boolean not null default false,
+  blocked_at timestamptz,
+  blocked_by_user_id uuid references users(id) on delete set null,
+  blocked_reason text,
+  legal_id_type text,
+  legal_id_number text,
+  legal_id_image_url text,
   address text,
   notes text,
   last_booked_at timestamptz,
@@ -98,6 +105,27 @@ alter table customers
 
 alter table customers
   add column if not exists last_booked_at timestamptz;
+
+alter table customers
+  add column if not exists legal_id_type text;
+
+alter table customers
+  add column if not exists legal_id_number text;
+
+alter table customers
+  add column if not exists legal_id_image_url text;
+
+alter table customers
+  add column if not exists is_blocked boolean not null default false;
+
+alter table customers
+  add column if not exists blocked_at timestamptz;
+
+alter table customers
+  add column if not exists blocked_by_user_id uuid references users(id) on delete set null;
+
+alter table customers
+  add column if not exists blocked_reason text;
 
 create table if not exists bookings (
   id uuid primary key default gen_random_uuid(),
@@ -239,6 +267,7 @@ create index if not exists bookings_archived_at_idx on bookings(archived_at);
 create index if not exists customers_email_lower_idx on customers (lower(email));
 create index if not exists customers_phone_idx on customers(phone);
 create index if not exists customers_last_booked_at_idx on customers(last_booked_at);
+create index if not exists customers_legal_id_number_idx on customers(legal_id_number);
 create index if not exists payments_booking_id_idx on payments(booking_id);
 create index if not exists payments_status_idx on payments(status);
 create index if not exists payments_deleted_at_idx on payments(deleted_at);

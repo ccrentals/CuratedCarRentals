@@ -7,12 +7,21 @@ import { dbQuery } from "@/lib/db";
 import { fmtDate } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
 import { CustomerProfileForm } from "@/components/admin/CustomerProfileForm";
+import { formatLegalIdTypeLabel } from "@/lib/customers/legalId";
+import { CustomerBlockToggleButton } from "@/components/admin/CustomerBlockToggleButton";
 
 type CustomerRow = {
   id: string;
   full_name: string;
   email: string;
   phone: string;
+  is_blocked: boolean;
+  blocked_at: string | null;
+  blocked_by_user_id: string | null;
+  blocked_reason: string | null;
+  legal_id_type: string | null;
+  legal_id_number: string | null;
+  legal_id_image_url: string | null;
   address: string | null;
   notes: string | null;
   created_at: string;
@@ -20,6 +29,19 @@ type CustomerRow = {
   total_bookings: number;
   total_spend: number;
 };
+
+function isMissingColumn(error: unknown, column: string) {
+  const code = (error as { code?: string } | null)?.code;
+  const message = String((error as { message?: unknown } | null)?.message ?? "").toLowerCase();
+  const normalizedColumn = column.toLowerCase();
+  const escapedColumn = normalizedColumn.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const columnPattern = new RegExp(`\\b${escapedColumn}\\b`);
+  return code === "42703" && message.includes("does not exist") && columnPattern.test(message);
+}
+
+function isAnyMissingColumn(error: unknown, columns: string[]) {
+  return columns.some((column) => isMissingColumn(error, column));
+}
 
 function isAdminRole(role: string | undefined) {
   const normalized = String(role ?? "")
@@ -60,10 +82,42 @@ export default async function AdminCustomerDetailPage({
   const dateTo = normalizeDateInput(typeof query.dateTo === "string" ? query.dateTo : undefined);
   const pageSize = typeof query.pageSize === "string" ? query.pageSize : "";
 
-  const customer = await dbQuery<CustomerRow>(
-    "select c.id, c.full_name, c.email, c.phone, c.address, c.notes, c.created_at, c.last_booked_at, count(distinct b.id)::int as total_bookings, coalesce(sum(case when p.status in ('DEPOSIT_PAID', 'SUCCESS', 'REFUNDED') and p.deleted_at is null then p.deposit_amount_cents else 0 end), 0)::int as total_spend from customers c left join bookings b on b.customer_id = c.id left join payments p on p.booking_id = b.id where c.id = $1 group by c.id, c.full_name, c.email, c.phone, c.address, c.notes, c.created_at, c.last_booked_at",
-    [id],
-  );
+  let customer;
+  try {
+    customer = await dbQuery<CustomerRow>(
+      "select c.id, c.full_name, c.email, c.phone, coalesce(c.is_blocked, false) as is_blocked, c.blocked_at, c.blocked_by_user_id, c.blocked_reason, c.legal_id_type, c.legal_id_number, c.legal_id_image_url, c.address, c.notes, c.created_at, c.last_booked_at, count(distinct b.id)::int as total_bookings, coalesce(sum(case when p.status in ('DEPOSIT_PAID', 'SUCCESS', 'REFUNDED') and p.deleted_at is null then p.deposit_amount_cents else 0 end), 0)::int as total_spend from customers c left join bookings b on b.customer_id = c.id left join payments p on p.booking_id = b.id where c.id = $1 group by c.id, c.full_name, c.email, c.phone, c.is_blocked, c.blocked_at, c.blocked_by_user_id, c.blocked_reason, c.legal_id_type, c.legal_id_number, c.legal_id_image_url, c.address, c.notes, c.created_at, c.last_booked_at",
+      [id],
+    );
+  } catch (error) {
+    if (
+      !isAnyMissingColumn(error, [
+        "legal_id_type",
+        "is_blocked",
+        "blocked_at",
+        "blocked_by_user_id",
+        "blocked_reason",
+      ])
+    ) {
+      throw error;
+    }
+    const legacyCustomer = await dbQuery<Omit<CustomerRow, "legal_id_type" | "legal_id_number" | "legal_id_image_url">>(
+      "select c.id, c.full_name, c.email, c.phone, false as is_blocked, null::timestamptz as blocked_at, null::uuid as blocked_by_user_id, null::text as blocked_reason, c.address, c.notes, c.created_at, c.last_booked_at, count(distinct b.id)::int as total_bookings, coalesce(sum(case when p.status in ('DEPOSIT_PAID', 'SUCCESS', 'REFUNDED') and p.deleted_at is null then p.deposit_amount_cents else 0 end), 0)::int as total_spend from customers c left join bookings b on b.customer_id = c.id left join payments p on p.booking_id = b.id where c.id = $1 group by c.id, c.full_name, c.email, c.phone, c.address, c.notes, c.created_at, c.last_booked_at",
+      [id],
+    );
+    customer = {
+      ...legacyCustomer,
+      rows: legacyCustomer.rows.map(
+        (
+          row: Omit<CustomerRow, "legal_id_type" | "legal_id_number" | "legal_id_image_url">,
+        ) => ({
+          ...row,
+          legal_id_type: null,
+          legal_id_number: null,
+          legal_id_image_url: null,
+        }),
+      ),
+    };
+  }
 
   const customerRow = customer.rows[0];
   if (!customerRow) {
@@ -95,18 +149,27 @@ export default async function AdminCustomerDetailPage({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Customer</p>
-          <h1 className="text-3xl font-bold text-[var(--ccr-text)]">{customerRow.full_name}</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-3xl font-bold text-[var(--ccr-text)]">{customerRow.full_name}</h1>
+            {customerRow.is_blocked ? (
+              <span className="rounded-full border border-red-400/70 bg-red-500/20 px-2 py-0.5 text-xs font-semibold text-red-300">
+                Blocked
+              </span>
+            ) : null}
+          </div>
           <p className="mt-1 text-sm text-[var(--ccr-muted)]">
             {customerRow.email} · {customerRow.phone}
           </p>
         </div>
         <div className="flex items-center gap-2">
           <Link
-            href={`/admin/bookings?create=1&customerId=${customerRow.id}`}
-            className="rounded-xl border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] ring-1 ring-[var(--ccr-accent)]"
+            href={customerRow.is_blocked ? "#" : `/admin/bookings?create=1&customerId=${customerRow.id}`}
+            aria-disabled={customerRow.is_blocked}
+            className={`rounded-xl border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] ring-1 ring-[var(--ccr-accent)] ${customerRow.is_blocked ? "pointer-events-none opacity-50" : ""}`}
           >
             New booking for customer
           </Link>
+          <CustomerBlockToggleButton customerId={customerRow.id} isBlocked={customerRow.is_blocked} />
           <Link
             href="/admin/customers"
             className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
@@ -124,9 +187,31 @@ export default async function AdminCustomerDetailPage({
             fullName={customerRow.full_name}
             email={customerRow.email}
             phone={customerRow.phone}
+            legalIdType={customerRow.legal_id_type}
+            legalIdNumber={customerRow.legal_id_number}
+            legalIdImageUrl={customerRow.legal_id_image_url}
             address={customerRow.address}
             notes={customerRow.notes}
           />
+          <div className="mt-4 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3 text-xs text-[var(--ccr-muted)]">
+            <p className="font-semibold text-[var(--ccr-text)]">Legal Identification</p>
+            <p className="mt-1">
+              Type: {customerRow.legal_id_type ? formatLegalIdTypeLabel(customerRow.legal_id_type) : "Not provided"}
+            </p>
+            <p className="mt-1">Number: {customerRow.legal_id_number || "Not provided"}</p>
+            {customerRow.legal_id_image_url ? (
+              <a
+                href={customerRow.legal_id_image_url}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-1 inline-flex text-[var(--ccr-accent)] underline"
+              >
+                View uploaded ID image
+              </a>
+            ) : (
+              <p className="mt-1">Image: Not provided</p>
+            )}
+          </div>
           <div className="mt-5 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3 text-xs text-[var(--ccr-muted)]">
             <p>Created: {fmtDate(customerRow.created_at)}</p>
             <p className="mt-1">

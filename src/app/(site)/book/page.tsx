@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
 
 import { SectionHeading } from "@/components/sections/SectionHeading";
@@ -10,6 +10,7 @@ import { siteContent } from "@/data/content";
 import { formatCurrency } from "@/lib/utils";
 import { formatJmd } from "@/lib/money";
 import { calcDaysInclusive } from "@/lib/payments/dateMath";
+import { LEGAL_ID_TYPES, formatLegalIdTypeLabel } from "@/lib/customers/legalId";
 
 const sampleRentalDays = 5;
 
@@ -37,6 +38,8 @@ type RawPublicVehicle = NonNullable<PublicVehiclesApiResponse["vehicles"]>[numbe
 
 export default function BookPage() {
   const router = useRouter();
+  const legalIdInputRef = useRef<HTMLInputElement | null>(null);
+  const uploadcarePublicKey = process.env.NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY ?? "";
   const todayKey = (() => {
     const now = new Date();
     const pad = (value: number) => String(value).padStart(2, "0");
@@ -47,6 +50,11 @@ export default function BookPage() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [legalIdType, setLegalIdType] = useState<(typeof LEGAL_ID_TYPES)[number]>("TRN");
+  const [legalIdNumber, setLegalIdNumber] = useState("");
+  const [legalIdImageUrl, setLegalIdImageUrl] = useState("");
+  const [legalIdUploading, setLegalIdUploading] = useState(false);
+  const [legalIdUploadError, setLegalIdUploadError] = useState<string | null>(null);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [pickupLocation, setPickupLocation] = useState("");
@@ -88,9 +96,66 @@ export default function BookPage() {
       });
   }, []);
 
+  async function handleLegalIdImageChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    setLegalIdUploadError(null);
+    if (!uploadcarePublicKey.trim()) {
+      setLegalIdUploadError(
+        "Image upload is unavailable right now. Please continue without an image or contact support.",
+      );
+      return;
+    }
+
+    setLegalIdUploading(true);
+    try {
+      const formData = new FormData();
+      formData.set("UPLOADCARE_PUB_KEY", uploadcarePublicKey.trim());
+      formData.set("UPLOADCARE_STORE", "1");
+      formData.set("file", file);
+
+      const uploadResponse = await fetch("https://upload.uploadcare.com/base/", {
+        method: "POST",
+        body: formData,
+      });
+      const uploadPayload = (await uploadResponse
+        .json()
+        .catch(() => null)) as { file?: unknown; error?: { content?: unknown } } | null;
+
+      if (!uploadResponse.ok || typeof uploadPayload?.file !== "string") {
+        const providerMessage =
+          typeof uploadPayload?.error?.content === "string"
+            ? uploadPayload.error.content
+            : "Upload failed";
+        throw new Error(providerMessage);
+      }
+
+      setLegalIdImageUrl(`https://ucarecdn.com/${uploadPayload.file}/`);
+    } catch (uploadError) {
+      const message =
+        uploadError instanceof Error ? uploadError.message : "Unable to upload image";
+      setLegalIdUploadError(message);
+    } finally {
+      setLegalIdUploading(false);
+    }
+  }
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+    setLegalIdUploadError(null);
+
+    if (!legalIdNumber.trim()) {
+      setError("Please enter your TRN/passport/legal ID number.");
+      return;
+    }
+    if (legalIdUploading) {
+      setError("Please wait for the ID image upload to finish.");
+      return;
+    }
+
     setLoading(true);
 
     const response = await fetch("/api/public/bookings", {
@@ -101,6 +166,9 @@ export default function BookPage() {
         fullName,
         email,
         phone,
+        legalIdType,
+        legalIdNumber,
+        legalIdImageUrl,
         startDate,
         endDate,
         pickupLocation,
@@ -202,6 +270,81 @@ export default function BookPage() {
                   required
                 />
               </label>
+              <label className="text-sm text-[var(--ccr-muted)]">
+                Legal ID Type
+                <select
+                  value={legalIdType}
+                  onChange={(event) =>
+                    setLegalIdType(event.target.value as (typeof LEGAL_ID_TYPES)[number])
+                  }
+                  className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-[var(--ccr-text)]"
+                  required
+                >
+                  {LEGAL_ID_TYPES.map((type) => (
+                    <option key={type} value={type}>
+                      {formatLegalIdTypeLabel(type)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-sm text-[var(--ccr-muted)]">
+                TRN / Passport / Legal ID Number
+                <input
+                  type="text"
+                  value={legalIdNumber}
+                  onChange={(event) => setLegalIdNumber(event.target.value)}
+                  className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-[var(--ccr-text)] outline-none ring-[var(--ccr-accent)] focus:ring-2"
+                  placeholder="Enter your legal ID number"
+                  required
+                />
+              </label>
+              <div className="text-sm text-[var(--ccr-muted)] md:col-span-2">
+                Legal ID Image (optional)
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => legalIdInputRef.current?.click()}
+                    disabled={legalIdUploading}
+                    className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
+                  >
+                    {legalIdUploading ? "Uploading..." : "Use camera / upload image"}
+                  </button>
+                  {legalIdImageUrl ? (
+                    <>
+                      <a
+                        href={legalIdImageUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs font-semibold text-[var(--ccr-accent)] underline"
+                      >
+                        View uploaded image
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => setLegalIdImageUrl("")}
+                        className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-2 py-1 text-[11px] font-semibold text-[var(--ccr-text)]"
+                      >
+                        Remove
+                      </button>
+                    </>
+                  ) : null}
+                </div>
+                <input
+                  ref={legalIdInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={handleLegalIdImageChange}
+                  className="hidden"
+                />
+                {legalIdUploadError ? (
+                  <p className="mt-2 text-xs text-red-500">{legalIdUploadError}</p>
+                ) : (
+                  <p className="mt-2 text-xs text-[var(--ccr-muted)]">
+                    On mobile, this opens your camera so you can take and upload the ID photo.
+                  </p>
+                )}
+              </div>
               <label className="text-sm text-[var(--ccr-muted)]">
                 Pickup Date
                 <input
