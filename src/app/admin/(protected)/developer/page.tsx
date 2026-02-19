@@ -13,6 +13,7 @@ const DOCUMENTATION_LINKS = [
   { href: "/admin/documentation/design", label: "Design Documentation" },
   { href: "/admin/documentation/technical", label: "Technical Documentation" },
   { href: "/admin/documentation/operations", label: "Operational Documentation" },
+  { href: "/admin/developer/access", label: "Role Capability Matrix" },
 ];
 
 function isDeveloperRole(role: string | undefined) {
