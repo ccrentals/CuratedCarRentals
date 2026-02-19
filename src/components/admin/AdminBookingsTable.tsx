@@ -160,20 +160,19 @@ export function AdminBookingsTable({
         <table className="min-w-full text-left text-sm">
           <thead className="border-b border-[var(--ccr-border)] text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
             <tr>
-              <th className="hidden px-4 py-3 md:table-cell">Booking</th>
+              <th className="px-4 py-3">Booking</th>
               <th className="px-4 py-3">Customer</th>
               <th className="px-4 py-3">Vehicle</th>
               <th className="px-4 py-3">Dates</th>
               <th className="px-4 py-3">Status</th>
-              <th className="hidden px-4 py-3 md:table-cell">Created</th>
-              <th className="px-4 py-3 md:hidden">Booking / Created</th>
+              <th className="px-4 py-3">Created</th>
               <th className="px-4 py-3">Details</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((booking) => (
               <tr key={booking.id} className="border-b border-[var(--ccr-border)] last:border-b-0">
-                <td className="hidden px-4 py-3 font-mono text-xs text-[var(--ccr-text)] md:table-cell">
+                <td className="px-4 py-3 font-mono text-xs text-[var(--ccr-text)]">
                   <Link
                     href={`/admin/bookings/${booking.id}`}
                     className="inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-[11px] font-bold text-[var(--ccr-accent)] transition hover:bg-[var(--ccr-accent)] hover:text-[var(--ccr-primary)]"
@@ -187,7 +186,31 @@ export function AdminBookingsTable({
                   <p className="text-xs text-[var(--ccr-muted)]">{booking.customerEmail}</p>
                 </td>
                 <td className="px-4 py-3 text-[var(--ccr-text)]">{booking.vehicleLabel}</td>
-                <td className="px-4 py-3 text-[var(--ccr-muted)]">{booking.datesLabel}</td>
+                <td className="px-4 py-3 text-[var(--ccr-muted)]">
+                  <span className="hidden md:inline">{booking.datesLabel}</span>
+                  <details className="group md:hidden">
+                    <summary className="list-none cursor-pointer [&::-webkit-details-marker]:hidden">
+                      <span className="inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-text)]">
+                        See more
+                        <svg
+                          viewBox="0 0 20 20"
+                          className="h-3 w-3 transition-transform group-open:rotate-180"
+                          aria-hidden="true"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M5 7l5 6 5-6" />
+                        </svg>
+                      </span>
+                    </summary>
+                    <div className="mt-2 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-2 text-xs text-[var(--ccr-muted)]">
+                      {booking.datesLabel}
+                    </div>
+                  </details>
+                </td>
                 <td className="px-4 py-3">
                   <div className="flex w-full items-center gap-2">
                     <span className={`${STATUS_PILL_BASE_CLASS} ${statusPillToneClass(booking.status)}`}>
@@ -220,12 +243,12 @@ export function AdminBookingsTable({
                     </span>
                   ) : null}
                 </td>
-                <td className="hidden px-4 py-3 text-[var(--ccr-muted)] md:table-cell">{booking.createdAtLabel}</td>
-                <td className="px-4 py-3 md:hidden">
-                  <details className="group">
+                <td className="px-4 py-3 text-[var(--ccr-muted)]">
+                  <span className="hidden md:inline">{booking.createdAtLabel}</span>
+                  <details className="group md:hidden">
                     <summary className="list-none cursor-pointer [&::-webkit-details-marker]:hidden">
-                      <span className="inline-flex items-center gap-2 rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-text)]">
-                        Info
+                      <span className="inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-text)]">
+                        See more
                         <svg
                           viewBox="0 0 20 20"
                           className="h-3 w-3 transition-transform group-open:rotate-180"
@@ -240,20 +263,8 @@ export function AdminBookingsTable({
                         </svg>
                       </span>
                     </summary>
-                    <div className="mt-2 space-y-2 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-2 text-xs">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-semibold text-[var(--ccr-muted)]">Booking</span>
-                        <Link
-                          href={`/admin/bookings/${booking.id}`}
-                          className="inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-2 py-0.5 font-mono text-[11px] font-bold text-[var(--ccr-accent)]"
-                          title="Open booking"
-                        >
-                          {booking.id.slice(0, 8)}
-                        </Link>
-                      </div>
-                      <p className="text-[var(--ccr-muted)]">
-                        <span className="font-semibold">Created:</span> {booking.createdAtLabel}
-                      </p>
+                    <div className="mt-2 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-2 text-xs text-[var(--ccr-muted)]">
+                      {booking.createdAtLabel}
                     </div>
                   </details>
                 </td>
