@@ -9,7 +9,9 @@
     "migrate": "node scripts/migrate.js",
     "seed:public-vehicles": "tsx scripts/seed-public-vehicles.ts",
     "test": "tsx --test",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:e2e": "playwright test",
+    "test:e2e:update": "playwright test --update-snapshots"
   },
   "dependencies": {
     "@prisma/client": "^7.3.0",
@@ -22,6 +24,7 @@
     "react-dom": "19.2.3"
   },
   "devDependencies": {
+    "@playwright/test": "^1.50.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
