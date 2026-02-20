@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { InfoTooltipIcon } from "@/components/admin/InfoTooltipIcon";
+import { MobileTableAffordance } from "@/components/admin/MobileTableAffordance";
 import { PaginationSummaryNav } from "@/components/admin/PaginationSummaryNav";
 import { dbQuery } from "@/lib/db";
 import { fmtDate, fmtDateOnly } from "@/lib/dateFormat";
@@ -483,7 +484,10 @@ export default async function AdminReportsPage({
 
                       <div className="mt-4 space-y-2 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-4">
                         {visibleRevenuePoints.map((point) => (
-                          <div key={point.periodStart} className="grid grid-cols-[120px_1fr_130px] items-center gap-3">
+                          <div
+                            key={point.periodStart}
+                            className="grid grid-cols-1 gap-1 sm:grid-cols-[120px_1fr_130px] sm:items-center sm:gap-3"
+                          >
                             <span className="text-xs font-semibold text-[var(--ccr-text)]">
                               {point.periodLabel}
                             </span>
@@ -493,14 +497,14 @@ export default async function AdminReportsPage({
                                 style={{ width: `${Math.max(2, (point.grossRevenue / maxRevenue) * 100)}%` }}
                               />
                             </div>
-                            <span className="text-right text-xs font-semibold text-[var(--ccr-text)]">
+                            <span className="text-xs font-semibold text-[var(--ccr-text)] sm:text-right">
                               {formatJmd(point.grossRevenue)}
                             </span>
                           </div>
                         ))}
                       </div>
 
-                      <div className="mt-4 overflow-x-auto">
+                      <MobileTableAffordance className="mt-4">
                         <table className="min-w-full text-left text-sm">
                           <thead className="border-b border-[var(--ccr-border)] text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
                             <tr>
@@ -528,7 +532,7 @@ export default async function AdminReportsPage({
                             ))}
                           </tbody>
                         </table>
-                      </div>
+                      </MobileTableAffordance>
                     </>
                   )}
                 </div>
@@ -545,7 +549,7 @@ export default async function AdminReportsPage({
                   {report.utilization.rows.length === 0 ? (
                     <p className="text-sm text-[var(--ccr-muted)]">No data for selected range.</p>
                   ) : (
-                    <div className="overflow-x-auto">
+                    <MobileTableAffordance>
                       <table className="min-w-full text-left text-sm">
                         <thead className="border-b border-[var(--ccr-border)] text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
                           <tr>
@@ -581,7 +585,7 @@ export default async function AdminReportsPage({
                           ))}
                         </tbody>
                       </table>
-                    </div>
+                    </MobileTableAffordance>
                   )}
                 </div>
               ) : null}
@@ -592,7 +596,7 @@ export default async function AdminReportsPage({
                     <p className="text-sm text-[var(--ccr-muted)]">No data for selected range.</p>
                   ) : (
                     <>
-                      <div className="overflow-x-auto">
+                      <MobileTableAffordance>
                         <table className="min-w-full text-left text-sm">
                           <thead className="border-b border-[var(--ccr-border)] text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
                             <tr>
@@ -674,7 +678,7 @@ export default async function AdminReportsPage({
                             </tr>
                           </tbody>
                         </table>
-                      </div>
+                      </MobileTableAffordance>
 
                       <PaginationSummaryNav
                         className="mt-3"
@@ -767,7 +771,7 @@ export default async function AdminReportsPage({
                       <p className="mt-2 text-sm text-[var(--ccr-muted)]">No data for selected range.</p>
                     ) : (
                       <>
-                        <div className="mt-2 overflow-x-auto rounded-xl border border-[var(--ccr-border)]">
+                        <MobileTableAffordance className="mt-2 rounded-xl border border-[var(--ccr-border)]">
                           <table className="min-w-full text-left text-sm">
                             <thead className="border-b border-[var(--ccr-border)] text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
                               <tr>
@@ -828,7 +832,7 @@ export default async function AdminReportsPage({
                               ))}
                             </tbody>
                           </table>
-                        </div>
+                        </MobileTableAffordance>
                         <PaginationSummaryNav
                           from={pickupPage.from}
                           to={pickupPage.to}
@@ -854,7 +858,7 @@ export default async function AdminReportsPage({
                       <p className="mt-2 text-sm text-[var(--ccr-muted)]">No data for selected range.</p>
                     ) : (
                       <>
-                        <div className="mt-2 overflow-x-auto rounded-xl border border-[var(--ccr-border)]">
+                        <MobileTableAffordance className="mt-2 rounded-xl border border-[var(--ccr-border)]">
                           <table className="min-w-full text-left text-sm">
                             <thead className="border-b border-[var(--ccr-border)] text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
                               <tr>
@@ -915,7 +919,7 @@ export default async function AdminReportsPage({
                               ))}
                             </tbody>
                           </table>
-                        </div>
+                        </MobileTableAffordance>
                         <PaginationSummaryNav
                           from={returnPage.from}
                           to={returnPage.to}
@@ -976,7 +980,7 @@ export default async function AdminReportsPage({
                     <p className="mt-3 text-sm text-[var(--ccr-muted)]">No data for selected range.</p>
                   ) : (
                     <>
-                      <div className="mt-4 overflow-x-auto rounded-xl border border-[var(--ccr-border)]">
+                      <MobileTableAffordance className="mt-4 rounded-xl border border-[var(--ccr-border)]">
                         <table className="min-w-full text-left text-sm">
                           <thead className="border-b border-[var(--ccr-border)] text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
                             <tr>
@@ -998,7 +1002,7 @@ export default async function AdminReportsPage({
                             ))}
                           </tbody>
                         </table>
-                      </div>
+                      </MobileTableAffordance>
                       <PaginationSummaryNav
                         from={breakdownPage.from}
                         to={breakdownPage.to}

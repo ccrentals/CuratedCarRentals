@@ -1,4 +1,5 @@
 import { BookingPayPanel } from "@/components/payments/BookingPayPanel";
+import { notFound } from "next/navigation";
 import { readBookingOverrideInfo } from "@/lib/bookings/holds";
 import { dbQuery } from "@/lib/db";
 import { fmtDateOnly } from "@/lib/dateFormat";
@@ -34,11 +35,7 @@ export default async function BookingPayPage({
 
   const booking = bookingResult.rows[0];
   if (!booking) {
-    return (
-      <div className="mx-auto w-full max-w-3xl px-6 py-12">
-        <p className="text-sm text-[var(--ccr-muted)]">Booking not found.</p>
-      </div>
-    );
+    notFound();
   }
 
   const pricing = booking.pricing_json ?? {};

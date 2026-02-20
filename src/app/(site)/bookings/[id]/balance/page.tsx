@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 
 import { PayBalanceButton } from "@/components/payments/PayBalanceButton";
 import { readBookingOverrideInfo } from "@/lib/bookings/holds";
@@ -38,11 +39,7 @@ export default async function BookingBalancePage({
 
   const booking = bookingResult.rows[0];
   if (!booking) {
-    return (
-      <div className="mx-auto w-full max-w-3xl px-6 py-12">
-        <p className="text-sm text-[var(--ccr-muted)]">Booking not found.</p>
-      </div>
-    );
+    notFound();
   }
 
   const pricing = booking.pricing_json ?? {};

@@ -173,59 +173,119 @@ export default async function AdminCustomersPage({
         </div>
       </form>
 
-      <div className="mt-6 overflow-x-auto rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)]">
+      <div className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)]">
         {customers.rows.length === 0 ? (
           <div className="px-6 py-10 text-center text-sm text-[var(--ccr-muted)]">
             No customers found.
           </div>
         ) : (
-          <table className="min-w-full text-left text-sm">
-            <thead className="border-b border-[var(--ccr-border)] text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
-              <tr>
-                <th className="px-4 py-3">Customer</th>
-                <th className="px-4 py-3">Phone</th>
-                <th className="px-4 py-3">Bookings</th>
-                <th className="px-4 py-3">Total Spend</th>
-                <th className="px-4 py-3">Last Booked</th>
-                <th className="px-4 py-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
+          <>
+            <div className="divide-y divide-[var(--ccr-border)] md:hidden">
               {customers.rows.map((customer: CustomerListRow) => (
-                <tr key={customer.id} className="border-b border-[var(--ccr-border)] last:border-b-0">
-                  <td className="px-4 py-3">
+                <article key={`mobile-${customer.id}`} className="space-y-3 px-4 py-4">
+                  <div>
                     <p className="font-semibold text-[var(--ccr-text)]">{customer.full_name}</p>
                     <p className="text-xs text-[var(--ccr-muted)]">{customer.email}</p>
-                    <p className="mt-1 font-mono text-[10px] text-[var(--ccr-muted)]">{customer.id.slice(0, 8)}</p>
-                  </td>
-                  <td className="px-4 py-3 text-[var(--ccr-text)]">{customer.phone}</td>
-                  <td className="px-4 py-3 text-[var(--ccr-text)]">{customer.total_bookings}</td>
-                  <td className="px-4 py-3 text-[var(--ccr-text)]">{formatJmd(customer.total_spend)}</td>
-                  <td className="px-4 py-3 text-[var(--ccr-muted)]">
-                    {customer.last_booked_at ? fmtDate(customer.last_booked_at) : "No bookings yet"}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <Link
-                        href={customer.is_blocked ? "#" : `/admin/bookings?create=1&customerId=${customer.id}`}
-                        aria-disabled={customer.is_blocked}
-                        className={`rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] ${customer.is_blocked ? "pointer-events-none opacity-50" : ""}`}
-                      >
-                        New booking
-                      </Link>
-                      <Link
-                        href={`/admin/customers/${customer.id}`}
-                        className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
-                      >
-                        View
-                      </Link>
-                      <CustomerBlockToggleButton customerId={customer.id} isBlocked={customer.is_blocked} />
+                    <p className="mt-1 font-mono text-[10px] text-[var(--ccr-muted)]">
+                      {customer.id.slice(0, 8)}
+                    </p>
+                  </div>
+                  <dl className="grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <dt className="uppercase tracking-wide text-[var(--ccr-muted)]">Phone</dt>
+                      <dd className="font-semibold text-[var(--ccr-text)]">{customer.phone || "—"}</dd>
                     </div>
-                  </td>
-                </tr>
+                    <div>
+                      <dt className="uppercase tracking-wide text-[var(--ccr-muted)]">Bookings</dt>
+                      <dd className="font-semibold text-[var(--ccr-text)]">{customer.total_bookings}</dd>
+                    </div>
+                    <div>
+                      <dt className="uppercase tracking-wide text-[var(--ccr-muted)]">Total spend</dt>
+                      <dd className="font-semibold text-[var(--ccr-text)]">
+                        {formatJmd(customer.total_spend)}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="uppercase tracking-wide text-[var(--ccr-muted)]">Last booked</dt>
+                      <dd className="font-semibold text-[var(--ccr-text)]">
+                        {customer.last_booked_at ? fmtDate(customer.last_booked_at) : "No bookings yet"}
+                      </dd>
+                    </div>
+                  </dl>
+                  <div className="flex flex-wrap gap-2">
+                    <Link
+                      href={customer.is_blocked ? "#" : `/admin/bookings?create=1&customerId=${customer.id}`}
+                      aria-disabled={customer.is_blocked}
+                      className={`rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] ${customer.is_blocked ? "pointer-events-none opacity-50" : ""}`}
+                    >
+                      New booking
+                    </Link>
+                    <Link
+                      href={`/admin/customers/${customer.id}`}
+                      className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+                    >
+                      View
+                    </Link>
+                    <CustomerBlockToggleButton customerId={customer.id} isBlocked={customer.is_blocked} />
+                  </div>
+                </article>
               ))}
-            </tbody>
-          </table>
+            </div>
+
+            <div className="hidden overflow-x-auto md:block">
+              <table className="min-w-full text-left text-sm">
+                <thead className="border-b border-[var(--ccr-border)] text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
+                  <tr>
+                    <th className="px-4 py-3">Customer</th>
+                    <th className="px-4 py-3">Phone</th>
+                    <th className="px-4 py-3">Bookings</th>
+                    <th className="px-4 py-3">Total Spend</th>
+                    <th className="px-4 py-3">Last Booked</th>
+                    <th className="px-4 py-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {customers.rows.map((customer: CustomerListRow) => (
+                    <tr key={customer.id} className="border-b border-[var(--ccr-border)] last:border-b-0">
+                      <td className="px-4 py-3">
+                        <p className="font-semibold text-[var(--ccr-text)]">{customer.full_name}</p>
+                        <p className="text-xs text-[var(--ccr-muted)]">{customer.email}</p>
+                        <p className="mt-1 font-mono text-[10px] text-[var(--ccr-muted)]">
+                          {customer.id.slice(0, 8)}
+                        </p>
+                      </td>
+                      <td className="px-4 py-3 text-[var(--ccr-text)]">{customer.phone}</td>
+                      <td className="px-4 py-3 text-[var(--ccr-text)]">{customer.total_bookings}</td>
+                      <td className="px-4 py-3 text-[var(--ccr-text)]">
+                        {formatJmd(customer.total_spend)}
+                      </td>
+                      <td className="px-4 py-3 text-[var(--ccr-muted)]">
+                        {customer.last_booked_at ? fmtDate(customer.last_booked_at) : "No bookings yet"}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <Link
+                            href={customer.is_blocked ? "#" : `/admin/bookings?create=1&customerId=${customer.id}`}
+                            aria-disabled={customer.is_blocked}
+                            className={`rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] ${customer.is_blocked ? "pointer-events-none opacity-50" : ""}`}
+                          >
+                            New booking
+                          </Link>
+                          <Link
+                            href={`/admin/customers/${customer.id}`}
+                            className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+                          >
+                            View
+                          </Link>
+                          <CustomerBlockToggleButton customerId={customer.id} isBlocked={customer.is_blocked} />
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </div>
     </div>

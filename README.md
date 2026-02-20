@@ -11,6 +11,19 @@ npm run dev
 
 App: `http://localhost:3000`
 
+## Artifacts policy
+
+- Generated audit/E2E artifacts are stored under `.artifacts/` and are gitignored.
+- Do not save audit screenshots/videos/reports under `public/`.
+- Playwright outputs:
+  - HTML report: `.artifacts/playwright-report/`
+  - Test artifacts (screenshots/videos/traces): `.artifacts/test-results/`
+- Run E2E against an existing local server:
+
+```bash
+E2E_BASE_URL=http://127.0.0.1:3000 npm run test:e2e
+```
+
 ## Core URLs
 
 Public:

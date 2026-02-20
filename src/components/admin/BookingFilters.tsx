@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
+import { ADMIN_ACCENT_RING_CLASS } from "@/components/admin/adminUiClasses";
+
 const STATUS_OPTIONS = [
   { label: "All", value: "all" },
   { label: "Pending payment", value: "pending_payment" },
@@ -92,13 +94,13 @@ export default function BookingFilters({ canAdmin }: { canAdmin?: boolean }) {
             <button
               key={option.value}
               type="button"
-              onClick={() => {
+            onClick={() => {
                 setStatus(option.value);
                 updateParams({ status: option.value === "all" ? null : option.value });
               }}
               className={`rounded-full border px-4 py-1.5 text-xs font-semibold transition ${
                 isActive
-                  ? "border-[var(--ccr-primary)] bg-[var(--ccr-primary)] text-white ring-2 ring-[var(--ccr-accent)] ring-offset-2 ring-offset-[var(--ccr-surface)]"
+                  ? `border-[var(--ccr-primary)] bg-[var(--ccr-primary)] text-white ${ADMIN_ACCENT_RING_CLASS}`
                   : "border-[var(--ccr-border)] bg-transparent text-[var(--ccr-text)] hover:border-[var(--ccr-primary)]"
               }`}
             >

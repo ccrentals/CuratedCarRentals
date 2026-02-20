@@ -1,5 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
+import { notFound } from "next/navigation";
 
 import { Container } from "@/components/site/Container";
 import { Button } from "@/components/ui/Button";
@@ -17,20 +18,7 @@ export default async function FleetVehicleDetailPage({
   const vehicle = await getPublicVehicleByIdentifier(id);
 
   if (!vehicle) {
-    return (
-      <div className="py-10 md:py-14">
-        <Container>
-          <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm">
-            <p className="text-sm text-[var(--ccr-muted)]">Vehicle not found.</p>
-            <div className="mt-4">
-              <Button href="/fleet" variant="secondary">
-                Back to Fleet
-              </Button>
-            </div>
-          </section>
-        </Container>
-      </div>
-    );
+    notFound();
   }
 
   return (

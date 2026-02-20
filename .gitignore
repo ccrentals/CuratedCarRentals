@@ -15,6 +15,20 @@
 /playwright-report
 /test-results
 
+# generated artifacts (audit/e2e/media)
+audit-artifacts/
+.artifacts/
+playwright-report/
+test-results/
+coverage/
+e2e/responsive-screenshots.spec.ts-snapshots/
+**/*.mp4
+**/*.webm
+**/*.zip
+**/*.log
+**/*.tmp
+**/*.DS_Store
+
 # next.js
 /.next/
 /out/

@@ -286,27 +286,14 @@ export default async function AdminPaymentsPage({
         </div>
       </div>
 
-      <div className="mt-6 overflow-x-auto rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)]">
+      <div className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)]">
         {payments.rows.length === 0 ? (
           <div className="px-6 py-10 text-center text-sm text-[var(--ccr-muted)]">
             No payments yet.
           </div>
         ) : (
-          <table className="min-w-full text-left text-sm">
-            <thead className="border-b border-[var(--ccr-border)] text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
-              <tr>
-                <th className="px-4 py-3">Payment</th>
-                <th className="px-4 py-3">Booking</th>
-                <th className="px-4 py-3">Customer</th>
-                <th className="px-4 py-3">Vehicle</th>
-                <th className="px-4 py-3">Provider</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Amount</th>
-                <th className="px-4 py-3">Created</th>
-                <th className="px-4 py-3">Error</th>
-              </tr>
-            </thead>
-            <tbody>
+          <>
+            <div className="divide-y divide-[var(--ccr-border)] md:hidden">
               {payments.rows.map((payment: PaymentRow) => {
                 const errorMessage = extractError(payment.metadata_json);
                 const statusLabel = formatPaymentStatus(payment.status, {
@@ -315,68 +302,149 @@ export default async function AdminPaymentsPage({
                 const providerLabel = displayProvider(payment.provider, payment.metadata_json);
                 const bookingHref = `/admin/bookings/${payment.booking_id}`;
                 return (
-                  <tr key={payment.id} className="border-b border-[var(--ccr-border)] last:border-b-0">
-                    <td className="px-4 py-3 font-mono text-xs text-[var(--ccr-text)]">
+                  <article key={`mobile-${payment.id}`} className="space-y-3 px-4 py-4">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
                       <Link
                         href={bookingHref}
-                        className="inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-[11px] font-bold text-[var(--ccr-accent)] transition hover:bg-[var(--ccr-accent)] hover:text-[var(--ccr-primary)]"
+                        className="inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 font-mono text-[11px] font-bold text-[var(--ccr-accent)]"
                         title="Open booking"
                       >
                         {payment.id.slice(0, 8)}
                       </Link>
-                    </td>
-                    <td className="px-4 py-3">
-                      <Link
-                        href={bookingHref}
-                        className="text-sm font-semibold text-[var(--ccr-text)]"
-                      >
-                        {payment.booking_id.slice(0, 8)}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-3">
-                      <Link href={bookingHref} className="block">
-                        <p className="font-semibold text-[var(--ccr-text)]">{payment.customer_name}</p>
-                        <p className="text-xs text-[var(--ccr-muted)]">{payment.customer_email}</p>
-                      </Link>
-                    </td>
-                    <td className="px-4 py-3 text-[var(--ccr-text)]">
-                      <Link href={bookingHref} className="block">
+                      <p className="text-xs text-[var(--ccr-muted)]">{fmtDate(payment.created_at)}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-sm font-semibold text-[var(--ccr-text)]">
+                        {payment.customer_name}
+                      </p>
+                      <p className="text-xs text-[var(--ccr-muted)]">{payment.customer_email}</p>
+                      <p className="text-xs text-[var(--ccr-muted)]">
                         {payment.vehicle_make} {payment.vehicle_model}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-3 text-[var(--ccr-text)]">
-                      <Link href={bookingHref} className="block">
-                        {providerLabel}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-3 text-[var(--ccr-text)]">
-                      <Link href={bookingHref} className="block">
-                        {statusLabel}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-3 text-[var(--ccr-text)]">
-                      <Link href={bookingHref} className="block">
-                        {formatJmd(payment.deposit_amount_cents)}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-3 text-[var(--ccr-muted)]">
-                      <Link href={bookingHref} className="block">
-                        {fmtDate(payment.created_at)}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-3 text-xs text-red-300">
-                      <div>{errorMessage || "—"}</div>
-                      <div className="mt-2">
-                        <PaymentLogToggle
-                          log={payment.metadata_json ? JSON.stringify(payment.metadata_json, null, 2) : ""}
-                        />
+                      </p>
+                    </div>
+                    <dl className="grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <dt className="uppercase tracking-wide text-[var(--ccr-muted)]">Booking</dt>
+                        <dd>
+                          <Link href={bookingHref} className="font-semibold text-[var(--ccr-text)]">
+                            {payment.booking_id.slice(0, 8)}
+                          </Link>
+                        </dd>
                       </div>
-                    </td>
-                  </tr>
+                      <div>
+                        <dt className="uppercase tracking-wide text-[var(--ccr-muted)]">Amount</dt>
+                        <dd className="font-semibold text-[var(--ccr-text)]">
+                          {formatJmd(payment.deposit_amount_cents)}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="uppercase tracking-wide text-[var(--ccr-muted)]">Provider</dt>
+                        <dd className="font-semibold text-[var(--ccr-text)]">{providerLabel}</dd>
+                      </div>
+                      <div>
+                        <dt className="uppercase tracking-wide text-[var(--ccr-muted)]">Status</dt>
+                        <dd className="font-semibold text-[var(--ccr-text)]">{statusLabel}</dd>
+                      </div>
+                    </dl>
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="min-h-4 text-xs text-red-300">{errorMessage || "—"}</p>
+                      <PaymentLogToggle
+                        log={payment.metadata_json ? JSON.stringify(payment.metadata_json, null, 2) : ""}
+                      />
+                    </div>
+                  </article>
                 );
               })}
-            </tbody>
-          </table>
+            </div>
+
+            <div className="hidden overflow-x-auto md:block">
+              <table className="min-w-full text-left text-sm">
+                <thead className="border-b border-[var(--ccr-border)] text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
+                  <tr>
+                    <th className="px-4 py-3">Payment</th>
+                    <th className="px-4 py-3">Booking</th>
+                    <th className="px-4 py-3">Customer</th>
+                    <th className="px-4 py-3">Vehicle</th>
+                    <th className="px-4 py-3">Provider</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3">Amount</th>
+                    <th className="px-4 py-3">Created</th>
+                    <th className="px-4 py-3">Error</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {payments.rows.map((payment: PaymentRow) => {
+                    const errorMessage = extractError(payment.metadata_json);
+                    const statusLabel = formatPaymentStatus(payment.status, {
+                      paymentType: extractPaymentType(payment.metadata_json),
+                    });
+                    const providerLabel = displayProvider(payment.provider, payment.metadata_json);
+                    const bookingHref = `/admin/bookings/${payment.booking_id}`;
+                    return (
+                      <tr key={payment.id} className="border-b border-[var(--ccr-border)] last:border-b-0">
+                        <td className="px-4 py-3 font-mono text-xs text-[var(--ccr-text)]">
+                          <Link
+                            href={bookingHref}
+                            className="inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-[11px] font-bold text-[var(--ccr-accent)] transition hover:bg-[var(--ccr-accent)] hover:text-[var(--ccr-primary)]"
+                            title="Open booking"
+                          >
+                            {payment.id.slice(0, 8)}
+                          </Link>
+                        </td>
+                        <td className="px-4 py-3">
+                          <Link
+                            href={bookingHref}
+                            className="text-sm font-semibold text-[var(--ccr-text)]"
+                          >
+                            {payment.booking_id.slice(0, 8)}
+                          </Link>
+                        </td>
+                        <td className="px-4 py-3">
+                          <Link href={bookingHref} className="block">
+                            <p className="font-semibold text-[var(--ccr-text)]">{payment.customer_name}</p>
+                            <p className="text-xs text-[var(--ccr-muted)]">{payment.customer_email}</p>
+                          </Link>
+                        </td>
+                        <td className="px-4 py-3 text-[var(--ccr-text)]">
+                          <Link href={bookingHref} className="block">
+                            {payment.vehicle_make} {payment.vehicle_model}
+                          </Link>
+                        </td>
+                        <td className="px-4 py-3 text-[var(--ccr-text)]">
+                          <Link href={bookingHref} className="block">
+                            {providerLabel}
+                          </Link>
+                        </td>
+                        <td className="px-4 py-3 text-[var(--ccr-text)]">
+                          <Link href={bookingHref} className="block">
+                            {statusLabel}
+                          </Link>
+                        </td>
+                        <td className="px-4 py-3 text-[var(--ccr-text)]">
+                          <Link href={bookingHref} className="block">
+                            {formatJmd(payment.deposit_amount_cents)}
+                          </Link>
+                        </td>
+                        <td className="px-4 py-3 text-[var(--ccr-muted)]">
+                          <Link href={bookingHref} className="block">
+                            {fmtDate(payment.created_at)}
+                          </Link>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-red-300">
+                          <div>{errorMessage || "—"}</div>
+                          <div className="mt-2">
+                            <PaymentLogToggle
+                              log={payment.metadata_json ? JSON.stringify(payment.metadata_json, null, 2) : ""}
+                            />
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </div>
     </div>

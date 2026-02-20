@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 
 import { VehicleBlockouts } from "@/components/admin/VehicleBlockouts";
 import { VehicleDetailForm } from "@/components/admin/VehicleDetailForm";
@@ -28,14 +29,7 @@ export default async function AdminVehicleDetailPage({
 
   const vehicle = vehicleResult.rows[0];
   if (!vehicle) {
-    return (
-      <div className="mx-auto w-full max-w-5xl px-6 py-10">
-        <Link href="/admin/vehicles" className="text-sm font-semibold text-[var(--ccr-text)]">
-          Back to vehicles
-        </Link>
-        <p className="mt-4 text-sm text-[var(--ccr-muted)]">Vehicle not found.</p>
-      </div>
-    );
+    notFound();
   }
 
   return (

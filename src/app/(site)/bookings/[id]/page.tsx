@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 
 import { dbQuery } from "@/lib/db";
 import { fmtDateOnly } from "@/lib/dateFormat";
@@ -36,11 +37,7 @@ export default async function BookingSummaryPage({
 
   const booking = bookingResult.rows[0];
   if (!booking) {
-    return (
-      <div className="mx-auto w-full max-w-3xl px-6 py-12">
-        <p className="text-sm text-[var(--ccr-muted)]">Booking not found.</p>
-      </div>
-    );
+    notFound();
   }
 
   const pricing = booking.pricing_json ?? {};

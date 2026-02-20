@@ -42,4 +42,6 @@ Use this only when intentional visual changes are expected.
 
 - E2E runs start a local dev server on port `4173` by default.
 - The development breakpoint overlay is disabled during screenshot tests.
-- HTML reports are generated in `playwright-report/`.
+- HTML reports are generated in `.artifacts/playwright-report/`.
+- Test screenshots/videos/traces are generated in `.artifacts/test-results/`.
+- Store ad-hoc audit captures under `.artifacts/audit/` (never under `public/`).

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 
 import { CustomerSnapshotBookingsTable } from "@/components/admin/CustomerSnapshotBookingsTable";
 import { getSessionFromRequest } from "@/lib/auth/session";
@@ -154,11 +155,7 @@ export default async function AdminCustomerDetailPage({
 
   const customerRow = customer.rows[0];
   if (!customerRow) {
-    return (
-      <div className="mx-auto w-full max-w-4xl px-6 py-10">
-        <p className="text-sm text-[var(--ccr-muted)]">Customer not found.</p>
-      </div>
-    );
+    notFound();
   }
 
   let latestDriversLicenseBookingId: string | null = null;

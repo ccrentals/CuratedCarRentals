@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 
 import { dbQuery } from "@/lib/db";
 import { BookingActions } from "@/components/admin/BookingActions";
@@ -262,11 +263,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
 
   const booking = bookingResult.rows[0];
   if (!booking) {
-    return (
-      <div className="mx-auto w-full max-w-4xl px-6 py-10">
-        <p className="text-sm text-[var(--ccr-muted)]">Booking not found.</p>
-      </div>
-    );
+    notFound();
   }
 
   let payments: { rows: PaymentRow[]; rowCount: number };

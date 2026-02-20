@@ -4,9 +4,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
+import { ADMIN_ACCENT_RING_CLASS } from "@/components/admin/adminUiClasses";
 import { UserMenu } from "@/components/admin/UserMenu";
 
 const SIDEBAR_STORAGE_KEY = "adminSidebarCollapsed";
+const DRAWER_FOCUSABLE_SELECTOR =
+  'a[href], area[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 type NavChild = {
   label: string;
@@ -586,6 +589,10 @@ export function AdminShell({
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [mobileCompactHeader, setMobileCompactHeader] = useState(false);
   const mobileHeaderRef = useRef<HTMLElement | null>(null);
+  const drawerRef = useRef<HTMLElement | null>(null);
+  const mainContentRef = useRef<HTMLDivElement | null>(null);
+  const drawerTriggerRef = useRef<HTMLElement | null>(null);
+  const previousFocusedElementRef = useRef<HTMLElement | null>(null);
   const mobileCompactThresholdRef = useRef(72);
   const [collapsed, setCollapsed] = useState(() => {
     if (typeof window === "undefined") return false;
@@ -611,15 +618,109 @@ export function AdminShell({
 
   useEffect(() => {
     if (!drawerOpen) return;
+    const drawer = drawerRef.current;
+    if (!drawer) return;
+
+    const getFocusableElements = () =>
+      Array.from(drawer.querySelectorAll<HTMLElement>(DRAWER_FOCUSABLE_SELECTOR)).filter(
+        (element) =>
+          !element.hasAttribute("disabled") &&
+          element.getAttribute("aria-hidden") !== "true" &&
+          (element.getClientRects().length > 0 || element === document.activeElement),
+      );
+
     const handleKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setDrawerOpen(false);
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setDrawerOpen(false);
+        return;
+      }
+      if (event.key !== "Tab") return;
+
+      const focusableElements = getFocusableElements();
+      if (focusableElements.length === 0) {
+        event.preventDefault();
+        drawer.focus();
+        return;
+      }
+
+      const first = focusableElements[0];
+      const last = focusableElements[focusableElements.length - 1];
+      const activeElement =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null;
+
+      if (event.shiftKey) {
+        if (!activeElement || activeElement === first || !drawer.contains(activeElement)) {
+          event.preventDefault();
+          last.focus();
+        }
+        return;
+      }
+
+      if (!activeElement || activeElement === last || !drawer.contains(activeElement)) {
+        event.preventDefault();
+        first.focus();
+      }
     };
+
+    const handleFocusIn = (event: FocusEvent) => {
+      const focusTarget = event.target as Node | null;
+      if (focusTarget && drawer.contains(focusTarget)) return;
+      const focusableElements = getFocusableElements();
+      const nextTarget = focusableElements[0] ?? drawer;
+      nextTarget.focus();
+    };
+
+    previousFocusedElementRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+
     window.addEventListener("keydown", handleKey);
+    document.addEventListener("focusin", handleFocusIn);
+
+    const focusTimer = window.requestAnimationFrame(() => {
+      const focusableElements = getFocusableElements();
+      const nextTarget = focusableElements[0] ?? drawer;
+      nextTarget.focus();
+    });
+
     const previous = document.body.style.overflow;
     document.body.style.overflow = "hidden";
+
+    const background = mainContentRef.current;
+    const previousAriaHidden = background?.getAttribute("aria-hidden") ?? null;
+    const supportsInert = Boolean(background && "inert" in background);
+    const previousInert = supportsInert
+      ? Boolean((background as HTMLElement & { inert?: boolean }).inert)
+      : false;
+
+    if (background) {
+      background.setAttribute("aria-hidden", "true");
+      if (supportsInert) {
+        (background as HTMLElement & { inert?: boolean }).inert = true;
+      }
+    }
+
     return () => {
+      window.cancelAnimationFrame(focusTimer);
       window.removeEventListener("keydown", handleKey);
+      document.removeEventListener("focusin", handleFocusIn);
       document.body.style.overflow = previous;
+
+      if (background) {
+        if (previousAriaHidden === null) {
+          background.removeAttribute("aria-hidden");
+        } else {
+          background.setAttribute("aria-hidden", previousAriaHidden);
+        }
+        if (supportsInert) {
+          (background as HTMLElement & { inert?: boolean }).inert = previousInert;
+        }
+      }
+
+      const restoreTarget = drawerTriggerRef.current ?? previousFocusedElementRef.current;
+      if (restoreTarget) {
+        window.requestAnimationFrame(() => restoreTarget.focus());
+      }
     };
   }, [drawerOpen]);
 
@@ -677,7 +778,7 @@ export function AdminShell({
     return NAV_ITEMS.find((nav) => isActivePath(pathname, nav.href));
   }, [pathname]);
 
-  const handleMenuToggle = () => {
+  const handleMenuToggle = (trigger?: HTMLElement | null) => {
     if (typeof window === "undefined") return;
     const isDesktop = window.matchMedia("(min-width: 1024px)").matches;
     if (isDesktop) {
@@ -688,7 +789,13 @@ export function AdminShell({
       });
       setDrawerOpen(false);
     } else {
-      setDrawerOpen((prev) => !prev);
+      setDrawerOpen((prev) => {
+        const next = !prev;
+        if (next) {
+          drawerTriggerRef.current = trigger ?? drawerTriggerRef.current;
+        }
+        return next;
+      });
     }
   };
 
@@ -704,7 +811,9 @@ export function AdminShell({
         <div className={`flex items-center gap-2 ${collapsed ? "justify-center" : ""}`}>
           <button
             type="button"
-            onClick={handleMenuToggle}
+            onClick={(event) =>
+              handleMenuToggle(event.currentTarget as HTMLElement)
+            }
             aria-label="Toggle admin sidebar"
             className="rounded-lg border border-[var(--ccr-border)] px-2 py-1 text-sm font-semibold text-[var(--ccr-text)]"
           >
@@ -745,9 +854,17 @@ export function AdminShell({
         onClick={() => setDrawerOpen(false)}
       />
       <aside
+        ref={drawerRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Admin navigation"
+        aria-hidden={!drawerOpen}
+        tabIndex={drawerOpen ? -1 : undefined}
         data-admin-drawer
         className={`fixed left-0 top-0 z-50 flex h-dvh w-64 flex-col border-r border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 pt-6 shadow-xl transition-transform lg:hidden ${
-          drawerOpen ? "translate-x-0" : "-translate-x-full"
+          drawerOpen
+            ? "translate-x-0"
+            : "pointer-events-none invisible -translate-x-full"
         }`}
       >
         <div className="shrink-0 flex items-center justify-between">
@@ -795,7 +912,7 @@ export function AdminShell({
         </div>
       </aside>
 
-      <div className="min-w-0 flex-1">
+      <div ref={mainContentRef} className="min-w-0 flex-1">
         <header
           ref={mobileHeaderRef}
           data-admin-full-header
@@ -807,7 +924,9 @@ export function AdminShell({
             <div className="flex min-w-0 flex-1 items-center gap-3">
               <button
                 type="button"
-                onClick={handleMenuToggle}
+                onClick={(event) =>
+                  handleMenuToggle(event.currentTarget as HTMLElement)
+                }
                 aria-label="Open admin menu"
                 className="rounded-lg border border-[var(--ccr-border)] px-2 py-1 text-sm font-semibold text-[var(--ccr-text)] lg:hidden"
               >
@@ -826,7 +945,9 @@ export function AdminShell({
               </button>
               {activeItem ? (
                 <div className="flex min-w-0 items-center gap-3 text-lg font-semibold text-[var(--ccr-text)] sm:gap-5">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--ccr-surface-soft)] shadow-sm ring-2 ring-[var(--ccr-accent)] ring-offset-2 ring-offset-[var(--ccr-surface)]">
+                  <span
+                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--ccr-surface-soft)] shadow-sm ${ADMIN_ACCENT_RING_CLASS}`}
+                  >
                     {activeItem.icon("h-5 w-5 text-[var(--ccr-accent)]")}
                   </span>
                   <span className="truncate">{activeItem.label}</span>
@@ -851,9 +972,11 @@ export function AdminShell({
               <div className="flex min-w-0 items-center gap-3 text-base font-semibold text-[var(--ccr-text)]">
                 <button
                   type="button"
-                  onClick={handleMenuToggle}
+                  onClick={(event) =>
+                    handleMenuToggle(event.currentTarget as HTMLElement)
+                  }
                   aria-label="Open admin menu"
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--ccr-surface-soft)] shadow-sm ring-1 ring-[var(--ccr-accent)] ring-offset-1 ring-offset-[var(--ccr-surface)]"
+                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--ccr-surface-soft)] shadow-sm ${ADMIN_ACCENT_RING_CLASS}`}
                 >
                   {activeItem.icon("h-4 w-4 text-[var(--ccr-accent)]")}
                 </button>
@@ -862,7 +985,9 @@ export function AdminShell({
             ) : (
               <button
                 type="button"
-                onClick={handleMenuToggle}
+                onClick={(event) =>
+                  handleMenuToggle(event.currentTarget as HTMLElement)
+                }
                 aria-label="Open admin menu"
                 className="rounded-lg border border-[var(--ccr-border)] px-2 py-1 text-sm font-semibold text-[var(--ccr-text)]"
               >
