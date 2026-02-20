@@ -12,7 +12,7 @@ import {
 } from "@/lib/notifications/email";
 import { recalculateBookingPayments } from "@/lib/payments/recalculateBooking";
 import { logError } from "@/lib/log";
-import { overrideOverlappingNonBlockingBookings } from "@/lib/bookings/holds";
+import { maybeEntitleBookingAfterPayment } from "@/lib/availability/entitlement";
 
 const METHOD_ALLOWLIST = new Set(["CASH", "BANK_TRANSFER", "POS_CARD", "CHEQUE", "OTHER"]);
 const METHOD_LABELS: Record<string, string> = {
@@ -107,31 +107,11 @@ export async function POST(
       ],
     );
 
-    const summary = await recalculateBookingPayments(booking.id, { client });
-    const shouldConfirm =
-      String(booking.status).toUpperCase() === "PENDING_PAYMENT" &&
-      summary.netPaidToDate >= summary.depositAmount;
-    const overrideOutcome = await overrideOverlappingNonBlockingBookings(client, {
-      paidBookingId: booking.id,
-      vehicleId: booking.vehicle_id,
-      startDate: booking.start_date,
-      endDate: booking.end_date,
-      overrideReason: "Overridden by paid booking",
+    const entitlementResolution = await maybeEntitleBookingAfterPayment(booking.id, {
+      client,
+      auditUserId: session.userId,
     });
-
-    if (overrideOutcome.blockingConflictIds.length > 0) {
-      await client.query("rollback");
-      return NextResponse.json(
-        { error: "Vehicle is no longer available for these dates" },
-        { status: 409 },
-      );
-    }
-
-    if (shouldConfirm) {
-      await client.query("update bookings set status = 'CONFIRMED', updated_at = now() where id = $1", [
-        booking.id,
-      ]);
-    }
+    const summary = await recalculateBookingPayments(booking.id, { client });
 
     await client.query("commit");
 
@@ -144,12 +124,14 @@ export async function POST(
         amount,
         method,
         reference: reference || undefined,
-        confirmed: shouldConfirm,
-        overriddenBookings: overrideOutcome.overridden.map((item) => item.id),
+        confirmed: entitlementResolution.state === "ENTITLED",
+        entitlementState: entitlementResolution.state,
+        winnerBookingId: entitlementResolution.winnerBookingId,
+        overriddenBookings: entitlementResolution.cancelledOverlaps.map((item) => item.id),
       },
     });
 
-    for (const overriddenBooking of overrideOutcome.overridden) {
+    for (const overriddenBooking of entitlementResolution.cancelledOverlaps) {
       await writeAuditLog({
         userId: session.userId,
         action: "BOOKING_OVERRIDDEN_BY_PAID_BOOKING",
@@ -185,6 +167,16 @@ export async function POST(
         endDate: overriddenBooking.endDate,
         pickupLocation: overriddenBooking.pickupLocation,
         overriddenByBookingId: booking.id,
+      });
+    }
+
+    if (entitlementResolution.state === "LOST") {
+      return NextResponse.json({
+        ok: true,
+        lost: true,
+        winnerBookingId: entitlementResolution.winnerBookingId,
+        paidToDate: summary.netPaidToDate,
+        balanceDue: summary.balanceDue,
       });
     }
 

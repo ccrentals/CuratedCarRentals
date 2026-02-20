@@ -761,7 +761,7 @@ async function buildUpcomingPickupsReturnsReport(
     "join customers c on c.id = b.customer_id " +
     "join vehicles v on v.id = b.vehicle_id " +
     "where coalesce(b.pricing_json->>'overridden_by_booking_id', '') = '' " +
-    "and (upper(b.status) in ('CONFIRMED','PICKED_UP','RETURNED','ACTIVE') or (upper(b.status) = 'PENDING_PAYMENT' and upper(coalesce(b.pricing_json->>'payment_option_selected', '')) = 'PAY_ON_PICKUP')) " +
+    "and (upper(b.status) in ('CONFIRMED','PICKED_UP','RETURNED','ACTIVE') or (upper(b.status) = 'PENDING_PAYMENT' and upper(coalesce(b.pricing_json->>'payment_option_selected', '')) in ('PAY_ON_PICKUP','NONE'))) " +
     vehicleClause;
 
   const pickups = await db.query(

@@ -4,7 +4,12 @@ import PrintInvoiceButton from "@/components/payments/PrintInvoiceButton";
 import { dbQuery } from "@/lib/db";
 import { fmtDateOnly } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
-import { computeBookingPricing, fetchNetPaidToDate, readPromoPricingFields } from "@/lib/payments/pricing";
+import {
+  computeBookingPricing,
+  fetchNetPaidToDate,
+  readInsurancePricingFields,
+  readPromoPricingFields,
+} from "@/lib/payments/pricing";
 
 type PaymentRow = {
   id: string;
@@ -77,6 +82,7 @@ export default async function BookingInvoicePage({
   const dailyRate = Number((pricing as Record<string, unknown>).daily_rate_cents ?? booking.daily_rate_cents ?? 0);
   const deposit = Number((pricing as Record<string, unknown>).deposit_cents ?? booking.deposit_cents ?? 0);
   const { promoCode, promoDiscount } = readPromoPricingFields(pricing);
+  const { insuranceSelected, insurancePricePerDay, insuranceTotal } = readInsurancePricingFields(pricing);
   const netPaidToDate = await fetchNetPaidToDate(booking.id);
   const summary = computeBookingPricing({
     bookingId: booking.id,
@@ -88,6 +94,9 @@ export default async function BookingInvoicePage({
     netPaidToDate,
     promoCode,
     promoDiscount,
+    insuranceSelected,
+    insurancePricePerDay,
+    insuranceTotal,
   });
 
   return (

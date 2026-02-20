@@ -16,6 +16,7 @@ import {
   computeBookingPricing,
   fetchNetPaidToDate,
   isNonBlockingBookingHold,
+  readInsurancePricingFields,
   readPaymentOption,
   readPromoPricingFields,
 } from "@/lib/payments/pricing";
@@ -23,12 +24,28 @@ import { readBookingOverrideInfo } from "@/lib/bookings/holds";
 import { formatBookingStatusLabel } from "@/lib/bookings/formatBookingStatusLabel";
 import { refundRequiredStyles } from "@/lib/refundRequiredStyles";
 import { formatLegalIdTypeLabel } from "@/lib/customers/legalId";
+import { isEntitledBooking } from "@/lib/availability/entitlement";
 
 type BookingDetails = {
   id: string;
   start_date: string;
   end_date: string;
+  start_at: string | null;
+  end_at: string | null;
+  pickup_time: string | null;
+  dropoff_time: string | null;
   pickup_location: string;
+  dropoff_location: string | null;
+  pickup_location_text_snapshot: string | null;
+  dropoff_location_text_snapshot: string | null;
+  vehicle_id: string;
+  insurance_selected: boolean | null;
+  insurance_price_per_day_cents: number | null;
+  insurance_total_cents: number | null;
+  payment_option: string | null;
+  custom_payment_amount_cents: number | null;
+  drivers_license_number: string | null;
+  drivers_license_expiration_date: string | null;
   status: string;
   pricing_json: Record<string, unknown>;
   customer_name: string;
@@ -36,7 +53,6 @@ type BookingDetails = {
   customer_phone: string;
   customer_legal_id_type: string | null;
   customer_legal_id_number: string | null;
-  customer_legal_id_image_url: string | null;
   vehicle_make: string;
   vehicle_model: string;
   vehicle_year: number;
@@ -74,6 +90,10 @@ type OverriddenByThisBooking = {
   customer_name: string;
 };
 
+type BookingPrivateDocRow = {
+  document_type: string;
+};
+
 function isUndefinedColumn(error: unknown, column: string) {
   const code = (error as { code?: string } | null)?.code;
   const message = String((error as { message?: unknown } | null)?.message ?? "").toLowerCase();
@@ -81,6 +101,10 @@ function isUndefinedColumn(error: unknown, column: string) {
   const escapedColumn = normalizedColumn.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const columnPattern = new RegExp(`\\b${escapedColumn}\\b`);
   return code === "42703" && message.includes("does not exist") && columnPattern.test(message);
+}
+
+function isAnyUndefinedColumn(error: unknown, columns: string[]) {
+  return columns.some((column) => isUndefinedColumn(error, column));
 }
 
 function statusBadge(status: string) {
@@ -138,15 +162,52 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
   let bookingResult;
   try {
     bookingResult = await dbQuery<BookingDetails>(
-      "select b.id, b.start_date, b.end_date, b.pickup_location, b.status, b.pricing_json, c.full_name as customer_name, c.email as customer_email, c.phone as customer_phone, c.legal_id_type as customer_legal_id_type, c.legal_id_number as customer_legal_id_number, c.legal_id_image_url as customer_legal_id_image_url, v.make as vehicle_make, v.model as vehicle_model, v.year as vehicle_year, v.daily_rate_cents, v.deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.id = $1",
+      "select b.id, b.start_date, b.end_date, b.start_at, b.end_at, b.pickup_time::text as pickup_time, b.dropoff_time::text as dropoff_time, b.pickup_location, b.dropoff_location, b.pickup_location_text_snapshot, b.dropoff_location_text_snapshot, b.vehicle_id, b.insurance_selected, b.insurance_price_per_day_cents, b.insurance_total_cents, b.payment_option, b.custom_payment_amount_cents, b.drivers_license_number, b.drivers_license_expiration_date::text as drivers_license_expiration_date, b.status, b.pricing_json, c.full_name as customer_name, c.email as customer_email, c.phone as customer_phone, c.legal_id_type as customer_legal_id_type, c.legal_id_number as customer_legal_id_number, v.make as vehicle_make, v.model as vehicle_model, v.year as vehicle_year, v.daily_rate_cents, v.deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.id = $1",
       [id],
     );
   } catch (error) {
-    if (!isUndefinedColumn(error, "legal_id_type")) {
+    if (
+      !isAnyUndefinedColumn(error, [
+        "legal_id_type",
+        "start_at",
+        "end_at",
+        "pickup_time",
+        "dropoff_time",
+        "dropoff_location",
+        "pickup_location_text_snapshot",
+        "dropoff_location_text_snapshot",
+        "insurance_selected",
+        "insurance_price_per_day_cents",
+        "insurance_total_cents",
+        "payment_option",
+        "custom_payment_amount_cents",
+        "drivers_license_number",
+        "drivers_license_expiration_date",
+      ])
+    ) {
       throw error;
     }
     const legacyBooking = await dbQuery<
-      Omit<BookingDetails, "customer_legal_id_type" | "customer_legal_id_number" | "customer_legal_id_image_url">
+      Omit<
+        BookingDetails,
+        | "start_at"
+        | "end_at"
+        | "pickup_time"
+        | "dropoff_time"
+        | "dropoff_location"
+        | "pickup_location_text_snapshot"
+        | "dropoff_location_text_snapshot"
+        | "vehicle_id"
+        | "insurance_selected"
+        | "insurance_price_per_day_cents"
+        | "insurance_total_cents"
+        | "payment_option"
+        | "custom_payment_amount_cents"
+        | "drivers_license_number"
+        | "drivers_license_expiration_date"
+        | "customer_legal_id_type"
+        | "customer_legal_id_number"
+      >
     >(
       "select b.id, b.start_date, b.end_date, b.pickup_location, b.status, b.pricing_json, c.full_name as customer_name, c.email as customer_email, c.phone as customer_phone, v.make as vehicle_make, v.model as vehicle_model, v.year as vehicle_year, v.daily_rate_cents, v.deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.id = $1",
       [id],
@@ -157,13 +218,43 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
         (
           row: Omit<
             BookingDetails,
-            "customer_legal_id_type" | "customer_legal_id_number" | "customer_legal_id_image_url"
+            | "start_at"
+            | "end_at"
+            | "pickup_time"
+            | "dropoff_time"
+            | "dropoff_location"
+            | "pickup_location_text_snapshot"
+            | "dropoff_location_text_snapshot"
+            | "vehicle_id"
+            | "insurance_selected"
+            | "insurance_price_per_day_cents"
+            | "insurance_total_cents"
+            | "payment_option"
+            | "custom_payment_amount_cents"
+            | "drivers_license_number"
+            | "drivers_license_expiration_date"
+            | "customer_legal_id_type"
+            | "customer_legal_id_number"
           >,
         ) => ({
         ...row,
+        start_at: null,
+        end_at: null,
+        pickup_time: null,
+        dropoff_time: null,
+        dropoff_location: null,
+        pickup_location_text_snapshot: row.pickup_location,
+        dropoff_location_text_snapshot: row.pickup_location,
+        vehicle_id: "",
+        insurance_selected: null,
+        insurance_price_per_day_cents: null,
+        insurance_total_cents: null,
+        payment_option: null,
+        custom_payment_amount_cents: null,
+        drivers_license_number: null,
+        drivers_license_expiration_date: null,
         customer_legal_id_type: null,
         customer_legal_id_number: null,
-        customer_legal_id_image_url: null,
         }),
       ),
     };
@@ -196,11 +287,34 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
     }
   }
 
+  let privateDocs: { rows: BookingPrivateDocRow[]; rowCount: number } = { rows: [], rowCount: 0 };
+  try {
+    privateDocs = await dbQuery<BookingPrivateDocRow>(
+      "select distinct document_type from booking_private_files where booking_id = $1",
+      [id],
+    );
+  } catch (error) {
+    if (!isUndefinedColumn(error, "booking_private_files")) {
+      throw error;
+    }
+  }
+  const hasDriversLicenseDoc = privateDocs.rows.some(
+    (row: BookingPrivateDocRow) => row.document_type === "DRIVERS_LICENSE",
+  );
+  const hasSignatureDoc = privateDocs.rows.some(
+    (row: BookingPrivateDocRow) => row.document_type === "SIGNATURE",
+  );
+
   const pricing = booking.pricing_json ?? {};
   const dailyRate = Number(pricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
   const deposit = Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0);
   const paymentOption = readPaymentOption(pricing);
   const { promoCode, promoDiscount } = readPromoPricingFields(pricing);
+  const {
+    insuranceSelected,
+    insurancePricePerDay,
+    insuranceTotal,
+  } = readInsurancePricingFields(pricing);
   const overrideInfo = readBookingOverrideInfo(pricing);
   const netPaidToDate = await fetchNetPaidToDate(booking.id);
   const summary = computeBookingPricing({
@@ -214,6 +328,9 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
     netPaidToDate,
     promoCode,
     promoDiscount,
+    insuranceSelected,
+    insurancePricePerDay,
+    insuranceTotal,
   });
   const days = summary.days;
   const total = summary.total;
@@ -224,6 +341,32 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
   const refundRequired = summary.refundRequired;
   const isDepositPaid = deposit > 0 ? paidToDate >= deposit : paidToDate > 0;
   const displayStatus = formatBookingStatusLabel(booking.status, summary.paymentStatus).toUpperCase();
+  const entitlementState = isEntitledBooking({
+    status: booking.status,
+    paymentStatus: summary.paymentStatus,
+    paidToDate: summary.netPaidToDate,
+    depositRequired: summary.depositRequired,
+  })
+    ? "ENTITLED"
+    : "TENTATIVE";
+  const pickupDateTimeLabel = booking.start_at
+    ? fmtDate(booking.start_at)
+    : `${fmtDate(booking.start_date)} ${booking.pickup_time ?? ""}`.trim();
+  const dropoffDateTimeLabel = booking.end_at
+    ? fmtDate(booking.end_at)
+    : `${fmtDate(booking.end_date)} ${booking.dropoff_time ?? ""}`.trim();
+  const pickupLocationSnapshot = booking.pickup_location_text_snapshot || booking.pickup_location;
+  const dropoffLocationSnapshot =
+    booking.dropoff_location_text_snapshot || booking.dropoff_location || booking.pickup_location;
+  const customPaymentAmount = Number(
+    pricing.custom_payment_amount_cents ?? booking.custom_payment_amount_cents ?? 0,
+  );
+  const insurancePricePerDayDisplay = Number(
+    pricing.insurance_price_per_day_cents ?? booking.insurance_price_per_day_cents ?? insurancePricePerDay ?? 0,
+  );
+  const insuranceTotalDisplay = Number(
+    pricing.insurance_total_cents ?? booking.insurance_total_cents ?? insuranceTotal ?? 0,
+  );
   const isNonBlocking =
     isNonBlockingBookingHold({
       paymentStatus: summary.paymentStatus,
@@ -231,6 +374,9 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
       holdMinimumAmount: summary.deposit,
     }) && !["CANCELLED", "RETURNED"].includes(booking.status.toUpperCase());
   const overriddenByBookingId = overrideInfo.overriddenByBookingId;
+  const cancellationReasonWhenLost = overrideInfo.isOverridden
+    ? overrideInfo.overrideReason || "LOST_TO_FIRST_DEPOSIT"
+    : null;
 
   const notesRaw = (pricing as { admin_notes?: AdminNote[] }).admin_notes;
   const notes = Array.isArray(notesRaw) ? [...notesRaw] : [];
@@ -356,20 +502,50 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
               <dd className="font-semibold text-[var(--ccr-text)]">{displayStatus.replace(/_/g, " ")}</dd>
             </div>
             <div>
+              <dt className="text-xs uppercase tracking-wide">Entitlement</dt>
+              <dd className="font-semibold text-[var(--ccr-text)]">{entitlementState}</dd>
+            </div>
+            <div>
               <dt className="text-xs uppercase tracking-wide">Payment Option</dt>
               <dd className="font-semibold text-[var(--ccr-text)]">
                 {summary.paymentOption.replace(/_/g, " ")}
               </dd>
             </div>
+            {summary.paymentOption === "CUSTOM" ? (
+              <div>
+                <dt className="text-xs uppercase tracking-wide">Custom Amount</dt>
+                <dd className="font-semibold text-[var(--ccr-text)]">{formatJmd(customPaymentAmount)}</dd>
+              </div>
+            ) : null}
             <div>
-              <dt className="text-xs uppercase tracking-wide">Dates</dt>
+              <dt className="text-xs uppercase tracking-wide">Pickup Date & Time</dt>
               <dd className="font-semibold text-[var(--ccr-text)]">
-                {fmtDate(booking.start_date)} → {fmtDate(booking.end_date)}
+                {pickupDateTimeLabel}
               </dd>
             </div>
             <div>
-              <dt className="text-xs uppercase tracking-wide">Pickup Location</dt>
-              <dd className="font-semibold text-[var(--ccr-text)]">{booking.pickup_location}</dd>
+              <dt className="text-xs uppercase tracking-wide">Dropoff Date & Time</dt>
+              <dd className="font-semibold text-[var(--ccr-text)]">{dropoffDateTimeLabel}</dd>
+            </div>
+            <div>
+              <dt className="text-xs uppercase tracking-wide">Pickup Location Snapshot</dt>
+              <dd className="font-semibold text-[var(--ccr-text)]">{pickupLocationSnapshot}</dd>
+            </div>
+            <div>
+              <dt className="text-xs uppercase tracking-wide">Dropoff Location Snapshot</dt>
+              <dd className="font-semibold text-[var(--ccr-text)]">{dropoffLocationSnapshot}</dd>
+            </div>
+            {cancellationReasonWhenLost ? (
+              <div>
+                <dt className="text-xs uppercase tracking-wide">Cancellation Reason</dt>
+                <dd className="font-semibold text-[var(--ccr-text)]">{cancellationReasonWhenLost}</dd>
+              </div>
+            ) : null}
+            <div>
+              <dt className="text-xs uppercase tracking-wide">Vehicle ID</dt>
+              <dd className="font-mono font-semibold text-[var(--ccr-text)]">
+                {booking.vehicle_id || "N/A"}
+              </dd>
             </div>
           </dl>
         </section>
@@ -390,14 +566,31 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
               ) : (
                 <p className="text-[var(--ccr-muted)]">Not provided</p>
               )}
-              {booking.customer_legal_id_image_url ? (
+              <p className="mt-2 text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Driver&apos;s License</p>
+              <p className="text-[var(--ccr-muted)]">
+                Number: {booking.drivers_license_number || booking.customer_legal_id_number || "Not provided"}
+              </p>
+              <p className="text-[var(--ccr-muted)]">
+                Expiry: {booking.drivers_license_expiration_date ? fmtDate(booking.drivers_license_expiration_date) : "Not provided"}
+              </p>
+              {hasDriversLicenseDoc ? (
                 <a
-                  href={booking.customer_legal_id_image_url}
+                  href={`/api/public/bookings/${booking.id}/private-files/DRIVERS_LICENSE`}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex text-xs font-semibold text-[var(--ccr-accent)] underline"
+                  className="mt-1 inline-flex text-xs font-semibold text-[var(--ccr-accent)] underline"
                 >
-                  View ID image
+                  View secure driver&apos;s license file
+                </a>
+              ) : null}
+              {hasSignatureDoc ? (
+                <a
+                  href={`/api/public/bookings/${booking.id}/private-files/SIGNATURE`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-1 inline-flex text-xs font-semibold text-[var(--ccr-accent)] underline"
+                >
+                  View secure signature
                 </a>
               ) : null}
             </div>
@@ -406,6 +599,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
               <p className="font-semibold text-[var(--ccr-text)]">
                 {booking.vehicle_year} {booking.vehicle_make} {booking.vehicle_model}
               </p>
+              <p className="font-mono text-xs text-[var(--ccr-muted)]">ID: {booking.vehicle_id || "N/A"}</p>
               <p className="text-[var(--ccr-muted)]">Daily Rate: {formatJmd(dailyRate)}</p>
             </div>
           </div>
@@ -455,12 +649,34 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
               <span className="font-semibold text-[var(--ccr-text)]">{formatJmd(dailyRate)}</span>
             </div>
             <div className="flex items-center justify-between">
+              <span>Insurance selected</span>
+              <span className="font-semibold text-[var(--ccr-text)]">
+                {summary.insuranceSelected ? "Yes" : "No"}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span>Insurance price/day</span>
+              <span className="font-semibold text-[var(--ccr-text)]">
+                {formatJmd(insurancePricePerDayDisplay)}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span>Insurance total</span>
+              <span className="font-semibold text-[var(--ccr-text)]">
+                {formatJmd(insuranceTotalDisplay)}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
               <span>Deposit due</span>
               <span className="font-semibold text-[var(--ccr-text)]">{formatJmd(depositDue)}</span>
             </div>
             <div className="flex items-center justify-between">
               <span>Balance due</span>
               <span className="font-semibold text-[var(--ccr-text)]">{formatJmd(balanceDue)}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span>Payment option (stored)</span>
+              <span className="font-semibold text-[var(--ccr-text)]">{summary.paymentOption}</span>
             </div>
             <div className="flex items-center justify-between">
               <span>Payment status</span>

@@ -121,7 +121,7 @@ function resolveReportSubstatusIndicators(input: {
     });
   }
 
-  if (!isClosed && paymentOption === "PAY_ON_PICKUP") {
+  if (!isClosed && (paymentOption === "PAY_ON_PICKUP" || paymentOption === "NONE")) {
     indicators.push({
       key: "due_on_pickup",
       variant: "due_on_pickup",

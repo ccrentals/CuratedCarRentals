@@ -20,7 +20,7 @@ type BookingPaySummary = {
   promoCode: string | null;
   promoDiscount: number;
   paymentStatus: "UNPAID" | "DUE_ON_PICKUP" | "DEPOSIT_PAID" | "PAID_IN_FULL";
-  paymentOption: "DEPOSIT" | "FULL" | "PAY_ON_PICKUP";
+  paymentOption: "DEPOSIT" | "FULL" | "CUSTOM" | "NONE";
 };
 
 type PromoResponse = {
@@ -135,7 +135,7 @@ export function BookingPayPanel({
             same dates first, unpaid bookings may be cancelled.
           </p>
         </div>
-        {summary.paymentOption === "PAY_ON_PICKUP" ? (
+        {summary.paymentOption === "NONE" ? (
           <div className="mt-4 rounded-xl border border-red-300/40 bg-red-500/15 p-4 text-sm text-red-100">
             <p className="font-semibold">Pay on Pickup selected</p>
             <p className="mt-1 text-red-100/90">
@@ -237,7 +237,7 @@ export function BookingPayPanel({
                 <span className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)]">
                   Payment already started
                 </span>
-              ) : summary.paymentOption === "PAY_ON_PICKUP" && summary.paymentStatus === "DUE_ON_PICKUP" ? (
+              ) : summary.paymentOption === "NONE" && summary.paymentStatus === "DUE_ON_PICKUP" ? (
                 <span className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)]">
                   Selected
                 </span>

@@ -122,15 +122,13 @@ async function updateExistingCustomer(
     bookedAtIso: string;
     legalIdType?: string | null;
     legalIdNumber?: string | null;
-    legalIdImageUrl?: string | null;
     legalIdTypeProvided: boolean;
     legalIdNumberProvided: boolean;
-    legalIdImageUrlProvided: boolean;
   },
 ) {
   try {
     await db.query(
-      "update customers set full_name = $2, email = $3, phone = $4, address = $5, notes = $6, last_booked_at = greatest(coalesce(last_booked_at, to_timestamp(0)), $7::timestamptz), legal_id_type = case when $8::boolean then $9 else legal_id_type end, legal_id_number = case when $10::boolean then $11 else legal_id_number end, legal_id_image_url = case when $12::boolean then $13 else legal_id_image_url end where id = $1",
+      "update customers set full_name = $2, email = $3, phone = $4, address = $5, notes = $6, last_booked_at = greatest(coalesce(last_booked_at, to_timestamp(0)), $7::timestamptz), legal_id_type = case when $8::boolean then $9 else legal_id_type end, legal_id_number = case when $10::boolean then $11 else legal_id_number end where id = $1",
       [
         customerId,
         input.fullName,
@@ -143,13 +141,11 @@ async function updateExistingCustomer(
         input.legalIdType ?? null,
         input.legalIdNumberProvided,
         input.legalIdNumber ?? null,
-        input.legalIdImageUrlProvided,
-        input.legalIdImageUrl ?? null,
       ],
     );
     return;
   } catch (error) {
-    if (isAnyMissingColumn(error, ["legal_id_type", "legal_id_number", "legal_id_image_url"])) {
+    if (isAnyMissingColumn(error, ["legal_id_type", "legal_id_number"])) {
       try {
         await db.query(
           "update customers set full_name = $2, email = $3, phone = $4, address = $5, notes = $6, last_booked_at = greatest(coalesce(last_booked_at, to_timestamp(0)), $7::timestamptz) where id = $1",
@@ -197,12 +193,11 @@ async function insertCustomer(
     bookedAtIso: string;
     legalIdType?: string | null;
     legalIdNumber?: string | null;
-    legalIdImageUrl?: string | null;
   },
 ) {
   try {
     const inserted = await db.query(
-      "insert into customers (full_name, email, phone, address, notes, last_booked_at, legal_id_type, legal_id_number, legal_id_image_url) values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning id",
+      "insert into customers (full_name, email, phone, address, notes, last_booked_at, legal_id_type, legal_id_number) values ($1, $2, $3, $4, $5, $6, $7, $8) returning id",
       [
         input.fullName,
         input.email,
@@ -212,12 +207,11 @@ async function insertCustomer(
         input.bookedAtIso,
         input.legalIdType ?? null,
         input.legalIdNumber ?? null,
-        input.legalIdImageUrl ?? null,
       ],
     );
     return (inserted.rows[0] as CustomerRow).id;
   } catch (error) {
-    if (isAnyMissingColumn(error, ["legal_id_type", "legal_id_number", "legal_id_image_url"])) {
+    if (isAnyMissingColumn(error, ["legal_id_type", "legal_id_number"])) {
       try {
         const inserted = await db.query(
           "insert into customers (full_name, email, phone, address, notes, last_booked_at) values ($1, $2, $3, $4, $5, $6) returning id",
@@ -252,7 +246,6 @@ export type UpsertCustomerForBookingInput = {
   notes?: string | null;
   legalIdType?: string | null;
   legalIdNumber?: string | null;
-  legalIdImageUrl?: string | null;
   bookedAt?: string;
 };
 
@@ -273,11 +266,8 @@ export async function upsertCustomerForBooking(
   const legalIdType = normalizeLegalIdType(input.legalIdType);
   const legalIdNumber =
     typeof input.legalIdNumber === "string" ? input.legalIdNumber.trim() : null;
-  const legalIdImageUrl =
-    typeof input.legalIdImageUrl === "string" ? input.legalIdImageUrl.trim() : null;
   const legalIdTypeProvided = Object.prototype.hasOwnProperty.call(input, "legalIdType");
   const legalIdNumberProvided = Object.prototype.hasOwnProperty.call(input, "legalIdNumber");
-  const legalIdImageUrlProvided = Object.prototype.hasOwnProperty.call(input, "legalIdImageUrl");
 
   if (!fullName || !email || !phone) {
     throw new Error("fullName, email, and phone are required");
@@ -304,10 +294,8 @@ export async function upsertCustomerForBooking(
         bookedAtIso,
         legalIdType,
         legalIdNumber,
-        legalIdImageUrl,
         legalIdTypeProvided,
         legalIdNumberProvided,
-        legalIdImageUrlProvided,
       });
       return { customerId: input.customerId, created: false };
     }
@@ -330,10 +318,8 @@ export async function upsertCustomerForBooking(
       bookedAtIso,
       legalIdType,
       legalIdNumber,
-      legalIdImageUrl,
       legalIdTypeProvided,
       legalIdNumberProvided,
-      legalIdImageUrlProvided,
     });
     return { customerId: existingId, created: false };
   }
@@ -347,7 +333,6 @@ export async function upsertCustomerForBooking(
     bookedAtIso,
     legalIdType,
     legalIdNumber,
-    legalIdImageUrl,
   });
   return { customerId, created: true };
 }

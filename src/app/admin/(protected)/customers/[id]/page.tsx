@@ -15,19 +15,33 @@ type CustomerRow = {
   full_name: string;
   email: string;
   phone: string;
+  first_name: string | null;
+  last_name: string | null;
+  street: string | null;
+  street2: string | null;
+  city: string | null;
+  state: string | null;
+  zip: string | null;
+  country: string | null;
+  birthday: string | null;
+  drivers_license_number: string | null;
   is_blocked: boolean;
   blocked_at: string | null;
   blocked_by_user_id: string | null;
   blocked_reason: string | null;
   legal_id_type: string | null;
   legal_id_number: string | null;
-  legal_id_image_url: string | null;
   address: string | null;
   notes: string | null;
   created_at: string;
   last_booked_at: string | null;
   total_bookings: number;
   total_spend: number;
+};
+
+type CustomerPrivateDocRow = {
+  booking_id: string;
+  document_type: string;
 };
 
 function isMissingColumn(error: unknown, column: string) {
@@ -85,7 +99,7 @@ export default async function AdminCustomerDetailPage({
   let customer;
   try {
     customer = await dbQuery<CustomerRow>(
-      "select c.id, c.full_name, c.email, c.phone, coalesce(c.is_blocked, false) as is_blocked, c.blocked_at, c.blocked_by_user_id, c.blocked_reason, c.legal_id_type, c.legal_id_number, c.legal_id_image_url, c.address, c.notes, c.created_at, c.last_booked_at, count(distinct b.id)::int as total_bookings, coalesce(sum(case when p.status in ('DEPOSIT_PAID', 'SUCCESS', 'REFUNDED') and p.deleted_at is null then p.deposit_amount_cents else 0 end), 0)::int as total_spend from customers c left join bookings b on b.customer_id = c.id left join payments p on p.booking_id = b.id where c.id = $1 group by c.id, c.full_name, c.email, c.phone, c.is_blocked, c.blocked_at, c.blocked_by_user_id, c.blocked_reason, c.legal_id_type, c.legal_id_number, c.legal_id_image_url, c.address, c.notes, c.created_at, c.last_booked_at",
+      "select c.id, c.full_name, c.email, c.phone, c.first_name, c.last_name, c.street, c.street2, c.city, c.state, c.zip, c.country, c.birthday::text as birthday, c.drivers_license_number, coalesce(c.is_blocked, false) as is_blocked, c.blocked_at, c.blocked_by_user_id, c.blocked_reason, c.legal_id_type, c.legal_id_number, c.address, c.notes, c.created_at, c.last_booked_at, count(distinct b.id)::int as total_bookings, coalesce(sum(case when p.status in ('DEPOSIT_PAID', 'SUCCESS', 'REFUNDED') and p.deleted_at is null then p.deposit_amount_cents else 0 end), 0)::int as total_spend from customers c left join bookings b on b.customer_id = c.id left join payments p on p.booking_id = b.id where c.id = $1 group by c.id, c.full_name, c.email, c.phone, c.first_name, c.last_name, c.street, c.street2, c.city, c.state, c.zip, c.country, c.birthday, c.drivers_license_number, c.is_blocked, c.blocked_at, c.blocked_by_user_id, c.blocked_reason, c.legal_id_type, c.legal_id_number, c.address, c.notes, c.created_at, c.last_booked_at",
       [id],
     );
   } catch (error) {
@@ -96,11 +110,21 @@ export default async function AdminCustomerDetailPage({
         "blocked_at",
         "blocked_by_user_id",
         "blocked_reason",
+        "first_name",
+        "last_name",
+        "street",
+        "street2",
+        "city",
+        "state",
+        "zip",
+        "country",
+        "birthday",
+        "drivers_license_number",
       ])
     ) {
       throw error;
     }
-    const legacyCustomer = await dbQuery<Omit<CustomerRow, "legal_id_type" | "legal_id_number" | "legal_id_image_url">>(
+    const legacyCustomer = await dbQuery<Omit<CustomerRow, "legal_id_type" | "legal_id_number">>(
       "select c.id, c.full_name, c.email, c.phone, false as is_blocked, null::timestamptz as blocked_at, null::uuid as blocked_by_user_id, null::text as blocked_reason, c.address, c.notes, c.created_at, c.last_booked_at, count(distinct b.id)::int as total_bookings, coalesce(sum(case when p.status in ('DEPOSIT_PAID', 'SUCCESS', 'REFUNDED') and p.deleted_at is null then p.deposit_amount_cents else 0 end), 0)::int as total_spend from customers c left join bookings b on b.customer_id = c.id left join payments p on p.booking_id = b.id where c.id = $1 group by c.id, c.full_name, c.email, c.phone, c.address, c.notes, c.created_at, c.last_booked_at",
       [id],
     );
@@ -108,12 +132,21 @@ export default async function AdminCustomerDetailPage({
       ...legacyCustomer,
       rows: legacyCustomer.rows.map(
         (
-          row: Omit<CustomerRow, "legal_id_type" | "legal_id_number" | "legal_id_image_url">,
+          row: Omit<CustomerRow, "legal_id_type" | "legal_id_number">,
         ) => ({
           ...row,
+          first_name: null,
+          last_name: null,
+          street: null,
+          street2: null,
+          city: null,
+          state: null,
+          zip: null,
+          country: null,
+          birthday: null,
+          drivers_license_number: null,
           legal_id_type: null,
           legal_id_number: null,
-          legal_id_image_url: null,
         }),
       ),
     };
@@ -126,6 +159,29 @@ export default async function AdminCustomerDetailPage({
         <p className="text-sm text-[var(--ccr-muted)]">Customer not found.</p>
       </div>
     );
+  }
+
+  let latestDriversLicenseBookingId: string | null = null;
+  let latestSignatureBookingId: string | null = null;
+  try {
+    const privateDocsResult = await dbQuery<CustomerPrivateDocRow>(
+      "select bpf.booking_id, bpf.document_type from booking_private_files bpf join bookings b on b.id = bpf.booking_id where b.customer_id = $1 and bpf.document_type in ('DRIVERS_LICENSE', 'SIGNATURE') order by bpf.created_at desc",
+      [id],
+    );
+    for (const row of privateDocsResult.rows as CustomerPrivateDocRow[]) {
+      if (row.document_type === "DRIVERS_LICENSE" && !latestDriversLicenseBookingId) {
+        latestDriversLicenseBookingId = row.booking_id;
+      }
+      if (row.document_type === "SIGNATURE" && !latestSignatureBookingId) {
+        latestSignatureBookingId = row.booking_id;
+      }
+      if (latestDriversLicenseBookingId && latestSignatureBookingId) break;
+    }
+  } catch (error) {
+    const code = (error as { code?: string } | null)?.code;
+    if (code !== "42P01") {
+      throw error;
+    }
   }
 
   const snapshotBookingsPage = await fetchCustomerSnapshotBookingsPage({
@@ -189,7 +245,16 @@ export default async function AdminCustomerDetailPage({
             phone={customerRow.phone}
             legalIdType={customerRow.legal_id_type}
             legalIdNumber={customerRow.legal_id_number}
-            legalIdImageUrl={customerRow.legal_id_image_url}
+            firstName={customerRow.first_name}
+            lastName={customerRow.last_name}
+            street={customerRow.street}
+            street2={customerRow.street2}
+            city={customerRow.city}
+            state={customerRow.state}
+            zip={customerRow.zip}
+            country={customerRow.country}
+            birthday={customerRow.birthday}
+            driversLicenseNumber={customerRow.drivers_license_number}
             address={customerRow.address}
             notes={customerRow.notes}
           />
@@ -199,18 +264,27 @@ export default async function AdminCustomerDetailPage({
               Type: {customerRow.legal_id_type ? formatLegalIdTypeLabel(customerRow.legal_id_type) : "Not provided"}
             </p>
             <p className="mt-1">Number: {customerRow.legal_id_number || "Not provided"}</p>
-            {customerRow.legal_id_image_url ? (
+            <p className="mt-1">Driver&apos;s License Number: {customerRow.drivers_license_number || "Not provided"}</p>
+            {latestDriversLicenseBookingId ? (
               <a
-                href={customerRow.legal_id_image_url}
+                href={`/api/public/bookings/${latestDriversLicenseBookingId}/private-files/DRIVERS_LICENSE`}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-2 inline-flex text-[var(--ccr-accent)] underline"
+              >
+                View secure driver&apos;s license file
+              </a>
+            ) : null}
+            {latestSignatureBookingId ? (
+              <a
+                href={`/api/public/bookings/${latestSignatureBookingId}/private-files/SIGNATURE`}
                 target="_blank"
                 rel="noreferrer"
                 className="mt-1 inline-flex text-[var(--ccr-accent)] underline"
               >
-                View uploaded ID image
+                View secure signature file
               </a>
-            ) : (
-              <p className="mt-1">Image: Not provided</p>
-            )}
+            ) : null}
           </div>
           <div className="mt-5 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3 text-xs text-[var(--ccr-muted)]">
             <p>Created: {fmtDate(customerRow.created_at)}</p>

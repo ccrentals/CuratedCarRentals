@@ -41,6 +41,7 @@ Important:
 Schema file: `db/schema.sql`
 
 Notes:
+- Runtime DB access uses SQL migrations + `pg` queries. `prisma/schema.prisma` is legacy reference only and is not the runtime source of truth.
 - The admin lockout feature uses `users.locked_at` and `admin_login_attempts`.
 - Vehicles store image URLs in `vehicles.image_urls_json` (files are not stored in Neon).
 

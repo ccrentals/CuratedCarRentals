@@ -7,6 +7,7 @@ import { readBookingOverrideInfo } from "@/lib/bookings/holds";
 import {
   computeBookingPricing,
   fetchNetPaidToDate,
+  readInsurancePricingFields,
   readPaymentOption,
   readPromoPricingFields,
 } from "@/lib/payments/pricing";
@@ -47,6 +48,7 @@ export default async function BookingSummaryPage({
   const deposit = Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0);
   const paymentOption = readPaymentOption(pricing);
   const { promoCode, promoDiscount } = readPromoPricingFields(pricing);
+  const { insuranceSelected, insurancePricePerDay, insuranceTotal } = readInsurancePricingFields(pricing);
   const overrideInfo = readBookingOverrideInfo(pricing);
   const netPaidToDate = await fetchNetPaidToDate(booking.id);
   const summary = computeBookingPricing({
@@ -60,6 +62,9 @@ export default async function BookingSummaryPage({
     netPaidToDate,
     promoCode,
     promoDiscount,
+    insuranceSelected,
+    insurancePricePerDay,
+    insuranceTotal,
   });
   const depositDue = Math.max(0, summary.deposit - summary.netPaidToDate);
   const canPayDeposit = depositDue > 0;
@@ -136,6 +141,30 @@ export default async function BookingSummaryPage({
             <li>Please bring a valid driver’s license and your booking reference.</li>
             <li>Cancellations within 24 hours of pickup may be non-refundable.</li>
           </ul>
+        </div>
+
+        <div className="mt-6 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+            Secure Documents
+          </h3>
+          <div className="mt-3 flex flex-wrap gap-3">
+            <a
+              href={`/api/public/bookings/${booking.id}/private-files/DRIVERS_LICENSE`}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-sm font-semibold text-[var(--ccr-text)]"
+            >
+              View Driver&apos;s License
+            </a>
+            <a
+              href={`/api/public/bookings/${booking.id}/private-files/SIGNATURE`}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-sm font-semibold text-[var(--ccr-text)]"
+            >
+              View Signature
+            </a>
+          </div>
         </div>
 
         <div className="mt-6 flex flex-wrap gap-3">

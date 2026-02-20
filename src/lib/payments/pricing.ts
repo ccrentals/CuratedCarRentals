@@ -1,11 +1,12 @@
 import { dbQuery } from "@/lib/db";
 import { calcDaysInclusive, dateOnlyUtc } from "@/lib/payments/dateMath";
+import { logWarn } from "@/lib/log";
 
 export type Queryable = {
   query: (text: string, params?: unknown[]) => Promise<{ rows: unknown[]; rowCount: number }>;
 };
 
-export type PaymentOption = "DEPOSIT" | "FULL" | "PAY_ON_PICKUP";
+export type PaymentOption = "DEPOSIT" | "FULL" | "CUSTOM" | "NONE";
 export type PaymentStatus = "UNPAID" | "DUE_ON_PICKUP" | "DEPOSIT_PAID" | "PAID_IN_FULL";
 
 export type BookingPricingSummary = {
@@ -15,10 +16,17 @@ export type BookingPricingSummary = {
   endDate: string;
   days: number;
   dailyRate: number;
+  baseTotal: number;
+  insuranceSelected: boolean;
+  insurancePricePerDay: number;
+  insuranceTotal: number;
+  discountTotal: number;
   subtotal: number;
   promoCode: string | null;
   promoDiscount: number;
   total: number;
+  amountDue: number;
+  depositRequired: number;
   deposit: number;
   paymentOption: PaymentOption;
   netPaidToDate: number;
@@ -40,13 +48,25 @@ function toMoneyLike(value: unknown) {
   return amount;
 }
 
-export function normalizePaymentOption(value: unknown): PaymentOption {
+export function parsePaymentOptionInput(value: unknown): PaymentOption | null {
   const normalized = String(value ?? "")
     .trim()
     .toUpperCase();
+  if (!normalized) return null;
   if (normalized === "FULL") return "FULL";
-  if (normalized === "PAY_ON_PICKUP") return "PAY_ON_PICKUP";
-  return "DEPOSIT";
+  if (normalized === "DEPOSIT") return "DEPOSIT";
+  if (normalized === "CUSTOM") return "CUSTOM";
+  if (normalized === "NONE") return "NONE";
+  if (normalized === "PAY_ON_PICKUP") return "NONE";
+  return null;
+}
+
+export function normalizePaymentOption(value: unknown, fallback: PaymentOption = "DEPOSIT"): PaymentOption {
+  const parsed = parsePaymentOptionInput(value);
+  if (parsed) return parsed;
+  const normalized = String(value ?? "").trim();
+  if (!normalized) return fallback;
+  throw new Error(`Invalid payment option: ${normalized}`);
 }
 
 export function normalizePaymentStatus(value: unknown): PaymentStatus {
@@ -61,7 +81,16 @@ export function normalizePaymentStatus(value: unknown): PaymentStatus {
 
 export function readPaymentOption(pricing: Record<string, unknown> | null | undefined): PaymentOption {
   const source = pricing ?? {};
-  return normalizePaymentOption(source.payment_option_selected);
+  try {
+    return normalizePaymentOption(source.payment_option_selected);
+  } catch (error) {
+    const invalidValue = String(source.payment_option_selected ?? "");
+    logWarn("pricing_invalid_payment_option", {
+      paymentOption: invalidValue,
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+    return "DEPOSIT";
+  }
 }
 
 export function readAmountPaid(
@@ -118,51 +147,98 @@ export function readPromoPricingFields(pricing: Record<string, unknown> | null |
     typeof source.promo_code === "string" && source.promo_code.trim().length > 0
       ? source.promo_code.trim().toUpperCase()
       : null;
-  const promoDiscount = Number(source.promo_discount_cents ?? 0);
+  const promoDiscount = Math.max(0, toMoneyLike(source.promo_discount_cents ?? 0));
   return { promoCode, promoDiscount };
+}
+
+function asBoolean(value: unknown): boolean | null {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["true", "1", "yes", "y"].includes(normalized)) return true;
+    if (["false", "0", "no", "n"].includes(normalized)) return false;
+  }
+  return null;
+}
+
+export function readInsurancePricingFields(pricing: Record<string, unknown> | null | undefined) {
+  const source = pricing ?? {};
+  const insurancePricePerDay = Math.max(0, toMoneyLike(source.insurance_price_per_day_cents));
+  const insuranceTotal = Math.max(0, toMoneyLike(source.insurance_total_cents));
+  const insuranceSelectedRaw = asBoolean(source.insurance_selected);
+  const insuranceSelected = insuranceSelectedRaw ?? (insuranceTotal > 0 || insurancePricePerDay > 0);
+
+  return {
+    insuranceSelected,
+    insurancePricePerDay,
+    insuranceTotal,
+  };
 }
 
 export function computeBookingPricing(input: {
   bookingId: string;
   bookingStatus: string;
-  startDate: unknown;
-  endDate: unknown;
+  startDate?: unknown;
+  endDate?: unknown;
+  startAt?: unknown;
+  endAt?: unknown;
   dailyRate: number;
   deposit: number;
   paymentOption?: PaymentOption | null | undefined;
   netPaidToDate: number;
   promoCode?: string | null;
   promoDiscount?: number;
+  insuranceSelected?: boolean | null | undefined;
+  insurancePricePerDay?: number | null | undefined;
+  insuranceTotal?: number | null | undefined;
 }): Omit<BookingPricingSummary, "startDate" | "endDate"> & { startDate: string; endDate: string } {
-  const days = calcDaysInclusive(input.startDate, input.endDate);
+  const startForDays = input.startDate ?? input.startAt;
+  const endForDays = input.endDate ?? input.endAt;
+  const days = calcDaysInclusive(startForDays, endForDays);
   const dailyRate = Number.isFinite(input.dailyRate) ? Number(input.dailyRate) : 0;
   const deposit = Number.isFinite(input.deposit) ? Number(input.deposit) : 0;
   const netPaidToDate = Number.isFinite(input.netPaidToDate) ? Number(input.netPaidToDate) : 0;
-  const subtotal = dailyRate * days;
+  const baseTotal = dailyRate * days;
+  const insuranceSelected = input.insuranceSelected === true;
+  const insurancePricePerDay = Number.isFinite(input.insurancePricePerDay)
+    ? Math.max(0, Number(input.insurancePricePerDay))
+    : 0;
+  const insuranceTotalFromDays = insuranceSelected ? insurancePricePerDay * days : 0;
+  const insuranceTotalOverride = Number.isFinite(input.insuranceTotal)
+    ? Math.max(0, Number(input.insuranceTotal))
+    : 0;
+  const insuranceTotal = insuranceTotalOverride > 0 ? insuranceTotalOverride : insuranceTotalFromDays;
+  const effectiveInsuranceSelected = insuranceSelected || insuranceTotal > 0;
+  const subtotal = baseTotal + insuranceTotal;
   const promoCode =
     typeof input.promoCode === "string" && input.promoCode.trim().length > 0
       ? input.promoCode.trim().toUpperCase()
       : null;
   const paymentOption = normalizePaymentOption(input.paymentOption);
   const promoDiscountRaw = Number.isFinite(input.promoDiscount) ? Number(input.promoDiscount) : 0;
-  const promoDiscount = Math.max(0, Math.min(subtotal, promoDiscountRaw));
-  const total = Math.max(0, subtotal - promoDiscount);
+  const discountTotal = Math.max(0, Math.min(subtotal, promoDiscountRaw));
+  const total = Math.max(0, subtotal - discountTotal);
+  const amountDue = total;
+  const depositRequired = deposit;
 
-  const balanceDue = Math.max(0, total - netPaidToDate);
+  const balanceDue = Math.max(0, amountDue - netPaidToDate);
   const paymentStatus: PaymentStatus =
-    balanceDue === 0 && total > 0
+    balanceDue === 0 && amountDue > 0
       ? "PAID_IN_FULL"
       : netPaidToDate > 0
         ? "DEPOSIT_PAID"
-        : paymentOption === "PAY_ON_PICKUP"
+        : paymentOption === "NONE"
           ? "DUE_ON_PICKUP"
           : "UNPAID";
 
   const statusUpper = String(input.bookingStatus || "").toUpperCase();
-  const refundRequired = netPaidToDate > total || (statusUpper === "CANCELLED" && netPaidToDate > 0);
+  const refundRequired =
+    netPaidToDate > amountDue || (statusUpper === "CANCELLED" && netPaidToDate > 0);
 
-  const startDate = typeof input.startDate === "string" ? input.startDate : String(input.startDate ?? "");
-  const endDate = typeof input.endDate === "string" ? input.endDate : String(input.endDate ?? "");
+  const startDate =
+    typeof input.startDate === "string" ? input.startDate : String(input.startDate ?? input.startAt ?? "");
+  const endDate =
+    typeof input.endDate === "string" ? input.endDate : String(input.endDate ?? input.endAt ?? "");
 
   return {
     bookingId: input.bookingId,
@@ -171,11 +247,18 @@ export function computeBookingPricing(input: {
     endDate,
     days,
     dailyRate,
+    baseTotal,
+    insuranceSelected: effectiveInsuranceSelected,
+    insurancePricePerDay,
+    insuranceTotal,
+    discountTotal,
     subtotal,
     promoCode,
-    promoDiscount,
+    promoDiscount: discountTotal,
     total,
-    deposit,
+    amountDue,
+    depositRequired,
+    deposit: depositRequired,
     paymentOption,
     netPaidToDate,
     balanceDue,
@@ -249,6 +332,7 @@ export async function getBookingPricingSummary(
   const deposit = Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0);
   const paymentOption = readPaymentOption(pricing);
   const { promoCode, promoDiscount } = readPromoPricingFields(pricing);
+  const { insuranceSelected, insurancePricePerDay, insuranceTotal } = readInsurancePricingFields(pricing);
   const netPaidToDate = await fetchNetPaidToDate(bookingId, options);
 
   return computeBookingPricing({
@@ -262,5 +346,8 @@ export async function getBookingPricingSummary(
     netPaidToDate,
     promoCode,
     promoDiscount,
+    insuranceSelected,
+    insurancePricePerDay,
+    insuranceTotal,
   });
 }

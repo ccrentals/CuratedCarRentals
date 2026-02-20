@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
@@ -13,10 +13,24 @@ type CustomerProfileFormProps = {
   phone: string;
   legalIdType: string | null;
   legalIdNumber: string | null;
-  legalIdImageUrl: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  street: string | null;
+  street2: string | null;
+  city: string | null;
+  state: string | null;
+  zip: string | null;
+  country: string | null;
+  birthday: string | null;
+  driversLicenseNumber: string | null;
   address: string | null;
   notes: string | null;
 };
+
+function normalizeDateInput(value: string | null) {
+  if (!value) return "";
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : "";
+}
 
 export function CustomerProfileForm({
   customerId,
@@ -25,69 +39,42 @@ export function CustomerProfileForm({
   phone,
   legalIdType,
   legalIdNumber,
-  legalIdImageUrl,
+  firstName,
+  lastName,
+  street,
+  street2,
+  city,
+  state,
+  zip,
+  country,
+  birthday,
+  driversLicenseNumber,
   address,
   notes,
 }: CustomerProfileFormProps) {
   const router = useRouter();
-  const legalIdInputRef = useRef<HTMLInputElement | null>(null);
-  const uploadcarePublicKey = process.env.NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY ?? "";
   const [nextFullName, setNextFullName] = useState(fullName);
   const [nextEmail, setNextEmail] = useState(email);
   const [nextPhone, setNextPhone] = useState(phone);
   const [nextLegalIdType, setNextLegalIdType] = useState(legalIdType ?? "TRN");
   const [nextLegalIdNumber, setNextLegalIdNumber] = useState(legalIdNumber ?? "");
-  const [nextLegalIdImageUrl, setNextLegalIdImageUrl] = useState(legalIdImageUrl ?? "");
+  const [nextFirstName, setNextFirstName] = useState(firstName ?? "");
+  const [nextLastName, setNextLastName] = useState(lastName ?? "");
+  const [nextStreet, setNextStreet] = useState(street ?? "");
+  const [nextStreet2, setNextStreet2] = useState(street2 ?? "");
+  const [nextCity, setNextCity] = useState(city ?? "");
+  const [nextState, setNextState] = useState(state ?? "");
+  const [nextZip, setNextZip] = useState(zip ?? "");
+  const [nextCountry, setNextCountry] = useState(country ?? "");
+  const [nextBirthday, setNextBirthday] = useState(normalizeDateInput(birthday));
+  const [nextDriversLicenseNumber, setNextDriversLicenseNumber] = useState(
+    driversLicenseNumber ?? "",
+  );
   const [nextAddress, setNextAddress] = useState(address ?? "");
   const [nextNotes, setNextNotes] = useState(notes ?? "");
-  const [uploadingLegalId, setUploadingLegalId] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  async function handleLegalIdImageChange(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) return;
-
-    if (!uploadcarePublicKey.trim()) {
-      setError("Uploadcare is not configured. Add NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY.");
-      return;
-    }
-
-    setError(null);
-    setUploadingLegalId(true);
-    try {
-      const formData = new FormData();
-      formData.set("UPLOADCARE_PUB_KEY", uploadcarePublicKey.trim());
-      formData.set("UPLOADCARE_STORE", "1");
-      formData.set("file", file);
-
-      const uploadResponse = await fetch("https://upload.uploadcare.com/base/", {
-        method: "POST",
-        body: formData,
-      });
-      const uploadPayload = (await uploadResponse
-        .json()
-        .catch(() => null)) as { file?: unknown; error?: { content?: unknown } } | null;
-
-      if (!uploadResponse.ok || typeof uploadPayload?.file !== "string") {
-        const providerMessage =
-          typeof uploadPayload?.error?.content === "string"
-            ? uploadPayload.error.content
-            : "Upload failed";
-        throw new Error(providerMessage);
-      }
-
-      setNextLegalIdImageUrl(`https://ucarecdn.com/${uploadPayload.file}/`);
-    } catch (uploadError) {
-      const message =
-        uploadError instanceof Error ? uploadError.message : "Unable to upload ID image.";
-      setError(message);
-    } finally {
-      setUploadingLegalId(false);
-    }
-  }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -107,12 +94,6 @@ export function CustomerProfileForm({
       setLoading(false);
       return;
     }
-    if (uploadingLegalId) {
-      setError("Please wait until image upload finishes.");
-      setLoading(false);
-      return;
-    }
-
     const csrfToken = await ensureCsrfToken();
     const response = await fetch(`/api/admin/customers/${customerId}`, {
       method: "PATCH",
@@ -126,7 +107,16 @@ export function CustomerProfileForm({
         phone: nextPhone,
         legalIdType: nextLegalIdType,
         legalIdNumber: nextLegalIdNumber,
-        legalIdImageUrl: nextLegalIdImageUrl,
+        firstName: nextFirstName,
+        lastName: nextLastName,
+        street: nextStreet,
+        street2: nextStreet2,
+        city: nextCity,
+        state: nextState,
+        zip: nextZip,
+        country: nextCountry,
+        birthday: nextBirthday || null,
+        driversLicenseNumber: nextDriversLicenseNumber,
         address: nextAddress,
         notes: nextNotes,
       }),
@@ -176,6 +166,44 @@ export function CustomerProfileForm({
           className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
         />
       </label>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="block text-xs text-[var(--ccr-muted)]">
+          First name
+          <input
+            type="text"
+            value={nextFirstName}
+            onChange={(event) => setNextFirstName(event.target.value)}
+            className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+          />
+        </label>
+        <label className="block text-xs text-[var(--ccr-muted)]">
+          Last name
+          <input
+            type="text"
+            value={nextLastName}
+            onChange={(event) => setNextLastName(event.target.value)}
+            className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+          />
+        </label>
+      </div>
+      <label className="block text-xs text-[var(--ccr-muted)]">
+        Driver&apos;s license number
+        <input
+          type="text"
+          value={nextDriversLicenseNumber}
+          onChange={(event) => setNextDriversLicenseNumber(event.target.value)}
+          className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+        />
+      </label>
+      <label className="block text-xs text-[var(--ccr-muted)]">
+        Birthday
+        <input
+          type="date"
+          value={nextBirthday}
+          onChange={(event) => setNextBirthday(event.target.value)}
+          className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+        />
+      </label>
       <label className="block text-xs text-[var(--ccr-muted)]">
         Legal ID Type
         <select
@@ -201,46 +229,6 @@ export function CustomerProfileForm({
           className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
         />
       </label>
-      <div className="text-xs text-[var(--ccr-muted)]">
-        Legal ID Image
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => legalIdInputRef.current?.click()}
-            disabled={uploadingLegalId}
-            className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
-          >
-            {uploadingLegalId ? "Uploading..." : "Use camera / upload image"}
-          </button>
-          {nextLegalIdImageUrl ? (
-            <>
-              <a
-                href={nextLegalIdImageUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="text-xs font-semibold text-[var(--ccr-accent)] underline"
-              >
-                View image
-              </a>
-              <button
-                type="button"
-                onClick={() => setNextLegalIdImageUrl("")}
-                className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-2 py-1 text-[11px] font-semibold text-[var(--ccr-text)]"
-              >
-                Remove
-              </button>
-            </>
-          ) : null}
-        </div>
-        <input
-          ref={legalIdInputRef}
-          type="file"
-          accept="image/*"
-          capture="environment"
-          onChange={handleLegalIdImageChange}
-          className="hidden"
-        />
-      </div>
       <label className="block text-xs text-[var(--ccr-muted)]">
         Address
         <textarea
@@ -250,6 +238,62 @@ export function CustomerProfileForm({
           className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
         />
       </label>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="block text-xs text-[var(--ccr-muted)]">
+          Street
+          <input
+            type="text"
+            value={nextStreet}
+            onChange={(event) => setNextStreet(event.target.value)}
+            className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+          />
+        </label>
+        <label className="block text-xs text-[var(--ccr-muted)]">
+          Street 2
+          <input
+            type="text"
+            value={nextStreet2}
+            onChange={(event) => setNextStreet2(event.target.value)}
+            className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+          />
+        </label>
+        <label className="block text-xs text-[var(--ccr-muted)]">
+          City
+          <input
+            type="text"
+            value={nextCity}
+            onChange={(event) => setNextCity(event.target.value)}
+            className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+          />
+        </label>
+        <label className="block text-xs text-[var(--ccr-muted)]">
+          State
+          <input
+            type="text"
+            value={nextState}
+            onChange={(event) => setNextState(event.target.value)}
+            className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+          />
+        </label>
+        <label className="block text-xs text-[var(--ccr-muted)]">
+          ZIP
+          <input
+            type="text"
+            value={nextZip}
+            onChange={(event) => setNextZip(event.target.value)}
+            className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+          />
+        </label>
+        <label className="block text-xs text-[var(--ccr-muted)]">
+          Country
+          <input
+            type="text"
+            value={nextCountry}
+            onChange={(event) => setNextCountry(event.target.value)}
+            className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+          />
+        </label>
+      </div>
       <label className="block text-xs text-[var(--ccr-muted)]">
         Admin notes
         <textarea

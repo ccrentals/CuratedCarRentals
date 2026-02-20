@@ -2,6 +2,7 @@ import { dbQuery } from "@/lib/db";
 import {
   computeBookingPricing,
   fetchNetPaidToDate,
+  readInsurancePricingFields,
   readPaymentOption,
   readPromoPricingFields,
   type Queryable,
@@ -16,7 +17,7 @@ export type BookingPaymentSummary = {
   promoDiscount: number;
   totalAmount: number;
   depositAmount: number;
-  paymentOption: "DEPOSIT" | "FULL" | "PAY_ON_PICKUP";
+  paymentOption: "DEPOSIT" | "FULL" | "CUSTOM" | "NONE";
   netPaidToDate: number;
   balanceDue: number;
   paymentStatus: "UNPAID" | "DUE_ON_PICKUP" | "DEPOSIT_PAID" | "PAID_IN_FULL";
@@ -60,6 +61,7 @@ export async function recalculateBookingPayments(
   const depositAmount = Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0);
   const paymentOption = readPaymentOption(pricing);
   const { promoCode, promoDiscount } = readPromoPricingFields(pricing);
+  const { insuranceSelected, insurancePricePerDay, insuranceTotal } = readInsurancePricingFields(pricing);
 
   const netPaidToDate = await fetchNetPaidToDate(bookingId, options);
 
@@ -74,6 +76,9 @@ export async function recalculateBookingPayments(
     netPaidToDate,
     promoCode,
     promoDiscount,
+    insuranceSelected,
+    insurancePricePerDay,
+    insuranceTotal,
   });
 
   const updatedPricing = {
@@ -81,11 +86,17 @@ export async function recalculateBookingPayments(
     days: summary.days,
     daily_rate_cents: summary.dailyRate,
     deposit_cents: summary.deposit,
+    base_total_cents: summary.baseTotal,
     subtotal_cents: summary.subtotal,
+    insurance_selected: summary.insuranceSelected,
+    insurance_price_per_day_cents: summary.insurancePricePerDay,
+    insurance_total_cents: summary.insuranceTotal,
     promo_code: summary.promoCode,
     promo_discount_cents: summary.promoDiscount,
+    discount_total_cents: summary.discountTotal,
     paid_to_date: summary.netPaidToDate,
     amount_paid: summary.netPaidToDate,
+    amount_due_cents: summary.amountDue,
     balance_due: summary.balanceDue,
     total_amount: summary.total,
     total_cents: summary.total,
@@ -93,6 +104,7 @@ export async function recalculateBookingPayments(
     payment_status: summary.paymentStatus,
     payment_option_selected: summary.paymentOption,
     refund_required: summary.refundRequired,
+    currency: "JMD",
   };
 
   await db.query("update bookings set pricing_json = $1, updated_at = now() where id = $2", [

@@ -5,7 +5,7 @@ import { fetchAdminBookingsPage } from "@/lib/bookings/adminBookingsList";
 import { getDbPool } from "@/lib/db";
 import { sendBookingCreatedEmail } from "@/lib/notifications/email";
 import { calcDaysInclusive, dateOnlyUtc } from "@/lib/payments/dateMath";
-import { findOverlappingBlockingBookingIds } from "@/lib/bookings/holds";
+import { isVehicleUnavailableEntitlementBased } from "@/lib/availability/entitlement";
 import { requireCsrf } from "@/lib/security/csrf";
 import { isEmail, isISODate, isNonEmptyString } from "@/lib/validators";
 import { logError } from "@/lib/log";
@@ -21,6 +21,17 @@ function isAdminRole(role: string | undefined) {
     .trim()
     .toUpperCase();
   return normalized === "ADMIN" || normalized === "DEVELOPER";
+}
+
+function buildWindowFromDates(startDate: string, endDate: string) {
+  const startAt = new Date(`${startDate}T00:00:00.000Z`);
+  const endAt = new Date(`${endDate}T00:00:00.000Z`);
+  if (Number.isNaN(startAt.getTime()) || Number.isNaN(endAt.getTime())) return null;
+  endAt.setUTCDate(endAt.getUTCDate() + 1);
+  return {
+    startAt: startAt.toISOString(),
+    endAt: endAt.toISOString(),
+  };
 }
 
 export async function GET(request: Request) {
@@ -125,14 +136,18 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Vehicle not found" }, { status: 404 });
     }
 
-    const blockingOverlaps = await findOverlappingBlockingBookingIds(client, {
-      vehicleId,
-      startDate,
-      endDate,
-      forUpdate: true,
-    });
+    const availabilityWindow = buildWindowFromDates(startDate, endDate);
+    if (!availabilityWindow) {
+      await client.query("rollback");
+      return NextResponse.json({ error: "Invalid booking dates." }, { status: 400 });
+    }
 
-    if (blockingOverlaps.length > 0) {
+    const isUnavailable = await isVehicleUnavailableEntitlementBased(
+      vehicleId,
+      availabilityWindow,
+      { client },
+    );
+    if (isUnavailable) {
       await client.query("rollback");
       return NextResponse.json({ error: "Vehicle unavailable for selected dates" }, { status: 409 });
     }

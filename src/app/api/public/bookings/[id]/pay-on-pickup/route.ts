@@ -7,6 +7,7 @@ import {
   computeBookingPricing,
   fetchNetPaidToDate,
   normalizePaymentStatus,
+  readInsurancePricingFields,
   readPaymentOption,
   readPromoPricingFields,
 } from "@/lib/payments/pricing";
@@ -32,10 +33,16 @@ function buildPricingSnapshot(
     deposit_cents: summary.deposit,
     days: summary.days,
     subtotal_cents: summary.subtotal,
+    base_total_cents: summary.baseTotal,
+    insurance_selected: summary.insuranceSelected,
+    insurance_price_per_day_cents: summary.insurancePricePerDay,
+    insurance_total_cents: summary.insuranceTotal,
     promo_code: summary.promoCode,
     promo_discount_cents: summary.promoDiscount,
+    discount_total_cents: summary.discountTotal,
     total_cents: summary.total,
     total_amount: summary.total,
+    amount_due_cents: summary.amountDue,
     amount_paid: summary.netPaidToDate,
     paid_to_date: summary.netPaidToDate,
     balance_due: summary.balanceDue,
@@ -85,6 +92,7 @@ export async function POST(
     const dailyRate = Number(pricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
     const deposit = Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0);
     const { promoCode, promoDiscount } = readPromoPricingFields(pricing);
+    const { insuranceSelected, insurancePricePerDay, insuranceTotal } = readInsurancePricingFields(pricing);
     const currentPaymentOption = readPaymentOption(pricing);
     const currentPaymentStatus = normalizePaymentStatus(pricing.payment_status);
 
@@ -99,7 +107,7 @@ export async function POST(
     }
 
     const alreadySelected =
-      currentPaymentOption === "PAY_ON_PICKUP" &&
+      currentPaymentOption === "NONE" &&
       currentPaymentStatus === "DUE_ON_PICKUP" &&
       String(booking.status).toUpperCase() === "CONFIRMED";
 
@@ -120,10 +128,13 @@ export async function POST(
       endDate: booking.end_date,
       dailyRate,
       deposit,
-      paymentOption: "PAY_ON_PICKUP",
+      paymentOption: "NONE",
       netPaidToDate,
       promoCode,
       promoDiscount,
+      insuranceSelected,
+      insurancePricePerDay,
+      insuranceTotal,
     });
 
     const nextStatus = String(booking.status).toUpperCase() === "PENDING_PAYMENT" ? "CONFIRMED" : booking.status;
@@ -143,7 +154,7 @@ export async function POST(
       details: {
         previousStatus: booking.status,
         nextStatus,
-        paymentOption: "PAY_ON_PICKUP",
+        paymentOption: "NONE",
         paymentStatus: summary.paymentStatus,
         total: summary.total,
         balanceDue: summary.balanceDue,
@@ -154,7 +165,7 @@ export async function POST(
       ok: true,
       bookingId: booking.id,
       status: nextStatus,
-      paymentOption: "PAY_ON_PICKUP",
+      paymentOption: "NONE",
       paymentStatus: summary.paymentStatus,
       balanceDue: summary.balanceDue,
     });

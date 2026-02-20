@@ -11,7 +11,9 @@
     "test": "tsx --test",
     "lint": "eslint",
     "test:e2e": "playwright test",
-    "test:e2e:update": "playwright test --update-snapshots"
+    "test:e2e:update": "playwright test --update-snapshots",
+    "test:e2e:visual": "E2E_VISUAL=1 playwright test e2e/responsive-screenshots.spec.ts",
+    "test:e2e:visual:update": "E2E_VISUAL=1 playwright test e2e/responsive-screenshots.spec.ts --update-snapshots"
   },
   "dependencies": {
     "@prisma/client": "^7.3.0",

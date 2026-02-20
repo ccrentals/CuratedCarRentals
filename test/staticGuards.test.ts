@@ -29,3 +29,46 @@ test("Idempotency: WiPay webhook uses webhook_events insert gate and short-circu
   assert.match(code, /on conflict\s*\(provider,\s*event_id\)\s*do nothing/i);
   assert.match(code, /duplicate/i);
 });
+
+test("Pricing SSoT: booking create, promo preview, and WiPay starts use computeBookingPricing", () => {
+  const files = [
+    "src/app/api/public/bookings/route.ts",
+    "src/app/api/public/promos/validate/route.ts",
+    "src/app/api/payments/wipay/start/route.ts",
+    "src/app/api/payments/wipay/full/start/route.ts",
+    "src/app/api/payments/wipay/custom/start/route.ts",
+    "src/app/api/payments/wipay/balance/start/route.ts",
+  ];
+
+  for (const file of files) {
+    const code = read(file);
+    assert.match(code, /computeBookingPricing\(/);
+  }
+});
+
+test("Pricing SSoT: insurance-aware pricing is wired into promo + WiPay routes", () => {
+  const files = [
+    "src/app/api/public/promos/validate/route.ts",
+    "src/app/api/payments/wipay/start/route.ts",
+    "src/app/api/payments/wipay/full/start/route.ts",
+    "src/app/api/payments/wipay/custom/start/route.ts",
+    "src/app/api/payments/wipay/balance/start/route.ts",
+  ];
+
+  for (const file of files) {
+    const code = read(file);
+    assert.match(code, /insurance/i);
+  }
+});
+
+test("Entitlement SSoT wiring: public availability and payment reconciliation use entitlement helper", () => {
+  const publicVehicles = read("src/lib/publicVehicles.ts");
+  assert.match(publicVehicles, /listAvailableVehiclesEntitlementBased/);
+  assert.match(publicVehicles, /isVehicleUnavailableEntitlementBased/);
+
+  const publicBookingsCreate = read("src/app/api/public/bookings/route.ts");
+  assert.match(publicBookingsCreate, /isPublicVehicleUnavailableForWindow/);
+
+  const wipayReconcile = read("src/lib/payments/wipayReconcile.ts");
+  assert.match(wipayReconcile, /maybeEntitleBookingAfterPayment/);
+});

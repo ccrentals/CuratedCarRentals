@@ -8,6 +8,7 @@ import { formatJmd } from "@/lib/money";
 import {
   computeBookingPricing,
   fetchNetPaidToDate,
+  readInsurancePricingFields,
   readPaymentOption,
   readPromoPricingFields,
 } from "@/lib/payments/pricing";
@@ -71,6 +72,7 @@ export default async function BookingBalancePage({
   const deposit = Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0);
   const paymentOption = readPaymentOption(pricing);
   const { promoCode, promoDiscount } = readPromoPricingFields(pricing);
+  const { insuranceSelected, insurancePricePerDay, insuranceTotal } = readInsurancePricingFields(pricing);
 
   const netPaidToDate = await fetchNetPaidToDate(booking.id);
   const summary = computeBookingPricing({
@@ -84,6 +86,9 @@ export default async function BookingBalancePage({
     netPaidToDate,
     promoCode,
     promoDiscount,
+    insuranceSelected,
+    insurancePricePerDay,
+    insuranceTotal,
   });
 
   return (

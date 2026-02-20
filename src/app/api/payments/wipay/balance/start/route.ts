@@ -4,8 +4,15 @@ import { dbQuery } from "@/lib/db";
 import { logError, logWarn } from "@/lib/log";
 import { requireCsrf } from "@/lib/security/csrf";
 import { buildRequestParams, requestHostedPageUrl } from "@/lib/wipay";
-import { computeBookingPricing, fetchNetPaidToDate, readPromoPricingFields } from "@/lib/payments/pricing";
+import {
+  computeBookingPricing,
+  fetchNetPaidToDate,
+  readInsurancePricingFields,
+  readPaymentOption,
+  readPromoPricingFields,
+} from "@/lib/payments/pricing";
 import { formatJmdDecimal } from "@/lib/money";
+import { isVehicleUnavailableEntitlementBased } from "@/lib/availability/entitlement";
 
 function buildOrderId() {
   const timePart = Date.now().toString(36).slice(-6);
@@ -70,8 +77,11 @@ export async function POST(request: Request) {
   const bookingResult = await dbQuery<{
     id: string;
     status: string;
+    vehicle_id: string;
     start_date: string;
     end_date: string;
+    start_at: string | null;
+    end_at: string | null;
     pricing_json: Record<string, unknown> | null;
     customer_name: string;
     customer_email: string;
@@ -79,7 +89,7 @@ export async function POST(request: Request) {
     daily_rate_cents: number;
     deposit_cents: number;
   }>(
-    "select b.id, b.status, b.start_date, b.end_date, b.pricing_json, c.full_name as customer_name, c.email as customer_email, c.phone as customer_phone, v.daily_rate_cents, v.deposit_cents from bookings b join vehicles v on v.id = b.vehicle_id join customers c on c.id = b.customer_id where b.id = $1",
+    "select b.id, b.status, b.vehicle_id, b.start_date, b.end_date, b.start_at, b.end_at, b.pricing_json, c.full_name as customer_name, c.email as customer_email, c.phone as customer_phone, v.daily_rate_cents, v.deposit_cents from bookings b join vehicles v on v.id = b.vehicle_id join customers c on c.id = b.customer_id where b.id = $1",
     [bookingId],
   );
 
@@ -92,10 +102,29 @@ export async function POST(request: Request) {
     return jsonError(400, "invalid_booking_state", "Booking cannot be paid", { status: booking.status });
   }
 
+  const startAt = booking.start_at ?? `${booking.start_date}T00:00:00.000Z`;
+  const fallbackEndAt = new Date(`${booking.end_date}T00:00:00.000Z`);
+  fallbackEndAt.setUTCDate(fallbackEndAt.getUTCDate() + 1);
+  const endAt = booking.end_at ?? fallbackEndAt.toISOString();
+  const unavailable = await isVehicleUnavailableEntitlementBased(
+    booking.vehicle_id,
+    { startAt, endAt },
+    { excludeBookingId: booking.id, includeBlockouts: true },
+  );
+  if (unavailable) {
+    return jsonError(
+      409,
+      "vehicle_unavailable",
+      "This vehicle has been secured by another customer for the selected dates.",
+    );
+  }
+
   const pricing = booking.pricing_json ?? {};
   const dailyRate = Number(pricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
   const deposit = Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0);
+  const paymentOption = readPaymentOption(pricing);
   const { promoCode, promoDiscount } = readPromoPricingFields(pricing);
+  const { insuranceSelected, insurancePricePerDay, insuranceTotal } = readInsurancePricingFields(pricing);
   const netPaidToDate = await fetchNetPaidToDate(booking.id);
   const summary = computeBookingPricing({
     bookingId: booking.id,
@@ -104,9 +133,13 @@ export async function POST(request: Request) {
     endDate: booking.end_date,
     dailyRate,
     deposit,
+    paymentOption,
     netPaidToDate,
     promoCode,
     promoDiscount,
+    insuranceSelected,
+    insurancePricePerDay,
+    insuranceTotal,
   });
   const balanceDue = summary.balanceDue;
 

@@ -10,7 +10,7 @@ import { writeAuditLog } from "@/lib/audit";
 import { recalculateBookingPayments } from "@/lib/payments/recalculateBooking";
 import { logError } from "@/lib/log";
 import { readPromoPricingFields } from "@/lib/payments/pricing";
-import { overrideOverlappingNonBlockingBookings } from "@/lib/bookings/holds";
+import { maybeEntitleBookingAfterPayment } from "@/lib/availability/entitlement";
 
 type ReconcileInput = {
   orderId: string;
@@ -168,34 +168,21 @@ export async function reconcileWiPayPayment(input: ReconcileInput): Promise<Reco
       ],
     );
 
-    const bookingResult = await client.query(
-      "select b.id, b.vehicle_id, b.start_date, b.end_date, b.status, b.pickup_location, b.pricing_json, c.full_name as customer_name, c.email as customer_email, c.phone as customer_phone, v.make as vehicle_make, v.model as vehicle_model, v.year as vehicle_year, v.daily_rate_cents, v.deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.id = $1",
-      [payment.booking_id],
-    );
-
-    if (bookingResult.rowCount === 0) {
-      await client.query("rollback");
-      return { ok: false, reason: "not_found" };
-    }
-
-    const booking = bookingResult.rows[0];
-    const shouldConfirmBooking = booking.status === "PENDING_PAYMENT";
-    const overrideOutcome = await overrideOverlappingNonBlockingBookings(client, {
-      paidBookingId: booking.id,
-      vehicleId: booking.vehicle_id,
-      startDate: booking.start_date,
-      endDate: booking.end_date,
-      overrideReason: "Overridden by paid booking",
+    const entitlementResolution = await maybeEntitleBookingAfterPayment(payment.booking_id, {
+      client,
+      auditUserId: "system",
     });
+    const recalculated = await recalculateBookingPayments(payment.booking_id, { client });
 
-    if (overrideOutcome.blockingConflictIds.length > 0) {
+    if (entitlementResolution.state === "LOST") {
       await client.query(
         "update payments set metadata_json = jsonb_set(metadata_json, '{overlap_review}', 'true'::jsonb, true), updated_at = now() where id = $1",
         [payment.id],
       );
-
-      // Keep payment as DEPOSIT_PAID, but do not confirm booking.
-      const recalculated = await recalculateBookingPayments(booking.id, { client });
+      await client.query(
+        "update payments set metadata_json = jsonb_set(metadata_json, '{entitlement_winner_booking_id}', to_jsonb($2::text), true), updated_at = now() where id = $1",
+        [payment.id, entitlementResolution.winnerBookingId],
+      );
 
       await client.query("commit");
       await writeAuditLog({
@@ -207,7 +194,7 @@ export async function reconcileWiPayPayment(input: ReconcileInput): Promise<Reco
               ? "PAYMENT_BALANCE_OVERLAP_REVIEW"
               : "PAYMENT_DEPOSIT_OVERLAP_REVIEW",
         entityType: "booking",
-        entityId: booking.id,
+        entityId: payment.booking_id,
         details: {
           paymentId: payment.id,
           orderId: input.orderId,
@@ -215,19 +202,24 @@ export async function reconcileWiPayPayment(input: ReconcileInput): Promise<Reco
           source: input.source,
           netPaidToDate: recalculated.netPaidToDate,
           balanceDue: recalculated.balanceDue,
-          blockingConflictIds: overrideOutcome.blockingConflictIds,
+          winnerBookingId: entitlementResolution.winnerBookingId,
+          entitlementState: entitlementResolution.state,
         },
       });
-      return { ok: false, reason: "overlap", bookingId: booking.id };
+      return { ok: false, reason: "overlap", bookingId: payment.booking_id };
     }
 
-    if (shouldConfirmBooking) {
-      await client.query("update bookings set status = 'CONFIRMED', updated_at = now() where id = $1", [
-        booking.id,
-      ]);
+    const bookingResult = await client.query(
+      "select b.id, b.start_date, b.end_date, b.status, b.pickup_location, b.pricing_json, c.full_name as customer_name, c.email as customer_email, c.phone as customer_phone, v.make as vehicle_make, v.model as vehicle_model, v.year as vehicle_year, v.daily_rate_cents, v.deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.id = $1",
+      [payment.booking_id],
+    );
+
+    if (bookingResult.rowCount === 0) {
+      await client.query("rollback");
+      return { ok: false, reason: "not_found" };
     }
 
-    const recalculated = await recalculateBookingPayments(booking.id, { client });
+    const booking = bookingResult.rows[0];
 
     await client.query("commit");
 
@@ -248,11 +240,12 @@ export async function reconcileWiPayPayment(input: ReconcileInput): Promise<Reco
         source: input.source,
         netPaidToDate: recalculated.netPaidToDate,
         balanceDue: recalculated.balanceDue,
-        overriddenBookings: overrideOutcome.overridden.map((bookingRow) => bookingRow.id),
+        entitlementState: entitlementResolution.state,
+        overriddenBookings: entitlementResolution.cancelledOverlaps.map((bookingRow) => bookingRow.id),
       },
     });
 
-    for (const overriddenBooking of overrideOutcome.overridden) {
+    for (const overriddenBooking of entitlementResolution.cancelledOverlaps) {
       await writeAuditLog({
         userId: "system",
         action: "BOOKING_OVERRIDDEN_BY_PAID_BOOKING",

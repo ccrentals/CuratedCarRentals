@@ -6,6 +6,7 @@ import { clearPromoRedemptionForBooking, normalizePromoInputCode, upsertPromoRed
 import {
   computeBookingPricing,
   fetchNetPaidToDate,
+  readInsurancePricingFields,
   readPaymentOption,
   readPromoPricingFields,
 } from "@/lib/payments/pricing";
@@ -54,11 +55,17 @@ function buildPricingSnapshot(
     deposit_cents: summary.deposit,
     days: summary.days,
     subtotal_cents: summary.subtotal,
+    base_total_cents: summary.baseTotal,
+    insurance_selected: summary.insuranceSelected,
+    insurance_price_per_day_cents: summary.insurancePricePerDay,
+    insurance_total_cents: summary.insuranceTotal,
     promo_code: summary.promoCode,
     promo_code_id: promoCodeId,
     promo_discount_cents: summary.promoDiscount,
+    discount_total_cents: summary.discountTotal,
     total_cents: summary.total,
     total_amount: summary.total,
+    amount_due_cents: summary.amountDue,
     amount_paid: summary.netPaidToDate,
     balance_due: summary.balanceDue,
     payment_status: summary.paymentStatus,
@@ -82,6 +89,7 @@ async function computeCurrentSummary(db: Queryable, booking: BookingRow) {
   const deposit = Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0);
   const paymentOption = readPaymentOption(pricing);
   const { promoCode, promoDiscount } = readPromoPricingFields(pricing);
+  const { insuranceSelected, insurancePricePerDay, insuranceTotal } = readInsurancePricingFields(pricing);
   const netPaidToDate = await fetchNetPaidToDate(booking.id, { client: db });
   return computeBookingPricing({
     bookingId: booking.id,
@@ -94,6 +102,9 @@ async function computeCurrentSummary(db: Queryable, booking: BookingRow) {
     netPaidToDate,
     promoCode,
     promoDiscount,
+    insuranceSelected,
+    insurancePricePerDay,
+    insuranceTotal,
   });
 }
 
@@ -156,6 +167,9 @@ export async function POST(
       netPaidToDate: currentSummary.netPaidToDate,
       promoCode: validation.code,
       promoDiscount: validation.discountAmountCents,
+      insuranceSelected: currentSummary.insuranceSelected,
+      insurancePricePerDay: currentSummary.insurancePricePerDay,
+      insuranceTotal: currentSummary.insuranceTotal,
     });
 
     const pricingSnapshot = buildPricingSnapshot(booking.pricing_json, nextSummary, validation.promoId);
@@ -224,6 +238,9 @@ export async function DELETE(
       netPaidToDate: currentSummary.netPaidToDate,
       promoCode: null,
       promoDiscount: 0,
+      insuranceSelected: currentSummary.insuranceSelected,
+      insurancePricePerDay: currentSummary.insurancePricePerDay,
+      insuranceTotal: currentSummary.insuranceTotal,
     });
 
     const pricingSnapshot = buildPricingSnapshot(booking.pricing_json, nextSummary, null);

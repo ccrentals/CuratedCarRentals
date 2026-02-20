@@ -1,5 +1,9 @@
 import { dbQuery } from "@/lib/db";
 import type { Vehicle } from "@/data/vehicles";
+import {
+  isVehicleUnavailableEntitlementBased,
+  listAvailableVehiclesEntitlementBased,
+} from "@/lib/availability/entitlement";
 
 export type PublicVehicle = Vehicle & {
   make: string;
@@ -24,6 +28,27 @@ type VehicleRow = {
   features_json: unknown;
   image_urls_json: unknown;
 };
+
+export type AvailabilityWindowInput = {
+  pickupDate: string;
+  dropoffDate: string;
+  pickupTime?: string | null;
+  dropoffTime?: string | null;
+};
+
+type NormalizedAvailabilityWindow = {
+  pickupDate: string;
+  dropoffDate: string;
+  pickupTime: string;
+  dropoffTime: string;
+  startAtIso: string;
+  endAtIso: string;
+};
+
+const DATE_ONLY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+const TIME_ONLY_REGEX = /^([01]\d|2[0-3]):[0-5]\d$/;
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function toObject(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -64,6 +89,39 @@ function slugify(value: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 80);
+}
+
+function normalizeDateOnly(value: string) {
+  return DATE_ONLY_REGEX.test(value) ? value : null;
+}
+
+function normalizeTimeOnly(value: string | null | undefined, fallback: string) {
+  if (typeof value !== "string") return fallback;
+  const normalized = value.trim();
+  return TIME_ONLY_REGEX.test(normalized) ? normalized : fallback;
+}
+
+function toNormalizedAvailabilityWindow(
+  input: AvailabilityWindowInput,
+): NormalizedAvailabilityWindow | null {
+  const pickupDate = normalizeDateOnly(input.pickupDate);
+  const dropoffDate = normalizeDateOnly(input.dropoffDate);
+  if (!pickupDate || !dropoffDate) return null;
+
+  const pickupTime = normalizeTimeOnly(input.pickupTime, "00:00");
+  const dropoffTime = normalizeTimeOnly(input.dropoffTime, "23:59");
+  const start = new Date(`${pickupDate}T${pickupTime}:00`);
+  const end = new Date(`${dropoffDate}T${dropoffTime}:00`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) return null;
+
+  return {
+    pickupDate,
+    dropoffDate,
+    pickupTime,
+    dropoffTime,
+    startAtIso: start.toISOString(),
+    endAtIso: end.toISOString(),
+  };
 }
 
 function mapRowToPublicVehicle(row: VehicleRow): PublicVehicle | null {
@@ -118,6 +176,35 @@ export async function getPublicVehicles(): Promise<PublicVehicle[]> {
     mapRowToPublicVehicle(row),
   );
   return mapped.filter((vehicle): vehicle is PublicVehicle => vehicle !== null);
+}
+
+export async function getPublicVehiclesAvailableForWindow(
+  input: AvailabilityWindowInput,
+): Promise<PublicVehicle[]> {
+  const window = toNormalizedAvailabilityWindow(input);
+  if (!window) return [];
+
+  const vehicles = await getPublicVehicles();
+  if (vehicles.length === 0) return [];
+
+  return listAvailableVehiclesEntitlementBased(
+    vehicles,
+    { startAt: window.startAtIso, endAt: window.endAtIso },
+    { includeBlockouts: true },
+  );
+}
+
+export async function isPublicVehicleUnavailableForWindow(
+  vehicleId: string,
+  input: AvailabilityWindowInput,
+): Promise<boolean> {
+  const window = toNormalizedAvailabilityWindow(input);
+  if (!window || !UUID_REGEX.test(vehicleId)) return true;
+  return isVehicleUnavailableEntitlementBased(
+    vehicleId,
+    { startAt: window.startAtIso, endAt: window.endAtIso },
+    { includeBlockouts: true },
+  );
 }
 
 export async function getPublicVehicleByIdentifier(identifier: string): Promise<PublicVehicle | null> {

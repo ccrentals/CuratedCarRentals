@@ -242,9 +242,19 @@ export function AdminBookingsTable({
                       </Link>
                     </span>
                   ) : null}
+                  {booking.lostToFirstDeposit ? (
+                    <span className="mt-1 inline-flex rounded-full border border-amber-300/40 bg-amber-500/20 px-2 py-0.5 text-[11px] font-semibold text-amber-100">
+                      Lost to first deposit
+                    </span>
+                  ) : null}
                 </td>
                 <td className="px-4 py-3 text-[var(--ccr-muted)]">
                   <span className="hidden md:inline">{booking.createdAtLabel}</span>
+                  {booking.cancelledAtLabel ? (
+                    <p className="mt-1 hidden text-[11px] text-rose-200 md:block">
+                      Cancelled: {booking.cancelledAtLabel}
+                    </p>
+                  ) : null}
                   <details className="group md:hidden">
                     <summary className="list-none cursor-pointer [&::-webkit-details-marker]:hidden">
                       <span className="inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-text)]">
@@ -265,6 +275,7 @@ export function AdminBookingsTable({
                     </summary>
                     <div className="mt-2 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-2 text-xs text-[var(--ccr-muted)]">
                       {booking.createdAtLabel}
+                      {booking.cancelledAtLabel ? ` • Cancelled: ${booking.cancelledAtLabel}` : ""}
                     </div>
                   </details>
                 </td>

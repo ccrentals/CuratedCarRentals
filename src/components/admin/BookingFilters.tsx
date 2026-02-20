@@ -9,6 +9,7 @@ const STATUS_OPTIONS = [
   { label: "Confirmed", value: "confirmed" },
   { label: "Completed", value: "completed" },
   { label: "Cancelled", value: "cancelled" },
+  { label: "Lost to first deposit", value: "lost_to_first_deposit" },
 ];
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;

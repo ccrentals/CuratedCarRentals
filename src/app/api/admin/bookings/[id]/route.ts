@@ -5,10 +5,10 @@ import { dbQuery, getDbPool } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
 import { getInternalNotesRecipient, sendBookingNoteEmail } from "@/lib/notifications/email";
 import {
-  findOverlappingBlockingBookingIds,
   isNonBlockingPricing,
   readBookingOverrideInfo,
 } from "@/lib/bookings/holds";
+import { isVehicleUnavailableEntitlementBased } from "@/lib/availability/entitlement";
 import {
   computeBookingPricing,
   fetchNetPaidToDate,
@@ -53,6 +53,17 @@ function normalizeDateInput(value: unknown): string | null {
 function asObject(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
+}
+
+function buildWindowFromDates(startDate: string, endDate: string) {
+  const startAt = new Date(`${startDate}T00:00:00.000Z`);
+  const endAt = new Date(`${endDate}T00:00:00.000Z`);
+  if (Number.isNaN(startAt.getTime()) || Number.isNaN(endAt.getTime())) return null;
+  endAt.setUTCDate(endAt.getUTCDate() + 1);
+  return {
+    startAt: startAt.toISOString(),
+    endAt: endAt.toISOString(),
+  };
 }
 
 export async function GET(
@@ -445,15 +456,21 @@ export async function PATCH(
         );
       }
 
-      const blockingOverlaps = await findOverlappingBlockingBookingIds(client, {
-        vehicleId: booking.vehicle_id,
-        startDate,
-        endDate,
-        excludeBookingId: booking.id,
-        forUpdate: true,
-      });
+      const availabilityWindow = buildWindowFromDates(startDate, endDate);
+      if (!availabilityWindow) {
+        await client.query("rollback");
+        return NextResponse.json(
+          { error: "Vehicle is no longer available for the updated dates" },
+          { status: 409 },
+        );
+      }
 
-      if (blockingOverlaps.length > 0) {
+      const isUnavailable = await isVehicleUnavailableEntitlementBased(
+        booking.vehicle_id,
+        availabilityWindow,
+        { client, excludeBookingId: booking.id },
+      );
+      if (isUnavailable) {
         await client.query("rollback");
         return NextResponse.json(
           { error: "Vehicle is no longer available for the updated dates" },

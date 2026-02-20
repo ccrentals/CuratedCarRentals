@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { dbQuery } from "@/lib/db";
 import { calcDaysInclusive, dateOnlyUtc } from "@/lib/payments/dateMath";
+import { computeBookingPricing } from "@/lib/payments/pricing";
 import { normalizePromoInputCode, validatePromoForBooking } from "@/lib/promos";
 
 const UUID_REGEX =
@@ -16,6 +17,12 @@ export async function POST(request: Request) {
   const endDate = typeof body?.endDate === "string" ? body.endDate : "";
   const customerEmail =
     typeof body?.customerEmail === "string" ? body.customerEmail.trim().toLowerCase() : "";
+  const insuranceSelected = body?.insuranceSelected === true;
+  const insurancePricePerDayCentsRaw = Number(body?.insurancePricePerDayCents);
+  const insurancePricePerDayCents =
+    Number.isFinite(insurancePricePerDayCentsRaw) && insurancePricePerDayCentsRaw > 0
+      ? Math.round(insurancePricePerDayCentsRaw)
+      : 0;
 
   if (!UUID_REGEX.test(vehicleId)) {
     return NextResponse.json({ error: "Invalid vehicle" }, { status: 400 });
@@ -47,7 +54,20 @@ export async function POST(request: Request) {
   }
 
   const vehicle = vehicleResult.rows[0];
-  const subtotalCents = Number(vehicle.daily_rate_cents || 0) * days;
+  const pricingPreview = computeBookingPricing({
+    bookingId: "promo-preview",
+    bookingStatus: "PENDING_PAYMENT",
+    startDate,
+    endDate,
+    dailyRate: Number(vehicle.daily_rate_cents || 0),
+    deposit: Number(vehicle.deposit_cents || 0),
+    paymentOption: "DEPOSIT",
+    netPaidToDate: 0,
+    insuranceSelected,
+    insurancePricePerDay: insurancePricePerDayCents,
+    promoDiscount: 0,
+  });
+  const subtotalCents = pricingPreview.subtotal;
   const normalizedCode = normalizePromoInputCode(codeRaw);
   if (!normalizedCode) {
     return NextResponse.json({ error: "Promo code is required" }, { status: 400 });
@@ -74,5 +94,8 @@ export async function POST(request: Request) {
     discountAmountCents: validation.discountAmountCents,
     totalAfterDiscountCents: validation.totalAfterDiscountCents,
     depositCents: Number(vehicle.deposit_cents || 0),
+    insuranceSelected,
+    insuranceTotalCents: pricingPreview.insuranceTotal,
+    isEstimate: !insuranceSelected,
   });
 }

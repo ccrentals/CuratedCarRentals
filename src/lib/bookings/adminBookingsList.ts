@@ -45,6 +45,8 @@ export type AdminBookingListItem = {
   vehicleLabel: string;
   datesLabel: string;
   createdAtLabel: string;
+  cancelledAtLabel: string | null;
+  lostToFirstDeposit: boolean;
   status: string;
   statusLabel: string;
   substatusIndicators: BookingSubstatusIndicator[];
@@ -80,11 +82,13 @@ const STATUS_MAP: Record<string, string[]> = {
   completed: ["RETURNED"],
   cancelled: ["CANCELLED"],
 };
+const LOST_TO_FIRST_DEPOSIT_FILTER = "lost_to_first_deposit";
 
 function normalizeStatusFilter(raw: unknown) {
   if (typeof raw !== "string" || raw.trim().length === 0) return undefined;
   const normalized = raw.trim().toLowerCase();
   if (normalized === "all") return undefined;
+  if (normalized === LOST_TO_FIRST_DEPOSIT_FILTER) return undefined;
   return STATUS_MAP[normalized] ?? [normalized.toUpperCase()];
 }
 
@@ -134,7 +138,7 @@ function resolveSubstatusIndicators(input: {
     });
   }
 
-  if (!isClosed && paymentOption === "PAY_ON_PICKUP") {
+  if (!isClosed && paymentOption === "NONE") {
     indicators.push({
       key: "due_on_pickup",
       variant: "due_on_pickup",
@@ -177,6 +181,9 @@ function normalizeQueryInput(input: AdminBookingListQueryInput) {
   const statusFilter = normalizeStatusFilter(input.status);
   const includeArchived =
     input.includeArchived === true || (typeof input.archived === "string" && input.archived === "1");
+  const lostToFirstDepositOnly =
+    typeof input.status === "string" &&
+    input.status.trim().toLowerCase() === LOST_TO_FIRST_DEPOSIT_FILTER;
   const cursor = decodeBookingsCursor(input.cursor);
 
   return {
@@ -186,6 +193,7 @@ function normalizeQueryInput(input: AdminBookingListQueryInput) {
     dateTo,
     statusFilter,
     includeArchived,
+    lostToFirstDepositOnly,
     cursor,
   };
 }
@@ -194,6 +202,7 @@ function buildBookingsQuery(input: {
   includeArchiveFilter: boolean;
   includeArchived: boolean;
   statusFilter?: string[];
+  lostToFirstDepositOnly: boolean;
   q: string;
   dateFrom?: string;
   dateTo?: string;
@@ -219,6 +228,12 @@ function buildBookingsQuery(input: {
       values.push(input.statusFilter);
       index += 1;
     }
+  }
+
+  if (input.lostToFirstDepositOnly) {
+    whereClauses.push(
+      "upper(coalesce(b.status, '')) = 'CANCELLED' and upper(coalesce(b.pricing_json->>'cancel_reason', '')) = 'LOST_TO_FIRST_DEPOSIT'",
+    );
   }
 
   if (input.q) {
@@ -282,6 +297,7 @@ export async function fetchAdminBookingsPage(input: AdminBookingListQueryInput):
       includeArchiveFilter,
       includeArchived: normalized.includeArchived,
       statusFilter: normalized.statusFilter,
+      lostToFirstDepositOnly: normalized.lostToFirstDepositOnly,
       q: normalized.q,
       dateFrom: normalized.dateFrom,
       dateTo: normalized.dateTo,
@@ -297,6 +313,7 @@ export async function fetchAdminBookingsPage(input: AdminBookingListQueryInput):
         includeArchiveFilter,
         includeArchived: normalized.includeArchived,
         statusFilter: normalized.statusFilter,
+        lostToFirstDepositOnly: normalized.lostToFirstDepositOnly,
         q: normalized.q,
         dateFrom: normalized.dateFrom,
         dateTo: normalized.dateTo,
@@ -383,6 +400,13 @@ export async function fetchAdminBookingsPage(input: AdminBookingListQueryInput):
       }) && !["CANCELLED", "RETURNED"].includes(row.status.toUpperCase());
 
     const overrideInfo = readBookingOverrideInfo(pricing);
+    const cancelReason = String(pricing.cancel_reason ?? "")
+      .trim()
+      .toUpperCase();
+    const lostToFirstDeposit = cancelReason === "LOST_TO_FIRST_DEPOSIT";
+    const cancelledAtRaw =
+      typeof pricing.cancelled_at === "string" ? pricing.cancelled_at : null;
+    const cancelledAtLabel = cancelledAtRaw ? fmtDateNoSeconds(cancelledAtRaw) : null;
 
     return {
       id: row.id,
@@ -391,6 +415,8 @@ export async function fetchAdminBookingsPage(input: AdminBookingListQueryInput):
       vehicleLabel: `${row.vehicle_make} ${row.vehicle_model}`.trim(),
       datesLabel: `${fmtDateNoSeconds(row.start_date)} → ${fmtDateNoSeconds(row.end_date)}`,
       createdAtLabel: fmtDateNoSeconds(row.created_at),
+      cancelledAtLabel,
+      lostToFirstDeposit,
       status: row.status,
       statusLabel: formatBookingStatusLabel(row.status, String(pricing.payment_status ?? "")),
       substatusIndicators: resolveSubstatusIndicators({

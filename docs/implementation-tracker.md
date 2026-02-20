@@ -1,6 +1,6 @@
 # Curated Car Rentals - Implementation Tracker
 
-Last updated: 2026-02-13
+Last updated: 2026-02-19
 
 ## Status Legend
 - `DONE` - implemented and verified
@@ -9,7 +9,7 @@ Last updated: 2026-02-13
 - `BLOCKED` - waiting on user/external input
 
 ## Current Phase Snapshot
-- Phase: Admin refinement + workflow completion
+- Phase: Public booking flow revamp (design + data model + payment/availability hardening)
 - Overall state: `IN_PROGRESS`
 
 ## Completed
@@ -31,6 +31,31 @@ Last updated: 2026-02-13
 - `IN_PROGRESS` None.
 
 ## Newly Completed
+- `DONE` Public booking entry override:
+  - `/book` now renders the new multi-step wizard component (`PublicBookingWizard`), replacing the legacy single-page public booking form as primary experience.
+  - Existing “Book Now” links remain on `/book`, preserving URL compatibility for marketing links.
+- `DONE` Public availability hardening (server-side):
+  - `GET /api/public/vehicles` now accepts pickup/dropoff date+time and returns only vehicles that are available for the selected range.
+  - Availability filtering excludes vehicles with overlapping active bookings and overlapping blockouts.
+  - `POST /api/public/bookings` now re-validates availability against the same date+time rule before creating a booking.
+- `DONE` Public booking validation/persistence enhancements:
+  - Driver's license image URL + number are now required at booking creation.
+  - Booking creation persists pickup/dropoff snapshots, pickup/dropoff time fields, insurance/payment option fields, and DL metadata.
+  - Driver's license/signature references are stored in `booking_private_files`.
+- `DONE` Booking revamp schema foundation (additive, backward-compatible) staged:
+  - new `booking_locations` table for pickup/dropoff management
+  - new `insurance_plans` table (global default + per-vehicle override structure)
+  - new `booking_private_files` table for private booking document references (driver's license/signature)
+  - `customers` extended with profile fields (`first_name`, `last_name`, address parts, `birthday`)
+  - `customers.drivers_license_number` added as unique lookup field (UUID PK remains unchanged)
+  - `bookings` extended with pickup/dropoff snapshots, time-window fields, insurance fields, and payment option/custom amount fields
+  - migration file: `migrations/008_booking_revamp_foundation.sql`
+  - base schema updated: `db/schema.sql`
+- `DONE` Booking revamp overlap audit completed and documented:
+  - current booking/public/admin/payment architecture mapped
+  - requirement gap analysis A-K mapped
+  - safe rollout sequence captured
+  - reference: `docs/booking-revamp-overlap-audit.md`
 - `DONE` Cron reminder observability hardening:
   - canonical reminder event type constants centralized in `src/lib/cron/reminderTypes.ts`
   - durable run logging added for cron jobs in `audit_logs` (`entity_type=cron_run`, `action=CRON_REMINDER_RUN`)

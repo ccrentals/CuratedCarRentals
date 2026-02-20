@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { AdminSettingsForm } from "@/components/admin/AdminSettingsForm";
+import { BookingFlowConfigPanel } from "@/components/admin/BookingFlowConfigPanel";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { DEFAULT_ADMIN_SETTINGS } from "@/lib/adminSettings";
 import { dbQuery } from "@/lib/db";
@@ -103,7 +104,7 @@ export default async function AdminSettingsPage() {
         </Link>
       </div>
 
-      <div className="mt-6">
+      <div className="mt-6 space-y-6">
         {!isAdmin ? (
           <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
             <p className="text-sm font-semibold text-[var(--ccr-text)]">Admin access required.</p>
@@ -127,6 +128,8 @@ export default async function AdminSettingsPage() {
             disabled={!isAdmin}
           />
         )}
+
+        {isAdmin ? <BookingFlowConfigPanel /> : null}
       </div>
     </div>
   );

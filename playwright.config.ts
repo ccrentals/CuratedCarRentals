@@ -50,7 +50,8 @@ export default defineConfig({
   webServer: process.env.E2E_BASE_URL
     ? undefined
     : {
-        command: "NEXT_PUBLIC_DISABLE_BREAKPOINT_OVERLAY=1 npm run dev -- --port 4173",
+        command:
+          "NEXT_PUBLIC_DISABLE_BREAKPOINT_OVERLAY=1 NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY=e2e-public-key npm run dev -- --port 4173",
         url: baseURL,
         reuseExistingServer: !process.env.CI,
         timeout: 120_000,
