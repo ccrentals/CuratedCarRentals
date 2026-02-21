@@ -204,8 +204,6 @@ export default async function AdminPaymentsPage({
         })}
       </div>
 
-      <PaymentsFilters initialQuery={q} />
-
       <div className="mt-6 grid gap-4 lg:grid-cols-[1.1fr_1.9fr]">
         <div className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
           <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
@@ -302,6 +300,8 @@ export default async function AdminPaymentsPage({
           )}
         </div>
       </div>
+
+      <PaymentsFilters initialQuery={q} />
 
       <div className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)]">
         {payments.rows.length === 0 ? (

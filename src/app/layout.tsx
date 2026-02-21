@@ -37,7 +37,7 @@ export default function RootLayout({
   const allowedThemesJson = JSON.stringify(APP_THEMES);
 
   return (
-    <html lang="en" data-theme-init="pending" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning>
       <head>
         <style
           id="ccr-theme-critical"
@@ -66,12 +66,6 @@ html[data-theme="sand"], html[data-theme="sand"] body {
 html[data-theme="forest"], html[data-theme="forest"] body {
   background: #0f1d17;
   color: #e9f4ec;
-}
-html[data-theme-init="pending"] body {
-  visibility: hidden;
-}
-html[data-theme-init="ready"] body {
-  visibility: visible;
 }
 `,
           }}
@@ -103,8 +97,6 @@ html[data-theme-init="ready"] body {
     document.documentElement.style.colorScheme = darkThemes.indexOf(theme) !== -1 ? "dark" : "light";
   } catch (e) {
     // Best-effort only.
-  } finally {
-    document.documentElement.setAttribute("data-theme-init", "ready");
   }
 })();`,
           }}
