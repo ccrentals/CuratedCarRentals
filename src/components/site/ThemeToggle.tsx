@@ -4,7 +4,14 @@ import { useSyncExternalStore } from "react";
 
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 import { cn } from "@/lib/utils";
-import { APP_THEMES, type AppTheme, isAppTheme, THEME_LABELS, THEME_STORAGE_KEY } from "@/lib/theme";
+import {
+  APP_THEMES,
+  type AppTheme,
+  isAppTheme,
+  THEME_COOKIE_NAME,
+  THEME_LABELS,
+  THEME_STORAGE_KEY,
+} from "@/lib/theme";
 
 type ThemeToggleProps = {
   className?: string;
@@ -15,6 +22,12 @@ type ThemeToggleProps = {
 
 function applyTheme(theme: AppTheme) {
   document.documentElement.setAttribute("data-theme", theme);
+}
+
+function persistThemeCookie(theme: AppTheme) {
+  if (typeof document === "undefined") return;
+  const secure = window.location.protocol === "https:" ? "; Secure" : "";
+  document.cookie = `${THEME_COOKIE_NAME}=${encodeURIComponent(theme)}; Path=/; Max-Age=31536000; SameSite=Lax${secure}`;
 }
 
 function getCurrentTheme() {
@@ -72,6 +85,7 @@ export function ThemeToggle({
 
   function selectTheme(nextTheme: AppTheme) {
     localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+    persistThemeCookie(nextTheme);
     applyTheme(nextTheme);
     if (persistence === "user") {
       void persistThemeForUser(nextTheme);
