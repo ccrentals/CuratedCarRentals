@@ -9,6 +9,8 @@ import { recalculateBookingPayments } from "@/lib/payments/recalculateBooking";
 import {
   getInternalNotesRecipient,
   sendBookingOverriddenByPaidBookingEmail,
+  sendPaymentCompleteEmail,
+  sendPaymentUpdateEmail,
 } from "@/lib/notifications/email";
 import { maybeEntitleBookingAfterPayment } from "@/lib/availability/entitlement";
 
@@ -33,7 +35,7 @@ export async function POST(
     await client.query("begin");
 
     const bookingResult = await client.query(
-      "select b.id, b.vehicle_id, b.start_date, b.end_date, b.status, b.pricing_json, v.deposit_cents from bookings b join vehicles v on v.id = b.vehicle_id where b.id = $1",
+      "select b.id, b.vehicle_id, b.start_date, b.end_date, b.status, b.pickup_location, b.pricing_json, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model, v.year as vehicle_year, v.deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.id = $1",
       [id],
     );
 
@@ -167,6 +169,48 @@ export async function POST(
         ok: true,
         lost: true,
         winnerBookingId: entitlementResolution.winnerBookingId,
+      });
+    }
+
+    const vehicleLabel =
+      `${booking.vehicle_year ?? ""} ${booking.vehicle_make ?? ""} ${booking.vehicle_model ?? ""}`.trim();
+    const paymentDateTime = new Date().toISOString();
+
+    if (recalculated.balanceDue <= 0) {
+      await sendPaymentCompleteEmail({
+        bookingId: booking.id,
+        customerEmail: booking.customer_email,
+        customerName: booking.customer_name,
+        vehicleLabel,
+        startDate: booking.start_date,
+        endDate: booking.end_date,
+        pickupLocation: booking.pickup_location ?? "",
+        dailyRate: recalculated.dailyRate,
+        deposit: recalculated.depositAmount,
+        total: recalculated.totalAmount,
+        paidToDate: recalculated.netPaidToDate,
+        balanceDue: recalculated.balanceDue,
+        paymentAmount: depositCents,
+        paymentMethod: "Manual / Admin (Deposit)",
+        paymentDateTime,
+      });
+    } else {
+      await sendPaymentUpdateEmail({
+        bookingId: booking.id,
+        customerEmail: booking.customer_email,
+        customerName: booking.customer_name,
+        vehicleLabel,
+        startDate: booking.start_date,
+        endDate: booking.end_date,
+        pickupLocation: booking.pickup_location ?? "",
+        dailyRate: recalculated.dailyRate,
+        deposit: recalculated.depositAmount,
+        total: recalculated.totalAmount,
+        paidToDate: recalculated.netPaidToDate,
+        balanceDue: recalculated.balanceDue,
+        paymentAmount: depositCents,
+        paymentMethod: "Manual / Admin (Deposit)",
+        paymentDateTime,
       });
     }
 

@@ -77,9 +77,13 @@ export default function RootLayout({
       >
         <CsrfBootstrap />
         <div className="flex min-h-screen flex-col">
-          <Header />
+          <div data-site-header>
+            <Header />
+          </div>
           <main className="flex-1">{children}</main>
-          <Footer />
+          <div data-site-footer>
+            <Footer />
+          </div>
         </div>
         {showBreakpointOverlay ? <BreakpointOverlay /> : null}
       </body>

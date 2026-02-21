@@ -9,6 +9,8 @@ import { logError } from "@/lib/log";
 import {
   getInternalNotesRecipient,
   sendBookingOverriddenByPaidBookingEmail,
+  sendPaymentCompleteEmail,
+  sendPaymentUpdateEmail,
 } from "@/lib/notifications/email";
 import { maybeEntitleBookingAfterPayment } from "@/lib/availability/entitlement";
 
@@ -33,7 +35,7 @@ export async function POST(
     await client.query("begin");
 
     const bookingResult = await client.query(
-      "select b.id, b.vehicle_id, b.status, b.start_date, b.end_date from bookings b where b.id = $1 for update",
+      "select b.id, b.vehicle_id, b.status, b.start_date, b.end_date, b.pickup_location, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model, v.year as vehicle_year from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.id = $1 for update",
       [id],
     );
 
@@ -143,6 +145,48 @@ export async function POST(
         ok: true,
         lost: true,
         winnerBookingId: entitlementResolution.winnerBookingId,
+      });
+    }
+
+    const vehicleLabel =
+      `${booking.vehicle_year ?? ""} ${booking.vehicle_make ?? ""} ${booking.vehicle_model ?? ""}`.trim();
+    const paymentDateTime = new Date().toISOString();
+
+    if (after.balanceDue <= 0) {
+      await sendPaymentCompleteEmail({
+        bookingId: booking.id,
+        customerEmail: booking.customer_email,
+        customerName: booking.customer_name,
+        vehicleLabel,
+        startDate: booking.start_date,
+        endDate: booking.end_date,
+        pickupLocation: booking.pickup_location ?? "",
+        dailyRate: after.dailyRate,
+        deposit: after.depositAmount,
+        total: after.totalAmount,
+        paidToDate: after.netPaidToDate,
+        balanceDue: after.balanceDue,
+        paymentAmount: balanceDue,
+        paymentMethod: "Manual / Admin (Balance)",
+        paymentDateTime,
+      });
+    } else {
+      await sendPaymentUpdateEmail({
+        bookingId: booking.id,
+        customerEmail: booking.customer_email,
+        customerName: booking.customer_name,
+        vehicleLabel,
+        startDate: booking.start_date,
+        endDate: booking.end_date,
+        pickupLocation: booking.pickup_location ?? "",
+        dailyRate: after.dailyRate,
+        deposit: after.depositAmount,
+        total: after.totalAmount,
+        paidToDate: after.netPaidToDate,
+        balanceDue: after.balanceDue,
+        paymentAmount: balanceDue,
+        paymentMethod: "Manual / Admin (Balance)",
+        paymentDateTime,
       });
     }
 

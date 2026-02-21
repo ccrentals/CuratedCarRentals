@@ -152,6 +152,7 @@ export function AdminCreateBookingModal({
 
       const paymentResponse = await fetch(`/api/admin/bookings/${bookingId}/add-payment`, {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
           "x-csrf-token": csrfToken ?? "",

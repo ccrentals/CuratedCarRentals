@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 
 import { getSessionFromRequest } from "@/lib/auth/session";
-import { hashBookingAccessToken, bookingAccessCookieName } from "@/lib/bookings/privateAccess";
 import { dbQuery } from "@/lib/db";
 import { logError } from "@/lib/log";
 import { buildUploadcareCdnUrl, extractUploadcareFileId } from "@/lib/uploads/uploadcare";
@@ -32,18 +31,6 @@ function jsonNoStore(payload: Record<string, unknown>, status: number) {
   });
 }
 
-function parseCookieValue(request: Request, name: string) {
-  const cookieHeader = request.headers.get("cookie") ?? "";
-  const pairs = cookieHeader.split(";").map((entry) => entry.trim());
-  for (const pair of pairs) {
-    if (!pair) continue;
-    const [key, ...rest] = pair.split("=");
-    if (key !== name) continue;
-    return decodeURIComponent(rest.join("="));
-  }
-  return "";
-}
-
 function decodeDataUrl(dataUrl: string) {
   const match = dataUrl.match(/^data:([^;,]+)?(;base64)?,(.*)$/i);
   if (!match) return null;
@@ -60,36 +47,15 @@ function decodeDataUrl(dataUrl: string) {
   }
 }
 
-async function authorizeBookingFileRead(request: Request, bookingId: string) {
-  const session = await getSessionFromRequest();
-  // Any signed-in admin-portal session can read secure booking files.
-  // Public readers still require a booking-specific access token cookie.
-  if (session) return true;
-
-  const bookingResult = await dbQuery<{ pricing_json: Record<string, unknown> | null }>(
-    "select pricing_json from bookings where id = $1 limit 1",
-    [bookingId],
-  );
-  if (bookingResult.rowCount === 0) return false;
-
-  const pricing = bookingResult.rows[0]?.pricing_json ?? {};
-  const expectedHash =
-    typeof pricing.private_access_token_hash === "string"
-      ? pricing.private_access_token_hash
-      : "";
-  if (!expectedHash) return false;
-
-  const accessToken = parseCookieValue(request, bookingAccessCookieName(bookingId));
-  if (!accessToken) return false;
-
-  const providedHash = hashBookingAccessToken(accessToken);
-  return providedHash === expectedHash;
-}
-
 export async function GET(
-  request: Request,
+  _request: Request,
   { params }: { params: Promise<{ id: string; documentType: string }> },
 ) {
+  const session = await getSessionFromRequest();
+  if (!session) {
+    return jsonNoStore({ error: "Unauthorized" }, 401);
+  }
+
   const { id: bookingId, documentType: documentTypeRaw } = await params;
   const documentType = normalizeDocumentType(documentTypeRaw);
   if (!documentType) {
@@ -97,11 +63,6 @@ export async function GET(
   }
 
   try {
-    const isAuthorized = await authorizeBookingFileRead(request, bookingId);
-    if (!isAuthorized) {
-      return jsonNoStore({ error: "Forbidden" }, 403);
-    }
-
     const fileResult = await dbQuery<BookingFileRow>(
       "select id, booking_id, document_type, storage_provider, storage_key, original_file_name, mime_type from booking_private_files where booking_id = $1 and document_type = $2 order by created_at desc limit 1",
       [bookingId, documentType],
@@ -114,7 +75,6 @@ export async function GET(
 
     const isDataUrl = file.storage_provider.toUpperCase() === "DATA_URL";
     if (isDataUrl) {
-      // Legacy fallback only. New uploads store opaque provider file IDs.
       const decoded = decodeDataUrl(file.storage_key);
       if (!decoded) {
         return jsonNoStore({ error: "Unable to read file data." }, 500);
@@ -158,9 +118,10 @@ export async function GET(
       },
     });
   } catch (error) {
-    logError("api.public.bookings.private-files.GET", error, {
+    logError("admin.bookings.private-files.GET", error, {
       bookingId,
       documentType,
+      userId: session.userId,
     });
     return jsonNoStore({ error: "Failed to load booking file." }, 500);
   }

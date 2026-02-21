@@ -108,6 +108,7 @@ export function ManualPaymentForm({
     const csrfToken = await ensureCsrfToken();
     const response = await fetch(`/api/admin/bookings/${bookingId}/add-payment`, {
       method: "POST",
+      credentials: "include",
       headers: {
         "Content-Type": "application/json",
         "x-csrf-token": csrfToken ?? "",

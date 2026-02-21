@@ -264,7 +264,7 @@ export default async function AdminCustomerDetailPage({
             <p className="mt-1">Driver&apos;s License Number: {customerRow.drivers_license_number || "Not provided"}</p>
             {latestDriversLicenseBookingId ? (
               <a
-                href={`/api/public/bookings/${latestDriversLicenseBookingId}/private-files/DRIVERS_LICENSE`}
+                href={`/admin/bookings/${latestDriversLicenseBookingId}/private-files/DRIVERS_LICENSE`}
                 target="_blank"
                 rel="noreferrer"
                 className="mt-2 inline-flex text-[var(--ccr-accent)] underline"
@@ -274,7 +274,7 @@ export default async function AdminCustomerDetailPage({
             ) : null}
             {latestSignatureBookingId ? (
               <a
-                href={`/api/public/bookings/${latestSignatureBookingId}/private-files/SIGNATURE`}
+                href={`/admin/bookings/${latestSignatureBookingId}/private-files/SIGNATURE`}
                 target="_blank"
                 rel="noreferrer"
                 className="mt-1 inline-flex text-[var(--ccr-accent)] underline"

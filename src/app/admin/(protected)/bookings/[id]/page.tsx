@@ -10,7 +10,7 @@ import { ManualPaymentForm } from "@/components/admin/ManualPaymentForm";
 import { PaymentRowActions } from "@/components/admin/PaymentRowActions";
 import { RefundRequiredToast } from "@/components/admin/RefundRequiredToast";
 import { getSessionFromRequest } from "@/lib/auth/session";
-import { fmtDate } from "@/lib/dateFormat";
+import { fmtDate, fmtDateNoSeconds } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
 import { formatPaymentStatus } from "@/lib/payments/formatPaymentStatus";
 import {
@@ -24,7 +24,6 @@ import {
 import { readBookingOverrideInfo } from "@/lib/bookings/holds";
 import { formatBookingStatusLabel } from "@/lib/bookings/formatBookingStatusLabel";
 import { refundRequiredStyles } from "@/lib/refundRequiredStyles";
-import { formatLegalIdTypeLabel } from "@/lib/customers/legalId";
 import { isEntitledBooking } from "@/lib/availability/entitlement";
 
 type BookingDetails = {
@@ -129,6 +128,12 @@ function readPaymentMetadataText(
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed.length ? trimmed : null;
+}
+
+function formatTimeNoSeconds(value: string | null | undefined) {
+  const normalized = String(value ?? "").trim();
+  if (!normalized) return "";
+  return normalized.replace(/:(\d{2})(?:\.\d+)?$/, "");
 }
 
 export default async function AdminBookingDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -347,11 +352,11 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
     ? "ENTITLED"
     : "TENTATIVE";
   const pickupDateTimeLabel = booking.start_at
-    ? fmtDate(booking.start_at)
-    : `${fmtDate(booking.start_date)} ${booking.pickup_time ?? ""}`.trim();
+    ? fmtDateNoSeconds(booking.start_at)
+    : `${fmtDate(booking.start_date)} ${formatTimeNoSeconds(booking.pickup_time)}`.trim();
   const dropoffDateTimeLabel = booking.end_at
-    ? fmtDate(booking.end_at)
-    : `${fmtDate(booking.end_date)} ${booking.dropoff_time ?? ""}`.trim();
+    ? fmtDateNoSeconds(booking.end_at)
+    : `${fmtDate(booking.end_date)} ${formatTimeNoSeconds(booking.dropoff_time)}`.trim();
   const pickupLocationSnapshot = booking.pickup_location_text_snapshot || booking.pickup_location;
   const dropoffLocationSnapshot =
     booking.dropoff_location_text_snapshot || booking.dropoff_location || booking.pickup_location;
@@ -473,76 +478,78 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
             isPaidInFull={isPaidInFull}
             isDepositPaid={isDepositPaid}
             canAdmin={canAdmin}
+            bookingChangesContent={
+              <BookingUpdateForm
+                bookingId={booking.id}
+                startDate={booking.start_date}
+                endDate={booking.end_date}
+                pickupLocation={booking.pickup_location}
+                customerName={booking.customer_name}
+                customerEmail={booking.customer_email}
+                customerPhone={booking.customer_phone}
+                disabled={["RETURNED", "CANCELLED"].includes(booking.status.toUpperCase())}
+              />
+            }
           />
         </div>
-      </div>
-
-      <div className="mt-4">
-        <BookingUpdateForm
-          bookingId={booking.id}
-          startDate={booking.start_date}
-          endDate={booking.end_date}
-          pickupLocation={booking.pickup_location}
-          customerName={booking.customer_name}
-          customerEmail={booking.customer_email}
-          customerPhone={booking.customer_phone}
-          disabled={["RETURNED", "CANCELLED"].includes(booking.status.toUpperCase())}
-        />
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[1.2fr_1fr]">
         <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm">
           <h2 className="text-lg font-bold text-[var(--ccr-text)]">Booking Details</h2>
-          <dl className="mt-4 grid gap-3 text-sm text-[var(--ccr-muted)]">
-            <div>
-              <dt className="text-xs uppercase tracking-wide">Status</dt>
-              <dd className="font-semibold text-[var(--ccr-text)]">{displayStatus.replace(/_/g, " ")}</dd>
-            </div>
-            <div>
-              <dt className="text-xs uppercase tracking-wide">Entitlement</dt>
-              <dd className="font-semibold text-[var(--ccr-text)]">{entitlementState}</dd>
-            </div>
-            <div>
-              <dt className="text-xs uppercase tracking-wide">Payment Option</dt>
-              <dd className="font-semibold text-[var(--ccr-text)]">
-                {summary.paymentOption.replace(/_/g, " ")}
-              </dd>
-            </div>
-            {summary.paymentOption === "CUSTOM" ? (
-              <div>
-                <dt className="text-xs uppercase tracking-wide">Custom Amount</dt>
-                <dd className="font-semibold text-[var(--ccr-text)]">{formatJmd(customPaymentAmount)}</dd>
+          <dl className="mt-4 grid gap-6 text-sm text-[var(--ccr-muted)] md:grid-cols-2">
+            <div className="space-y-3">
+              <div className="min-w-0">
+                <dt className="text-xs uppercase tracking-wide">Status</dt>
+                <dd className="font-semibold text-[var(--ccr-text)]">{displayStatus.replace(/_/g, " ")}</dd>
               </div>
-            ) : null}
-            <div>
-              <dt className="text-xs uppercase tracking-wide">Pickup Date & Time</dt>
-              <dd className="font-semibold text-[var(--ccr-text)]">
-                {pickupDateTimeLabel}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs uppercase tracking-wide">Dropoff Date & Time</dt>
-              <dd className="font-semibold text-[var(--ccr-text)]">{dropoffDateTimeLabel}</dd>
-            </div>
-            <div>
-              <dt className="text-xs uppercase tracking-wide">Pickup Location Snapshot</dt>
-              <dd className="font-semibold text-[var(--ccr-text)]">{pickupLocationSnapshot}</dd>
-            </div>
-            <div>
-              <dt className="text-xs uppercase tracking-wide">Dropoff Location Snapshot</dt>
-              <dd className="font-semibold text-[var(--ccr-text)]">{dropoffLocationSnapshot}</dd>
-            </div>
-            {cancellationReasonWhenLost ? (
-              <div>
-                <dt className="text-xs uppercase tracking-wide">Cancellation Reason</dt>
-                <dd className="font-semibold text-[var(--ccr-text)]">{cancellationReasonWhenLost}</dd>
+              <div className="min-w-0">
+                <dt className="text-xs uppercase tracking-wide">Entitlement</dt>
+                <dd className="font-semibold text-[var(--ccr-text)]">{entitlementState}</dd>
               </div>
-            ) : null}
-            <div>
-              <dt className="text-xs uppercase tracking-wide">Vehicle ID</dt>
-              <dd className="font-mono font-semibold text-[var(--ccr-text)]">
-                {booking.vehicle_id || "N/A"}
-              </dd>
+              <div className="min-w-0">
+                <dt className="text-xs uppercase tracking-wide">Payment Option</dt>
+                <dd className="font-semibold text-[var(--ccr-text)]">
+                  {summary.paymentOption.replace(/_/g, " ")}
+                </dd>
+              </div>
+              {summary.paymentOption === "CUSTOM" ? (
+                <div className="min-w-0">
+                  <dt className="text-xs uppercase tracking-wide">Custom Amount</dt>
+                  <dd className="font-semibold text-[var(--ccr-text)]">{formatJmd(customPaymentAmount)}</dd>
+                </div>
+              ) : null}
+              {cancellationReasonWhenLost ? (
+                <div className="min-w-0">
+                  <dt className="text-xs uppercase tracking-wide">Cancellation Reason</dt>
+                  <dd className="font-semibold text-[var(--ccr-text)]">{cancellationReasonWhenLost}</dd>
+                </div>
+              ) : null}
+              <div className="min-w-0">
+                <dt className="text-xs uppercase tracking-wide">Vehicle</dt>
+                <dd className="font-semibold text-[var(--ccr-text)]">
+                  {booking.vehicle_year} {booking.vehicle_make} {booking.vehicle_model}
+                </dd>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="min-w-0">
+                <dt className="text-xs uppercase tracking-wide">Pickup Date & Time</dt>
+                <dd className="font-semibold text-[var(--ccr-text)]">{pickupDateTimeLabel}</dd>
+              </div>
+              <div className="min-w-0">
+                <dt className="text-xs uppercase tracking-wide">Dropoff Date & Time</dt>
+                <dd className="font-semibold text-[var(--ccr-text)]">{dropoffDateTimeLabel}</dd>
+              </div>
+              <div className="min-w-0">
+                <dt className="text-xs uppercase tracking-wide">Pickup Location Snapshot</dt>
+                <dd className="font-semibold text-[var(--ccr-text)]">{pickupLocationSnapshot}</dd>
+              </div>
+              <div className="min-w-0">
+                <dt className="text-xs uppercase tracking-wide">Dropoff Location Snapshot</dt>
+                <dd className="font-semibold text-[var(--ccr-text)]">{dropoffLocationSnapshot}</dd>
+              </div>
             </div>
           </dl>
         </section>
@@ -555,40 +562,33 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
               <p className="font-semibold text-[var(--ccr-text)]">{booking.customer_name}</p>
               <p className="text-[var(--ccr-muted)]">{booking.customer_email}</p>
               <p className="text-[var(--ccr-muted)]">{booking.customer_phone}</p>
-              <p className="mt-2 text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Legal ID</p>
-              {booking.customer_legal_id_type && booking.customer_legal_id_number ? (
-                <p className="text-[var(--ccr-muted)]">
-                  {formatLegalIdTypeLabel(booking.customer_legal_id_type)} · {booking.customer_legal_id_number}
-                </p>
-              ) : (
-                <p className="text-[var(--ccr-muted)]">Not provided</p>
-              )}
               <p className="mt-2 text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Driver&apos;s License</p>
               <p className="text-[var(--ccr-muted)]">
                 Number: {booking.drivers_license_number || booking.customer_legal_id_number || "Not provided"}
               </p>
-              <p className="text-[var(--ccr-muted)]">
-                Expiry: {booking.drivers_license_expiration_date ? fmtDate(booking.drivers_license_expiration_date) : "Not provided"}
-              </p>
-              {hasDriversLicenseDoc ? (
-                <a
-                  href={`/api/public/bookings/${booking.id}/private-files/DRIVERS_LICENSE`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mt-1 inline-flex text-xs font-semibold text-[var(--ccr-accent)] underline"
-                >
-                  View secure driver&apos;s license file
-                </a>
-              ) : null}
-              {hasSignatureDoc ? (
-                <a
-                  href={`/api/public/bookings/${booking.id}/private-files/SIGNATURE`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mt-1 inline-flex text-xs font-semibold text-[var(--ccr-accent)] underline"
-                >
-                  View secure signature
-                </a>
+              {hasDriversLicenseDoc || hasSignatureDoc ? (
+                <div className="mt-2 flex flex-wrap items-center gap-4 text-xs font-semibold">
+                  {hasDriversLicenseDoc ? (
+                    <a
+                      href={`/admin/bookings/${booking.id}/private-files/DRIVERS_LICENSE`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[var(--ccr-accent)] transition-colors hover:text-[var(--ccr-text)]"
+                    >
+                      View ID
+                    </a>
+                  ) : null}
+                  {hasSignatureDoc ? (
+                    <a
+                      href={`/admin/bookings/${booking.id}/private-files/SIGNATURE`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[var(--ccr-accent)] transition-colors hover:text-[var(--ccr-text)]"
+                    >
+                      View Signature
+                    </a>
+                  ) : null}
+                </div>
               ) : null}
             </div>
             <div>
@@ -596,8 +596,6 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
               <p className="font-semibold text-[var(--ccr-text)]">
                 {booking.vehicle_year} {booking.vehicle_make} {booking.vehicle_model}
               </p>
-              <p className="font-mono text-xs text-[var(--ccr-muted)]">ID: {booking.vehicle_id || "N/A"}</p>
-              <p className="text-[var(--ccr-muted)]">Daily Rate: {formatJmd(dailyRate)}</p>
             </div>
           </div>
         </section>
@@ -639,17 +637,25 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
                 <span className="font-semibold text-[var(--ccr-text)]">-{formatJmd(summary.promoDiscount)}</span>
               </div>
             ) : null}
-          </div>
-          <div className="space-y-3 border-t border-[var(--ccr-border)] pt-5 md:border-l md:border-t-0 md:pl-6 md:pt-0">
-            <div className="flex items-center justify-between">
-              <span>Daily Rate</span>
-              <span className="font-semibold text-[var(--ccr-text)]">{formatJmd(dailyRate)}</span>
-            </div>
             <div className="flex items-center justify-between">
               <span>Insurance selected</span>
               <span className="font-semibold text-[var(--ccr-text)]">
                 {summary.insuranceSelected ? "Yes" : "No"}
               </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span>Payment option (stored)</span>
+              <span className="font-semibold text-[var(--ccr-text)]">{summary.paymentOption}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span>Payment status</span>
+              <span className="font-semibold text-[var(--ccr-text)]">{summary.paymentStatus.replace(/_/g, " ")}</span>
+            </div>
+          </div>
+          <div className="space-y-3 border-t border-[var(--ccr-border)] pt-5 md:border-l md:border-t-0 md:pl-6 md:pt-0">
+            <div className="flex items-center justify-between">
+              <span>Daily Rate</span>
+              <span className="font-semibold text-[var(--ccr-text)]">{formatJmd(dailyRate)}</span>
             </div>
             <div className="flex items-center justify-between">
               <span>Insurance price/day</span>
@@ -670,14 +676,6 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
             <div className="flex items-center justify-between">
               <span>Balance due</span>
               <span className="font-semibold text-[var(--ccr-text)]">{formatJmd(balanceDue)}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span>Payment option (stored)</span>
-              <span className="font-semibold text-[var(--ccr-text)]">{summary.paymentOption}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span>Payment status</span>
-              <span className="font-semibold text-[var(--ccr-text)]">{summary.paymentStatus.replace(/_/g, " ")}</span>
             </div>
           </div>
         </div>
@@ -768,7 +766,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
                         {formatJmd(payment.deposit_amount_cents)}
                       </td>
                       <td className="px-3 py-2 text-[var(--ccr-muted)]">
-                        {fmtDate(payment.created_at)}
+                        {fmtDateNoSeconds(payment.created_at)}
                       </td>
                       <td className="px-3 py-2">
                         <PaymentRowActions
@@ -823,7 +821,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
           <div className="min-w-0">
             <dt className="text-xs uppercase tracking-wide">Overridden at</dt>
             <dd className="font-semibold text-[var(--ccr-text)]">
-              {overrideInfo.overriddenAt ? fmtDate(overrideInfo.overriddenAt) : "N/A"}
+              {overrideInfo.overriddenAt ? fmtDateNoSeconds(overrideInfo.overriddenAt) : "N/A"}
             </dd>
           </div>
           <div className="min-w-0">

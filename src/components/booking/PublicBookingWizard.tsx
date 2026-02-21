@@ -277,7 +277,6 @@ export function PublicBookingWizard() {
   const [driversLicenseExpirationDate, setDriversLicenseExpirationDate] = useState("");
   const [driversLicenseImageUrl, setDriversLicenseImageUrl] = useState("");
   const [driversLicenseUploading, setDriversLicenseUploading] = useState(false);
-  const uploadcarePublicKey = process.env.NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY ?? "";
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -1023,38 +1022,21 @@ export function PublicBookingWizard() {
 
   async function uploadDriversLicenseFile(file: File) {
     setErrorMessage(null);
-    if (!uploadcarePublicKey.trim()) {
-      setErrorMessage(
-        "Driver's license upload is unavailable right now. Configure NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY.",
-      );
-      return;
-    }
-
     setDriversLicenseUploading(true);
     try {
-      const formData = new FormData();
-      formData.set("UPLOADCARE_PUB_KEY", uploadcarePublicKey.trim());
-      formData.set("UPLOADCARE_STORE", "1");
-      formData.set("file", file);
-
-      const response = await fetch("https://upload.uploadcare.com/base/", {
-        method: "POST",
-        body: formData,
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error("Unable to read driver's license image."));
+        reader.onload = () => {
+          if (typeof reader.result === "string" && reader.result.startsWith("data:image/")) {
+            resolve(reader.result);
+            return;
+          }
+          reject(new Error("Driver's license image must be a valid image file."));
+        };
+        reader.readAsDataURL(file);
       });
-
-      const payload = (await response.json().catch(() => null)) as
-        | { file?: unknown; error?: { content?: unknown } }
-        | null;
-
-      if (!response.ok || typeof payload?.file !== "string") {
-        throw new Error(
-          typeof payload?.error?.content === "string"
-            ? payload.error.content
-            : "Unable to upload license image.",
-        );
-      }
-
-      setDriversLicenseImageUrl(payload.file);
+      setDriversLicenseImageUrl(dataUrl);
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : "Unable to upload driver's license image.",
@@ -1337,6 +1319,7 @@ export function PublicBookingWizard() {
           legalIdType: "DRIVERS_LICENSE",
           legalIdNumber: normalizeText(driversLicenseNumber),
           legalIdImageUploadToken: driversLicenseImageUrl,
+          driversLicenseDataUrl: driversLicenseImageUrl,
           driversLicenseNumber: normalizeText(driversLicenseNumber),
           driversLicenseExpirationDate: normalizeText(driversLicenseExpirationDate) || null,
           signatureDataUrl,

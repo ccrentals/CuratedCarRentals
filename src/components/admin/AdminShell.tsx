@@ -806,6 +806,7 @@ export function AdminShell({
   return (
     <div className="min-h-screen bg-[var(--ccr-bg)] text-[var(--ccr-text)] lg:flex">
       <aside
+        data-admin-sidebar
         className={`hidden overflow-hidden lg:flex lg:flex-col lg:border-r lg:border-[var(--ccr-border)] lg:bg-[var(--ccr-surface)] lg:px-4 lg:py-6 lg:transition-[width] lg:duration-300 lg:ease-in-out ${sidebarWidth}`}
       >
         <div className={`flex items-center gap-2 ${collapsed ? "justify-center" : ""}`}>
