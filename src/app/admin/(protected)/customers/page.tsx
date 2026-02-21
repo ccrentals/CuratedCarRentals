@@ -5,6 +5,7 @@ import { dbQuery } from "@/lib/db";
 import { fmtDate } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
 import { CustomerBlockToggleButton } from "@/components/admin/CustomerBlockToggleButton";
+import { CustomersFilters } from "@/components/admin/CustomersFilters";
 
 type CustomerListRow = {
   id: string;
@@ -47,7 +48,7 @@ async function fetchCustomers({
   const whereSql = q
     ? "where c.full_name ilike $1 or c.email ilike $1 or c.phone ilike $1"
     : "";
-  const values = q ? [`%${q}%`] : [];
+  const values = q ? [`${q}%`] : [];
 
   const orderBy =
     sort === "total_bookings"
@@ -135,43 +136,7 @@ export default async function AdminCustomersPage({
         </div>
       </div>
 
-      <form action="/admin/customers" method="get" className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
-        <div className="grid gap-3 md:grid-cols-[2fr_1fr_auto_auto]">
-          <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-            Search
-            <input
-              name="q"
-              defaultValue={q}
-              placeholder="Search name, email, or phone"
-              className="mt-2 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
-            />
-          </label>
-          <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-            Sort
-            <select
-              name="sort"
-              defaultValue={sort}
-              className="mt-2 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
-            >
-              <option value="last_booked">Last Booked</option>
-              <option value="total_bookings">Most Bookings</option>
-              <option value="total_spend">Highest Spend</option>
-            </select>
-          </label>
-          <button
-            type="submit"
-            className="mt-6 w-full rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-xs font-semibold text-white md:w-auto"
-          >
-            Apply
-          </button>
-          <Link
-            href="/admin/customers"
-            className="mt-6 inline-flex w-full items-center justify-center rounded-xl border border-[var(--ccr-border)] px-4 py-2 text-xs font-semibold text-[var(--ccr-text)] md:w-auto"
-          >
-            Reset
-          </Link>
-        </div>
-      </form>
+      <CustomersFilters initialQuery={q} initialSort={sort} />
 
       <div className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)]">
         {customers.rows.length === 0 ? (

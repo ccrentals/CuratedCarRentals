@@ -80,7 +80,7 @@ async function fetchCustomers({
   const whereSql = q
     ? "where c.full_name ilike $1 or c.email ilike $1 or c.phone ilike $1"
     : "";
-  const values = q ? [`%${q}%`] : [];
+  const values = q ? [`${q}%`] : [];
 
   const orderBy =
     sort === "total_bookings"

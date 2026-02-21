@@ -72,6 +72,12 @@ export default function BookingFilters({ canAdmin }: { canAdmin?: boolean }) {
   useEffect(() => {
     const timer = setTimeout(() => {
       const trimmed = query.trim();
+      if (trimmed.length > 0 && trimmed.length < 3) {
+        if ((searchParams.get("q") ?? "") !== "") {
+          updateParams({ q: null });
+        }
+        return;
+      }
       const current = searchParams.get("q") ?? "";
       if (trimmed === current) return;
       updateParams({ q: trimmed ? trimmed : null });

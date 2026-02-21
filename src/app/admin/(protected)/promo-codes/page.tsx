@@ -86,6 +86,7 @@ export default function AdminPromoCodesPage() {
   const [promos, setPromos] = useState<PromoRow[]>([]);
   const [vehicles, setVehicles] = useState<VehicleRow[]>([]);
   const [search, setSearch] = useState("");
+  const [isBootstrapped, setIsBootstrapped] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -150,6 +151,7 @@ export default function AdminPromoCodesPage() {
       }
 
       setLoading(false);
+      setIsBootstrapped(true);
     }
 
     void bootstrap();
@@ -158,6 +160,18 @@ export default function AdminPromoCodesPage() {
       isCurrent = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!isBootstrapped) return;
+
+    const timer = window.setTimeout(() => {
+      const trimmed = search.trim();
+      if (trimmed.length > 0 && trimmed.length < 3) return;
+      void loadPromos(trimmed);
+    }, 300);
+
+    return () => window.clearTimeout(timer);
+  }, [isBootstrapped, search]);
 
   const selectedAllowedSet = useMemo(() => new Set(allowedVehicleIds), [allowedVehicleIds]);
   const selectedExcludedSet = useMemo(() => new Set(excludedVehicleIds), [excludedVehicleIds]);

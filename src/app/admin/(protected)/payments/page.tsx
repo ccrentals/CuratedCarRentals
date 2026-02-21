@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { PaymentsFilters } from "@/components/admin/PaymentsFilters";
 import PaymentLogToggle from "@/components/admin/PaymentLogToggle";
 import { dbQuery } from "@/lib/db";
 import { fmtDate } from "@/lib/dateFormat";
@@ -70,12 +71,19 @@ export default async function AdminPaymentsPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = await searchParams;
+  const q = typeof params.q === "string" ? params.q.trim() : "";
   const bookingId = typeof params.bookingId === "string" ? params.bookingId.trim() : "";
   const paymentType = typeof params.paymentType === "string" ? params.paymentType.trim() : "";
   const normalizedType = paymentType === "balance" ? "balance" : paymentType === "deposit" ? "deposit" : "";
 
   const conditions: string[] = [];
   const values: string[] = [];
+  if (q) {
+    values.push(`${q}%`);
+    conditions.push(
+      `(c.full_name ilike $${values.length} or c.email ilike $${values.length} or c.phone ilike $${values.length} or b.id::text ilike $${values.length} or p.id::text ilike $${values.length})`,
+    );
+  }
   if (bookingId) {
     values.push(bookingId);
     conditions.push(`p.booking_id = $${values.length}`);
@@ -109,6 +117,7 @@ export default async function AdminPaymentsPage({
   };
 
   const exportParams = new URLSearchParams();
+  if (q) exportParams.set("q", q);
   if (bookingId) exportParams.set("bookingId", bookingId);
   if (normalizedType) exportParams.set("paymentType", normalizedType);
   const exportHref = exportParams.toString()
@@ -117,6 +126,7 @@ export default async function AdminPaymentsPage({
 
   const filterParams = (value: string) => {
     const next = new URLSearchParams();
+    if (q) next.set("q", q);
     if (bookingId) next.set("bookingId", bookingId);
     if (value) next.set("paymentType", value);
     return `/admin/payments${next.toString() ? `?${next.toString()}` : ""}`;
@@ -139,6 +149,11 @@ export default async function AdminPaymentsPage({
                 Type: <span className="font-semibold text-[var(--ccr-text)]">{normalizedType}</span>
               </span>
             ) : null}
+            {q ? (
+              <span>
+                Search: <span className="font-semibold text-[var(--ccr-text)]">{q}</span>
+              </span>
+            ) : null}
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -149,7 +164,7 @@ export default async function AdminPaymentsPage({
           >
             Export CSV
           </Link>
-          {bookingId || normalizedType ? (
+          {q || bookingId || normalizedType ? (
             <Link
               href="/admin/payments"
               className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
@@ -188,6 +203,8 @@ export default async function AdminPaymentsPage({
           );
         })}
       </div>
+
+      <PaymentsFilters initialQuery={q} />
 
       <div className="mt-6 grid gap-4 lg:grid-cols-[1.1fr_1.9fr]">
         <div className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">

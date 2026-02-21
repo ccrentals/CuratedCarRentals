@@ -71,7 +71,7 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const q = (url.searchParams.get("q") ?? "").trim();
-  const values = q ? [`%${q}%`] : [];
+  const values = q ? [`${q}%`] : [];
   const whereSql = q ? "where p.code ilike $1" : "";
 
   const result = await dbQuery<PromoListRow>(

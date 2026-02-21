@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import Script from "next/script";
 
 import { BreakpointOverlay } from "@/components/dev/BreakpointOverlay";
 import { CsrfBootstrap } from "@/components/site/CsrfBootstrap";
@@ -38,12 +37,47 @@ export default function RootLayout({
   const allowedThemesJson = JSON.stringify(APP_THEMES);
 
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" data-theme-init="pending" suppressHydrationWarning>
       <head>
-        <Script
+        <style
+          id="ccr-theme-critical"
+          dangerouslySetInnerHTML={{
+            __html: `
+html, body {
+  background: #f5f7fc;
+  color: #1a243b;
+}
+html[data-theme="dark"], html[data-theme="dark"] body {
+  background: #0d1427;
+  color: #e8edf8;
+}
+html[data-theme="midnight"], html[data-theme="midnight"] body {
+  background: #040507;
+  color: #f2f5ff;
+}
+html[data-theme="ocean"], html[data-theme="ocean"] body {
+  background: #0a1b2d;
+  color: #e8f5ff;
+}
+html[data-theme="sand"], html[data-theme="sand"] body {
+  background: #f5efe4;
+  color: #2c2216;
+}
+html[data-theme="forest"], html[data-theme="forest"] body {
+  background: #0f1d17;
+  color: #e9f4ec;
+}
+html[data-theme-init="pending"] body {
+  visibility: hidden;
+}
+html[data-theme-init="ready"] body {
+  visibility: visible;
+}
+`,
+          }}
+        />
+        <script
           id="ccr-theme-init"
-          // Apply theme before hydration to avoid flashes on refresh.
-          strategy="beforeInteractive"
           dangerouslySetInnerHTML={{
             __html: `
 (function () {
@@ -65,8 +99,12 @@ export default function RootLayout({
       theme = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
     }
     document.documentElement.setAttribute("data-theme", theme);
+    var darkThemes = ["dark", "midnight", "ocean", "forest"];
+    document.documentElement.style.colorScheme = darkThemes.indexOf(theme) !== -1 ? "dark" : "light";
   } catch (e) {
     // Best-effort only.
+  } finally {
+    document.documentElement.setAttribute("data-theme-init", "ready");
   }
 })();`,
           }}

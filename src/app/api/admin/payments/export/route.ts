@@ -28,12 +28,19 @@ export async function GET(request: Request) {
   }
 
   const { searchParams } = new URL(request.url);
+  const q = searchParams.get("q")?.trim() ?? "";
   const bookingId = searchParams.get("bookingId")?.trim();
   const paymentType = searchParams.get("paymentType")?.trim();
   const normalizedType = paymentType === "balance" ? "balance" : paymentType === "deposit" ? "deposit" : "";
 
   const conditions: string[] = [];
   const values: string[] = [];
+  if (q) {
+    values.push(`${q}%`);
+    conditions.push(
+      `(c.full_name ilike $${values.length} or c.email ilike $${values.length} or c.phone ilike $${values.length} or b.id::text ilike $${values.length} or p.id::text ilike $${values.length})`,
+    );
+  }
   if (bookingId) {
     values.push(bookingId);
     conditions.push(`p.booking_id = $${values.length}`);

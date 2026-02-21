@@ -5,6 +5,7 @@ import { dbQuery } from "@/lib/db";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { fmtDate } from "@/lib/dateFormat";
 import { CreateUserForm, UserRowActions } from "@/components/admin/UsersManager";
+import { UsersFilters } from "@/components/admin/UsersFilters";
 
 type UserRow = {
   id: string;
@@ -67,7 +68,7 @@ export default async function AdminUsersPage({
   const values: string[] = [];
   let whereSql = "";
   if (q) {
-    values.push(`%${q}%`);
+    values.push(`${q}%`);
     whereSql = "where (email ilike $1 or username ilike $1 or full_name ilike $1)";
   }
 
@@ -156,35 +157,7 @@ export default async function AdminUsersPage({
         </div>
       ) : null}
 
-      <div className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
-        <form action="/admin/users" method="get" className="flex flex-wrap items-end gap-3">
-          <div className="min-w-[240px] flex-1">
-            <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-              Search
-            </label>
-            <input
-              name="q"
-              defaultValue={q}
-              placeholder="Search name, email, or username"
-              className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
-            />
-          </div>
-          <button
-            type="submit"
-            className="rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-sm font-semibold text-white"
-          >
-            Apply
-          </button>
-          {q ? (
-            <Link
-              href="/admin/users"
-              className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)]"
-            >
-              Reset
-            </Link>
-          ) : null}
-        </form>
-      </div>
+      <UsersFilters initialQuery={q} />
 
       <CreateUserForm disabled={lifecycleNotConfigured} actorRole={effectiveSessionRole ?? "USER"} />
 

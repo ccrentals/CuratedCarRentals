@@ -274,7 +274,7 @@ export default async function AdminReportsPage({
               type="date"
               name="dateFrom"
               defaultValue={filters.dateFrom}
-              className="mt-2 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+              className="promo-date-time-input mt-2 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
             />
           </label>
           <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
@@ -283,7 +283,7 @@ export default async function AdminReportsPage({
               type="date"
               name="dateTo"
               defaultValue={filters.dateTo}
-              className="mt-2 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+              className="promo-date-time-input mt-2 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
             />
           </label>
           <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">

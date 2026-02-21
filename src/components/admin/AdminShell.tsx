@@ -216,7 +216,7 @@ const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
-    label: "Cron",
+    label: "Schedule",
     href: "/admin/cron",
     icon: (className: string) => (
       <svg
@@ -375,13 +375,13 @@ const NAV_GROUPS: NavGroup[] = [
   {
     id: "monitoring",
     label: "Monitoring",
-    itemHrefs: ["/admin/reports", "/admin/cron", "/admin/health"],
+    itemHrefs: ["/admin/reports", "/admin/cron"],
     defaultExpanded: true,
   },
   {
     id: "administration",
     label: "Administration",
-    itemHrefs: ["/admin/documentation", "/admin/developer"],
+    itemHrefs: ["/admin/documentation", "/admin/developer", "/admin/health"],
     defaultExpanded: true,
   },
 ];

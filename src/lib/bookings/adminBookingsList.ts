@@ -240,7 +240,7 @@ function buildBookingsQuery(input: {
     whereClauses.push(
       `(c.full_name ilike $${index} or c.email ilike $${index} or c.phone ilike $${index} or b.id::text ilike $${index})`,
     );
-    values.push(`%${input.q}%`);
+    values.push(`${input.q}%`);
     index += 1;
   }
 
