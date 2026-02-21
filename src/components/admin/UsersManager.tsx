@@ -1,9 +1,17 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
+import { ADMIN_OUTLINE_BUTTON_CLASS } from "@/components/admin/adminUiClasses";
 import { SlideDownPanel } from "@/components/admin/SlideDownPanel";
 
 type CreateUserResult = {
@@ -55,9 +63,12 @@ export function CreateUserForm({
   const [copyToast, setCopyToast] = useState<{ message: string; tone: "success" | "error" } | null>(
     null,
   );
-  const [tempPassword, setTempPassword] = useState<string | null>(null);
-  const [tempPasswordExpiresAt, setTempPasswordExpiresAt] = useState<string | null>(null);
-  const [createdUsername, setCreatedUsername] = useState<string | null>(null);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [successNotice, setSuccessNotice] = useState<{
+    tempPassword: string;
+    tempPasswordExpiresAt: string | null;
+    createdUsername: string | null;
+  } | null>(null);
 
   function showCopyToast(message: string, tone: "success" | "error" = "success") {
     setCopyToast({ message, tone });
@@ -71,10 +82,8 @@ export function CreateUserForm({
     if (loading) return;
     setLoading(true);
     setError(null);
+    setSuccessNotice(null);
     setCopyToast(null);
-    setTempPassword(null);
-    setTempPasswordExpiresAt(null);
-    setCreatedUsername(null);
 
     if (firstName.trim().length < 1) {
       setError("First name is required.");
@@ -126,13 +135,16 @@ export function CreateUserForm({
       return;
     }
 
-    setTempPassword(data.tempPassword);
-    setTempPasswordExpiresAt(data.tempPasswordExpiresAt ?? null);
-    setCreatedUsername(data.username ? String(data.username) : null);
+    setSuccessNotice({
+      tempPassword: data.tempPassword,
+      tempPasswordExpiresAt: data.tempPasswordExpiresAt ?? null,
+      createdUsername: data.username ? String(data.username) : null,
+    });
     setFirstName("");
     setLastName("");
     setEmail("");
     setRole("USER");
+    setPanelOpen(false);
     router.refresh();
   }
 
@@ -142,6 +154,8 @@ export function CreateUserForm({
         title="Create user"
         description="Creates an account with a temporary password (expires in 3 days). The user will be prompted to set a permanent password after first login."
         defaultOpen={false}
+        open={panelOpen}
+        onOpenChange={setPanelOpen}
       >
         <div className="grid gap-3 md:grid-cols-4">
           <label className="text-xs text-[var(--ccr-muted)]">
@@ -198,72 +212,75 @@ export function CreateUserForm({
             {loading ? "Creating..." : "Create user"}
           </button>
         </div>
-
-        {tempPassword ? (
-          <div className="mt-4 rounded-xl border border-[var(--ccr-border)] border-l-4 border-l-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] p-4 text-sm text-[var(--ccr-text)]">
-            <p className="font-semibold text-[var(--ccr-text)]">Temporary password created</p>
-            <p className="mt-1 text-xs text-[var(--ccr-muted)]">
-              Share this password securely with the user. It is shown once and will expire in 3 days.
-            </p>
-            {createdUsername ? (
-              <p className="mt-2 text-xs text-[var(--ccr-muted)]">
-                Username:{" "}
-                <span className="font-mono text-[var(--ccr-text)]">{createdUsername}</span>
-              </p>
-            ) : null}
-            <p className="mt-3 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 font-mono text-sm text-[var(--ccr-text)]">
-              {tempPassword}
-            </p>
-            {tempPasswordExpiresAt ? (
-              <p className="mt-2 text-[11px] text-[var(--ccr-muted)]">
-                Expires: {new Date(tempPasswordExpiresAt).toLocaleString()}
-              </p>
-            ) : null}
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={async () => {
-                  try {
-                    await navigator.clipboard.writeText(tempPassword);
-                    showCopyToast("Copied", "success");
-                  } catch {
-                    showCopyToast("Copy failed", "error");
-                  }
-                }}
-                className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] hover:bg-[var(--ccr-bg)]"
-              >
-                Copy
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setTempPassword(null);
-                  setTempPasswordExpiresAt(null);
-                  setCreatedUsername(null);
-                  setCopyToast(null);
-                }}
-                aria-label="Dismiss temporary password"
-                className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] hover:bg-[var(--ccr-bg)]"
-              >
-                X
-              </button>
-              {copyToast ? (
-                <span
-                  className={`rounded-lg border px-2 py-1 text-[11px] font-semibold ${
-                    copyToast.tone === "success"
-                      ? "border-[var(--ccr-accent)] bg-[var(--ccr-bg)] text-[var(--ccr-accent)]"
-                      : "border-red-400/40 bg-[var(--ccr-bg)] text-red-200"
-                  }`}
-                  role="status"
-                  aria-live="polite"
-                >
-                  {copyToast.message}
-                </span>
-              ) : null}
-            </div>
-          </div>
-        ) : null}
       </SlideDownPanel>
+
+      {successNotice ? (
+        <div className="mt-3 rounded-xl border border-[var(--ccr-border)] border-l-4 border-l-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] p-3 text-xs text-[var(--ccr-text)]">
+          <p className="font-semibold text-[var(--ccr-text)]">User created successfully.</p>
+          {successNotice.createdUsername ? (
+            <p className="mt-1 text-[11px] text-[var(--ccr-muted)]">
+              Username:{" "}
+              <span className="font-mono text-[var(--ccr-text)]">{successNotice.createdUsername}</span>
+            </p>
+          ) : null}
+          {successNotice.tempPasswordExpiresAt ? (
+            <p className="mt-1 text-[11px] text-[var(--ccr-muted)]">
+              Password expires: {new Date(successNotice.tempPasswordExpiresAt).toLocaleString()}
+            </p>
+          ) : null}
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(successNotice.tempPassword);
+                  showCopyToast("Copied", "success");
+                } catch {
+                  showCopyToast("Copy failed", "error");
+                }
+              }}
+              className={`${ADMIN_OUTLINE_BUTTON_CLASS} px-3 py-1.5 text-xs font-semibold`}
+            >
+              Copy temp password
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSuccessNotice(null);
+                setCopyToast(null);
+                setPanelOpen(true);
+              }}
+              className={`${ADMIN_OUTLINE_BUTTON_CLASS} px-3 py-1.5 text-xs font-semibold`}
+            >
+              Create another
+            </button>
+            <button
+              type="button"
+              aria-label="Dismiss user created notice"
+              onClick={() => {
+                setSuccessNotice(null);
+                setCopyToast(null);
+              }}
+              className={`${ADMIN_OUTLINE_BUTTON_CLASS} px-2.5 py-1.5 text-xs font-semibold`}
+            >
+              Dismiss
+            </button>
+            {copyToast ? (
+              <span
+                className={`rounded-lg border px-2 py-1 text-[11px] font-semibold ${
+                  copyToast.tone === "success"
+                    ? "border-[var(--ccr-accent)] bg-[var(--ccr-bg)] text-[var(--ccr-accent)]"
+                    : "border-red-400/40 bg-[var(--ccr-bg)] text-red-200"
+                }`}
+                role="status"
+                aria-live="polite"
+              >
+                {copyToast.message}
+              </span>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -292,6 +309,9 @@ type Mode =
   | "lock"
   | "reset_password"
   | null;
+
+const MODAL_FOCUSABLE_SELECTOR =
+  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 function ActionIconButton({
   label,
@@ -348,6 +368,8 @@ export function UserRowActions({
   const [copyToast, setCopyToast] = useState<null | "Copied" | "Copy failed">(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const modalPanelRef = useRef<HTMLDivElement | null>(null);
+  const restoreFocusRef = useRef<HTMLElement | null>(null);
 
   const isDeactivated = isActive === false || Boolean(deactivatedAt);
   const self = currentUserId === userId;
@@ -364,6 +386,95 @@ export function UserRowActions({
     if (mode === "reset_password") return "Reset password";
     return "";
   }, [mode]);
+  const titleId = `user-action-title-${userId}`;
+
+  const rememberFocusedTrigger = useCallback(() => {
+    if (typeof document === "undefined") return;
+    const active = document.activeElement;
+    if (active instanceof HTMLElement) {
+      restoreFocusRef.current = active;
+    }
+  }, []);
+
+  const openMode = useCallback(
+    (nextMode: Exclude<Mode, null>) => {
+      rememberFocusedTrigger();
+      setMode(nextMode);
+    },
+    [rememberFocusedTrigger],
+  );
+
+  const closeModal = useCallback(() => {
+    if (loading) return;
+    setMode(null);
+    setError(null);
+  }, [loading]);
+
+  useEffect(() => {
+    if (!mode) return;
+    const panel = modalPanelRef.current;
+    if (!panel) return;
+
+    const previousBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const rafId = window.requestAnimationFrame(() => {
+      const focusable = Array.from(panel.querySelectorAll<HTMLElement>(MODAL_FOCUSABLE_SELECTOR));
+      (focusable[0] ?? panel).focus();
+    });
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!modalPanelRef.current) return;
+      const currentPanel = modalPanelRef.current;
+
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeModal();
+        return;
+      }
+
+      if (event.key !== "Tab") return;
+      const focusable = Array.from(currentPanel.querySelectorAll<HTMLElement>(MODAL_FOCUSABLE_SELECTOR)).filter(
+        (element) => !element.hasAttribute("disabled") && element.getAttribute("aria-hidden") !== "true",
+      );
+
+      if (focusable.length === 0) {
+        event.preventDefault();
+        currentPanel.focus();
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+
+      if (event.shiftKey) {
+        if (!active || active === first || !currentPanel.contains(active)) {
+          event.preventDefault();
+          last.focus();
+        }
+        return;
+      }
+
+      if (!active || active === last || !currentPanel.contains(active)) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      window.cancelAnimationFrame(rafId);
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousBodyOverflow;
+      const restoreTarget = restoreFocusRef.current;
+      if (restoreTarget && document.contains(restoreTarget)) {
+        restoreTarget.focus();
+      }
+      restoreFocusRef.current = null;
+    };
+  }, [closeModal, mode]);
 
   async function patch(payload: Record<string, unknown>) {
     const csrfToken = await ensureCsrfToken();
@@ -479,7 +590,7 @@ export function UserRowActions({
             setEditFullName((fullName ?? "").trim() || email);
             setEditEmail(email);
             setEditUsername((username ?? "").trim());
-            setMode("edit_profile");
+            openMode("edit_profile");
           }}
         >
           <svg
@@ -505,7 +616,7 @@ export function UserRowActions({
           onClick={() => {
             setError(null);
             setNextRole(currentRole);
-            setMode("set_role");
+            openMode("set_role");
           }}
         >
           <svg
@@ -532,7 +643,7 @@ export function UserRowActions({
             setError(null);
             setReason("");
             setResetResult(null);
-            setMode("unlock");
+            openMode("unlock");
           }}
         >
           <svg
@@ -560,7 +671,7 @@ export function UserRowActions({
             setError(null);
             setReason("");
             setResetResult(null);
-            setMode("lock");
+            openMode("lock");
           }}
           disabled={self}
         >
@@ -589,7 +700,7 @@ export function UserRowActions({
           setReason("");
           setResetResult(null);
           setCopyToast(null);
-          setMode("reset_password");
+          openMode("reset_password");
         }}
         disabled={self}
       >
@@ -615,7 +726,7 @@ export function UserRowActions({
           onClick={() => {
             setError(null);
             setReason("");
-            setMode("reactivate");
+            openMode("reactivate");
           }}
           className="border-emerald-400/30 bg-emerald-500/10 text-emerald-100 hover:border-emerald-300/60"
         >
@@ -641,7 +752,7 @@ export function UserRowActions({
             if (self) return;
             setError(null);
             setReason("");
-            setMode("deactivate");
+            openMode("deactivate");
           }}
           disabled={self}
         >
@@ -663,152 +774,155 @@ export function UserRowActions({
       )}
 
       {mode ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
-          <div
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">
+          <button
+            type="button"
+            aria-label="Close user action dialog"
             className="absolute inset-0 bg-black/60"
-            onClick={() => {
-              if (loading) return;
-              setMode(null);
-              setError(null);
-            }}
+            onClick={closeModal}
           />
-          <div className="relative w-full max-w-md rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-5 shadow-2xl">
-            <h3 className="text-lg font-bold text-[var(--ccr-text)]">{title}</h3>
-            <p className="mt-1 text-sm text-[var(--ccr-muted)] break-all">
-              {email}
-            </p>
+          <div
+            ref={modalPanelRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={titleId}
+            className="relative z-10 flex max-h-[85vh] w-[92vw] max-w-md min-w-0 flex-col overflow-x-hidden rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4 shadow-2xl sm:w-full sm:p-5"
+            tabIndex={-1}
+          >
+            <h3 id={titleId} className="min-w-0 text-lg font-bold text-[var(--ccr-text)]">
+              {title}
+            </h3>
+            <p className="mt-1 break-words text-sm text-[var(--ccr-muted)]">{email}</p>
 
-            {mode === "edit_profile" ? (
-              <div className="mt-4 grid gap-3">
-                <label className="block text-xs text-[var(--ccr-muted)]">
-                  Name
-                  <input
-                    value={editFullName}
-                    onChange={(e) => setEditFullName(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
-                  />
-                </label>
-                <label className="block text-xs text-[var(--ccr-muted)]">
-                  Email
-                  <input
-                    value={editEmail}
-                    onChange={(e) => setEditEmail(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
-                  />
-                </label>
-                <label className="block text-xs text-[var(--ccr-muted)]">
-                  Username
-                  <input
-                    value={editUsername}
-                    onChange={(e) => setEditUsername(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
-                  />
-                </label>
-              </div>
-            ) : mode === "set_role" ? (
-              <label className="mt-4 block text-xs text-[var(--ccr-muted)]">
-                Role
-                <select
-                  value={nextRole}
-                  onChange={(e) => setNextRole(mapSelectedRole(e.target.value, canAssignDeveloperRole))}
-                  className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
-                >
-                  <option value="USER">USER</option>
-                  <option value="ADMIN">ADMIN</option>
-                  {canAssignDeveloperRole ? <option value="DEVELOPER">DEVELOPER</option> : null}
-                </select>
-              </label>
-            ) : mode === "unlock" ? (
-              <label className="mt-4 block text-xs text-[var(--ccr-muted)]">
-                Note (optional)
-                <textarea
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                  rows={3}
-                  className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
-                />
-              </label>
-            ) : mode === "lock" ? (
-              <label className="mt-4 block text-xs text-[var(--ccr-muted)]">
-                Reason (required)
-                <textarea
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                  rows={3}
-                  className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
-                />
-              </label>
-            ) : mode === "reset_password" && resetResult ? (
-              <div className="mt-4 space-y-3">
-                <p className="text-sm text-[var(--ccr-muted)]">
-                  Temporary password created. It expires in 3 days and the user will be required to set a permanent password after logging in.
-                </p>
-                <p className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 font-mono text-sm text-[var(--ccr-text)]">
-                  {resetResult.tempPassword}
-                </p>
-                {resetResult.tempPasswordExpiresAt ? (
-                  <p className="text-[11px] text-[var(--ccr-muted)]">
-                    Expires: {new Date(resetResult.tempPasswordExpiresAt).toLocaleString()}
-                  </p>
-                ) : null}
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      try {
-                        await navigator.clipboard.writeText(resetResult.tempPassword);
-                        setCopyToast("Copied");
-                        window.setTimeout(() => setCopyToast(null), 1400);
-                      } catch {
-                        setCopyToast("Copy failed");
-                        window.setTimeout(() => setCopyToast(null), 1400);
-                      }
-                    }}
-                    className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] hover:bg-[var(--ccr-bg)]"
-                  >
-                    Copy
-                  </button>
-                  {copyToast ? (
-                    <span
-                      className={`rounded-lg border px-2 py-1 text-[11px] font-semibold ${
-                        copyToast === "Copied"
-                          ? "border-[var(--ccr-accent)] bg-[var(--ccr-bg)] text-[var(--ccr-accent)]"
-                          : "border-red-400/40 bg-[var(--ccr-bg)] text-red-200"
-                      }`}
-                      role="status"
-                      aria-live="polite"
-                    >
-                      {copyToast}
-                    </span>
-                  ) : null}
+            <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
+              {mode === "edit_profile" ? (
+                <div className="grid gap-3">
+                  <label className="block text-xs text-[var(--ccr-muted)]">
+                    Name
+                    <input
+                      value={editFullName}
+                      onChange={(e) => setEditFullName(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+                    />
+                  </label>
+                  <label className="block text-xs text-[var(--ccr-muted)]">
+                    Email
+                    <input
+                      value={editEmail}
+                      onChange={(e) => setEditEmail(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+                    />
+                  </label>
+                  <label className="block text-xs text-[var(--ccr-muted)]">
+                    Username
+                    <input
+                      value={editUsername}
+                      onChange={(e) => setEditUsername(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+                    />
+                  </label>
                 </div>
-              </div>
-            ) : (
-              <label className="mt-4 block text-xs text-[var(--ccr-muted)]">
-                Reason (required)
-                <textarea
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                  rows={3}
-                  className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
-                />
-              </label>
-            )}
+              ) : mode === "set_role" ? (
+                <label className="block text-xs text-[var(--ccr-muted)]">
+                  Role
+                  <select
+                    value={nextRole}
+                    onChange={(e) => setNextRole(mapSelectedRole(e.target.value, canAssignDeveloperRole))}
+                    className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+                  >
+                    <option value="USER">USER</option>
+                    <option value="ADMIN">ADMIN</option>
+                    {canAssignDeveloperRole ? <option value="DEVELOPER">DEVELOPER</option> : null}
+                  </select>
+                </label>
+              ) : mode === "unlock" ? (
+                <label className="block text-xs text-[var(--ccr-muted)]">
+                  Note (optional)
+                  <textarea
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                    rows={3}
+                    className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+                  />
+                </label>
+              ) : mode === "lock" ? (
+                <label className="block text-xs text-[var(--ccr-muted)]">
+                  Reason (required)
+                  <textarea
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                    rows={3}
+                    className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+                  />
+                </label>
+              ) : mode === "reset_password" && resetResult ? (
+                <div className="space-y-3">
+                  <p className="text-sm text-[var(--ccr-muted)]">
+                    Temporary password created. It expires in 3 days and the user will be required to set a permanent password after logging in.
+                  </p>
+                  <p className="break-all rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 font-mono text-sm text-[var(--ccr-text)]">
+                    {resetResult.tempPassword}
+                  </p>
+                  {resetResult.tempPasswordExpiresAt ? (
+                    <p className="text-[11px] text-[var(--ccr-muted)]">
+                      Expires: {new Date(resetResult.tempPasswordExpiresAt).toLocaleString()}
+                    </p>
+                  ) : null}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(resetResult.tempPassword);
+                          setCopyToast("Copied");
+                          window.setTimeout(() => setCopyToast(null), 1400);
+                        } catch {
+                          setCopyToast("Copy failed");
+                          window.setTimeout(() => setCopyToast(null), 1400);
+                        }
+                      }}
+                      className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] hover:bg-[var(--ccr-bg)]"
+                    >
+                      Copy
+                    </button>
+                    {copyToast ? (
+                      <span
+                        className={`rounded-lg border px-2 py-1 text-[11px] font-semibold ${
+                          copyToast === "Copied"
+                            ? "border-[var(--ccr-accent)] bg-[var(--ccr-bg)] text-[var(--ccr-accent)]"
+                            : "border-red-400/40 bg-[var(--ccr-bg)] text-red-200"
+                        }`}
+                        role="status"
+                        aria-live="polite"
+                      >
+                        {copyToast}
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+              ) : (
+                <label className="block text-xs text-[var(--ccr-muted)]">
+                  Reason (required)
+                  <textarea
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                    rows={3}
+                    className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+                  />
+                </label>
+              )}
 
-            {error ? <p className="mt-3 text-xs text-red-300">{error}</p> : null}
+              {error ? <p className="mt-3 text-xs text-red-300">{error}</p> : null}
+            </div>
 
-            <div className="mt-5 flex items-center justify-end gap-2">
+            <div className="mt-4 flex shrink-0 items-center justify-end gap-2 border-t border-[var(--ccr-border)] pt-3">
               <button
                 type="button"
-                onClick={() => {
-                  if (loading) return;
-                  setMode(null);
-                  setError(null);
-                }}
+                onClick={closeModal}
                 className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
               >
-                  {mode === "reset_password" && resetResult ? "Done" : "Cancel"}
-                </button>
+                {mode === "reset_password" && resetResult ? "Done" : "Cancel"}
+              </button>
               {mode === "reset_password" && resetResult ? null : (
                 <button
                   type="button"

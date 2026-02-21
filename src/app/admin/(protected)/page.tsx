@@ -120,16 +120,16 @@ export default async function AdminDashboardPage() {
     <div className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <h1 className="text-2xl font-bold text-[var(--ccr-text)] sm:text-3xl">Admin Dashboard</h1>
-        <div className="flex w-full flex-wrap gap-4 sm:w-auto sm:justify-end sm:gap-5">
+        <div className="grid w-full grid-cols-2 gap-3 sm:flex sm:w-auto sm:justify-end sm:gap-5">
           <Link
             href="/admin/bookings"
-            className={`inline-flex w-full items-center justify-center rounded-full bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] shadow-sm ring-2 ring-[var(--ccr-accent)] ring-offset-2 ring-offset-[var(--ccr-bg)] transition hover:bg-[var(--ccr-surface-soft)] hover:ring-[var(--ccr-accent-strong)] sm:w-auto ${hoverTextClass}`}
+            className={`inline-flex h-11 w-full items-center justify-center rounded-full bg-[var(--ccr-surface)] px-3 py-2 text-center text-xs font-semibold text-[var(--ccr-text)] shadow-sm ring-2 ring-[var(--ccr-accent)] ring-offset-2 ring-offset-[var(--ccr-bg)] transition hover:bg-[var(--ccr-surface-soft)] hover:ring-[var(--ccr-accent-strong)] sm:h-auto sm:w-auto sm:px-4 sm:text-sm ${hoverTextClass}`}
           >
             View Bookings
           </Link>
           <Link
             href="/admin/vehicles"
-            className={`inline-flex w-full items-center justify-center rounded-full bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] shadow-sm ring-2 ring-[var(--ccr-accent)] ring-offset-2 ring-offset-[var(--ccr-bg)] transition hover:bg-[var(--ccr-surface-soft)] hover:ring-[var(--ccr-accent-strong)] sm:w-auto ${hoverTextClass}`}
+            className={`inline-flex h-11 w-full items-center justify-center rounded-full bg-[var(--ccr-surface)] px-3 py-2 text-center text-xs font-semibold text-[var(--ccr-text)] shadow-sm ring-2 ring-[var(--ccr-accent)] ring-offset-2 ring-offset-[var(--ccr-bg)] transition hover:bg-[var(--ccr-surface-soft)] hover:ring-[var(--ccr-accent-strong)] sm:h-auto sm:w-auto sm:px-4 sm:text-sm ${hoverTextClass}`}
           >
             Manage Vehicles
           </Link>

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
+import { ADMIN_OUTLINE_BUTTON_CLASS } from "@/components/admin/adminUiClasses";
 
 export default function AdminLoginPage() {
   const router = useRouter();
@@ -164,7 +165,7 @@ export default function AdminLoginPage() {
 
         <Link
           href="/"
-          className="mt-4 block w-full rounded-xl border border-[var(--ccr-border)] px-4 py-2 text-center text-sm font-semibold text-[var(--ccr-text)] hover:bg-[var(--ccr-surface-soft)]"
+          className={`mt-4 block w-full px-4 py-2 text-center text-sm font-semibold ${ADMIN_OUTLINE_BUTTON_CLASS}`}
         >
           Back to Home
         </Link>
