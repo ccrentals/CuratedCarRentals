@@ -536,7 +536,10 @@ function AdminNavLinks({
       {visibleGroups.map((group) => {
         const groupItems = group.itemHrefs
           .map((href) => NAV_ITEM_BY_HREF.get(href))
-          .filter((item): item is NavItem => Boolean(item));
+          .filter(
+            (item): item is NavItem =>
+              Boolean(item) && visibleItemHrefs.has((item as NavItem).href),
+          );
         const groupExpanded = Boolean(expandedGroups[group.id]);
         return (
           <section key={group.id} className="rounded-xl border border-[var(--ccr-border)]/60 bg-[var(--ccr-surface-soft)]/40 p-2">

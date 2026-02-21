@@ -487,7 +487,7 @@ export function CalendarView({
           </div>
           <div
             className={`grid ${
-              view === "month" ? "grid-cols-7 gap-1.5 sm:gap-2" : "grid-cols-1 gap-2 md:grid-cols-7"
+              view === "month" ? "grid-cols-7 gap-1 sm:gap-1.5" : "grid-cols-1 gap-2 md:grid-cols-7"
             }`}
           >
           {days.map((day) => {
@@ -521,14 +521,14 @@ export function CalendarView({
                       : ""
                   } ${
                     monthMode
-                      ? "min-h-[64px] p-1 sm:min-h-[80px] sm:p-1.5"
+                      ? "h-[54px] p-1 sm:h-[72px] sm:p-1.5"
                       : "min-h-[84px] p-2 sm:min-h-[96px]"
                   } cursor-pointer`}
                 >
                 <div
                   className={
                     monthMode
-                      ? "flex flex-col items-start gap-1"
+                      ? "flex h-full flex-col items-center justify-start gap-0.5 pt-0.5 text-center sm:gap-1"
                       : "flex items-start justify-between gap-1"
                   }
                 >
@@ -542,7 +542,11 @@ export function CalendarView({
                       fullDayLabel
                     )}
                   </span>
-                  <div className="flex items-center gap-1">
+                  <div
+                    className={
+                      monthMode ? "flex items-center justify-center gap-1" : "flex items-center gap-1"
+                    }
+                  >
                     {bookingEvents.length > 0 ? (
                       <span
                         className={`${countBadgeBaseClass} border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] text-[var(--ccr-accent)]`}

@@ -180,6 +180,11 @@ const NUMERIC_PATTERN = "^-?[0-9]+(\\.[0-9]+)?$";
 const PAYMENT_SUCCESS_STATUSES = ["DEPOSIT_PAID", "SUCCESS"] as const;
 const PAYMENT_NET_STATUSES = ["DEPOSIT_PAID", "SUCCESS", "REFUNDED"] as const;
 
+/**
+ * Canonical booking amount source for reports:
+ * - Prefer persisted pricing_json totals captured at booking pricing time (computeBookingPricing snapshot)
+ * - Fall back to legacy daily-rate math only when snapshot fields are missing
+ */
 const PROMO_DISCOUNT_SQL = `coalesce(
   case
     when coalesce(b.pricing_json->>'promo_discount_cents', '') ~ '${NUMERIC_PATTERN}' then (b.pricing_json->>'promo_discount_cents')::numeric
@@ -294,6 +299,33 @@ function buildBucketSeries(dateFrom: string, dateTo: string, granularity: Report
 function clampPercent(value: number) {
   if (!Number.isFinite(value)) return 0;
   return Math.max(0, Math.min(100, value));
+}
+
+export function normalizeRevenueBarWidthPercent(value: number, maxValue: number, minPercent = 2) {
+  const safeValue = asNumber(value);
+  const safeMax = asNumber(maxValue);
+  if (safeValue <= 0 || safeMax <= 0) return 0;
+  const normalized = clampPercent((safeValue / safeMax) * 100);
+  return Math.max(Math.min(minPercent, 100), normalized);
+}
+
+export function summarizeRevenuePoints(points: RevenuePoint[]) {
+  return {
+    grossRevenue: points.reduce((sum, point) => sum + asNumber(point.grossRevenue), 0),
+    refunds: points.reduce((sum, point) => sum + asNumber(point.refunds), 0),
+    netRevenue: points.reduce((sum, point) => sum + asNumber(point.netRevenue), 0),
+    paymentCount: points.reduce((sum, point) => sum + asNumber(point.paymentCount), 0),
+    fallbackBookingCount: points.reduce((sum, point) => sum + asNumber(point.fallbackBookingCount), 0),
+  };
+}
+
+export function summarizeOutstandingBalanceRows(
+  rows: Array<{ balanceDue: number }>,
+): OutstandingBalancesReport["totals"] {
+  return {
+    totalOutstandingAmount: rows.reduce((sum, row) => sum + asNumber(row.balanceDue), 0),
+    outstandingCount: rows.length,
+  };
 }
 
 function maybeText(value: unknown) {
@@ -501,16 +533,11 @@ async function buildRevenueReport(db: Queryable, filters: ReportsFilters): Promi
   const points = Array.from(rowsByBucket.values()).sort((a, b) =>
     a.periodStart.localeCompare(b.periodStart),
   );
+  const totals = summarizeRevenuePoints(points);
 
   return {
     granularity: filters.revenueGranularity,
-    totals: {
-      grossRevenue: points.reduce((sum, point) => sum + point.grossRevenue, 0),
-      refunds: points.reduce((sum, point) => sum + point.refunds, 0),
-      netRevenue: points.reduce((sum, point) => sum + point.netRevenue, 0),
-      paymentCount: points.reduce((sum, point) => sum + point.paymentCount, 0),
-      fallbackBookingCount: points.reduce((sum, point) => sum + point.fallbackBookingCount, 0),
-    },
+    totals,
     points,
   };
 }
@@ -685,10 +712,7 @@ async function buildOutstandingBalancesReport(
   });
 
   return {
-    totals: {
-      totalOutstandingAmount: mappedRows.reduce((sum, row) => sum + row.balanceDue, 0),
-      outstandingCount: mappedRows.length,
-    },
+    totals: summarizeOutstandingBalanceRows(mappedRows),
     rows: mappedRows,
   };
 }
