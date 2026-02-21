@@ -921,7 +921,7 @@ export function AdminShell({
             mobileCompactHeader ? "hidden md:block" : ""
           }`}
         >
-          <div className="mx-auto flex w-full max-w-none flex-wrap items-start gap-3 py-3 pl-2 pr-4 sm:pl-3 sm:pr-5 lg:flex-nowrap lg:items-center lg:justify-between">
+          <div className="mx-auto flex w-full max-w-none items-center justify-between gap-1.5 py-3 pl-2 pr-3 sm:gap-2 sm:pr-5 sm:pl-3">
             <div className="flex min-w-0 flex-1 items-center gap-3">
               <button
                 type="button"
@@ -945,11 +945,11 @@ export function AdminShell({
                 </svg>
               </button>
               {activeItem ? (
-                <div className="flex min-w-0 items-center gap-3 text-lg font-semibold text-[var(--ccr-text)] sm:gap-5">
+                <div className="flex min-w-0 items-center gap-2 text-base font-semibold text-[var(--ccr-text)] sm:gap-4 sm:text-lg">
                   <span
-                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--ccr-surface-soft)] shadow-sm ${ADMIN_ACCENT_RING_CLASS}`}
+                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--ccr-surface-soft)] shadow-sm sm:h-9 sm:w-9 ${ADMIN_ACCENT_RING_CLASS}`}
                   >
-                    {activeItem.icon("h-5 w-5 text-[var(--ccr-accent)]")}
+                    {activeItem.icon("h-4 w-4 text-[var(--ccr-accent)] sm:h-5 sm:w-5")}
                   </span>
                   <span className="truncate">{activeItem.label}</span>
                 </div>
@@ -958,7 +958,9 @@ export function AdminShell({
             <UserMenu
               email={user.email}
               showEmail={false}
-              className="w-full justify-start lg:w-auto lg:justify-end"
+              showThemeLabel={false}
+              showSignOut={false}
+              className="w-auto shrink-0 justify-end"
             />
           </div>
         </header>

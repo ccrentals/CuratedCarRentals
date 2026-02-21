@@ -157,7 +157,7 @@ export function CustomerSnapshotBookingsTable({
         </table>
       )}
 
-      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--ccr-border)] px-3 py-3">
+      <div className="flex flex-col gap-3 border-t border-[var(--ccr-border)] px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
         <label className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
           Rows per page
           <select
@@ -174,16 +174,16 @@ export function CustomerSnapshotBookingsTable({
           </select>
         </label>
 
-        <div className="flex min-w-[250px] flex-col items-end gap-2">
+        <div className="flex min-w-0 flex-1 items-center justify-end gap-3">
           <PaginationSummary
             from={pagination.from}
             to={pagination.to}
             totalCount={totalCount}
             page={pagination.page}
             totalPages={pagination.totalPages}
-            className="mt-0 w-full justify-end"
+            className="mt-0 shrink-0 flex-nowrap justify-end gap-3 whitespace-nowrap"
           />
-          <div className="flex items-center gap-3">
+          <div className="flex shrink-0 items-center gap-3">
             {loadMoreError ? <span className="text-xs text-rose-300">{loadMoreError}</span> : null}
             <button
               type="button"

@@ -93,27 +93,29 @@ export default function BookingFilters({ canAdmin }: { canAdmin?: boolean }) {
 
   return (
     <div className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
-      <div className="flex flex-wrap items-center gap-3">
-        {STATUS_OPTIONS.map((option) => {
-          const isActive = status === option.value;
-          return (
-            <button
-              key={option.value}
-              type="button"
-            onClick={() => {
-                setStatus(option.value);
-                updateParams({ status: option.value === "all" ? null : option.value });
-              }}
-              className={`rounded-full border px-4 py-1.5 text-xs font-semibold transition ${
-                isActive
-                  ? `border-[var(--ccr-primary)] bg-[var(--ccr-primary)] text-white ${ADMIN_ACCENT_RING_CLASS}`
-                  : "border-[var(--ccr-border)] bg-transparent text-[var(--ccr-text)] hover:border-[var(--ccr-primary)]"
-              }`}
-            >
-              {option.label}
-            </button>
-          );
-        })}
+      <div className="flex flex-wrap items-start gap-3">
+        <div className="grid w-full grid-cols-3 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center">
+          {STATUS_OPTIONS.map((option) => {
+            const isActive = status === option.value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => {
+                  setStatus(option.value);
+                  updateParams({ status: option.value === "all" ? null : option.value });
+                }}
+                className={`rounded-full border px-2.5 py-1.5 text-[11px] font-semibold leading-none transition sm:px-4 sm:text-xs ${
+                  isActive
+                    ? `border-[var(--ccr-primary)] bg-[var(--ccr-primary)] text-white ${ADMIN_ACCENT_RING_CLASS}`
+                    : "border-[var(--ccr-border)] bg-transparent text-[var(--ccr-text)] hover:border-[var(--ccr-primary)]"
+                }`}
+              >
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
 
         {activeFilters ? (
           <button
@@ -126,7 +128,7 @@ export default function BookingFilters({ canAdmin }: { canAdmin?: boolean }) {
               setShowArchived(false);
               router.push(pathname);
             }}
-            className="ml-auto rounded-full border border-[var(--ccr-border)] px-4 py-1.5 text-xs font-semibold text-[var(--ccr-text)] hover:border-[var(--ccr-primary)]"
+            className="w-full rounded-full border border-[var(--ccr-border)] px-4 py-1.5 text-xs font-semibold text-[var(--ccr-text)] hover:border-[var(--ccr-primary)] sm:ml-auto sm:w-auto"
           >
             Clear filters
           </button>

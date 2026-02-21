@@ -1,10 +1,12 @@
 import Link from "next/link";
 
+import { LoadMorePaginationControls } from "@/components/admin/LoadMorePaginationControls";
 import { PaymentsFilters } from "@/components/admin/PaymentsFilters";
 import PaymentLogToggle from "@/components/admin/PaymentLogToggle";
 import { dbQuery } from "@/lib/db";
 import { fmtDate } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
+import { normalizePageSize, parsePositiveIntParam } from "@/lib/pagination/sharedPagination";
 import { formatPaymentStatus } from "@/lib/payments/formatPaymentStatus";
 
 function maskValue(value: string | undefined, visible = 4) {
@@ -75,6 +77,8 @@ export default async function AdminPaymentsPage({
   const bookingId = typeof params.bookingId === "string" ? params.bookingId.trim() : "";
   const paymentType = typeof params.paymentType === "string" ? params.paymentType.trim() : "";
   const normalizedType = paymentType === "balance" ? "balance" : paymentType === "deposit" ? "deposit" : "";
+  const rowsPerPage = normalizePageSize(typeof params.rows === "string" ? params.rows : undefined);
+  const requestedVisible = parsePositiveIntParam(params.visible);
 
   const conditions: string[] = [];
   const values: string[] = [];
@@ -101,6 +105,8 @@ export default async function AdminPaymentsPage({
     "order by p.created_at desc";
 
   const payments = await dbQuery<PaymentRow>(queryText, values);
+  const visibleCount = Math.max(rowsPerPage, requestedVisible ?? rowsPerPage);
+  const visiblePayments = payments.rows.slice(0, visibleCount);
   const wipayRecent = await dbQuery<WipayRow>(
     "select id, booking_id, status, deposit_amount_cents, provider_ref, provider_transaction_id, metadata_json, created_at from payments where provider = 'WIPAY' order by created_at desc limit 5",
   );
@@ -311,7 +317,7 @@ export default async function AdminPaymentsPage({
         ) : (
           <>
             <div className="divide-y divide-[var(--ccr-border)] md:hidden">
-              {payments.rows.map((payment: PaymentRow) => {
+              {visiblePayments.map((payment: PaymentRow) => {
                 const errorMessage = extractError(payment.metadata_json);
                 const statusLabel = formatPaymentStatus(payment.status, {
                   paymentType: extractPaymentType(payment.metadata_json),
@@ -390,7 +396,7 @@ export default async function AdminPaymentsPage({
                   </tr>
                 </thead>
                 <tbody>
-                  {payments.rows.map((payment: PaymentRow) => {
+                  {visiblePayments.map((payment: PaymentRow) => {
                     const errorMessage = extractError(payment.metadata_json);
                     const statusLabel = formatPaymentStatus(payment.status, {
                       paymentType: extractPaymentType(payment.metadata_json),
@@ -461,6 +467,12 @@ export default async function AdminPaymentsPage({
                 </tbody>
               </table>
             </div>
+            <LoadMorePaginationControls
+              pageSize={rowsPerPage}
+              loadedCount={visiblePayments.length}
+              totalCount={payments.rows.length}
+              noMoreLabel="No more payments"
+            />
           </>
         )}
       </div>

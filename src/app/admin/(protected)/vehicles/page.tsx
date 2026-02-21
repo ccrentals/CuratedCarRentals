@@ -6,6 +6,8 @@ import { VehiclesFilters } from "@/components/admin/VehiclesFilters";
 import { dbQuery } from "@/lib/db";
 import { fmtDate } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
+import { LoadMorePaginationControls } from "@/components/admin/LoadMorePaginationControls";
+import { normalizePageSize, parsePositiveIntParam } from "@/lib/pagination/sharedPagination";
 
 type VehicleRow = {
   id: string;
@@ -25,6 +27,8 @@ export default async function AdminVehiclesPage({
 }) {
   const params = await searchParams;
   const q = typeof params.q === "string" ? params.q.trim() : "";
+  const rowsPerPage = normalizePageSize(typeof params.rows === "string" ? params.rows : undefined);
+  const requestedVisible = parsePositiveIntParam(params.visible);
 
   const whereSql = q
     ? "where make ilike $1 or model ilike $1 or id::text ilike $1 or cast(year as text) ilike $1"
@@ -35,6 +39,8 @@ export default async function AdminVehiclesPage({
     `select id, make, model, year, daily_rate_cents, deposit_cents, status, created_at from vehicles ${whereSql} order by created_at desc`,
     values,
   );
+  const visibleCount = Math.max(rowsPerPage, requestedVisible ?? rowsPerPage);
+  const visibleVehicles = vehicles.rows.slice(0, visibleCount);
 
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-10">
@@ -69,7 +75,7 @@ export default async function AdminVehiclesPage({
               </tr>
             </thead>
             <tbody>
-              {vehicles.rows.map((vehicle: VehicleRow) => (
+              {visibleVehicles.map((vehicle: VehicleRow) => (
                 <tr key={vehicle.id} className="border-b border-[var(--ccr-border)] last:border-b-0">
                   <td className="px-4 py-3 text-[var(--ccr-text)]">
                     <Link
@@ -94,6 +100,14 @@ export default async function AdminVehiclesPage({
             </tbody>
           </table>
         )}
+        {vehicles.rows.length > 0 ? (
+          <LoadMorePaginationControls
+            pageSize={rowsPerPage}
+            loadedCount={visibleVehicles.length}
+            totalCount={vehicles.rows.length}
+            noMoreLabel="No more vehicles"
+          />
+        ) : null}
       </div>
     </div>
   );

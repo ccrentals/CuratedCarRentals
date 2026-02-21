@@ -5,7 +5,9 @@ import { dbQuery } from "@/lib/db";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { fmtDate } from "@/lib/dateFormat";
 import { CreateUserForm, UserRowActions } from "@/components/admin/UsersManager";
+import { LoadMorePaginationControls } from "@/components/admin/LoadMorePaginationControls";
 import { UsersFilters } from "@/components/admin/UsersFilters";
+import { normalizePageSize, parsePositiveIntParam } from "@/lib/pagination/sharedPagination";
 
 type UserRow = {
   id: string;
@@ -60,6 +62,8 @@ export default async function AdminUsersPage({
 
   const params = await searchParams;
   const q = typeof params.q === "string" ? params.q.trim() : "";
+  const rowsPerPage = normalizePageSize(typeof params.rows === "string" ? params.rows : undefined);
+  const requestedVisible = parsePositiveIntParam(params.visible);
 
   if (!canAdmin) {
     redirect("/admin");
@@ -116,6 +120,8 @@ export default async function AdminUsersPage({
   const users = usersQuery.result;
   const lifecycleNotConfigured = usersQuery.lifecycleNotConfigured;
   const usernamesNotConfigured = usersQuery.usernamesNotConfigured;
+  const visibleCount = Math.max(rowsPerPage, requestedVisible ?? rowsPerPage);
+  const visibleUsers = users.rows.slice(0, visibleCount);
 
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-10">
@@ -178,7 +184,7 @@ export default async function AdminUsersPage({
               </tr>
             </thead>
             <tbody>
-              {users.rows.map((user: UserRow) => (
+              {visibleUsers.map((user: UserRow) => (
                 <tr key={user.id} className="border-b border-[var(--ccr-border)] last:border-b-0">
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap items-center gap-2">
@@ -224,6 +230,14 @@ export default async function AdminUsersPage({
             </tbody>
           </table>
         )}
+        {users.rows.length > 0 ? (
+          <LoadMorePaginationControls
+            pageSize={rowsPerPage}
+            loadedCount={visibleUsers.length}
+            totalCount={users.rows.length}
+            noMoreLabel="No more users"
+          />
+        ) : null}
       </div>
     </div>
   );

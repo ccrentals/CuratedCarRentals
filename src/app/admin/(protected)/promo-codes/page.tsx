@@ -3,9 +3,11 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
+import { PaginationSummary } from "@/components/admin/PaginationSummaryNav";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 import { SlideDownPanel } from "@/components/admin/SlideDownPanel";
 import { formatJmd } from "@/lib/money";
+import { buildLoadedPaginationProgress, STANDARD_PAGE_SIZE_OPTIONS } from "@/lib/pagination/sharedPagination";
 
 type PromoRow = {
   id: string;
@@ -91,6 +93,8 @@ export default function AdminPromoCodesPage() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [rowsPerPage, setRowsPerPage] = useState<number>(STANDARD_PAGE_SIZE_OPTIONS[0]);
+  const [visibleCount, setVisibleCount] = useState<number>(STANDARD_PAGE_SIZE_OPTIONS[0]);
 
   const [code, setCode] = useState("");
   const [discountType, setDiscountType] = useState<"PERCENT" | "FIXED">("PERCENT");
@@ -175,6 +179,15 @@ export default function AdminPromoCodesPage() {
 
   const selectedAllowedSet = useMemo(() => new Set(allowedVehicleIds), [allowedVehicleIds]);
   const selectedExcludedSet = useMemo(() => new Set(excludedVehicleIds), [excludedVehicleIds]);
+  const visiblePromos = useMemo(
+    () => promos.slice(0, Math.max(rowsPerPage, visibleCount)),
+    [promos, rowsPerPage, visibleCount],
+  );
+  const pagination = useMemo(
+    () => buildLoadedPaginationProgress(visiblePromos.length, promos.length, rowsPerPage),
+    [visiblePromos.length, promos.length, rowsPerPage],
+  );
+  const hasMorePromos = visiblePromos.length < promos.length;
 
   async function submitCreatePromo() {
     if (saving) return;
@@ -509,7 +522,7 @@ export default function AdminPromoCodesPage() {
               </tr>
             </thead>
             <tbody>
-              {promos.map((promo) => {
+              {visiblePromos.map((promo) => {
                 const status = getPromoRuntimeStatus(promo);
                 return (
                 <tr key={promo.id} className="border-b border-[var(--ccr-border)] last:border-b-0">
@@ -556,6 +569,47 @@ export default function AdminPromoCodesPage() {
             </tbody>
           </table>
         )}
+        {promos.length > 0 ? (
+          <div className="flex flex-col gap-3 border-t border-[var(--ccr-border)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <label className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+              Rows per page
+              <select
+                value={String(rowsPerPage)}
+                onChange={(event) => {
+                  const nextValue = Number(event.target.value);
+                  setRowsPerPage(nextValue);
+                  setVisibleCount(nextValue);
+                }}
+                className="cursor-pointer rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-2 py-1 text-xs font-semibold text-[var(--ccr-text)]"
+              >
+                {STANDARD_PAGE_SIZE_OPTIONS.map((size) => (
+                  <option key={size} value={String(size)}>
+                    {size}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="flex min-w-0 flex-1 items-center justify-end gap-3">
+              <PaginationSummary
+                from={pagination.from}
+                to={pagination.to}
+                totalCount={promos.length}
+                page={pagination.page}
+                totalPages={pagination.totalPages}
+                className="mt-0 shrink-0 flex-nowrap justify-end gap-3 whitespace-nowrap"
+              />
+              <button
+                type="button"
+                onClick={() => setVisibleCount((current) => current + rowsPerPage)}
+                disabled={!hasMorePromos}
+                className="cursor-pointer rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {hasMorePromos ? "Load more" : "No more promo codes"}
+              </button>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );

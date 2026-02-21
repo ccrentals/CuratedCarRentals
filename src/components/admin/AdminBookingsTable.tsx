@@ -228,20 +228,6 @@ export function AdminBookingsTable({
                       </span>
                     ) : null}
                   </div>
-                  {booking.overriddenByBookingId ? (
-                    <span
-                      className="mt-1 inline-flex flex-wrap items-center gap-1 rounded-full border border-red-300/40 bg-red-500/15 px-2 py-0.5 text-[11px] font-semibold text-red-100"
-                      title={`Overridden by booking ${booking.overriddenByBookingId}`}
-                    >
-                      Overridden
-                      <Link
-                        href={`/admin/bookings/${booking.overriddenByBookingId}`}
-                        className="underline underline-offset-2"
-                      >
-                        by {booking.overriddenByCustomerName ?? booking.overriddenByBookingId.slice(0, 8)}
-                      </Link>
-                    </span>
-                  ) : null}
                   {booking.lostToFirstDeposit ? (
                     <span className="mt-1 inline-flex rounded-full border border-amber-300/40 bg-amber-500/20 px-2 py-0.5 text-[11px] font-semibold text-amber-100">
                       Lost to first deposit
@@ -290,7 +276,7 @@ export function AdminBookingsTable({
         </table>
       )}
 
-      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--ccr-border)] px-4 py-3">
+      <div className="flex flex-col gap-3 border-t border-[var(--ccr-border)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
         <label className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
           Rows per page
           <select
@@ -307,16 +293,16 @@ export function AdminBookingsTable({
           </select>
         </label>
 
-        <div className="flex min-w-[250px] flex-col items-end gap-2">
+        <div className="flex min-w-0 flex-1 items-center justify-end gap-3">
           <PaginationSummary
             from={pagination.from}
             to={pagination.to}
             totalCount={totalCount}
             page={pagination.page}
             totalPages={pagination.totalPages}
-            className="mt-0 w-full justify-end"
+            className="mt-0 shrink-0 flex-nowrap justify-end gap-3 whitespace-nowrap"
           />
-          <div className="flex items-center gap-3">
+          <div className="flex shrink-0 items-center gap-3">
             {loadMoreError ? <span className="text-xs text-rose-300">{loadMoreError}</span> : null}
             <button
               type="button"

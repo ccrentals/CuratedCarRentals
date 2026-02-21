@@ -5,7 +5,11 @@ import { dbQuery } from "@/lib/db";
 import { fmtDate } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
 import { CustomerBlockToggleButton } from "@/components/admin/CustomerBlockToggleButton";
+import { CreateCustomerForm } from "@/components/admin/CreateCustomerForm";
+import { CustomersExportMenu } from "@/components/admin/CustomersExportMenu";
 import { CustomersFilters } from "@/components/admin/CustomersFilters";
+import { LoadMorePaginationControls } from "@/components/admin/LoadMorePaginationControls";
+import { normalizePageSize, parsePositiveIntParam } from "@/lib/pagination/sharedPagination";
 
 type CustomerListRow = {
   id: string;
@@ -24,6 +28,13 @@ function isAdminRole(role: string | undefined) {
     .trim()
     .toUpperCase();
   return normalized === "ADMIN" || normalized === "DEVELOPER";
+}
+
+function isStaffRole(role: string | undefined) {
+  const normalized = String(role ?? "")
+    .trim()
+    .toUpperCase();
+  return normalized === "ADMIN" || normalized === "DEVELOPER" || normalized === "USER";
 }
 
 function normalizeSort(value: string | undefined): "last_booked" | "total_bookings" | "total_spend" {
@@ -93,8 +104,9 @@ export default async function AdminCustomersPage({
 }) {
   const session = await getSessionFromRequest();
   const isAdmin = isAdminRole(session?.role);
+  const isStaff = isStaffRole(session?.role);
 
-  if (!isAdmin) {
+  if (!isStaff) {
     return (
       <div className="mx-auto w-full max-w-4xl px-4 py-10 sm:px-6 lg:px-8">
         <h1 className="text-2xl font-bold text-[var(--ccr-text)]">Customers</h1>
@@ -108,7 +120,11 @@ export default async function AdminCustomersPage({
   const params = await searchParams;
   const q = typeof params.q === "string" ? params.q.trim() : "";
   const sort = normalizeSort(typeof params.sort === "string" ? params.sort : undefined);
+  const rowsPerPage = normalizePageSize(typeof params.rows === "string" ? params.rows : undefined);
+  const requestedVisible = parsePositiveIntParam(params.visible);
   const customers = await fetchCustomers({ q, sort });
+  const visibleCount = Math.max(rowsPerPage, requestedVisible ?? rowsPerPage);
+  const visibleCustomers = customers.rows.slice(0, visibleCount);
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
@@ -120,13 +136,9 @@ export default async function AdminCustomersPage({
             Track customer profiles, booking history, and booking activity.
           </p>
         </div>
-        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-          <Link
-            href={`/api/admin/customers?export=csv${q ? `&q=${encodeURIComponent(q)}` : ""}&sort=${sort}`}
-            className="inline-flex w-full items-center justify-center rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] sm:w-auto"
-          >
-            Export CSV
-          </Link>
+        <div className="grid w-full grid-cols-3 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center">
+          <CustomersExportMenu q={q} sort={sort} />
+          <CreateCustomerForm />
           <Link
             href="/admin/bookings?create=1"
             className="inline-flex w-full items-center justify-center rounded-xl border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] ring-1 ring-[var(--ccr-accent)] sm:w-auto"
@@ -146,14 +158,11 @@ export default async function AdminCustomersPage({
         ) : (
           <>
             <div className="divide-y divide-[var(--ccr-border)] md:hidden">
-              {customers.rows.map((customer: CustomerListRow) => (
+              {visibleCustomers.map((customer: CustomerListRow) => (
                 <article key={`mobile-${customer.id}`} className="space-y-3 px-4 py-4">
                   <div>
                     <p className="font-semibold text-[var(--ccr-text)]">{customer.full_name}</p>
                     <p className="text-xs text-[var(--ccr-muted)]">{customer.email}</p>
-                    <p className="mt-1 font-mono text-[10px] text-[var(--ccr-muted)]">
-                      {customer.id.slice(0, 8)}
-                    </p>
                   </div>
                   <dl className="grid grid-cols-2 gap-2 text-xs">
                     <div>
@@ -191,7 +200,9 @@ export default async function AdminCustomersPage({
                     >
                       View
                     </Link>
-                    <CustomerBlockToggleButton customerId={customer.id} isBlocked={customer.is_blocked} />
+                    {isAdmin ? (
+                      <CustomerBlockToggleButton customerId={customer.id} isBlocked={customer.is_blocked} />
+                    ) : null}
                   </div>
                 </article>
               ))}
@@ -210,14 +221,11 @@ export default async function AdminCustomersPage({
                   </tr>
                 </thead>
                 <tbody>
-                  {customers.rows.map((customer: CustomerListRow) => (
+                  {visibleCustomers.map((customer: CustomerListRow) => (
                     <tr key={customer.id} className="border-b border-[var(--ccr-border)] last:border-b-0">
                       <td className="px-4 py-3">
                         <p className="font-semibold text-[var(--ccr-text)]">{customer.full_name}</p>
                         <p className="text-xs text-[var(--ccr-muted)]">{customer.email}</p>
-                        <p className="mt-1 font-mono text-[10px] text-[var(--ccr-muted)]">
-                          {customer.id.slice(0, 8)}
-                        </p>
                       </td>
                       <td className="px-4 py-3 text-[var(--ccr-text)]">{customer.phone}</td>
                       <td className="px-4 py-3 text-[var(--ccr-text)]">{customer.total_bookings}</td>
@@ -242,7 +250,9 @@ export default async function AdminCustomersPage({
                           >
                             View
                           </Link>
-                          <CustomerBlockToggleButton customerId={customer.id} isBlocked={customer.is_blocked} />
+                          {isAdmin ? (
+                            <CustomerBlockToggleButton customerId={customer.id} isBlocked={customer.is_blocked} />
+                          ) : null}
                         </div>
                       </td>
                     </tr>
@@ -252,6 +262,14 @@ export default async function AdminCustomersPage({
             </div>
           </>
         )}
+        {customers.rows.length > 0 ? (
+          <LoadMorePaginationControls
+            pageSize={rowsPerPage}
+            loadedCount={visibleCustomers.length}
+            totalCount={customers.rows.length}
+            noMoreLabel="No more customers"
+          />
+        ) : null}
       </div>
     </div>
   );

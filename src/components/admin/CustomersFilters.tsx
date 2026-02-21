@@ -72,7 +72,7 @@ export function CustomersFilters({ initialQuery, initialSort }: CustomersFilters
       method="get"
       className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4"
     >
-      <div className="grid gap-3 md:grid-cols-[2fr_1fr_auto_auto]">
+      <div className="grid gap-3 md:grid-cols-[2fr_1fr_auto]">
         <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
           Search
           <input
@@ -100,18 +100,20 @@ export function CustomersFilters({ initialQuery, initialSort }: CustomersFilters
             <option value="total_spend">Highest Spend</option>
           </select>
         </label>
-        <button
-          type="submit"
-          className="mt-6 w-full rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-xs font-semibold text-white md:w-auto"
-        >
-          Apply
-        </button>
-        <Link
-          href="/admin/customers"
-          className="mt-6 inline-flex w-full items-center justify-center rounded-xl border border-[var(--ccr-border)] px-4 py-2 text-xs font-semibold text-[var(--ccr-text)] md:w-auto"
-        >
-          Reset
-        </Link>
+        <div className="grid grid-cols-2 gap-2 md:flex md:items-end">
+          <button
+            type="submit"
+            className="w-full rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-xs font-semibold text-white md:w-auto"
+          >
+            Apply
+          </button>
+          <Link
+            href="/admin/customers"
+            className="inline-flex w-full items-center justify-center rounded-xl border border-[var(--ccr-border)] px-4 py-2 text-xs font-semibold text-[var(--ccr-text)] md:w-auto"
+          >
+            Reset
+          </Link>
+        </div>
       </div>
     </form>
   );

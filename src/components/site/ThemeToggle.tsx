@@ -115,7 +115,7 @@ export function ThemeToggle({
         suppressHydrationWarning
         aria-label="Theme"
         className={cn(
-          "rounded-xl px-3 py-2 text-xs font-semibold transition-colors",
+          "rounded-xl px-3 py-2 text-xs font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ccr-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--ccr-surface)]",
           variant === "default" &&
             "border border-[var(--ccr-border)] bg-[var(--ccr-surface)] text-[var(--ccr-text)] hover:bg-[var(--ccr-surface-soft)]",
           variant === "inverse" &&

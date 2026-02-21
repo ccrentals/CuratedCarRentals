@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { BlockoutModal } from "@/components/admin/BlockoutModal";
@@ -127,6 +127,7 @@ export function CalendarView({
   const [showAllDayBlockouts, setShowAllDayBlockouts] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [activeBlockout, setActiveBlockout] = useState<BlockoutEvent | null>(null);
+  const dayViewRef = useRef<HTMLElement | null>(null);
 
   const base = parseDateKey(baseDate) ?? new Date();
   const activeSelectedDate = days.includes(selectedDate) ? selectedDate : baseDate;
@@ -298,6 +299,19 @@ export function CalendarView({
   ];
   const dayViewMoreButtonClass =
     "mt-2 cursor-pointer appearance-none border-0 bg-transparent text-xs font-semibold text-[var(--ccr-accent)] underline-offset-2 transition hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ccr-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--ccr-surface)]";
+  const countBadgeBaseClass =
+    "inline-flex h-5 min-w-5 items-center justify-center rounded-full border px-1 text-[10px] font-semibold leading-none";
+  const selectDay = (day: string) => {
+    setSelectedDate(day);
+    setShowAllDayBookings(false);
+    setShowAllDayBlockouts(false);
+
+    if (typeof window === "undefined") return;
+    if (!window.matchMedia("(max-width: 1023px)").matches) return;
+    requestAnimationFrame(() => {
+      dayViewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  };
 
   return (
     <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_320px]">
@@ -439,6 +453,7 @@ export function CalendarView({
                 onChange={(event) =>
                   updateParams({ showBookings: event.target.checked ? null : "0" })
                 }
+                className="h-4 w-4 accent-[var(--ccr-accent)]"
               />
               Bookings
             </label>
@@ -449,6 +464,7 @@ export function CalendarView({
                 onChange={(event) =>
                   updateParams({ showBlockouts: event.target.checked ? null : "0" })
                 }
+                className="h-4 w-4 accent-[var(--ccr-accent)]"
               />
               Blockouts
             </label>
@@ -457,9 +473,11 @@ export function CalendarView({
 
         <div className="mt-6">
           <div
-            className={`mb-2 hidden text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)] ${
-              view === "month" ? "grid grid-cols-7" : "md:grid md:grid-cols-7"
-            }`}
+            className={
+              view === "month"
+                ? "mb-2 grid grid-cols-7 text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]"
+                : "mb-2 hidden text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)] md:grid md:grid-cols-7"
+            }
           >
             {WEEKDAY_LABELS.map((label) => (
               <span key={label} className="px-1">
@@ -468,104 +486,97 @@ export function CalendarView({
             ))}
           </div>
           <div
-            className={`grid gap-2 ${
-              view === "month" ? "grid-cols-7" : "grid-cols-1 md:grid-cols-7"
+            className={`grid ${
+              view === "month" ? "grid-cols-7 gap-1.5 sm:gap-2" : "grid-cols-1 gap-2 md:grid-cols-7"
             }`}
           >
           {days.map((day) => {
             const events = dayEvents.get(day) ?? { bookings: [], blockouts: [] };
             const bookingEvents = filters.showBookings ? events.bookings : [];
             const blockoutEvents = filters.showBlockouts ? events.blockouts : [];
-            const total = bookingEvents.length + blockoutEvents.length;
-            const topEvents = [...bookingEvents, ...blockoutEvents].slice(0, 2);
             const monthMode = view === "month";
+            const dayDate = new Date(`${day}T00:00:00`);
+            const fullDayLabel = dayDate.toLocaleDateString(undefined, {
+              month: "short",
+              day: "numeric",
+            });
+            const compactDayLabel = dayDate.toLocaleDateString(undefined, {
+              day: "numeric",
+            });
             return (
-                <button
-                  type="button"
+                <div
                   key={day}
-                  onClick={() => {
-                    setSelectedDate(day);
-                    setShowAllDayBookings(false);
-                    setShowAllDayBlockouts(false);
+                  onClick={() => selectDay(day)}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter" && event.key !== " ") return;
+                    event.preventDefault();
+                    selectDay(day);
                   }}
-                  className={`min-h-[120px] rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-2 text-left transition ${
+                  role="button"
+                  tabIndex={0}
+                  aria-pressed={activeSelectedDate === day}
+                  className={`rounded-xl border border-[var(--ccr-border)] text-left transition ${
                     activeSelectedDate === day
                       ? "border-[var(--ccr-primary)] bg-[var(--ccr-surface-soft)] shadow-[inset_0_1px_2px_var(--ccr-border)] ring-1 ring-[var(--ccr-accent)]"
                       : ""
-                  }`}
+                  } ${
+                    monthMode
+                      ? "min-h-[64px] p-1 sm:min-h-[80px] sm:p-1.5"
+                      : "min-h-[84px] p-2 sm:min-h-[96px]"
+                  } cursor-pointer`}
                 >
-                <div className="flex items-center justify-between">
+                <div
+                  className={
+                    monthMode
+                      ? "flex flex-col items-start gap-1"
+                      : "flex items-start justify-between gap-1"
+                  }
+                >
                   <span className="text-xs font-semibold text-[var(--ccr-muted)]">
-                    {new Date(`${day}T00:00:00`).toLocaleDateString(undefined, {
-                      month: "short",
-                      day: "numeric",
-                    })}
+                    {monthMode ? (
+                      <>
+                        <span className="sm:hidden">{compactDayLabel}</span>
+                        <span className="hidden sm:inline">{fullDayLabel}</span>
+                      </>
+                    ) : (
+                      fullDayLabel
+                    )}
                   </span>
-                  {total > 0 ? (
-                    <span className="rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-semibold text-amber-900">
-                      {total}
-                    </span>
-                  ) : null}
+                  <div className="flex items-center gap-1">
+                    {bookingEvents.length > 0 ? (
+                      <span
+                        className={`${countBadgeBaseClass} border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] text-[var(--ccr-accent)]`}
+                        aria-label={`${bookingEvents.length} bookings`}
+                        title={`${bookingEvents.length} bookings`}
+                      >
+                        {bookingEvents.length}
+                      </span>
+                    ) : null}
+                    {blockoutEvents.length > 0 ? (
+                      <span
+                        className={`${countBadgeBaseClass} border-amber-200 bg-amber-50 text-amber-700`}
+                        aria-label={`${blockoutEvents.length} blockouts`}
+                        title={`${blockoutEvents.length} blockouts`}
+                      >
+                        {blockoutEvents.length}
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
                 {!monthMode ? (
-                  <div className="mt-1 flex flex-wrap gap-1">
-                    {filters.showBookings && bookingEvents.length > 0 ? (
-                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
-                        Bookings {bookingEvents.length}
-                      </span>
-                    ) : null}
-                    {filters.showBlockouts && blockoutEvents.length > 0 ? (
-                      <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
-                        Blockouts {blockoutEvents.length}
-                      </span>
-                    ) : null}
-                  </div>
+                  <p className="mt-2 text-[10px] text-[var(--ccr-muted)]">Tap to view day details</p>
                 ) : null}
-                {monthMode ? (
-                  <div className="mt-2 flex items-center gap-1">
-                    {Array.from({ length: Math.min(total, 3) }).map((_, index) => (
-                      <span
-                        key={`${day}-dot-${index}`}
-                        className="h-1.5 w-1.5 rounded-full bg-[var(--ccr-accent)]"
-                      />
-                    ))}
-                    {total > 3 ? (
-                      <span className="text-[10px] text-[var(--ccr-muted)]">+{total - 3}</span>
-                    ) : null}
-                  </div>
-                ) : (
-                  <div className="mt-2 space-y-1">
-                    {topEvents.map((event, index) => {
-                      const isBooking = "customer_name" in event;
-                      const label = isBooking
-                        ? `${(event as BookingEvent).vehicle_make} ${(event as BookingEvent).vehicle_model}`
-                        : (event as BlockoutEvent).reason;
-                      return (
-                        <div
-                          key={`${day}-${index}-${label}`}
-                          className={`truncate rounded-md px-2 py-1 text-[10px] font-semibold ${
-                            isBooking
-                              ? "bg-emerald-100 text-emerald-800"
-                              : "bg-amber-100 text-amber-800"
-                          }`}
-                        >
-                          {isBooking ? "Booking" : "Blockout"} • {label}
-                        </div>
-                      );
-                    })}
-                    {total > 2 ? (
-                      <p className="text-[10px] text-[var(--ccr-muted)]">+{total - 2} more</p>
-                    ) : null}
-                  </div>
-                )}
-              </button>
+              </div>
             );
           })}
           </div>
         </div>
       </div>
 
-      <aside className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
+      <aside
+        ref={dayViewRef}
+        className="scroll-mt-20 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4"
+      >
         <div className="flex items-center justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
@@ -597,7 +608,7 @@ export function CalendarView({
                   <li key={booking.id}>
                     <Link
                       href={`/admin/bookings/${booking.id}`}
-                      className="block rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800"
+                      className="block rounded-xl border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] transition hover:border-[var(--ccr-accent-strong)]"
                     >
                       {booking.customer_name} • {booking.vehicle_make} {booking.vehicle_model}
                     </Link>
