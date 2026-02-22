@@ -326,7 +326,7 @@ export default async function AdminCustomerDetailPage({
                 className="mt-2 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
               >
                 <option value="">All statuses</option>
-                <option value="PENDING_PAYMENT">Pending payment</option>
+                <option value="PENDING_PAYMENT">Pending</option>
                 <option value="CONFIRMED">Confirmed</option>
                 <option value="RETURNED">Completed</option>
                 <option value="CANCELLED">Cancelled</option>

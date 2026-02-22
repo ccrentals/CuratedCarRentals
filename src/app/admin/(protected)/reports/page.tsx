@@ -4,6 +4,7 @@ import { InfoTooltipIcon } from "@/components/admin/InfoTooltipIcon";
 import { MobileTableAffordance } from "@/components/admin/MobileTableAffordance";
 import { PaginationSummaryNav } from "@/components/admin/PaginationSummaryNav";
 import { ReportsGranularityTabs } from "@/components/admin/ReportsGranularityTabs";
+import { DateRangeArrow } from "@/components/shared/DateRangeArrow";
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { dbQuery } from "@/lib/db";
 import { fmtDateOnly } from "@/lib/dateFormat";
@@ -25,6 +26,15 @@ type VehicleRow = {
   make: string;
   model: string;
 };
+
+type ReportExportFormat = "csv" | "excel" | "pdf";
+type ReportExportKey =
+  | "outstanding_balances"
+  | "pickups"
+  | "returns"
+  | "upcoming_combined"
+  | "cancellations_refunds";
+type ImpactPageSize = 5 | 10 | 20 | 30 | 50;
 
 const REPORT_CARDS = [
   {
@@ -64,6 +74,12 @@ const REPORT_CARDS = [
       "Cancellation counts, refund totals, net impact, and period-based breakdown.",
   },
 ] as const;
+const REPORT_EXPORT_FORMAT_OPTIONS: Array<{ key: ReportExportFormat; label: string }> = [
+  { key: "csv", label: "CSV" },
+  { key: "pdf", label: "PDF" },
+  { key: "excel", label: "Excel" },
+];
+const IMPACT_PAGE_SIZE_OPTIONS: ImpactPageSize[] = [5, 10, 20, 30, 50];
 
 function formatPercent(value: number | null) {
   if (value === null || !Number.isFinite(value)) return "—";
@@ -80,7 +96,11 @@ function statusChipClass() {
 }
 
 const STATUS_PILL_BASE_CLASS =
-  "inline-flex min-h-7 shrink-0 items-center whitespace-nowrap rounded-full border px-3 py-1 text-xs font-semibold leading-none";
+  "inline-flex min-h-7 shrink-0 items-center whitespace-nowrap rounded-full border px-3 py-1 text-xs font-semibold leading-none transition hover:ring-2 hover:ring-[var(--ccr-accent)] hover:ring-offset-1 hover:ring-offset-[var(--ccr-surface)]";
+const REPORT_BLOCK_RING_ON_BG_CLASS =
+  "transition-colors duration-200 hover:border-[var(--ccr-accent)]";
+const REPORT_BLOCK_RING_ON_SURFACE_CLASS =
+  "transition-colors duration-200 hover:border-[var(--ccr-accent)]";
 
 function formatStatusLabel(status: string) {
   const normalized = String(status ?? "")
@@ -202,6 +222,46 @@ function MetricCountValue({
   );
 }
 
+function ReportExportDropdown({
+  label,
+  hrefs,
+}: {
+  label: string;
+  hrefs: Record<ReportExportFormat, string>;
+}) {
+  return (
+    <details className="group relative">
+      <summary className="flex list-none items-center gap-2 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] transition hover:ring-2 hover:ring-[var(--ccr-accent)] hover:ring-offset-1 hover:ring-offset-[var(--ccr-surface)] [&::-webkit-details-marker]:hidden">
+        {label}
+        <svg
+          viewBox="0 0 20 20"
+          className="h-3.5 w-3.5 text-[var(--ccr-muted)] transition group-open:rotate-180"
+          aria-hidden="true"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M5 7l5 6 5-6" />
+        </svg>
+      </summary>
+      <div className="absolute right-0 z-20 mt-2 w-36 overflow-hidden rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] shadow-lg">
+        {REPORT_EXPORT_FORMAT_OPTIONS.map((option) => (
+          <Link
+            key={`${label}-${option.key}`}
+            href={hrefs[option.key]}
+            prefetch={false}
+            className="block border-b border-[var(--ccr-border)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] last:border-b-0 hover:bg-[var(--ccr-surface-soft)]"
+          >
+            {option.label}
+          </Link>
+        ))}
+      </div>
+    </details>
+  );
+}
+
 function FunnelConversionRow({
   from,
   to,
@@ -215,20 +275,7 @@ function FunnelConversionRow({
     <div className="flex items-center justify-between gap-3">
       <div className="flex min-w-0 items-center gap-2 text-[var(--ccr-text)]">
         <span className="truncate">{from}</span>
-        <span
-          aria-hidden="true"
-          className="inline-flex h-5 w-8 items-center justify-center text-[var(--ccr-muted)]"
-        >
-          <svg viewBox="0 0 36 10" className="h-2.5 w-full" fill="none">
-            <path
-              d="M1 5h30M27 1l4 4-4 4"
-              stroke="currentColor"
-              strokeWidth="1.7"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </span>
+        <DateRangeArrow size={14} className="mx-0 text-[var(--ccr-muted)]" />
         <span className="truncate">{to}</span>
       </div>
       <span className="shrink-0 font-semibold text-[var(--ccr-text)]">{value}</span>
@@ -247,6 +294,11 @@ export default async function AdminReportsPage({
     STANDARD_PAGE_SIZE_OPTIONS,
     10,
   ) as StandardPageSize;
+  const impactRowsPerPage = normalizePageSize(
+    typeof params.impactRows === "string" ? params.impactRows : undefined,
+    IMPACT_PAGE_SIZE_OPTIONS,
+    5,
+  ) as ImpactPageSize;
 
   const report = await getAdminReportsPayload({
     dateFrom: typeof params.dateFrom === "string" ? params.dateFrom : undefined,
@@ -261,6 +313,9 @@ export default async function AdminReportsPage({
   const baseUiQuery = new URLSearchParams(baseFilterQuery);
   if (rowsPerPage !== 10) {
     baseUiQuery.set("rows", String(rowsPerPage));
+  }
+  if (impactRowsPerPage !== 5) {
+    baseUiQuery.set("impactRows", String(impactRowsPerPage));
   }
   for (const key of [
     "outstandingPage",
@@ -293,9 +348,14 @@ export default async function AdminReportsPage({
     return search ? `/admin/reports?${search}` : "/admin/reports";
   };
 
-  const exportHref = (
-    reportKey: "outstanding_balances" | "pickups" | "returns" | "cancellations_refunds",
-  ) => `/api/admin/reports?${baseFilterQuery}&format=csv&report=${reportKey}`;
+  const exportHref = (reportKey: ReportExportKey, format: ReportExportFormat) =>
+    `/api/admin/reports?${baseFilterQuery}&format=${format}&report=${reportKey}`;
+
+  const exportHrefSet = (reportKey: ReportExportKey): Record<ReportExportFormat, string> => ({
+    csv: exportHref(reportKey, "csv"),
+    excel: exportHref(reportKey, "excel"),
+    pdf: exportHref(reportKey, "pdf"),
+  });
 
   const visibleRevenuePoints = report.revenue.points.filter(
     (point) =>
@@ -318,14 +378,18 @@ export default async function AdminReportsPage({
   const breakdownPage = paginateRows(
     report.cancellationRefundImpact.breakdown,
     params.breakdownPage,
-    rowsPerPage,
+    impactRowsPerPage,
   );
   const cancellationPage = paginateRows(
     report.cancellationRefundImpact.cancellations,
     params.cancelPage,
-    rowsPerPage,
+    impactRowsPerPage,
   );
-  const refundPage = paginateRows(report.cancellationRefundImpact.refunds, params.refundPage, rowsPerPage);
+  const refundPage = paginateRows(
+    report.cancellationRefundImpact.refunds,
+    params.refundPage,
+    impactRowsPerPage,
+  );
 
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-10">
@@ -338,7 +402,7 @@ export default async function AdminReportsPage({
         </div>
         <Link
           href="/admin/bookings"
-          className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+          className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] transition hover:ring-2 hover:ring-[var(--ccr-accent)] hover:ring-offset-1 hover:ring-offset-[var(--ccr-bg)]"
         >
           View Bookings
         </Link>
@@ -409,30 +473,40 @@ export default async function AdminReportsPage({
       </form>
 
       <section className="mt-6 grid grid-cols-2 gap-3 max-[359px]:grid-cols-1 md:grid-cols-4 md:gap-4">
-        <div className="min-w-0 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
+        <div
+          className={`min-w-0 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4 ${REPORT_BLOCK_RING_ON_BG_CLASS}`}
+        >
           <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Gross Revenue</p>
           <MetricCurrencyValue amount={report.revenue.totals.grossRevenue} />
         </div>
-        <div className="min-w-0 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
+        <div
+          className={`min-w-0 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4 ${REPORT_BLOCK_RING_ON_BG_CLASS}`}
+        >
           <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Net Revenue</p>
           <MetricCurrencyValue amount={report.revenue.totals.netRevenue} />
         </div>
-        <div className="min-w-0 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
+        <div
+          className={`min-w-0 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4 ${REPORT_BLOCK_RING_ON_BG_CLASS}`}
+        >
           <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
             Outstanding Balance
           </p>
           <MetricCurrencyValue amount={report.outstandingBalances.totals.totalOutstandingAmount} />
         </div>
-        <div className="min-w-0 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
+        <div
+          className={`min-w-0 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4 ${REPORT_BLOCK_RING_ON_BG_CLASS}`}
+        >
           <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Outstanding Bookings</p>
           <MetricCountValue value={report.outstandingBalances.totals.outstandingCount} />
         </div>
       </section>
 
       <section className="mt-6">
-        <div className="flex items-center justify-between gap-3 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-6 py-4">
+        <div
+          className={`flex items-center justify-between gap-3 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-6 py-4 ${REPORT_BLOCK_RING_ON_BG_CLASS}`}
+        >
           <h2 className="text-lg font-bold text-[var(--ccr-text)]">Recommended Reports</h2>
-          <span className="rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-accent)]">
+          <span className="rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-accent)] transition hover:ring-2 hover:ring-[var(--ccr-accent)] hover:ring-offset-1 hover:ring-offset-[var(--ccr-surface)]">
             Live
           </span>
         </div>
@@ -449,40 +523,26 @@ export default async function AdminReportsPage({
                   <p className="mt-1 text-sm text-[var(--ccr-muted)]">{card.description}</p>
                 </div>
                 {card.key === "outstanding" ? (
-                  <Link
-                    href={exportHref("outstanding_balances")}
-                    prefetch={false}
-                    className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
-                  >
-                    Export CSV
-                  </Link>
+                  <ReportExportDropdown
+                    label="Export"
+                    hrefs={exportHrefSet("outstanding_balances")}
+                  />
                 ) : null}
                 {card.key === "upcoming" ? (
                   <div className="flex flex-wrap gap-2">
-                    <Link
-                      href={exportHref("pickups")}
-                      prefetch={false}
-                      className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
-                    >
-                      Export Pickups CSV
-                    </Link>
-                    <Link
-                      href={exportHref("returns")}
-                      prefetch={false}
-                      className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
-                    >
-                      Export Returns CSV
-                    </Link>
+                    <ReportExportDropdown label="Export Pickups" hrefs={exportHrefSet("pickups")} />
+                    <ReportExportDropdown label="Export Returns" hrefs={exportHrefSet("returns")} />
+                    <ReportExportDropdown
+                      label="Export Both"
+                      hrefs={exportHrefSet("upcoming_combined")}
+                    />
                   </div>
                 ) : null}
                 {card.key === "impact" ? (
-                  <Link
-                    href={exportHref("cancellations_refunds")}
-                    prefetch={false}
-                    className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
-                  >
-                    Export CSV
-                  </Link>
+                  <ReportExportDropdown
+                    label="Export"
+                    hrefs={exportHrefSet("cancellations_refunds")}
+                  />
                 ) : null}
               </div>
 
@@ -510,7 +570,9 @@ export default async function AdminReportsPage({
                   ) : (
                     <>
                       <div className="mt-4 grid grid-cols-2 gap-3 max-[359px]:grid-cols-1 md:grid-cols-4">
-                        <div className="min-w-0 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3">
+                        <div
+                          className={`min-w-0 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3 ${REPORT_BLOCK_RING_ON_SURFACE_CLASS}`}
+                        >
                           <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
                             Gross
                           </p>
@@ -519,7 +581,9 @@ export default async function AdminReportsPage({
                             className="mt-1 text-[clamp(1.45rem,5.6vw,1.65rem)]"
                           />
                         </div>
-                        <div className="min-w-0 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3">
+                        <div
+                          className={`min-w-0 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3 ${REPORT_BLOCK_RING_ON_SURFACE_CLASS}`}
+                        >
                           <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
                             Refunds
                           </p>
@@ -528,14 +592,18 @@ export default async function AdminReportsPage({
                             className="mt-1 text-[clamp(1.45rem,5.6vw,1.65rem)]"
                           />
                         </div>
-                        <div className="min-w-0 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3">
+                        <div
+                          className={`min-w-0 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3 ${REPORT_BLOCK_RING_ON_SURFACE_CLASS}`}
+                        >
                           <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Net</p>
                           <MetricCurrencyValue
                             amount={report.revenue.totals.netRevenue}
                             className="mt-1 text-[clamp(1.45rem,5.6vw,1.65rem)]"
                           />
                         </div>
-                        <div className="min-w-0 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3">
+                        <div
+                          className={`min-w-0 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3 ${REPORT_BLOCK_RING_ON_SURFACE_CLASS}`}
+                        >
                           <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
                             Payment Count
                           </p>
@@ -550,7 +618,7 @@ export default async function AdminReportsPage({
                         {visibleRevenuePoints.map((point) => (
                           <div
                             key={point.periodStart}
-                            className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3"
+                            className={`rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3 ${REPORT_BLOCK_RING_ON_BG_CLASS}`}
                           >
                             <span className="block text-xs font-semibold text-[var(--ccr-text)]">
                               {point.periodLabel}
@@ -775,13 +843,17 @@ export default async function AdminReportsPage({
               {card.key === "funnel" ? (
                 <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_1fr]">
                   <div className="grid grid-cols-2 gap-3 max-[359px]:grid-cols-1">
-                    <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3">
+                    <div
+                      className={`rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3 ${REPORT_BLOCK_RING_ON_SURFACE_CLASS}`}
+                    >
                       <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Pending</p>
                       <p className="mt-1 text-xl font-bold text-[var(--ccr-text)]">
                         {report.funnel.counts.pendingPayment}
                       </p>
                     </div>
-                    <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3">
+                    <div
+                      className={`rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3 ${REPORT_BLOCK_RING_ON_SURFACE_CLASS}`}
+                    >
                       <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
                         Confirmed / Active
                       </p>
@@ -789,7 +861,9 @@ export default async function AdminReportsPage({
                         {report.funnel.counts.confirmedActive}
                       </p>
                     </div>
-                    <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3">
+                    <div
+                      className={`rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3 ${REPORT_BLOCK_RING_ON_SURFACE_CLASS}`}
+                    >
                       <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
                         Completed / Returned
                       </p>
@@ -797,7 +871,9 @@ export default async function AdminReportsPage({
                         {report.funnel.counts.completedReturned}
                       </p>
                     </div>
-                    <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3">
+                    <div
+                      className={`rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3 ${REPORT_BLOCK_RING_ON_SURFACE_CLASS}`}
+                    >
                       <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
                         Cancelled + Overridden
                       </p>
@@ -806,7 +882,9 @@ export default async function AdminReportsPage({
                       </p>
                     </div>
                   </div>
-                  <div className="space-y-3 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-4 text-sm">
+                  <div
+                    className={`space-y-3 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-4 text-sm ${REPORT_BLOCK_RING_ON_SURFACE_CLASS}`}
+                  >
                     <FunnelConversionRow
                       from="Pending"
                       to="Confirmed"
@@ -1010,32 +1088,82 @@ export default async function AdminReportsPage({
 
               {card.key === "impact" ? (
                 <div className="mt-4">
+                  <div className="mb-3 flex items-center justify-end">
+                    <details className="group relative">
+                      <summary className="flex list-none items-center gap-2 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] transition hover:ring-2 hover:ring-[var(--ccr-accent)] hover:ring-offset-1 hover:ring-offset-[var(--ccr-surface)] [&::-webkit-details-marker]:hidden">
+                        Rows: {impactRowsPerPage}
+                        <svg
+                          viewBox="0 0 20 20"
+                          className="h-3.5 w-3.5 text-[var(--ccr-muted)] transition group-open:rotate-180"
+                          aria-hidden="true"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M5 7l5 6 5-6" />
+                        </svg>
+                      </summary>
+                      <div className="absolute right-0 z-20 mt-2 w-28 overflow-hidden rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] shadow-lg">
+                        {IMPACT_PAGE_SIZE_OPTIONS.map((option) => (
+                          <Link
+                            key={`impact-rows-${option}`}
+                            href={buildReportsHref({
+                              impactRows: String(option),
+                              breakdownPage: null,
+                              cancelPage: null,
+                              refundPage: null,
+                            })}
+                            className={`block border-b border-[var(--ccr-border)] px-3 py-2 text-xs font-semibold last:border-b-0 ${
+                              option === impactRowsPerPage
+                                ? "bg-[var(--ccr-surface-soft)] text-[var(--ccr-accent)]"
+                                : "text-[var(--ccr-text)] hover:bg-[var(--ccr-surface-soft)]"
+                            }`}
+                          >
+                            {option}
+                          </Link>
+                        ))}
+                      </div>
+                    </details>
+                  </div>
+
                   <div className="grid grid-cols-2 gap-3 max-[359px]:grid-cols-1 md:grid-cols-5">
-                    <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3">
+                    <div
+                      className={`rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3 ${REPORT_BLOCK_RING_ON_SURFACE_CLASS}`}
+                    >
                       <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Cancelled</p>
                       <p className="mt-1 font-semibold text-[var(--ccr-text)]">
                         {report.cancellationRefundImpact.summary.cancelledCount}
                       </p>
                     </div>
-                    <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3">
+                    <div
+                      className={`rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3 ${REPORT_BLOCK_RING_ON_SURFACE_CLASS}`}
+                    >
                       <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Refund Count</p>
                       <p className="mt-1 font-semibold text-[var(--ccr-text)]">
                         {report.cancellationRefundImpact.summary.refundCount}
                       </p>
                     </div>
-                    <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3">
+                    <div
+                      className={`rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3 ${REPORT_BLOCK_RING_ON_SURFACE_CLASS}`}
+                    >
                       <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Refund Total</p>
                       <p className="mt-1 font-semibold text-[var(--ccr-text)]">
                         {formatJmd(report.cancellationRefundImpact.summary.refundTotal)}
                       </p>
                     </div>
-                    <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3">
+                    <div
+                      className={`rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3 ${REPORT_BLOCK_RING_ON_SURFACE_CLASS}`}
+                    >
                       <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Gross Payments</p>
                       <p className="mt-1 font-semibold text-[var(--ccr-text)]">
                         {formatJmd(report.cancellationRefundImpact.summary.grossPayments)}
                       </p>
                     </div>
-                    <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3">
+                    <div
+                      className={`rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3 ${REPORT_BLOCK_RING_ON_SURFACE_CLASS}`}
+                    >
                       <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Net Impact</p>
                       <p className="mt-1 font-semibold text-[var(--ccr-text)]">
                         {formatJmd(report.cancellationRefundImpact.summary.netImpact)}
@@ -1101,7 +1229,7 @@ export default async function AdminReportsPage({
                             {cancellationPage.rows.map((row) => (
                               <li
                                 key={`cancel-${row.bookingId}-${row.cancelledAt}`}
-                                className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2"
+                                className={`rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 ${REPORT_BLOCK_RING_ON_SURFACE_CLASS}`}
                               >
                                 <div className="flex flex-wrap items-center justify-between gap-2">
                                   <p className="text-sm font-semibold text-[var(--ccr-text)]">
@@ -1154,7 +1282,7 @@ export default async function AdminReportsPage({
                             {refundPage.rows.map((row) => (
                               <li
                                 key={`refund-${row.paymentId}`}
-                                className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2"
+                                className={`rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 ${REPORT_BLOCK_RING_ON_SURFACE_CLASS}`}
                               >
                                 <div className="flex flex-wrap items-center justify-between gap-2">
                                   <p className="text-sm font-semibold text-[var(--ccr-text)]">

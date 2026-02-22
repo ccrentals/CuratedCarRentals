@@ -12,6 +12,7 @@ import {
   readSortFromSearchParams,
   type SortDir,
 } from "@/components/admin/tableSort";
+import { getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery } from "@/lib/db";
 import { formatJmd } from "@/lib/money";
 import { normalizePageSize, parsePositiveIntParam } from "@/lib/pagination/sharedPagination";
@@ -93,6 +94,12 @@ export default async function AdminPaymentsPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  const session = await getSessionFromRequest();
+  const canViewPaymentErrors =
+    String(session?.role ?? "")
+      .trim()
+      .toUpperCase() === "DEVELOPER";
+
   const params = await searchParams;
   const q = typeof params.q === "string" ? params.q.trim() : "";
   const bookingId = typeof params.bookingId === "string" ? params.bookingId.trim() : "";
@@ -436,12 +443,14 @@ export default async function AdminPaymentsPage({
                         <dd className="font-semibold text-[var(--ccr-text)]">{statusLabel}</dd>
                       </div>
                     </dl>
-                    <div className="flex items-start justify-between gap-3">
-                      <p className="min-h-4 text-xs text-red-300">{errorMessage || "—"}</p>
-                      <PaymentLogToggle
-                        log={payment.metadata_json ? JSON.stringify(payment.metadata_json, null, 2) : ""}
-                      />
-                    </div>
+                    {canViewPaymentErrors ? (
+                      <div className="flex items-start justify-between gap-3">
+                        <p className="min-h-4 text-xs text-red-300">{errorMessage || "—"}</p>
+                        <PaymentLogToggle
+                          log={payment.metadata_json ? JSON.stringify(payment.metadata_json, null, 2) : ""}
+                        />
+                      </div>
+                    ) : null}
                   </article>
                 );
               })}
@@ -459,7 +468,7 @@ export default async function AdminPaymentsPage({
                     <SortableTh label="Status" columnKey="status" sort={{ sortBy, sortDir }} href={sortHref("status", "asc")} />
                     <SortableTh label="Amount" columnKey="amount" sort={{ sortBy, sortDir }} href={sortHref("amount", "desc")} />
                     <SortableTh label="Created" columnKey="created" sort={{ sortBy, sortDir }} href={sortHref("created", "desc")} />
-                    <th className="px-4 py-3">Error</th>
+                    {canViewPaymentErrors ? <th className="px-4 py-3">Error</th> : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -520,14 +529,16 @@ export default async function AdminPaymentsPage({
                             <TableDateTime value={payment.created_at} />
                           </Link>
                         </td>
-                        <td className="px-4 py-3 text-xs text-red-300">
-                          <div>{errorMessage || "—"}</div>
-                          <div className="mt-2">
-                            <PaymentLogToggle
-                              log={payment.metadata_json ? JSON.stringify(payment.metadata_json, null, 2) : ""}
-                            />
-                          </div>
-                        </td>
+                        {canViewPaymentErrors ? (
+                          <td className="px-4 py-3 text-xs text-red-300">
+                            <div>{errorMessage || "—"}</div>
+                            <div className="mt-2">
+                              <PaymentLogToggle
+                                log={payment.metadata_json ? JSON.stringify(payment.metadata_json, null, 2) : ""}
+                              />
+                            </div>
+                          </td>
+                        ) : null}
                       </tr>
                     );
                   })}

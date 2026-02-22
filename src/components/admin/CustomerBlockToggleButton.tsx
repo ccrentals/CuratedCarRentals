@@ -63,8 +63,8 @@ export function CustomerBlockToggleButton({
       disabled={loading}
       className={`rounded-lg border px-3 py-2 text-xs font-semibold ${
         isBlocked
-          ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-300"
-          : "border-red-500/60 bg-red-500/10 text-red-300"
+          ? "border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] text-[var(--ccr-text)]"
+          : "border-[var(--ccr-border)] bg-[var(--ccr-surface)] text-[var(--ccr-text)]"
       } disabled:cursor-not-allowed disabled:opacity-60`}
       title={isBlocked ? "Unblock customer" : "Block customer"}
     >

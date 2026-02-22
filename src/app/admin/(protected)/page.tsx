@@ -2,10 +2,18 @@ import Link from "next/link";
 
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { InlineDateTimeRange } from "@/components/shared/InlineDateTimeRange";
-import { bookingStartSqlExpr, buildUpcomingWhereSql, getStartOfToday, isUpcomingBooking } from "@/lib/bookings/upcoming";
+import { bookingStartSqlExpr, buildUpcomingWhereSql, getStartOfToday } from "@/lib/bookings/upcoming";
 import { dbQuery } from "@/lib/db";
 import { fmtDate } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
+
+function formatDashboardStatus(status: string) {
+  return String(status ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
 
 export default async function AdminDashboardPage() {
   const now = new Date();
@@ -219,13 +227,8 @@ export default async function AdminDashboardPage() {
                       </p>
                     </div>
                     <div className="flex shrink-0 flex-col items-end gap-1">
-                      {isUpcomingBooking(booking, now) ? (
-                        <span className="rounded-full border border-emerald-300/40 bg-emerald-500/15 px-2.5 py-1 text-[11px] font-semibold text-emerald-100">
-                          Upcoming
-                        </span>
-                      ) : null}
                       <span className="rounded-full bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-semibold text-[var(--ccr-text)]">
-                        {booking.status}
+                        {formatDashboardStatus(booking.status)}
                       </span>
                     </div>
                   </div>
@@ -415,7 +418,7 @@ export default async function AdminDashboardPage() {
                         </div>
                         <div className="flex shrink-0 items-start gap-3">
                           <span className="rounded-full bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-semibold text-[var(--ccr-text)]">
-                            {booking.status}
+                            {formatDashboardStatus(booking.status)}
                           </span>
                           <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-[var(--ccr-border)] text-[var(--ccr-text)] transition-transform group-open:rotate-180">
                             <svg

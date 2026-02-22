@@ -14,6 +14,9 @@ export function formatBookingStatusLabel(bookingStatus: string, paymentStatus?: 
     .toUpperCase();
 
   if (!normalizedBookingStatus) return "Unknown";
+  if (normalizedBookingStatus === "PENDING_PAYMENT" || normalizedBookingStatus === "PENDING") {
+    return "Pending";
+  }
   if (normalizedBookingStatus === "CONFIRMED" && normalizedPaymentStatus !== "PAID_IN_FULL") {
     return "Booked";
   }

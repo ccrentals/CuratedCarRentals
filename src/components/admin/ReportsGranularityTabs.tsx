@@ -52,7 +52,7 @@ export function ReportsGranularityTabs({ active, hrefs }: ReportsGranularityTabs
                 router.push(hrefs[option], { scroll: false });
               });
             }}
-            className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+            className={`rounded-full px-3 py-1 text-xs font-semibold transition hover:ring-2 hover:ring-[var(--ccr-accent)] hover:ring-offset-1 hover:ring-offset-[var(--ccr-surface)] ${
               isActive
                 ? "bg-[var(--ccr-primary)] text-white"
                 : "border border-[var(--ccr-border)] text-[var(--ccr-text)] hover:bg-[var(--ccr-surface-soft)]"

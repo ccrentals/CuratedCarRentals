@@ -59,7 +59,7 @@ function statusPillToneClass(status: string) {
     return "border-sky-300/30 bg-sky-500/15 text-sky-100";
   }
   if (normalized === "PENDING_PAYMENT" || normalized === "PENDING") {
-    return "border-amber-300/60 bg-amber-500/20 text-amber-100";
+    return "border-[var(--ccr-accent)]/45 bg-[var(--ccr-accent)]/15 text-[var(--ccr-text)]";
   }
   if (normalized === "CANCELLED") {
     return "border-rose-300/45 bg-rose-500/15 text-rose-100";

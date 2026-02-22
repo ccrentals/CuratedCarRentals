@@ -34,3 +34,13 @@ test("readSortFromSearchParams: falls back to legacy mapping with allowlist", ()
   assert.deepEqual(sort, { sortBy: "totalSpend", sortDir: "desc" });
 });
 
+test("readSortFromSearchParams: accepts quote sort allowlist keys", () => {
+  const params = new URLSearchParams("sortBy=pickup&sortDir=asc");
+  const sort = readSortFromSearchParams(params, {
+    allowedSortBy: ["created", "customer", "email", "pickup", "return", "vehicle", "total", "status"],
+    defaultSortBy: "created",
+    defaultSortDir: "desc",
+  });
+
+  assert.deepEqual(sort, { sortBy: "pickup", sortDir: "asc" });
+});

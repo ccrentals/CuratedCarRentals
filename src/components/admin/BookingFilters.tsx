@@ -7,7 +7,7 @@ import { ADMIN_ACCENT_RING_CLASS } from "@/components/admin/adminUiClasses";
 
 const STATUS_OPTIONS = [
   { label: "All", value: "all" },
-  { label: "Pending payment", value: "pending_payment" },
+  { label: "Pending", value: "pending_payment" },
   { label: "Confirmed", value: "confirmed" },
   { label: "Completed", value: "completed" },
   { label: "Upcoming", value: "upcoming" },

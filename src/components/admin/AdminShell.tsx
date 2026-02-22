@@ -54,6 +54,11 @@ const DOCUMENTATION_CHILDREN: NavChild[] = [
   { label: "Project Management", href: "/admin/documentation/project-management" },
 ];
 
+const BOOKINGS_CHILDREN: NavChild[] = [
+  { label: "Bookings", href: "/admin/bookings" },
+  { label: "Quotes", href: "/admin/bookings/quotes" },
+];
+
 const NAV_ITEMS: NavItem[] = [
   {
     label: "Dashboard",
@@ -79,6 +84,7 @@ const NAV_ITEMS: NavItem[] = [
   {
     label: "Bookings",
     href: "/admin/bookings",
+    children: BOOKINGS_CHILDREN,
     icon: (className: string) => (
       <svg
         viewBox="0 0 24 24"
@@ -631,6 +637,7 @@ export function AdminShell({
 }) {
   const pathname = usePathname() ?? "/admin";
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [logoGlowOn, setLogoGlowOn] = useState(false);
   const [mobileCompactHeader, setMobileCompactHeader] = useState(false);
   const mobileHeaderRef = useRef<HTMLElement | null>(null);
   const drawerRef = useRef<HTMLElement | null>(null);
@@ -668,6 +675,21 @@ export function AdminShell({
     if (!pathname.startsWith("/admin/messages")) return;
     void refreshUnreadMessagesCount();
   }, [pathname, refreshUnreadMessagesCount]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setLogoGlowOn(false);
+      return;
+    }
+    setLogoGlowOn(true);
+    const timer = window.setTimeout(() => {
+      setLogoGlowOn(false);
+    }, 1650);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [pathname]);
 
   useEffect(() => {
     if (!drawerOpen) return;
@@ -830,6 +852,7 @@ export function AdminShell({
   const activeItem = useMemo(() => {
     return NAV_ITEMS.find((nav) => isActivePath(pathname, nav.href));
   }, [pathname]);
+  const logoGlowClass = logoGlowOn ? "ccr-icon-glow-pulse" : "";
 
   const handleMenuToggle = (trigger?: HTMLElement | null) => {
     if (typeof window === "undefined") return;
@@ -1002,7 +1025,7 @@ export function AdminShell({
               {activeItem ? (
                 <div className="flex min-w-0 items-center gap-2 text-base font-semibold text-[var(--ccr-text)] sm:gap-4 sm:text-lg">
                   <span
-                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--ccr-surface-soft)] shadow-sm sm:h-9 sm:w-9 ${ADMIN_ACCENT_RING_CLASS}`}
+                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--ccr-surface-soft)] shadow-sm sm:h-9 sm:w-9 ${ADMIN_ACCENT_RING_CLASS} ${logoGlowClass}`}
                   >
                     {activeItem.icon("h-4 w-4 text-[var(--ccr-accent)] sm:h-5 sm:w-5")}
                   </span>
@@ -1044,7 +1067,7 @@ export function AdminShell({
                     handleMenuToggle(event.currentTarget as HTMLElement)
                   }
                   aria-label="Open admin menu"
-                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--ccr-surface-soft)] shadow-sm ${ADMIN_ACCENT_RING_CLASS}`}
+                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--ccr-surface-soft)] shadow-sm ${ADMIN_ACCENT_RING_CLASS} ${logoGlowClass}`}
                 >
                   {activeItem.icon("h-4 w-4 text-[var(--ccr-accent)]")}
                 </button>

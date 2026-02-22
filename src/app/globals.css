@@ -208,6 +208,33 @@ input.booking-edit-date-input::-webkit-calendar-picker-indicator {
   animation: logo-pulse-once 900ms ease-in-out 1;
 }
 
+@keyframes ccrIconGlowPulse {
+  0% {
+    background-color: var(--ccr-surface-soft);
+    filter: drop-shadow(0 0 0 color-mix(in srgb, var(--ccr-accent) 0%, transparent));
+  }
+  50% {
+    background-color: color-mix(in srgb, var(--ccr-surface-soft) 78%, var(--ccr-accent) 22%);
+    filter: drop-shadow(0 0 0.2rem color-mix(in srgb, var(--ccr-accent) 55%, transparent))
+      drop-shadow(0 0 0.65rem color-mix(in srgb, var(--ccr-accent) 35%, transparent));
+  }
+  100% {
+    background-color: var(--ccr-surface-soft);
+    filter: drop-shadow(0 0 0 color-mix(in srgb, var(--ccr-accent) 0%, transparent));
+  }
+}
+
+.ccr-icon-glow-pulse {
+  animation: ccrIconGlowPulse 0.8s ease-in-out 2;
+  will-change: background-color, filter;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ccr-icon-glow-pulse {
+    animation: none !important;
+  }
+}
+
 @media print {
   @page {
     size: auto;

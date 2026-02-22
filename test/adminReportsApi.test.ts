@@ -96,3 +96,95 @@ test("admin reports API: returns report payload shape for authorized admin", asy
   assert.ok(body.report?.upcoming);
   assert.ok(body.report?.cancellationRefundImpact);
 });
+
+test("admin reports API: supports combined upcoming CSV export", async () => {
+  const response = await handleReportsGet(
+    new Request(
+      "http://localhost/api/admin/reports?dateFrom=2026-02-01&dateTo=2026-02-28&format=csv&report=upcoming_combined",
+    ),
+    {
+      getSession: async () => ({
+        userId: "admin-id",
+        role: "ADMIN",
+        expiresAt: 9999999999,
+        issuedAt: 9999999000,
+      }),
+      getPayload: async () => mockPayload,
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("content-type") ?? "", /text\/csv/i);
+  const csv = await response.text();
+  assert.match(csv, /# Upcoming Pickups and Returns/);
+  assert.match(csv, /# Pickups/);
+  assert.match(csv, /# Returns/);
+});
+
+test("admin reports API: supports excel export", async () => {
+  const response = await handleReportsGet(
+    new Request(
+      "http://localhost/api/admin/reports?dateFrom=2026-02-01&dateTo=2026-02-28&format=excel&report=outstanding_balances",
+    ),
+    {
+      getSession: async () => ({
+        userId: "admin-id",
+        role: "ADMIN",
+        expiresAt: 9999999999,
+        issuedAt: 9999999000,
+      }),
+      getPayload: async () => mockPayload,
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("content-type") ?? "", /application\/vnd\.ms-excel/i);
+  const xml = await response.text();
+  assert.match(xml, /<Workbook/i);
+  assert.match(xml, /Outstanding Balances/i);
+});
+
+test("admin reports API: supports PDF export", async () => {
+  const response = await handleReportsGet(
+    new Request(
+      "http://localhost/api/admin/reports?dateFrom=2026-02-01&dateTo=2026-02-28&format=pdf&report=pickups",
+    ),
+    {
+      getSession: async () => ({
+        userId: "admin-id",
+        role: "ADMIN",
+        expiresAt: 9999999999,
+        issuedAt: 9999999000,
+      }),
+      getPayload: async () => mockPayload,
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("content-type") ?? "", /application\/pdf/i);
+  const body = await response.arrayBuffer();
+  const prefix = Buffer.from(body).subarray(0, 8).toString("ascii");
+  assert.match(prefix, /^%PDF-1\./);
+});
+
+test("admin reports API: rejects unsupported export format", async () => {
+  const response = await handleReportsGet(
+    new Request(
+      "http://localhost/api/admin/reports?dateFrom=2026-02-01&dateTo=2026-02-28&format=jsonl&report=pickups",
+    ),
+    {
+      getSession: async () => ({
+        userId: "admin-id",
+        role: "ADMIN",
+        expiresAt: 9999999999,
+        issuedAt: 9999999000,
+      }),
+      getPayload: async () => mockPayload,
+    },
+  );
+
+  assert.equal(response.status, 400);
+  const body = (await response.json()) as { ok: boolean; error?: string };
+  assert.equal(body.ok, false);
+  assert.match(body.error ?? "", /Invalid format/i);
+});
