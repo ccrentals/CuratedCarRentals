@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 
-import { DateTimeStack } from "@/components/shared/DateTimeStack";
+import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import {
   DEVELOPER_CHECKLIST_DEFINITIONS,
   type ChecklistEntry,
@@ -136,7 +136,7 @@ export function DeveloperChecklistEditor({
           <div>
             Updated:{" "}
             {lastUpdatedAt ? (
-              <DateTimeStack
+              <DateTimeInline
                 value={lastUpdatedAt}
                 className="inline-flex font-semibold text-[var(--ccr-text)]"
               />

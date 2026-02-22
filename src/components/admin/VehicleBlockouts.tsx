@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { BlockoutModal } from "@/components/admin/BlockoutModal";
-import { DateTimeStack } from "@/components/shared/DateTimeStack";
+import { TableDateTime } from "@/components/shared/TableDateTime";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
 type VehicleOption = {
@@ -181,10 +181,10 @@ export function VehicleBlockouts({ vehicle }: VehicleBlockoutsProps) {
               {blockouts.map((blockout) => (
                 <tr key={blockout.id} className="border-b border-[var(--ccr-border)] last:border-b-0">
                   <td className="px-3 py-2 text-[var(--ccr-text)]">
-                    <DateTimeStack value={blockout.start_at} />
+                    <TableDateTime value={blockout.start_at} />
                   </td>
                   <td className="px-3 py-2 text-[var(--ccr-text)]">
-                    <DateTimeStack value={blockout.end_at} />
+                    <TableDateTime value={blockout.end_at} />
                   </td>
                   <td className="px-3 py-2 text-[var(--ccr-text)]">{blockout.reason}</td>
                   <td className="px-3 py-2 text-[var(--ccr-muted)]">

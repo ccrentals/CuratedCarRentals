@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { DateTimeStack } from "@/components/shared/DateTimeStack";
+import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
 type AdminSettings = {
@@ -124,7 +124,7 @@ export function AdminSettingsForm({
           <div>
             Updated:{" "}
             {updatedAt ? (
-              <DateTimeStack value={updatedAt} className="inline-flex font-semibold text-[var(--ccr-text)]" />
+              <DateTimeInline value={updatedAt} className="inline-flex font-semibold text-[var(--ccr-text)]" />
             ) : (
               <span className="font-semibold text-[var(--ccr-text)]">Never</span>
             )}

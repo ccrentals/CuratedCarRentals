@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
-import { DateTimeStack } from "@/components/shared/DateTimeStack";
+import { DateTimeInline } from "@/components/shared/DateTimeInline";
+import { TableDateTime } from "@/components/shared/TableDateTime";
 import { refreshUnreadMessagesCount } from "@/lib/messages/useUnreadMessagesCount";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 import { SortableTh } from "@/components/admin/SortableTh";
@@ -283,7 +284,7 @@ export function MessagesInboxTable({
                   {statusLabel(row.status)}
                 </span>
               </div>
-              <DateTimeStack value={row.createdAt} className="text-xs text-[var(--ccr-muted)]" />
+              <DateTimeInline value={row.createdAt} className="text-xs text-[var(--ccr-muted)]" />
               <p className="text-sm text-[var(--ccr-text)]">{snippet(row.message)}</p>
               <Link
                 href={`/admin/messages/${row.id}?markRead=1&back=${encodeURIComponent(currentPath)}`}
@@ -349,7 +350,7 @@ export function MessagesInboxTable({
                     </td>
                   ) : null}
                   <td className="px-4 py-3 text-[var(--ccr-muted)]">
-                    <DateTimeStack value={row.createdAt} />
+                    <TableDateTime value={row.createdAt} />
                   </td>
                   <td className="px-4 py-3 font-semibold text-[var(--ccr-text)]">{row.name}</td>
                   <td className="px-4 py-3 text-[var(--ccr-text)]">{row.email}</td>

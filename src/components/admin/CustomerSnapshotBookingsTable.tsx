@@ -5,7 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
 
 import { PaginationSummary } from "@/components/admin/PaginationSummaryNav";
-import { DateTimeStack } from "@/components/shared/DateTimeStack";
+import { TableDateTime } from "@/components/shared/TableDateTime";
 import { StackedDateTimeRange } from "@/components/shared/StackedDateTimeRange";
 import type { CustomerSnapshotBookingItem } from "@/lib/customers/customerSnapshotBookings";
 import {
@@ -153,7 +153,7 @@ export function CustomerSnapshotBookingsTable({
                 <td className="px-3 py-2 text-[var(--ccr-text)]">{booking.totalLabel}</td>
                 <td className="px-3 py-2 text-[var(--ccr-text)]">{booking.balanceLabel}</td>
                 <td className="px-3 py-2 text-[var(--ccr-muted)]">
-                  <DateTimeStack value={booking.createdAtLabel} />
+                  <TableDateTime value={booking.createdAtLabel} />
                 </td>
                 <td className="px-3 py-2 text-right">
                   <Link href={`/admin/bookings/${booking.id}`} className="text-xs font-semibold text-[var(--ccr-text)]">

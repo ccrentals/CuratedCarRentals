@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { DateTimeStack } from "@/components/shared/DateTimeStack";
+import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { CustomerSnapshotBookingsTable } from "@/components/admin/CustomerSnapshotBookingsTable";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { fetchCustomerSnapshotBookingsPage } from "@/lib/customers/customerSnapshotBookings";
@@ -286,7 +286,7 @@ export default async function AdminCustomerDetailPage({
           <div className="mt-5 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3 text-xs text-[var(--ccr-muted)]">
             <p>
               Created:{" "}
-              <DateTimeStack
+              <DateTimeInline
                 value={customerRow.created_at}
                 className="inline-flex text-[var(--ccr-text)]"
               />
@@ -294,7 +294,7 @@ export default async function AdminCustomerDetailPage({
             <p className="mt-1">
               Last booked:{" "}
               {customerRow.last_booked_at ? (
-                <DateTimeStack
+                <DateTimeInline
                   value={customerRow.last_booked_at}
                   className="inline-flex text-[var(--ccr-text)]"
                 />

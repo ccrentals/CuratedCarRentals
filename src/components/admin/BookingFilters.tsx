@@ -97,7 +97,7 @@ export default function BookingFilters({ canAdmin }: { canAdmin?: boolean }) {
   return (
     <div className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
       <div className="flex flex-wrap items-start gap-3">
-        <div className="grid w-full grid-cols-3 gap-2 sm:flex sm:min-w-0 sm:flex-1 sm:flex-nowrap sm:items-center sm:overflow-x-auto">
+        <div className="grid w-full grid-cols-3 gap-2 sm:flex sm:min-w-0 sm:flex-1 sm:flex-nowrap sm:items-center sm:overflow-x-auto sm:px-2 sm:py-1 sm:scroll-pl-2 sm:scroll-pr-2">
           {STATUS_OPTIONS.map((option) => {
             const isActive = status === option.value;
             return (

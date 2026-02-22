@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { DateTimeStack } from "@/components/shared/DateTimeStack";
+import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { MessageStatusActions } from "@/components/admin/MessageStatusActions";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { writeAuditLog } from "@/lib/audit";
@@ -110,7 +110,7 @@ export default async function AdminMessageDetailPage({
               <p className="text-sm text-[var(--ccr-muted)]">{result.item.email}</p>
               <p className="mt-1 text-xs text-[var(--ccr-muted)]">
                 Received{" "}
-                <DateTimeStack
+                <DateTimeInline
                   value={result.item.createdAt}
                   className="inline-flex text-[var(--ccr-text)]"
                 />
@@ -134,7 +134,7 @@ export default async function AdminMessageDetailPage({
               <dt className="font-semibold uppercase tracking-wide">Read at</dt>
               <dd className="mt-0.5 text-[var(--ccr-text)]">
                 {result.item.readAt ? (
-                  <DateTimeStack value={result.item.readAt} className="inline-flex" />
+                  <DateTimeInline value={result.item.readAt} className="inline-flex" />
                 ) : (
                   "Not read yet"
                 )}

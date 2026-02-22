@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { DateTimeStack } from "@/components/shared/DateTimeStack";
+import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
 type AdminNote = {
@@ -191,7 +191,7 @@ export function BookingNotes({ bookingId, notes }: BookingNotesProps) {
                 <p className="text-sm text-[var(--ccr-text)]">{entry.message}</p>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   {entry.created_at ? (
-                    <DateTimeStack value={entry.created_at} className="text-xs text-[var(--ccr-muted)]" />
+                    <DateTimeInline value={entry.created_at} className="text-xs text-[var(--ccr-muted)]" />
                   ) : null}
                   {scheduleStatus ? (
                     <span className="inline-flex items-center rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-2 py-0.5 text-[11px] font-semibold text-[var(--ccr-text)]">
@@ -201,7 +201,7 @@ export function BookingNotes({ bookingId, notes }: BookingNotesProps) {
                   {scheduledForValue ? (
                     <span className="inline-flex items-center gap-1 rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-2 py-0.5 text-[11px] font-semibold text-[var(--ccr-text)]">
                       <span>Scheduled for</span>
-                      <DateTimeStack value={scheduledForValue} />
+                      <DateTimeInline value={scheduledForValue} />
                     </span>
                   ) : null}
                   {entry.email_last_error ? (

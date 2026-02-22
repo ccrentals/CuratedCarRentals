@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import { DateTimeStack } from "@/components/shared/DateTimeStack";
+import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 import {
   APP_THEMES,
@@ -188,14 +188,14 @@ export function ProfileManager() {
             </div>
             <div>
               <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Member since</p>
-              <DateTimeStack
+              <DateTimeInline
                 value={userSummary?.createdAt}
                 className="font-semibold text-[var(--ccr-text)]"
               />
             </div>
             <div>
               <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Last login</p>
-              <DateTimeStack
+              <DateTimeInline
                 value={userSummary?.lastLoginAt}
                 className="font-semibold text-[var(--ccr-text)]"
               />

@@ -7,7 +7,7 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { InfoTooltipIcon } from "@/components/admin/InfoTooltipIcon";
 import { PaginationSummary } from "@/components/admin/PaginationSummaryNav";
 import { SortableTh } from "@/components/admin/SortableTh";
-import { DateTimeStack } from "@/components/shared/DateTimeStack";
+import { TableDateTime } from "@/components/shared/TableDateTime";
 import { StackedDateTimeRange } from "@/components/shared/StackedDateTimeRange";
 import {
   applySortToSearchParams,
@@ -321,11 +321,11 @@ export function AdminBookingsTable({
                   ) : null}
                 </td>
                 <td className="px-4 py-3 text-[var(--ccr-muted)]">
-                  <DateTimeStack value={booking.createdAtLabel} className="hidden md:inline-flex" />
+                  <TableDateTime value={booking.createdAtLabel} className="hidden md:inline-flex" />
                   {booking.cancelledAtLabel ? (
                     <div className="mt-1 hidden text-[11px] text-rose-200 md:block">
                       <span className="font-semibold uppercase tracking-wide">Cancelled</span>
-                      <DateTimeStack value={booking.cancelledAtLabel} className="mt-1 inline-flex" />
+                      <TableDateTime value={booking.cancelledAtLabel} className="mt-1 inline-flex" />
                     </div>
                   ) : null}
                   <details className="group md:hidden">
@@ -347,11 +347,11 @@ export function AdminBookingsTable({
                       </span>
                     </summary>
                     <div className="mt-2 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-2 text-xs text-[var(--ccr-muted)]">
-                      <DateTimeStack value={booking.createdAtLabel} />
+                      <TableDateTime value={booking.createdAtLabel} />
                       {booking.cancelledAtLabel ? (
                         <div className="mt-2 text-rose-200">
                           <p className="font-semibold uppercase tracking-wide">Cancelled</p>
-                          <DateTimeStack value={booking.cancelledAtLabel} className="mt-1 inline-flex" />
+                          <TableDateTime value={booking.cancelledAtLabel} className="mt-1 inline-flex" />
                         </div>
                       ) : null}
                     </div>

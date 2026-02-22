@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { DateTimeStack } from "@/components/shared/DateTimeStack";
+import { TableDateTime } from "@/components/shared/TableDateTime";
 import { StackedDateTimeRange } from "@/components/shared/StackedDateTimeRange";
 import { dbQuery } from "@/lib/db";
 import { fmtDate } from "@/lib/dateFormat";
@@ -176,7 +176,7 @@ export default async function AdminBookingsArchivePage() {
                     </td>
                     <td className="px-4 py-3 text-[var(--ccr-text)]">{booking.status}</td>
                     <td className="px-4 py-3 text-[var(--ccr-muted)]">
-                      <DateTimeStack value={booking.archived_at} />
+                      <TableDateTime value={booking.archived_at} />
                     </td>
                     <td className="px-4 py-3 text-[var(--ccr-muted)]">{booking.archived_reason ?? "—"}</td>
                     <td className="px-4 py-3 text-right">
@@ -247,10 +247,10 @@ export default async function AdminBookingsArchivePage() {
                       {payment.currency} {Number(payment.deposit_amount_cents).toFixed(2)}
                     </td>
                     <td className="px-4 py-3 text-[var(--ccr-muted)]">
-                      <DateTimeStack value={payment.created_at} />
+                      <TableDateTime value={payment.created_at} />
                     </td>
                     <td className="px-4 py-3 text-[var(--ccr-muted)]">
-                      <DateTimeStack value={payment.deleted_at} />
+                      <TableDateTime value={payment.deleted_at} />
                     </td>
                     <td className="px-4 py-3 text-[var(--ccr-muted)]">{payment.deleted_reason ?? "—"}</td>
                     <td className="px-4 py-3 text-[var(--ccr-muted)]">{payment.deleted_by_email ?? "—"}</td>

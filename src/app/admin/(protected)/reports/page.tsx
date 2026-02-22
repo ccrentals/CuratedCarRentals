@@ -4,7 +4,7 @@ import { InfoTooltipIcon } from "@/components/admin/InfoTooltipIcon";
 import { MobileTableAffordance } from "@/components/admin/MobileTableAffordance";
 import { PaginationSummaryNav } from "@/components/admin/PaginationSummaryNav";
 import { ReportsGranularityTabs } from "@/components/admin/ReportsGranularityTabs";
-import { DateTimeStack } from "@/components/shared/DateTimeStack";
+import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { dbQuery } from "@/lib/db";
 import { fmtDateOnly } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
@@ -1108,7 +1108,7 @@ export default async function AdminReportsPage({
                                     {row.bookingId.slice(0, 8)} · {row.vehicleLabel}
                                   </p>
                                   <span className="text-xs text-[var(--ccr-muted)]">
-                                    <DateTimeStack value={row.cancelledAt} />
+                                    <DateTimeInline value={row.cancelledAt} />
                                   </span>
                                 </div>
                                 <p className="text-xs text-[var(--ccr-muted)]">

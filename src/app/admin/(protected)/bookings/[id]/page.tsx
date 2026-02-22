@@ -9,8 +9,9 @@ import { BookingUpdateForm } from "@/components/admin/BookingUpdateForm";
 import { ManualPaymentForm } from "@/components/admin/ManualPaymentForm";
 import { PaymentRowActions } from "@/components/admin/PaymentRowActions";
 import { RefundRequiredToast } from "@/components/admin/RefundRequiredToast";
-import { DateTimeStack } from "@/components/shared/DateTimeStack";
-import { StackedDateTimeRange } from "@/components/shared/StackedDateTimeRange";
+import { DateTimeInline } from "@/components/shared/DateTimeInline";
+import { InlineDateTimeRange } from "@/components/shared/InlineDateTimeRange";
+import { TableDateTime } from "@/components/shared/TableDateTime";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { fmtDate, fmtDateNoSeconds, fmtDateOnly } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
@@ -539,13 +540,13 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
               <div className="min-w-0">
                 <dt className="text-xs uppercase tracking-wide">Pickup Date & Time</dt>
                 <dd className="font-semibold text-[var(--ccr-text)]">
-                  <DateTimeStack value={pickupDateTimeLabel} />
+                  <DateTimeInline value={pickupDateTimeLabel} />
                 </dd>
               </div>
               <div className="min-w-0">
                 <dt className="text-xs uppercase tracking-wide">Dropoff Date & Time</dt>
                 <dd className="font-semibold text-[var(--ccr-text)]">
-                  <DateTimeStack value={dropoffDateTimeLabel} />
+                  <DateTimeInline value={dropoffDateTimeLabel} />
                 </dd>
               </div>
               <div className="min-w-0">
@@ -772,7 +773,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
                         {formatJmd(payment.deposit_amount_cents)}
                       </td>
                       <td className="px-3 py-2 text-[var(--ccr-muted)]">
-                        <DateTimeStack value={payment.created_at} />
+                        <TableDateTime value={payment.created_at} />
                       </td>
                       <td className="px-3 py-2">
                         <PaymentRowActions
@@ -827,7 +828,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
           <div className="min-w-0">
             <dt className="text-xs uppercase tracking-wide">Overridden at</dt>
             <dd className="font-semibold text-[var(--ccr-text)]">
-              {overrideInfo.overriddenAt ? <DateTimeStack value={overrideInfo.overriddenAt} /> : "N/A"}
+              {overrideInfo.overriddenAt ? <DateTimeInline value={overrideInfo.overriddenAt} /> : "N/A"}
             </dd>
           </div>
           <div className="min-w-0">
@@ -851,7 +852,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
                   </Link>
                   <p className="mt-1 text-[var(--ccr-text)]">{item.customer_name}</p>
                   <p className="text-[var(--ccr-muted)]">
-                    <StackedDateTimeRange
+                    <InlineDateTimeRange
                       startLabel={fmtDate(item.start_date)}
                       endLabel={fmtDate(item.end_date)}
                     />

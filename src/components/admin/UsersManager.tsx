@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from "react";
 
-import { DateTimeStack } from "@/components/shared/DateTimeStack";
+import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 import { ADMIN_OUTLINE_BUTTON_CLASS } from "@/components/admin/adminUiClasses";
 import { SlideDownPanel } from "@/components/admin/SlideDownPanel";
@@ -227,7 +227,7 @@ export function CreateUserForm({
           {successNotice.tempPasswordExpiresAt ? (
             <p className="mt-1 text-[11px] text-[var(--ccr-muted)]">
               Password expires:{" "}
-              <DateTimeStack
+              <DateTimeInline
                 value={successNotice.tempPasswordExpiresAt}
                 className="inline-flex"
               />
@@ -871,7 +871,7 @@ export function UserRowActions({
                   {resetResult.tempPasswordExpiresAt ? (
                     <p className="text-[11px] text-[var(--ccr-muted)]">
                       Expires:{" "}
-                      <DateTimeStack
+                      <DateTimeInline
                         value={resetResult.tempPasswordExpiresAt}
                         className="inline-flex"
                       />

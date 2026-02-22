@@ -1,7 +1,7 @@
 import Link from "next/link";
 
-import { DateTimeStack } from "@/components/shared/DateTimeStack";
-import { StackedDateTimeRange } from "@/components/shared/StackedDateTimeRange";
+import { DateTimeInline } from "@/components/shared/DateTimeInline";
+import { InlineDateTimeRange } from "@/components/shared/InlineDateTimeRange";
 import { bookingStartSqlExpr, buildUpcomingWhereSql, getStartOfToday, isUpcomingBooking } from "@/lib/bookings/upcoming";
 import { dbQuery } from "@/lib/db";
 import { fmtDate } from "@/lib/dateFormat";
@@ -212,7 +212,7 @@ export default async function AdminDashboardPage() {
                         {booking.customer_name} • {booking.vehicle_make} {booking.vehicle_model}
                       </p>
                       <p className="text-xs text-[var(--ccr-muted)]">
-                        <StackedDateTimeRange
+                        <InlineDateTimeRange
                           startLabel={fmtDate(booking.start_date)}
                           endLabel={fmtDate(booking.end_date)}
                         />
@@ -296,7 +296,7 @@ export default async function AdminDashboardPage() {
                           {booking.customer_name} • {booking.vehicle_make} {booking.vehicle_model}
                         </p>
                         <p className="mt-1 text-xs text-[var(--ccr-muted)]">
-                          <StackedDateTimeRange
+                          <InlineDateTimeRange
                             startLabel={fmtDate(booking.start_date)}
                             endLabel={fmtDate(booking.end_date)}
                           />
@@ -347,7 +347,7 @@ export default async function AdminDashboardPage() {
                       </Link>
                       <p className="text-xs text-[var(--ccr-muted)]">
                         Updated{" "}
-                        <DateTimeStack
+                        <DateTimeInline
                           value={vehicle.updated_at}
                           className="inline-flex text-[var(--ccr-muted)]"
                         />
@@ -439,7 +439,7 @@ export default async function AdminDashboardPage() {
                         {booking.customer_name} • {booking.vehicle_make} {booking.vehicle_model}
                       </p>
                       <p className="mt-1 text-xs text-[var(--ccr-muted)]">
-                        <StackedDateTimeRange
+                        <InlineDateTimeRange
                           startLabel={fmtDate(booking.start_date)}
                           endLabel={fmtDate(booking.end_date)}
                         />
@@ -489,7 +489,7 @@ export default async function AdminDashboardPage() {
                       </Link>
                       <p className="text-xs text-[var(--ccr-muted)]">
                         Added{" "}
-                        <DateTimeStack
+                        <DateTimeInline
                           value={vehicle.created_at}
                           className="inline-flex text-[var(--ccr-muted)]"
                         />

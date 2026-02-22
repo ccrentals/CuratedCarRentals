@@ -1,6 +1,7 @@
 import Link from "next/link";
 
-import { DateTimeStack } from "@/components/shared/DateTimeStack";
+import { DateTimeInline } from "@/components/shared/DateTimeInline";
+import { TableDateTime } from "@/components/shared/TableDateTime";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery } from "@/lib/db";
 import { formatJmd } from "@/lib/money";
@@ -227,7 +228,7 @@ export default async function AdminCustomersPage({
                       <dt className="uppercase tracking-wide text-[var(--ccr-muted)]">Last booked</dt>
                       <dd className="font-semibold text-[var(--ccr-text)]">
                         {customer.last_booked_at ? (
-                          <DateTimeStack
+                          <DateTimeInline
                             value={customer.last_booked_at}
                             className="font-semibold text-[var(--ccr-text)]"
                           />
@@ -305,7 +306,7 @@ export default async function AdminCustomersPage({
                       </td>
                       <td className="px-4 py-3 text-[var(--ccr-muted)]">
                         {customer.last_booked_at ? (
-                          <DateTimeStack value={customer.last_booked_at} />
+                          <TableDateTime value={customer.last_booked_at} />
                         ) : (
                           "No bookings yet"
                         )}

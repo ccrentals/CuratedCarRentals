@@ -1,5 +1,5 @@
 import { DateRangeArrow } from "@/components/shared/DateRangeArrow";
-import { DateTimeStack } from "@/components/shared/DateTimeStack";
+import { TableDateTime } from "@/components/shared/TableDateTime";
 import { cn } from "@/lib/utils";
 
 type StackedDateTimeRangeProps = {
@@ -22,9 +22,9 @@ export function StackedDateTimeRange({
         className,
       )}
     >
-      <DateTimeStack value={startLabel} className={textClassName} />
+      <TableDateTime value={startLabel} className={textClassName} />
       <DateRangeArrow size={15} className="mx-0 self-center" />
-      <DateTimeStack value={endLabel} className={textClassName} />
+      <TableDateTime value={endLabel} className={textClassName} />
     </span>
   );
 }

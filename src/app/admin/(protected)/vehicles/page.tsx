@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { AdminVehicleForm } from "@/components/admin/AdminVehicleForm";
-import { DateTimeStack } from "@/components/shared/DateTimeStack";
+import { TableDateTime } from "@/components/shared/TableDateTime";
 import { SlideDownPanel } from "@/components/admin/SlideDownPanel";
 import { VehiclesFilters } from "@/components/admin/VehiclesFilters";
 import { dbQuery } from "@/lib/db";
@@ -93,7 +93,7 @@ export default async function AdminVehiclesPage({
                   </td>
                   <td className="px-4 py-3 text-[var(--ccr-muted)]">{vehicle.status}</td>
                   <td className="px-4 py-3 text-[var(--ccr-muted)]">
-                    <DateTimeStack value={vehicle.created_at} />
+                    <TableDateTime value={vehicle.created_at} />
                   </td>
                 </tr>
               ))}

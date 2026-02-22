@@ -1,6 +1,7 @@
 import Link from "next/link";
 
-import { DateTimeStack } from "@/components/shared/DateTimeStack";
+import { DateTimeInline } from "@/components/shared/DateTimeInline";
+import { TableDateTime } from "@/components/shared/TableDateTime";
 import { LoadMorePaginationControls } from "@/components/admin/LoadMorePaginationControls";
 import { PaymentsFilters } from "@/components/admin/PaymentsFilters";
 import PaymentLogToggle from "@/components/admin/PaymentLogToggle";
@@ -341,7 +342,7 @@ export default async function AdminPaymentsPage({
                       <div className="font-semibold text-[var(--ccr-text)]">
                         {statusLabel} · {formatJmd(row.deposit_amount_cents)}
                       </div>
-                      <DateTimeStack
+                      <DateTimeInline
                         value={row.created_at}
                         className="text-xs text-[var(--ccr-muted)]"
                       />
@@ -397,7 +398,7 @@ export default async function AdminPaymentsPage({
                       >
                         {payment.id.slice(0, 8)}
                       </Link>
-                      <DateTimeStack
+                      <DateTimeInline
                         value={payment.created_at}
                         className="text-xs text-[var(--ccr-muted)]"
                       />
@@ -516,7 +517,7 @@ export default async function AdminPaymentsPage({
                         </td>
                         <td className="px-4 py-3 text-[var(--ccr-muted)]">
                           <Link href={bookingHref} className="block">
-                            <DateTimeStack value={payment.created_at} />
+                            <TableDateTime value={payment.created_at} />
                           </Link>
                         </td>
                         <td className="px-4 py-3 text-xs text-red-300">

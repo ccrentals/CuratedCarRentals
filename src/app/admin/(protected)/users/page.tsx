@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { DateTimeStack } from "@/components/shared/DateTimeStack";
+import { TableDateTime } from "@/components/shared/TableDateTime";
 import { dbQuery } from "@/lib/db";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { CreateUserForm, UserRowActions } from "@/components/admin/UsersManager";
@@ -211,7 +211,7 @@ export default async function AdminUsersPage({
                   <td className="px-4 py-3 text-[var(--ccr-text)]">{user.role}</td>
                   <td className="px-4 py-3 text-[var(--ccr-text)]">{statusLabel(user)}</td>
                   <td className="px-4 py-3 text-[var(--ccr-muted)]">
-                    <DateTimeStack value={user.created_at} />
+                    <TableDateTime value={user.created_at} />
                   </td>
                   <td className="px-4 py-3 text-right">
                     <UserRowActions
