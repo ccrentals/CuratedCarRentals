@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import PrintInvoiceButton from "@/components/payments/PrintInvoiceButton";
+import { DateRangeArrow } from "@/components/shared/DateRangeArrow";
 import { dbQuery } from "@/lib/db";
 import { fmtDateOnly } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
@@ -137,7 +138,12 @@ export default async function BookingInvoicePage({
             <div>
               <p className="text-xs uppercase text-[var(--ccr-muted)]">Rental</p>
               <p>
-                {fmtDateOnly(booking.start_date)} → {fmtDateOnly(booking.end_date)} ({summary.days} days)
+                <span className="inline-flex items-center">
+                  {fmtDateOnly(booking.start_date)}
+                  <DateRangeArrow />
+                  {fmtDateOnly(booking.end_date)}
+                </span>{" "}
+                ({summary.days} days)
               </p>
               <p className="text-[var(--ccr-muted)]">Pickup: {booking.pickup_location}</p>
             </div>

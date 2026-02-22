@@ -10,6 +10,7 @@ const STATUS_OPTIONS = [
   { label: "Pending payment", value: "pending_payment" },
   { label: "Confirmed", value: "confirmed" },
   { label: "Completed", value: "completed" },
+  { label: "Upcoming", value: "upcoming" },
   { label: "Cancelled", value: "cancelled" },
   { label: "Lost to first deposit", value: "lost_to_first_deposit" },
 ];
@@ -27,26 +28,28 @@ export default function BookingFilters({ canAdmin }: { canAdmin?: boolean }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
+  const scopeParam = searchParams.get("scope")?.toLowerCase() === "upcoming" ? "upcoming" : "all";
   const statusParam = normalizeStatus(searchParams.get("status"));
+  const selectedStatusParam = scopeParam === "upcoming" ? "upcoming" : statusParam;
   const qParam = searchParams.get("q") ?? "";
   const dateFromParam = searchParams.get("dateFrom") ?? "";
   const dateToParam = searchParams.get("dateTo") ?? "";
   const archivedParam = searchParams.get("archived") === "1";
 
-  const [status, setStatus] = useState(statusParam);
+  const [status, setStatus] = useState(selectedStatusParam);
   const [query, setQuery] = useState(qParam);
   const [dateFrom, setDateFrom] = useState(dateFromParam);
   const [dateTo, setDateTo] = useState(dateToParam);
   const [showArchived, setShowArchived] = useState(archivedParam);
 
   useEffect(() => {
-    if (statusParam !== status) setStatus(statusParam);
+    if (selectedStatusParam !== status) setStatus(selectedStatusParam);
     if (qParam !== query) setQuery(qParam);
     if (dateFromParam !== dateFrom) setDateFrom(dateFromParam);
     if (dateToParam !== dateTo) setDateTo(dateToParam);
     if (archivedParam !== showArchived) setShowArchived(archivedParam);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusParam, qParam, dateFromParam, dateToParam, archivedParam]);
+  }, [selectedStatusParam, qParam, dateFromParam, dateToParam, archivedParam]);
 
   const updateParams = useCallback(
     (updates: Record<string, string | null | undefined>) => {
@@ -94,7 +97,7 @@ export default function BookingFilters({ canAdmin }: { canAdmin?: boolean }) {
   return (
     <div className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
       <div className="flex flex-wrap items-start gap-3">
-        <div className="grid w-full grid-cols-3 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center">
+        <div className="grid w-full grid-cols-3 gap-2 sm:flex sm:min-w-0 sm:flex-1 sm:flex-nowrap sm:items-center sm:overflow-x-auto">
           {STATUS_OPTIONS.map((option) => {
             const isActive = status === option.value;
             return (
@@ -103,7 +106,19 @@ export default function BookingFilters({ canAdmin }: { canAdmin?: boolean }) {
                 type="button"
                 onClick={() => {
                   setStatus(option.value);
-                  updateParams({ status: option.value === "all" ? null : option.value });
+                  if (option.value === "upcoming") {
+                    updateParams({
+                      scope: "upcoming",
+                      status: null,
+                      pickupDay: null,
+                    });
+                    return;
+                  }
+                  updateParams({
+                    status: option.value === "all" ? null : option.value,
+                    scope: null,
+                    pickupDay: null,
+                  });
                 }}
                 className={`rounded-full border px-2.5 py-1.5 text-[11px] font-semibold leading-none transition sm:px-4 sm:text-xs ${
                   isActive

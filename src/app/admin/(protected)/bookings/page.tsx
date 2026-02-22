@@ -41,6 +41,10 @@ export default async function AdminBookingsPage({
   const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 
   const rawStatus = typeof params.status === "string" ? params.status : "";
+  const rawScope = typeof params.scope === "string" ? params.scope : "";
+  const rawPickupDay = typeof params.pickupDay === "string" ? params.pickupDay : "";
+  const rawSortBy = typeof params.sortBy === "string" ? params.sortBy.trim() : "";
+  const rawSortDir = typeof params.sortDir === "string" ? params.sortDir.trim() : "";
   const rawQuery = typeof params.q === "string" ? params.q.trim() : "";
   const rawDateFrom =
     typeof params.dateFrom === "string" && datePattern.test(params.dateFrom) ? params.dateFrom : "";
@@ -56,6 +60,10 @@ export default async function AdminBookingsPage({
 
   const bookingsPage = await fetchAdminBookingsPage({
     status: rawStatus || null,
+    scope: rawScope || null,
+    pickupDay: rawPickupDay || null,
+    sortBy: rawSortBy || null,
+    sortDir: rawSortDir || null,
     q: rawQuery || null,
     dateFrom: rawDateFrom || null,
     dateTo: rawDateTo || null,
@@ -97,6 +105,10 @@ export default async function AdminBookingsPage({
   }
 
   const stateKey = JSON.stringify({
+    scope: rawScope || "",
+    pickupDay: rawPickupDay || "",
+    sortBy: rawSortBy || "",
+    sortDir: rawSortDir || "",
     status: rawStatus || "",
     q: rawQuery || "",
     dateFrom: rawDateFrom || "",
@@ -155,6 +167,10 @@ export default async function AdminBookingsPage({
         initialTotalCount={bookingsPage.totalCount}
         pageSize={bookingsPage.limit}
         filters={{
+          scope: rawScope || undefined,
+          pickupDay: rawPickupDay || undefined,
+          sortBy: rawSortBy || undefined,
+          sortDir: rawSortDir || undefined,
           status: rawStatus || undefined,
           q: rawQuery || undefined,
           dateFrom: rawDateFrom || undefined,

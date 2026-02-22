@@ -5,6 +5,8 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
 
 import { PaginationSummary } from "@/components/admin/PaginationSummaryNav";
+import { DateTimeStack } from "@/components/shared/DateTimeStack";
+import { StackedDateTimeRange } from "@/components/shared/StackedDateTimeRange";
 import type { CustomerSnapshotBookingItem } from "@/lib/customers/customerSnapshotBookings";
 import {
   mergeBookingsById,
@@ -141,11 +143,18 @@ export function CustomerSnapshotBookingsTable({
               <tr key={booking.id} className="border-b border-[var(--ccr-border)] last:border-b-0">
                 <td className="px-3 py-2 font-mono text-xs text-[var(--ccr-text)]">{booking.shortId}</td>
                 <td className="px-3 py-2 text-[var(--ccr-text)]">{booking.vehicleLabel}</td>
-                <td className="px-3 py-2 text-[var(--ccr-muted)]">{booking.datesLabel}</td>
+                <td className="px-3 py-2 text-[var(--ccr-muted)]">
+                  <StackedDateTimeRange
+                    startLabel={booking.startDateLabel}
+                    endLabel={booking.endDateLabel}
+                  />
+                </td>
                 <td className="px-3 py-2 text-[var(--ccr-text)]">{booking.statusLabel}</td>
                 <td className="px-3 py-2 text-[var(--ccr-text)]">{booking.totalLabel}</td>
                 <td className="px-3 py-2 text-[var(--ccr-text)]">{booking.balanceLabel}</td>
-                <td className="px-3 py-2 text-[var(--ccr-muted)]">{booking.createdAtLabel}</td>
+                <td className="px-3 py-2 text-[var(--ccr-muted)]">
+                  <DateTimeStack value={booking.createdAtLabel} />
+                </td>
                 <td className="px-3 py-2 text-right">
                   <Link href={`/admin/bookings/${booking.id}`} className="text-xs font-semibold text-[var(--ccr-text)]">
                     View

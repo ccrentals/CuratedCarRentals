@@ -72,3 +72,29 @@ test("Entitlement SSoT wiring: public availability and payment reconciliation us
   const wipayReconcile = read("src/lib/payments/wipayReconcile.ts");
   assert.match(wipayReconcile, /maybeEntitleBookingAfterPayment/);
 });
+
+test("Upcoming SSoT wiring: dashboard, bookings list, and calendar use shared upcoming helper", () => {
+  const bookingsList = read("src/lib/bookings/adminBookingsList.ts");
+  assert.match(bookingsList, /from \"@\/lib\/bookings\/upcoming\"/);
+  assert.match(bookingsList, /buildUpcomingWhereSql\(/);
+
+  const dashboard = read("src/app/admin/(protected)/page.tsx");
+  assert.match(dashboard, /from \"@\/lib\/bookings\/upcoming\"/);
+  assert.match(dashboard, /buildUpcomingWhereSql\(/);
+
+  const calendarView = read("src/components/admin/CalendarView.tsx");
+  assert.match(calendarView, /from \"@\/lib\/bookings\/upcoming\"/);
+  assert.match(calendarView, /isUpcomingBooking\(/);
+});
+
+test("Dashboard upcoming context links to bookings with Upcoming scope", () => {
+  const dashboard = read("src/app/admin/(protected)/page.tsx");
+  assert.match(dashboard, /\/admin\/bookings\?scope=upcoming/);
+});
+
+test("Admin bookings API forwards upcoming scope parameters", () => {
+  const apiRoute = read("src/app/api/admin/bookings/route.ts");
+  assert.match(apiRoute, /scope:\s*searchParams\.get\(\"scope\"\)/);
+  assert.match(apiRoute, /sortBy:\s*searchParams\.get\(\"sortBy\"\)/);
+  assert.match(apiRoute, /sortDir:\s*searchParams\.get\(\"sortDir\"\)/);
+});

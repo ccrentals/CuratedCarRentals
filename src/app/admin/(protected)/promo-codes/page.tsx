@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { PaginationSummary } from "@/components/admin/PaginationSummaryNav";
+import { StackedDateTimeRange } from "@/components/shared/StackedDateTimeRange";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 import { SlideDownPanel } from "@/components/admin/SlideDownPanel";
 import { formatJmd } from "@/lib/money";
@@ -539,8 +540,10 @@ export default function AdminPromoCodesPage() {
                     {promoStatusLabel(status)}
                   </td>
                   <td className="px-4 py-3 text-[var(--ccr-muted)]">
-                    {promo.start_at ? new Date(promo.start_at).toLocaleString() : "Any time"} →{" "}
-                    {promo.end_at ? new Date(promo.end_at).toLocaleString() : "No end"}
+                    <StackedDateTimeRange
+                      startLabel={promo.start_at ? new Date(promo.start_at).toLocaleString() : "Any time"}
+                      endLabel={promo.end_at ? new Date(promo.end_at).toLocaleString() : "No end"}
+                    />
                   </td>
                   <td className="px-4 py-3 text-[var(--ccr-text)]">
                     {promo.redemption_count}

@@ -1,6 +1,7 @@
 import { CalendarView } from "@/components/admin/CalendarView";
 import { CopySqlButton } from "@/components/admin/CopySqlButton";
 import { loadAdminSettings } from "@/lib/adminSettings";
+import { buildBookingRangeWhere, buildRange } from "@/lib/bookings/dateRangeFilter";
 import { dbQuery } from "@/lib/db";
 
 type VehicleRow = {
@@ -12,8 +13,10 @@ type VehicleRow = {
 type BookingRow = {
   id: string;
   status: string;
+  start_at: string | null;
   start_date: string;
   end_date: string;
+  created_at: string;
   pickup_location: string;
   customer_name: string;
   vehicle_id: string;
@@ -120,6 +123,10 @@ create index if not exists blockouts_range_idx on blockouts(start_at, end_at);`;
   const days = buildDays(rangeStart, rangeEnd);
   const startDate = formatDateKey(rangeStart);
   const endDate = formatDateKey(rangeEnd);
+  const bookingRange = buildRange(startDate, endDate);
+  if (!bookingRange) {
+    throw new Error("Unable to normalize calendar date range.");
+  }
 
   const vehicles = await dbQuery<VehicleRow>("select id, make, model from vehicles order by make, model");
   const { settings: adminSettings } = await loadAdminSettings();
@@ -136,9 +143,14 @@ create index if not exists blockouts_range_idx on blockouts(start_at, end_at);`;
     statusFilter = map[statusParam] ?? statusParam.toUpperCase();
   }
 
-  const bookingClauses: string[] = ["b.start_date <= $2", "b.end_date >= $1"];
-  const bookingValues: Array<string> = [startDate, endDate];
-  let bookingParamIndex = 3;
+  const bookingRangeWhere = buildBookingRangeWhere({
+    rangeStart: bookingRange.rangeStartIso,
+    rangeEnd: bookingRange.rangeEndIso,
+    bookingAlias: "b",
+  });
+  const bookingClauses: string[] = [bookingRangeWhere.clause];
+  const bookingValues: Array<string> = [...bookingRangeWhere.values];
+  let bookingParamIndex = bookingRangeWhere.nextParamIndex;
 
   if (vehicleId) {
     bookingClauses.push(`b.vehicle_id = $${bookingParamIndex}`);
@@ -154,7 +166,7 @@ create index if not exists blockouts_range_idx on blockouts(start_at, end_at);`;
 
   const bookings = showBookings
     ? await dbQuery<BookingRow>(
-        "select b.id, b.status, b.start_date, b.end_date, b.pickup_location, c.full_name as customer_name, v.id as vehicle_id, v.make as vehicle_make, v.model as vehicle_model from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where " +
+        "select b.id, b.status, b.start_at, b.start_date, b.end_date, b.created_at, b.pickup_location, c.full_name as customer_name, v.id as vehicle_id, v.make as vehicle_make, v.model as vehicle_model from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where " +
           bookingClauses.join(" and ") +
           " order by b.start_date asc",
         bookingValues,

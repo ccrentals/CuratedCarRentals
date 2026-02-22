@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { BlockoutModal } from "@/components/admin/BlockoutModal";
+import { DateTimeStack } from "@/components/shared/DateTimeStack";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
 type VehicleOption = {
@@ -23,12 +24,6 @@ type BlockoutRow = {
 type VehicleBlockoutsProps = {
   vehicle: VehicleOption;
 };
-
-function formatDateTime(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString();
-}
 
 function rangeDefaults() {
   const start = new Date();
@@ -186,10 +181,10 @@ export function VehicleBlockouts({ vehicle }: VehicleBlockoutsProps) {
               {blockouts.map((blockout) => (
                 <tr key={blockout.id} className="border-b border-[var(--ccr-border)] last:border-b-0">
                   <td className="px-3 py-2 text-[var(--ccr-text)]">
-                    {formatDateTime(blockout.start_at)}
+                    <DateTimeStack value={blockout.start_at} />
                   </td>
                   <td className="px-3 py-2 text-[var(--ccr-text)]">
-                    {formatDateTime(blockout.end_at)}
+                    <DateTimeStack value={blockout.end_at} />
                   </td>
                   <td className="px-3 py-2 text-[var(--ccr-text)]">{blockout.reason}</td>
                   <td className="px-3 py-2 text-[var(--ccr-muted)]">

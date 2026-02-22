@@ -5,6 +5,8 @@ import {
   normalizeBookingPageSize,
   type BookingPageSize,
 } from "@/lib/bookings/adminBookingsPagination";
+import { buildBookingRangeWhere, buildRange, type BookingDateRange } from "@/lib/bookings/dateRangeFilter";
+import { buildUpcomingWhereSql } from "@/lib/bookings/upcoming";
 import { dbQuery } from "@/lib/db";
 import { fmtDateNoSeconds } from "@/lib/dateFormat";
 import {
@@ -43,7 +45,11 @@ export type AdminBookingListItem = {
   customerName: string;
   customerEmail: string;
   vehicleLabel: string;
-  datesLabel: string;
+  startDateLabel: string;
+  endDateLabel: string;
+  startDateIso: string;
+  endDateIso: string;
+  createdAtIso: string;
   createdAtLabel: string;
   cancelledAtLabel: string | null;
   lostToFirstDeposit: boolean;
@@ -65,6 +71,10 @@ export type AdminBookingListPage = {
 
 export type AdminBookingListQueryInput = {
   status?: string | null;
+  scope?: string | null;
+  pickupDay?: string | null;
+  sortBy?: string | null;
+  sortDir?: string | null;
   q?: string | null;
   dateFrom?: string | null;
   dateTo?: string | null;
@@ -72,6 +82,7 @@ export type AdminBookingListQueryInput = {
   includeArchived?: boolean;
   limit?: unknown;
   cursor?: unknown;
+  now?: unknown;
 };
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -83,6 +94,19 @@ const STATUS_MAP: Record<string, string[]> = {
   cancelled: ["CANCELLED"],
 };
 const LOST_TO_FIRST_DEPOSIT_FILTER = "lost_to_first_deposit";
+const UPCOMING_SCOPE = "upcoming";
+const PICKUP_DAY_TODAY = "today";
+const BOOKING_SORT_FIELDS = [
+  "booking",
+  "customer",
+  "vehicle",
+  "dates",
+  "status",
+  "created",
+] as const;
+
+type BookingSortBy = (typeof BOOKING_SORT_FIELDS)[number];
+type BookingSortDir = "asc" | "desc";
 
 function normalizeStatusFilter(raw: unknown) {
   if (typeof raw !== "string" || raw.trim().length === 0) return undefined;
@@ -92,10 +116,55 @@ function normalizeStatusFilter(raw: unknown) {
   return STATUS_MAP[normalized] ?? [normalized.toUpperCase()];
 }
 
+function normalizeScope(raw: unknown) {
+  if (typeof raw !== "string" || raw.trim().length === 0) return undefined;
+  const normalized = raw.trim().toLowerCase();
+  if (normalized === "all") return undefined;
+  if (normalized !== UPCOMING_SCOPE) return undefined;
+  return normalized;
+}
+
+function normalizePickupDay(raw: unknown) {
+  if (typeof raw !== "string" || raw.trim().length === 0) return undefined;
+  const normalized = raw.trim().toLowerCase();
+  if (normalized !== PICKUP_DAY_TODAY) return undefined;
+  return normalized;
+}
+
+function normalizeBookingSortBy(raw: unknown): BookingSortBy | undefined {
+  if (typeof raw !== "string" || raw.trim().length === 0) return undefined;
+  const normalized = raw.trim().toLowerCase();
+  if (BOOKING_SORT_FIELDS.some((field) => field === normalized)) {
+    return normalized as BookingSortBy;
+  }
+  return undefined;
+}
+
+function normalizeBookingSortDir(raw: unknown): BookingSortDir | undefined {
+  const normalized = String(raw ?? "")
+    .trim()
+    .toLowerCase();
+  if (normalized === "asc") return "asc";
+  if (normalized === "desc") return "desc";
+  return undefined;
+}
+
 function asIsoTimestamp(value: unknown) {
   if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString();
   const date = new Date(String(value ?? ""));
   if (!Number.isNaN(date.getTime())) return date.toISOString();
+  return String(value ?? "");
+}
+
+function asIsoDateOnly(value: unknown) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString().slice(0, 10);
+  }
+  if (typeof value === "string" && DATE_RE.test(value)) {
+    return value;
+  }
+  const date = new Date(String(value ?? ""));
+  if (!Number.isNaN(date.getTime())) return date.toISOString().slice(0, 10);
   return String(value ?? "");
 }
 
@@ -175,26 +244,44 @@ function normalizeQueryInput(input: AdminBookingListQueryInput) {
   const limit = normalizeBookingPageSize(input.limit);
   const q = typeof input.q === "string" ? input.q.trim() : "";
   const dateFrom =
-    typeof input.dateFrom === "string" && DATE_RE.test(input.dateFrom) ? input.dateFrom : undefined;
+    typeof input.dateFrom === "string" && DATE_RE.test(input.dateFrom) ? input.dateFrom : null;
   const dateTo =
-    typeof input.dateTo === "string" && DATE_RE.test(input.dateTo) ? input.dateTo : undefined;
+    typeof input.dateTo === "string" && DATE_RE.test(input.dateTo) ? input.dateTo : null;
+  const dateRange = buildRange(dateFrom, dateTo);
   const statusFilter = normalizeStatusFilter(input.status);
+  const scope = normalizeScope(input.scope);
+  const pickupDay = normalizePickupDay(input.pickupDay);
   const includeArchived =
     input.includeArchived === true || (typeof input.archived === "string" && input.archived === "1");
   const lostToFirstDepositOnly =
     typeof input.status === "string" &&
     input.status.trim().toLowerCase() === LOST_TO_FIRST_DEPOSIT_FILTER;
   const cursor = decodeBookingsCursor(input.cursor);
+  const offset =
+    cursor && Number.isInteger(cursor.offset) && Number(cursor.offset) >= 0
+      ? Number(cursor.offset)
+      : 0;
+  const now = input.now instanceof Date && !Number.isNaN(input.now.getTime()) ? input.now : new Date();
+  const defaultSortBy: BookingSortBy =
+    scope === UPCOMING_SCOPE || pickupDay === PICKUP_DAY_TODAY ? "dates" : "created";
+  const defaultSortDir: BookingSortDir = defaultSortBy === "created" ? "desc" : "asc";
+  const sortBy = normalizeBookingSortBy(input.sortBy) ?? defaultSortBy;
+  const sortDir = normalizeBookingSortDir(input.sortDir) ?? defaultSortDir;
 
   return {
     limit,
     q,
-    dateFrom,
-    dateTo,
+    dateRange,
     statusFilter,
+    scope,
+    pickupDay,
     includeArchived,
     lostToFirstDepositOnly,
     cursor,
+    offset,
+    now,
+    sortBy,
+    sortDir,
   };
 }
 
@@ -202,19 +289,24 @@ function buildBookingsQuery(input: {
   includeArchiveFilter: boolean;
   includeArchived: boolean;
   statusFilter?: string[];
+  scope?: string;
+  pickupDay?: string;
   lostToFirstDepositOnly: boolean;
   q: string;
-  dateFrom?: string;
-  dateTo?: string;
-  cursor: ReturnType<typeof decodeBookingsCursor>;
+  dateRange: BookingDateRange | null;
+  offset: number;
+  sortBy: BookingSortBy;
+  sortDir: BookingSortDir;
   limit: number;
+  now: Date;
 }, options?: { countOnly?: boolean }) {
   const countOnly = options?.countOnly === true;
   const whereClauses: string[] = [];
   const values: Array<string | string[] | number> = [];
   let index = 1;
 
-  if (input.includeArchiveFilter && !input.includeArchived) {
+  const forceExcludeArchived = input.scope === UPCOMING_SCOPE;
+  if (input.includeArchiveFilter && (!input.includeArchived || forceExcludeArchived)) {
     whereClauses.push("b.archived_at is null");
   }
 
@@ -236,6 +328,18 @@ function buildBookingsQuery(input: {
     );
   }
 
+  if (input.scope === UPCOMING_SCOPE || input.pickupDay === PICKUP_DAY_TODAY) {
+    const upcomingWhere = buildUpcomingWhereSql({
+      bookingAlias: "b",
+      paramStartIndex: index,
+      now: input.now,
+      mode: input.pickupDay === PICKUP_DAY_TODAY ? "pickup_today" : "upcoming",
+    });
+    whereClauses.push(upcomingWhere.clause);
+    values.push(...upcomingWhere.values);
+    index = upcomingWhere.nextParamIndex;
+  }
+
   if (input.q) {
     whereClauses.push(
       `(c.full_name ilike $${index} or c.email ilike $${index} or c.phone ilike $${index} or b.id::text ilike $${index})`,
@@ -244,25 +348,16 @@ function buildBookingsQuery(input: {
     index += 1;
   }
 
-  if (input.dateFrom) {
-    whereClauses.push(`b.start_date >= $${index}`);
-    values.push(input.dateFrom);
-    index += 1;
-  }
-
-  if (input.dateTo) {
-    whereClauses.push(`b.end_date <= $${index}`);
-    values.push(input.dateTo);
-    index += 1;
-  }
-
-  if (!countOnly && input.cursor) {
-    whereClauses.push(
-      `(b.created_at < $${index}::timestamptz or (b.created_at = $${index}::timestamptz and b.id::text < $${index + 1}::text))`,
-    );
-    values.push(input.cursor.createdAt);
-    values.push(input.cursor.id);
-    index += 2;
+  if (input.dateRange) {
+    const rangeFilter = buildBookingRangeWhere({
+      rangeStart: input.dateRange.rangeStartIso,
+      rangeEnd: input.dateRange.rangeEndIso,
+      paramStartIndex: index,
+      bookingAlias: "b",
+    });
+    whereClauses.push(rangeFilter.clause);
+    values.push(...rangeFilter.values);
+    index = rangeFilter.nextParamIndex;
   }
 
   const whereSql = whereClauses.length > 0 ? `where ${whereClauses.join(" and ")}` : "";
@@ -276,18 +371,35 @@ function buildBookingsQuery(input: {
     };
   }
 
+  const directionSql = input.sortDir === "asc" ? "asc" : "desc";
+  const orderBySql =
+    input.sortBy === "booking"
+      ? `order by b.id::text ${directionSql}`
+      : input.sortBy === "customer"
+        ? `order by lower(c.full_name) ${directionSql}, lower(c.email) ${directionSql}, b.id::text ${directionSql}`
+        : input.sortBy === "vehicle"
+          ? `order by lower(v.make) ${directionSql}, lower(v.model) ${directionSql}, b.id::text ${directionSql}`
+          : input.sortBy === "dates"
+            ? `order by b.start_date ${directionSql}, b.end_date ${directionSql}, b.id::text ${directionSql}`
+            : input.sortBy === "status"
+              ? `order by upper(b.status) ${directionSql}, b.id::text ${directionSql}`
+              : `order by b.created_at ${directionSql}, b.id::text ${directionSql}`;
+
   values.push(input.limit + 1);
   const limitIndex = values.length;
+  values.push(Math.max(0, input.offset));
+  const offsetIndex = values.length;
   const text =
     "select b.id, b.start_date, b.end_date, b.created_at, b.status, b.pricing_json, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model, v.deposit_cents as vehicle_deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id " +
     whereSql +
-    ` order by b.created_at desc, b.id::text desc limit $${limitIndex}`;
+    ` ${orderBySql} limit $${limitIndex} offset $${offsetIndex}`;
 
   return { text, values };
 }
 
 export async function fetchAdminBookingsPage(input: AdminBookingListQueryInput): Promise<AdminBookingListPage> {
   const normalized = normalizeQueryInput(input);
+  const requiresArchiveFilter = !normalized.includeArchived || normalized.scope === UPCOMING_SCOPE;
 
   let archiveNotConfigured = false;
   let includeArchiveFilterInUse = true;
@@ -297,12 +409,16 @@ export async function fetchAdminBookingsPage(input: AdminBookingListQueryInput):
       includeArchiveFilter,
       includeArchived: normalized.includeArchived,
       statusFilter: normalized.statusFilter,
+      scope: normalized.scope,
+      pickupDay: normalized.pickupDay,
       lostToFirstDepositOnly: normalized.lostToFirstDepositOnly,
       q: normalized.q,
-      dateFrom: normalized.dateFrom,
-      dateTo: normalized.dateTo,
-      cursor: normalized.cursor,
+      dateRange: normalized.dateRange,
+      offset: normalized.offset,
+      sortBy: normalized.sortBy,
+      sortDir: normalized.sortDir,
       limit: normalized.limit,
+      now: normalized.now,
     });
     return dbQuery<BookingDbRow>(query.text, query.values);
   };
@@ -313,12 +429,16 @@ export async function fetchAdminBookingsPage(input: AdminBookingListQueryInput):
         includeArchiveFilter,
         includeArchived: normalized.includeArchived,
         statusFilter: normalized.statusFilter,
+        scope: normalized.scope,
+        pickupDay: normalized.pickupDay,
         lostToFirstDepositOnly: normalized.lostToFirstDepositOnly,
         q: normalized.q,
-        dateFrom: normalized.dateFrom,
-        dateTo: normalized.dateTo,
-        cursor: null,
+        dateRange: normalized.dateRange,
+        offset: 0,
+        sortBy: normalized.sortBy,
+        sortDir: normalized.sortDir,
         limit: normalized.limit,
+        now: normalized.now,
       },
       { countOnly: true },
     );
@@ -330,7 +450,7 @@ export async function fetchAdminBookingsPage(input: AdminBookingListQueryInput):
   try {
     pageResult = await runPageQuery(true);
   } catch (error) {
-    if (!normalized.includeArchived && isUndefinedColumn(error, "archived_at")) {
+    if (requiresArchiveFilter && isUndefinedColumn(error, "archived_at")) {
       archiveNotConfigured = true;
       includeArchiveFilterInUse = false;
       pageResult = await runPageQuery(false);
@@ -413,7 +533,11 @@ export async function fetchAdminBookingsPage(input: AdminBookingListQueryInput):
       customerName: row.customer_name,
       customerEmail: row.customer_email,
       vehicleLabel: `${row.vehicle_make} ${row.vehicle_model}`.trim(),
-      datesLabel: `${fmtDateNoSeconds(row.start_date)} → ${fmtDateNoSeconds(row.end_date)}`,
+      startDateLabel: fmtDateNoSeconds(row.start_date),
+      endDateLabel: fmtDateNoSeconds(row.end_date),
+      startDateIso: asIsoDateOnly(row.start_date),
+      endDateIso: asIsoDateOnly(row.end_date),
+      createdAtIso: asIsoTimestamp(row.created_at),
       createdAtLabel: fmtDateNoSeconds(row.created_at),
       cancelledAtLabel,
       lostToFirstDeposit,
@@ -436,6 +560,20 @@ export async function fetchAdminBookingsPage(input: AdminBookingListQueryInput):
     hasMore && visibleRows.length > 0
       ? encodeBookingsCursor({
           createdAt: asIsoTimestamp(visibleRows[visibleRows.length - 1].created_at),
+          startDate: asIsoDateOnly(visibleRows[visibleRows.length - 1].start_date),
+          sortValue:
+            normalized.sortBy === "booking"
+              ? visibleRows[visibleRows.length - 1].id
+              : normalized.sortBy === "customer"
+                ? String(visibleRows[visibleRows.length - 1].customer_name ?? "")
+                : normalized.sortBy === "vehicle"
+                  ? `${visibleRows[visibleRows.length - 1].vehicle_make} ${visibleRows[visibleRows.length - 1].vehicle_model}`
+                  : normalized.sortBy === "dates"
+                    ? asIsoDateOnly(visibleRows[visibleRows.length - 1].start_date)
+                    : normalized.sortBy === "status"
+                      ? String(visibleRows[visibleRows.length - 1].status ?? "")
+                      : asIsoTimestamp(visibleRows[visibleRows.length - 1].created_at),
+          offset: normalized.offset + visibleRows.length,
           id: visibleRows[visibleRows.length - 1].id,
         })
       : null;

@@ -7,6 +7,8 @@ export type AdminSettings = {
   sendDropoffReminder: boolean;
   sendLateDropoffAlert: boolean;
   dayViewBookingLimit: number | "all";
+  contactNotificationEmails: string;
+  contactNotifyCooldownMinutes: number;
 };
 
 export const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
@@ -16,6 +18,8 @@ export const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
   sendDropoffReminder: false,
   sendLateDropoffAlert: false,
   dayViewBookingLimit: 5,
+  contactNotificationEmails: "",
+  contactNotifyCooldownMinutes: 10,
 };
 
 function normalizeDayViewBookingLimit(value: unknown): number | "all" {
@@ -32,6 +36,22 @@ function normalizeDayViewBookingLimit(value: unknown): number | "all" {
     }
   }
   return DEFAULT_ADMIN_SETTINGS.dayViewBookingLimit;
+}
+
+function normalizeNotificationEmails(value: unknown) {
+  if (typeof value !== "string") return DEFAULT_ADMIN_SETTINGS.contactNotificationEmails;
+  return value
+    .split(/[,;\n]/)
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .slice(0, 25)
+    .join(", ");
+}
+
+function normalizeContactNotifyCooldownMinutes(value: unknown) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return DEFAULT_ADMIN_SETTINGS.contactNotifyCooldownMinutes;
+  return Math.min(120, Math.max(1, Math.floor(parsed)));
 }
 
 function normalizeAdminSettings(raw: unknown): AdminSettings {
@@ -62,6 +82,10 @@ function normalizeAdminSettings(raw: unknown): AdminSettings {
         ? value.sendLateDropoffAlert
         : DEFAULT_ADMIN_SETTINGS.sendLateDropoffAlert,
     dayViewBookingLimit: normalizeDayViewBookingLimit(value.dayViewBookingLimit),
+    contactNotificationEmails: normalizeNotificationEmails(value.contactNotificationEmails),
+    contactNotifyCooldownMinutes: normalizeContactNotifyCooldownMinutes(
+      value.contactNotifyCooldownMinutes,
+    ),
   };
 }
 

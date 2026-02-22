@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import { DateTimeStack } from "@/components/shared/DateTimeStack";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 import {
   APP_THEMES,
@@ -26,13 +27,6 @@ type MeResponse = {
     theme?: AppTheme | null;
   };
 };
-
-function formatDate(value: string | null | undefined) {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-  return date.toLocaleString();
-}
 
 function initialsFromName(name: string, email: string) {
   const trimmed = name.trim();
@@ -95,8 +89,8 @@ export function ProfileManager() {
       role: profile.role ?? "—",
       fullName: profile.fullName ?? "",
       username: profile.username ?? "—",
-      createdAt: formatDate(profile.createdAt),
-      lastLoginAt: formatDate(profile.lastLoginAt),
+      createdAt: profile.createdAt ?? null,
+      lastLoginAt: profile.lastLoginAt ?? null,
       status: profile.isActive === false ? "Inactive" : "Active",
       userId: profile.userId ?? "—",
     };
@@ -194,11 +188,17 @@ export function ProfileManager() {
             </div>
             <div>
               <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Member since</p>
-              <p className="font-semibold text-[var(--ccr-text)]">{userSummary?.createdAt ?? "—"}</p>
+              <DateTimeStack
+                value={userSummary?.createdAt}
+                className="font-semibold text-[var(--ccr-text)]"
+              />
             </div>
             <div>
               <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Last login</p>
-              <p className="font-semibold text-[var(--ccr-text)]">{userSummary?.lastLoginAt ?? "—"}</p>
+              <DateTimeStack
+                value={userSummary?.lastLoginAt}
+                className="font-semibold text-[var(--ccr-text)]"
+              />
             </div>
           </div>
         </section>

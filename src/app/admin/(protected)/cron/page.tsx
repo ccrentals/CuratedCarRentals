@@ -1,8 +1,8 @@
 import Link from "next/link";
 
 import { CronRunButtons } from "@/components/admin/CronRunButtons";
+import { DateTimeStack } from "@/components/shared/DateTimeStack";
 import { dbQuery } from "@/lib/db";
-import { fmtDate } from "@/lib/dateFormat";
 import { loadLatestReminderRuns } from "@/lib/cron/reminderRuns";
 import { REMINDER_EVENT_LABELS, REMINDER_EVENT_TYPES, type ReminderEventType } from "@/lib/cron/reminderTypes";
 
@@ -139,7 +139,7 @@ export default async function AdminCronPage() {
                 <li key={eventType} className="flex items-center justify-between gap-3">
                   <span>{REMINDER_EVENT_LABELS[eventType]}</span>
                   <span className="text-xs text-[var(--ccr-muted)]">
-                    {displayTimestamp ? fmtDate(displayTimestamp) : "No runs yet"}
+                    {displayTimestamp ? <DateTimeStack value={displayTimestamp} /> : "No runs yet"}
                   </span>
                 </li>
               );
@@ -194,7 +194,9 @@ export default async function AdminCronPage() {
                         );
                       })()}
                     </td>
-                    <td className="px-3 py-2 text-[var(--ccr-muted)]">{fmtDate(row.created_at)}</td>
+                    <td className="px-3 py-2 text-[var(--ccr-muted)]">
+                      <DateTimeStack value={row.created_at} />
+                    </td>
                   </tr>
                 ))}
               </tbody>

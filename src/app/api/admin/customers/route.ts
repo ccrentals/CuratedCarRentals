@@ -7,6 +7,7 @@ import { isEmail } from "@/lib/validators";
 import { writeAuditLog } from "@/lib/audit";
 import { logError } from "@/lib/log";
 import { normalizeLegalIdType } from "@/lib/customers/legalId";
+import { readSortFromSearchParams, type SortDir } from "@/components/admin/tableSort";
 
 type CustomerListRow = {
   id: string;
@@ -33,10 +34,30 @@ function isStaffRole(role: string | undefined) {
   return normalized === "ADMIN" || normalized === "DEVELOPER" || normalized === "USER";
 }
 
-function normalizeSort(value: string | null): "last_booked" | "total_bookings" | "total_spend" {
-  if (value === "total_bookings") return "total_bookings";
-  if (value === "total_spend") return "total_spend";
-  return "last_booked";
+const CUSTOMER_SORT_COLUMNS = ["customer", "bookings", "totalSpend", "lastBooked", "created"] as const;
+type CustomerSortBy = (typeof CUSTOMER_SORT_COLUMNS)[number];
+type CustomerSortDir = SortDir;
+
+export function normalizeCustomerSort(searchParams: URLSearchParams): {
+  sortBy: CustomerSortBy;
+  sortDir: CustomerSortDir;
+} {
+  const sort = readSortFromSearchParams(searchParams, {
+    allowedSortBy: CUSTOMER_SORT_COLUMNS,
+    defaultSortBy: "lastBooked",
+    defaultSortDir: "desc",
+    legacySortParam: "sort",
+    legacySortMap: {
+      last_booked: { sortBy: "lastBooked", sortDir: "desc" },
+      total_bookings: { sortBy: "bookings", sortDir: "desc" },
+      total_spend: { sortBy: "totalSpend", sortDir: "desc" },
+    },
+  });
+
+  return {
+    sortBy: (sort.sortBy as CustomerSortBy | undefined) ?? "lastBooked",
+    sortDir: (sort.sortDir as CustomerSortDir | undefined) ?? "desc",
+  };
 }
 
 function csvEscape(value: unknown) {
@@ -280,22 +301,29 @@ function isUniqueDriversLicenseError(error: unknown) {
 
 async function fetchCustomers({
   q,
-  sort,
+  sortBy,
+  sortDir,
 }: {
   q: string;
-  sort: "last_booked" | "total_bookings" | "total_spend";
+  sortBy: CustomerSortBy;
+  sortDir: CustomerSortDir;
 }) {
   const whereSql = q
     ? "where c.full_name ilike $1 or c.email ilike $1 or c.phone ilike $1"
     : "";
   const values = q ? [`${q}%`] : [];
 
+  const direction = sortDir === "asc" ? "asc" : "desc";
   const orderBy =
-    sort === "total_bookings"
-      ? "order by total_bookings desc, coalesce(c.last_booked_at, max(b.created_at), c.created_at) desc"
-      : sort === "total_spend"
-        ? "order by total_spend desc, coalesce(c.last_booked_at, max(b.created_at), c.created_at) desc"
-        : "order by coalesce(c.last_booked_at, max(b.created_at), c.created_at) desc";
+    sortBy === "customer"
+      ? `order by lower(c.full_name) ${direction}, lower(c.email) ${direction}, c.id::text ${direction}`
+      : sortBy === "bookings"
+        ? `order by total_bookings ${direction}, coalesce(c.last_booked_at, max(b.created_at), c.created_at) desc`
+        : sortBy === "totalSpend"
+          ? `order by total_spend ${direction}, coalesce(c.last_booked_at, max(b.created_at), c.created_at) desc`
+          : sortBy === "created"
+            ? `order by c.created_at ${direction}, c.id::text ${direction}`
+            : `order by coalesce(c.last_booked_at, max(b.created_at), c.created_at) ${direction}, c.id::text ${direction}`;
 
   const withDeletedAware =
     "select c.id, c.full_name, c.email, c.phone, c.created_at, c.last_booked_at, count(distinct b.id)::int as total_bookings, coalesce(sum(case when p.status in ('DEPOSIT_PAID', 'SUCCESS', 'REFUNDED') and p.deleted_at is null then p.deposit_amount_cents else 0 end), 0)::int as total_spend from customers c left join bookings b on b.customer_id = c.id left join payments p on p.booking_id = b.id " +
@@ -339,10 +367,10 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const q = (url.searchParams.get("q") ?? "").trim();
-  const sort = normalizeSort(url.searchParams.get("sort"));
+  const sort = normalizeCustomerSort(url.searchParams);
   const exportMode = (url.searchParams.get("export") ?? "").toLowerCase();
 
-  const result = await fetchCustomers({ q, sort });
+  const result = await fetchCustomers({ q, sortBy: sort.sortBy, sortDir: sort.sortDir });
   if (exportMode === "csv") {
     const csv = createCsv(result.rows);
     return new NextResponse(csv, {

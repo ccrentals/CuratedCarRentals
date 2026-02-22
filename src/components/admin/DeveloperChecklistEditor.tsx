@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 
+import { DateTimeStack } from "@/components/shared/DateTimeStack";
 import {
   DEVELOPER_CHECKLIST_DEFINITIONS,
   type ChecklistEntry,
@@ -35,13 +36,6 @@ function priorityBadgeClass(priority: ChecklistPriority) {
     default:
       return "border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] text-[var(--ccr-text)]";
   }
-}
-
-function formatTimestamp(value: string | null) {
-  if (!value) return "Not updated";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleString();
 }
 
 export function DeveloperChecklistEditor({
@@ -140,7 +134,15 @@ export function DeveloperChecklistEditor({
         </div>
         <div className="text-xs text-[var(--ccr-muted)]">
           <div>
-            Updated: <span className="font-semibold text-[var(--ccr-text)]">{formatTimestamp(lastUpdatedAt)}</span>
+            Updated:{" "}
+            {lastUpdatedAt ? (
+              <DateTimeStack
+                value={lastUpdatedAt}
+                className="inline-flex font-semibold text-[var(--ccr-text)]"
+              />
+            ) : (
+              <span className="font-semibold text-[var(--ccr-text)]">Not updated</span>
+            )}
           </div>
           <div>
             By: <span className="font-semibold text-[var(--ccr-text)]">{lastUpdatedBy ?? "System"}</span>
@@ -250,4 +252,3 @@ export function DeveloperChecklistEditor({
     </section>
   );
 }
-

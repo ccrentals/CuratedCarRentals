@@ -9,8 +9,10 @@ import { BookingUpdateForm } from "@/components/admin/BookingUpdateForm";
 import { ManualPaymentForm } from "@/components/admin/ManualPaymentForm";
 import { PaymentRowActions } from "@/components/admin/PaymentRowActions";
 import { RefundRequiredToast } from "@/components/admin/RefundRequiredToast";
+import { DateTimeStack } from "@/components/shared/DateTimeStack";
+import { StackedDateTimeRange } from "@/components/shared/StackedDateTimeRange";
 import { getSessionFromRequest } from "@/lib/auth/session";
-import { fmtDate, fmtDateNoSeconds } from "@/lib/dateFormat";
+import { fmtDate, fmtDateNoSeconds, fmtDateOnly } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
 import { formatPaymentStatus } from "@/lib/payments/formatPaymentStatus";
 import {
@@ -353,10 +355,10 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
     : "TENTATIVE";
   const pickupDateTimeLabel = booking.start_at
     ? fmtDateNoSeconds(booking.start_at)
-    : `${fmtDate(booking.start_date)} ${formatTimeNoSeconds(booking.pickup_time)}`.trim();
+    : `${fmtDateOnly(booking.start_date)}, ${formatTimeNoSeconds(booking.pickup_time) || "12:00 AM"}`;
   const dropoffDateTimeLabel = booking.end_at
     ? fmtDateNoSeconds(booking.end_at)
-    : `${fmtDate(booking.end_date)} ${formatTimeNoSeconds(booking.dropoff_time)}`.trim();
+    : `${fmtDateOnly(booking.end_date)}, ${formatTimeNoSeconds(booking.dropoff_time) || "12:00 AM"}`;
   const pickupLocationSnapshot = booking.pickup_location_text_snapshot || booking.pickup_location;
   const dropoffLocationSnapshot =
     booking.dropoff_location_text_snapshot || booking.dropoff_location || booking.pickup_location;
@@ -536,11 +538,15 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
             <div className="space-y-3">
               <div className="min-w-0">
                 <dt className="text-xs uppercase tracking-wide">Pickup Date & Time</dt>
-                <dd className="font-semibold text-[var(--ccr-text)]">{pickupDateTimeLabel}</dd>
+                <dd className="font-semibold text-[var(--ccr-text)]">
+                  <DateTimeStack value={pickupDateTimeLabel} />
+                </dd>
               </div>
               <div className="min-w-0">
                 <dt className="text-xs uppercase tracking-wide">Dropoff Date & Time</dt>
-                <dd className="font-semibold text-[var(--ccr-text)]">{dropoffDateTimeLabel}</dd>
+                <dd className="font-semibold text-[var(--ccr-text)]">
+                  <DateTimeStack value={dropoffDateTimeLabel} />
+                </dd>
               </div>
               <div className="min-w-0">
                 <dt className="text-xs uppercase tracking-wide">Pickup Location Snapshot</dt>
@@ -766,7 +772,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
                         {formatJmd(payment.deposit_amount_cents)}
                       </td>
                       <td className="px-3 py-2 text-[var(--ccr-muted)]">
-                        {fmtDateNoSeconds(payment.created_at)}
+                        <DateTimeStack value={payment.created_at} />
                       </td>
                       <td className="px-3 py-2">
                         <PaymentRowActions
@@ -821,7 +827,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
           <div className="min-w-0">
             <dt className="text-xs uppercase tracking-wide">Overridden at</dt>
             <dd className="font-semibold text-[var(--ccr-text)]">
-              {overrideInfo.overriddenAt ? fmtDateNoSeconds(overrideInfo.overriddenAt) : "N/A"}
+              {overrideInfo.overriddenAt ? <DateTimeStack value={overrideInfo.overriddenAt} /> : "N/A"}
             </dd>
           </div>
           <div className="min-w-0">
@@ -844,7 +850,12 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
                     {item.id}
                   </Link>
                   <p className="mt-1 text-[var(--ccr-text)]">{item.customer_name}</p>
-                  <p className="text-[var(--ccr-muted)]">{fmtDate(item.start_date)} → {fmtDate(item.end_date)}</p>
+                  <p className="text-[var(--ccr-muted)]">
+                    <StackedDateTimeRange
+                      startLabel={fmtDate(item.start_date)}
+                      endLabel={fmtDate(item.end_date)}
+                    />
+                  </p>
                 </li>
               ))}
             </ul>

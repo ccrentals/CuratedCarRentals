@@ -21,8 +21,8 @@ export function buildRequestParams({
 }: WiPayRequestParams) {
   const accountNumberRaw = process.env.WIPAY_ACCOUNT_NUMBER;
   const apiKey = process.env.WIPAY_API_KEY;
-  const environment = process.env.WIPAY_ENV ?? "sandbox";
-  const feeStructure = process.env.WIPAY_FEE_STRUCTURE ?? "merchant_absorb";
+  const environment = (process.env.WIPAY_ENV ?? "sandbox").trim().toLowerCase();
+  const feeStructure = (process.env.WIPAY_FEE_STRUCTURE ?? "merchant_absorb").trim().toLowerCase();
   const rawOrigin = process.env.WIPAY_ORIGIN ?? "curated-car-rentals";
   const origin = rawOrigin
     .toLowerCase()

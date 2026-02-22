@@ -5,6 +5,7 @@ import { useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { BlockoutModal } from "@/components/admin/BlockoutModal";
+import { isUpcomingBooking } from "@/lib/bookings/upcoming";
 
 type VehicleOption = {
   id: string;
@@ -15,6 +16,7 @@ type VehicleOption = {
 type BookingEvent = {
   id: string;
   status: string;
+  start_at: string | null;
   start_date: string;
   end_date: string;
   pickup_location?: string;
@@ -614,7 +616,16 @@ export function CalendarView({
                       href={`/admin/bookings/${booking.id}`}
                       className="block rounded-xl border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] transition hover:border-[var(--ccr-accent-strong)]"
                     >
-                      {booking.customer_name} • {booking.vehicle_make} {booking.vehicle_model}
+                      <span className="flex flex-wrap items-center gap-2">
+                        <span>
+                          {booking.customer_name} • {booking.vehicle_make} {booking.vehicle_model}
+                        </span>
+                        {isUpcomingBooking(booking, new Date()) ? (
+                          <span className="rounded-full border border-emerald-300/40 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-100">
+                            Upcoming
+                          </span>
+                        ) : null}
+                      </span>
                     </Link>
                   </li>
                 ))}

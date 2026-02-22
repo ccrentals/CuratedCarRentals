@@ -35,14 +35,35 @@ function buildWindowFromDates(startDate: string, endDate: string) {
 }
 
 export async function GET(request: Request) {
-  const session = await getSessionFromRequest();
+  return handleAdminBookingsGet(request);
+}
+
+export type AdminBookingsGetRouteDeps = {
+  getSession: () => Promise<Awaited<ReturnType<typeof getSessionFromRequest>>>;
+  fetchPage: typeof fetchAdminBookingsPage;
+};
+
+const DEFAULT_BOOKINGS_GET_DEPS: AdminBookingsGetRouteDeps = {
+  getSession: () => getSessionFromRequest(),
+  fetchPage: fetchAdminBookingsPage,
+};
+
+export async function handleAdminBookingsGet(
+  request: Request,
+  deps: AdminBookingsGetRouteDeps = DEFAULT_BOOKINGS_GET_DEPS,
+) {
+  const session = await deps.getSession();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const { searchParams } = new URL(request.url);
-  const page = await fetchAdminBookingsPage({
+  const page = await deps.fetchPage({
     status: searchParams.get("status"),
+    scope: searchParams.get("scope"),
+    pickupDay: searchParams.get("pickupDay"),
+    sortBy: searchParams.get("sortBy"),
+    sortDir: searchParams.get("sortDir"),
     q: searchParams.get("q"),
     dateFrom: searchParams.get("dateFrom"),
     dateTo: searchParams.get("dateTo"),

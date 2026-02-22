@@ -25,6 +25,22 @@ function normalizeDayViewBookingLimit(value: unknown): number | "all" {
   return DEFAULT_ADMIN_SETTINGS.dayViewBookingLimit;
 }
 
+function normalizeNotificationEmails(value: unknown) {
+  if (typeof value !== "string") return DEFAULT_ADMIN_SETTINGS.contactNotificationEmails;
+  return value
+    .split(/[,;\n]/)
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .slice(0, 25)
+    .join(", ");
+}
+
+function normalizeContactNotifyCooldownMinutes(value: unknown) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return DEFAULT_ADMIN_SETTINGS.contactNotifyCooldownMinutes;
+  return Math.min(120, Math.max(1, Math.floor(parsed)));
+}
+
 function isAdminRole(role: string | undefined) {
   const normalized = String(role ?? "")
     .trim()
@@ -38,19 +54,34 @@ function normalizeSettings(raw: unknown): AdminSettings {
   }
 
   const value = raw as Record<string, unknown>;
-  const next: AdminSettings = { ...DEFAULT_ADMIN_SETTINGS };
 
-  for (const key of Object.keys(DEFAULT_ADMIN_SETTINGS) as Array<keyof AdminSettings>) {
-    if (key === "dayViewBookingLimit") {
-      continue;
-    }
-    if (typeof value[key] === "boolean") {
-      next[key] = value[key] as boolean;
-    }
-  }
-  next.dayViewBookingLimit = normalizeDayViewBookingLimit(value.dayViewBookingLimit);
-
-  return next;
+  return {
+    blockoutSupersedesBookings:
+      typeof value.blockoutSupersedesBookings === "boolean"
+        ? value.blockoutSupersedesBookings
+        : DEFAULT_ADMIN_SETTINGS.blockoutSupersedesBookings,
+    requireRestoreReason:
+      typeof value.requireRestoreReason === "boolean"
+        ? value.requireRestoreReason
+        : DEFAULT_ADMIN_SETTINGS.requireRestoreReason,
+    sendPickupReminder:
+      typeof value.sendPickupReminder === "boolean"
+        ? value.sendPickupReminder
+        : DEFAULT_ADMIN_SETTINGS.sendPickupReminder,
+    sendDropoffReminder:
+      typeof value.sendDropoffReminder === "boolean"
+        ? value.sendDropoffReminder
+        : DEFAULT_ADMIN_SETTINGS.sendDropoffReminder,
+    sendLateDropoffAlert:
+      typeof value.sendLateDropoffAlert === "boolean"
+        ? value.sendLateDropoffAlert
+        : DEFAULT_ADMIN_SETTINGS.sendLateDropoffAlert,
+    dayViewBookingLimit: normalizeDayViewBookingLimit(value.dayViewBookingLimit),
+    contactNotificationEmails: normalizeNotificationEmails(value.contactNotificationEmails),
+    contactNotifyCooldownMinutes: normalizeContactNotifyCooldownMinutes(
+      value.contactNotifyCooldownMinutes,
+    ),
+  };
 }
 
 function parseStoredContent(content: unknown): AdminSettings {

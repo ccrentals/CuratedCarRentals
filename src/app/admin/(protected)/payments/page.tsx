@@ -1,10 +1,17 @@
 import Link from "next/link";
 
+import { DateTimeStack } from "@/components/shared/DateTimeStack";
 import { LoadMorePaginationControls } from "@/components/admin/LoadMorePaginationControls";
 import { PaymentsFilters } from "@/components/admin/PaymentsFilters";
 import PaymentLogToggle from "@/components/admin/PaymentLogToggle";
+import { SortableTh } from "@/components/admin/SortableTh";
+import {
+  applySortToSearchParams,
+  nextSort,
+  readSortFromSearchParams,
+  type SortDir,
+} from "@/components/admin/tableSort";
 import { dbQuery } from "@/lib/db";
-import { fmtDate } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
 import { normalizePageSize, parsePositiveIntParam } from "@/lib/pagination/sharedPagination";
 import { formatPaymentStatus } from "@/lib/payments/formatPaymentStatus";
@@ -67,6 +74,19 @@ type WipayRow = {
   created_at: string;
 };
 
+const PAYMENT_SORT_COLUMNS = [
+  "payment",
+  "booking",
+  "customer",
+  "vehicle",
+  "provider",
+  "status",
+  "amount",
+  "created",
+] as const;
+type PaymentSortBy = (typeof PAYMENT_SORT_COLUMNS)[number];
+type PaymentSortDir = SortDir;
+
 export default async function AdminPaymentsPage({
   searchParams,
 }: {
@@ -79,6 +99,18 @@ export default async function AdminPaymentsPage({
   const normalizedType = paymentType === "balance" ? "balance" : paymentType === "deposit" ? "deposit" : "";
   const rowsPerPage = normalizePageSize(typeof params.rows === "string" ? params.rows : undefined);
   const requestedVisible = parsePositiveIntParam(params.visible);
+  const currentParams = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (typeof value === "string") currentParams.set(key, value);
+  }
+  const sort = readSortFromSearchParams(currentParams, {
+    allowedSortBy: PAYMENT_SORT_COLUMNS,
+    defaultSortBy: "created",
+    defaultSortDir: "desc",
+  }) as { sortBy: PaymentSortBy; sortDir: PaymentSortDir };
+  const sortBy: PaymentSortBy = sort.sortBy ?? "created";
+  const sortDir: PaymentSortDir = sort.sortDir ?? "desc";
+  const directionSql = sortDir === "asc" ? "asc" : "desc";
 
   const conditions: string[] = [];
   const values: string[] = [];
@@ -99,10 +131,27 @@ export default async function AdminPaymentsPage({
     conditions.push(`coalesce(p.metadata_json->>'payment_type','deposit') <> 'balance'`);
   }
 
+  const orderBySql =
+    sortBy === "payment"
+      ? `order by p.id::text ${directionSql}`
+      : sortBy === "booking"
+        ? `order by p.booking_id::text ${directionSql}, p.id::text ${directionSql}`
+        : sortBy === "customer"
+          ? `order by lower(c.full_name) ${directionSql}, lower(c.email) ${directionSql}, p.id::text ${directionSql}`
+          : sortBy === "vehicle"
+            ? `order by lower(v.make) ${directionSql}, lower(v.model) ${directionSql}, p.id::text ${directionSql}`
+            : sortBy === "provider"
+              ? `order by lower(p.provider) ${directionSql}, p.id::text ${directionSql}`
+              : sortBy === "status"
+                ? `order by upper(p.status) ${directionSql}, p.id::text ${directionSql}`
+                : sortBy === "amount"
+                  ? `order by p.deposit_amount_cents ${directionSql}, p.id::text ${directionSql}`
+                  : `order by p.created_at ${directionSql}, p.id::text ${directionSql}`;
+
   const queryText =
     "select p.id, p.booking_id, p.provider, p.status, p.deposit_amount_cents, p.created_at, p.metadata_json, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model from payments p join bookings b on b.id = p.booking_id join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id " +
     (conditions.length ? `where ${conditions.join(" and ")} ` : "") +
-    "order by p.created_at desc";
+    orderBySql;
 
   const payments = await dbQuery<PaymentRow>(queryText, values);
   const visibleCount = Math.max(rowsPerPage, requestedVisible ?? rowsPerPage);
@@ -126,6 +175,8 @@ export default async function AdminPaymentsPage({
   if (q) exportParams.set("q", q);
   if (bookingId) exportParams.set("bookingId", bookingId);
   if (normalizedType) exportParams.set("paymentType", normalizedType);
+  if (sortBy) exportParams.set("sortBy", sortBy);
+  if (sortDir) exportParams.set("sortDir", sortDir);
   const exportHref = exportParams.toString()
     ? `/api/admin/payments/export?${exportParams.toString()}`
     : "/api/admin/payments/export";
@@ -135,7 +186,16 @@ export default async function AdminPaymentsPage({
     if (q) next.set("q", q);
     if (bookingId) next.set("bookingId", bookingId);
     if (value) next.set("paymentType", value);
+    if (sortBy) next.set("sortBy", sortBy);
+    if (sortDir) next.set("sortDir", sortDir);
     return `/admin/payments${next.toString() ? `?${next.toString()}` : ""}`;
+  };
+
+  const sortHref = (columnKey: PaymentSortBy, defaultDirection: SortDir) => {
+    const next = nextSort({ sortBy, sortDir }, columnKey, defaultDirection);
+    const nextParams = applySortToSearchParams(currentParams, next);
+    const qs = nextParams.toString();
+    return qs ? `/admin/payments?${qs}` : "/admin/payments";
   };
 
   return (
@@ -281,7 +341,10 @@ export default async function AdminPaymentsPage({
                       <div className="font-semibold text-[var(--ccr-text)]">
                         {statusLabel} · {formatJmd(row.deposit_amount_cents)}
                       </div>
-                      <div className="text-xs text-[var(--ccr-muted)]">{fmtDate(row.created_at)}</div>
+                      <DateTimeStack
+                        value={row.created_at}
+                        className="text-xs text-[var(--ccr-muted)]"
+                      />
                     </div>
                     <div className="mt-2 text-xs text-[var(--ccr-muted)]">
                       Booking:{" "}
@@ -334,7 +397,10 @@ export default async function AdminPaymentsPage({
                       >
                         {payment.id.slice(0, 8)}
                       </Link>
-                      <p className="text-xs text-[var(--ccr-muted)]">{fmtDate(payment.created_at)}</p>
+                      <DateTimeStack
+                        value={payment.created_at}
+                        className="text-xs text-[var(--ccr-muted)]"
+                      />
                     </div>
                     <div className="space-y-1">
                       <p className="text-sm font-semibold text-[var(--ccr-text)]">
@@ -384,14 +450,14 @@ export default async function AdminPaymentsPage({
               <table className="min-w-full text-left text-sm">
                 <thead className="border-b border-[var(--ccr-border)] text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
                   <tr>
-                    <th className="px-4 py-3">Payment</th>
-                    <th className="px-4 py-3">Booking</th>
-                    <th className="px-4 py-3">Customer</th>
-                    <th className="px-4 py-3">Vehicle</th>
-                    <th className="px-4 py-3">Provider</th>
-                    <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3">Amount</th>
-                    <th className="px-4 py-3">Created</th>
+                    <SortableTh label="Payment" columnKey="payment" sort={{ sortBy, sortDir }} href={sortHref("payment", "asc")} />
+                    <SortableTh label="Booking" columnKey="booking" sort={{ sortBy, sortDir }} href={sortHref("booking", "asc")} />
+                    <SortableTh label="Customer" columnKey="customer" sort={{ sortBy, sortDir }} href={sortHref("customer", "asc")} />
+                    <SortableTh label="Vehicle" columnKey="vehicle" sort={{ sortBy, sortDir }} href={sortHref("vehicle", "asc")} />
+                    <SortableTh label="Provider" columnKey="provider" sort={{ sortBy, sortDir }} href={sortHref("provider", "asc")} />
+                    <SortableTh label="Status" columnKey="status" sort={{ sortBy, sortDir }} href={sortHref("status", "asc")} />
+                    <SortableTh label="Amount" columnKey="amount" sort={{ sortBy, sortDir }} href={sortHref("amount", "desc")} />
+                    <SortableTh label="Created" columnKey="created" sort={{ sortBy, sortDir }} href={sortHref("created", "desc")} />
                     <th className="px-4 py-3">Error</th>
                   </tr>
                 </thead>
@@ -450,7 +516,7 @@ export default async function AdminPaymentsPage({
                         </td>
                         <td className="px-4 py-3 text-[var(--ccr-muted)]">
                           <Link href={bookingHref} className="block">
-                            {fmtDate(payment.created_at)}
+                            <DateTimeStack value={payment.created_at} />
                           </Link>
                         </td>
                         <td className="px-4 py-3 text-xs text-red-300">

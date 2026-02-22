@@ -1,10 +1,14 @@
 import Link from "next/link";
 
+import { DateTimeStack } from "@/components/shared/DateTimeStack";
+import { StackedDateTimeRange } from "@/components/shared/StackedDateTimeRange";
+import { bookingStartSqlExpr, buildUpcomingWhereSql, getStartOfToday, isUpcomingBooking } from "@/lib/bookings/upcoming";
 import { dbQuery } from "@/lib/db";
 import { fmtDate } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
 
 export default async function AdminDashboardPage() {
+  const now = new Date();
   const hoverTextClass = "hover:text-[var(--ccr-muted)]";
   // Shared gold-ring quick action treatment for visual consistency.
   const quickActionClass =
@@ -21,20 +25,40 @@ export default async function AdminDashboardPage() {
   const confirmedResult = await dbQuery<{ count: string }>(
     "select count(*) from bookings where status = 'CONFIRMED'",
   );
+  const upcomingWhere = buildUpcomingWhereSql({
+    bookingAlias: "b",
+    paramStartIndex: 1,
+    now,
+    mode: "upcoming",
+  });
+  const upcomingWindowEnd = new Date(getStartOfToday(now).getTime() + 8 * 24 * 60 * 60 * 1000);
   const upcomingPickupsResult = await dbQuery<{ count: string }>(
-    "select count(*) from bookings where start_date between current_date and (current_date + interval '7 days') and status not in ('CANCELLED','RETURNED')",
+    "select count(*) from bookings b where " +
+      upcomingWhere.clause +
+      ` and ${bookingStartSqlExpr("b")} < $${upcomingWhere.nextParamIndex}::timestamptz`,
+    [...upcomingWhere.values, upcomingWindowEnd.toISOString()],
   );
 
+  const pickupsTodayWhere = buildUpcomingWhereSql({
+    bookingAlias: "b",
+    paramStartIndex: 1,
+    now,
+    mode: "pickup_today",
+  });
   const pickupsToday = await dbQuery<{
     id: string;
     status: string;
+    start_at: string;
     start_date: string;
     end_date: string;
     customer_name: string;
     vehicle_make: string;
     vehicle_model: string;
   }>(
-    "select b.id, b.status, b.start_date, b.end_date, c.full_name as customer_name, v.make as vehicle_make, v.model as vehicle_model from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.start_date = current_date and b.status not in ('CANCELLED','RETURNED') order by b.created_at desc limit 5",
+    "select b.id, b.status, coalesce(b.start_at, b.start_date::timestamptz) as start_at, b.start_date, b.end_date, c.full_name as customer_name, v.make as vehicle_make, v.model as vehicle_model from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where " +
+      pickupsTodayWhere.clause +
+      ` order by ${bookingStartSqlExpr("b")} asc, b.created_at desc limit 5`,
+    pickupsTodayWhere.values,
   );
 
   const outstandingBalances = await dbQuery<{
@@ -112,7 +136,7 @@ export default async function AdminDashboardPage() {
     {
       label: "Upcoming Pickups (7d)",
       value: upcomingPickupsResult.rows[0]?.count ?? "0",
-      href: "/admin/bookings",
+      href: "/admin/bookings?scope=upcoming",
     },
   ];
 
@@ -154,7 +178,7 @@ export default async function AdminDashboardPage() {
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-lg font-bold text-[var(--ccr-text)]">Upcoming pickups today</h2>
             <Link
-              href={`/admin/bookings?dateFrom=${new Date().toISOString().slice(0, 10)}&dateTo=${new Date().toISOString().slice(0, 10)}`}
+              href="/admin/bookings?scope=upcoming"
               className={`text-xs font-semibold text-[var(--ccr-text)] ${hoverTextClass}`}
             >
               View all
@@ -167,6 +191,7 @@ export default async function AdminDashboardPage() {
               {(pickupsToday.rows as Array<{
                 id: string;
                 status: string;
+                start_at: string;
                 start_date: string;
                 end_date: string;
                 customer_name: string;
@@ -187,12 +212,22 @@ export default async function AdminDashboardPage() {
                         {booking.customer_name} • {booking.vehicle_make} {booking.vehicle_model}
                       </p>
                       <p className="text-xs text-[var(--ccr-muted)]">
-                        {fmtDate(booking.start_date)} → {fmtDate(booking.end_date)}
+                        <StackedDateTimeRange
+                          startLabel={fmtDate(booking.start_date)}
+                          endLabel={fmtDate(booking.end_date)}
+                        />
                       </p>
                     </div>
-                    <span className="shrink-0 rounded-full bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-semibold text-[var(--ccr-text)]">
-                      {booking.status}
-                    </span>
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      {isUpcomingBooking(booking, now) ? (
+                        <span className="rounded-full border border-emerald-300/40 bg-emerald-500/15 px-2.5 py-1 text-[11px] font-semibold text-emerald-100">
+                          Upcoming
+                        </span>
+                      ) : null}
+                      <span className="rounded-full bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-semibold text-[var(--ccr-text)]">
+                        {booking.status}
+                      </span>
+                    </div>
                   </div>
                 </li>
               ))}
@@ -261,7 +296,10 @@ export default async function AdminDashboardPage() {
                           {booking.customer_name} • {booking.vehicle_make} {booking.vehicle_model}
                         </p>
                         <p className="mt-1 text-xs text-[var(--ccr-muted)]">
-                          {fmtDate(booking.start_date)} → {fmtDate(booking.end_date)}
+                          <StackedDateTimeRange
+                            startLabel={fmtDate(booking.start_date)}
+                            endLabel={fmtDate(booking.end_date)}
+                          />
                         </p>
                         <Link
                           href={`/admin/bookings/${booking.id}`}
@@ -308,7 +346,11 @@ export default async function AdminDashboardPage() {
                         {vehicle.year} {vehicle.make} {vehicle.model}
                       </Link>
                       <p className="text-xs text-[var(--ccr-muted)]">
-                        Updated {fmtDate(vehicle.updated_at)}
+                        Updated{" "}
+                        <DateTimeStack
+                          value={vehicle.updated_at}
+                          className="inline-flex text-[var(--ccr-muted)]"
+                        />
                       </p>
                     </div>
                     <span className="rounded-full bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-semibold text-[var(--ccr-text)]">
@@ -397,7 +439,10 @@ export default async function AdminDashboardPage() {
                         {booking.customer_name} • {booking.vehicle_make} {booking.vehicle_model}
                       </p>
                       <p className="mt-1 text-xs text-[var(--ccr-muted)]">
-                        {fmtDate(booking.start_date)} → {fmtDate(booking.end_date)}
+                        <StackedDateTimeRange
+                          startLabel={fmtDate(booking.start_date)}
+                          endLabel={fmtDate(booking.end_date)}
+                        />
                       </p>
                       <Link
                         href={`/admin/bookings/${booking.id}`}
@@ -443,7 +488,11 @@ export default async function AdminDashboardPage() {
                         {vehicle.year} {vehicle.make} {vehicle.model}
                       </Link>
                       <p className="text-xs text-[var(--ccr-muted)]">
-                        Added {fmtDate(vehicle.created_at)}
+                        Added{" "}
+                        <DateTimeStack
+                          value={vehicle.created_at}
+                          className="inline-flex text-[var(--ccr-muted)]"
+                        />
                       </p>
                     </div>
                     <span

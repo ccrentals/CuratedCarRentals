@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import { DateTimeStack } from "@/components/shared/DateTimeStack";
+import { StackedDateTimeRange } from "@/components/shared/StackedDateTimeRange";
 import { dbQuery } from "@/lib/db";
 import { fmtDate } from "@/lib/dateFormat";
 import { getSessionFromRequest } from "@/lib/auth/session";
@@ -170,10 +172,12 @@ export default async function AdminBookingsArchivePage() {
                       {booking.vehicle_make} {booking.vehicle_model}
                     </td>
                     <td className="px-4 py-3 text-[var(--ccr-muted)]">
-                      {fmtDate(booking.start_date)} → {fmtDate(booking.end_date)}
+                      <StackedDateTimeRange startLabel={fmtDate(booking.start_date)} endLabel={fmtDate(booking.end_date)} />
                     </td>
                     <td className="px-4 py-3 text-[var(--ccr-text)]">{booking.status}</td>
-                    <td className="px-4 py-3 text-[var(--ccr-muted)]">{fmtDate(booking.archived_at)}</td>
+                    <td className="px-4 py-3 text-[var(--ccr-muted)]">
+                      <DateTimeStack value={booking.archived_at} />
+                    </td>
                     <td className="px-4 py-3 text-[var(--ccr-muted)]">{booking.archived_reason ?? "—"}</td>
                     <td className="px-4 py-3 text-right">
                       {canAdmin ? <UnarchiveBookingButton bookingId={booking.id} /> : null}
@@ -242,8 +246,12 @@ export default async function AdminBookingsArchivePage() {
                     <td className="px-4 py-3 text-[var(--ccr-text)]">
                       {payment.currency} {Number(payment.deposit_amount_cents).toFixed(2)}
                     </td>
-                    <td className="px-4 py-3 text-[var(--ccr-muted)]">{fmtDate(payment.created_at)}</td>
-                    <td className="px-4 py-3 text-[var(--ccr-muted)]">{fmtDate(payment.deleted_at)}</td>
+                    <td className="px-4 py-3 text-[var(--ccr-muted)]">
+                      <DateTimeStack value={payment.created_at} />
+                    </td>
+                    <td className="px-4 py-3 text-[var(--ccr-muted)]">
+                      <DateTimeStack value={payment.deleted_at} />
+                    </td>
                     <td className="px-4 py-3 text-[var(--ccr-muted)]">{payment.deleted_reason ?? "—"}</td>
                     <td className="px-4 py-3 text-[var(--ccr-muted)]">{payment.deleted_by_email ?? "—"}</td>
                     <td className="px-4 py-3 text-right">

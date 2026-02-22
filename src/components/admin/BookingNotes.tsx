@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { DateTimeStack } from "@/components/shared/DateTimeStack";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
 type AdminNote = {
@@ -24,13 +25,6 @@ type BookingNotesProps = {
   bookingId: string;
   notes: AdminNote[];
 };
-
-function fmtClientDate(value?: string) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString();
-}
 
 function normalizeTarget(value: unknown): "none" | "customer" | "internal" | "both" {
   if (value === "customer" || value === "internal" || value === "both" || value === "none") {
@@ -58,10 +52,7 @@ function scheduleStatusLabel(note: AdminNote) {
   if (note.email_send_mode !== "scheduled") return null;
   if (note.email_cancelled_at) return "Email schedule cancelled";
   const pending = pendingScheduledTargets(note);
-  if (pending.length > 0) {
-    const scheduled = note.email_scheduled_for ? fmtClientDate(note.email_scheduled_for) : "Scheduled";
-    return `Scheduled for ${scheduled}`;
-  }
+  if (pending.length > 0) return "Scheduled email pending";
   return "Scheduled email sent";
 }
 
@@ -188,17 +179,29 @@ export function BookingNotes({ bookingId, notes }: BookingNotesProps) {
             const noteKey = entry.note_id ?? `${entry.created_at ?? "note"}-${index}`;
             const scheduleStatus = scheduleStatusLabel(entry);
             const canCancel = pendingScheduledTargets(entry).length > 0;
+            const scheduledForValue =
+              entry.email_send_mode === "scheduled" &&
+              !entry.email_cancelled_at &&
+              pendingScheduledTargets(entry).length > 0
+                ? entry.email_scheduled_for ?? null
+                : null;
 
             return (
               <li key={noteKey} className="rounded-xl bg-[var(--ccr-surface-soft)] p-3">
                 <p className="text-sm text-[var(--ccr-text)]">{entry.message}</p>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   {entry.created_at ? (
-                    <p className="text-xs text-[var(--ccr-muted)]">{fmtClientDate(entry.created_at)}</p>
+                    <DateTimeStack value={entry.created_at} className="text-xs text-[var(--ccr-muted)]" />
                   ) : null}
                   {scheduleStatus ? (
                     <span className="inline-flex items-center rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-2 py-0.5 text-[11px] font-semibold text-[var(--ccr-text)]">
                       {scheduleStatus}
+                    </span>
+                  ) : null}
+                  {scheduledForValue ? (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-2 py-0.5 text-[11px] font-semibold text-[var(--ccr-text)]">
+                      <span>Scheduled for</span>
+                      <DateTimeStack value={scheduledForValue} />
                     </span>
                   ) : null}
                   {entry.email_last_error ? (

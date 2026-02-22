@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import { DateTimeStack } from "@/components/shared/DateTimeStack";
 import { dbQuery } from "@/lib/db";
 import { getSessionFromRequest } from "@/lib/auth/session";
-import { fmtDate } from "@/lib/dateFormat";
 import { CreateUserForm, UserRowActions } from "@/components/admin/UsersManager";
 import { LoadMorePaginationControls } from "@/components/admin/LoadMorePaginationControls";
 import { UsersFilters } from "@/components/admin/UsersFilters";
@@ -210,7 +210,9 @@ export default async function AdminUsersPage({
                   </td>
                   <td className="px-4 py-3 text-[var(--ccr-text)]">{user.role}</td>
                   <td className="px-4 py-3 text-[var(--ccr-text)]">{statusLabel(user)}</td>
-                  <td className="px-4 py-3 text-[var(--ccr-muted)]">{fmtDate(user.created_at)}</td>
+                  <td className="px-4 py-3 text-[var(--ccr-muted)]">
+                    <DateTimeStack value={user.created_at} />
+                  </td>
                   <td className="px-4 py-3 text-right">
                     <UserRowActions
                       currentUserId={session?.userId ?? ""}

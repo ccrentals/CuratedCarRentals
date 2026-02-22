@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { DateTimeStack } from "@/components/shared/DateTimeStack";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
 type AdminSettings = {
@@ -11,6 +12,8 @@ type AdminSettings = {
   sendDropoffReminder: boolean;
   sendLateDropoffAlert: boolean;
   dayViewBookingLimit: number | "all";
+  contactNotificationEmails: string;
+  contactNotifyCooldownMinutes: number;
 };
 
 type AdminSettingsFormProps = {
@@ -21,7 +24,12 @@ type AdminSettingsFormProps = {
 };
 
 type ToggleField = {
-  key: Exclude<keyof AdminSettings, "dayViewBookingLimit">;
+  key:
+    | "blockoutSupersedesBookings"
+    | "requireRestoreReason"
+    | "sendPickupReminder"
+    | "sendDropoffReminder"
+    | "sendLateDropoffAlert";
   label: string;
   description: string;
 };
@@ -55,13 +63,6 @@ const TOGGLE_FIELDS: ToggleField[] = [
       "Enable automatic late-return alerts when dropoff is missed (time-based logic can be expanded later).",
   },
 ];
-
-function formatUpdatedAt(value: string | null) {
-  if (!value) return "Never";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleString();
-}
 
 export function AdminSettingsForm({
   initialSettings,
@@ -121,7 +122,12 @@ export function AdminSettingsForm({
         </div>
         <div className="text-xs text-[var(--ccr-muted)]">
           <div>
-            Updated: <span className="font-semibold text-[var(--ccr-text)]">{formatUpdatedAt(updatedAt)}</span>
+            Updated:{" "}
+            {updatedAt ? (
+              <DateTimeStack value={updatedAt} className="inline-flex font-semibold text-[var(--ccr-text)]" />
+            ) : (
+              <span className="font-semibold text-[var(--ccr-text)]">Never</span>
+            )}
           </div>
           <div>
             By: <span className="font-semibold text-[var(--ccr-text)]">{updatedByEmail ?? "System"}</span>
@@ -154,6 +160,54 @@ export function AdminSettingsForm({
               <option value="15">15 bookings</option>
               <option value="20">20 bookings</option>
               <option value="all">All bookings</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
+          <p className="text-sm font-semibold text-[var(--ccr-text)]">Message notification recipients</p>
+          <p className="mt-1 text-xs text-[var(--ccr-muted)]">
+            Comma-separated emails for contact message alerts. Leave empty to use <code>ADMIN_NOTIFY_EMAILS</code>.
+          </p>
+          <div className="mt-3">
+            <input
+              type="text"
+              value={settings.contactNotificationEmails}
+              disabled={disabled || saving}
+              placeholder="owner@example.com, ops@example.com"
+              onChange={(event) =>
+                setSettings((current) => ({
+                  ...current,
+                  contactNotificationEmails: event.target.value,
+                }))
+              }
+              className="w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+            />
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
+          <p className="text-sm font-semibold text-[var(--ccr-text)]">Contact notification cooldown</p>
+          <p className="mt-1 text-xs text-[var(--ccr-muted)]">
+            Prevent duplicate alerts by sending at most once per cooldown window.
+          </p>
+          <div className="mt-3 max-w-xs">
+            <select
+              value={String(settings.contactNotifyCooldownMinutes)}
+              disabled={disabled || saving}
+              onChange={(event) =>
+                setSettings((current) => ({
+                  ...current,
+                  contactNotifyCooldownMinutes: Number(event.target.value),
+                }))
+              }
+              className="w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+            >
+              <option value="5">5 minutes</option>
+              <option value="10">10 minutes</option>
+              <option value="15">15 minutes</option>
+              <option value="30">30 minutes</option>
+              <option value="60">60 minutes</option>
             </select>
           </div>
         </div>

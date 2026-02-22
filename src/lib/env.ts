@@ -6,6 +6,8 @@ function missingKeys(keys: string[]) {
   return keys.filter((key) => !isNonEmpty(process.env[key]));
 }
 
+const WIPAY_ALLOWED_FEE_STRUCTURES = new Set(["customer_pay", "merchant_absorb", "split"]);
+
 function isValidUrl(value: string | undefined) {
   if (!value) return false;
   try {
@@ -53,9 +55,9 @@ export function validateEnv(): EnvValidation {
   if (isNonEmpty(process.env.WIPAY_ENV) && !["sandbox", "live"].includes(wipayEnv)) {
     paymentsInvalid.push("WIPAY_ENV must be sandbox or live");
   }
-  const fee = (process.env.WIPAY_FEE_STRUCTURE ?? "").trim();
-  if (isNonEmpty(process.env.WIPAY_FEE_STRUCTURE) && fee !== "merchant_absorb") {
-    paymentsInvalid.push("WIPAY_FEE_STRUCTURE must be merchant_absorb");
+  const fee = (process.env.WIPAY_FEE_STRUCTURE ?? "").trim().toLowerCase();
+  if (isNonEmpty(process.env.WIPAY_FEE_STRUCTURE) && !WIPAY_ALLOWED_FEE_STRUCTURES.has(fee)) {
+    paymentsInvalid.push("WIPAY_FEE_STRUCTURE must be customer_pay, merchant_absorb, or split");
   }
   const account = (process.env.WIPAY_ACCOUNT_NUMBER ?? "").trim();
   if (isNonEmpty(process.env.WIPAY_ACCOUNT_NUMBER) && !/^\d+$/.test(account)) {
@@ -100,4 +102,3 @@ export function assertProductionEnv() {
     throw new Error(parts.join(" | "));
   }
 }
-

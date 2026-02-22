@@ -4,7 +4,8 @@ import { useMemo, useState } from "react";
 
 type CustomersExportMenuProps = {
   q: string;
-  sort: "last_booked" | "total_bookings" | "total_spend";
+  sortBy?: string;
+  sortDir?: "asc" | "desc";
 };
 
 type ExportType = "csv" | "excel" | "pdf";
@@ -15,13 +16,19 @@ const EXPORT_OPTIONS: Array<{ type: ExportType; label: string }> = [
   { type: "pdf", label: "Export PDF" },
 ];
 
-export function CustomersExportMenu({ q, sort }: CustomersExportMenuProps) {
+export function CustomersExportMenu({ q, sortBy, sortDir }: CustomersExportMenuProps) {
   const [open, setOpen] = useState(false);
 
   const exportHref = useMemo(() => {
-    return (type: ExportType) =>
-      `/api/admin/customers?export=${type}${q ? `&q=${encodeURIComponent(q)}` : ""}&sort=${sort}`;
-  }, [q, sort]);
+    return (type: ExportType) => {
+      const params = new URLSearchParams();
+      params.set("export", type);
+      if (q) params.set("q", q);
+      if (sortBy) params.set("sortBy", sortBy);
+      if (sortDir) params.set("sortDir", sortDir);
+      return `/api/admin/customers?${params.toString()}`;
+    };
+  }, [q, sortBy, sortDir]);
 
   return (
     <div className="relative">

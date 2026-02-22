@@ -111,7 +111,7 @@ export function Header() {
       >
         <div
           className={cn(
-            "absolute inset-0 bg-black/40 transition-opacity duration-200",
+            "absolute inset-0 bg-black/55 transition-opacity duration-200",
             mobileNavOpen ? "opacity-100" : "opacity-0",
           )}
           onClick={() => setMobileNavOpen(false)}
@@ -120,7 +120,7 @@ export function Header() {
         <aside
           id="mobile-site-nav"
           className={cn(
-            "absolute left-0 top-0 flex h-full w-80 max-w-[85vw] flex-col border-r border-[var(--ccr-border)] bg-[var(--ccr-surface)] shadow-2xl transition-transform duration-200",
+            "absolute left-0 top-0 flex h-full w-80 max-w-[85vw] flex-col border-r border-[var(--ccr-border)] bg-[var(--ccr-primary)] text-[var(--ccr-on-primary)] shadow-2xl transition-transform duration-200",
             mobileNavOpen ? "translate-x-0" : "-translate-x-full",
           )}
           aria-label="Site navigation"
@@ -136,7 +136,7 @@ export function Header() {
             <button
               type="button"
               onClick={() => setMobileNavOpen(false)}
-              className="inline-flex items-center rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-muted)] hover:bg-[var(--ccr-surface-soft)]"
+              className="inline-flex min-h-11 items-center rounded-xl border border-[var(--ccr-border)] bg-white/10 px-3 py-2 text-xs font-semibold text-[var(--ccr-on-primary-muted)] transition hover:bg-white/15 hover:text-[var(--ccr-on-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ccr-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--ccr-primary)]"
               aria-label="Close menu"
             >
               Close
@@ -144,7 +144,7 @@ export function Header() {
           </div>
 
           <div className="flex-1 overflow-y-auto px-3 py-4">
-            <nav className="grid gap-1 text-sm font-semibold uppercase tracking-wide text-[var(--ccr-primary)]">
+            <nav className="grid gap-2 text-sm font-semibold uppercase tracking-wide text-[var(--ccr-on-primary)]">
               {navLinks.map((item) => {
                 const isActive = pathname === item.href;
                 return (
@@ -152,9 +152,11 @@ export function Header() {
                     key={item.href}
                     href={item.href}
                     className={cn(
-                      "rounded-xl px-3 py-2 transition-colors hover:bg-[var(--ccr-surface-soft)] hover:text-[var(--ccr-primary-soft)]",
-                      isActive && "bg-[var(--ccr-surface-soft)] text-[var(--ccr-primary-soft)]",
+                      "flex min-h-11 items-center rounded-xl border border-transparent px-3 py-2.5 transition-colors hover:bg-white/10 hover:text-[var(--ccr-on-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ccr-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--ccr-primary)]",
+                      isActive &&
+                        "border-[var(--ccr-accent)] bg-[var(--ccr-accent)]/15 text-[var(--ccr-on-primary)] shadow-[inset_3px_0_0_var(--ccr-accent)]",
                     )}
+                    aria-current={isActive ? "page" : undefined}
                   >
                     {item.label}
                   </Link>
@@ -162,7 +164,7 @@ export function Header() {
               })}
             </nav>
 
-            <div className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4 text-sm text-[var(--ccr-muted)]">
+            <div className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-primary-soft)]/80 p-4 text-sm text-[var(--ccr-on-primary-muted)]">
               <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-accent-strong)]">Contact</p>
               <p className="mt-2 break-words">{siteContent.phone}</p>
               <p className="break-words">{siteContent.email}</p>
@@ -175,12 +177,12 @@ export function Header() {
             </div>
           </div>
 
-          <div className="flex items-center justify-between gap-3 border-t border-[var(--ccr-border)] px-4 py-4">
+          <div className="flex items-center justify-between gap-3 border-t border-[var(--ccr-border)] bg-[var(--ccr-primary-soft)]/55 px-4 py-4">
             <ThemeToggle />
             <Link
               href="/admin"
               aria-label="Admin sign in"
-              className="inline-flex items-center gap-2 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-muted)] hover:bg-[var(--ccr-surface-soft)]"
+              className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-[var(--ccr-border)] bg-white/10 px-3 py-2 text-xs font-semibold text-[var(--ccr-on-primary-muted)] transition hover:bg-white/15 hover:text-[var(--ccr-on-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ccr-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--ccr-primary)]"
             >
               <svg
                 viewBox="0 0 24 24"

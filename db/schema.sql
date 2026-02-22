@@ -250,6 +250,19 @@ create table if not exists audit_logs (
   created_at timestamptz not null default now()
 );
 
+create table if not exists contact_messages (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  name text not null,
+  email text not null,
+  message text not null,
+  status text not null default 'NEW',
+  read_at timestamptz,
+  read_by_user_id uuid references users(id) on delete set null,
+  source text not null default 'contact_page',
+  constraint contact_messages_status_check check (status in ('NEW', 'READ', 'ARCHIVED'))
+);
+
 create table if not exists user_invites (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references users(id) on delete cascade,
@@ -292,6 +305,8 @@ create index if not exists promo_redemptions_promo_code_id_idx on promo_redempti
 create index if not exists promo_redemptions_booking_id_idx on promo_redemptions(booking_id);
 create index if not exists promo_redemptions_customer_id_idx on promo_redemptions(customer_id);
 create index if not exists promo_redemptions_customer_email_lower_idx on promo_redemptions (lower(customer_email));
+create index if not exists contact_messages_status_created_idx on contact_messages(status, created_at desc);
+create index if not exists contact_messages_created_idx on contact_messages(created_at desc);
 
 -- Booking revamp foundation (additive / backward-compatible)
 create table if not exists booking_locations (

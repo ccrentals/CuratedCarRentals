@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 
+import { DateTimeStack } from "@/components/shared/DateTimeStack";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 import { formatJmd } from "@/lib/money";
 
@@ -513,7 +514,9 @@ export default function AdminPromoCodeDetailPage() {
                         </td>
                         <td className="px-3 py-2 text-[var(--ccr-text)]">{row.customer_email ?? "Unknown"}</td>
                         <td className="px-3 py-2 text-[var(--ccr-text)]">{formatJmd(row.discount_amount_cents)}</td>
-                        <td className="px-3 py-2 text-[var(--ccr-muted)]">{new Date(row.created_at).toLocaleString()}</td>
+                        <td className="px-3 py-2 text-[var(--ccr-muted)]">
+                          <DateTimeStack value={row.created_at} />
+                        </td>
                       </tr>
                     ))}
                   </tbody>

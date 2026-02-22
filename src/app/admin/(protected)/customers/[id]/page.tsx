@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { DateTimeStack } from "@/components/shared/DateTimeStack";
 import { CustomerSnapshotBookingsTable } from "@/components/admin/CustomerSnapshotBookingsTable";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { fetchCustomerSnapshotBookingsPage } from "@/lib/customers/customerSnapshotBookings";
 import { dbQuery } from "@/lib/db";
-import { fmtDate } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
 import { CustomerProfileForm } from "@/components/admin/CustomerProfileForm";
 import { formatLegalIdTypeLabel } from "@/lib/customers/legalId";
@@ -284,9 +284,23 @@ export default async function AdminCustomerDetailPage({
             ) : null}
           </div>
           <div className="mt-5 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3 text-xs text-[var(--ccr-muted)]">
-            <p>Created: {fmtDate(customerRow.created_at)}</p>
+            <p>
+              Created:{" "}
+              <DateTimeStack
+                value={customerRow.created_at}
+                className="inline-flex text-[var(--ccr-text)]"
+              />
+            </p>
             <p className="mt-1">
-              Last booked: {customerRow.last_booked_at ? fmtDate(customerRow.last_booked_at) : "No bookings yet"}
+              Last booked:{" "}
+              {customerRow.last_booked_at ? (
+                <DateTimeStack
+                  value={customerRow.last_booked_at}
+                  className="inline-flex text-[var(--ccr-text)]"
+                />
+              ) : (
+                "No bookings yet"
+              )}
             </p>
           </div>
         </section>

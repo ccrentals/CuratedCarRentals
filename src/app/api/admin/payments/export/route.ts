@@ -1,5 +1,6 @@
 import { dbQuery } from "@/lib/db";
 import { getSessionFromRequest } from "@/lib/auth/session";
+import { readSortFromSearchParams, type SortDir } from "@/components/admin/tableSort";
 
 function csvEscape(value: string) {
   if (value.includes("\"") || value.includes(",") || value.includes("\n")) {
@@ -21,6 +22,19 @@ type ExportRow = {
   vehicle_model: string;
 };
 
+const PAYMENT_SORT_COLUMNS = [
+  "payment",
+  "booking",
+  "customer",
+  "vehicle",
+  "provider",
+  "status",
+  "amount",
+  "created",
+] as const;
+type PaymentSortBy = (typeof PAYMENT_SORT_COLUMNS)[number];
+type PaymentSortDir = SortDir;
+
 export async function GET(request: Request) {
   const session = await getSessionFromRequest();
   if (!session) {
@@ -32,6 +46,14 @@ export async function GET(request: Request) {
   const bookingId = searchParams.get("bookingId")?.trim();
   const paymentType = searchParams.get("paymentType")?.trim();
   const normalizedType = paymentType === "balance" ? "balance" : paymentType === "deposit" ? "deposit" : "";
+  const sort = readSortFromSearchParams(searchParams, {
+    allowedSortBy: PAYMENT_SORT_COLUMNS,
+    defaultSortBy: "created",
+    defaultSortDir: "desc",
+  }) as { sortBy: PaymentSortBy; sortDir: PaymentSortDir };
+  const sortBy: PaymentSortBy = sort.sortBy ?? "created";
+  const sortDir: PaymentSortDir = sort.sortDir ?? "desc";
+  const directionSql = sortDir === "asc" ? "asc" : "desc";
 
   const conditions: string[] = [];
   const values: string[] = [];
@@ -52,10 +74,27 @@ export async function GET(request: Request) {
     conditions.push(`coalesce(p.metadata_json->>'payment_type','deposit') <> 'balance'`);
   }
 
+  const orderBySql =
+    sortBy === "payment"
+      ? `order by p.id::text ${directionSql}`
+      : sortBy === "booking"
+        ? `order by p.booking_id::text ${directionSql}, p.id::text ${directionSql}`
+        : sortBy === "customer"
+          ? `order by lower(c.full_name) ${directionSql}, lower(c.email) ${directionSql}, p.id::text ${directionSql}`
+          : sortBy === "vehicle"
+            ? `order by lower(v.make) ${directionSql}, lower(v.model) ${directionSql}, p.id::text ${directionSql}`
+            : sortBy === "provider"
+              ? `order by lower(p.provider) ${directionSql}, p.id::text ${directionSql}`
+              : sortBy === "status"
+                ? `order by upper(p.status) ${directionSql}, p.id::text ${directionSql}`
+                : sortBy === "amount"
+                  ? `order by p.deposit_amount_cents ${directionSql}, p.id::text ${directionSql}`
+                  : `order by p.created_at ${directionSql}, p.id::text ${directionSql}`;
+
   const queryText =
     "select p.id, p.booking_id, p.provider, p.status, p.deposit_amount_cents, p.created_at, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model from payments p join bookings b on b.id = p.booking_id join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id " +
     (conditions.length ? `where ${conditions.join(" and ")} ` : "") +
-    "order by p.created_at desc";
+    orderBySql;
 
   const rows = await dbQuery<ExportRow>(queryText, values);
 

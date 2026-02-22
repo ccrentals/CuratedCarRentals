@@ -6,6 +6,15 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 
 import { InfoTooltipIcon } from "@/components/admin/InfoTooltipIcon";
 import { PaginationSummary } from "@/components/admin/PaginationSummaryNav";
+import { SortableTh } from "@/components/admin/SortableTh";
+import { DateTimeStack } from "@/components/shared/DateTimeStack";
+import { StackedDateTimeRange } from "@/components/shared/StackedDateTimeRange";
+import {
+  applySortToSearchParams,
+  readSortFromSearchParams,
+  type SortDir,
+  type SortState,
+} from "@/components/admin/tableSort";
 import {
   mergeBookingsById,
   type BookingPageSize,
@@ -24,6 +33,10 @@ type AdminBookingsTableProps = {
   initialTotalCount: number;
   pageSize: BookingPageSize;
   filters: {
+    scope?: string;
+    pickupDay?: string;
+    sortBy?: string;
+    sortDir?: string;
     status?: string;
     q?: string;
     dateFrom?: string;
@@ -35,6 +48,7 @@ type AdminBookingsTableProps = {
 
 const STATUS_PILL_BASE_CLASS =
   "inline-flex min-h-7 shrink-0 items-center whitespace-nowrap rounded-full border px-3 py-1 text-xs font-semibold leading-none";
+const BOOKING_SORT_COLUMNS = ["booking", "customer", "vehicle", "dates", "status", "created"] as const;
 
 function statusPillToneClass(status: string) {
   const normalized = String(status ?? "")
@@ -82,6 +96,23 @@ export function AdminBookingsTable({
   const [totalCount, setTotalCount] = useState(initialTotalCount);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [loadMoreError, setLoadMoreError] = useState<string>("");
+  const defaultSort = useMemo<SortState>(() => {
+    const scope = String(filters.scope ?? "").toLowerCase();
+    const pickupDay = String(filters.pickupDay ?? "").toLowerCase();
+    if (scope === "upcoming" || pickupDay === "today") {
+      return { sortBy: "dates", sortDir: "asc" };
+    }
+    return { sortBy: "created", sortDir: "desc" };
+  }, [filters.pickupDay, filters.scope]);
+  const sort = useMemo(
+    () =>
+      readSortFromSearchParams(searchParams, {
+        allowedSortBy: BOOKING_SORT_COLUMNS,
+        defaultSortBy: defaultSort.sortBy,
+        defaultSortDir: defaultSort.sortDir,
+      }),
+    [defaultSort.sortBy, defaultSort.sortDir, searchParams],
+  );
 
   useEffect(() => {
     setRows(initialRows);
@@ -93,6 +124,10 @@ export function AdminBookingsTable({
 
   const baseApiQuery = useMemo(() => {
     const params = new URLSearchParams();
+    if (filters.scope) params.set("scope", filters.scope);
+    if (filters.pickupDay) params.set("pickupDay", filters.pickupDay);
+    if (sort.sortBy) params.set("sortBy", sort.sortBy);
+    if (sort.sortDir) params.set("sortDir", sort.sortDir);
     if (filters.status) params.set("status", filters.status);
     if (filters.q) params.set("q", filters.q);
     if (filters.dateFrom) params.set("dateFrom", filters.dateFrom);
@@ -100,7 +135,14 @@ export function AdminBookingsTable({
     if (filters.archived === "1") params.set("archived", "1");
     params.set("limit", String(pageSize));
     return params;
-  }, [filters, pageSize]);
+  }, [filters, pageSize, sort.sortBy, sort.sortDir]);
+
+  const updateSort = (next: SortState) => {
+    const params = applySortToSearchParams(searchParams, next);
+    const nextQuery = params.toString();
+    const nextUrl = nextQuery ? `${pathname}?${nextQuery}` : pathname;
+    router.replace(nextUrl, { scroll: false });
+  };
 
   const handlePageSizeChange = (nextValue: string) => {
     const next = withBookingPageSizeSearchParams(searchParams.toString(), nextValue);
@@ -160,12 +202,48 @@ export function AdminBookingsTable({
         <table className="min-w-full text-left text-sm">
           <thead className="border-b border-[var(--ccr-border)] text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
             <tr>
-              <th className="px-4 py-3">Booking</th>
-              <th className="px-4 py-3">Customer</th>
-              <th className="px-4 py-3">Vehicle</th>
-              <th className="px-4 py-3">Dates</th>
-              <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3">Created</th>
+              <SortableTh
+                label="Booking"
+                columnKey="booking"
+                sort={sort}
+                onChange={updateSort}
+                defaultDirection="asc"
+              />
+              <SortableTh
+                label="Customer"
+                columnKey="customer"
+                sort={sort}
+                onChange={updateSort}
+                defaultDirection="asc"
+              />
+              <SortableTh
+                label="Vehicle"
+                columnKey="vehicle"
+                sort={sort}
+                onChange={updateSort}
+                defaultDirection="asc"
+              />
+              <SortableTh
+                label="Dates"
+                columnKey="dates"
+                sort={sort}
+                onChange={updateSort}
+                defaultDirection="asc"
+              />
+              <SortableTh
+                label="Status"
+                columnKey="status"
+                sort={sort}
+                onChange={updateSort}
+                defaultDirection="asc"
+              />
+              <SortableTh
+                label="Created"
+                columnKey="created"
+                sort={sort}
+                onChange={updateSort}
+                defaultDirection="desc"
+              />
               <th className="px-4 py-3">Details</th>
             </tr>
           </thead>
@@ -187,7 +265,12 @@ export function AdminBookingsTable({
                 </td>
                 <td className="px-4 py-3 text-[var(--ccr-text)]">{booking.vehicleLabel}</td>
                 <td className="px-4 py-3 text-[var(--ccr-muted)]">
-                  <span className="hidden md:inline">{booking.datesLabel}</span>
+                  <span className="hidden md:inline-flex">
+                    <StackedDateTimeRange
+                      startLabel={booking.startDateLabel}
+                      endLabel={booking.endDateLabel}
+                    />
+                  </span>
                   <details className="group md:hidden">
                     <summary className="list-none cursor-pointer [&::-webkit-details-marker]:hidden">
                       <span className="inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-text)]">
@@ -207,7 +290,10 @@ export function AdminBookingsTable({
                       </span>
                     </summary>
                     <div className="mt-2 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-2 text-xs text-[var(--ccr-muted)]">
-                      {booking.datesLabel}
+                      <StackedDateTimeRange
+                        startLabel={booking.startDateLabel}
+                        endLabel={booking.endDateLabel}
+                      />
                     </div>
                   </details>
                 </td>
@@ -235,11 +321,12 @@ export function AdminBookingsTable({
                   ) : null}
                 </td>
                 <td className="px-4 py-3 text-[var(--ccr-muted)]">
-                  <span className="hidden md:inline">{booking.createdAtLabel}</span>
+                  <DateTimeStack value={booking.createdAtLabel} className="hidden md:inline-flex" />
                   {booking.cancelledAtLabel ? (
-                    <p className="mt-1 hidden text-[11px] text-rose-200 md:block">
-                      Cancelled: {booking.cancelledAtLabel}
-                    </p>
+                    <div className="mt-1 hidden text-[11px] text-rose-200 md:block">
+                      <span className="font-semibold uppercase tracking-wide">Cancelled</span>
+                      <DateTimeStack value={booking.cancelledAtLabel} className="mt-1 inline-flex" />
+                    </div>
                   ) : null}
                   <details className="group md:hidden">
                     <summary className="list-none cursor-pointer [&::-webkit-details-marker]:hidden">
@@ -260,8 +347,13 @@ export function AdminBookingsTable({
                       </span>
                     </summary>
                     <div className="mt-2 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-2 text-xs text-[var(--ccr-muted)]">
-                      {booking.createdAtLabel}
-                      {booking.cancelledAtLabel ? ` • Cancelled: ${booking.cancelledAtLabel}` : ""}
+                      <DateTimeStack value={booking.createdAtLabel} />
+                      {booking.cancelledAtLabel ? (
+                        <div className="mt-2 text-rose-200">
+                          <p className="font-semibold uppercase tracking-wide">Cancelled</p>
+                          <DateTimeStack value={booking.cancelledAtLabel} className="mt-1 inline-flex" />
+                        </div>
+                      ) : null}
                     </div>
                   </details>
                 </td>

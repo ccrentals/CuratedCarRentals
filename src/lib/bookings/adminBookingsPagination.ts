@@ -10,6 +10,9 @@ export type BookingPageSize = StandardPageSize;
 
 export type BookingsCursor = {
   createdAt: string;
+  startDate?: string;
+  sortValue?: string;
+  offset?: number;
   id: string;
 };
 
@@ -44,10 +47,32 @@ export function decodeBookingsCursor(value: unknown): BookingsCursor | null {
     if (!parsed || typeof parsed !== "object") return null;
     if (typeof parsed.createdAt !== "string" || parsed.createdAt.trim().length === 0) return null;
     if (typeof parsed.id !== "string" || parsed.id.trim().length === 0) return null;
-    return {
+    const startDate =
+      typeof parsed.startDate === "string" && parsed.startDate.trim().length > 0
+        ? parsed.startDate.trim()
+        : undefined;
+    const sortValue =
+      typeof parsed.sortValue === "string" && parsed.sortValue.trim().length > 0
+        ? parsed.sortValue.trim()
+        : undefined;
+    const offset =
+      Number.isInteger(parsed.offset) && Number(parsed.offset) >= 0
+        ? Number(parsed.offset)
+        : undefined;
+    const baseCursor: BookingsCursor = {
       createdAt: parsed.createdAt.trim(),
       id: parsed.id.trim(),
     };
+    if (startDate) {
+      baseCursor.startDate = startDate;
+    }
+    if (sortValue) {
+      baseCursor.sortValue = sortValue;
+    }
+    if (offset !== undefined) {
+      baseCursor.offset = offset;
+    }
+    return baseCursor;
   } catch {
     return null;
   }

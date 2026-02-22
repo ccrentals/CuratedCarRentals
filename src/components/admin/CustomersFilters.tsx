@@ -6,31 +6,23 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 type CustomersFiltersProps = {
   initialQuery: string;
-  initialSort: "last_booked" | "total_bookings" | "total_spend";
 };
 
-function normalizeSort(value: string | null): "last_booked" | "total_bookings" | "total_spend" {
-  if (value === "total_bookings") return "total_bookings";
-  if (value === "total_spend") return "total_spend";
-  return "last_booked";
-}
-
-export function CustomersFilters({ initialQuery, initialSort }: CustomersFiltersProps) {
+export function CustomersFilters({ initialQuery }: CustomersFiltersProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
   const queryParam = searchParams.get("q") ?? initialQuery;
-  const sortParam = normalizeSort(searchParams.get("sort") ?? initialSort);
+  const sortByParam = searchParams.get("sortBy") ?? "";
+  const sortDirParam = searchParams.get("sortDir") ?? "";
 
   const [query, setQuery] = useState(queryParam);
-  const [sort, setSort] = useState(sortParam);
 
   useEffect(() => {
     if (queryParam !== query) setQuery(queryParam);
-    if (sortParam !== sort) setSort(sortParam);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [queryParam, sortParam]);
+  }, [queryParam]);
 
   const updateParams = useCallback(
     (updates: Record<string, string | null | undefined>) => {
@@ -72,7 +64,9 @@ export function CustomersFilters({ initialQuery, initialSort }: CustomersFilters
       method="get"
       className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4"
     >
-      <div className="grid gap-3 md:grid-cols-[2fr_1fr_auto]">
+      {sortByParam ? <input type="hidden" name="sortBy" value={sortByParam} /> : null}
+      {sortDirParam ? <input type="hidden" name="sortDir" value={sortDirParam} /> : null}
+      <div className="grid gap-3 md:grid-cols-[2fr_auto]">
         <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
           Search
           <input
@@ -82,23 +76,6 @@ export function CustomersFilters({ initialQuery, initialSort }: CustomersFilters
             placeholder="Search name, email, or phone"
             className="mt-2 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
           />
-        </label>
-        <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-          Sort
-          <select
-            name="sort"
-            value={sort}
-            onChange={(event) => {
-              const nextSort = normalizeSort(event.target.value);
-              setSort(nextSort);
-              updateParams({ sort: nextSort });
-            }}
-            className="mt-2 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
-          >
-            <option value="last_booked">Last Booked</option>
-            <option value="total_bookings">Most Bookings</option>
-            <option value="total_spend">Highest Spend</option>
-          </select>
         </label>
         <div className="grid grid-cols-2 gap-2 md:flex md:items-end">
           <button

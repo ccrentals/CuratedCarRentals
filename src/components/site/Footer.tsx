@@ -29,10 +29,13 @@ export function Footer() {
 
           <div>
             <p className="text-sm font-semibold uppercase tracking-wide text-[var(--ccr-accent)]">Quick Links</p>
-            <ul className="mt-3 space-y-2 text-sm">
+            <ul className="mt-3 grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
               {footerLinks.map((link) => (
                 <li key={link.href}>
-                  <Link href={link.href} className="hover:text-white">
+                  <Link
+                    href={link.href}
+                    className="rounded-sm hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ccr-accent)]/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--ccr-primary)]"
+                  >
                     {link.label}
                   </Link>
                 </li>

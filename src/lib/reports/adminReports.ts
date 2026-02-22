@@ -1,4 +1,5 @@
 import { dbQuery } from "@/lib/db";
+import { buildBookingRangeWhere, buildRange } from "@/lib/bookings/dateRangeFilter";
 import { dateOnlyUtc } from "@/lib/payments/dateMath";
 import {
   isBlockingBookingHold,
@@ -638,7 +639,16 @@ async function buildOutstandingBalancesReport(
   db: Queryable,
   filters: ReportsFilters,
 ): Promise<OutstandingBalancesReport> {
-  const values: unknown[] = [filters.dateFrom, filters.dateTo, [...PAYMENT_NET_STATUSES]];
+  const range = buildRange(filters.dateFrom, filters.dateTo);
+  if (!range) {
+    throw new Error("Unable to normalize reports date range.");
+  }
+  const bookingRangeWhere = buildBookingRangeWhere({
+    rangeStart: range.rangeStartIso,
+    rangeEnd: range.rangeEndIso,
+    bookingAlias: "b",
+  });
+  const values: unknown[] = [...bookingRangeWhere.values, [...PAYMENT_NET_STATUSES]];
   const vehicleClause = buildVehicleFilterClause(filters.vehicleId, values, "b.vehicle_id");
 
   const rows = await db.query(
@@ -654,7 +664,7 @@ async function buildOutstandingBalancesReport(
       "  from bookings b " +
       "  join customers c on c.id = b.customer_id " +
       "  join vehicles v on v.id = b.vehicle_id " +
-      "  where ((b.start_date <= $2 and b.end_date >= $1) or b.created_at::date between $1 and $2) " +
+      `  where ${bookingRangeWhere.clause} ` +
       "    and b.status not in ('CANCELLED','OVERRIDDEN') " +
       "    and coalesce(b.pricing_json->>'overridden_by_booking_id', '') = '' " +
       vehicleClause +

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { PayBalanceButton } from "@/components/payments/PayBalanceButton";
+import { DateRangeArrow } from "@/components/shared/DateRangeArrow";
 import { readBookingOverrideInfo } from "@/lib/bookings/holds";
 import { dbQuery } from "@/lib/db";
 import { fmtDateOnly } from "@/lib/dateFormat";
@@ -105,8 +106,10 @@ export default async function BookingBalancePage({
           </p>
           <p>
             Dates:{" "}
-            <span className="font-semibold text-[var(--ccr-text)]">
-              {fmtDateOnly(booking.start_date)} → {fmtDateOnly(booking.end_date)}
+            <span className="inline-flex items-center font-semibold text-[var(--ccr-text)]">
+              {fmtDateOnly(booking.start_date)}
+              <DateRangeArrow />
+              {fmtDateOnly(booking.end_date)}
             </span>
           </p>
           <p>

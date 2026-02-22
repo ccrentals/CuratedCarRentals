@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 
+import { DateRangeArrow } from "@/components/shared/DateRangeArrow";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 import { formatJmd } from "@/lib/money";
 import { PayBalanceButton } from "@/components/payments/PayBalanceButton";
@@ -36,12 +37,14 @@ type PromoResponse = {
 export function BookingPayPanel({
   bookingId,
   vehicleLabel,
-  dateRangeLabel,
+  startDateLabel,
+  endDateLabel,
   initialSummary,
 }: {
   bookingId: string;
   vehicleLabel: string;
-  dateRangeLabel: string;
+  startDateLabel: string;
+  endDateLabel: string;
   initialSummary: BookingPaySummary;
 }) {
   const [summary, setSummary] = useState<BookingPaySummary>(initialSummary);
@@ -150,7 +153,12 @@ export function BookingPayPanel({
             Vehicle: <span className="font-semibold text-[var(--ccr-text)]">{vehicleLabel}</span>
           </p>
           <p>
-            Dates: <span className="font-semibold text-[var(--ccr-text)]">{dateRangeLabel}</span>
+            Dates:{" "}
+            <span className="inline-flex items-center font-semibold text-[var(--ccr-text)]">
+              {startDateLabel}
+              <DateRangeArrow />
+              {endDateLabel}
+            </span>
           </p>
         </div>
 

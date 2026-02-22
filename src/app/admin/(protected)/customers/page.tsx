@@ -1,14 +1,21 @@
 import Link from "next/link";
 
+import { DateTimeStack } from "@/components/shared/DateTimeStack";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery } from "@/lib/db";
-import { fmtDate } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
 import { CustomerBlockToggleButton } from "@/components/admin/CustomerBlockToggleButton";
 import { CreateCustomerForm } from "@/components/admin/CreateCustomerForm";
 import { CustomersExportMenu } from "@/components/admin/CustomersExportMenu";
 import { CustomersFilters } from "@/components/admin/CustomersFilters";
 import { LoadMorePaginationControls } from "@/components/admin/LoadMorePaginationControls";
+import { SortableTh } from "@/components/admin/SortableTh";
+import {
+  applySortToSearchParams,
+  nextSort,
+  readSortFromSearchParams,
+  type SortDir,
+} from "@/components/admin/tableSort";
 import { normalizePageSize, parsePositiveIntParam } from "@/lib/pagination/sharedPagination";
 
 type CustomerListRow = {
@@ -37,10 +44,29 @@ function isStaffRole(role: string | undefined) {
   return normalized === "ADMIN" || normalized === "DEVELOPER" || normalized === "USER";
 }
 
-function normalizeSort(value: string | undefined): "last_booked" | "total_bookings" | "total_spend" {
-  if (value === "total_bookings") return "total_bookings";
-  if (value === "total_spend") return "total_spend";
-  return "last_booked";
+const CUSTOMER_SORT_COLUMNS = ["customer", "bookings", "totalSpend", "lastBooked", "created"] as const;
+type CustomerSortBy = (typeof CUSTOMER_SORT_COLUMNS)[number];
+type CustomerSortDir = SortDir;
+
+function normalizeCustomerSort(
+  params: URLSearchParams,
+): { sortBy: CustomerSortBy; sortDir: CustomerSortDir } {
+  const sort = readSortFromSearchParams(params, {
+    allowedSortBy: CUSTOMER_SORT_COLUMNS,
+    defaultSortBy: "lastBooked",
+    defaultSortDir: "desc",
+    legacySortParam: "sort",
+    legacySortMap: {
+      last_booked: { sortBy: "lastBooked", sortDir: "desc" },
+      total_bookings: { sortBy: "bookings", sortDir: "desc" },
+      total_spend: { sortBy: "totalSpend", sortDir: "desc" },
+    },
+  });
+
+  return {
+    sortBy: (sort.sortBy as CustomerSortBy | undefined) ?? "lastBooked",
+    sortDir: (sort.sortDir as CustomerSortDir | undefined) ?? "desc",
+  };
 }
 
 function isMissingColumn(error: unknown, column: string) {
@@ -51,22 +77,29 @@ function isMissingColumn(error: unknown, column: string) {
 
 async function fetchCustomers({
   q,
-  sort,
+  sortBy,
+  sortDir,
 }: {
   q: string;
-  sort: "last_booked" | "total_bookings" | "total_spend";
+  sortBy: CustomerSortBy;
+  sortDir: CustomerSortDir;
 }) {
   const whereSql = q
     ? "where c.full_name ilike $1 or c.email ilike $1 or c.phone ilike $1"
     : "";
   const values = q ? [`${q}%`] : [];
+  const direction = sortDir === "asc" ? "asc" : "desc";
 
   const orderBy =
-    sort === "total_bookings"
-      ? "order by total_bookings desc, coalesce(c.last_booked_at, max(b.created_at), c.created_at) desc"
-      : sort === "total_spend"
-        ? "order by total_spend desc, coalesce(c.last_booked_at, max(b.created_at), c.created_at) desc"
-        : "order by coalesce(c.last_booked_at, max(b.created_at), c.created_at) desc";
+    sortBy === "customer"
+      ? `order by lower(c.full_name) ${direction}, lower(c.email) ${direction}, c.id::text ${direction}`
+      : sortBy === "bookings"
+        ? `order by total_bookings ${direction}, coalesce(c.last_booked_at, max(b.created_at), c.created_at) desc`
+        : sortBy === "totalSpend"
+          ? `order by total_spend ${direction}, coalesce(c.last_booked_at, max(b.created_at), c.created_at) desc`
+          : sortBy === "created"
+            ? `order by c.created_at ${direction}, c.id::text ${direction}`
+            : `order by coalesce(c.last_booked_at, max(b.created_at), c.created_at) ${direction}, c.id::text ${direction}`;
 
   const queryWithDeletedColumn =
     "select c.id, c.full_name, c.email, c.phone, coalesce(c.is_blocked, false) as is_blocked, c.created_at, c.last_booked_at, count(distinct b.id)::int as total_bookings, coalesce(sum(case when p.status in ('DEPOSIT_PAID', 'SUCCESS', 'REFUNDED') and p.deleted_at is null then p.deposit_amount_cents else 0 end), 0)::int as total_spend from customers c left join bookings b on b.customer_id = c.id left join payments p on p.booking_id = b.id " +
@@ -118,13 +151,24 @@ export default async function AdminCustomersPage({
   }
 
   const params = await searchParams;
+  const queryParams = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (typeof value === "string") queryParams.set(key, value);
+  }
   const q = typeof params.q === "string" ? params.q.trim() : "";
-  const sort = normalizeSort(typeof params.sort === "string" ? params.sort : undefined);
+  const sort = normalizeCustomerSort(queryParams);
   const rowsPerPage = normalizePageSize(typeof params.rows === "string" ? params.rows : undefined);
   const requestedVisible = parsePositiveIntParam(params.visible);
-  const customers = await fetchCustomers({ q, sort });
+  const customers = await fetchCustomers({ q, sortBy: sort.sortBy, sortDir: sort.sortDir });
   const visibleCount = Math.max(rowsPerPage, requestedVisible ?? rowsPerPage);
   const visibleCustomers = customers.rows.slice(0, visibleCount);
+
+  const sortHref = (columnKey: CustomerSortBy, defaultDirection: SortDir) => {
+    const next = nextSort(sort, columnKey, defaultDirection);
+    const nextParams = applySortToSearchParams(queryParams, next);
+    const qs = nextParams.toString();
+    return qs ? `/admin/customers?${qs}` : "/admin/customers";
+  };
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
@@ -137,7 +181,7 @@ export default async function AdminCustomersPage({
           </p>
         </div>
         <div className="grid w-full grid-cols-3 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center">
-          <CustomersExportMenu q={q} sort={sort} />
+          <CustomersExportMenu q={q} sortBy={sort.sortBy} sortDir={sort.sortDir} />
           <CreateCustomerForm />
           <Link
             href="/admin/bookings?create=1"
@@ -148,7 +192,7 @@ export default async function AdminCustomersPage({
         </div>
       </div>
 
-      <CustomersFilters initialQuery={q} initialSort={sort} />
+      <CustomersFilters initialQuery={q} />
 
       <div className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)]">
         {customers.rows.length === 0 ? (
@@ -182,7 +226,14 @@ export default async function AdminCustomersPage({
                     <div>
                       <dt className="uppercase tracking-wide text-[var(--ccr-muted)]">Last booked</dt>
                       <dd className="font-semibold text-[var(--ccr-text)]">
-                        {customer.last_booked_at ? fmtDate(customer.last_booked_at) : "No bookings yet"}
+                        {customer.last_booked_at ? (
+                          <DateTimeStack
+                            value={customer.last_booked_at}
+                            className="font-semibold text-[var(--ccr-text)]"
+                          />
+                        ) : (
+                          "No bookings yet"
+                        )}
                       </dd>
                     </div>
                   </dl>
@@ -212,11 +263,31 @@ export default async function AdminCustomersPage({
               <table className="min-w-full text-left text-sm">
                 <thead className="border-b border-[var(--ccr-border)] text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
                   <tr>
-                    <th className="px-4 py-3">Customer</th>
+                    <SortableTh
+                      label="Customer"
+                      columnKey="customer"
+                      sort={sort}
+                      href={sortHref("customer", "asc")}
+                    />
                     <th className="px-4 py-3">Phone</th>
-                    <th className="px-4 py-3">Bookings</th>
-                    <th className="px-4 py-3">Total Spend</th>
-                    <th className="px-4 py-3">Last Booked</th>
+                    <SortableTh
+                      label="Bookings"
+                      columnKey="bookings"
+                      sort={sort}
+                      href={sortHref("bookings", "desc")}
+                    />
+                    <SortableTh
+                      label="Total Spend"
+                      columnKey="totalSpend"
+                      sort={sort}
+                      href={sortHref("totalSpend", "desc")}
+                    />
+                    <SortableTh
+                      label="Last Booked"
+                      columnKey="lastBooked"
+                      sort={sort}
+                      href={sortHref("lastBooked", "desc")}
+                    />
                     <th className="px-4 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -233,7 +304,11 @@ export default async function AdminCustomersPage({
                         {formatJmd(customer.total_spend)}
                       </td>
                       <td className="px-4 py-3 text-[var(--ccr-muted)]">
-                        {customer.last_booked_at ? fmtDate(customer.last_booked_at) : "No bookings yet"}
+                        {customer.last_booked_at ? (
+                          <DateTimeStack value={customer.last_booked_at} />
+                        ) : (
+                          "No bookings yet"
+                        )}
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-2">

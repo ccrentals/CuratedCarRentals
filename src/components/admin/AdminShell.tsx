@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { ADMIN_ACCENT_RING_CLASS } from "@/components/admin/adminUiClasses";
 import { UserMenu } from "@/components/admin/UserMenu";
+import { useUnreadMessagesCount } from "@/lib/messages/useUnreadMessagesCount";
 
 const SIDEBAR_STORAGE_KEY = "adminSidebarCollapsed";
 const DRAWER_FOCUSABLE_SELECTOR =
@@ -33,6 +34,7 @@ type NavGroup = {
 type AdminNavLinksProps = {
   pathname: string;
   currentRole: string | undefined;
+  unreadMessagesCount: number;
   collapsedState?: boolean;
   expandedItems: Record<string, boolean>;
   setExpandedItems: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
@@ -111,6 +113,25 @@ const NAV_ITEMS: NavItem[] = [
         <circle cx="10" cy="8" r="3.2" />
         <path d="M20 21c0-2.1-1.2-3.7-3-4.4" />
         <path d="M17 3.6a3.2 3.2 0 0 1 0 6.2" />
+      </svg>
+    ),
+  },
+  {
+    label: "Messages",
+    href: "/admin/messages",
+    icon: (className: string) => (
+      <svg
+        viewBox="0 0 24 24"
+        className={className}
+        aria-hidden="true"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M4 6h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1z" />
+        <path d="M3 8l9 6 9-6" />
       </svg>
     ),
   },
@@ -362,6 +383,7 @@ const NAV_GROUPS: NavGroup[] = [
       "/admin",
       "/admin/bookings",
       "/admin/customers",
+      "/admin/messages",
       "/admin/payments",
       "/admin/promo-codes",
       "/admin/calendar",
@@ -420,6 +442,7 @@ function isActivePath(pathname: string, href: string) {
 function AdminNavLinks({
   pathname,
   currentRole,
+  unreadMessagesCount,
   collapsedState,
   expandedItems,
   setExpandedItems,
@@ -440,6 +463,8 @@ function AdminNavLinks({
     const hasChildren = Boolean(item.children?.length) && !collapsedState;
     const isExpanded = hasChildren && Boolean(expandedItems[item.href]);
     const showChildren = hasChildren && isExpanded;
+    const messageBadgeCount = item.href === "/admin/messages" ? unreadMessagesCount : 0;
+    const badgeLabel = messageBadgeCount > 99 ? "99+" : String(messageBadgeCount);
     return (
       <div key={item.href} className={`flex flex-col ${collapsedState ? "items-center" : ""}`}>
         <div className={`flex items-center gap-2 ${collapsedState ? "w-full justify-center" : "w-full"}`}>
@@ -457,7 +482,7 @@ function AdminNavLinks({
             }`}
           >
             <span
-              className={`flex h-9 w-9 items-center justify-center rounded-lg ${
+              className={`relative flex h-9 w-9 items-center justify-center rounded-lg ${
                 active
                   ? "bg-white/20 text-white"
                   : "bg-[var(--ccr-surface-soft)] text-[var(--ccr-text)]"
@@ -466,8 +491,22 @@ function AdminNavLinks({
               {item.icon(
                 `h-5 w-5 ${active ? "text-white" : "text-[var(--ccr-text)]"}`,
               )}
+              {messageBadgeCount > 0 ? (
+                <span className="absolute -right-1 -top-1 inline-flex min-h-4 min-w-4 items-center justify-center rounded-full border border-[var(--ccr-surface)] bg-[var(--ccr-accent)] px-1 text-[9px] font-bold leading-none text-white">
+                  {badgeLabel}
+                </span>
+              ) : null}
             </span>
-            {collapsedState ? null : <span>{item.label}</span>}
+            {collapsedState ? null : (
+              <span className="flex min-w-0 items-center gap-2">
+                <span className="truncate">{item.label}</span>
+                {messageBadgeCount > 0 ? (
+                  <span className="inline-flex min-h-4 min-w-4 items-center justify-center rounded-full bg-[var(--ccr-accent)] px-1.5 text-[10px] font-bold leading-none text-white">
+                    {badgeLabel}
+                  </span>
+                ) : null}
+              </span>
+            )}
           </Link>
           {hasChildren ? (
             <button
@@ -584,9 +623,11 @@ function AdminNavLinks({
 export function AdminShell({
   children,
   user,
+  unreadMessagesCount,
 }: {
   children: React.ReactNode;
   user: { email: string; role: string };
+  unreadMessagesCount: number;
 }) {
   const pathname = usePathname() ?? "/admin";
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -597,6 +638,10 @@ export function AdminShell({
   const drawerTriggerRef = useRef<HTMLElement | null>(null);
   const previousFocusedElementRef = useRef<HTMLElement | null>(null);
   const mobileCompactThresholdRef = useRef(72);
+  const {
+    count: liveUnreadMessagesCount,
+    refresh: refreshUnreadMessagesCount,
+  } = useUnreadMessagesCount(unreadMessagesCount);
   const [collapsed, setCollapsed] = useState(() => {
     if (typeof window === "undefined") return false;
     return localStorage.getItem(SIDEBAR_STORAGE_KEY) === "true";
@@ -618,6 +663,11 @@ export function AdminShell({
     });
     return initial;
   });
+
+  useEffect(() => {
+    if (!pathname.startsWith("/admin/messages")) return;
+    void refreshUnreadMessagesCount();
+  }, [pathname, refreshUnreadMessagesCount]);
 
   useEffect(() => {
     if (!drawerOpen) return;
@@ -843,6 +893,7 @@ export function AdminShell({
         <AdminNavLinks
           pathname={pathname}
           currentRole={user.role}
+          unreadMessagesCount={liveUnreadMessagesCount}
           collapsedState={collapsed}
           expandedItems={expandedItems}
           setExpandedItems={setExpandedItems}
@@ -894,6 +945,7 @@ export function AdminShell({
             <AdminNavLinks
               pathname={pathname}
               currentRole={user.role}
+              unreadMessagesCount={liveUnreadMessagesCount}
               expandedItems={expandedItems}
               setExpandedItems={setExpandedItems}
               expandedGroups={expandedGroups}

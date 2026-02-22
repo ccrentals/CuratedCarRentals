@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { DateRangeArrow } from "@/components/shared/DateRangeArrow";
 import { dbQuery } from "@/lib/db";
 import { fmtDateOnly } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
@@ -99,7 +100,12 @@ export default async function BookingSummaryPage({
             Vehicle: <span className="font-semibold text-[var(--ccr-text)]">{booking.vehicle_make} {booking.vehicle_model}</span>
           </p>
           <p>
-            Dates: <span className="font-semibold text-[var(--ccr-text)]">{fmtDateOnly(booking.start_date)} → {fmtDateOnly(booking.end_date)}</span>
+            Dates:{" "}
+            <span className="inline-flex items-center font-semibold text-[var(--ccr-text)]">
+              {fmtDateOnly(booking.start_date)}
+              <DateRangeArrow />
+              {fmtDateOnly(booking.end_date)}
+            </span>
           </p>
           <p>
             Status: <span className="font-semibold text-[var(--ccr-text)]">{booking.status}</span>

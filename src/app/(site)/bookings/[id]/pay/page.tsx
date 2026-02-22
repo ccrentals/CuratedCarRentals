@@ -89,7 +89,8 @@ export default async function BookingPayPage({
     <BookingPayPanel
       bookingId={booking.id}
       vehicleLabel={`${booking.vehicle_make} ${booking.vehicle_model}`}
-      dateRangeLabel={`${fmtDateOnly(booking.start_date)} → ${fmtDateOnly(booking.end_date)}`}
+      startDateLabel={fmtDateOnly(booking.start_date)}
+      endDateLabel={fmtDateOnly(booking.end_date)}
       initialSummary={{
         days: summary.days,
         subtotal: summary.subtotal,

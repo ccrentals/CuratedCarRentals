@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
+import { DateRangeArrow } from "@/components/shared/DateRangeArrow";
 import { getSessionFromRequest } from "@/lib/auth/session";
 
 const SVG_FONT_FAMILY =
@@ -898,7 +899,14 @@ const DOCS: Record<string, DocSection> = {
               <li>Visible focus states on inputs and links.</li>
               <li>Proper form labels and error messaging.</li>
               <li>Maintain color contrast (especially in dark mode).</li>
-              <li>Use semantic headings (<code>h1</code> → <code>h2</code> → …) and meaningful link text.</li>
+              <li>
+                Use semantic headings (
+                <code>h1</code>
+                <DateRangeArrow />
+                <code>h2</code>
+                <DateRangeArrow />
+                …) and meaningful link text.
+              </li>
             </ul>
           </>
         ),
@@ -1057,42 +1065,104 @@ const DOCS: Record<string, DocSection> = {
             <p className="text-[var(--ccr-text)] font-semibold">Public</p>
             <ul className="mt-1 list-disc space-y-1 pl-5">
               <li>
-                <code>GET /api/public/vehicles</code> → <code>{`{ vehicles: VehicleRow[] }`}</code>
+                <code>GET /api/public/vehicles</code>
+                <DateRangeArrow />
+                <code>{`{ vehicles: VehicleRow[] }`}</code>
               </li>
               <li>
-                <code>POST /api/public/bookings</code> → creates a booking in <code>PENDING_PAYMENT</code> state.
+                <code>POST /api/public/bookings</code>
+                <DateRangeArrow />
+                creates a booking in <code>PENDING_PAYMENT</code> state.
               </li>
             </ul>
 
             <p className="mt-4 text-[var(--ccr-text)] font-semibold">Payments (WiPay)</p>
             <ul className="mt-1 list-disc space-y-1 pl-5">
-              <li><code>POST /api/payments/wipay/start</code> → returns hosted checkout URL.</li>
-              <li><code>GET /api/payments/wipay/return</code> → provider redirect handler → redirects to success/fail page.</li>
-              <li><code>POST /api/payments/wipay/webhook</code> → reconcile async provider events.</li>
+              <li>
+                <code>POST /api/payments/wipay/start</code>
+                <DateRangeArrow />
+                returns hosted checkout URL.
+              </li>
+              <li>
+                <code>GET /api/payments/wipay/return</code>
+                <DateRangeArrow />
+                provider redirect handler
+                <DateRangeArrow />
+                redirects to success/fail page.
+              </li>
+              <li>
+                <code>POST /api/payments/wipay/webhook</code>
+                <DateRangeArrow />
+                reconcile async provider events.
+              </li>
             </ul>
 
             <p className="mt-4 text-[var(--ccr-text)] font-semibold">Admin</p>
             <ul className="mt-1 list-disc space-y-1 pl-5">
-              <li><code>POST /api/admin/login</code> → sets session cookie.</li>
-              <li><code>POST /api/admin/logout</code> → clears session cookie.</li>
-              <li><code>GET /api/admin/me</code> → returns current user summary.</li>
-              <li><code>GET/PATCH /api/admin/docs</code> → documentation notes storage (DB table <code>admin_documents</code>).</li>
+              <li>
+                <code>POST /api/admin/login</code>
+                <DateRangeArrow />
+                sets session cookie.
+              </li>
+              <li>
+                <code>POST /api/admin/logout</code>
+                <DateRangeArrow />
+                clears session cookie.
+              </li>
+              <li>
+                <code>GET /api/admin/me</code>
+                <DateRangeArrow />
+                returns current user summary.
+              </li>
+              <li>
+                <code>GET/PATCH /api/admin/docs</code>
+                <DateRangeArrow />
+                documentation notes storage (DB table <code>admin_documents</code>).
+              </li>
               <li><code>/api/admin/*</code> resource routes for vehicles, bookings, payments, users, and blockouts.</li>
             </ul>
 
             <p className="mt-4 text-[var(--ccr-text)] font-semibold">Health & Security</p>
             <ul className="mt-1 list-disc space-y-1 pl-5">
-              <li><code>GET /api/health/db</code> → DB connectivity snapshot.</li>
-              <li><code>GET /api/health/ready</code> → readiness status used by <code>/admin/health</code>.</li>
-              <li><code>GET /api/security/csrf</code> → bootstrap CSRF token for protected requests.</li>
+              <li>
+                <code>GET /api/health/db</code>
+                <DateRangeArrow />
+                DB connectivity snapshot.
+              </li>
+              <li>
+                <code>GET /api/health/ready</code>
+                <DateRangeArrow />
+                readiness status used by <code>/admin/health</code>.
+              </li>
+              <li>
+                <code>GET /api/security/csrf</code>
+                <DateRangeArrow />
+                bootstrap CSRF token for protected requests.
+              </li>
             </ul>
 
             <p className="mt-4 text-[var(--ccr-text)] font-semibold">Cron</p>
             <ul className="mt-1 list-disc space-y-1 pl-5">
-              <li><code>POST /api/cron/pickup-reminders</code> → sends pickup reminder emails (requires <code>x-cron-secret</code>).</li>
-              <li><code>POST /api/cron/balance-reminders</code> → sends balance reminder emails (requires <code>x-cron-secret</code>).</li>
-              <li><code>POST /api/cron/note-emails</code> → sends scheduled note emails due at/earlier than current time.</li>
-              <li><code>POST /api/admin/cron/simulate-reminders</code> → admin-only simulation mode for validating Last Runs + Recent Reminder Events without sending provider traffic.</li>
+              <li>
+                <code>POST /api/cron/pickup-reminders</code>
+                <DateRangeArrow />
+                sends pickup reminder emails (requires <code>x-cron-secret</code>).
+              </li>
+              <li>
+                <code>POST /api/cron/balance-reminders</code>
+                <DateRangeArrow />
+                sends balance reminder emails (requires <code>x-cron-secret</code>).
+              </li>
+              <li>
+                <code>POST /api/cron/note-emails</code>
+                <DateRangeArrow />
+                sends scheduled note emails due at/earlier than current time.
+              </li>
+              <li>
+                <code>POST /api/admin/cron/simulate-reminders</code>
+                <DateRangeArrow />
+                admin-only simulation mode for validating Last Runs + Recent Reminder Events without sending provider traffic.
+              </li>
             </ul>
 
             <details className="mt-4 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-4 py-3">
@@ -1282,7 +1352,7 @@ Payments (WiPay)
 - WIPAY_ACCOUNT_NUMBER
 - WIPAY_API_KEY
 - WIPAY_ENV (sandbox|live)
-- WIPAY_FEE_STRUCTURE (merchant_absorb)
+- WIPAY_FEE_STRUCTURE (customer_pay|merchant_absorb|split)
 - WIPAY_ORIGIN
 
 Email (Resend)
@@ -1303,13 +1373,109 @@ Cron
         ),
       },
       {
+        title: "Production Go-Live Checklist",
+        content: (
+          <>
+            <p className="text-sm text-[var(--ccr-muted)]">
+              Use this checklist before switching from test/sandbox to production.
+            </p>
+            <ol className="list-decimal space-y-2 pl-5">
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">Git + release:</span> Merge the production branch,
+                tag a release, and verify CI is green before deploy.
+              </li>
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">Netlify config:</span> Confirm production site is linked
+                to the correct repository/branch, build command is <code>npm run build</code>, and env vars are set in the
+                production context.
+              </li>
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">Domain + HTTPS:</span> DNS points to Netlify, TLS is
+                active, and <code>SITE_URL</code> is the live https URL (not localhost).
+              </li>
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">Database:</span> Production <code>DATABASE_URL</code> is
+                set, required migrations are applied, and a restore-tested backup/snapshot exists.
+              </li>
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">WiPay:</span> Replace sandbox credentials with live{" "}
+                <code>WIPAY_ACCOUNT_NUMBER</code> and <code>WIPAY_API_KEY</code>, set <code>WIPAY_ENV=live</code>, confirm{" "}
+                <code>WIPAY_FEE_STRUCTURE</code> matches business policy, and run a small real payment + webhook reconciliation.
+              </li>
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">Email (Resend):</span> Validate <code>RESEND_API_KEY</code>{" "}
+                and <code>RESEND_FROM</code> on the production domain, then verify booking/contact/admin emails deliver.
+              </li>
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">Invoices (PDFMonkey):</span> Set{" "}
+                <code>PDFMONKEY_API_KEY</code> and <code>PDFMONKEY_TEMPLATE_ID</code>, then generate and open a real invoice
+                from an actual booking.
+              </li>
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">Uploads (optional):</span> If enabled, verify{" "}
+                <code>NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY</code> and upload access policies.
+              </li>
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">Security:</span> Strong production values for{" "}
+                <code>ADMIN_SESSION_SECRET</code>, <code>CSRF_SECRET</code>, and <code>CRON_SECRET</code>; confirm least-privilege
+                admin users and rotate any exposed secrets.
+              </li>
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">Scheduled jobs:</span> Confirm Netlify scheduled
+                functions run and validate pickup/balance reminder jobs in <code>/admin/cron</code> and logs.
+              </li>
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">Operational smoke test:</span> Run end-to-end flow
+                (book
+                <DateRangeArrow />
+                pay deposit
+                <DateRangeArrow />
+                success page
+                <DateRangeArrow />
+                admin booking/payment state
+                <DateRangeArrow />
+                reminder preview
+                <DateRangeArrow />
+                invoice/email checks).
+              </li>
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">Rollback plan:</span> Document who can roll back,
+                previous deploy target, and how to restore DB snapshots if needed.
+              </li>
+            </ol>
+            <details className="mt-3 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-4 py-3">
+              <summary className="cursor-pointer text-sm font-semibold text-[var(--ccr-text)]">
+                Go-live command gate
+              </summary>
+              <CodeBlock>{`Run these before and after production deploy:
+- npm test
+- npx tsc --noEmit
+- npm run build
+- E2E_BASE_URL=https://your-production-domain npm run test:e2e (or staging equivalent)`}</CodeBlock>
+            </details>
+          </>
+        ),
+      },
+      {
         title: "Developer Workflow & Code Documentation",
         content: (
           <>
             <ul className="list-disc space-y-2 pl-5">
-              <li><code>npm run dev</code> → local development at <code>http://localhost:3000</code></li>
-              <li><code>npm run build</code> → production build + type checking</li>
-              <li><code>npm run lint</code> → ESLint</li>
+              <li>
+                <code>npm run dev</code>
+                <DateRangeArrow />
+                local development at <code>http://localhost:3000</code>
+              </li>
+              <li>
+                <code>npm run build</code>
+                <DateRangeArrow />
+                production build + type checking
+              </li>
+              <li>
+                <code>npm run lint</code>
+                <DateRangeArrow />
+                ESLint
+              </li>
             </ul>
             <p>
               Key folders:
@@ -1724,7 +1890,13 @@ Cron
           <>
             <ul className="list-disc space-y-2 pl-5">
               <li>Discovery & PRD sign-off</li>
-              <li>Design: wireframes → mockups → approval</li>
+              <li>
+                Design: wireframes
+                <DateRangeArrow />
+                mockups
+                <DateRangeArrow />
+                approval
+              </li>
               <li>Frontend build: public pages + admin UI</li>
               <li>Integrations: payments, email, invoices, uploads</li>
               <li>Testing: staging, UAT, go-live checklist</li>

@@ -1,10 +1,10 @@
 import Link from "next/link";
 
 import { AdminVehicleForm } from "@/components/admin/AdminVehicleForm";
+import { DateTimeStack } from "@/components/shared/DateTimeStack";
 import { SlideDownPanel } from "@/components/admin/SlideDownPanel";
 import { VehiclesFilters } from "@/components/admin/VehiclesFilters";
 import { dbQuery } from "@/lib/db";
-import { fmtDate } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
 import { LoadMorePaginationControls } from "@/components/admin/LoadMorePaginationControls";
 import { normalizePageSize, parsePositiveIntParam } from "@/lib/pagination/sharedPagination";
@@ -93,7 +93,7 @@ export default async function AdminVehiclesPage({
                   </td>
                   <td className="px-4 py-3 text-[var(--ccr-muted)]">{vehicle.status}</td>
                   <td className="px-4 py-3 text-[var(--ccr-muted)]">
-                    {fmtDate(vehicle.created_at)}
+                    <DateTimeStack value={vehicle.created_at} />
                   </td>
                 </tr>
               ))}

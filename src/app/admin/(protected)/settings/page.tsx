@@ -27,14 +27,20 @@ function parseStoredSettings(content: unknown): AdminSettings {
   try {
     const raw = JSON.parse(content) as Record<string, unknown>;
     const next: AdminSettings = { ...DEFAULT_ADMIN_SETTINGS };
-    for (const key of Object.keys(DEFAULT_ADMIN_SETTINGS) as Array<keyof AdminSettings>) {
-      if (key === "dayViewBookingLimit") {
-        continue;
-      }
-      if (typeof raw[key] === "boolean") {
-        next[key] = raw[key] as boolean;
-      }
+
+    const toggleKeys: Array<
+      "blockoutSupersedesBookings" | "requireRestoreReason" | "sendPickupReminder" | "sendDropoffReminder" | "sendLateDropoffAlert"
+    > = [
+      "blockoutSupersedesBookings",
+      "requireRestoreReason",
+      "sendPickupReminder",
+      "sendDropoffReminder",
+      "sendLateDropoffAlert",
+    ];
+    for (const key of toggleKeys) {
+      if (typeof raw[key] === "boolean") next[key] = raw[key] as boolean;
     }
+
     const limit = raw.dayViewBookingLimit;
     if (limit === "all") {
       next.dayViewBookingLimit = "all";
@@ -51,6 +57,21 @@ function parseStoredSettings(content: unknown): AdminSettings {
         }
       }
     }
+
+    if (typeof raw.contactNotificationEmails === "string") {
+      next.contactNotificationEmails = raw.contactNotificationEmails
+        .split(/[,;\n]/)
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+        .slice(0, 25)
+        .join(", ");
+    }
+
+    const cooldown = Number(raw.contactNotifyCooldownMinutes);
+    if (Number.isFinite(cooldown)) {
+      next.contactNotifyCooldownMinutes = Math.min(120, Math.max(1, Math.floor(cooldown)));
+    }
+
     return next;
   } catch {
     return { ...DEFAULT_ADMIN_SETTINGS };

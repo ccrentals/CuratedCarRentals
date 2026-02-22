@@ -23,7 +23,8 @@ export type CustomerSnapshotBookingItem = {
   id: string;
   shortId: string;
   vehicleLabel: string;
-  datesLabel: string;
+  startDateLabel: string;
+  endDateLabel: string;
   status: string;
   statusLabel: string;
   totalLabel: string;
@@ -156,7 +157,8 @@ export async function fetchCustomerSnapshotBookingsPage(
       id: row.id,
       shortId: row.id.slice(0, 8),
       vehicleLabel: `${row.vehicle_make} ${row.vehicle_model}`.trim(),
-      datesLabel: `${fmtDate(row.start_date)} → ${fmtDate(row.end_date)}`,
+      startDateLabel: fmtDate(row.start_date),
+      endDateLabel: fmtDate(row.end_date),
       status: row.status,
       statusLabel: formatStatusLabel(row.status),
       totalLabel: formatJmd(total),

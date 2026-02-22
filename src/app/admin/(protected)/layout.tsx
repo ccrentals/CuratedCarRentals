@@ -2,6 +2,10 @@ import { redirect } from "next/navigation";
 
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery } from "@/lib/db";
+import {
+  getUnreadContactMessagesCount,
+  isContactMessagesMissingTableError,
+} from "@/lib/messages/adminMessages";
 import { AdminShell } from "@/components/admin/AdminShell";
 
 function isUndefinedColumn(error: unknown, column: string) {
@@ -45,12 +49,27 @@ export default async function AdminLayout({
   })();
 
   const user = userResult.rows[0] ?? { email: "admin", role: session.role };
+  const unreadMessagesCount = await (async () => {
+    try {
+      return await getUnreadContactMessagesCount();
+    } catch (error) {
+      if (isContactMessagesMissingTableError(error)) {
+        return 0;
+      }
+      throw error;
+    }
+  })();
 
   if (user.must_change_password) {
     redirect("/admin/set-password");
   }
 
   return (
-    <AdminShell user={{ email: user.email, role: user.role ?? "Admin" }}>{children}</AdminShell>
+    <AdminShell
+      user={{ email: user.email, role: user.role ?? "Admin" }}
+      unreadMessagesCount={unreadMessagesCount}
+    >
+      {children}
+    </AdminShell>
   );
 }
