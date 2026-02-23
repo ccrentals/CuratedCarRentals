@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 
 type UploadcareImagesInputProps = {
   label?: string;
@@ -9,6 +9,8 @@ type UploadcareImagesInputProps = {
   value?: string[];
   onChange?: (urls: string[]) => void;
   displayMode?: "grid" | "carousel";
+  disabled?: boolean;
+  actionSlot?: ReactNode;
 };
 
 declare global {
@@ -126,6 +128,8 @@ export function UploadcareImagesInput({
   value,
   onChange,
   displayMode = "grid",
+  disabled = false,
+  actionSlot = null,
 }: UploadcareImagesInputProps) {
   const [internal, setInternal] = useState<string[]>(() => value ?? []);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -140,6 +144,7 @@ export function UploadcareImagesInput({
   const canUpload = useMemo(() => Boolean(publicKey), [publicKey]);
 
   const handleUpload = async () => {
+    if (disabled) return;
     if (!canUpload) {
       setError("Uploadcare is not configured. Add NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY.");
       return;
@@ -215,10 +220,10 @@ export function UploadcareImagesInput({
         <button
           type="button"
           onClick={handleUpload}
-          disabled={loading}
-          className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1.5 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
+          disabled={loading || disabled}
+          className="min-h-10 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1.5 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
         >
-          {loading ? "Opening..." : "Upload Images"}
+          {loading ? "Opening..." : disabled ? "View mode" : "Upload Images"}
         </button>
       </div>
 
@@ -256,13 +261,18 @@ export function UploadcareImagesInput({
                   </button>
                 ))}
               </div>
-              <button
-                type="button"
-                onClick={() => removeUrlAtIndex(activeIndex)}
-                className="shrink-0 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1.5 text-xs font-semibold text-[var(--ccr-text)] hover:bg-[var(--ccr-surface-soft)]"
-              >
-                Remove
-              </button>
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
+                {!disabled ? (
+                  <button
+                    type="button"
+                    onClick={() => removeUrlAtIndex(activeIndex)}
+                    className="min-h-10 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1.5 text-xs font-semibold text-[var(--ccr-text)] hover:bg-[var(--ccr-surface-soft)]"
+                  >
+                    Remove
+                  </button>
+                ) : null}
+                {actionSlot}
+              </div>
             </div>
 
             {isLightboxOpen ? (
@@ -279,13 +289,15 @@ export function UploadcareImagesInput({
                       Image {activeIndex + 1} of {urls.length}
                     </p>
                     <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => removeUrlAtIndex(activeIndex)}
-                        className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-1.5 text-xs font-semibold text-[var(--ccr-text)] hover:bg-[var(--ccr-surface)]"
-                      >
-                        Remove
-                      </button>
+                      {!disabled ? (
+                        <button
+                          type="button"
+                          onClick={() => removeUrlAtIndex(activeIndex)}
+                          className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-1.5 text-xs font-semibold text-[var(--ccr-text)] hover:bg-[var(--ccr-surface)]"
+                        >
+                          Remove
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         onClick={() => setIsLightboxOpen(false)}
@@ -336,7 +348,8 @@ export function UploadcareImagesInput({
                 <button
                   type="button"
                   onClick={() => removeUrlAtIndex(index)}
-                  className="w-full border-t border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-2 py-1 text-xs font-semibold text-[var(--ccr-text)] hover:bg-[var(--ccr-surface-soft)]"
+                  disabled={disabled}
+                  className="w-full border-t border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-2 py-1 text-xs font-semibold text-[var(--ccr-text)] hover:bg-[var(--ccr-surface-soft)] disabled:opacity-50"
                 >
                   Remove
                 </button>

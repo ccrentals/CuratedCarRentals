@@ -129,6 +129,19 @@ function parseStoredSettings(content: unknown): AdminSettings {
       next.vehicleDocumentFolders = normalizedFolders;
     }
 
+    const vehicleDocumentTypeOptions = Array.isArray(raw.vehicleDocumentTypeOptions)
+      ? raw.vehicleDocumentTypeOptions
+      : typeof raw.vehicleDocumentTypeOptions === "string"
+        ? raw.vehicleDocumentTypeOptions.split(/[,;\n]/)
+        : [];
+    const normalizedDocumentTypeOptions = vehicleDocumentTypeOptions
+      .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+      .filter(Boolean)
+      .slice(0, 40);
+    if (normalizedDocumentTypeOptions.length > 0) {
+      next.vehicleDocumentTypeOptions = normalizedDocumentTypeOptions;
+    }
+
     const vehicleChecklistTemplateItems = Array.isArray(raw.vehicleChecklistTemplateItems)
       ? raw.vehicleChecklistTemplateItems
       : typeof raw.vehicleChecklistTemplateItems === "string"

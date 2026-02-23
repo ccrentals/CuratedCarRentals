@@ -528,6 +528,16 @@ create table if not exists vehicle_checklist_items (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists vehicle_notes (
+  id uuid primary key default gen_random_uuid(),
+  vehicle_id uuid not null references vehicles(id) on delete cascade,
+  note_text text not null,
+  created_by_user_id uuid references users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  deleted_at timestamptz
+);
+
 create table if not exists maintenance_service_types (
   id uuid primary key default gen_random_uuid(),
   name text not null,
@@ -753,6 +763,10 @@ create index if not exists vehicle_documents_archived_at_idx
   on vehicle_documents(archived_at);
 create index if not exists vehicle_checklist_items_vehicle_id_idx
   on vehicle_checklist_items(vehicle_id);
+create index if not exists vehicle_notes_vehicle_id_created_at_idx
+  on vehicle_notes(vehicle_id, created_at desc);
+create index if not exists vehicle_notes_deleted_at_idx
+  on vehicle_notes(deleted_at);
 create unique index if not exists maintenance_service_types_name_lower_unique
   on maintenance_service_types(lower(name));
 create index if not exists maintenance_service_types_is_active_idx
@@ -780,7 +794,7 @@ create index if not exists maintenance_reminders_status_idx
 create index if not exists maintenance_reminders_remind_at_idx
   on maintenance_reminders(remind_at);
 create unique index if not exists maintenance_reminders_schedule_remind_channel_unique
-  on maintenance_reminders(schedule_id, channel, date(remind_at));
+  on maintenance_reminders(schedule_id, channel, ((remind_at at time zone 'UTC')::date));
 create index if not exists vehicle_maintenance_records_vehicle_status_idx
   on vehicle_maintenance_records(vehicle_id, status);
 create index if not exists vehicle_maintenance_records_scheduled_date_idx

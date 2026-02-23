@@ -142,6 +142,10 @@ function normalizeSettings(raw: unknown): AdminSettings {
       value.vehicleDocumentFolders,
       DEFAULT_ADMIN_SETTINGS.vehicleDocumentFolders,
     ),
+    vehicleDocumentTypeOptions: normalizeStringList(
+      value.vehicleDocumentTypeOptions,
+      DEFAULT_ADMIN_SETTINGS.vehicleDocumentTypeOptions,
+    ),
     vehicleChecklistTemplateItems: normalizeStringList(
       value.vehicleChecklistTemplateItems,
       DEFAULT_ADMIN_SETTINGS.vehicleChecklistTemplateItems,

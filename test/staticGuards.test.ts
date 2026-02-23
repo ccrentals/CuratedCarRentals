@@ -109,3 +109,13 @@ test("Maintenance SSoT wiring: maintenance APIs use centralized maintenance help
   assert.match(detailRoute, /computeMaintenanceRecordTotal\(/);
   assert.match(detailRoute, /getMaintenanceDueState\(/);
 });
+
+test("Blockouts linkage wiring: calendar and admin blockout APIs use shared blockout service", () => {
+  const blockoutsApi = read("src/app/api/admin/blockouts/route.ts");
+  assert.match(blockoutsApi, /from \"@\/lib\/blockouts\/shared\"/);
+  assert.match(blockoutsApi, /listBlockouts\(/);
+
+  const calendarPage = read("src/app/admin/(protected)/calendar/page.tsx");
+  assert.match(calendarPage, /from \"@\/lib\/blockouts\/shared\"/);
+  assert.match(calendarPage, /listBlockouts\(/);
+});

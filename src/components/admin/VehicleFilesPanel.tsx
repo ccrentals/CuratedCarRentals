@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
+import { TableDateTime } from "@/components/shared/TableDateTime";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
 const DEFAULT_FOLDERS = ["Paperwork", "Insurance", "Registration", "Other"] as const;
@@ -11,6 +12,7 @@ const WIDGET_SRC = "https://ucarecdn.com/libs/widget/3.x/uploadcare.full.min.js"
 type VehicleFilesPanelProps = {
   vehicleId: string;
   folders?: string[];
+  documentTypes?: string[];
 };
 
 type VehicleDocument = {
@@ -103,9 +105,26 @@ function normalizeFolders(input: string[] | undefined) {
   return [...DEFAULT_FOLDERS];
 }
 
-export function VehicleFilesPanel({ vehicleId, folders: configuredFolders }: VehicleFilesPanelProps) {
+function normalizeDocumentTypes(input: string[] | undefined) {
+  const next = (input ?? [])
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .slice(0, 40);
+  if (next.length > 0) return next;
+  return ["General", "Registration", "Insurance", "Service Invoice", "Receipt", "Photo", "Other"];
+}
+
+export function VehicleFilesPanel({
+  vehicleId,
+  folders: configuredFolders,
+  documentTypes: configuredDocumentTypes,
+}: VehicleFilesPanelProps) {
   const publicKey = process.env.NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY ?? "";
   const folders = useMemo(() => normalizeFolders(configuredFolders), [configuredFolders]);
+  const documentTypes = useMemo(
+    () => normalizeDocumentTypes(configuredDocumentTypes),
+    [configuredDocumentTypes],
+  );
 
   const [activeFolder, setActiveFolder] = useState<string>(folders[0]);
   const [items, setItems] = useState<VehicleDocument[]>([]);
@@ -113,7 +132,7 @@ export function VehicleFilesPanel({ vehicleId, folders: configuredFolders }: Veh
   const [error, setError] = useState<string | null>(null);
 
   const [pendingUpload, setPendingUpload] = useState<PendingUpload | null>(null);
-  const [documentType, setDocumentType] = useState("General");
+  const [documentType, setDocumentType] = useState(documentTypes[0] ?? "General");
   const [title, setTitle] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -177,6 +196,12 @@ export function VehicleFilesPanel({ vehicleId, folders: configuredFolders }: Veh
   useEffect(() => {
     void loadDocuments();
   }, [loadDocuments]);
+
+  useEffect(() => {
+    if (!documentType.trim()) {
+      setDocumentType(documentTypes[0] ?? "General");
+    }
+  }, [documentType, documentTypes]);
 
   const chooseFile = async () => {
     setError(null);
@@ -354,11 +379,17 @@ export function VehicleFilesPanel({ vehicleId, folders: configuredFolders }: Veh
           <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
             Document type
             <input
+              list={`vehicle-document-types-${vehicleId}`}
               value={documentType}
               onChange={(event) => setDocumentType(event.target.value)}
               className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
               placeholder="Insurance certificate"
             />
+            <datalist id={`vehicle-document-types-${vehicleId}`}>
+              {documentTypes.map((option) => (
+                <option key={option} value={option} />
+              ))}
+            </datalist>
           </label>
           <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
             Title
@@ -409,45 +440,94 @@ export function VehicleFilesPanel({ vehicleId, folders: configuredFolders }: Veh
             </p>
           </div>
         ) : null}
-        {items.map((item) => (
-          <article
-            key={item.id}
-            data-testid="vehicle-file-card"
-            className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4"
-          >
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <div>
-                <p className="font-semibold text-[var(--ccr-text)] break-words">{item.label || item.title}</p>
-                <p className="text-xs text-[var(--ccr-muted)]">{item.documentType}</p>
-              </div>
-              <span className="rounded-full border border-[var(--ccr-border)] px-2 py-1 text-[11px] font-semibold text-[var(--ccr-muted)]">
-                {item.folder}
-              </span>
+        {!loading && items.length > 0 ? (
+          <>
+            <div className="space-y-3 md:hidden">
+              {items.map((item) => (
+                <article
+                  key={item.id}
+                  data-testid="vehicle-file-card"
+                  className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <p className="font-semibold text-[var(--ccr-text)] break-words">{item.label || item.title}</p>
+                      <p className="text-xs text-[var(--ccr-muted)]">{item.documentType}</p>
+                    </div>
+                    <span className="rounded-full border border-[var(--ccr-border)] px-2 py-1 text-[11px] font-semibold text-[var(--ccr-muted)]">
+                      {item.folder}
+                    </span>
+                  </div>
+
+                  <div className="mt-2 text-xs text-[var(--ccr-muted)] break-words">
+                    <p>Linked to: {item.linkedTo}</p>
+                    <p>Uploaded: <DateTimeInline value={item.createdAt} /></p>
+                    <p>{item.mimeType || "Unknown type"} · {normalizeBytes(item.sizeBytes)}</p>
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <a
+                      href={`/api/admin/vehicles/${vehicleId}/documents/${item.id}/download`}
+                      className="inline-flex min-h-10 items-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+                    >
+                      Download
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => void archiveDocument(item.id)}
+                      className="min-h-10 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700"
+                    >
+                      Archive
+                    </button>
+                  </div>
+                </article>
+              ))}
             </div>
 
-            <div className="mt-2 text-xs text-[var(--ccr-muted)] break-words">
-              <p>Linked to: {item.linkedTo}</p>
-              <p>Uploaded: <DateTimeInline value={item.createdAt} /></p>
-              <p>{item.mimeType || "Unknown type"} · {normalizeBytes(item.sizeBytes)}</p>
+            <div className="hidden overflow-x-auto md:block">
+              <table className="min-w-full text-left text-sm">
+                <thead className="border-b border-[var(--ccr-border)] text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
+                  <tr>
+                    <th className="px-3 py-2">Type</th>
+                    <th className="px-3 py-2">Label</th>
+                    <th className="px-3 py-2">Linked To</th>
+                    <th className="px-3 py-2">Uploaded</th>
+                    <th className="px-3 py-2">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((item) => (
+                    <tr key={`desktop-${item.id}`} className="border-b border-[var(--ccr-border)] last:border-b-0">
+                      <td className="px-3 py-2 text-[var(--ccr-text)]">{item.documentType}</td>
+                      <td className="px-3 py-2 text-[var(--ccr-text)] break-words">{item.label || item.title}</td>
+                      <td className="px-3 py-2 text-[var(--ccr-muted)] break-words">{item.linkedTo}</td>
+                      <td className="px-3 py-2 text-[var(--ccr-muted)]">
+                        <TableDateTime value={item.createdAt} />
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="flex flex-wrap gap-2">
+                          <a
+                            href={`/api/admin/vehicles/${vehicleId}/documents/${item.id}/download`}
+                            className="inline-flex min-h-9 items-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-xs font-semibold text-[var(--ccr-text)]"
+                          >
+                            Download
+                          </a>
+                          <button
+                            type="button"
+                            onClick={() => void archiveDocument(item.id)}
+                            className="min-h-9 rounded-lg border border-red-300 bg-red-50 px-3 py-1 text-xs font-semibold text-red-700"
+                          >
+                            Archive
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-
-            <div className="mt-3 flex flex-wrap gap-2">
-              <a
-                href={`/api/admin/vehicles/${vehicleId}/documents/${item.id}/download`}
-                className="inline-flex min-h-10 items-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
-              >
-                Download
-              </a>
-              <button
-                type="button"
-                onClick={() => void archiveDocument(item.id)}
-                className="min-h-10 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700"
-              >
-                Archive
-              </button>
-            </div>
-          </article>
-        ))}
+          </>
+        ) : null}
       </div>
     </section>
   );

@@ -21,7 +21,6 @@ type VehicleProfileRow = {
   available_until: string | null;
   entry_date: string | null;
   exit_date: string | null;
-  notes: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -45,7 +44,6 @@ type ProfilePayload = {
   available_until: string | null;
   entry_date: string | null;
   exit_date: string | null;
-  notes: string | null;
 };
 
 export type AdminVehicleProfileRouteDeps = {
@@ -106,7 +104,6 @@ function normalizePayload(body: Record<string, unknown> | null): ProfilePayload 
     entry_date: normalizeNullableDate(body?.entry_date ?? body?.entryDate ?? body?.vehicle_entry_date ?? body?.vehicleEntryDate),
     exit_date: normalizeNullableDate(body?.exit_date ?? body?.exitDate ?? body?.vehicle_exit_date ?? body?.vehicleExitDate),
     odometer_unit: normalizeNullableText(body?.odometer_unit ?? body?.odometerUnit, 16),
-    notes: normalizeNullableText(body?.notes, 4000),
   };
 }
 
@@ -122,14 +119,14 @@ const DEFAULT_DEPS: AdminVehicleProfileRouteDeps = {
   requireCsrfCheck: (request, bodyToken) => requireCsrf(request, bodyToken),
   getProfile: async (vehicleId) => {
     const result = await dbQuery<VehicleProfileRow>(
-      "select vehicle_id, vin, license_plate, vehicle_type, vehicle_class, year, color, current_location_label, odometer_value, odometer_unit, fuel_level_value, available_from, available_until, entry_date, exit_date, notes, created_at, updated_at from vehicle_profiles where vehicle_id = $1::uuid limit 1",
+      "select vehicle_id, vin, license_plate, vehicle_type, vehicle_class, year, color, current_location_label, odometer_value, odometer_unit, fuel_level_value, available_from, available_until, entry_date, exit_date, created_at, updated_at from vehicle_profiles where vehicle_id = $1::uuid limit 1",
       [vehicleId],
     );
     return result.rows[0] ?? null;
   },
   upsertProfile: async (vehicleId, payload) => {
     const result = await dbQuery<VehicleProfileRow>(
-      "insert into vehicle_profiles (vehicle_id, vin, license_plate, vehicle_type, vehicle_class, year, color, current_location_label, odometer_value, odometer_unit, fuel_level_value, available_from, available_until, entry_date, exit_date, notes) values ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::date, $13::date, $14::date, $15::date, $16) on conflict (vehicle_id) do update set vin = excluded.vin, license_plate = excluded.license_plate, vehicle_type = excluded.vehicle_type, vehicle_class = excluded.vehicle_class, year = excluded.year, color = excluded.color, current_location_label = excluded.current_location_label, odometer_value = excluded.odometer_value, odometer_unit = excluded.odometer_unit, fuel_level_value = excluded.fuel_level_value, available_from = excluded.available_from, available_until = excluded.available_until, entry_date = excluded.entry_date, exit_date = excluded.exit_date, notes = excluded.notes, updated_at = now() returning vehicle_id, vin, license_plate, vehicle_type, vehicle_class, year, color, current_location_label, odometer_value, odometer_unit, fuel_level_value, available_from, available_until, entry_date, exit_date, notes, created_at, updated_at",
+      "insert into vehicle_profiles (vehicle_id, vin, license_plate, vehicle_type, vehicle_class, year, color, current_location_label, odometer_value, odometer_unit, fuel_level_value, available_from, available_until, entry_date, exit_date) values ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::date, $13::date, $14::date, $15::date) on conflict (vehicle_id) do update set vin = excluded.vin, license_plate = excluded.license_plate, vehicle_type = excluded.vehicle_type, vehicle_class = excluded.vehicle_class, year = excluded.year, color = excluded.color, current_location_label = excluded.current_location_label, odometer_value = excluded.odometer_value, odometer_unit = excluded.odometer_unit, fuel_level_value = excluded.fuel_level_value, available_from = excluded.available_from, available_until = excluded.available_until, entry_date = excluded.entry_date, exit_date = excluded.exit_date, updated_at = now() returning vehicle_id, vin, license_plate, vehicle_type, vehicle_class, year, color, current_location_label, odometer_value, odometer_unit, fuel_level_value, available_from, available_until, entry_date, exit_date, created_at, updated_at",
       [
         vehicleId,
         payload.vin,
@@ -146,7 +143,6 @@ const DEFAULT_DEPS: AdminVehicleProfileRouteDeps = {
         payload.available_until,
         payload.entry_date,
         payload.exit_date,
-        payload.notes,
       ],
     );
     return result.rows[0];

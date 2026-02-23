@@ -11,6 +11,7 @@ import {
 } from "@/lib/notifications/email";
 import { recalculateBookingPayments } from "@/lib/payments/recalculateBooking";
 import { requireCsrf } from "@/lib/security/csrf";
+import { createBlockout, listBlockouts } from "@/lib/blockouts/shared";
 
 function parseDate(value: string) {
   const date = new Date(value);
@@ -29,27 +30,35 @@ export async function GET(request: Request) {
   const vehicleId = searchParams.get("vehicleId");
 
   try {
-    if (!start || !end) {
-      return NextResponse.json({ error: "start and end are required" }, { status: 400 });
+    const hasStart = Boolean(start);
+    const hasEnd = Boolean(end);
+    if (hasStart !== hasEnd) {
+      return NextResponse.json({ error: "start and end must be provided together" }, { status: 400 });
+    }
+    if (!hasStart && !vehicleId) {
+      return NextResponse.json({ error: "Provide vehicleId or start/end range." }, { status: 400 });
     }
 
-    const startAt = parseDate(start);
-    const endAt = parseDate(end);
-    if (!startAt || !endAt) {
-      return NextResponse.json({ error: "Invalid date range" }, { status: 400 });
+    let rangeStartIso: string | null = null;
+    let rangeEndIso: string | null = null;
+    if (hasStart && hasEnd) {
+      const startAt = parseDate(start as string);
+      const endAt = parseDate(end as string);
+      if (!startAt || !endAt) {
+        return NextResponse.json({ error: "Invalid date range" }, { status: 400 });
+      }
+      rangeStartIso = startAt.toISOString();
+      rangeEndIso = endAt.toISOString();
     }
 
-    const query =
-      "select b.id, b.vehicle_id, b.start_at, b.end_at, b.reason, b.notes, b.created_at, b.updated_at, v.make as vehicle_make, v.model as vehicle_model from blockouts b join vehicles v on v.id = b.vehicle_id where b.start_at < $2 and b.end_at > $1 " +
-      (vehicleId ? "and b.vehicle_id = $3 " : "") +
-      "order by b.start_at asc";
+    const blockouts = await listBlockouts({
+      rangeStartIso,
+      rangeEndIso,
+      vehicleId,
+      limit: hasStart && hasEnd ? null : 250,
+    });
 
-    const values = vehicleId
-      ? [startAt.toISOString(), endAt.toISOString(), vehicleId]
-      : [startAt.toISOString(), endAt.toISOString()];
-    const blockouts = await dbQuery(query, values);
-
-    return NextResponse.json({ blockouts: blockouts.rows });
+    return NextResponse.json({ blockouts });
   } catch (error) {
     const code =
       typeof error === "object" && error !== null && "code" in error
@@ -246,12 +255,16 @@ export async function POST(request: Request) {
       );
     }
 
-    const insert = await dbQuery(
-      "insert into blockouts (vehicle_id, start_at, end_at, reason, notes, created_by) values ($1, $2, $3, $4, $5, $6) returning *",
-      [vehicleId, startAt.toISOString(), endAt.toISOString(), reason, notes || null, session.userId],
-    );
+    const insert = await createBlockout({
+      vehicleId,
+      startAtIso: startAt.toISOString(),
+      endAtIso: endAt.toISOString(),
+      reason,
+      notes: notes || null,
+      createdByUserId: session.userId,
+    });
 
-    return NextResponse.json({ blockout: insert.rows[0] });
+    return NextResponse.json({ blockout: insert });
   } catch (error) {
     const code =
       typeof error === "object" && error !== null && "code" in error

@@ -159,7 +159,7 @@ create index if not exists maintenance_reminders_status_idx
 create index if not exists maintenance_reminders_remind_at_idx
   on maintenance_reminders(remind_at);
 create unique index if not exists maintenance_reminders_schedule_remind_channel_unique
-  on maintenance_reminders(schedule_id, channel, date(remind_at));
+  on maintenance_reminders(schedule_id, channel, ((remind_at at time zone 'UTC')::date));
 
 create table if not exists vehicle_document_links (
   id uuid primary key default gen_random_uuid(),

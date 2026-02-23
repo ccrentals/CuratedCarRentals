@@ -74,7 +74,6 @@ test("admin vehicle profile API: PATCH upserts normalized payload", async () => 
         available_until: "2026-03-15",
         entry_date: "2026-02-20",
         exit_date: "2026-04-20",
-        notes: "Recent service completed",
         csrfToken: "token",
       }),
     }),
@@ -106,7 +105,6 @@ test("admin vehicle profile API: PATCH upserts normalized payload", async () => 
           available_until: payload.available_until,
           entry_date: payload.entry_date,
           exit_date: payload.exit_date,
-          notes: payload.notes,
           created_at: "2026-02-20T12:00:00.000Z",
           updated_at: "2026-02-20T12:00:00.000Z",
         };
@@ -128,6 +126,119 @@ test("admin vehicle profile API: PATCH upserts normalized payload", async () => 
   assert.equal(saved.current_location_label, "Airport Lot");
   assert.equal(saved.odometer_value, 50123);
   assert.equal(saved.fuel_level_value, 68);
+});
+
+test("admin vehicle profile API: overview persistence save then load", async () => {
+  let storedProfile: {
+    vehicle_id: string;
+    vin: string | null;
+    license_plate: string | null;
+    vehicle_type: string | null;
+    vehicle_class: string | null;
+    year: number | null;
+    color: string | null;
+    current_location_label: string | null;
+    odometer_value: number | null;
+    odometer_unit: string | null;
+    fuel_level_value: number | null;
+    available_from: string | null;
+    available_until: string | null;
+    entry_date: string | null;
+    exit_date: string | null;
+    created_at: string;
+    updated_at: string;
+  } | null = null;
+  const vehicleId = "11111111-1111-4111-8111-111111111111";
+
+  const patchResponse = await handleAdminVehicleProfilePatch(
+    new Request(`http://localhost/api/admin/vehicles/${vehicleId}/profile`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "x-csrf-token": "token",
+      },
+      body: JSON.stringify({
+        vin: "1HGCM82633A004352",
+        license_plate: "1234AB",
+        vehicle_type: "SEDAN",
+        vehicle_class: "STANDARD",
+        year: 2020,
+        color: "Black",
+        current_location_label: "Airport lot",
+        odometer_value: 50222,
+        odometer_unit: "KM",
+        fuel_level_value: 67,
+        available_from: "2026-03-01",
+        available_until: "2026-03-20",
+        entry_date: "2026-02-10",
+        exit_date: "2026-04-01",
+        csrfToken: "token",
+      }),
+    }),
+    { params: Promise.resolve({ id: vehicleId }) },
+    {
+      getSession: async () => ({
+        userId: "admin-user-id",
+        role: "ADMIN",
+        issuedAt: Date.now(),
+        expiresAt: Date.now() + 60_000,
+      }),
+      requireCsrfCheck: async () => true,
+      getProfile: async () => storedProfile,
+      upsertProfile: async (id, payload) => {
+        storedProfile = {
+          vehicle_id: id,
+          vin: payload.vin,
+          license_plate: payload.license_plate,
+          vehicle_type: payload.vehicle_type,
+          vehicle_class: payload.vehicle_class,
+          year: payload.year,
+          color: payload.color,
+          current_location_label: payload.current_location_label,
+          odometer_value: payload.odometer_value,
+          odometer_unit: payload.odometer_unit,
+          fuel_level_value: payload.fuel_level_value,
+          available_from: payload.available_from,
+          available_until: payload.available_until,
+          entry_date: payload.entry_date,
+          exit_date: payload.exit_date,
+          created_at: "2026-02-20T12:00:00.000Z",
+          updated_at: "2026-02-20T12:00:00.000Z",
+        };
+        return storedProfile;
+      },
+    },
+  );
+
+  assert.equal(patchResponse.status, 200);
+
+  const getResponse = await handleAdminVehicleProfileGet(
+    new Request(`http://localhost/api/admin/vehicles/${vehicleId}/profile`),
+    { params: Promise.resolve({ id: vehicleId }) },
+    {
+      getSession: async () => ({
+        userId: "admin-user-id",
+        role: "ADMIN",
+        issuedAt: Date.now(),
+        expiresAt: Date.now() + 60_000,
+      }),
+      requireCsrfCheck: async () => true,
+      getProfile: async () => storedProfile,
+      upsertProfile: async () => {
+        throw new Error("unreachable");
+      },
+    },
+  );
+
+  assert.equal(getResponse.status, 200);
+  const payload = (await getResponse.json()) as {
+    ok?: boolean;
+    profile?: { vin?: string | null; license_plate?: string | null; current_location_label?: string | null };
+  };
+  assert.equal(payload.ok, true);
+  assert.equal(payload.profile?.vin, "1HGCM82633A004352");
+  assert.equal(payload.profile?.license_plate, "1234AB");
+  assert.equal(payload.profile?.current_location_label, "Airport lot");
 });
 
 test("admin vehicle profile API: PATCH rejects invalid fuel level", async () => {

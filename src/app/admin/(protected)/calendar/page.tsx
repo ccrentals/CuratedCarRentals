@@ -1,6 +1,7 @@
 import { CalendarView } from "@/components/admin/CalendarView";
 import { CopySqlButton } from "@/components/admin/CopySqlButton";
 import { loadAdminSettings } from "@/lib/adminSettings";
+import { listBlockouts } from "@/lib/blockouts/shared";
 import { buildBookingRangeWhere, buildRange } from "@/lib/bookings/dateRangeFilter";
 import { dbQuery } from "@/lib/db";
 
@@ -176,26 +177,16 @@ create index if not exists blockouts_range_idx on blockouts(start_at, end_at);`;
       )
     : { rows: [] };
 
-  const blockoutClauses: string[] = ["b.start_at < $2", "b.end_at > $1"];
-  const blockoutValues: string[] = [rangeStart.toISOString(), rangeEnd.toISOString()];
-  const blockoutParamIndex = 3;
-
-  if (vehicleId) {
-    blockoutClauses.push(`b.vehicle_id = $${blockoutParamIndex}`);
-    blockoutValues.push(vehicleId);
-  }
-
   let blockoutsTableMissing = false;
-  let blockouts: { rows: BlockoutRow[] } = { rows: [] };
+  let blockouts: BlockoutRow[] = [];
 
   if (showBlockouts) {
     try {
-      blockouts = await dbQuery<BlockoutRow>(
-        "select b.id, b.vehicle_id, b.start_at, b.end_at, b.reason, b.notes, v.make as vehicle_make, v.model as vehicle_model from blockouts b join vehicles v on v.id = b.vehicle_id where " +
-          blockoutClauses.join(" and ") +
-          " order by b.start_at asc",
-        blockoutValues,
-      );
+      blockouts = (await listBlockouts({
+        rangeStartIso: rangeStart.toISOString(),
+        rangeEndIso: rangeEnd.toISOString(),
+        vehicleId,
+      })) as BlockoutRow[];
     } catch (error) {
       const code =
         typeof error === "object" && error !== null && "code" in error
@@ -203,7 +194,7 @@ create index if not exists blockouts_range_idx on blockouts(start_at, end_at);`;
           : "";
       if (code === "42P01") {
         blockoutsTableMissing = true;
-        blockouts = { rows: [] };
+        blockouts = [];
       } else {
         throw error;
       }
@@ -244,7 +235,7 @@ create index if not exists blockouts_range_idx on blockouts(start_at, end_at);`;
         baseDate={formatDateKey(baseDate)}
         days={days}
         bookings={bookings.rows}
-        blockouts={blockouts.rows}
+        blockouts={blockouts}
         vehicles={vehicles.rows}
         dayViewBookingLimit={adminSettings.dayViewBookingLimit}
         filters={{

@@ -46,7 +46,6 @@ type VehicleProfileRow = {
   available_until: string | null;
   entry_date: string | null;
   exit_date: string | null;
-  notes: string | null;
 };
 
 type ReservationRow = {
@@ -56,6 +55,14 @@ type ReservationRow = {
   pickup_at: string;
   return_at: string;
   created_at: string;
+};
+
+type VehicleNoteRow = {
+  id: string;
+  note_text: string;
+  created_at: string;
+  created_by_user_id: string | null;
+  created_by_email: string | null;
 };
 
 const VEHICLE_DETAIL_TABS = [
@@ -176,10 +183,27 @@ export default async function AdminVehicleDetailPage({
   let vehicleProfile: VehicleProfileRow | null = null;
   try {
     const profileResult = await dbQuery<VehicleProfileRow>(
-      "select vin, license_plate, vehicle_type, vehicle_class, year, color, current_location_label, odometer_value, odometer_unit, fuel_level_value, available_from, available_until, entry_date, exit_date, notes from vehicle_profiles where vehicle_id = $1::uuid limit 1",
+      "select vin, license_plate, vehicle_type, vehicle_class, year, color, current_location_label, odometer_value, odometer_unit, fuel_level_value, available_from, available_until, entry_date, exit_date from vehicle_profiles where vehicle_id = $1::uuid limit 1",
       [vehicle.id],
     );
     vehicleProfile = profileResult.rows[0] ?? null;
+  } catch (error) {
+    if (!isVehicleExtensionsMissingTableError(error)) {
+      throw error;
+    }
+  }
+
+  let vehicleNotes: VehicleNoteRow[] = [];
+  try {
+    const notesResult = await dbQuery<VehicleNoteRow>(
+      `select n.id, n.note_text, n.created_at, n.created_by_user_id, u.email as created_by_email
+       from vehicle_notes n
+       left join users u on u.id = n.created_by_user_id
+       where n.vehicle_id = $1::uuid and n.deleted_at is null
+       order by n.created_at desc`,
+      [vehicle.id],
+    );
+    vehicleNotes = notesResult.rows;
   } catch (error) {
     if (!isVehicleExtensionsMissingTableError(error)) {
       throw error;
@@ -208,13 +232,16 @@ export default async function AdminVehicleDetailPage({
   }
 
   let documentFolders = [...DEFAULT_ADMIN_SETTINGS.vehicleDocumentFolders];
+  let documentTypeOptions = [...DEFAULT_ADMIN_SETTINGS.vehicleDocumentTypeOptions];
   let checklistTemplateItems = [...DEFAULT_ADMIN_SETTINGS.vehicleChecklistTemplateItems];
   try {
     const { settings } = await loadAdminSettings();
     documentFolders = settings.vehicleDocumentFolders;
+    documentTypeOptions = settings.vehicleDocumentTypeOptions;
     checklistTemplateItems = settings.vehicleChecklistTemplateItems;
   } catch {
     documentFolders = [...DEFAULT_ADMIN_SETTINGS.vehicleDocumentFolders];
+    documentTypeOptions = [...DEFAULT_ADMIN_SETTINGS.vehicleDocumentTypeOptions];
     checklistTemplateItems = [...DEFAULT_ADMIN_SETTINGS.vehicleChecklistTemplateItems];
   }
 
@@ -244,10 +271,10 @@ export default async function AdminVehicleDetailPage({
                 key={tab.key}
                 href={`/admin/vehicles/${vehicle.id}?tab=${tab.key}`}
                 data-testid={`vehicle-detail-tab-${tab.key}`}
-                className={`inline-flex min-h-11 items-center rounded-full px-3 py-2 text-xs font-semibold whitespace-nowrap transition sm:min-h-0 ${
+                className={`inline-flex min-h-11 items-center rounded-full border px-3 py-2 text-xs font-semibold whitespace-nowrap transition sm:min-h-0 ${
                   active
-                    ? "bg-[var(--ccr-primary)] text-white"
-                    : "text-[var(--ccr-text)] hover:bg-[var(--ccr-surface-soft)]"
+                    ? "border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] text-[var(--ccr-text)] shadow-sm ring-1 ring-[var(--ccr-accent)]/40"
+                    : "border-transparent text-[var(--ccr-text)] hover:border-[var(--ccr-border)] hover:bg-[var(--ccr-surface-soft)]"
                 }`}
               >
                 {tab.label}
@@ -258,7 +285,9 @@ export default async function AdminVehicleDetailPage({
       </nav>
 
       <div className="mt-4 grid gap-6">
-        {activeTab === "overview" ? <VehicleDetailForm vehicle={vehicle} profile={vehicleProfile} /> : null}
+        {activeTab === "overview" ? (
+          <VehicleDetailForm vehicle={vehicle} profile={vehicleProfile} initialNotes={vehicleNotes} />
+        ) : null}
 
         {activeTab === "reservations" ? (
           <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4 shadow-sm sm:p-6">
@@ -274,6 +303,10 @@ export default async function AdminVehicleDetailPage({
                     <article key={`mobile-${row.id}`} className="space-y-3 py-4">
                       <div className="flex items-start justify-between gap-3">
                         <div>
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                            UUID
+                          </p>
+                          <p className="mb-1 break-all font-mono text-[11px] text-[var(--ccr-muted)]">{row.id}</p>
                           <Link href={`/admin/bookings/${row.id}`} className="font-semibold text-[var(--ccr-text)] underline-offset-2 hover:underline">
                             {row.customer_name}
                           </Link>
@@ -302,6 +335,7 @@ export default async function AdminVehicleDetailPage({
                   <table className="min-w-full text-left text-sm">
                     <thead className="border-b border-[var(--ccr-border)] text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
                       <tr>
+                        <th className="px-4 py-3">UUID</th>
                         <SortableTh
                           label="Customer"
                           columnKey="customer"
@@ -337,6 +371,7 @@ export default async function AdminVehicleDetailPage({
                     <tbody>
                       {reservationRows.map((row) => (
                         <tr key={row.id} className="border-b border-[var(--ccr-border)] last:border-b-0">
+                          <td className="px-4 py-3 font-mono text-[11px] text-[var(--ccr-muted)]">{row.id}</td>
                           <td className="px-4 py-3 text-[var(--ccr-text)]">
                             <Link href={`/admin/bookings/${row.id}`} className="font-semibold text-[var(--ccr-text)]">
                               {row.customer_name}
@@ -371,7 +406,11 @@ export default async function AdminVehicleDetailPage({
         ) : null}
 
         {activeTab === "files" ? (
-          <VehicleFilesPanel vehicleId={vehicle.id} folders={documentFolders} />
+          <VehicleFilesPanel
+            vehicleId={vehicle.id}
+            folders={documentFolders}
+            documentTypes={documentTypeOptions}
+          />
         ) : null}
 
         {activeTab === "checklist" ? (

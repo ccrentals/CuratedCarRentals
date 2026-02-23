@@ -15,6 +15,7 @@ type AdminSettings = {
   contactNotificationEmails: string;
   contactNotifyCooldownMinutes: number;
   vehicleDocumentFolders: string[];
+  vehicleDocumentTypeOptions: string[];
   vehicleChecklistTemplateItems: string[];
   maintenanceRemindersEnabled: boolean;
   maintenanceReminderLeadDays: number;
@@ -294,6 +295,7 @@ export function AdminSettingsForm({
     settings.depreciationDefaultResidualPercent,
   );
   const vehicleDocumentFoldersValue = settings.vehicleDocumentFolders.join("\n");
+  const vehicleDocumentTypeOptionsValue = settings.vehicleDocumentTypeOptions.join("\n");
   const vehicleChecklistTemplateItemsValue = settings.vehicleChecklistTemplateItems.join("\n");
   const maintenanceCategoriesValue = settings.maintenanceCategories.join("\n");
 
@@ -567,6 +569,32 @@ export function AdminSettingsForm({
               }
               className="w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
               placeholder={"Paperwork\nInsurance\nRegistration\nOther"}
+            />
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
+          <p className="text-sm font-semibold text-[var(--ccr-text)]">Vehicle document types</p>
+          <p className="mt-1 text-xs text-[var(--ccr-muted)]">
+            One type per line. Used as quick type suggestions in vehicle document forms.
+          </p>
+          <div className="mt-3">
+            <textarea
+              value={vehicleDocumentTypeOptionsValue}
+              disabled={disabled || saving}
+              rows={5}
+              onChange={(event) =>
+                setSettings((current) => ({
+                  ...current,
+                  vehicleDocumentTypeOptions: event.target.value
+                    .split(/\n|,|;/)
+                    .map((entry) => entry.trim())
+                    .filter(Boolean)
+                    .slice(0, 40),
+                }))
+              }
+              className="w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+              placeholder={"Registration\nInsurance Certificate\nService Invoice\nReceipt\nPhoto\nOther"}
             />
           </div>
         </div>

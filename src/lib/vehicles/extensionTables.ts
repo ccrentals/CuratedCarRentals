@@ -2,6 +2,7 @@ const VEHICLE_EXTENSION_TABLES = new Set([
   "vehicle_profiles",
   "vehicle_documents",
   "vehicle_checklist_items",
+  "vehicle_notes",
   "vehicle_maintenance_logs",
   "vehicle_maintenance_records",
   "vehicle_maintenance_schedules",

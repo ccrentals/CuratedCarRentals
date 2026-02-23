@@ -26,17 +26,6 @@ type VehicleBlockoutsProps = {
   vehicle: VehicleOption;
 };
 
-function rangeDefaults() {
-  const start = new Date();
-  start.setDate(1);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(start);
-  end.setMonth(end.getMonth() + 2);
-  end.setDate(0);
-  end.setHours(23, 59, 59, 999);
-  return { start, end };
-}
-
 export function VehicleBlockouts({ vehicle }: VehicleBlockoutsProps) {
   const [blockouts, setBlockouts] = useState<BlockoutRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,18 +34,12 @@ export function VehicleBlockouts({ vehicle }: VehicleBlockoutsProps) {
   const [modalOpen, setModalOpen] = useState(false);
   const [activeBlockout, setActiveBlockout] = useState<BlockoutRow | null>(null);
 
-  const range = useMemo(() => rangeDefaults(), []);
-
   async function loadBlockouts() {
     setLoading(true);
     setError(null);
     setTableMissing(false);
 
-    const url = `/api/admin/blockouts?start=${encodeURIComponent(
-      range.start.toISOString(),
-    )}&end=${encodeURIComponent(range.end.toISOString())}&vehicleId=${encodeURIComponent(
-      vehicle.id,
-    )}`;
+    const url = `/api/admin/blockouts?vehicleId=${encodeURIComponent(vehicle.id)}`;
 
     const response = await fetch(url);
     const data = await response.json().catch(() => ({}));

@@ -10,6 +10,7 @@ export type AdminSettings = {
   contactNotificationEmails: string;
   contactNotifyCooldownMinutes: number;
   vehicleDocumentFolders: string[];
+  vehicleDocumentTypeOptions: string[];
   vehicleChecklistTemplateItems: string[];
   maintenanceRemindersEnabled: boolean;
   maintenanceReminderLeadDays: number;
@@ -31,6 +32,15 @@ export const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
   contactNotificationEmails: "",
   contactNotifyCooldownMinutes: 10,
   vehicleDocumentFolders: ["Paperwork", "Insurance", "Registration", "Other"],
+  vehicleDocumentTypeOptions: [
+    "Registration",
+    "Insurance Certificate",
+    "Inspection Report",
+    "Service Invoice",
+    "Receipt",
+    "Photo",
+    "Other",
+  ],
   vehicleChecklistTemplateItems: [
     "Insurance Certificate",
     "Registration",
@@ -180,6 +190,10 @@ function normalizeAdminSettings(raw: unknown): AdminSettings {
     vehicleDocumentFolders: normalizeStringList(
       value.vehicleDocumentFolders,
       DEFAULT_ADMIN_SETTINGS.vehicleDocumentFolders,
+    ),
+    vehicleDocumentTypeOptions: normalizeStringList(
+      value.vehicleDocumentTypeOptions,
+      DEFAULT_ADMIN_SETTINGS.vehicleDocumentTypeOptions,
     ),
     vehicleChecklistTemplateItems: normalizeStringList(
       value.vehicleChecklistTemplateItems,
