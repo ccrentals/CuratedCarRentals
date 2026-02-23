@@ -2,6 +2,7 @@ import { writeAuditLog } from "@/lib/audit";
 import { dbQuery, getDbPool } from "@/lib/db";
 import { readAmountPaid, type Queryable } from "@/lib/payments/pricing";
 import { recalculateBookingPayments, type BookingPaymentSummary } from "@/lib/payments/recalculateBooking";
+import { isEntitledBooking as isEntitledBookingShared } from "@/lib/availability/entitlementShared";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -191,15 +192,6 @@ function isClosedStatus(value: unknown) {
   return normalized === "CANCELLED" || normalized === "RETURNED" || normalized === "OVERRIDDEN";
 }
 
-function readDepositRequired(pricing: MaybeRecord, fallbackDeposit = 0) {
-  const source = toObject(pricing);
-  const explicit = toNumber(source.deposit_required_cents);
-  if (explicit > 0) return explicit;
-  const deposit = toNumber(source.deposit_cents);
-  if (deposit > 0) return deposit;
-  return Math.max(0, fallbackDeposit);
-}
-
 export function isEntitledBooking(
   booking: {
     status?: unknown;
@@ -211,23 +203,7 @@ export function isEntitledBooking(
   },
   pricingSnapshot?: MaybeRecord,
 ): boolean {
-  if (isClosedStatus(booking.status)) return false;
-  const pricing = toObject(pricingSnapshot ?? booking.pricing_json);
-  const paymentStatus = String(
-    booking.paymentStatus ?? pricing.payment_status ?? "",
-  )
-    .trim()
-    .toUpperCase();
-  const paidToDate = toNumber(
-    booking.paidToDate ?? pricing.amount_paid ?? pricing.paid_to_date ?? 0,
-  );
-  const depositRequired = Math.max(
-    0,
-    toNumber(
-      booking.depositRequired ?? readDepositRequired(pricing, toNumber(booking.depositFallback)),
-    ),
-  );
-  return paymentStatus === "PAID_IN_FULL" || paidToDate >= depositRequired;
+  return isEntitledBookingShared(booking, pricingSnapshot);
 }
 
 async function hasOverlappingBlockout(

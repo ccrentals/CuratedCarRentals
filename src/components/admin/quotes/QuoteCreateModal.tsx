@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
+import { useDialogA11y } from "@/components/admin/useDialogA11y";
 import {
   formatTagsInput,
   parseTagsInput,
@@ -128,6 +129,8 @@ export function QuoteCreateModal({ onCreated }: QuoteCreateModalProps) {
   const [preview, setPreview] = useState<PricingPreview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const dialogRef = useRef<HTMLElement | null>(null);
+  const triggerRef = useRef<HTMLElement | null>(null);
 
   const pickupLocations = useMemo(
     () => locations.filter((location) => location.is_active && location.allow_pickup),
@@ -145,24 +148,12 @@ export function QuoteCreateModal({ onCreated }: QuoteCreateModalProps) {
     );
   }, [insuranceEnabled, insurancePlans, vehicleId]);
 
-  useEffect(() => {
-    if (!open) return;
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setOpen(false);
-      }
-    };
-
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    window.addEventListener("keydown", onKeyDown);
-
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, [open]);
+  useDialogA11y({
+    open,
+    onClose: () => setOpen(false),
+    dialogRef,
+    restoreFocusRef: triggerRef,
+  });
 
   const loadBootstrap = useCallback(async () => {
     setLoadingBootstrap(true);
@@ -453,6 +444,7 @@ export function QuoteCreateModal({ onCreated }: QuoteCreateModalProps) {
         type="button"
         onClick={() => {
           setError(null);
+          triggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
           setOpen(true);
         }}
         className="rounded-xl border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] ring-1 ring-[var(--ccr-accent)] transition hover:border-[var(--ccr-accent-strong)] hover:bg-[var(--ccr-surface-soft)]"
@@ -466,10 +458,12 @@ export function QuoteCreateModal({ onCreated }: QuoteCreateModalProps) {
           onClick={() => setOpen(false)}
         />
         <section
+          ref={dialogRef}
           role="dialog"
           aria-modal="true"
           aria-label="Create quote"
-          className={`absolute right-0 top-0 h-full w-full max-w-2xl border-l border-[var(--ccr-border)] bg-[var(--ccr-surface)] shadow-2xl transition-transform duration-200 ease-out ${
+          tabIndex={open ? -1 : undefined}
+          className={`absolute right-0 top-0 h-[100dvh] max-h-[100dvh] w-full max-w-2xl overflow-hidden border-l border-[var(--ccr-border)] bg-[var(--ccr-surface)] shadow-2xl transition-transform duration-200 ease-out ${
             open ? "translate-x-0" : "translate-x-full"
           }`}
         >
@@ -758,7 +752,7 @@ export function QuoteCreateModal({ onCreated }: QuoteCreateModalProps) {
               </div>
             </form>
 
-            <footer className="flex items-center justify-between border-t border-[var(--ccr-border)] px-5 py-4">
+            <footer className="sticky bottom-0 flex items-center justify-between border-t border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-5 py-4">
               <p className="text-xs text-[var(--ccr-muted)]">{formatTagsInput(parseTagsInput(tagsInput)) || "No tags"}</p>
               <button
                 type="submit"

@@ -9,6 +9,16 @@ export type AdminSettings = {
   dayViewBookingLimit: number | "all";
   contactNotificationEmails: string;
   contactNotifyCooldownMinutes: number;
+  vehicleDocumentFolders: string[];
+  vehicleChecklistTemplateItems: string[];
+  maintenanceRemindersEnabled: boolean;
+  maintenanceReminderLeadDays: number;
+  maintenanceDueSoonDays: number;
+  maintenanceDueSoonKm: number;
+  maintenanceCategories: string[];
+  depreciationDefaultMethod: "STRAIGHT_LINE";
+  depreciationDefaultUsefulLifeMonths: number;
+  depreciationDefaultResidualPercent: number;
 };
 
 export const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
@@ -20,6 +30,30 @@ export const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
   dayViewBookingLimit: 5,
   contactNotificationEmails: "",
   contactNotifyCooldownMinutes: 10,
+  vehicleDocumentFolders: ["Paperwork", "Insurance", "Registration", "Other"],
+  vehicleChecklistTemplateItems: [
+    "Insurance Certificate",
+    "Registration",
+    "Roadside Assistance",
+  ],
+  maintenanceRemindersEnabled: false,
+  maintenanceReminderLeadDays: 7,
+  maintenanceDueSoonDays: 14,
+  maintenanceDueSoonKm: 500,
+  maintenanceCategories: [
+    "SERVICE",
+    "REPAIR",
+    "INSPECTION",
+    "REGISTRATION",
+    "INSURANCE",
+    "TIRE",
+    "BRAKE",
+    "BATTERY",
+    "OTHER",
+  ],
+  depreciationDefaultMethod: "STRAIGHT_LINE",
+  depreciationDefaultUsefulLifeMonths: 60,
+  depreciationDefaultResidualPercent: 20,
 };
 
 function normalizeDayViewBookingLimit(value: unknown): number | "all" {
@@ -54,6 +88,63 @@ function normalizeContactNotifyCooldownMinutes(value: unknown) {
   return Math.min(120, Math.max(1, Math.floor(parsed)));
 }
 
+function normalizeMaintenanceReminderLeadDays(value: unknown) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return DEFAULT_ADMIN_SETTINGS.maintenanceReminderLeadDays;
+  return Math.min(90, Math.max(1, Math.floor(parsed)));
+}
+
+function normalizeMaintenanceDueSoonDays(value: unknown) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return DEFAULT_ADMIN_SETTINGS.maintenanceDueSoonDays;
+  return Math.min(180, Math.max(1, Math.floor(parsed)));
+}
+
+function normalizeMaintenanceDueSoonKm(value: unknown) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return DEFAULT_ADMIN_SETTINGS.maintenanceDueSoonKm;
+  return Math.min(25000, Math.max(0, Math.floor(parsed)));
+}
+
+function normalizeDepreciationDefaultMethod(value: unknown) {
+  const normalized = String(value ?? "")
+    .trim()
+    .toUpperCase();
+  if (normalized === "STRAIGHT_LINE") return "STRAIGHT_LINE" as const;
+  return DEFAULT_ADMIN_SETTINGS.depreciationDefaultMethod;
+}
+
+function normalizeDepreciationDefaultUsefulLifeMonths(value: unknown) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return DEFAULT_ADMIN_SETTINGS.depreciationDefaultUsefulLifeMonths;
+  }
+  return Math.min(240, Math.max(1, Math.floor(parsed)));
+}
+
+function normalizeDepreciationDefaultResidualPercent(value: unknown) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return DEFAULT_ADMIN_SETTINGS.depreciationDefaultResidualPercent;
+  }
+  return Math.min(95, Math.max(0, Math.floor(parsed)));
+}
+
+function normalizeStringList(value: unknown, fallback: string[]) {
+  const rawList = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? value.split(/[,;\n]/)
+      : [];
+
+  const list = rawList
+    .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+    .filter(Boolean)
+    .slice(0, 40);
+
+  return list.length > 0 ? list : [...fallback];
+}
+
 function normalizeAdminSettings(raw: unknown): AdminSettings {
   if (!raw || typeof raw !== "object") {
     return { ...DEFAULT_ADMIN_SETTINGS };
@@ -86,6 +177,42 @@ function normalizeAdminSettings(raw: unknown): AdminSettings {
     contactNotifyCooldownMinutes: normalizeContactNotifyCooldownMinutes(
       value.contactNotifyCooldownMinutes,
     ),
+    vehicleDocumentFolders: normalizeStringList(
+      value.vehicleDocumentFolders,
+      DEFAULT_ADMIN_SETTINGS.vehicleDocumentFolders,
+    ),
+    vehicleChecklistTemplateItems: normalizeStringList(
+      value.vehicleChecklistTemplateItems,
+      DEFAULT_ADMIN_SETTINGS.vehicleChecklistTemplateItems,
+    ),
+    maintenanceRemindersEnabled:
+      typeof value.maintenanceRemindersEnabled === "boolean"
+        ? value.maintenanceRemindersEnabled
+        : DEFAULT_ADMIN_SETTINGS.maintenanceRemindersEnabled,
+    maintenanceReminderLeadDays: normalizeMaintenanceReminderLeadDays(
+      value.maintenanceReminderLeadDays,
+    ),
+    maintenanceDueSoonDays: normalizeMaintenanceDueSoonDays(
+      value.maintenanceDueSoonDays,
+    ),
+    maintenanceDueSoonKm: normalizeMaintenanceDueSoonKm(
+      value.maintenanceDueSoonKm,
+    ),
+    maintenanceCategories: normalizeStringList(
+      value.maintenanceCategories,
+      DEFAULT_ADMIN_SETTINGS.maintenanceCategories,
+    ),
+    depreciationDefaultMethod: normalizeDepreciationDefaultMethod(
+      value.depreciationDefaultMethod,
+    ),
+    depreciationDefaultUsefulLifeMonths:
+      normalizeDepreciationDefaultUsefulLifeMonths(
+        value.depreciationDefaultUsefulLifeMonths,
+      ),
+    depreciationDefaultResidualPercent:
+      normalizeDepreciationDefaultResidualPercent(
+        value.depreciationDefaultResidualPercent,
+      ),
   };
 }
 

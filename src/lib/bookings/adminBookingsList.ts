@@ -16,9 +16,13 @@ import {
   readPaymentOption,
 } from "@/lib/payments/pricing";
 import { formatBookingStatusLabel } from "@/lib/bookings/formatBookingStatusLabel";
+import { deriveBookingPhase, type DerivedBookingPhase } from "@/lib/vehicles/vehicleStatus";
 
 type BookingDbRow = {
   id: string;
+  archived_at: string | Date | null;
+  start_at: string | Date | null;
+  end_at: string | Date | null;
   start_date: string | Date;
   end_date: string | Date;
   created_at: string | Date;
@@ -55,6 +59,7 @@ export type AdminBookingListItem = {
   lostToFirstDeposit: boolean;
   status: string;
   statusLabel: string;
+  derivedPhase: DerivedBookingPhase;
   substatusIndicators: BookingSubstatusIndicator[];
   overriddenByBookingId: string | null;
   overriddenByCustomerName: string | null;
@@ -380,7 +385,7 @@ function buildBookingsQuery(input: {
         : input.sortBy === "vehicle"
           ? `order by lower(v.make) ${directionSql}, lower(v.model) ${directionSql}, b.id::text ${directionSql}`
           : input.sortBy === "dates"
-            ? `order by b.start_date ${directionSql}, b.end_date ${directionSql}, b.id::text ${directionSql}`
+            ? `order by coalesce(b.start_at, b.start_date::timestamptz) ${directionSql}, coalesce(b.end_at, (b.end_date::timestamptz + interval '1 day')) ${directionSql}, b.id::text ${directionSql}`
             : input.sortBy === "status"
               ? `order by upper(b.status) ${directionSql}, b.id::text ${directionSql}`
               : `order by b.created_at ${directionSql}, b.id::text ${directionSql}`;
@@ -390,7 +395,7 @@ function buildBookingsQuery(input: {
   values.push(Math.max(0, input.offset));
   const offsetIndex = values.length;
   const text =
-    "select b.id, b.start_date, b.end_date, b.created_at, b.status, b.pricing_json, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model, v.deposit_cents as vehicle_deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id " +
+    "select b.id, b.archived_at, b.start_at, b.end_at, b.start_date, b.end_date, b.created_at, b.status, b.pricing_json, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model, v.deposit_cents as vehicle_deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id " +
     whereSql +
     ` ${orderBySql} limit $${limitIndex} offset $${offsetIndex}`;
 
@@ -527,6 +532,19 @@ export async function fetchAdminBookingsPage(input: AdminBookingListQueryInput):
     const cancelledAtRaw =
       typeof pricing.cancelled_at === "string" ? pricing.cancelled_at : null;
     const cancelledAtLabel = cancelledAtRaw ? fmtDateNoSeconds(cancelledAtRaw) : null;
+    const derivedPhase = deriveBookingPhase(
+      {
+        status: row.status,
+        archived_at: row.archived_at,
+        start_at: row.start_at,
+        start_date: row.start_date,
+        end_at: row.end_at,
+        end_date: row.end_date,
+        pricing_json: row.pricing_json,
+        vehicle_deposit_cents: row.vehicle_deposit_cents,
+      },
+      normalized.now,
+    );
 
     return {
       id: row.id,
@@ -543,6 +561,7 @@ export async function fetchAdminBookingsPage(input: AdminBookingListQueryInput):
       lostToFirstDeposit,
       status: row.status,
       statusLabel: formatBookingStatusLabel(row.status, String(pricing.payment_status ?? "")),
+      derivedPhase,
       substatusIndicators: resolveSubstatusIndicators({
         bookingStatus: row.status,
         pricing,

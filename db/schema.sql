@@ -443,6 +443,363 @@ create index if not exists quote_emails_status_created_idx
 create index if not exists quote_emails_to_email_lower_idx
   on quote_emails(lower(to_email));
 
+create table if not exists vehicle_profiles (
+  vehicle_id uuid primary key references vehicles(id) on delete cascade,
+  vin text,
+  license_plate text,
+  vehicle_type text,
+  vehicle_class text,
+  year int,
+  color text,
+  current_location_label text,
+  odometer_value int,
+  odometer_unit text not null default 'KM',
+  fuel_level_value int,
+  available_from date,
+  available_until date,
+  entry_date date,
+  exit_date date,
+  needs_cleaning boolean not null default false,
+  notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint vehicle_profiles_odometer_non_negative check (odometer_value is null or odometer_value >= 0),
+  constraint vehicle_profiles_fuel_level_range check (
+    fuel_level_value is null or (fuel_level_value >= 0 and fuel_level_value <= 100)
+  )
+);
+
+create table if not exists vehicle_documents (
+  id uuid primary key default gen_random_uuid(),
+  vehicle_id uuid not null references vehicles(id) on delete cascade,
+  folder text not null default 'Unsorted',
+  document_type text not null default 'OTHER',
+  title text not null,
+  storage_provider text not null default 'UPLOADCARE_FILE_ID',
+  storage_key text not null,
+  mime_type text,
+  size_bytes bigint,
+  file_size_bytes int,
+  tags jsonb not null default '[]'::jsonb,
+  label text,
+  uploaded_by_user_id uuid references users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  archived_at timestamptz,
+  constraint vehicle_documents_size_non_negative check (size_bytes is null or size_bytes >= 0)
+);
+
+alter table vehicle_documents
+  add column if not exists file_size_bytes int;
+alter table vehicle_documents
+  add column if not exists label text;
+alter table vehicle_documents
+  add column if not exists archived_at timestamptz;
+
+update vehicle_documents
+set document_type = 'OTHER'
+where document_type is null;
+
+alter table vehicle_documents
+  alter column document_type set default 'OTHER';
+alter table vehicle_documents
+  alter column document_type set not null;
+
+update vehicle_documents
+set file_size_bytes = least(greatest(size_bytes::bigint, 0), 2147483647)::int
+where file_size_bytes is null
+  and size_bytes is not null;
+
+alter table vehicle_documents
+  drop constraint if exists vehicle_documents_file_size_non_negative;
+alter table vehicle_documents
+  add constraint vehicle_documents_file_size_non_negative check (
+    file_size_bytes is null or file_size_bytes >= 0
+  );
+
+create table if not exists vehicle_checklist_items (
+  id uuid primary key default gen_random_uuid(),
+  vehicle_id uuid not null references vehicles(id) on delete cascade,
+  label text not null,
+  folder text not null default 'Unsorted',
+  required boolean not null default false,
+  uploaded_document_id uuid references vehicle_documents(id) on delete set null,
+  expiration_date date,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists maintenance_service_types (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  description text,
+  default_interval_days int,
+  default_interval_odometer int,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint maintenance_service_types_default_interval_days_check check (
+    default_interval_days is null or default_interval_days >= 1
+  ),
+  constraint maintenance_service_types_default_interval_odometer_check check (
+    default_interval_odometer is null or default_interval_odometer >= 1
+  )
+);
+
+create table if not exists vehicle_maintenance_schedules (
+  id uuid primary key default gen_random_uuid(),
+  vehicle_id uuid not null references vehicles(id) on delete cascade,
+  service_type_id uuid not null references maintenance_service_types(id) on delete restrict,
+  interval_days int,
+  interval_odometer int,
+  last_service_date date,
+  last_service_odometer int,
+  next_due_date date,
+  next_due_odometer int,
+  status text not null default 'ACTIVE',
+  notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint vehicle_maintenance_schedules_status_check check (
+    status in ('ACTIVE', 'PAUSED', 'COMPLETED')
+  ),
+  constraint vehicle_maintenance_schedules_interval_days_check check (
+    interval_days is null or interval_days >= 1
+  ),
+  constraint vehicle_maintenance_schedules_interval_odometer_check check (
+    interval_odometer is null or interval_odometer >= 1
+  ),
+  constraint vehicle_maintenance_schedules_last_service_odometer_check check (
+    last_service_odometer is null or last_service_odometer >= 0
+  ),
+  constraint vehicle_maintenance_schedules_next_due_odometer_check check (
+    next_due_odometer is null or next_due_odometer >= 0
+  )
+);
+
+create table if not exists vehicle_maintenance_logs (
+  id uuid primary key default gen_random_uuid(),
+  vehicle_id uuid not null references vehicles(id) on delete cascade,
+  service_type_id uuid not null references maintenance_service_types(id) on delete restrict,
+  service_date date not null,
+  service_type text not null default 'General',
+  odometer_value int,
+  cost_cents int,
+  vendor text,
+  notes text,
+  created_by_user_id uuid references users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  constraint vehicle_maintenance_logs_odometer_non_negative check (
+    odometer_value is null or odometer_value >= 0
+  ),
+  constraint vehicle_maintenance_logs_cost_non_negative check (
+    cost_cents is null or cost_cents >= 0
+  )
+);
+
+create table if not exists maintenance_reminders (
+  id uuid primary key default gen_random_uuid(),
+  vehicle_id uuid not null references vehicles(id) on delete cascade,
+  schedule_id uuid not null references vehicle_maintenance_schedules(id) on delete cascade,
+  remind_at timestamptz not null,
+  status text not null default 'PENDING',
+  channel text not null default 'EMAIL',
+  created_at timestamptz not null default now(),
+  constraint maintenance_reminders_status_check check (
+    status in ('PENDING', 'SENT', 'CANCELLED')
+  ),
+  constraint maintenance_reminders_channel_check check (
+    channel in ('EMAIL', 'IN_APP')
+  )
+);
+
+create table if not exists vehicle_maintenance_records (
+  id uuid primary key default gen_random_uuid(),
+  vehicle_id uuid not null references vehicles(id) on delete cascade,
+  status text not null,
+  category text not null,
+  title text not null,
+  description text,
+  vendor_name text,
+  vendor_contact text,
+  reference_number text,
+  service_date date,
+  scheduled_date date,
+  odometer_km int,
+  next_due_date date,
+  next_due_odometer_km int,
+  labor_cost_cents int,
+  parts_cost_cents int,
+  tax_cost_cents int,
+  total_cost_cents int,
+  currency text not null default 'JMD',
+  priority text not null default 'NORMAL',
+  created_by_user_id uuid references users(id) on delete set null,
+  completed_by_user_id uuid references users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  archived_at timestamptz,
+  constraint vehicle_maintenance_records_status_check check (
+    status in ('SCHEDULED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED')
+  ),
+  constraint vehicle_maintenance_records_category_check check (
+    category in (
+      'SERVICE',
+      'REPAIR',
+      'INSPECTION',
+      'REGISTRATION',
+      'INSURANCE',
+      'TIRE',
+      'BRAKE',
+      'BATTERY',
+      'OTHER'
+    )
+  ),
+  constraint vehicle_maintenance_records_priority_check check (
+    priority in ('LOW', 'NORMAL', 'HIGH', 'URGENT')
+  ),
+  constraint vehicle_maintenance_records_currency_check check (
+    currency = 'JMD'
+  ),
+  constraint vehicle_maintenance_records_odometer_non_negative check (
+    odometer_km is null or odometer_km >= 0
+  ),
+  constraint vehicle_maintenance_records_next_due_odometer_non_negative check (
+    next_due_odometer_km is null or next_due_odometer_km >= 0
+  ),
+  constraint vehicle_maintenance_records_labor_non_negative check (
+    labor_cost_cents is null or labor_cost_cents >= 0
+  ),
+  constraint vehicle_maintenance_records_parts_non_negative check (
+    parts_cost_cents is null or parts_cost_cents >= 0
+  ),
+  constraint vehicle_maintenance_records_tax_non_negative check (
+    tax_cost_cents is null or tax_cost_cents >= 0
+  ),
+  constraint vehicle_maintenance_records_total_non_negative check (
+    total_cost_cents is null or total_cost_cents >= 0
+  )
+);
+
+alter table vehicle_documents
+  add column if not exists maintenance_record_id uuid references vehicle_maintenance_records(id) on delete set null;
+
+create table if not exists vehicle_finance (
+  vehicle_id uuid primary key references vehicles(id) on delete cascade,
+  purchase_date date,
+  purchase_cost_cents int,
+  residual_value_cents int,
+  useful_life_months int,
+  depreciation_method text not null default 'STRAIGHT_LINE',
+  notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint vehicle_finance_purchase_cost_non_negative check (
+    purchase_cost_cents is null or purchase_cost_cents >= 0
+  ),
+  constraint vehicle_finance_residual_non_negative check (
+    residual_value_cents is null or residual_value_cents >= 0
+  ),
+  constraint vehicle_finance_useful_life_positive check (
+    useful_life_months is null or useful_life_months >= 1
+  ),
+  constraint vehicle_finance_method_check check (
+    depreciation_method in ('STRAIGHT_LINE')
+  )
+);
+
+create table if not exists vehicle_depreciation_snapshots (
+  id uuid primary key default gen_random_uuid(),
+  vehicle_id uuid not null references vehicles(id) on delete cascade,
+  as_of_month date not null,
+  book_value_cents int not null,
+  accumulated_depreciation_cents int not null,
+  depreciation_for_month_cents int not null,
+  created_at timestamptz not null default now(),
+  constraint vehicle_depreciation_snapshots_month_start_check check (
+    as_of_month = date_trunc('month', as_of_month)::date
+  ),
+  constraint vehicle_depreciation_snapshots_book_non_negative check (
+    book_value_cents >= 0
+  ),
+  constraint vehicle_depreciation_snapshots_accumulated_non_negative check (
+    accumulated_depreciation_cents >= 0
+  ),
+  constraint vehicle_depreciation_snapshots_monthly_non_negative check (
+    depreciation_for_month_cents >= 0
+  ),
+  unique (vehicle_id, as_of_month)
+);
+
+create table if not exists vehicle_document_links (
+  id uuid primary key default gen_random_uuid(),
+  vehicle_document_id uuid not null references vehicle_documents(id) on delete cascade,
+  entity_type text not null,
+  entity_id uuid not null,
+  created_at timestamptz not null default now(),
+  unique (vehicle_document_id, entity_type, entity_id)
+);
+
+create index if not exists vehicle_profiles_vehicle_id_idx
+  on vehicle_profiles(vehicle_id);
+create index if not exists vehicle_documents_vehicle_id_idx
+  on vehicle_documents(vehicle_id);
+create index if not exists vehicle_documents_folder_idx
+  on vehicle_documents(folder);
+create index if not exists vehicle_documents_vehicle_document_type_idx
+  on vehicle_documents(vehicle_id, document_type);
+create index if not exists vehicle_documents_maintenance_record_id_idx
+  on vehicle_documents(maintenance_record_id);
+create index if not exists vehicle_documents_archived_at_idx
+  on vehicle_documents(archived_at);
+create index if not exists vehicle_checklist_items_vehicle_id_idx
+  on vehicle_checklist_items(vehicle_id);
+create unique index if not exists maintenance_service_types_name_lower_unique
+  on maintenance_service_types(lower(name));
+create index if not exists maintenance_service_types_is_active_idx
+  on maintenance_service_types(is_active);
+create index if not exists vehicle_maintenance_schedules_vehicle_id_idx
+  on vehicle_maintenance_schedules(vehicle_id);
+create index if not exists vehicle_maintenance_schedules_service_type_id_idx
+  on vehicle_maintenance_schedules(service_type_id);
+create index if not exists vehicle_maintenance_schedules_status_idx
+  on vehicle_maintenance_schedules(status);
+create index if not exists vehicle_maintenance_schedules_next_due_date_idx
+  on vehicle_maintenance_schedules(next_due_date);
+create index if not exists vehicle_maintenance_logs_vehicle_id_idx
+  on vehicle_maintenance_logs(vehicle_id);
+create index if not exists vehicle_maintenance_logs_service_date_idx
+  on vehicle_maintenance_logs(service_date desc);
+create index if not exists vehicle_maintenance_logs_service_type_id_idx
+  on vehicle_maintenance_logs(service_type_id);
+create index if not exists maintenance_reminders_vehicle_id_idx
+  on maintenance_reminders(vehicle_id);
+create index if not exists maintenance_reminders_schedule_id_idx
+  on maintenance_reminders(schedule_id);
+create index if not exists maintenance_reminders_status_idx
+  on maintenance_reminders(status);
+create index if not exists maintenance_reminders_remind_at_idx
+  on maintenance_reminders(remind_at);
+create unique index if not exists maintenance_reminders_schedule_remind_channel_unique
+  on maintenance_reminders(schedule_id, channel, date(remind_at));
+create index if not exists vehicle_maintenance_records_vehicle_status_idx
+  on vehicle_maintenance_records(vehicle_id, status);
+create index if not exists vehicle_maintenance_records_scheduled_date_idx
+  on vehicle_maintenance_records(scheduled_date);
+create index if not exists vehicle_maintenance_records_next_due_date_idx
+  on vehicle_maintenance_records(next_due_date);
+create index if not exists vehicle_maintenance_records_category_idx
+  on vehicle_maintenance_records(category);
+create index if not exists vehicle_maintenance_records_archived_at_idx
+  on vehicle_maintenance_records(archived_at);
+create index if not exists vehicle_depreciation_snapshots_as_of_month_idx
+  on vehicle_depreciation_snapshots(as_of_month);
+create index if not exists vehicle_depreciation_snapshots_vehicle_id_idx
+  on vehicle_depreciation_snapshots(vehicle_id);
+create index if not exists vehicle_document_links_entity_idx
+  on vehicle_document_links(entity_type, entity_id);
+create index if not exists vehicle_document_links_vehicle_document_id_idx
+  on vehicle_document_links(vehicle_document_id);
+
 create table if not exists booking_private_files (
   id uuid primary key default gen_random_uuid(),
   booking_id uuid not null references bookings(id) on delete cascade,

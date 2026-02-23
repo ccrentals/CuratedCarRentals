@@ -23,12 +23,13 @@ export function CronRunButtons() {
   const [pickupState, setPickupState] = useState<RunState>("idle");
   const [balanceState, setBalanceState] = useState<RunState>("idle");
   const [notesState, setNotesState] = useState<RunState>("idle");
+  const [maintenanceState, setMaintenanceState] = useState<RunState>("idle");
   const [simulateState, setSimulateState] = useState<RunState>("idle");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const handleRun = async (
-    type: "pickup" | "balance" | "notes" | "simulate",
+    type: "pickup" | "balance" | "notes" | "maintenance" | "simulate",
     path: string,
     setState: (state: RunState) => void,
   ) => {
@@ -49,6 +50,12 @@ export function CronRunButtons() {
           `Reminder simulation ran. Logged ${data?.simulatedEvents ?? 0} simulated events for mode ${
             data?.mode ?? "all"
           }.`,
+        );
+      } else if (type === "maintenance") {
+        setMessage(
+          `Maintenance reminders ran. Due schedules ${data?.dueSchedules ?? 0}, created ${
+            data?.remindersCreated ?? 0
+          }, skipped ${data?.remindersSkipped ?? 0}.`,
         );
       } else {
         setMessage(
@@ -106,6 +113,20 @@ export function CronRunButtons() {
         className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
       >
         {notesState === "running" ? "Running..." : "Run Scheduled Note Emails Now"}
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          handleRun(
+            "maintenance",
+            "/api/admin/cron/run-maintenance-reminders",
+            setMaintenanceState,
+          )
+        }
+        disabled={maintenanceState === "running"}
+        className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
+      >
+        {maintenanceState === "running" ? "Running..." : "Run Maintenance Reminders Now"}
       </button>
       <button
         type="button"

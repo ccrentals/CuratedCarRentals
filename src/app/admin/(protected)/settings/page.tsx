@@ -29,13 +29,19 @@ function parseStoredSettings(content: unknown): AdminSettings {
     const next: AdminSettings = { ...DEFAULT_ADMIN_SETTINGS };
 
     const toggleKeys: Array<
-      "blockoutSupersedesBookings" | "requireRestoreReason" | "sendPickupReminder" | "sendDropoffReminder" | "sendLateDropoffAlert"
+      | "blockoutSupersedesBookings"
+      | "requireRestoreReason"
+      | "sendPickupReminder"
+      | "sendDropoffReminder"
+      | "sendLateDropoffAlert"
+      | "maintenanceRemindersEnabled"
     > = [
       "blockoutSupersedesBookings",
       "requireRestoreReason",
       "sendPickupReminder",
       "sendDropoffReminder",
       "sendLateDropoffAlert",
+      "maintenanceRemindersEnabled",
     ];
     for (const key of toggleKeys) {
       if (typeof raw[key] === "boolean") next[key] = raw[key] as boolean;
@@ -70,6 +76,83 @@ function parseStoredSettings(content: unknown): AdminSettings {
     const cooldown = Number(raw.contactNotifyCooldownMinutes);
     if (Number.isFinite(cooldown)) {
       next.contactNotifyCooldownMinutes = Math.min(120, Math.max(1, Math.floor(cooldown)));
+    }
+
+    const maintenanceLeadDays = Number(raw.maintenanceReminderLeadDays);
+    if (Number.isFinite(maintenanceLeadDays)) {
+      next.maintenanceReminderLeadDays = Math.min(90, Math.max(1, Math.floor(maintenanceLeadDays)));
+    }
+
+    const maintenanceDueSoonDays = Number(raw.maintenanceDueSoonDays);
+    if (Number.isFinite(maintenanceDueSoonDays)) {
+      next.maintenanceDueSoonDays = Math.min(180, Math.max(1, Math.floor(maintenanceDueSoonDays)));
+    }
+
+    const maintenanceDueSoonKm = Number(raw.maintenanceDueSoonKm);
+    if (Number.isFinite(maintenanceDueSoonKm)) {
+      next.maintenanceDueSoonKm = Math.min(25000, Math.max(0, Math.floor(maintenanceDueSoonKm)));
+    }
+
+    const depreciationMethod = String(raw.depreciationDefaultMethod ?? "")
+      .trim()
+      .toUpperCase();
+    if (depreciationMethod === "STRAIGHT_LINE") {
+      next.depreciationDefaultMethod = "STRAIGHT_LINE";
+    }
+
+    const depreciationUsefulLife = Number(raw.depreciationDefaultUsefulLifeMonths);
+    if (Number.isFinite(depreciationUsefulLife)) {
+      next.depreciationDefaultUsefulLifeMonths = Math.min(
+        240,
+        Math.max(1, Math.floor(depreciationUsefulLife)),
+      );
+    }
+
+    const depreciationResidualPercent = Number(raw.depreciationDefaultResidualPercent);
+    if (Number.isFinite(depreciationResidualPercent)) {
+      next.depreciationDefaultResidualPercent = Math.min(
+        95,
+        Math.max(0, Math.floor(depreciationResidualPercent)),
+      );
+    }
+
+    const vehicleDocumentFolders = Array.isArray(raw.vehicleDocumentFolders)
+      ? raw.vehicleDocumentFolders
+      : typeof raw.vehicleDocumentFolders === "string"
+        ? raw.vehicleDocumentFolders.split(/[,;\n]/)
+        : [];
+    const normalizedFolders = vehicleDocumentFolders
+      .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+      .filter(Boolean)
+      .slice(0, 40);
+    if (normalizedFolders.length > 0) {
+      next.vehicleDocumentFolders = normalizedFolders;
+    }
+
+    const vehicleChecklistTemplateItems = Array.isArray(raw.vehicleChecklistTemplateItems)
+      ? raw.vehicleChecklistTemplateItems
+      : typeof raw.vehicleChecklistTemplateItems === "string"
+        ? raw.vehicleChecklistTemplateItems.split(/[,;\n]/)
+        : [];
+    const normalizedTemplateItems = vehicleChecklistTemplateItems
+      .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+      .filter(Boolean)
+      .slice(0, 40);
+    if (normalizedTemplateItems.length > 0) {
+      next.vehicleChecklistTemplateItems = normalizedTemplateItems;
+    }
+
+    const maintenanceCategories = Array.isArray(raw.maintenanceCategories)
+      ? raw.maintenanceCategories
+      : typeof raw.maintenanceCategories === "string"
+        ? raw.maintenanceCategories.split(/[,;\n]/)
+        : [];
+    const normalizedMaintenanceCategories = maintenanceCategories
+      .map((entry) => (typeof entry === "string" ? entry.trim().toUpperCase() : ""))
+      .filter(Boolean)
+      .slice(0, 40);
+    if (normalizedMaintenanceCategories.length > 0) {
+      next.maintenanceCategories = normalizedMaintenanceCategories;
     }
 
     return next;

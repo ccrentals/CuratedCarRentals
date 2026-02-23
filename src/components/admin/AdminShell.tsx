@@ -222,6 +222,46 @@ const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    label: "Maintenance",
+    href: "/admin/maintenance",
+    icon: (className: string) => (
+      <svg
+        viewBox="0 0 24 24"
+        className={className}
+        aria-hidden="true"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M14.5 6.5a4 4 0 0 0-4.9 4.9L3 18l3 3 6.6-6.6a4 4 0 0 0 4.9-4.9l-2.5 2.5-3-3z" />
+        <path d="M19 3l2 2" />
+      </svg>
+    ),
+  },
+  {
+    label: "Depreciation",
+    href: "/admin/depreciation",
+    icon: (className: string) => (
+      <svg
+        viewBox="0 0 24 24"
+        className={className}
+        aria-hidden="true"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M5 19V5" />
+        <path d="M5 19h14" />
+        <path d="M8 15l3-3 3 2 4-5" />
+        <path d="M17 9h1.8V7.2" />
+      </svg>
+    ),
+  },
+  {
     label: "Reports",
     href: "/admin/reports",
     icon: (className: string) => (
@@ -394,6 +434,7 @@ const NAV_GROUPS: NavGroup[] = [
       "/admin/promo-codes",
       "/admin/calendar",
       "/admin/vehicles",
+      "/admin/maintenance",
       "/admin/settings",
       "/admin/users",
       "/admin/profile",

@@ -5,7 +5,7 @@ import { useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { BlockoutModal } from "@/components/admin/BlockoutModal";
-import { isUpcomingBooking } from "@/lib/bookings/upcoming";
+import { deriveBookingPhase, type DerivedBookingPhase } from "@/lib/vehicles/vehicleStatus";
 
 type VehicleOption = {
   id: string;
@@ -16,9 +16,12 @@ type VehicleOption = {
 type BookingEvent = {
   id: string;
   status: string;
+  archived_at?: string | null;
   start_at: string | null;
+  end_at?: string | null;
   start_date: string;
   end_date: string;
+  pricing_json?: Record<string, unknown> | null;
   pickup_location?: string;
   customer_name: string;
   vehicle_id: string;
@@ -109,6 +112,24 @@ function dayRange(dateKey: string) {
 function overlapsDay(start: Date, end: Date, dayKey: string) {
   const { start: dayStart, end: dayEnd } = dayRange(dayKey);
   return start < dayEnd && end > dayStart;
+}
+
+function bookingPhaseBadge(phase: DerivedBookingPhase) {
+  if (phase === "UPCOMING") {
+    return {
+      label: "Upcoming",
+      className:
+        "rounded-full border border-emerald-300/40 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-100",
+    };
+  }
+  if (phase === "ON_RENT") {
+    return {
+      label: "On Rent",
+      className:
+        "rounded-full border border-cyan-300/40 bg-cyan-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-cyan-100",
+    };
+  }
+  return null;
 }
 
 export function CalendarView({
@@ -210,6 +231,10 @@ export function CalendarView({
         ? dayViewBookingLimit
         : DEFAULT_DAY_BOOKING_LIMIT;
   const hasDayViewLimit = typeof normalizedDayViewLimit === "number";
+  const now = new Date();
+  const hasUpcomingInDayView = selectedEvents.bookings.some(
+    (booking) => deriveBookingPhase(booking, now) === "UPCOMING",
+  );
 
   const visibleDayBookings = showAllDayBookings
     ? selectedEvents.bookings
@@ -610,25 +635,28 @@ export function CalendarView({
               <p className="mt-2 text-sm text-[var(--ccr-muted)]">No bookings.</p>
             ) : (
               <ul className="mt-2 space-y-2">
-                {visibleDayBookings.map((booking) => (
-                  <li key={booking.id}>
-                    <Link
-                      href={`/admin/bookings/${booking.id}`}
-                      className="block rounded-xl border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] transition hover:border-[var(--ccr-accent-strong)]"
-                    >
-                      <span className="flex flex-wrap items-center gap-2">
-                        <span>
-                          {booking.customer_name} • {booking.vehicle_make} {booking.vehicle_model}
-                        </span>
-                        {isUpcomingBooking(booking, new Date()) ? (
-                          <span className="rounded-full border border-emerald-300/40 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-100">
-                            Upcoming
+                {visibleDayBookings.map((booking) => {
+                  const phaseBadge = bookingPhaseBadge(deriveBookingPhase(booking, now));
+                  return (
+                    <li key={booking.id}>
+                      <Link
+                        href={`/admin/bookings/${booking.id}`}
+                        className="block rounded-xl border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] transition hover:border-[var(--ccr-accent-strong)]"
+                      >
+                        <span className="flex flex-wrap items-center gap-2">
+                          <span>
+                            {booking.customer_name} • {booking.vehicle_make} {booking.vehicle_model}
                           </span>
-                        ) : null}
-                      </span>
-                    </Link>
-                  </li>
-                ))}
+                          {phaseBadge ? (
+                            <span className={phaseBadge.className}>
+                              {phaseBadge.label}
+                            </span>
+                          ) : null}
+                        </span>
+                      </Link>
+                    </li>
+                  );
+                })}
               </ul>
             )}
             {hiddenDayBookingCount > 0 ? (
@@ -648,6 +676,14 @@ export function CalendarView({
               >
                 See less
               </button>
+            ) : null}
+            {hasUpcomingInDayView ? (
+              <Link
+                href="/admin/bookings?scope=upcoming"
+                className="mt-2 inline-flex text-xs font-semibold text-[var(--ccr-accent)] underline-offset-2 transition hover:underline"
+              >
+                See more upcoming
+              </Link>
             ) : null}
           </div>
 

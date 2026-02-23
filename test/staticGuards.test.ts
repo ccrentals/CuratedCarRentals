@@ -73,18 +73,19 @@ test("Entitlement SSoT wiring: public availability and payment reconciliation us
   assert.match(wipayReconcile, /maybeEntitleBookingAfterPayment/);
 });
 
-test("Upcoming SSoT wiring: dashboard, bookings list, and calendar use shared upcoming helper", () => {
+test("Upcoming SSoT wiring: dashboard + bookings SQL filters and calendar/day labels use shared helpers", () => {
   const bookingsList = read("src/lib/bookings/adminBookingsList.ts");
   assert.match(bookingsList, /from \"@\/lib\/bookings\/upcoming\"/);
   assert.match(bookingsList, /buildUpcomingWhereSql\(/);
+  assert.match(bookingsList, /deriveBookingPhase\(/);
 
   const dashboard = read("src/app/admin/(protected)/page.tsx");
   assert.match(dashboard, /from \"@\/lib\/bookings\/upcoming\"/);
   assert.match(dashboard, /buildUpcomingWhereSql\(/);
 
   const calendarView = read("src/components/admin/CalendarView.tsx");
-  assert.match(calendarView, /from \"@\/lib\/bookings\/upcoming\"/);
-  assert.match(calendarView, /isUpcomingBooking\(/);
+  assert.match(calendarView, /from \"@\/lib\/vehicles\/vehicleStatus\"/);
+  assert.match(calendarView, /deriveBookingPhase\(/);
 });
 
 test("Dashboard upcoming context links to bookings with Upcoming scope", () => {
@@ -97,4 +98,14 @@ test("Admin bookings API forwards upcoming scope parameters", () => {
   assert.match(apiRoute, /scope:\s*searchParams\.get\(\"scope\"\)/);
   assert.match(apiRoute, /sortBy:\s*searchParams\.get\(\"sortBy\"\)/);
   assert.match(apiRoute, /sortDir:\s*searchParams\.get\(\"sortDir\"\)/);
+});
+
+test("Maintenance SSoT wiring: maintenance APIs use centralized maintenance helper", () => {
+  const listRoute = read("src/app/api/admin/vehicles/[id]/maintenance/route.ts");
+  assert.match(listRoute, /computeMaintenanceRecordTotal\(/);
+  assert.match(listRoute, /getMaintenanceDueState\(/);
+
+  const detailRoute = read("src/app/api/admin/vehicles/[id]/maintenance/[recordId]/route.ts");
+  assert.match(detailRoute, /computeMaintenanceRecordTotal\(/);
+  assert.match(detailRoute, /getMaintenanceDueState\(/);
 });

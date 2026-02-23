@@ -125,6 +125,9 @@ export default async function AdminCronPage() {
             <li>
               Note emails: <span className="font-semibold">Every 15 minutes</span>
             </li>
+            <li>
+              Maintenance reminders: <span className="font-semibold">14:00 UTC daily</span>
+            </li>
           </ul>
           <CronRunButtons />
         </div>

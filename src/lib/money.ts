@@ -12,3 +12,18 @@ export function formatJmd(amount: number) {
 export function formatJmdDecimal(amount: number) {
   return Number(amount || 0).toFixed(2);
 }
+
+export function formatJmdFromCents(amountCents: number | null | undefined) {
+  const normalized = Number.isFinite(amountCents) ? Number(amountCents) : 0;
+  return (normalized / 100).toLocaleString("en-JM", {
+    style: "currency",
+    currency: "JMD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+export function formatJmdDecimalFromCents(amountCents: number | null | undefined) {
+  const normalized = Number.isFinite(amountCents) ? Number(amountCents) : 0;
+  return (normalized / 100).toFixed(2);
+}

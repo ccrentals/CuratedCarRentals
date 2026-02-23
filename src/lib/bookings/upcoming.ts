@@ -2,8 +2,10 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 const UPCOMING_EXCLUDED_STATUSES = new Set([
   "CANCELLED",
+  "NO_SHOW",
   "RETURNED",
   "COMPLETED",
+  "LOST",
   "OVERRIDDEN",
   "ARCHIVED",
 ]);

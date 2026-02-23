@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { buildQuoteEmailDraft } from "@/lib/quotes/quoteUi";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
+import { useDialogA11y } from "@/components/admin/useDialogA11y";
 
 type QuoteEmailTarget = {
   id: string;
@@ -38,25 +39,13 @@ export function QuoteEmailModal({ open, target, onClose, onSent }: QuoteEmailMod
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const dialogRef = useRef<HTMLElement | null>(null);
 
-  useEffect(() => {
-    if (!open) return;
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    };
-
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    window.addEventListener("keydown", onKeyDown);
-
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, [onClose, open]);
+  useDialogA11y({
+    open,
+    onClose,
+    dialogRef,
+  });
 
   useEffect(() => {
     if (!open) return;
@@ -131,10 +120,12 @@ export function QuoteEmailModal({ open, target, onClose, onSent }: QuoteEmailMod
         onClick={onClose}
       />
       <section
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label="Email quote"
-        className="absolute right-0 top-0 h-full w-full max-w-xl border-l border-[var(--ccr-border)] bg-[var(--ccr-surface)] shadow-2xl"
+        tabIndex={open ? -1 : undefined}
+        className="absolute right-0 top-0 h-[100dvh] max-h-[100dvh] w-full max-w-xl overflow-hidden border-l border-[var(--ccr-border)] bg-[var(--ccr-surface)] shadow-2xl"
       >
         <div className="flex h-full flex-col">
           <header className="flex items-start justify-between gap-3 border-b border-[var(--ccr-border)] px-5 py-4">
@@ -182,7 +173,7 @@ export function QuoteEmailModal({ open, target, onClose, onSent }: QuoteEmailMod
             {success ? <p className="text-xs font-semibold text-emerald-200">{success}</p> : null}
           </div>
 
-          <footer className="flex items-center justify-end gap-2 border-t border-[var(--ccr-border)] px-5 py-4">
+          <footer className="sticky bottom-0 flex items-center justify-end gap-2 border-t border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-5 py-4">
             <button
               type="button"
               onClick={onClose}

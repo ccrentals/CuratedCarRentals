@@ -10,10 +10,13 @@ import { PaginationSummary } from "@/components/admin/PaginationSummaryNav";
 import { SortableTh } from "@/components/admin/SortableTh";
 import {
   applySortToSearchParams,
+  nextSort,
   readSortFromSearchParams,
+  type SortDir,
   type SortState,
 } from "@/components/admin/tableSort";
 import { TableDateTime } from "@/components/shared/TableDateTime";
+import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { formatJmd } from "@/lib/money";
 import {
   buildLoadedPaginationProgress,
@@ -82,6 +85,21 @@ const QUOTE_SORT_COLUMNS = [
 ] as const;
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+const MOBILE_SORT_COLUMNS = ["created", "customer", "pickup", "total", "status"] as const;
+type MobileSortBy = (typeof MOBILE_SORT_COLUMNS)[number];
+const MOBILE_SORT_LABELS: Record<MobileSortBy, string> = {
+  created: "Created",
+  customer: "Customer",
+  pickup: "Pickup",
+  total: "Total",
+  status: "Status",
+};
+
+function defaultSortDirection(sortBy: MobileSortBy): SortDir {
+  if (sortBy === "created" || sortBy === "total") return "desc";
+  return "asc";
+}
 
 function normalizeRows(value: string | null) {
   const parsed = Number(value);
@@ -309,6 +327,9 @@ export function AdminQuotesListClient() {
     router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, { scroll: false });
   };
 
+  const mobileSortBy = (sort.sortBy as MobileSortBy | undefined) ?? "created";
+  const mobileSortDir = sort.sortDir ?? defaultSortDirection(mobileSortBy);
+
   return (
     <div className="mx-auto w-full max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -418,6 +439,43 @@ export function AdminQuotesListClient() {
           </label>
         </div>
 
+        <div className="mt-3 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-3 md:hidden">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Sort</p>
+          <div className="mt-2 grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+            <label className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+              Sort by
+              <select
+                data-testid="quotes-mobile-sort-by"
+                value={mobileSortBy}
+                onChange={(event) => {
+                  const nextSortBy = event.target.value as MobileSortBy;
+                  const nextState =
+                    sort.sortBy === nextSortBy
+                      ? sort
+                      : nextSort(sort, nextSortBy, defaultSortDirection(nextSortBy));
+                  updateSort(nextState);
+                }}
+                className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+              >
+                {MOBILE_SORT_COLUMNS.map((column) => (
+                  <option key={column} value={column}>
+                    {MOBILE_SORT_LABELS[column]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              onClick={() => updateSort(nextSort(sort, mobileSortBy, defaultSortDirection(mobileSortBy)))}
+              data-testid="quotes-mobile-sort-dir"
+              className="self-end rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+              aria-label={`Sort direction ${mobileSortDir === "asc" ? "ascending" : "descending"}`}
+            >
+              {mobileSortDir === "asc" ? "Asc" : "Desc"}
+            </button>
+          </div>
+        </div>
+
         <div className="mt-3 flex justify-end gap-2">
           <button
             type="button"
@@ -455,9 +513,8 @@ export function AdminQuotesListClient() {
             <div className="px-4 py-6 text-sm text-[var(--ccr-muted)]">No quotes found.</div>
           ) : (
             rows.map((row) => {
-              const rackPrice = row.rackPriceCents ?? row.baseTotalCents;
               return (
-                <article key={`mobile-${row.id}`} className="space-y-3 px-4 py-4">
+                <article key={`mobile-${row.id}`} data-testid="quote-mobile-card" className="space-y-3 px-4 py-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="font-semibold text-[var(--ccr-text)]">{row.customerFullName}</p>
@@ -478,21 +535,25 @@ export function AdminQuotesListClient() {
                       <dd className="font-semibold text-[var(--ccr-text)]">{formatJmd(row.totalCents)}</dd>
                     </div>
                     <div>
+                      <dt>Vehicle</dt>
+                      <dd className="text-[var(--ccr-text)]">{row.vehicleLabel || "—"}</dd>
+                    </div>
+                    <div>
+                      <dt>Expires</dt>
+                      <dd className="text-[var(--ccr-text)]">
+                        {row.expiresAt ? <DateTimeInline value={row.expiresAt} /> : "—"}
+                      </dd>
+                    </div>
+                    <div>
                       <dt>Pickup</dt>
-                      <dd className="text-[var(--ccr-text)]">{row.startAt ? new Date(row.startAt).toLocaleString() : "—"}</dd>
+                      <dd className="text-[var(--ccr-text)]">
+                        {row.startAt ? <DateTimeInline value={row.startAt} /> : "—"}
+                      </dd>
                     </div>
                     <div>
                       <dt>Return</dt>
-                      <dd className="text-[var(--ccr-text)]">{row.endAt ? new Date(row.endAt).toLocaleString() : "—"}</dd>
-                    </div>
-                    <div>
-                      <dt>Rack Price</dt>
-                      <dd className="text-[var(--ccr-text)]">{formatJmd(rackPrice)}</dd>
-                    </div>
-                    <div>
-                      <dt>Discount</dt>
                       <dd className="text-[var(--ccr-text)]">
-                        {row.promoCode ? `${row.promoCode} · -${formatJmd(row.discountTotalCents)}` : "—"}
+                        {row.endAt ? <DateTimeInline value={row.endAt} /> : "—"}
                       </dd>
                     </div>
                   </dl>
@@ -527,44 +588,33 @@ export function AdminQuotesListClient() {
         </div>
 
         <div className="hidden overflow-x-auto md:block">
-          <table className="min-w-[1700px] text-left text-sm">
+          <table className="min-w-[980px] text-left text-sm">
             <thead className="border-b border-[var(--ccr-border)] text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
               <tr>
-                <th className="px-4 py-3">#</th>
+                <th className="px-4 py-3">Quote</th>
                 <th className="px-4 py-3">Reservation Type</th>
                 <SortableTh label="Customer Name" columnKey="customer" sort={sort} onChange={updateSort} defaultDirection="asc" />
-                <SortableTh label="Customer Email" columnKey="email" sort={sort} onChange={updateSort} defaultDirection="asc" />
                 <SortableTh label="Pickup Date" columnKey="pickup" sort={sort} onChange={updateSort} defaultDirection="asc" />
-                <SortableTh label="Return Date" columnKey="return" sort={sort} onChange={updateSort} defaultDirection="asc" />
-                <SortableTh label="Vehicle Class" columnKey="vehicle" sort={sort} onChange={updateSort} defaultDirection="asc" />
-                <th className="px-4 py-3">Commission Partner</th>
-                <th className="px-4 py-3">Client pays at Partner</th>
-                <th className="px-4 py-3">Rack Price (JMD)</th>
                 <SortableTh label="Total Price (JMD)" columnKey="total" sort={sort} onChange={updateSort} defaultDirection="desc" />
-                <SortableTh label="Status" columnKey="status" sort={sort} onChange={updateSort} defaultDirection="asc" />
-                <th className="px-4 py-3">Tags</th>
-                <th className="px-4 py-3">Discounts</th>
-                <th className="px-4 py-3">Comments</th>
                 <SortableTh label="Created" columnKey="created" sort={sort} onChange={updateSort} defaultDirection="desc" />
-                <th className="px-4 py-3 text-right">Actions</th>
+                <th className="px-4 py-3 text-right">Action</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr className="border-b border-[var(--ccr-border)]">
-                  <td colSpan={17} className="px-4 py-6 text-sm text-[var(--ccr-muted)]">
+                  <td colSpan={7} className="px-4 py-6 text-sm text-[var(--ccr-muted)]">
                     Loading quotes...
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr className="border-b border-[var(--ccr-border)]">
-                  <td colSpan={17} className="px-4 py-6 text-sm text-[var(--ccr-muted)]">
+                  <td colSpan={7} className="px-4 py-6 text-sm text-[var(--ccr-muted)]">
                     No quotes found.
                   </td>
                 </tr>
               ) : (
                 rows.map((row) => {
-                  const rackPrice = row.rackPriceCents ?? row.baseTotalCents;
                   return (
                     <tr key={row.id} className="border-b border-[var(--ccr-border)] last:border-b-0">
                       <td className="px-4 py-3 font-mono text-xs text-[var(--ccr-text)]">
@@ -573,31 +623,14 @@ export function AdminQuotesListClient() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-[var(--ccr-text)]">Reservations</td>
-                      <td className="px-4 py-3 text-[var(--ccr-text)]">{row.customerFullName}</td>
-                      <td className="px-4 py-3 text-[var(--ccr-text)]">{row.customerEmail}</td>
+                      <td className="px-4 py-3 text-[var(--ccr-text)]">
+                        <p>{row.customerFullName}</p>
+                        <p className="text-xs text-[var(--ccr-muted)]">{row.customerEmail}</p>
+                      </td>
                       <td className="px-4 py-3 text-[var(--ccr-muted)]">
                         <TableDateTime value={row.startAt} />
                       </td>
-                      <td className="px-4 py-3 text-[var(--ccr-muted)]">
-                        <TableDateTime value={row.endAt} />
-                      </td>
-                      <td className="px-4 py-3 text-[var(--ccr-text)]">{row.vehicleClass ?? "—"}</td>
-                      <td className="px-4 py-3 text-[var(--ccr-text)]">{row.commissionPartnerName ?? "—"}</td>
-                      <td className="px-4 py-3 text-[var(--ccr-text)]">{row.clientPaysAtPartner ? "Yes" : "No"}</td>
-                      <td className="px-4 py-3 text-[var(--ccr-text)]">{formatJmd(rackPrice)}</td>
                       <td className="px-4 py-3 text-[var(--ccr-text)]">{formatJmd(row.totalCents)}</td>
-                      <td className="px-4 py-3">
-                        <span className={`${QUOTE_STATUS_PILL_BASE_CLASS} ${quoteStatusPillToneClass(row.status)}`}>
-                          {quoteStatusLabel(row.status)}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-[var(--ccr-text)]">{row.tags.length > 0 ? row.tags.join(", ") : "—"}</td>
-                      <td className="px-4 py-3 text-[var(--ccr-text)]">
-                        {row.promoCode ? `${row.promoCode} · -${formatJmd(row.discountTotalCents)}` : "—"}
-                      </td>
-                      <td className="px-4 py-3 text-[var(--ccr-text)]" title={row.comments ?? undefined}>
-                        {truncateText(row.comments)}
-                      </td>
                       <td className="px-4 py-3 text-[var(--ccr-muted)]">
                         <TableDateTime value={row.createdAt} />
                       </td>

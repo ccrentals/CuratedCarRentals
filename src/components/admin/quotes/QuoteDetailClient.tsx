@@ -277,13 +277,13 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
         <div className="flex flex-wrap items-center gap-2">
           <Link
             href="/admin/bookings/quotes"
-            className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+            className="inline-flex min-h-9 items-center justify-center rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
           >
             Back to quotes
           </Link>
           <Link
             href={`/admin/bookings/quotes/${item.id}/print`}
-            className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+            className="inline-flex min-h-9 items-center justify-center rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
           >
             Print
           </Link>
@@ -291,14 +291,14 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
             href={`/api/admin/quotes/${item.id}/pdf`}
             target="_blank"
             rel="noreferrer"
-            className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+            className="inline-flex min-h-9 items-center justify-center rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
           >
             PDF
           </Link>
           <button
             type="button"
             onClick={() => setEmailOpen(true)}
-            className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+            className="inline-flex min-h-9 items-center justify-center rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
           >
             Email
           </button>
@@ -306,7 +306,7 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
             type="button"
             disabled={converting || Boolean(item.convertedBookingId)}
             onClick={() => void convertQuote()}
-            className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
+            className="inline-flex min-h-9 items-center justify-center rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
           >
             {item.convertedBookingId ? "Converted" : converting ? "Converting..." : "Convert to Booking"}
           </button>
@@ -353,7 +353,7 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
             type="button"
             onClick={() => void patchQuote({ status: "SENT" })}
             disabled={saving || item.status === "SENT"}
-            className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-50"
+            className="inline-flex min-h-9 items-center justify-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-50"
           >
             Mark Sent
           </button>
@@ -361,7 +361,7 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
             type="button"
             onClick={() => void patchQuote({ status: "ACCEPTED" })}
             disabled={saving || item.status === "ACCEPTED"}
-            className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-50"
+            className="inline-flex min-h-9 items-center justify-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-50"
           >
             Mark Accepted
           </button>
@@ -369,7 +369,7 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
             type="button"
             onClick={() => void patchQuote({ status: "EXPIRED" })}
             disabled={saving || item.status === "EXPIRED"}
-            className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-50"
+            className="inline-flex min-h-9 items-center justify-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-50"
           >
             Mark Expired
           </button>
@@ -377,7 +377,7 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
             type="button"
             onClick={() => void patchQuote({ status: "CANCELLED" })}
             disabled={saving || item.status === "CANCELLED"}
-            className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-50"
+            className="inline-flex min-h-9 items-center justify-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-50"
           >
             Mark Cancelled
           </button>
@@ -529,7 +529,7 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
                 rack_price_cents: rackPriceInput.trim() ? Number(rackPriceInput) : null,
               })
             }
-            className="rounded-lg border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-4 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
+            className="inline-flex min-h-9 items-center justify-center rounded-lg border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-4 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
           >
             {saving ? "Saving..." : "Save changes"}
           </button>

@@ -50,7 +50,14 @@ const STATUS_PILL_BASE_CLASS =
   "inline-flex min-h-7 shrink-0 items-center whitespace-nowrap rounded-full border px-3 py-1 text-xs font-semibold leading-none";
 const BOOKING_SORT_COLUMNS = ["booking", "customer", "vehicle", "dates", "status", "created"] as const;
 
-function statusPillToneClass(status: string) {
+function statusPillToneClass(status: string, phase: AdminBookingListItem["derivedPhase"]) {
+  if (phase === "UPCOMING") {
+    return "border-emerald-300/40 bg-emerald-500/15 text-emerald-100";
+  }
+  if (phase === "ON_RENT") {
+    return "border-cyan-300/35 bg-cyan-500/15 text-cyan-100";
+  }
+
   const normalized = String(status ?? "")
     .trim()
     .toUpperCase();
@@ -74,6 +81,12 @@ function statusPillToneClass(status: string) {
     return "border-cyan-300/35 bg-cyan-500/15 text-cyan-100";
   }
   return "border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] text-[var(--ccr-text)]";
+}
+
+function bookingPhaseLabel(booking: AdminBookingListItem) {
+  if (booking.derivedPhase === "UPCOMING") return "Upcoming";
+  if (booking.derivedPhase === "ON_RENT") return "On Rent";
+  return booking.statusLabel;
 }
 
 export function AdminBookingsTable({
@@ -299,8 +312,10 @@ export function AdminBookingsTable({
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex w-full items-center gap-2">
-                    <span className={`${STATUS_PILL_BASE_CLASS} ${statusPillToneClass(booking.status)}`}>
-                      {booking.statusLabel}
+                    <span
+                      className={`${STATUS_PILL_BASE_CLASS} ${statusPillToneClass(booking.status, booking.derivedPhase)}`}
+                    >
+                      {bookingPhaseLabel(booking)}
                     </span>
                     {booking.substatusIndicators.length > 0 ? (
                       <span className="ml-auto flex flex-nowrap items-center justify-end gap-2">

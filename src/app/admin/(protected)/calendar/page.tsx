@@ -13,9 +13,12 @@ type VehicleRow = {
 type BookingRow = {
   id: string;
   status: string;
+  archived_at: string | null;
   start_at: string | null;
+  end_at: string | null;
   start_date: string;
   end_date: string;
+  pricing_json: Record<string, unknown> | null;
   created_at: string;
   pickup_location: string;
   customer_name: string;
@@ -166,9 +169,9 @@ create index if not exists blockouts_range_idx on blockouts(start_at, end_at);`;
 
   const bookings = showBookings
     ? await dbQuery<BookingRow>(
-        "select b.id, b.status, b.start_at, b.start_date, b.end_date, b.created_at, b.pickup_location, c.full_name as customer_name, v.id as vehicle_id, v.make as vehicle_make, v.model as vehicle_model from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where " +
+        "select b.id, b.status, b.archived_at, b.start_at, b.end_at, b.start_date, b.end_date, b.pricing_json, b.created_at, b.pickup_location, c.full_name as customer_name, v.id as vehicle_id, v.make as vehicle_make, v.model as vehicle_model from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where " +
           bookingClauses.join(" and ") +
-          " order by b.start_date asc",
+          " order by coalesce(b.start_at, b.start_date::timestamptz) asc",
         bookingValues,
       )
     : { rows: [] };
