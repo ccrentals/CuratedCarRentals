@@ -408,8 +408,20 @@ create table if not exists quote_events (
   actor_admin_user_id uuid references users(id) on delete set null,
   meta jsonb not null default '{}'::jsonb,
   constraint quote_events_event_type_check check (
-    event_type in ('CREATED', 'UPDATED', 'EMAILED', 'STATUS_CHANGED', 'CONVERTED')
+    event_type in ('CREATED', 'UPDATED', 'EMAILED', 'STATUS_CHANGED', 'CONVERTED', 'PDF_GENERATED')
   )
+);
+
+create table if not exists quote_emails (
+  id uuid primary key default gen_random_uuid(),
+  quote_id uuid not null references quotes(id) on delete cascade,
+  to_email text not null,
+  subject text not null,
+  status text not null,
+  provider_message_id text,
+  error text,
+  created_at timestamptz not null default now(),
+  constraint quote_emails_status_check check (status in ('SENT', 'FAILED'))
 );
 
 create index if not exists quotes_status_created_idx
@@ -424,6 +436,12 @@ create index if not exists quote_events_quote_created_idx
   on quote_events(quote_id, created_at desc);
 create index if not exists quote_events_event_type_idx
   on quote_events(event_type, created_at desc);
+create index if not exists quote_emails_quote_created_idx
+  on quote_emails(quote_id, created_at desc);
+create index if not exists quote_emails_status_created_idx
+  on quote_emails(status, created_at desc);
+create index if not exists quote_emails_to_email_lower_idx
+  on quote_emails(lower(to_email));
 
 create table if not exists booking_private_files (
   id uuid primary key default gen_random_uuid(),

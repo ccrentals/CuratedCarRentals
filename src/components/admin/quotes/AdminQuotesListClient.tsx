@@ -505,7 +505,9 @@ export function AdminQuotesListClient() {
                       View
                     </Link>
                     <Link
-                      href={`/admin/bookings/quotes/${row.id}/print`}
+                      href={`/api/admin/quotes/${row.id}/pdf`}
+                      target="_blank"
+                      rel="noreferrer"
                       className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
                     >
                       Print
@@ -608,7 +610,9 @@ export function AdminQuotesListClient() {
                             View
                           </Link>
                           <Link
-                            href={`/admin/bookings/quotes/${row.id}/print`}
+                            href={`/api/admin/quotes/${row.id}/pdf`}
+                            target="_blank"
+                            rel="noreferrer"
                             className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
                           >
                             Print
@@ -689,7 +693,9 @@ export function AdminQuotesListClient() {
               }
             : null
         }
-        openPath={emailTarget ? `/admin/bookings/quotes/${emailTarget.id}` : undefined}
+        onSent={() => {
+          void fetchQuotes();
+        }}
         onClose={() => setEmailTarget(null)}
       />
     </div>

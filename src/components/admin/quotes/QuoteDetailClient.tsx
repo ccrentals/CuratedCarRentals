@@ -74,6 +74,12 @@ type QuoteDetailResponse = {
   error?: string;
 };
 
+type QuoteConvertResponse = {
+  ok?: boolean;
+  error?: string;
+  bookingId?: string;
+};
+
 type QuoteDetailClientProps = {
   quoteId: string;
   canManage: boolean;
@@ -111,8 +117,10 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [convertedBookingId, setConvertedBookingId] = useState<string | null>(null);
   const [item, setItem] = useState<QuoteDetailItem | null>(null);
   const [emailOpen, setEmailOpen] = useState(false);
+  const [converting, setConverting] = useState(false);
 
   const [expiresAtLocal, setExpiresAtLocal] = useState("");
   const [tagsInput, setTagsInput] = useState("");
@@ -148,6 +156,7 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
 
       setItem(payload.item);
       syncEditor(payload.item);
+      setConvertedBookingId(payload.item.convertedBookingId ?? null);
     } catch {
       setError("Unable to load quote.");
       setItem(null);
@@ -186,12 +195,48 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
 
       setItem(payload.item);
       syncEditor(payload.item);
+      setConvertedBookingId(payload.item.convertedBookingId ?? null);
       setMessage("Quote updated.");
       router.refresh();
     } catch {
       setError("Unable to update quote.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function convertQuote() {
+    if (!canManage || converting) return;
+    setConverting(true);
+    setError(null);
+    setMessage(null);
+    setConvertedBookingId(null);
+
+    try {
+      const csrfToken = await ensureCsrfToken();
+      const response = await fetch(`/api/admin/quotes/${quoteId}/convert-to-booking`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-csrf-token": csrfToken ?? "",
+        },
+        body: JSON.stringify({ csrfToken }),
+      });
+
+      const payload = (await response.json().catch(() => ({}))) as QuoteConvertResponse;
+      if (!response.ok || !payload.ok || !payload.bookingId) {
+        setError(payload.error ?? "Unable to convert quote.");
+        return;
+      }
+
+      setConvertedBookingId(payload.bookingId);
+      setMessage("Quote converted to booking.");
+      await loadQuote();
+      router.refresh();
+    } catch {
+      setError("Unable to convert quote.");
+    } finally {
+      setConverting(false);
     }
   }
 
@@ -242,6 +287,14 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
           >
             Print
           </Link>
+          <Link
+            href={`/api/admin/quotes/${item.id}/pdf`}
+            target="_blank"
+            rel="noreferrer"
+            className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+          >
+            PDF
+          </Link>
           <button
             type="button"
             onClick={() => setEmailOpen(true)}
@@ -251,17 +304,25 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
           </button>
           <button
             type="button"
-            disabled
-            title="Coming in Batch Q3"
-            className="cursor-not-allowed rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-xs font-semibold text-[var(--ccr-muted)]"
+            disabled={converting || Boolean(item.convertedBookingId)}
+            onClick={() => void convertQuote()}
+            className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
           >
-            Convert to Booking
+            {item.convertedBookingId ? "Converted" : converting ? "Converting..." : "Convert to Booking"}
           </button>
         </div>
       </div>
 
       {createdFlag ? <p className="mt-3 text-xs font-semibold text-emerald-200">Quote created successfully.</p> : null}
       {message ? <p className="mt-2 text-xs font-semibold text-emerald-200">{message}</p> : null}
+      {convertedBookingId ? (
+        <p className="mt-2 text-xs font-semibold text-emerald-200">
+          Booking created:{" "}
+          <Link href={`/admin/bookings/${convertedBookingId}`} className="underline">
+            {convertedBookingId.slice(0, 8)}
+          </Link>
+        </p>
+      ) : null}
       {error ? <p className="mt-2 text-xs font-semibold text-red-300">{error}</p> : null}
 
       <section className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-5">
@@ -502,7 +563,11 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
       <QuoteEmailModal
         open={emailOpen}
         onClose={() => setEmailOpen(false)}
-        openPath={`/admin/bookings/quotes/${item.id}`}
+        onSent={() => {
+          setEmailOpen(false);
+          void loadQuote();
+          router.refresh();
+        }}
         target={{
           id: item.id,
           customerFullName: item.customerFullName,

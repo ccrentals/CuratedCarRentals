@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { handleContactPost } from "@/app/api/public/contact/route";
+import type { RateLimitScope } from "@/lib/rateLimitStore";
 
 function makeDeps(options?: {
   ipRateCount?: number;
@@ -17,13 +18,18 @@ function makeDeps(options?: {
       getClientIp: () => "203.0.113.1",
       nowMs: () => 1_700_000_000_000,
       consumeRateLimit: async (input: {
-        scope: "CONTACT_IP" | "CONTACT_EMAIL" | "CONTACT_NOTIFY";
+        scope: RateLimitScope;
+        subjectKey: string;
         limit: number;
+        windowSeconds: number;
+        nowMs: number;
       }) => {
         const count =
           input.scope === "CONTACT_IP"
             ? Number(options?.ipRateCount ?? 1)
-            : Number(options?.emailRateCount ?? 1);
+            : input.scope === "CONTACT_EMAIL"
+              ? Number(options?.emailRateCount ?? 1)
+              : 1;
 
         return {
           count,

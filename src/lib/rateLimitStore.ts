@@ -1,6 +1,11 @@
 import { dbQuery } from "@/lib/db";
 
-export type RateLimitScope = "CONTACT_IP" | "CONTACT_EMAIL" | "CONTACT_NOTIFY";
+export type RateLimitScope =
+  | "CONTACT_IP"
+  | "CONTACT_EMAIL"
+  | "CONTACT_NOTIFY"
+  | "QUOTE_EMAIL_QUOTE"
+  | "QUOTE_EMAIL_ADMIN";
 
 export type ConsumeRateLimitInput = {
   scope: RateLimitScope;
