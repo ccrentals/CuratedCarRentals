@@ -19,7 +19,7 @@
 
 ## Primary Admin Login Method Switch (Developer-only)
 
-- A server-side setting now controls the default admin sign-in entry path:
+- A server-side setting controls the default admin sign-in entry path:
   - settings field: `authLoginMethod`
   - allowed values: `clerk` | `legacy`
   - default: `clerk`
@@ -32,10 +32,20 @@
 - Shared entry route:
   - `/admin/auth` resolves to the active primary method.
   - Header/admin sign-in entry points use `/admin/auth`.
+- Resolution priority order:
+  1. `AUTH_LOGIN_METHOD_OVERRIDE` env var (if valid `clerk` or `legacy`)
+  2. DB setting `authLoginMethod`
+  3. default `clerk`
 - Safety guarantees:
   - direct `/sign-in` remains available
   - direct `/admin/login` remains available
   - non-DEVELOPER users cannot change `authLoginMethod` (API returns `403` when changed)
+- Ops override notes:
+  - `AUTH_LOGIN_METHOD_OVERRIDE=legacy` forces `/admin/auth` to `/admin/login`
+  - `AUTH_LOGIN_METHOD_OVERRIDE=clerk` forces `/admin/auth` to `/sign-in`
+  - unset or blank uses DB setting
+  - invalid values are ignored (safe fallback)
+  - Netlify env changes require a redeploy to apply
 
 ## Compatibility Bridge Behavior
 

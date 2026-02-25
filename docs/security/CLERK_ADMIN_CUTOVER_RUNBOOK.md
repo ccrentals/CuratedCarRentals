@@ -21,6 +21,14 @@ It keeps break-glass fallback available to avoid admin lockout.
   - `Clerk (recommended)` => `/admin/auth` redirects to `/sign-in`
   - `Legacy (fallback)` => `/admin/auth` redirects to `/admin/login`
 - Both direct routes remain valid regardless of switch value.
+- Emergency ops override (higher priority than DB setting):
+  - Env var: `AUTH_LOGIN_METHOD_OVERRIDE`
+  - Allowed values: `legacy` or `clerk`
+  - `legacy` forces `/admin/auth` to `/admin/login`
+  - `clerk` forces `/admin/auth` to `/sign-in`
+  - unset/blank uses DB setting
+  - invalid values are ignored and safely fall back
+  - Netlify env change requires redeploy to take effect
 
 ## Pre-Cutover Prerequisites
 

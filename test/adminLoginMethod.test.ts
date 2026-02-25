@@ -3,6 +3,8 @@ import test from "node:test";
 
 import {
   canUpdatePrimaryAdminLoginMethod,
+  parseAdminLoginMethodOverride,
+  resolvePrimaryAdminLoginMethodResolution,
   resolvePrimaryAdminLoginMethod,
   resolvePrimaryAdminLoginPath,
 } from "@/lib/auth/adminLoginMethod";
@@ -31,6 +33,80 @@ test("primary admin login path resolves from normalized setting", () => {
   assert.equal(resolvePrimaryAdminLoginPath("legacy"), "/admin/login");
   assert.equal(resolvePrimaryAdminLoginPath("clerk"), "/sign-in");
   assert.equal(resolvePrimaryAdminLoginPath("bad-value"), "/sign-in");
+});
+
+test("env override parser accepts only clerk/legacy and ignores blank/invalid values", () => {
+  assert.equal(parseAdminLoginMethodOverride("legacy"), "legacy");
+  assert.equal(parseAdminLoginMethodOverride("LEGACY"), "legacy");
+  assert.equal(parseAdminLoginMethodOverride("clerk"), "clerk");
+  assert.equal(parseAdminLoginMethodOverride(" CLERK "), "clerk");
+
+  assert.equal(parseAdminLoginMethodOverride(""), null);
+  assert.equal(parseAdminLoginMethodOverride("   "), null);
+  assert.equal(parseAdminLoginMethodOverride(undefined), null);
+  assert.equal(parseAdminLoginMethodOverride(null), null);
+  assert.equal(parseAdminLoginMethodOverride("invalid"), null);
+});
+
+test("resolver precedence: env override legacy beats DB clerk", () => {
+  const result = resolvePrimaryAdminLoginMethodResolution({
+    envOverrideValue: "legacy",
+    dbLoginMethodValue: "clerk",
+    dbSource: "db",
+  });
+  assert.deepEqual(result, { method: "legacy", source: "env-override" });
+  assert.equal(resolvePrimaryAdminLoginPath(result.method), "/admin/login");
+});
+
+test("resolver precedence: env override clerk beats DB legacy", () => {
+  const result = resolvePrimaryAdminLoginMethodResolution({
+    envOverrideValue: "clerk",
+    dbLoginMethodValue: "legacy",
+    dbSource: "db",
+  });
+  assert.deepEqual(result, { method: "clerk", source: "env-override" });
+  assert.equal(resolvePrimaryAdminLoginPath(result.method), "/sign-in");
+});
+
+test("resolver precedence: invalid env override falls back to DB value", () => {
+  const result = resolvePrimaryAdminLoginMethodResolution({
+    envOverrideValue: "oops",
+    dbLoginMethodValue: "legacy",
+    dbSource: "db",
+  });
+  assert.deepEqual(result, { method: "legacy", source: "db" });
+});
+
+test("resolver precedence: blank or unset env override falls back to DB value", () => {
+  const blankResult = resolvePrimaryAdminLoginMethodResolution({
+    envOverrideValue: "   ",
+    dbLoginMethodValue: "legacy",
+    dbSource: "db",
+  });
+  assert.deepEqual(blankResult, { method: "legacy", source: "db" });
+
+  const unsetResult = resolvePrimaryAdminLoginMethodResolution({
+    envOverrideValue: undefined,
+    dbLoginMethodValue: "legacy",
+    dbSource: "db",
+  });
+  assert.deepEqual(unsetResult, { method: "legacy", source: "db" });
+});
+
+test("resolver precedence: missing or invalid DB falls back to default clerk", () => {
+  const missingDb = resolvePrimaryAdminLoginMethodResolution({
+    envOverrideValue: "",
+    dbLoginMethodValue: undefined,
+    dbSource: "default",
+  });
+  assert.deepEqual(missingDb, { method: "clerk", source: "default" });
+
+  const invalidDb = resolvePrimaryAdminLoginMethodResolution({
+    envOverrideValue: "",
+    dbLoginMethodValue: "invalid",
+    dbSource: "db",
+  });
+  assert.deepEqual(invalidDb, { method: "clerk", source: "db" });
 });
 
 test("primary login method updates require DEVELOPER role when value changes", () => {
