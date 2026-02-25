@@ -6,6 +6,12 @@ import { parseAppRole } from "@/lib/auth/roles";
 import { dbQuery } from "@/lib/db";
 import { logWarn } from "@/lib/log";
 import { isClerkEnabled } from "@/lib/security/clerk";
+import {
+  categorizeTurnstileFailure,
+  extractTurnstileToken,
+  getClientIpFromRequest,
+  verifyTurnstileToken,
+} from "@/lib/security/turnstile";
 import { buildClerkUsernameCandidates, isClerkUsernameError } from "@/lib/security/clerkUsernames";
 import { isEmail } from "@/lib/validators";
 
@@ -97,6 +103,23 @@ async function linkLocalUserToClerkId(localUserId: string, clerkUserId: string) 
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
   const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
+  const turnstileToken = extractTurnstileToken(body, request);
+  const ip = getClientIpFromRequest(request) ?? "unknown";
+
+  const turnstileResult = await verifyTurnstileToken({
+    token: turnstileToken,
+    remoteIp: ip,
+    expectedAction: "public_clerk_account_setup",
+  });
+  if (!turnstileResult.ok) {
+    logWarn("api.public.auth.clerkAccountSetup.turnstile_failed", {
+      route: "/api/public/auth/clerk-account-setup",
+      failureCategory: categorizeTurnstileFailure(turnstileResult.errorCodes),
+      status: turnstileResult.status,
+      ip,
+    });
+    return NextResponse.json({ error: turnstileResult.userMessage }, { status: turnstileResult.status });
+  }
 
   if (!isEmail(email)) {
     return NextResponse.json({ error: "Enter a valid email address." }, { status: 400 });

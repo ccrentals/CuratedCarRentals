@@ -39,9 +39,37 @@ This project uses a layered security model:
   - Enforced on:
     - `POST /api/public/contact`
     - `POST /api/public/bookings`
+    - `POST /api/public/returning-customer/start`
+    - `POST /api/public/returning-customer/verify`
+    - `POST /api/public/auth/clerk-account-setup`
 - Security headers and CSP:
   - Implemented in `next.config.ts`
   - `CSP_REPORT_ONLY=true` switches CSP to report-only mode.
+
+### Turnstile Protection Matrix
+
+| Public route/flow | Turnstile required | Status | Notes |
+| --- | --- | --- | --- |
+| `POST /api/public/contact` | Yes | Enforced | Contact inquiry form. |
+| `POST /api/public/bookings` | Yes | Enforced | Public reservation submit flow. |
+| `POST /api/public/returning-customer/start` | Yes | Enforced | Returning-customer verification bootstrap. |
+| `POST /api/public/returning-customer/verify` | Yes | Enforced | Returning-customer verification completion. |
+| `POST /api/public/auth/clerk-account-setup` | Yes | Enforced | Public Clerk migration/setup endpoint. |
+| `POST /api/public/pricing/quote` | No | Intentionally excluded | Read-only quote preview called frequently as user edits fields; guarded by validation + Cloudflare rate limiting. |
+| `POST /api/public/promos/validate` | No | Intentionally excluded | Read-only promo preview/validation; guarded by validation + Cloudflare rate limiting. |
+| `POST /api/public/bookings/[id]/promo` | No | Intentionally excluded | Requires booking context + CSRF; not anonymous submit form. |
+| `POST /api/public/bookings/[id]/pay-on-pickup` | No | Intentionally excluded | Requires booking context + CSRF; not anonymous submit form. |
+| `POST /api/public/auth/sync-legacy-password` | No | Intentionally excluded | Requires active Clerk session + CSRF. |
+
+Auth UX intentionally not using Turnstile:
+
+- `/sign-in`, `/forgot-password`, `/task/reset-password` use Clerk-hosted auth flows and abuse controls.
+- Adding custom Turnstile to these flows is intentionally avoided to reduce auth-flow breakage risk.
+
+Turnstile failure behavior:
+
+- Production: fail closed (missing token, missing config, or failed Siteverify blocks request).
+- Non-production: explicit bypass only when Turnstile keys are absent (for local development).
 
 ### Configured in Cloudflare dashboard (manual)
 
@@ -68,6 +96,19 @@ Add these in Netlify (Production + Preview as needed):
 
 Existing required env vars (DB/payments/email/etc.) remain unchanged.
 
+Turnstile setup notes:
+
+- Configure Cloudflare Turnstile widget hostnames to match local/preview/production domains.
+- If Turnstile keys are missing in production, protected routes return a security verification error and do not proceed.
+- For local development, either use Turnstile test keys or rely on explicit local bypass behavior when keys are intentionally unset.
+
+Turnstile failure-path test:
+
+1. Open `/contact` or `/book`, leave the security challenge incomplete, and submit.
+2. Confirm the UI shows a retry-friendly verification error message.
+3. Complete the challenge and resubmit.
+4. Confirm submission succeeds without page reload.
+
 Migration references:
 
 - `docs/security/CLERK_PASSWORD_OPERATIONS.md`
@@ -83,6 +124,8 @@ Migration references:
 3. **Configure Turnstile keys** and verify public form submissions:
    - `/contact`
    - `/book`
+   - Returning customer modal in `/book`
+   - `/sign-up` account setup form
 4. **Run CSP in report-only first** (`CSP_REPORT_ONLY=true`) and review violations.
 5. **Switch CSP enforcement on** (`CSP_REPORT_ONLY=false`) after allowlist validation.
 6. **Apply Cloudflare WAF + Rate Limiting** using `docs/security/CLOUDFLARE_WAF_SETUP.md`.

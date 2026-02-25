@@ -119,3 +119,19 @@ test("Blockouts linkage wiring: calendar and admin blockout APIs use shared bloc
   assert.match(calendarPage, /from \"@\/lib\/blockouts\/shared\"/);
   assert.match(calendarPage, /listBlockouts\(/);
 });
+
+test("Turnstile coverage: protected public submit routes call shared verifier", () => {
+  const files = [
+    "src/app/api/public/contact/route.ts",
+    "src/app/api/public/bookings/route.ts",
+    "src/app/api/public/returning-customer/start/route.ts",
+    "src/app/api/public/returning-customer/verify/route.ts",
+    "src/app/api/public/auth/clerk-account-setup/route.ts",
+  ];
+
+  for (const file of files) {
+    const code = read(file);
+    assert.match(code, /verifyTurnstileToken\(/);
+    assert.match(code, /extractTurnstileToken\(/);
+  }
+});

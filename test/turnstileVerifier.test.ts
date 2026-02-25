@@ -148,3 +148,72 @@ test("turnstile verifier: rejects failed Siteverify response", { concurrency: fa
     globalThis.fetch = originalFetch;
   }
 });
+
+test("turnstile verifier: rejects when token is missing", { concurrency: false }, async () => {
+  const originalNodeEnv = process.env.NODE_ENV;
+  const originalSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+  const originalSecret = process.env.TURNSTILE_SECRET_KEY;
+  const originalFetch = globalThis.fetch;
+
+  try {
+    setEnv("NODE_ENV", "production");
+    setEnv("NEXT_PUBLIC_TURNSTILE_SITE_KEY", "site-key");
+    setEnv("TURNSTILE_SECRET_KEY", "secret-key");
+    globalThis.fetch = (async () => {
+      throw new Error("fetch should not run when token is missing");
+    }) as typeof fetch;
+
+    const result = await verifyTurnstileToken({
+      token: "",
+      expectedAction: "public_contact",
+    });
+
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.status, 400);
+      assert.equal(result.errorCodes.includes("missing_input_response"), true);
+    }
+  } finally {
+    setEnv("NODE_ENV", originalNodeEnv);
+    setEnv("NEXT_PUBLIC_TURNSTILE_SITE_KEY", originalSiteKey);
+    setEnv("TURNSTILE_SECRET_KEY", originalSecret);
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("turnstile verifier: rejects action mismatch", { concurrency: false }, async () => {
+  const originalNodeEnv = process.env.NODE_ENV;
+  const originalSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+  const originalSecret = process.env.TURNSTILE_SECRET_KEY;
+  const originalFetch = globalThis.fetch;
+
+  try {
+    setEnv("NODE_ENV", "production");
+    setEnv("NEXT_PUBLIC_TURNSTILE_SITE_KEY", "site-key");
+    setEnv("TURNSTILE_SECRET_KEY", "secret-key");
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          success: true,
+          action: "public_contact",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      )) as typeof fetch;
+
+    const result = await verifyTurnstileToken({
+      token: "valid-token",
+      expectedAction: "public_booking",
+    });
+
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.status, 403);
+      assert.equal(result.errorCodes.includes("turnstile_action_mismatch"), true);
+    }
+  } finally {
+    setEnv("NODE_ENV", originalNodeEnv);
+    setEnv("NEXT_PUBLIC_TURNSTILE_SITE_KEY", originalSiteKey);
+    setEnv("TURNSTILE_SECRET_KEY", originalSecret);
+    globalThis.fetch = originalFetch;
+  }
+});

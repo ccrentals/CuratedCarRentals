@@ -20,6 +20,12 @@ export type TurnstileVerificationResult =
       errorCodes: string[];
     };
 
+export type TurnstileFailureCategory =
+  | "missing_token"
+  | "config_missing"
+  | "siteverify_failed"
+  | "verification_failed";
+
 function readEnv(name: string) {
   return process.env[name]?.trim() ?? "";
 }
@@ -69,6 +75,22 @@ export function getClientIpFromRequest(request: Request) {
 
 function makeFailure(status: number, userMessage: string, errorCodes: string[]) {
   return { ok: false as const, status, userMessage, errorCodes };
+}
+
+export function categorizeTurnstileFailure(errorCodes: string[]) {
+  if (errorCodes.includes("missing_input_response")) {
+    return "missing_token" satisfies TurnstileFailureCategory;
+  }
+  if (errorCodes.includes("turnstile_not_configured")) {
+    return "config_missing" satisfies TurnstileFailureCategory;
+  }
+  if (
+    errorCodes.includes("turnstile_request_failed") ||
+    errorCodes.includes("turnstile_http_error")
+  ) {
+    return "siteverify_failed" satisfies TurnstileFailureCategory;
+  }
+  return "verification_failed" satisfies TurnstileFailureCategory;
 }
 
 export async function verifyTurnstileToken(input: {

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { writeAuditLog } from "@/lib/audit";
 import { dbQuery } from "@/lib/db";
-import { logError } from "@/lib/log";
+import { logError, logWarn } from "@/lib/log";
 import { assessContactMessageSpam } from "@/lib/messages/spamDetection";
 import { maybeSendContactMessageNotification } from "@/lib/notifications/contactMessageNotifier";
 import {
@@ -10,7 +10,11 @@ import {
   type ConsumeRateLimitResult,
   type RateLimitScope,
 } from "@/lib/rateLimitStore";
-import { extractTurnstileToken, verifyTurnstileToken } from "@/lib/security/turnstile";
+import {
+  categorizeTurnstileFailure,
+  extractTurnstileToken,
+  verifyTurnstileToken,
+} from "@/lib/security/turnstile";
 import { isEmail } from "@/lib/validators";
 
 const MAX_SUBMISSIONS_PER_HOUR_PER_IP = 5;
@@ -207,6 +211,12 @@ export async function handleContactPost(request: Request, deps: ContactRouteDeps
     expectedAction: "public_contact",
   });
   if (!turnstileResult.ok) {
+    logWarn("api.public.contact.turnstile_failed", {
+      route: "/api/public/contact",
+      failureCategory: categorizeTurnstileFailure(turnstileResult.errorCodes),
+      status: turnstileResult.status,
+      ip,
+    });
     await deps.writeAudit({
       action: "CONTACT_MESSAGE_BLOCKED_TURNSTILE",
       details: {

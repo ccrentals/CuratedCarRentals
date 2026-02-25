@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { sendBookingCreatedEmail } from "@/lib/notifications/email";
 import { getDbPool } from "@/lib/db";
-import { logError } from "@/lib/log";
+import { logError, logWarn } from "@/lib/log";
 import { isEmail, isISODate, isNonEmptyString } from "@/lib/validators";
 import { calcDaysInclusive, dateOnlyUtc } from "@/lib/payments/dateMath";
 import { CustomerBlockedError, upsertCustomerForBooking } from "@/lib/customers";
@@ -12,6 +12,7 @@ import { createBookingAccessToken, hashBookingAccessToken } from "@/lib/bookings
 import { normalizePromoInputCode, upsertPromoRedemption, validatePromoForBooking } from "@/lib/promos";
 import { computeBookingPricing, parsePaymentOptionInput } from "@/lib/payments/pricing";
 import {
+  categorizeTurnstileFailure,
   extractTurnstileToken,
   getClientIpFromRequest,
   verifyTurnstileToken,
@@ -65,6 +66,12 @@ export async function POST(request: Request) {
     expectedAction: "public_booking",
   });
   if (!turnstileResult.ok) {
+    logWarn("api.public.bookings.turnstile_failed", {
+      route: "/api/public/bookings",
+      failureCategory: categorizeTurnstileFailure(turnstileResult.errorCodes),
+      status: turnstileResult.status,
+      ip: clientIp ?? "unknown",
+    });
     return NextResponse.json({ error: turnstileResult.userMessage }, { status: turnstileResult.status });
   }
 

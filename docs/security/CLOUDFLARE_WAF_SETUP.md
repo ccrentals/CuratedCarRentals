@@ -9,6 +9,7 @@ Use this as the starter dashboard configuration for this repository.
   - `POST /api/public/bookings`
   - `POST /api/public/returning-customer/start`
   - `POST /api/public/returning-customer/verify`
+  - `POST /api/public/auth/clerk-account-setup`
 - Auth surfaces:
   - `GET/POST /sign-in/**` (Clerk)
   - `GET/POST /sign-up/**` (Clerk)
@@ -41,7 +42,7 @@ Create rules in this order:
 ### Rule 2: Block invalid methods on public submit endpoints
 
 - Expression:
-  - `(http.request.uri.path in {"/api/public/contact" "/api/public/bookings" "/api/public/returning-customer/start" "/api/public/returning-customer/verify"} and http.request.method ne "POST")`
+  - `(http.request.uri.path in {"/api/public/contact" "/api/public/bookings" "/api/public/returning-customer/start" "/api/public/returning-customer/verify" "/api/public/auth/clerk-account-setup"} and http.request.method ne "POST")`
 - Action:
   - `Block`
 
@@ -92,6 +93,15 @@ Use source characteristic: `IP`.
 - Action:
   - `Managed Challenge`
 
+### RL 3b: Clerk account setup abuse
+
+- Match:
+  - `http.request.uri.path eq "/api/public/auth/clerk-account-setup" and http.request.method eq "POST"`
+- Threshold:
+  - `6 requests / 10 minutes`
+- Action:
+  - `Managed Challenge`
+
 ### RL 4: Legacy admin login brute force
 
 - Match:
@@ -138,4 +148,3 @@ Recommended:
 3. Verify `/api/payments/wipay/webhook` is not challenged.
 4. Verify admin login UI/API still function under normal use.
 5. Review Cloudflare Security Events and adjust thresholds before enforcing stricter blocks.
-

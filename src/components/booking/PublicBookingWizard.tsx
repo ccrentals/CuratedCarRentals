@@ -292,6 +292,8 @@ export function PublicBookingWizard() {
   const [returningBusy, setReturningBusy] = useState(false);
   const [returningStage, setReturningStage] = useState<"lookup" | "verify">("lookup");
   const [returningError, setReturningError] = useState<string | null>(null);
+  const [returningTurnstileToken, setReturningTurnstileToken] = useState<string | null>(null);
+  const [returningTurnstileResetKey, setReturningTurnstileResetKey] = useState(0);
 
   const signatureCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const signatureDrawingRef = useRef(false);
@@ -1168,6 +1170,10 @@ export function PublicBookingWizard() {
 
   async function startReturningCustomerLookup() {
     if (returningBusy) return;
+    if (!returningTurnstileToken) {
+      setReturningError("Please complete the security check before continuing.");
+      return;
+    }
     setReturningBusy(true);
     setReturningError(null);
 
@@ -1178,18 +1184,27 @@ export function PublicBookingWizard() {
         body: JSON.stringify({
           driversLicenseNumber: returningDlInput,
           sessionKey: returningSessionKey,
+          turnstileToken: returningTurnstileToken,
         }),
       });
       const data = (await response.json().catch(() => ({}))) as ReturningStartResponse;
 
       if (!response.ok || !data.ok) {
-        throw new Error("We couldn't verify your details.");
+        throw new Error(data.error || "We couldn't verify your details.");
       }
 
       setReturningChallengeToken(data.challengeToken ?? "");
       setReturningStage("verify");
-    } catch {
-      setReturningError("We couldn't verify your details.");
+      setReturningTurnstileToken(null);
+      setReturningTurnstileResetKey((value) => value + 1);
+    } catch (error) {
+      setReturningError(
+        error instanceof Error && error.message
+          ? error.message
+          : "Verification failed. Please complete the security check and retry.",
+      );
+      setReturningTurnstileToken(null);
+      setReturningTurnstileResetKey((value) => value + 1);
     } finally {
       setReturningBusy(false);
     }
@@ -1197,6 +1212,10 @@ export function PublicBookingWizard() {
 
   async function verifyReturningCustomer() {
     if (returningBusy) return;
+    if (!returningTurnstileToken) {
+      setReturningError("Please complete the security check before verifying.");
+      return;
+    }
     setReturningBusy(true);
     setReturningError(null);
 
@@ -1211,12 +1230,13 @@ export function PublicBookingWizard() {
           lastName: returningLastName,
           birthday: returningBirthday,
           sessionKey: returningSessionKey,
+          turnstileToken: returningTurnstileToken,
         }),
       });
 
       const data = (await response.json().catch(() => ({}))) as ReturningVerifyResponse;
       if (!response.ok || !data.ok || !data.customer) {
-        throw new Error("We couldn't verify your details.");
+        throw new Error(data.error || "We couldn't verify your details.");
       }
 
       setCustomerId(data.customer.customerId ?? null);
@@ -1237,8 +1257,16 @@ export function PublicBookingWizard() {
 
       setShowReturningCustomerModal(false);
       setStatusMessage("Returning customer details loaded. Please verify and continue.");
-    } catch {
-      setReturningError("We couldn't verify your details.");
+      setReturningTurnstileToken(null);
+      setReturningTurnstileResetKey((value) => value + 1);
+    } catch (error) {
+      setReturningError(
+        error instanceof Error && error.message
+          ? error.message
+          : "Verification failed. Please complete the security check and retry.",
+      );
+      setReturningTurnstileToken(null);
+      setReturningTurnstileResetKey((value) => value + 1);
     } finally {
       setReturningBusy(false);
     }
@@ -1721,6 +1749,8 @@ export function PublicBookingWizard() {
                       onClick={() => {
                         setReturningStage("lookup");
                         setReturningError(null);
+                        setReturningTurnstileToken(null);
+                        setReturningTurnstileResetKey((value) => value + 1);
                         setShowReturningCustomerModal(true);
                       }}
                       className="rounded-xl border border-[var(--ccr-accent)] bg-[var(--ccr-accent)]/10 px-4 py-2 text-sm font-semibold text-[var(--ccr-text)]"
@@ -2210,7 +2240,7 @@ export function PublicBookingWizard() {
                 <button
                   type="button"
                   onClick={startReturningCustomerLookup}
-                  disabled={returningBusy}
+                  disabled={returningBusy || !returningTurnstileToken}
                   className="w-full rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-sm font-semibold text-[var(--ccr-on-primary)] disabled:opacity-60"
                 >
                   {returningBusy ? "Checking..." : "Continue"}
@@ -2258,7 +2288,7 @@ export function PublicBookingWizard() {
                 <button
                   type="button"
                   onClick={verifyReturningCustomer}
-                  disabled={returningBusy}
+                  disabled={returningBusy || !returningTurnstileToken}
                   className="w-full rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-sm font-semibold text-[var(--ccr-on-primary)] disabled:opacity-60"
                 >
                   {returningBusy ? "Verifying..." : "Verify & Prefill"}
@@ -2266,11 +2296,27 @@ export function PublicBookingWizard() {
               </div>
             )}
 
+            <div className="mt-4 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                Security Check
+              </p>
+              <TurnstileWidget
+                action="public_returning_customer"
+                onTokenChange={setReturningTurnstileToken}
+                resetKey={returningTurnstileResetKey}
+                className="mt-2"
+              />
+            </div>
+
             {returningError ? <p className="mt-3 text-sm text-rose-600">{returningError}</p> : null}
 
             <button
               type="button"
-              onClick={() => setShowReturningCustomerModal(false)}
+              onClick={() => {
+                setReturningTurnstileToken(null);
+                setReturningTurnstileResetKey((value) => value + 1);
+                setShowReturningCustomerModal(false);
+              }}
               className="mt-4 w-full rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)]"
             >
               Close

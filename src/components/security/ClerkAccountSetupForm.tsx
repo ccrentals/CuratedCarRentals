@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useState } from "react";
 
+import { TurnstileWidget } from "@/components/security/TurnstileWidget";
+
 type SetupTone = "success" | "error" | "info";
 
 type SetupState = {
@@ -17,12 +19,21 @@ type SetupResponse = {
 
 export function ClerkAccountSetupForm() {
   const [email, setEmail] = useState("");
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [turnstileResetKey, setTurnstileResetKey] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [state, setState] = useState<SetupState | null>(null);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (isSubmitting) {
+      return;
+    }
+    if (!turnstileToken) {
+      setState({
+        tone: "error",
+        text: "Please complete the security check before preparing account setup.",
+      });
       return;
     }
 
@@ -33,7 +44,10 @@ export function ClerkAccountSetupForm() {
       const response = await fetch("/api/public/auth/clerk-account-setup", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email: email.trim() }),
+        body: JSON.stringify({
+          email: email.trim(),
+          turnstileToken,
+        }),
       });
 
       const data = (await response.json().catch(() => null)) as SetupResponse | null;
@@ -47,11 +61,17 @@ export function ClerkAccountSetupForm() {
         tone: response.ok ? "success" : "error",
         text: message,
       });
+      if (!response.ok) {
+        setTurnstileToken(null);
+        setTurnstileResetKey((value) => value + 1);
+      }
     } catch {
       setState({
         tone: "error",
         text: "Unable to prepare account setup right now. Try again shortly.",
       });
+      setTurnstileToken(null);
+      setTurnstileResetKey((value) => value + 1);
     } finally {
       setIsSubmitting(false);
     }
@@ -94,10 +114,15 @@ export function ClerkAccountSetupForm() {
             required
           />
         </label>
+        <TurnstileWidget
+          action="public_clerk_account_setup"
+          onTokenChange={setTurnstileToken}
+          resetKey={turnstileResetKey}
+        />
 
         <button
           type="submit"
-          disabled={isSubmitting}
+          disabled={isSubmitting || !turnstileToken}
           className="w-full rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--ccr-primary-soft)] disabled:cursor-not-allowed disabled:opacity-70"
         >
           {isSubmitting ? "Preparing account..." : "Prepare Clerk sign-in"}

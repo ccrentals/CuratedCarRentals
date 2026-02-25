@@ -4,6 +4,13 @@ import { NextResponse } from "next/server";
 
 import { writeAuditLog } from "@/lib/audit";
 import { dbQuery } from "@/lib/db";
+import { logWarn } from "@/lib/log";
+import {
+  categorizeTurnstileFailure,
+  extractTurnstileToken,
+  getClientIpFromRequest,
+  verifyTurnstileToken,
+} from "@/lib/security/turnstile";
 
 const VERIFY_RATE_LIMIT = 25;
 const VERIFY_RATE_WINDOW_MINUTES = 15;
@@ -29,17 +36,6 @@ type OtpAuditRow = {
   id: string;
   details_json: Record<string, unknown> | null;
 };
-
-function getClientIp(request: Request) {
-  const forwarded = request.headers.get("x-forwarded-for");
-  if (forwarded) {
-    const first = forwarded.split(",")[0]?.trim();
-    if (first) return first;
-  }
-  const realIp = request.headers.get("x-real-ip");
-  if (realIp?.trim()) return realIp.trim();
-  return "unknown";
-}
 
 function normalizeText(value: unknown) {
   if (typeof value !== "string") return "";
@@ -94,13 +90,50 @@ async function hitRateLimit(ip: string, sessionKey: string) {
 
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
-  const ip = getClientIp(request);
+  const turnstileToken = extractTurnstileToken(body, request);
+  const ip = getClientIpFromRequest(request) ?? "unknown";
   const sessionKey = normalizeSessionKey(body?.sessionKey);
   const driversLicenseNumber = normalizeText(body?.driversLicenseNumber);
   const challengeToken = normalizeText(body?.challengeToken);
   const otpCode = normalizeText(body?.otpCode);
   const lastNameInput = normalizeText(body?.lastName).toLowerCase();
   const birthdayInput = normalizeDateOnly(normalizeText(body?.birthday));
+
+  const turnstileResult = await verifyTurnstileToken({
+    token: turnstileToken,
+    remoteIp: ip,
+    expectedAction: "public_returning_customer",
+  });
+
+  if (!turnstileResult.ok) {
+    const failureCategory = categorizeTurnstileFailure(turnstileResult.errorCodes);
+    logWarn("api.public.returningCustomer.verify.turnstile_failed", {
+      route: "/api/public/returning-customer/verify",
+      failureCategory,
+      status: turnstileResult.status,
+      ip,
+    });
+    try {
+      await writeAuditLog({
+        action: "RETURNING_CUSTOMER_BLOCKED_TURNSTILE",
+        entityType: "public_lookup",
+        details: {
+          ip,
+          sessionKey,
+          stage: "verify",
+          errorCodes: turnstileResult.errorCodes,
+          failureCategory,
+        },
+      });
+    } catch (error) {
+      logWarn("api.public.returningCustomer.verify.turnstile_audit_failed", {
+        route: "/api/public/returning-customer/verify",
+        failureCategory,
+        message: (error as Error | null)?.message ?? "unknown",
+      });
+    }
+    return NextResponse.json({ ok: false, error: turnstileResult.userMessage }, { status: turnstileResult.status });
+  }
 
   if (!driversLicenseNumber || driversLicenseNumber.length < 4) {
     return genericFailure();
