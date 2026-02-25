@@ -2,6 +2,8 @@ const VEHICLE_EXTENSION_TABLES = new Set([
   "vehicle_profiles",
   "vehicle_documents",
   "vehicle_checklist_items",
+  "vehicle_checklist_templates",
+  "vehicle_checklist_events",
   "vehicle_notes",
   "vehicle_maintenance_logs",
   "vehicle_maintenance_records",
@@ -10,6 +12,7 @@ const VEHICLE_EXTENSION_TABLES = new Set([
   "maintenance_reminders",
   "vehicle_document_links",
   "vehicle_finance",
+  "vehicle_finance_snapshots",
   "vehicle_depreciation_snapshots",
 ]);
 
