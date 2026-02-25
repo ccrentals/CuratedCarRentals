@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import { logError } from "@/lib/log";
 import {
@@ -8,13 +9,6 @@ import {
   QuoteOpsError,
 } from "@/lib/quotes/quoteOps";
 import { requireCsrf } from "@/lib/security/csrf";
-
-function isStaffRole(role: string | undefined) {
-  const normalized = String(role ?? "")
-    .trim()
-    .toUpperCase();
-  return normalized === "ADMIN" || normalized === "DEVELOPER" || normalized === "USER";
-}
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -40,13 +34,9 @@ export async function handleAdminQuoteConvertPost(
   context: RouteContext,
   deps: AdminQuoteConvertRouteDeps = DEFAULT_DEPS,
 ) {
-  const session = await deps.getSession();
-  if (!session) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
-  if (!isStaffRole(session.role)) {
-    return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
+  if (!auth.ok) return auth.response;
+  const { actor } = auth;
 
   const body = await request.json().catch(() => null);
   if (!(await deps.requireCsrfCheck(request, body?.csrfToken ?? null))) {
@@ -58,7 +48,7 @@ export async function handleAdminQuoteConvertPost(
   try {
     const converted = await deps.convertQuote({
       quoteId: id,
-      actorAdminUserId: session.userId,
+      actorAdminUserId: actor.userId,
     });
 
     return NextResponse.json({
@@ -84,7 +74,7 @@ export async function handleAdminQuoteConvertPost(
 
     logError("admin_quote_convert_failed", error, {
       quoteId: id,
-      userId: session.userId,
+      userId: actor.userId,
     });
     return NextResponse.json(
       { ok: false, error: "Failed to convert quote to booking." },

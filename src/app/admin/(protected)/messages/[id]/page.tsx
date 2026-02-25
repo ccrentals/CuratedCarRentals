@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { isStaffRole } from "@/lib/auth/roles";
 
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { MessageStatusActions } from "@/components/admin/MessageStatusActions";
@@ -9,13 +10,6 @@ import {
   fetchAdminMessageByIdWithOptionalMarkRead,
   isContactMessagesMissingTableError,
 } from "@/lib/messages/adminMessages";
-
-function isStaffRole(role: string | undefined) {
-  const normalized = String(role ?? "")
-    .trim()
-    .toUpperCase();
-  return normalized === "ADMIN" || normalized === "DEVELOPER" || normalized === "USER";
-}
 
 function statusBadgeClass(status: string) {
   const normalized = String(status ?? "")

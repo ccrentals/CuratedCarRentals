@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery } from "@/lib/db";
 import { requireCsrf } from "@/lib/security/csrf";
@@ -34,13 +35,6 @@ export type AdminVehicleNotesRouteDeps = {
   listNotes: (vehicleId: string) => Promise<VehicleNoteRow[]>;
   createNote: (vehicleId: string, input: CreateVehicleNoteInput) => Promise<VehicleNoteRow>;
 };
-
-function isStaffRole(role: string | undefined) {
-  const normalized = String(role ?? "")
-    .trim()
-    .toUpperCase();
-  return normalized === "ADMIN" || normalized === "DEVELOPER" || normalized === "USER";
-}
 
 function normalizeText(value: unknown) {
   if (typeof value !== "string") return "";
@@ -103,13 +97,8 @@ export async function handleAdminVehicleNotesGet(
   context: VehicleNotesRouteContext,
   deps: AdminVehicleNotesRouteDeps = DEFAULT_DEPS,
 ) {
-  const session = await deps.getSession();
-  if (!session) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
-  if (!isStaffRole(session.role)) {
-    return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
+  if (!auth.ok) return auth.response;
 
   const { id } = await context.params;
   if (!UUID_REGEX.test(id)) {
@@ -135,13 +124,9 @@ export async function handleAdminVehicleNotesPost(
   context: VehicleNotesRouteContext,
   deps: AdminVehicleNotesRouteDeps = DEFAULT_DEPS,
 ) {
-  const session = await deps.getSession();
-  if (!session) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
-  if (!isStaffRole(session.role)) {
-    return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
+  if (!auth.ok) return auth.response;
+  const { actor } = auth;
 
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
   if (!(await deps.requireCsrfCheck(request, (body?.csrfToken as string | null | undefined) ?? null))) {
@@ -164,7 +149,7 @@ export async function handleAdminVehicleNotesPost(
   try {
     const item = await deps.createNote(id, {
       noteText,
-      createdByUserId: session.userId,
+      createdByUserId: actor.userId,
     });
     return NextResponse.json({ ok: true, item: mapNote(item) });
   } catch (error) {

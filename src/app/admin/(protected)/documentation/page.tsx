@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { isDeveloperRole } from "@/lib/auth/roles";
 
 import { DocumentationEditor } from "@/components/admin/DocumentationEditor";
 import { getSessionFromRequest } from "@/lib/auth/session";
@@ -48,12 +49,6 @@ const DOCUMENTATION_SECTIONS = [
     topics: ["Timeline", "Milestones", "Budget & resources", "Change log"],
   },
 ] as const;
-
-function isDeveloperRole(role: string | undefined) {
-  return String(role ?? "")
-    .trim()
-    .toUpperCase() === "DEVELOPER";
-}
 
 export default async function AdminDocumentationPage() {
   const session = await getSessionFromRequest();

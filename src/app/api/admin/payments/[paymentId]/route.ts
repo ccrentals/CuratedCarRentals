@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { getSessionFromRequest } from "@/lib/auth/session";
+import { requireAdminRole } from "@/lib/auth/adminGuards";
 import { getDbPool } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
 import { logError } from "@/lib/log";
@@ -11,13 +11,6 @@ import {
   sendBookingOverriddenByPaidBookingEmail,
 } from "@/lib/notifications/email";
 import { maybeEntitleBookingAfterPayment } from "@/lib/availability/entitlement";
-
-function isAdminRole(role: string | undefined) {
-  const normalized = String(role ?? "")
-    .trim()
-    .toUpperCase();
-  return normalized === "ADMIN" || normalized === "DEVELOPER";
-}
 
 function parseRequireRestoreReason(content: unknown) {
   if (typeof content !== "string" || !content.trim()) return true;
@@ -36,14 +29,9 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ paymentId: string }> },
 ) {
-  const session = await getSessionFromRequest();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  if (!isAdminRole(session.role)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requireAdminRole({ forbiddenMessage: "Forbidden" });
+  if (!auth.ok) return auth.response;
+  const { actor } = auth;
 
   if (!(await requireCsrf(request))) {
     return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
@@ -130,7 +118,7 @@ export async function PATCH(
     if (action === "delete") {
       await client.query(
         "update payments set deleted_at = now(), deleted_by_user_id = $2, deleted_reason = $3, updated_at = now() where id = $1 and deleted_at is null",
-        [paymentId, session.userId, reason],
+        [paymentId, actor.userId, reason],
       );
     }
 
@@ -174,7 +162,7 @@ export async function PATCH(
     if (action === "restore" && summary.netPaidToDate > 0) {
       const entitlementResolution = await maybeEntitleBookingAfterPayment(payment.booking_id, {
         client,
-        auditUserId: session.userId,
+        auditUserId: actor.userId,
       });
       entitlementState = entitlementResolution.state;
       winnerBookingId = entitlementResolution.winnerBookingId;
@@ -185,7 +173,7 @@ export async function PATCH(
     await client.query("commit");
 
     await writeAuditLog({
-      userId: session.userId,
+      userId: actor.userId,
       action: action === "delete" ? "MANUAL_PAYMENT_DELETED" : "MANUAL_PAYMENT_RESTORED",
       entityType: "payment",
       entityId: payment.id,
@@ -204,7 +192,7 @@ export async function PATCH(
 
     if (bookingStatusTransition) {
       await writeAuditLog({
-        userId: session.userId,
+        userId: actor.userId,
         action: "BOOKING_STATUS_AUTO_REVERTED",
         entityType: "booking",
         entityId: payment.booking_id,
@@ -221,7 +209,7 @@ export async function PATCH(
 
     for (const overriddenBooking of overriddenBookings) {
       await writeAuditLog({
-        userId: session.userId,
+        userId: actor.userId,
         action: "BOOKING_OVERRIDDEN_BY_PAID_BOOKING",
         entityType: "booking",
         entityId: overriddenBooking.id,
@@ -272,7 +260,7 @@ export async function PATCH(
         { status: 500 },
       );
     }
-    logError("api.admin.payments.PATCH", error, { userId: session.userId, paymentId, action });
+    logError("api.admin.payments.PATCH", error, { userId: actor.userId, paymentId, action });
     return NextResponse.json({ error: "Failed to update payment" }, { status: 500 });
   } finally {
     client.release();

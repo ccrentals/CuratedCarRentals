@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 
-import { getSessionFromRequest } from "@/lib/auth/session";
-import { DEFAULT_ADMIN_SETTINGS } from "@/lib/adminSettings";
+import { requireAdminRole, requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
+import {
+  DEFAULT_ADMIN_SETTINGS,
+  type VehicleChecklistTemplateSetting,
+} from "@/lib/adminSettings";
 import { dbQuery } from "@/lib/db";
 import { logError } from "@/lib/log";
 import { requireCsrf } from "@/lib/security/csrf";
@@ -98,11 +101,115 @@ function normalizeStringList(value: unknown, fallback: string[]) {
   return list.length > 0 ? list : [...fallback];
 }
 
-function isAdminRole(role: string | undefined) {
-  const normalized = String(role ?? "")
-    .trim()
-    .toUpperCase();
-  return normalized === "ADMIN" || normalized === "DEVELOPER";
+function normalizeBool(value: unknown, fallback: boolean) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["1", "true", "yes", "y"].includes(normalized)) return true;
+    if (["0", "false", "no", "n"].includes(normalized)) return false;
+  }
+  return fallback;
+}
+
+function normalizeChecklistTemplateKey(value: unknown, fallbackLabel: string, index: number) {
+  const candidate = String(value ?? "").trim().toLowerCase();
+  const fallback = String(fallbackLabel ?? "").trim().toLowerCase();
+  const source = candidate || fallback;
+  const slug = source
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 120);
+  if (slug) return slug;
+  return `template-${index + 1}`;
+}
+
+function normalizeChecklistTemplateWarningDays(value: unknown) {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return null;
+  return Math.min(3650, Math.max(0, Math.floor(parsed)));
+}
+
+function normalizeChecklistTemplateEntry(
+  entry: unknown,
+  index: number,
+  folders: string[],
+): VehicleChecklistTemplateSetting | null {
+  if (typeof entry === "string") {
+    const label = entry.trim();
+    if (!label) return null;
+    return {
+      key: normalizeChecklistTemplateKey("", label, index),
+      label: label.slice(0, 160),
+      folder: folders[0] ?? "Unsorted",
+      required: true,
+      allowNotRequired: true,
+      expiryRequired: false,
+      expiryWarningDays: null,
+      isActive: true,
+    };
+  }
+
+  if (!entry || typeof entry !== "object") return null;
+  const value = entry as Record<string, unknown>;
+  const label = String(value.label ?? "").trim();
+  if (!label) return null;
+  const folderText = String(value.folder ?? "").trim();
+
+  return {
+    key: normalizeChecklistTemplateKey(value.key, label, index),
+    label: label.slice(0, 160),
+    folder: (folderText || folders[0] || "Unsorted").slice(0, 80),
+    required: normalizeBool(value.required, true),
+    allowNotRequired: normalizeBool(
+      value.allowNotRequired ?? value.allow_not_required,
+      true,
+    ),
+    expiryRequired: normalizeBool(
+      value.expiryRequired ?? value.expiry_required,
+      false,
+    ),
+    expiryWarningDays: normalizeChecklistTemplateWarningDays(
+      value.expiryWarningDays ?? value.expiry_warning_days,
+    ),
+    isActive: normalizeBool(value.isActive ?? value.is_active, true),
+  };
+}
+
+function normalizeChecklistTemplates(
+  value: unknown,
+  fallbackLegacyItems: string[],
+  folders: string[],
+) {
+  const rawList = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? value.split(/\n|,|;/)
+      : [];
+
+  const normalized = rawList
+    .map((entry, index) => normalizeChecklistTemplateEntry(entry, index, folders))
+    .filter((entry): entry is VehicleChecklistTemplateSetting => Boolean(entry))
+    .slice(0, 80);
+
+  if (normalized.length > 0) {
+    const deduped: VehicleChecklistTemplateSetting[] = [];
+    const seen = new Set<string>();
+    for (const template of normalized) {
+      const key = `${template.key.toLowerCase()}::${template.label.toLowerCase()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      deduped.push(template);
+    }
+    if (deduped.length > 0) return deduped;
+  }
+
+  const legacy = fallbackLegacyItems
+    .map((entry, index) => normalizeChecklistTemplateEntry(entry, index, folders))
+    .filter((entry): entry is VehicleChecklistTemplateSetting => Boolean(entry));
+  if (legacy.length > 0) return legacy;
+
+  return DEFAULT_ADMIN_SETTINGS.vehicleChecklistTemplates.map((template) => ({ ...template }));
 }
 
 function normalizeSettings(raw: unknown): AdminSettings {
@@ -111,6 +218,19 @@ function normalizeSettings(raw: unknown): AdminSettings {
   }
 
   const value = raw as Record<string, unknown>;
+  const vehicleDocumentFolders = normalizeStringList(
+    value.vehicleDocumentFolders,
+    DEFAULT_ADMIN_SETTINGS.vehicleDocumentFolders,
+  );
+  const legacyTemplateItems = normalizeStringList(
+    value.vehicleChecklistTemplateItems,
+    DEFAULT_ADMIN_SETTINGS.vehicleChecklistTemplateItems,
+  );
+  const vehicleChecklistTemplates = normalizeChecklistTemplates(
+    value.vehicleChecklistTemplates,
+    legacyTemplateItems,
+    vehicleDocumentFolders,
+  );
 
   return {
     blockoutSupersedesBookings:
@@ -138,18 +258,13 @@ function normalizeSettings(raw: unknown): AdminSettings {
     contactNotifyCooldownMinutes: normalizeContactNotifyCooldownMinutes(
       value.contactNotifyCooldownMinutes,
     ),
-    vehicleDocumentFolders: normalizeStringList(
-      value.vehicleDocumentFolders,
-      DEFAULT_ADMIN_SETTINGS.vehicleDocumentFolders,
-    ),
+    vehicleDocumentFolders,
     vehicleDocumentTypeOptions: normalizeStringList(
       value.vehicleDocumentTypeOptions,
       DEFAULT_ADMIN_SETTINGS.vehicleDocumentTypeOptions,
     ),
-    vehicleChecklistTemplateItems: normalizeStringList(
-      value.vehicleChecklistTemplateItems,
-      DEFAULT_ADMIN_SETTINGS.vehicleChecklistTemplateItems,
-    ),
+    vehicleChecklistTemplates,
+    vehicleChecklistTemplateItems: vehicleChecklistTemplates.map((template) => template.label),
     maintenanceRemindersEnabled:
       typeof value.maintenanceRemindersEnabled === "boolean"
         ? value.maintenanceRemindersEnabled
@@ -211,10 +326,9 @@ function handleMissingTable(error: unknown) {
 }
 
 export async function GET() {
-  const session = await getSessionFromRequest();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireStaffOrAdminRole();
+  if (!auth.ok) return auth.response;
+  const { actor } = auth;
 
   try {
     const result = await dbQuery<{
@@ -235,19 +349,15 @@ export async function GET() {
   } catch (error) {
     const response = handleMissingTable(error);
     if (response) return response;
-    logError("api.admin.settings.GET", error, { userId: session.userId });
+    logError("api.admin.settings.GET", error, { userId: actor.userId });
     return NextResponse.json({ error: "Failed to load settings" }, { status: 500 });
   }
 }
 
 export async function PATCH(request: Request) {
-  const session = await getSessionFromRequest();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  if (!isAdminRole(session.role)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requireAdminRole();
+  if (!auth.ok) return auth.response;
+  const { actor } = auth;
 
   const body = await request.json().catch(() => null);
   if (!(await requireCsrf(request, body?.csrfToken ?? null))) {
@@ -263,7 +373,7 @@ export async function PATCH(request: Request) {
       updated_by: string | null;
     }>(
       "insert into admin_documents (key, content, updated_by) values ($1, $2, $3) on conflict (key) do update set content = excluded.content, updated_by = excluded.updated_by, updated_at = now() returning content, updated_at, updated_by",
-      [SETTINGS_KEY, JSON.stringify(settings), session.userId],
+      [SETTINGS_KEY, JSON.stringify(settings), actor.userId],
     );
 
     return NextResponse.json({
@@ -274,7 +384,7 @@ export async function PATCH(request: Request) {
   } catch (error) {
     const response = handleMissingTable(error);
     if (response) return response;
-    logError("api.admin.settings.PATCH", error, { userId: session.userId });
+    logError("api.admin.settings.PATCH", error, { userId: actor.userId });
     return NextResponse.json({ error: "Failed to update settings" }, { status: 500 });
   }
 }

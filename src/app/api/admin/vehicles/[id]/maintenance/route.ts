@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import { loadAdminSettings } from "@/lib/adminSettings";
 import { dbQuery } from "@/lib/db";
@@ -100,13 +101,6 @@ export type VehicleMaintenanceRouteDeps = {
     openScheduledCount: number;
   }>;
 };
-
-function isStaffRole(role: string | undefined) {
-  const normalized = String(role ?? "")
-    .trim()
-    .toUpperCase();
-  return normalized === "ADMIN" || normalized === "DEVELOPER" || normalized === "USER";
-}
 
 function normalizeText(value: unknown, max = 255) {
   if (typeof value !== "string") return "";
@@ -426,13 +420,9 @@ export async function handleVehicleMaintenanceGet(
   context: RouteContext,
   deps: VehicleMaintenanceRouteDeps = DEFAULT_DEPS,
 ) {
-  const session = await deps.getSession();
-  if (!session) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
-  if (!isStaffRole(session.role)) {
-    return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
+  if (!auth.ok) return auth.response;
+  const session = auth.session;
 
   const { id } = await context.params;
   if (!UUID_REGEX.test(id)) {
@@ -471,13 +461,9 @@ export async function handleVehicleMaintenancePost(
   context: RouteContext,
   deps: VehicleMaintenanceRouteDeps = DEFAULT_DEPS,
 ) {
-  const session = await deps.getSession();
-  if (!session) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
-  if (!isStaffRole(session.role)) {
-    return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
+  if (!auth.ok) return auth.response;
+  const session = auth.session;
 
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
   if (!(await deps.requireCsrfCheck(request, (body?.csrfToken as string | null | undefined) ?? null))) {

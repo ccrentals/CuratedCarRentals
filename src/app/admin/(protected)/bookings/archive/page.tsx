@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { isAdminRole } from "@/lib/auth/roles";
 
 import { TableDateTime } from "@/components/shared/TableDateTime";
 import { StackedDateTimeRange } from "@/components/shared/StackedDateTimeRange";
@@ -33,13 +34,6 @@ type DeletedPaymentRow = {
   deleted_reason: string | null;
   deleted_by_email: string | null;
 };
-
-function isAdminRole(role: string | undefined) {
-  const normalized = String(role ?? "")
-    .trim()
-    .toUpperCase();
-  return normalized === "ADMIN" || normalized === "DEVELOPER";
-}
 
 function isUndefinedColumn(error: unknown, column: string) {
   const code = (error as { code?: string } | null)?.code;

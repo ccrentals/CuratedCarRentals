@@ -1,5 +1,16 @@
 import { dbQuery } from "@/lib/db";
 
+export type VehicleChecklistTemplateSetting = {
+  key: string;
+  label: string;
+  folder: string;
+  required: boolean;
+  allowNotRequired: boolean;
+  expiryRequired: boolean;
+  expiryWarningDays: number | null;
+  isActive: boolean;
+};
+
 export type AdminSettings = {
   blockoutSupersedesBookings: boolean;
   requireRestoreReason: boolean;
@@ -11,6 +22,7 @@ export type AdminSettings = {
   contactNotifyCooldownMinutes: number;
   vehicleDocumentFolders: string[];
   vehicleDocumentTypeOptions: string[];
+  vehicleChecklistTemplates: VehicleChecklistTemplateSetting[];
   vehicleChecklistTemplateItems: string[];
   maintenanceRemindersEnabled: boolean;
   maintenanceReminderLeadDays: number;
@@ -41,6 +53,38 @@ export const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
     "Photo",
     "Other",
   ],
+  vehicleChecklistTemplates: [
+    {
+      key: "insurance-certificate",
+      label: "Insurance Certificate",
+      folder: "Insurance",
+      required: true,
+      allowNotRequired: true,
+      expiryRequired: true,
+      expiryWarningDays: 30,
+      isActive: true,
+    },
+    {
+      key: "registration",
+      label: "Registration",
+      folder: "Registration",
+      required: true,
+      allowNotRequired: true,
+      expiryRequired: true,
+      expiryWarningDays: 30,
+      isActive: true,
+    },
+    {
+      key: "roadside-assistance",
+      label: "Roadside Assistance",
+      folder: "Paperwork",
+      required: false,
+      allowNotRequired: true,
+      expiryRequired: false,
+      expiryWarningDays: null,
+      isActive: true,
+    },
+  ],
   vehicleChecklistTemplateItems: [
     "Insurance Certificate",
     "Registration",
@@ -65,6 +109,17 @@ export const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
   depreciationDefaultUsefulLifeMonths: 60,
   depreciationDefaultResidualPercent: 20,
 };
+
+function cloneDefaultAdminSettings(): AdminSettings {
+  return {
+    ...DEFAULT_ADMIN_SETTINGS,
+    vehicleDocumentFolders: [...DEFAULT_ADMIN_SETTINGS.vehicleDocumentFolders],
+    vehicleDocumentTypeOptions: [...DEFAULT_ADMIN_SETTINGS.vehicleDocumentTypeOptions],
+    vehicleChecklistTemplates: cloneDefaultChecklistTemplates(),
+    vehicleChecklistTemplateItems: [...DEFAULT_ADMIN_SETTINGS.vehicleChecklistTemplateItems],
+    maintenanceCategories: [...DEFAULT_ADMIN_SETTINGS.maintenanceCategories],
+  };
+}
 
 function normalizeDayViewBookingLimit(value: unknown): number | "all" {
   if (value === "all") return "all";
@@ -155,12 +210,143 @@ function normalizeStringList(value: unknown, fallback: string[]) {
   return list.length > 0 ? list : [...fallback];
 }
 
-function normalizeAdminSettings(raw: unknown): AdminSettings {
+function normalizeBool(value: unknown, fallback: boolean) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["1", "true", "yes", "y"].includes(normalized)) return true;
+    if (["0", "false", "no", "n"].includes(normalized)) return false;
+  }
+  return fallback;
+}
+
+function normalizeChecklistTemplateKey(value: unknown, fallbackLabel: string, index: number) {
+  const candidate = String(value ?? "").trim().toLowerCase();
+  const fallback = String(fallbackLabel ?? "").trim().toLowerCase();
+  const source = candidate || fallback;
+  const slug = source
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 120);
+  if (slug) return slug;
+  return `template-${index + 1}`;
+}
+
+function normalizeChecklistTemplateWarningDays(value: unknown) {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return null;
+  return Math.min(3650, Math.max(0, Math.floor(parsed)));
+}
+
+function normalizeChecklistTemplateEntry(
+  entry: unknown,
+  index: number,
+  folders: string[],
+): VehicleChecklistTemplateSetting | null {
+  if (typeof entry === "string") {
+    const label = entry.trim();
+    if (!label) return null;
+    return {
+      key: normalizeChecklistTemplateKey("", label, index),
+      label: label.slice(0, 160),
+      folder: folders[0] ?? "Unsorted",
+      required: true,
+      allowNotRequired: true,
+      expiryRequired: false,
+      expiryWarningDays: null,
+      isActive: true,
+    };
+  }
+
+  if (!entry || typeof entry !== "object") return null;
+  const value = entry as Record<string, unknown>;
+  const label = String(value.label ?? "").trim();
+  if (!label) return null;
+  const folderText = String(value.folder ?? "").trim();
+
+  return {
+    key: normalizeChecklistTemplateKey(value.key, label, index),
+    label: label.slice(0, 160),
+    folder: (folderText || folders[0] || "Unsorted").slice(0, 80),
+    required: normalizeBool(value.required, true),
+    allowNotRequired: normalizeBool(
+      value.allowNotRequired ?? value.allow_not_required,
+      true,
+    ),
+    expiryRequired: normalizeBool(
+      value.expiryRequired ?? value.expiry_required,
+      false,
+    ),
+    expiryWarningDays: normalizeChecklistTemplateWarningDays(
+      value.expiryWarningDays ?? value.expiry_warning_days,
+    ),
+    isActive: normalizeBool(value.isActive ?? value.is_active, true),
+  };
+}
+
+function cloneDefaultChecklistTemplates() {
+  return DEFAULT_ADMIN_SETTINGS.vehicleChecklistTemplates.map((template) => ({
+    ...template,
+  }));
+}
+
+function normalizeChecklistTemplates(
+  value: unknown,
+  fallbackLegacyItems: string[],
+  folders: string[],
+) {
+  const rawList = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? value.split(/\n|,|;/)
+      : [];
+
+  const normalized = rawList
+    .map((entry, index) => normalizeChecklistTemplateEntry(entry, index, folders))
+    .filter((entry): entry is VehicleChecklistTemplateSetting => Boolean(entry))
+    .slice(0, 80);
+
+  if (normalized.length > 0) {
+    const deduped: VehicleChecklistTemplateSetting[] = [];
+    const seen = new Set<string>();
+    for (const template of normalized) {
+      const key = `${template.key.toLowerCase()}::${template.label.toLowerCase()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      deduped.push(template);
+    }
+    if (deduped.length > 0) return deduped;
+  }
+
+  const legacy = fallbackLegacyItems
+    .map((entry, index) => normalizeChecklistTemplateEntry(entry, index, folders))
+    .filter((entry): entry is VehicleChecklistTemplateSetting => Boolean(entry));
+  if (legacy.length > 0) return legacy;
+
+  return cloneDefaultChecklistTemplates();
+}
+
+export function normalizeAdminSettingsValue(raw: unknown): AdminSettings {
   if (!raw || typeof raw !== "object") {
-    return { ...DEFAULT_ADMIN_SETTINGS };
+    return cloneDefaultAdminSettings();
   }
 
   const value = raw as Record<string, unknown>;
+  const vehicleDocumentFolders = normalizeStringList(
+    value.vehicleDocumentFolders,
+    DEFAULT_ADMIN_SETTINGS.vehicleDocumentFolders,
+  );
+  const legacyTemplateItems = normalizeStringList(
+    value.vehicleChecklistTemplateItems,
+    DEFAULT_ADMIN_SETTINGS.vehicleChecklistTemplateItems,
+  );
+  const vehicleChecklistTemplates = normalizeChecklistTemplates(
+    value.vehicleChecklistTemplates,
+    legacyTemplateItems,
+    vehicleDocumentFolders,
+  );
+
   return {
     blockoutSupersedesBookings:
       typeof value.blockoutSupersedesBookings === "boolean"
@@ -187,18 +373,13 @@ function normalizeAdminSettings(raw: unknown): AdminSettings {
     contactNotifyCooldownMinutes: normalizeContactNotifyCooldownMinutes(
       value.contactNotifyCooldownMinutes,
     ),
-    vehicleDocumentFolders: normalizeStringList(
-      value.vehicleDocumentFolders,
-      DEFAULT_ADMIN_SETTINGS.vehicleDocumentFolders,
-    ),
+    vehicleDocumentFolders,
     vehicleDocumentTypeOptions: normalizeStringList(
       value.vehicleDocumentTypeOptions,
       DEFAULT_ADMIN_SETTINGS.vehicleDocumentTypeOptions,
     ),
-    vehicleChecklistTemplateItems: normalizeStringList(
-      value.vehicleChecklistTemplateItems,
-      DEFAULT_ADMIN_SETTINGS.vehicleChecklistTemplateItems,
-    ),
+    vehicleChecklistTemplates,
+    vehicleChecklistTemplateItems: vehicleChecklistTemplates.map((template) => template.label),
     maintenanceRemindersEnabled:
       typeof value.maintenanceRemindersEnabled === "boolean"
         ? value.maintenanceRemindersEnabled
@@ -240,14 +421,14 @@ export async function loadAdminSettings(): Promise<{
     );
     const content = result.rows[0]?.content;
     if (!content || typeof content !== "string") {
-      return { settings: { ...DEFAULT_ADMIN_SETTINGS }, source: "default" };
+      return { settings: cloneDefaultAdminSettings(), source: "default" };
     }
 
     try {
       const parsed = JSON.parse(content);
-      return { settings: normalizeAdminSettings(parsed), source: "db" };
+      return { settings: normalizeAdminSettingsValue(parsed), source: "db" };
     } catch {
-      return { settings: { ...DEFAULT_ADMIN_SETTINGS }, source: "default" };
+      return { settings: cloneDefaultAdminSettings(), source: "default" };
     }
   } catch (error) {
     const code =
@@ -255,7 +436,7 @@ export async function loadAdminSettings(): Promise<{
         ? String((error as { code?: string }).code)
         : "";
     if (code === "42P01") {
-      return { settings: { ...DEFAULT_ADMIN_SETTINGS }, source: "default" };
+      return { settings: cloneDefaultAdminSettings(), source: "default" };
     }
     throw error;
   }

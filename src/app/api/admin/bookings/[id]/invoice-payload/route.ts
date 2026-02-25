@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { dbQuery } from "@/lib/db";
-import { getSessionFromRequest } from "@/lib/auth/session";
+import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
 import { buildInvoicePayload } from "@/lib/pdfmonkey";
 import {
   computeBookingPricing,
@@ -14,10 +14,8 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await getSessionFromRequest();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireStaffOrAdminRole();
+  if (!auth.ok) return auth.response;
 
   const { id } = await params;
   const bookingResult = await dbQuery<{

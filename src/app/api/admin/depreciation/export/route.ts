@@ -1,3 +1,4 @@
+import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import {
   DEPRECIATION_REPORT_SORT_COLUMNS,
@@ -8,13 +9,6 @@ import {
 } from "@/lib/vehicles/depreciationReport";
 import { readSortFromSearchParams } from "@/components/admin/tableSort";
 import { isVehicleExtensionsMissingTableError } from "@/lib/vehicles/extensionTables";
-
-function isStaffRole(role: string | undefined) {
-  const normalized = String(role ?? "")
-    .trim()
-    .toUpperCase();
-  return normalized === "ADMIN" || normalized === "DEVELOPER" || normalized === "USER";
-}
 
 function normalizeFilter(value: string | null) {
   const normalized = String(value ?? "").trim();
@@ -68,13 +62,11 @@ export async function handleAdminDepreciationExportGet(
   request: Request,
   deps: ExportDeps = DEFAULT_DEPS,
 ) {
-  const session = await deps.getSession();
-  if (!session) {
-    return new Response("Unauthorized", { status: 401 });
-  }
-  if (!isStaffRole(session.role)) {
-    return new Response("Forbidden", { status: 403 });
-  }
+  const auth = await requireStaffOrAdminRole({
+    getSession: deps.getSession,
+    responseFormat: "text",
+  });
+  if (!auth.ok) return auth.response;
 
   const { searchParams } = new URL(request.url);
   const asOfMonth = normalizeFilter(searchParams.get("asOfMonth"));

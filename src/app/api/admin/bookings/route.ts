@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { requireAdminRole, requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { fetchAdminBookingsPage } from "@/lib/bookings/adminBookingsList";
 import { getDbPool } from "@/lib/db";
@@ -15,13 +16,6 @@ import { writeAuditLog } from "@/lib/audit";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-function isAdminRole(role: string | undefined) {
-  const normalized = String(role ?? "")
-    .trim()
-    .toUpperCase();
-  return normalized === "ADMIN" || normalized === "DEVELOPER";
-}
 
 function buildWindowFromDates(startDate: string, endDate: string) {
   const startAt = new Date(`${startDate}T00:00:00.000Z`);
@@ -52,10 +46,8 @@ export async function handleAdminBookingsGet(
   request: Request,
   deps: AdminBookingsGetRouteDeps = DEFAULT_BOOKINGS_GET_DEPS,
 ) {
-  const session = await deps.getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
+  if (!auth.ok) return auth.response;
 
   const { searchParams } = new URL(request.url);
   const page = await deps.fetchPage({
@@ -76,13 +68,9 @@ export async function handleAdminBookingsGet(
 }
 
 export async function POST(request: Request) {
-  const session = await getSessionFromRequest();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  if (!isAdminRole(session.role)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requireAdminRole();
+  if (!auth.ok) return auth.response;
+  const { actor } = auth;
 
   if (!(await requireCsrf(request))) {
     return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
@@ -266,7 +254,7 @@ export async function POST(request: Request) {
     await client.query("commit");
 
     await writeAuditLog({
-      userId: session.userId,
+      userId: actor.userId,
       action: "BOOKING_CREATED_BY_ADMIN",
       entityType: "booking",
       entityId: bookingInsert.rows[0].id,
@@ -312,6 +300,7 @@ export async function POST(request: Request) {
   } catch (error) {
     await client.query("rollback");
     logError("admin_booking_create_failed", error, {
+      userId: actor.userId,
       vehicleId: String(vehicleId ?? ""),
       startDate: String(startDate ?? ""),
       endDate: String(endDate ?? ""),

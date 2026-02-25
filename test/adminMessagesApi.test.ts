@@ -24,6 +24,52 @@ test("admin messages API: list requires auth", async () => {
   assert.equal(response.status, 401);
 });
 
+test("admin messages API: non-staff role is forbidden", async () => {
+  const response = await handleAdminMessagesListGet(
+    new Request("http://localhost/api/admin/messages"),
+    {
+      getSession: async () => ({
+        userId: "91c7c89a-9f07-4d59-b79b-f92d55f0cf8b",
+        role: "CUSTOMER",
+        expiresAt: 999999999,
+        issuedAt: 999999000,
+      }),
+      getPage: async () => ({
+        items: [],
+        nextCursor: null,
+        hasMore: false,
+        totalCount: 0,
+        limit: 20,
+      }),
+    },
+  );
+
+  assert.equal(response.status, 403);
+});
+
+test("admin messages API: staff role can access admin list", async () => {
+  const response = await handleAdminMessagesListGet(
+    new Request("http://localhost/api/admin/messages"),
+    {
+      getSession: async () => ({
+        userId: "91c7c89a-9f07-4d59-b79b-f92d55f0cf8b",
+        role: "USER",
+        expiresAt: 999999999,
+        issuedAt: 999999000,
+      }),
+      getPage: async () => ({
+        items: [],
+        nextCursor: null,
+        hasMore: false,
+        totalCount: 0,
+        limit: 20,
+      }),
+    },
+  );
+
+  assert.equal(response.status, 200);
+});
+
 test("admin messages API: list returns items", async () => {
   const response = await handleAdminMessagesListGet(
     new Request("http://localhost/api/admin/messages?status=NEW&q=damian"),

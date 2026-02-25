@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { requireAdminRole } from "@/lib/auth/adminGuards";
 import { writeAuditLog } from "@/lib/audit";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery } from "@/lib/db";
@@ -7,13 +8,6 @@ import { requireCsrf } from "@/lib/security/csrf";
 import { logError } from "@/lib/log";
 
 const RETENTION_DAYS = 30;
-
-function isAdminRole(role: string | undefined) {
-  const normalized = String(role ?? "")
-    .trim()
-    .toUpperCase();
-  return normalized === "ADMIN" || normalized === "DEVELOPER";
-}
 
 export type AdminMessagesRetentionRouteDeps = {
   getSession: () => Promise<AdminSession | null>;
@@ -47,13 +41,9 @@ export async function handleAdminMessagesRetentionPost(
   request: Request,
   deps: AdminMessagesRetentionRouteDeps = DEFAULT_DEPS,
 ) {
-  const session = await deps.getSession();
-  if (!session) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
-  if (!isAdminRole(session.role)) {
-    return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requireAdminRole({ getSession: deps.getSession });
+  if (!auth.ok) return auth.response;
+  const { actor } = auth;
 
   const body = await request.json().catch(() => null);
   if (!(await deps.requireCsrfCheck(request, body?.csrfToken ?? null))) {
@@ -64,7 +54,7 @@ export async function handleAdminMessagesRetentionPost(
     const result = await deps.runRetention(RETENTION_DAYS);
 
     await deps.writeAudit({
-      userId: session.userId,
+      userId: actor.userId,
       action: "CONTACT_MESSAGES_RETENTION_ARCHIVE_RUN",
       entityType: "contact_message",
       details: {
@@ -80,7 +70,7 @@ export async function handleAdminMessagesRetentionPost(
     });
   } catch (error) {
     logError("admin_messages_retention_failed", error, {
-      userId: session.userId,
+      userId: actor.userId,
       olderThanDays: RETENTION_DAYS,
     });
     return NextResponse.json(

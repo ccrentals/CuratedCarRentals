@@ -1,31 +1,19 @@
 import { NextResponse } from "next/server";
 
-import { getSessionFromRequest } from "@/lib/auth/session";
+import { requireAdminRole } from "@/lib/auth/adminGuards";
 import { getDbPool } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
 import { logError } from "@/lib/log";
 import { requireCsrf } from "@/lib/security/csrf";
 import { recalculateBookingPayments } from "@/lib/payments/recalculateBooking";
 
-function isAdminRole(role: string | undefined) {
-  const normalized = String(role ?? "")
-    .trim()
-    .toUpperCase();
-  return normalized === "ADMIN" || normalized === "DEVELOPER";
-}
-
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ paymentId: string }> },
 ) {
-  const session = await getSessionFromRequest();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  if (!isAdminRole(session.role)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requireAdminRole({ forbiddenMessage: "Forbidden" });
+  if (!auth.ok) return auth.response;
+  const { actor } = auth;
 
   if (!(await requireCsrf(request))) {
     return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
@@ -101,7 +89,7 @@ export async function POST(
           original_payment_id: original.id,
           original_transaction_id: original.provider_transaction_id,
           reason,
-          created_by: session.userId,
+          created_by: actor.userId,
           created_at: new Date().toISOString(),
         },
       ],
@@ -112,7 +100,7 @@ export async function POST(
     await client.query("commit");
 
     await writeAuditLog({
-      userId: session.userId,
+      userId: actor.userId,
       action: "WIPAY_REFUND_CREATED",
       entityType: "payment",
       entityId: refundInsert.rows[0]?.id,
@@ -128,7 +116,7 @@ export async function POST(
     return NextResponse.json({ ok: true, message: "Refund recorded", summary });
   } catch (error) {
     await client.query("rollback");
-    logError("api.admin.payments.refund.POST", error, { userId: session.userId, paymentId });
+    logError("api.admin.payments.refund.POST", error, { userId: actor.userId, paymentId });
     return NextResponse.json({ error: "Failed to record refund" }, { status: 500 });
   } finally {
     client.release();

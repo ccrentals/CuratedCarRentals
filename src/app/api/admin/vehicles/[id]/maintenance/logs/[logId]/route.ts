@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery } from "@/lib/db";
 import {
@@ -46,13 +47,6 @@ type RouteDeps = {
   updateLog: (vehicleId: string, logId: string, payload: PatchPayload) => Promise<LogRow | null>;
   deleteLog: (vehicleId: string, logId: string) => Promise<boolean>;
 };
-
-function isStaffRole(role: string | undefined) {
-  const normalized = String(role ?? "")
-    .trim()
-    .toUpperCase();
-  return normalized === "ADMIN" || normalized === "DEVELOPER" || normalized === "USER";
-}
 
 function mapLog(row: LogRow) {
   return {
@@ -171,13 +165,9 @@ export async function handleVehicleMaintenanceLogPatch(
   context: RouteContext,
   deps: RouteDeps = DEFAULT_DEPS,
 ) {
-  const session = await deps.getSession();
-  if (!session) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
-  if (!isStaffRole(session.role)) {
-    return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
+  if (!auth.ok) return auth.response;
+  const session = auth.session;
 
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
   if (!(await deps.requireCsrfCheck(request, (body?.csrfToken as string | null | undefined) ?? null))) {
@@ -216,13 +206,9 @@ export async function handleVehicleMaintenanceLogDelete(
   context: RouteContext,
   deps: RouteDeps = DEFAULT_DEPS,
 ) {
-  const session = await deps.getSession();
-  if (!session) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
-  if (!isStaffRole(session.role)) {
-    return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
+  if (!auth.ok) return auth.response;
+  const session = auth.session;
 
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
   if (!(await deps.requireCsrfCheck(request, (body?.csrfToken as string | null | undefined) ?? null))) {

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { requireAdminRole } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import {
   buildReportsFilterQueryString,
@@ -8,13 +9,6 @@ import {
   type AdminReportsPayload,
   type ReportsFilterInput,
 } from "@/lib/reports/adminReports";
-
-function isAdminRole(role: string | undefined) {
-  const normalized = String(role ?? "")
-    .trim()
-    .toUpperCase();
-  return normalized === "ADMIN" || normalized === "DEVELOPER";
-}
 
 export type ReportsRouteDeps = {
   getSession: () => Promise<AdminSession | null>;
@@ -488,13 +482,8 @@ function exportTablesAsPdf(title: string, meta: string[], tables: ExportTable[])
 }
 
 export async function handleReportsGet(request: Request, deps: ReportsRouteDeps = DEFAULT_DEPS) {
-  const session = await deps.getSession();
-  if (!session) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
-  if (!isAdminRole(session.role)) {
-    return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requireAdminRole({ getSession: deps.getSession });
+  if (!auth.ok) return auth.response;
 
   const { searchParams } = new URL(request.url);
   const filters = parseFilters(searchParams);

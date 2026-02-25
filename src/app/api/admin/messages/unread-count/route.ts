@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import {
   getUnreadContactMessagesCount,
@@ -21,10 +22,8 @@ export async function handleAdminMessagesUnreadCountGet(
   _request: Request,
   deps: AdminMessagesUnreadCountRouteDeps = DEFAULT_DEPS,
 ) {
-  const session = await deps.getSession();
-  if (!session) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
+  if (!auth.ok) return auth.response;
 
   try {
     const count = await deps.getUnreadCount();

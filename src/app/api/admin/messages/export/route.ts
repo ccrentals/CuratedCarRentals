@@ -1,3 +1,4 @@
+import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery } from "@/lib/db";
 import {
@@ -16,13 +17,6 @@ type ExportRow = {
   message: string;
   read_at: string | null;
 };
-
-function isStaffRole(role: string | undefined) {
-  const normalized = String(role ?? "")
-    .trim()
-    .toUpperCase();
-  return normalized === "ADMIN" || normalized === "DEVELOPER" || normalized === "USER";
-}
 
 function csvEscape(value: string) {
   if (value.includes("\"") || value.includes(",") || value.includes("\n")) {
@@ -43,13 +37,11 @@ function messageSnippet(value: string, maxLength = 240) {
 }
 
 export async function GET(request: Request) {
-  const session = await getSessionFromRequest();
-  if (!session) {
-    return new Response("Unauthorized", { status: 401 });
-  }
-  if (!isStaffRole(session.role)) {
-    return new Response("Forbidden", { status: 403 });
-  }
+  const auth = await requireStaffOrAdminRole({
+    getSession: () => getSessionFromRequest(),
+    responseFormat: "text",
+  });
+  if (!auth.ok) return auth.response;
 
   const { searchParams } = new URL(request.url);
   const status = normalizeContactMessageStatusFilter(searchParams.get("status"));

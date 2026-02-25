@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery } from "@/lib/db";
 import { buildUploadcareCdnUrl, extractUploadcareFileId } from "@/lib/uploads/uploadcare";
@@ -25,13 +26,6 @@ export type AdminVehicleDocumentDownloadRouteDeps = {
   getDocument: (vehicleId: string, docId: string) => Promise<VehicleDocumentStorageRow | null>;
 };
 
-function isStaffRole(role: string | undefined) {
-  const normalized = String(role ?? "")
-    .trim()
-    .toUpperCase();
-  return normalized === "ADMIN" || normalized === "DEVELOPER" || normalized === "USER";
-}
-
 function sanitizeFileName(value: string) {
   const trimmed = value.trim();
   const compact = trimmed.replace(/[^a-z0-9._-]+/gi, "_");
@@ -55,20 +49,15 @@ export async function handleAdminVehicleDocumentDownload(
   context: VehicleDocumentDownloadRouteContext,
   deps: AdminVehicleDocumentDownloadRouteDeps = DEFAULT_DEPS,
 ) {
-  const session = await deps.getSession();
-  if (!session) {
+  const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
+  if (!auth.ok) {
+    const status = auth.reason === "unauthorized" ? 401 : 403;
+    const error = auth.reason === "unauthorized" ? "Unauthorized" : "Forbidden";
     return NextResponse.json(
-      { ok: false, error: "Unauthorized" },
-      { status: 401, headers: { "cache-control": "no-store" } },
+      { ok: false, error },
+      { status, headers: { "cache-control": "no-store" } },
     );
   }
-  if (!isStaffRole(session.role)) {
-    return NextResponse.json(
-      { ok: false, error: "Forbidden" },
-      { status: 403, headers: { "cache-control": "no-store" } },
-    );
-  }
-
   const { id, docId } = await context.params;
   if (!UUID_REGEX.test(id) || !UUID_REGEX.test(docId)) {
     return NextResponse.json(

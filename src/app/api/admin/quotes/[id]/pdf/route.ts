@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import { logError } from "@/lib/log";
 import {
@@ -10,13 +11,6 @@ import {
   type QuoteOpsQuote,
   type QuoteEventType,
 } from "@/lib/quotes/quoteOps";
-
-function isStaffRole(role: string | undefined) {
-  const normalized = String(role ?? "")
-    .trim()
-    .toUpperCase();
-  return normalized === "ADMIN" || normalized === "DEVELOPER" || normalized === "USER";
-}
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -50,13 +44,9 @@ export async function handleAdminQuotePdfGet(
   context: RouteContext,
   deps: AdminQuotePdfRouteDeps = DEFAULT_DEPS,
 ) {
-  const session = await deps.getSession();
-  if (!session) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
-  if (!isStaffRole(session.role)) {
-    return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
+  if (!auth.ok) return auth.response;
+  const { actor } = auth;
 
   const { id } = await context.params;
 
@@ -71,7 +61,7 @@ export async function handleAdminQuotePdfGet(
     await deps.recordEvent({
       quoteId: quote.id,
       eventType: "PDF_GENERATED",
-      actorAdminUserId: session.userId,
+      actorAdminUserId: actor.userId,
       meta: {
         source: "admin_quote_pdf",
       },

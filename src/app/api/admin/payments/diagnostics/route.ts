@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { dbQuery } from "@/lib/db";
-import { getSessionFromRequest } from "@/lib/auth/session";
+import { requireAdminRole } from "@/lib/auth/adminGuards";
 
 function maskValue(value: string | undefined, visible = 4) {
   if (!value) return "missing";
@@ -25,10 +25,8 @@ type RecentPayment = {
 };
 
 export async function GET() {
-  const session = await getSessionFromRequest();
-  if (!session) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAdminRole();
+  if (!auth.ok) return auth.response;
 
   const env = {
     WIPAY_ENV: process.env.WIPAY_ENV ?? "missing",

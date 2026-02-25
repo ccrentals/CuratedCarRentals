@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { getSessionFromRequest } from "@/lib/auth/session";
+import { requireAdminRole } from "@/lib/auth/adminGuards";
 import { dbQuery } from "@/lib/db";
 import { requireCsrf } from "@/lib/security/csrf";
 import { normalizePromoInputCode } from "@/lib/promos";
@@ -32,13 +32,6 @@ type RedemptionRow = {
   discount_amount_cents: number;
   created_at: string;
 };
-
-function isAdminRole(role: string | undefined) {
-  const normalized = String(role ?? "")
-    .trim()
-    .toUpperCase();
-  return normalized === "ADMIN" || normalized === "DEVELOPER";
-}
 
 function asInteger(value: unknown): number | null {
   if (value === null || value === undefined || value === "") return null;
@@ -80,13 +73,8 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await getSessionFromRequest();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  if (!isAdminRole(session.role)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requireAdminRole();
+  if (!auth.ok) return auth.response;
 
   const { id } = await params;
   const promo = await dbQuery<PromoRow>(
@@ -112,13 +100,9 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await getSessionFromRequest();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  if (!isAdminRole(session.role)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requireAdminRole();
+  if (!auth.ok) return auth.response;
+  const { actor } = auth;
 
   const { id } = await params;
   const body = await request.json().catch(() => null);
@@ -137,7 +121,7 @@ export async function PATCH(
     }
 
     await writeAuditLog({
-      userId: session.userId,
+      userId: actor.userId,
       action: isActive ? "PROMO_CODE_ACTIVATED" : "PROMO_CODE_DEACTIVATED",
       entityType: "promo_code",
       entityId: id,
@@ -202,7 +186,7 @@ export async function PATCH(
     }
 
     await writeAuditLog({
-      userId: session.userId,
+      userId: actor.userId,
       action: "PROMO_CODE_UPDATED",
       entityType: "promo_code",
       entityId: id,
@@ -215,7 +199,7 @@ export async function PATCH(
     if (codeError === "23505") {
       return NextResponse.json({ error: "Promo code already exists." }, { status: 409 });
     }
-    logError("api.admin.promo-codes.[id].PATCH", error, { userId: session.userId, promoId: id });
+    logError("api.admin.promo-codes.[id].PATCH", error, { userId: actor.userId, promoId: id });
     return NextResponse.json({ error: "Failed to update promo code." }, { status: 500 });
   }
 }

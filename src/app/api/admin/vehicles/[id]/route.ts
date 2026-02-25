@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { getSessionFromRequest } from "@/lib/auth/session";
+import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
 import { dbQuery } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
 import { requireCsrf } from "@/lib/security/csrf";
@@ -25,10 +25,8 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await getSessionFromRequest();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireStaffOrAdminRole();
+  if (!auth.ok) return auth.response;
 
   const { id } = await params;
   const vehicleResult = await dbQuery(
@@ -47,10 +45,9 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await getSessionFromRequest();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireStaffOrAdminRole();
+  if (!auth.ok) return auth.response;
+  const { actor } = auth;
 
   const { id } = await params;
   const body = await request.json().catch(() => null);
@@ -136,7 +133,7 @@ export async function PATCH(
   }
 
   await writeAuditLog({
-    userId: session.userId,
+    userId: actor.userId,
     action: "VEHICLE_UPDATE",
     entityType: "vehicle",
     entityId: id,

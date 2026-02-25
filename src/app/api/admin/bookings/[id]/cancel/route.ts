@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { getSessionFromRequest } from "@/lib/auth/session";
+import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
 import { dbQuery } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
 import { requireCsrf } from "@/lib/security/csrf";
@@ -9,10 +9,9 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await getSessionFromRequest();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireStaffOrAdminRole();
+  if (!auth.ok) return auth.response;
+  const { actor } = auth;
 
   if (!(await requireCsrf(request))) {
     return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
@@ -41,7 +40,7 @@ export async function POST(
   await dbQuery("update bookings set status = 'CANCELLED', updated_at = now() where id = $1", [id]);
 
   await writeAuditLog({
-    userId: session.userId,
+    userId: actor.userId,
     action: "BOOKING_CANCELLED",
     entityType: "booking",
     entityId: id,

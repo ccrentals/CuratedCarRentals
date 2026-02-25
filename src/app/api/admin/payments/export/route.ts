@@ -1,5 +1,5 @@
 import { dbQuery } from "@/lib/db";
-import { getSessionFromRequest } from "@/lib/auth/session";
+import { requireAdminRole } from "@/lib/auth/adminGuards";
 import { readSortFromSearchParams, type SortDir } from "@/components/admin/tableSort";
 
 function csvEscape(value: string) {
@@ -36,10 +36,8 @@ type PaymentSortBy = (typeof PAYMENT_SORT_COLUMNS)[number];
 type PaymentSortDir = SortDir;
 
 export async function GET(request: Request) {
-  const session = await getSessionFromRequest();
-  if (!session) {
-    return new Response("Unauthorized", { status: 401 });
-  }
+  const auth = await requireAdminRole({ responseFormat: "text" });
+  if (!auth.ok) return auth.response;
 
   const { searchParams } = new URL(request.url);
   const q = searchParams.get("q")?.trim() ?? "";

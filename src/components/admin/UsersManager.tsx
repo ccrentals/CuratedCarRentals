@@ -21,6 +21,19 @@ type CreateUserResult = {
   username?: string;
   tempPassword: string;
   tempPasswordExpiresAt: string;
+  clerkSync?:
+    | {
+        status: "created" | "linked_existing";
+        clerkUserId: string;
+        message: string;
+        localLinkSaved: boolean;
+        localLinkWarning?: string;
+      }
+    | {
+        status: "skipped" | "failed";
+        clerkUserId: null;
+        message: string;
+      };
 };
 
 type UserRole = "USER" | "ADMIN" | "DEVELOPER";
@@ -69,6 +82,9 @@ export function CreateUserForm({
     tempPassword: string;
     tempPasswordExpiresAt: string | null;
     createdUsername: string | null;
+    clerkMessage: string | null;
+    clerkWarning: string | null;
+    clerkWarningDetail: string | null;
   } | null>(null);
 
   function showCopyToast(message: string, tone: "success" | "error" = "success") {
@@ -140,6 +156,20 @@ export function CreateUserForm({
       tempPassword: data.tempPassword,
       tempPasswordExpiresAt: data.tempPasswordExpiresAt ?? null,
       createdUsername: data.username ? String(data.username) : null,
+      clerkMessage:
+        data.clerkSync && "message" in data.clerkSync ? data.clerkSync.message : null,
+      clerkWarning:
+        data.clerkSync &&
+        "status" in data.clerkSync &&
+        (data.clerkSync.status === "failed" ||
+          data.clerkSync.status === "skipped" ||
+          ("localLinkSaved" in data.clerkSync && !data.clerkSync.localLinkSaved))
+          ? "Clerk link needs attention."
+          : "Clerk link ready.",
+      clerkWarningDetail:
+        data.clerkSync && "localLinkWarning" in data.clerkSync
+          ? (data.clerkSync.localLinkWarning ?? null)
+          : null,
     });
     setFirstName("");
     setLastName("");
@@ -233,6 +263,20 @@ export function CreateUserForm({
               />
             </p>
           ) : null}
+          {successNotice.clerkMessage ? (
+            <p
+              className={`mt-1 text-[11px] ${
+                successNotice.clerkWarning === "Clerk link needs attention."
+                  ? "text-amber-300"
+                  : "text-emerald-300"
+              }`}
+            >
+              {successNotice.clerkMessage}
+            </p>
+          ) : null}
+          {successNotice.clerkWarningDetail ? (
+            <p className="mt-1 text-[11px] text-amber-300">{successNotice.clerkWarningDetail}</p>
+          ) : null}
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <button
               type="button"
@@ -303,7 +347,16 @@ type UserRowActionsProps = {
   lockedAt?: string | null;
 };
 
-type ResetResult = { tempPassword: string; tempPasswordExpiresAt?: string | null };
+type ResetResult =
+  | {
+      kind: "temp";
+      tempPassword: string;
+      tempPasswordExpiresAt?: string | null;
+    }
+  | {
+      kind: "self";
+      message: string;
+    };
 
 type Mode =
   | "edit_profile"
@@ -554,6 +607,7 @@ export function UserRowActions({
       message?: string;
       tempPassword?: string;
       tempPasswordExpiresAt?: string;
+      selfReset?: boolean;
     };
 
     setLoading(false);
@@ -563,14 +617,23 @@ export function UserRowActions({
     }
 
     if (mode === "reset_password") {
-      if (!data.tempPassword) {
+      if (data.tempPassword) {
+        setResetResult({
+          kind: "temp",
+          tempPassword: data.tempPassword,
+          tempPasswordExpiresAt: data.tempPasswordExpiresAt ?? null,
+        });
+      } else if (data.selfReset) {
+        setResetResult({
+          kind: "self",
+          message:
+            data.message ??
+            "Password reset initiated. You will be signed out and prompted to set a new password.",
+        });
+      } else {
         setError("Password reset succeeded, but temporary password was not returned.");
         return;
       }
-      setResetResult({
-        tempPassword: data.tempPassword,
-        tempPasswordExpiresAt: data.tempPasswordExpiresAt ?? null,
-      });
       setReason("");
       router.refresh();
       return;
@@ -698,16 +761,14 @@ export function UserRowActions({
 
       <ActionIconButton
         label="Reset password"
-        title={self ? "You cannot reset your own password here." : "Reset password"}
+        title="Reset password"
         onClick={() => {
-          if (self) return;
           setError(null);
           setReason("");
           setResetResult(null);
           setCopyToast(null);
           openMode("reset_password");
         }}
-        disabled={self}
       >
         <svg
           viewBox="0 0 24 24"
@@ -862,52 +923,58 @@ export function UserRowActions({
                 </label>
               ) : mode === "reset_password" && resetResult ? (
                 <div className="space-y-3">
-                  <p className="text-sm text-[var(--ccr-muted)]">
-                    Temporary password created. It expires in 3 days and the user will be required to set a permanent password after logging in.
-                  </p>
-                  <p className="break-all rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 font-mono text-sm text-[var(--ccr-text)]">
-                    {resetResult.tempPassword}
-                  </p>
-                  {resetResult.tempPasswordExpiresAt ? (
-                    <p className="text-[11px] text-[var(--ccr-muted)]">
-                      Expires:{" "}
-                      <DateTimeInline
-                        value={resetResult.tempPasswordExpiresAt}
-                        className="inline-flex"
-                      />
-                    </p>
-                  ) : null}
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        try {
-                          await navigator.clipboard.writeText(resetResult.tempPassword);
-                          setCopyToast("Copied");
-                          window.setTimeout(() => setCopyToast(null), 1400);
-                        } catch {
-                          setCopyToast("Copy failed");
-                          window.setTimeout(() => setCopyToast(null), 1400);
-                        }
-                      }}
-                      className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] hover:bg-[var(--ccr-bg)]"
-                    >
-                      Copy
-                    </button>
-                    {copyToast ? (
-                      <span
-                        className={`rounded-lg border px-2 py-1 text-[11px] font-semibold ${
-                          copyToast === "Copied"
-                            ? "border-[var(--ccr-accent)] bg-[var(--ccr-bg)] text-[var(--ccr-accent)]"
-                            : "border-red-400/40 bg-[var(--ccr-bg)] text-red-200"
-                        }`}
-                        role="status"
-                        aria-live="polite"
-                      >
-                        {copyToast}
-                      </span>
-                    ) : null}
-                  </div>
+                  {resetResult.kind === "temp" ? (
+                    <>
+                      <p className="text-sm text-[var(--ccr-muted)]">
+                        Temporary password created. It expires in 3 days and the user will be required to set a permanent password after logging in.
+                      </p>
+                      <p className="break-all rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 font-mono text-sm text-[var(--ccr-text)]">
+                        {resetResult.tempPassword}
+                      </p>
+                      {resetResult.tempPasswordExpiresAt ? (
+                        <p className="text-[11px] text-[var(--ccr-muted)]">
+                          Expires:{" "}
+                          <DateTimeInline
+                            value={resetResult.tempPasswordExpiresAt}
+                            className="inline-flex"
+                          />
+                        </p>
+                      ) : null}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              await navigator.clipboard.writeText(resetResult.tempPassword);
+                              setCopyToast("Copied");
+                              window.setTimeout(() => setCopyToast(null), 1400);
+                            } catch {
+                              setCopyToast("Copy failed");
+                              window.setTimeout(() => setCopyToast(null), 1400);
+                            }
+                          }}
+                          className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] hover:bg-[var(--ccr-bg)]"
+                        >
+                          Copy
+                        </button>
+                        {copyToast ? (
+                          <span
+                            className={`rounded-lg border px-2 py-1 text-[11px] font-semibold ${
+                              copyToast === "Copied"
+                                ? "border-[var(--ccr-accent)] bg-[var(--ccr-bg)] text-[var(--ccr-accent)]"
+                                : "border-red-400/40 bg-[var(--ccr-bg)] text-red-200"
+                            }`}
+                            role="status"
+                            aria-live="polite"
+                          >
+                            {copyToast}
+                          </span>
+                        ) : null}
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-sm text-[var(--ccr-muted)]">{resetResult.message}</p>
+                  )}
                 </div>
               ) : (
                 <label className="block text-xs text-[var(--ccr-muted)]">

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { isAdminRole } from "@/lib/auth/roles";
 
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { CustomerSnapshotBookingsTable } from "@/components/admin/CustomerSnapshotBookingsTable";
@@ -56,13 +57,6 @@ function isMissingColumn(error: unknown, column: string) {
 
 function isAnyMissingColumn(error: unknown, columns: string[]) {
   return columns.some((column) => isMissingColumn(error, column));
-}
-
-function isAdminRole(role: string | undefined) {
-  const normalized = String(role ?? "")
-    .trim()
-    .toUpperCase();
-  return normalized === "ADMIN" || normalized === "DEVELOPER";
 }
 
 function normalizeDateInput(value: string | undefined) {

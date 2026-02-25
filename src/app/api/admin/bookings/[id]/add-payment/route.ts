@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { getSessionFromRequest } from "@/lib/auth/session";
+import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
 import { getDbPool } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
 import { requireCsrf } from "@/lib/security/csrf";
@@ -27,10 +27,9 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await getSessionFromRequest();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireStaffOrAdminRole();
+  if (!auth.ok) return auth.response;
+  const { actor } = auth;
 
   if (!(await requireCsrf(request))) {
     return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
@@ -101,7 +100,7 @@ export async function POST(
           note,
           reference: reference || undefined,
           paid_at: paidAtIso,
-          entered_by: session.userId,
+          entered_by: actor.userId,
           created_at: new Date().toISOString(),
         },
       ],
@@ -109,14 +108,14 @@ export async function POST(
 
     const entitlementResolution = await maybeEntitleBookingAfterPayment(booking.id, {
       client,
-      auditUserId: session.userId,
+      auditUserId: actor.userId,
     });
     const summary = await recalculateBookingPayments(booking.id, { client });
 
     await client.query("commit");
 
     await writeAuditLog({
-      userId: session.userId,
+      userId: actor.userId,
       action: "BOOKING_MANUAL_PAYMENT_ADDED",
       entityType: "booking",
       entityId: booking.id,
@@ -133,7 +132,7 @@ export async function POST(
 
     for (const overriddenBooking of entitlementResolution.cancelledOverlaps) {
       await writeAuditLog({
-        userId: session.userId,
+        userId: actor.userId,
         action: "BOOKING_OVERRIDDEN_BY_PAID_BOOKING",
         entityType: "booking",
         entityId: overriddenBooking.id,
@@ -231,7 +230,7 @@ export async function POST(
     });
   } catch (error) {
     await client.query("rollback");
-    logError("admin_add_payment_failed", error, { bookingId: id });
+    logError("admin_add_payment_failed", error, { bookingId: id, userId: actor.userId });
     return NextResponse.json({ error: "Failed to add payment" }, { status: 500 });
   } finally {
     client.release();

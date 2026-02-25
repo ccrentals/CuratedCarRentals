@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import {
   fetchAdminMessageByIdWithOptionalMarkRead,
@@ -13,13 +14,6 @@ import {
 import { writeAuditLog } from "@/lib/audit";
 import { requireCsrf } from "@/lib/security/csrf";
 import { logError } from "@/lib/log";
-
-function isStaffRole(role: string | undefined) {
-  const normalized = String(role ?? "")
-    .trim()
-    .toUpperCase();
-  return normalized === "ADMIN" || normalized === "DEVELOPER" || normalized === "USER";
-}
 
 type MessageRouteContext = {
   params: Promise<{ id: string }>;
@@ -67,13 +61,9 @@ export async function handleAdminMessageGet(
   context: MessageRouteContext,
   deps: AdminMessageRouteDeps = DEFAULT_DEPS,
 ) {
-  const session = await deps.getSession();
-  if (!session) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
-  if (!isStaffRole(session.role)) {
-    return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
+  if (!auth.ok) return auth.response;
+  const { actor } = auth;
 
   const { id } = await context.params;
   const { searchParams } = new URL(request.url);
@@ -83,7 +73,7 @@ export async function handleAdminMessageGet(
     const result = await deps.getMessage({
       id,
       markRead,
-      actorUserId: session.userId,
+      actorUserId: actor.userId,
     });
 
     if (!result.item) {
@@ -92,7 +82,7 @@ export async function handleAdminMessageGet(
 
     if (markRead && result.statusChanged && result.previousStatus === "NEW") {
       await deps.writeAudit({
-        userId: session.userId,
+        userId: actor.userId,
         action: "CONTACT_MESSAGE_MARKED_READ",
         entityType: "contact_message",
         entityId: id,
@@ -126,13 +116,9 @@ export async function handleAdminMessagePatch(
   context: MessageRouteContext,
   deps: AdminMessageRouteDeps = DEFAULT_DEPS,
 ) {
-  const session = await deps.getSession();
-  if (!session) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
-  if (!isStaffRole(session.role)) {
-    return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
+  if (!auth.ok) return auth.response;
+  const { actor } = auth;
 
   const { id } = await context.params;
   const body = await request.json().catch(() => null);
@@ -156,7 +142,7 @@ export async function handleAdminMessagePatch(
     const result = await deps.patchMessage({
       id,
       action,
-      actorUserId: session.userId,
+      actorUserId: actor.userId,
     });
 
     if (!result.item) {
@@ -164,7 +150,7 @@ export async function handleAdminMessagePatch(
     }
 
     await deps.writeAudit({
-      userId: session.userId,
+      userId: actor.userId,
       action: "CONTACT_MESSAGE_STATUS_UPDATED",
       entityType: "contact_message",
       entityId: id,

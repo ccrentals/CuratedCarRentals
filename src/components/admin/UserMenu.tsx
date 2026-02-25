@@ -4,7 +4,15 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { ThemeToggle } from "@/components/site/ThemeToggle";
-import { ensureCsrfToken } from "@/lib/security/csrf-client";
+
+type UserMenuProps = {
+  email: string;
+  className?: string;
+  showEmail?: boolean;
+  showThemeLabel?: boolean;
+  compactSidebarLayout?: boolean;
+  showSignOut?: boolean;
+};
 
 export function UserMenu({
   email,
@@ -13,28 +21,36 @@ export function UserMenu({
   showThemeLabel = true,
   compactSidebarLayout = false,
   showSignOut = true,
-}: {
-  email: string;
-  className?: string;
-  showEmail?: boolean;
-  showThemeLabel?: boolean;
-  compactSidebarLayout?: boolean;
-  showSignOut?: boolean;
+}: UserMenuProps) {
+  return (
+    <UserMenuInner
+      email={email}
+      className={className}
+      showEmail={showEmail}
+      showThemeLabel={showThemeLabel}
+      compactSidebarLayout={compactSidebarLayout}
+      showSignOut={showSignOut}
+    />
+  );
+}
+
+function UserMenuInner({
+  email,
+  className,
+  showEmail,
+  showThemeLabel,
+  compactSidebarLayout,
+  showSignOut,
+}: UserMenuProps & {
 }) {
   const [loading, setLoading] = useState(false);
   const hoverTextClass = "transition hover:text-[var(--ccr-muted)]";
 
-  async function handleSignOut() {
+  function handleSignOut() {
     if (loading) return;
     setLoading(true);
-    const csrfToken = await ensureCsrfToken();
-    await fetch("/api/admin/logout", {
-      method: "POST",
-      headers: {
-        "x-csrf-token": csrfToken ?? "",
-      },
-    });
-    window.location.href = "/admin/login";
+    const fallbackLogoutUrl = "/api/admin/logout?redirect=/sign-in";
+    window.location.assign(fallbackLogoutUrl);
   }
 
   if (compactSidebarLayout) {

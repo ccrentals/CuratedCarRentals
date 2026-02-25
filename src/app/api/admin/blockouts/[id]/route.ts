@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { getSessionFromRequest } from "@/lib/auth/session";
+import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
 import { dbQuery } from "@/lib/db";
 import { logError } from "@/lib/log";
 import { requireCsrf } from "@/lib/security/csrf";
@@ -14,10 +14,9 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await getSessionFromRequest();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireStaffOrAdminRole();
+  if (!auth.ok) return auth.response;
+  const { actor } = auth;
 
   try {
     const { id } = await params;
@@ -85,7 +84,7 @@ export async function PATCH(
         { status: 500 },
       );
     }
-    logError("api.admin.blockouts.PATCH", error, { userId: session.userId });
+    logError("api.admin.blockouts.PATCH", error, { userId: actor.userId });
     return NextResponse.json({ error: "Failed to update blockout" }, { status: 500 });
   }
 }
@@ -94,10 +93,9 @@ export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await getSessionFromRequest();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireStaffOrAdminRole();
+  if (!auth.ok) return auth.response;
+  const { actor } = auth;
 
   try {
     if (!(await requireCsrf(request))) {
@@ -120,7 +118,7 @@ export async function DELETE(
         { status: 500 },
       );
     }
-    logError("api.admin.blockouts.DELETE", error, { userId: session.userId });
+    logError("api.admin.blockouts.DELETE", error, { userId: actor.userId });
     return NextResponse.json({ error: "Failed to delete blockout" }, { status: 500 });
   }
 }

@@ -1,13 +1,11 @@
 import { NextResponse } from "next/server";
 
-import { getSessionFromRequest } from "@/lib/auth/session";
+import { requireAdminRole } from "@/lib/auth/adminGuards";
 import { requireCsrf } from "@/lib/security/csrf";
 
 export async function POST(request: Request) {
-  const session = await getSessionFromRequest();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAdminRole();
+  if (!auth.ok) return auth.response;
 
   if (!(await requireCsrf(request))) {
     return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
@@ -32,4 +30,3 @@ export async function POST(request: Request) {
 
   return NextResponse.json(data);
 }
-

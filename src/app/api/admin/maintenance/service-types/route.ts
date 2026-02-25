@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { requireAdminRole, requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery } from "@/lib/db";
 import {
@@ -35,20 +36,6 @@ type RouteDeps = {
   listServiceTypes: () => Promise<ServiceTypeRow[]>;
   createServiceType: (payload: ServiceTypePayload) => Promise<ServiceTypeRow>;
 };
-
-function isStaffRole(role: string | undefined) {
-  const normalized = String(role ?? "")
-    .trim()
-    .toUpperCase();
-  return normalized === "ADMIN" || normalized === "DEVELOPER" || normalized === "USER";
-}
-
-function isAdminRole(role: string | undefined) {
-  const normalized = String(role ?? "")
-    .trim()
-    .toUpperCase();
-  return normalized === "ADMIN" || normalized === "DEVELOPER";
-}
 
 function mapServiceType(row: ServiceTypeRow) {
   return {
@@ -106,13 +93,8 @@ export async function handleMaintenanceServiceTypesGet(
   _request: Request,
   deps: RouteDeps = DEFAULT_DEPS,
 ) {
-  const session = await deps.getSession();
-  if (!session) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
-  if (!isStaffRole(session.role)) {
-    return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
+  if (!auth.ok) return auth.response;
 
   try {
     const rows = await deps.listServiceTypes();
@@ -132,13 +114,8 @@ export async function handleMaintenanceServiceTypesPost(
   request: Request,
   deps: RouteDeps = DEFAULT_DEPS,
 ) {
-  const session = await deps.getSession();
-  if (!session) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
-  if (!isAdminRole(session.role)) {
-    return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requireAdminRole({ getSession: deps.getSession });
+  if (!auth.ok) return auth.response;
 
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
   if (!(await deps.requireCsrfCheck(request, (body?.csrfToken as string | null | undefined) ?? null))) {
@@ -175,4 +152,3 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   return handleMaintenanceServiceTypesPost(request);
 }
-

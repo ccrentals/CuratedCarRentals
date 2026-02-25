@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { requireAdminRole } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery } from "@/lib/db";
 import {
@@ -42,13 +43,6 @@ export type ServiceTypeByIdRouteDeps = {
   updateServiceType: (serviceTypeId: string, payload: ServiceTypePayload) => Promise<ServiceTypeRow | null>;
   softDeleteServiceType: (serviceTypeId: string) => Promise<boolean>;
 };
-
-function isAdminRole(role: string | undefined) {
-  const normalized = String(role ?? "")
-    .trim()
-    .toUpperCase();
-  return normalized === "ADMIN" || normalized === "DEVELOPER";
-}
 
 function mapServiceType(row: ServiceTypeRow) {
   return {
@@ -108,13 +102,8 @@ export async function handleMaintenanceServiceTypePatch(
   context: RouteContext,
   deps: ServiceTypeByIdRouteDeps = DEFAULT_DEPS,
 ) {
-  const session = await deps.getSession();
-  if (!session) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
-  if (!isAdminRole(session.role)) {
-    return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requireAdminRole({ getSession: deps.getSession });
+  if (!auth.ok) return auth.response;
 
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
   if (!(await deps.requireCsrfCheck(request, (body?.csrfToken as string | null | undefined) ?? null))) {
@@ -157,13 +146,8 @@ export async function handleMaintenanceServiceTypeDelete(
   context: RouteContext,
   deps: ServiceTypeByIdRouteDeps = DEFAULT_DEPS,
 ) {
-  const session = await deps.getSession();
-  if (!session) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
-  if (!isAdminRole(session.role)) {
-    return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requireAdminRole({ getSession: deps.getSession });
+  if (!auth.ok) return auth.response;
 
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
   if (!(await deps.requireCsrfCheck(request, (body?.csrfToken as string | null | undefined) ?? null))) {
@@ -199,4 +183,3 @@ export async function PATCH(request: Request, context: RouteContext) {
 export async function DELETE(request: Request, context: RouteContext) {
   return handleMaintenanceServiceTypeDelete(request, context);
 }
-

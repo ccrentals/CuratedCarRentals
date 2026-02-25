@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { getSessionFromRequest } from "@/lib/auth/session";
+import { requireAdminRole } from "@/lib/auth/adminGuards";
 import { dbQuery } from "@/lib/db";
 import { logError } from "@/lib/log";
 import { requireCsrf } from "@/lib/security/csrf";
@@ -22,13 +22,6 @@ type VehicleRow = {
   status: string;
 };
 
-function isAdminRole(role: string | undefined) {
-  const normalized = String(role ?? "")
-    .trim()
-    .toUpperCase();
-  return normalized === "ADMIN" || normalized === "DEVELOPER";
-}
-
 function normalizeText(value: unknown) {
   if (typeof value !== "string") return "";
   return value.trim();
@@ -44,13 +37,9 @@ function parsePrice(value: unknown) {
 }
 
 export async function GET() {
-  const session = await getSessionFromRequest();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  if (!isAdminRole(session.role)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requireAdminRole();
+  if (!auth.ok) return auth.response;
+  const { actor } = auth;
 
   try {
     const [plans, vehicles] = await Promise.all([
@@ -67,19 +56,15 @@ export async function GET() {
       vehicles: vehicles.rows,
     });
   } catch (error) {
-    logError("api.admin.insurance-plans.GET", error, { userId: session.userId });
+    logError("api.admin.insurance-plans.GET", error, { userId: actor.userId });
     return NextResponse.json({ error: "Failed to load insurance plans." }, { status: 500 });
   }
 }
 
 export async function PATCH(request: Request) {
-  const session = await getSessionFromRequest();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  if (!isAdminRole(session.role)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requireAdminRole();
+  if (!auth.ok) return auth.response;
+  const { actor } = auth;
 
   const body = await request.json().catch(() => null);
   if (!(await requireCsrf(request, body?.csrfToken ?? null))) {
@@ -98,11 +83,11 @@ export async function PATCH(request: Request) {
     try {
       await dbQuery(
         "insert into insurance_plans (vehicle_id, is_enabled, price_per_day_cents, is_global_default, created_by) values (null, $1, $2, true, $3) on conflict (is_global_default) where is_global_default = true do update set is_enabled = excluded.is_enabled, price_per_day_cents = excluded.price_per_day_cents, updated_at = now()",
-        [isEnabled, pricePerDayCents, session.userId],
+        [isEnabled, pricePerDayCents, actor.userId],
       );
       return NextResponse.json({ ok: true });
     } catch (error) {
-      logError("api.admin.insurance-plans.PATCH.global", error, { userId: session.userId });
+      logError("api.admin.insurance-plans.PATCH.global", error, { userId: actor.userId });
       return NextResponse.json({ error: "Failed to save global insurance plan." }, { status: 500 });
     }
   }
@@ -123,13 +108,13 @@ export async function PATCH(request: Request) {
 
     await dbQuery(
       "insert into insurance_plans (vehicle_id, is_enabled, price_per_day_cents, is_global_default, created_by) values ($1, $2, $3, false, $4) on conflict (vehicle_id) do update set is_enabled = excluded.is_enabled, price_per_day_cents = excluded.price_per_day_cents, updated_at = now()",
-      [vehicleId, isEnabled, pricePerDayCents, session.userId],
+      [vehicleId, isEnabled, pricePerDayCents, actor.userId],
     );
 
     return NextResponse.json({ ok: true });
   } catch (error) {
     logError("api.admin.insurance-plans.PATCH.vehicle", error, {
-      userId: session.userId,
+      userId: actor.userId,
       vehicleId,
     });
     return NextResponse.json({ error: "Failed to save vehicle insurance plan." }, { status: 500 });

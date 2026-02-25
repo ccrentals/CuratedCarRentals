@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery } from "@/lib/db";
 import { requireCsrf } from "@/lib/security/csrf";
@@ -17,13 +18,6 @@ export type AdminVehicleNoteItemRouteDeps = {
   requireCsrfCheck: (request: Request, bodyToken?: string | null) => Promise<boolean>;
   softDeleteNote: (vehicleId: string, noteId: string) => Promise<boolean>;
 };
-
-function isStaffRole(role: string | undefined) {
-  const normalized = String(role ?? "")
-    .trim()
-    .toUpperCase();
-  return normalized === "ADMIN" || normalized === "DEVELOPER" || normalized === "USER";
-}
 
 const DEFAULT_DEPS: AdminVehicleNoteItemRouteDeps = {
   getSession: () => getSessionFromRequest(),
@@ -45,13 +39,8 @@ export async function handleAdminVehicleNoteDelete(
   context: VehicleNoteItemRouteContext,
   deps: AdminVehicleNoteItemRouteDeps = DEFAULT_DEPS,
 ) {
-  const session = await deps.getSession();
-  if (!session) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
-  if (!isStaffRole(session.role)) {
-    return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
+  if (!auth.ok) return auth.response;
 
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
   if (!(await deps.requireCsrfCheck(request, (body?.csrfToken as string | null | undefined) ?? null))) {

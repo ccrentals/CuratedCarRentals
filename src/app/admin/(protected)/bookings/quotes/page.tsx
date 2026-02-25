@@ -1,12 +1,6 @@
 import { AdminQuotesListClient } from "@/components/admin/quotes/AdminQuotesListClient";
 import { getSessionFromRequest } from "@/lib/auth/session";
-
-function isStaffRole(role: string | undefined) {
-  const normalized = String(role ?? "")
-    .trim()
-    .toUpperCase();
-  return normalized === "ADMIN" || normalized === "DEVELOPER" || normalized === "USER";
-}
+import { isStaffRole } from "@/lib/auth/roles";
 
 export default async function AdminQuotesPage() {
   const session = await getSessionFromRequest();

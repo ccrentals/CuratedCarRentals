@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { writeAuditLog } from "@/lib/audit";
 import { loadAdminSettings } from "@/lib/adminSettings";
-import { getSessionFromRequest } from "@/lib/auth/session";
+import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
 import { dbQuery, getDbPool } from "@/lib/db";
 import { logError } from "@/lib/log";
 import {
@@ -19,10 +19,9 @@ function parseDate(value: string) {
 }
 
 export async function GET(request: Request) {
-  const session = await getSessionFromRequest();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireStaffOrAdminRole();
+  if (!auth.ok) return auth.response;
+  const { actor } = auth;
 
   const { searchParams } = new URL(request.url);
   const start = searchParams.get("start");
@@ -73,16 +72,15 @@ export async function GET(request: Request) {
         { status: 500 },
       );
     }
-    logError("api.admin.blockouts.GET", error, { userId: session.userId, start, end, vehicleId });
+    logError("api.admin.blockouts.GET", error, { userId: actor.userId, start, end, vehicleId });
     return NextResponse.json({ error: "Failed to load blockouts" }, { status: 500 });
   }
 }
 
 export async function POST(request: Request) {
-  const session = await getSessionFromRequest();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireStaffOrAdminRole();
+  if (!auth.ok) return auth.response;
+  const { actor } = auth;
 
   let vehicleId = "";
 
@@ -146,7 +144,7 @@ export async function POST(request: Request) {
 
           const insert = await client.query(
             "insert into blockouts (vehicle_id, start_at, end_at, reason, notes, created_by) values ($1, $2, $3, $4, $5, $6) returning *",
-            [vehicleId, startAt.toISOString(), endAt.toISOString(), reason, notes || null, session.userId],
+            [vehicleId, startAt.toISOString(), endAt.toISOString(), reason, notes || null, actor.userId],
           );
 
           for (const booking of overlap.rows) {
@@ -186,7 +184,7 @@ export async function POST(request: Request) {
 
           for (const booking of cancelledBookings) {
             await writeAuditLog({
-              userId: session.userId,
+              userId: actor.userId,
               action: "BOOKING_CANCELLED_BY_BLOCKOUT",
               entityType: "booking",
               entityId: booking.id,
@@ -261,7 +259,7 @@ export async function POST(request: Request) {
       endAtIso: endAt.toISOString(),
       reason,
       notes: notes || null,
-      createdByUserId: session.userId,
+      createdByUserId: actor.userId,
     });
 
     return NextResponse.json({ blockout: insert });
@@ -279,7 +277,7 @@ export async function POST(request: Request) {
         { status: 500 },
       );
     }
-    logError("api.admin.blockouts.POST", error, { userId: session.userId, vehicleId });
+    logError("api.admin.blockouts.POST", error, { userId: actor.userId, vehicleId });
     return NextResponse.json({ error: "Failed to create blockout" }, { status: 500 });
   }
 }

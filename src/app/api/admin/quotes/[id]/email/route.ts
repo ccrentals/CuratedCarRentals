@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import { logError } from "@/lib/log";
 import {
@@ -20,13 +21,6 @@ import { isEmail } from "@/lib/validators";
 const QUOTE_EMAIL_LIMIT_PER_HOUR = 3;
 const ADMIN_EMAIL_LIMIT_PER_HOUR = 20;
 const RATE_LIMIT_WINDOW_SECONDS = 60 * 60;
-
-function isStaffRole(role: string | undefined) {
-  const normalized = String(role ?? "")
-    .trim()
-    .toUpperCase();
-  return normalized === "ADMIN" || normalized === "DEVELOPER" || normalized === "USER";
-}
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -98,13 +92,9 @@ export async function handleAdminQuoteEmailPost(
   context: RouteContext,
   deps: AdminQuoteEmailRouteDeps = DEFAULT_DEPS,
 ) {
-  const session = await deps.getSession();
-  if (!session) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
-  if (!isStaffRole(session.role)) {
-    return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
+  if (!auth.ok) return auth.response;
+  const { actor } = auth;
 
   const body = await request.json().catch(() => null);
   if (!(await deps.requireCsrfCheck(request, body?.csrfToken ?? null))) {
@@ -142,7 +132,7 @@ export async function handleAdminQuoteEmailPost(
 
     const perAdmin = await deps.consumeRateLimitCheck({
       scope: "QUOTE_EMAIL_ADMIN",
-      subjectKey: session.userId,
+      subjectKey: actor.userId,
       limit: ADMIN_EMAIL_LIMIT_PER_HOUR,
       windowSeconds: RATE_LIMIT_WINDOW_SECONDS,
       nowMs,
@@ -194,7 +184,7 @@ export async function handleAdminQuoteEmailPost(
     await deps.logQuoteEvent({
       quoteId: quote.id,
       eventType: "EMAILED",
-      actorAdminUserId: session.userId,
+      actorAdminUserId: actor.userId,
       meta: {
         toEmail,
         subject: emailContent.subject,
@@ -226,7 +216,7 @@ export async function handleAdminQuoteEmailPost(
 
     logError("admin_quote_email_failed", error, {
       quoteId: id,
-      userId: session.userId,
+      userId: actor.userId,
     });
     return NextResponse.json({ ok: false, error: "Failed to send quote email." }, { status: 500 });
   }

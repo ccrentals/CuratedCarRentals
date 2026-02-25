@@ -1,26 +1,17 @@
 import { NextResponse } from "next/server";
 import { randomBytes } from "node:crypto";
+import { clerkClient } from "@clerk/nextjs/server";
 
-import { getSessionFromRequest } from "@/lib/auth/session";
+import { requireAdminRole } from "@/lib/auth/adminGuards";
+import { isDeveloperRole } from "@/lib/auth/roles";
 import { dbQuery, getDbPool } from "@/lib/db";
 import { isEmail, isNonEmptyString } from "@/lib/validators";
 import { hashPassword } from "@/lib/auth/password";
 import { writeAuditLog } from "@/lib/audit";
 import { requireCsrf } from "@/lib/security/csrf";
-import { logError } from "@/lib/log";
-
-function isAdminRole(role: string | undefined) {
-  const normalized = String(role ?? "")
-    .trim()
-    .toUpperCase();
-  return normalized === "ADMIN" || normalized === "DEVELOPER";
-}
-
-function isDeveloperRole(role: string | undefined) {
-  return String(role ?? "")
-    .trim()
-    .toUpperCase() === "DEVELOPER";
-}
+import { buildClerkUsernameCandidates, isClerkUsernameError } from "@/lib/security/clerkUsernames";
+import { logError, logWarn } from "@/lib/log";
+import { isClerkEnabled } from "@/lib/security/clerk";
 
 function normalizeUsername(value: string) {
   const lower = value.trim().toLowerCase();
@@ -44,10 +35,227 @@ function generateTempPassword() {
   return randomBytes(9).toString("base64url"); // ~12 chars
 }
 
+function isUndefinedColumn(error: unknown, column: string) {
+  const code = (error as { code?: string } | null)?.code;
+  const message = String((error as { message?: unknown } | null)?.message ?? "");
+  return code === "42703" && message.includes(`\"${column}\"`) && message.includes("does not exist");
+}
+
+type ClerkSyncResult =
+  | {
+      status: "skipped";
+      clerkUserId: null;
+      message: string;
+    }
+  | {
+      status: "created" | "linked_existing";
+      clerkUserId: string;
+      message: string;
+      localLinkSaved: boolean;
+      localLinkWarning?: string;
+    }
+  | {
+      status: "failed";
+      clerkUserId: null;
+      message: string;
+    };
+
+type QueryClient = {
+  query: (sql: string, values?: unknown[]) => Promise<{ rowCount: number }>;
+};
+
+async function linkLocalUserToClerkId({
+  client,
+  localUserId,
+  clerkUserId,
+}: {
+  client: QueryClient;
+  localUserId: string;
+  clerkUserId: string;
+}) {
+  try {
+    const linkResult = await client.query(
+      "update users set clerk_user_id = $2 where id = $1 and (clerk_user_id is null or clerk_user_id = $2)",
+      [localUserId, clerkUserId],
+    );
+    if (linkResult.rowCount > 0) {
+      return { linked: true, warning: null as string | null };
+    }
+    return {
+      linked: false,
+      warning:
+        "Local user was created, but users.clerk_user_id is already set to a different Clerk user. Resolve mapping manually.",
+    };
+  } catch (error) {
+    if (isUndefinedColumn(error, "clerk_user_id")) {
+      return {
+        linked: false,
+        warning:
+          "Local user was created and Clerk user was provisioned, but users.clerk_user_id column is missing. Apply migration 020_clerk_user_mapping.sql.",
+      };
+    }
+    throw error;
+  }
+}
+
+async function provisionClerkUserForAdminInvite({
+  email,
+  localUsername,
+  firstName,
+  lastName,
+  tempPassword,
+  role,
+  localUserId,
+  client,
+}: {
+  email: string;
+  localUsername: string;
+  firstName: string;
+  lastName: string;
+  tempPassword: string;
+  role: string;
+  localUserId: string;
+  client: QueryClient;
+}): Promise<ClerkSyncResult> {
+  if (!isClerkEnabled()) {
+    return {
+      status: "skipped",
+      clerkUserId: null,
+      message: "Clerk is not configured in this environment.",
+    };
+  }
+
+  try {
+    const clerk = await clerkClient();
+    const usernameCandidates = buildClerkUsernameCandidates({
+      localUsername,
+      email,
+      localUserId,
+    });
+    const existing = await clerk.users.getUserList({
+      emailAddress: [email],
+      limit: 1,
+    });
+    const existingUser = existing.data[0] ?? null;
+    let clerkUserId = "";
+    let status: "created" | "linked_existing" = "created";
+
+    if (!existingUser) {
+      let created:
+        | Awaited<ReturnType<Awaited<ReturnType<typeof clerkClient>>["users"]["createUser"]>>
+        | null = null;
+      let createError: unknown = null;
+
+      const createAttempts = [...usernameCandidates, ""];
+      for (const candidate of createAttempts) {
+        try {
+          created = await clerk.users.createUser({
+            emailAddress: [email],
+            firstName,
+            lastName,
+            password: tempPassword,
+            // Admin creates the account; user accepts terms when they first sign in.
+            skipLegalChecks: true,
+            ...(candidate ? { username: candidate } : {}),
+            privateMetadata: {
+              localUserId,
+              localRole: role,
+              authProvisionedBy: "admin-user-create",
+            },
+          });
+          break;
+        } catch (error) {
+          createError = error;
+          if (candidate && isClerkUsernameError(error)) {
+            continue;
+          }
+          throw error;
+        }
+      }
+
+      if (!created) {
+        throw createError ?? new Error("Unable to create Clerk user");
+      }
+      clerkUserId = created.id;
+
+      // Force password update on first Clerk sign-in, matching the local temp-password model.
+      await clerk.users.setPasswordCompromised(clerkUserId, {
+        revokeAllSessions: true,
+      });
+    } else {
+      status = "linked_existing";
+      clerkUserId = existingUser.id;
+      const updateBase = {
+        firstName: existingUser.firstName || firstName,
+        lastName: existingUser.lastName || lastName,
+        privateMetadata: {
+          ...existingUser.privateMetadata,
+          localUserId,
+          localRole: role,
+          authProvisionedBy: "admin-user-link",
+        },
+      };
+
+      if (existingUser.username) {
+        await clerk.users.updateUser(clerkUserId, updateBase);
+      } else {
+        let updated = false;
+        for (const candidate of usernameCandidates) {
+          try {
+            await clerk.users.updateUser(clerkUserId, {
+              ...updateBase,
+              username: candidate,
+            });
+            updated = true;
+            break;
+          } catch (error) {
+            if (isClerkUsernameError(error)) {
+              continue;
+            }
+            throw error;
+          }
+        }
+
+        if (!updated) {
+          await clerk.users.updateUser(clerkUserId, updateBase);
+        }
+      }
+    }
+
+    const linkResult = await linkLocalUserToClerkId({
+      client,
+      localUserId,
+      clerkUserId,
+    });
+
+    return {
+      status,
+      clerkUserId,
+      message:
+        status === "created"
+          ? "Clerk account created and linked."
+          : "Existing Clerk account linked by email.",
+      localLinkSaved: linkResult.linked,
+      localLinkWarning: linkResult.warning ?? undefined,
+    };
+  } catch (error) {
+    logWarn("api.admin.users.clerkProvisioningFailed", {
+      localUserId,
+      email,
+      code: (error as { errors?: Array<{ code?: string }> } | null)?.errors?.[0]?.code,
+    });
+    return {
+      status: "failed",
+      clerkUserId: null,
+      message:
+        "Local user created, but Clerk provisioning failed. Create/link this user in Clerk Dashboard and set users.clerk_user_id manually.",
+    };
+  }
+}
+
 export async function GET(request: Request) {
-  const session = await getSessionFromRequest();
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!isAdminRole(session.role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const auth = await requireAdminRole({ forbiddenMessage: "Forbidden" });
+  if (!auth.ok) return auth.response;
 
   const { searchParams } = new URL(request.url);
   const q = (searchParams.get("q") ?? "").trim();
@@ -67,9 +275,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const session = await getSessionFromRequest();
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!isAdminRole(session.role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const auth = await requireAdminRole({ forbiddenMessage: "Forbidden" });
+  if (!auth.ok) return auth.response;
+  const { actor } = auth;
 
   const body = await request.json().catch(() => null);
   if (!(await requireCsrf(request, body?.csrfToken ?? null))) {
@@ -87,7 +295,7 @@ export async function POST(request: Request) {
       : roleRaw === "ADMIN"
         ? "ADMIN"
         : "USER";
-  if (role === "DEVELOPER" && !isDeveloperRole(session.role)) {
+  if (role === "DEVELOPER" && !isDeveloperRole(actor.role)) {
     return NextResponse.json({ error: "Only developers can assign DEVELOPER role." }, { status: 403 });
   }
 
@@ -206,12 +414,29 @@ export async function POST(request: Request) {
 
     await client.query("commit");
 
+    const clerkSync = await provisionClerkUserForAdminInvite({
+      email: emailLower,
+      localUsername: usernameFinal,
+      firstName,
+      lastName,
+      tempPassword,
+      role,
+      localUserId: newUserId,
+      client,
+    });
+
     await writeAuditLog({
-      userId: session.userId,
+      userId: actor.userId,
       action: "USER_CREATED",
       entityType: "user",
       entityId: newUserId,
-      details: { role, email: emailLower, username: usernameFinal },
+      details: {
+        role,
+        email: emailLower,
+        username: usernameFinal,
+        clerkSyncStatus: clerkSync.status,
+        clerkUserId: clerkSync.clerkUserId,
+      },
     });
 
     return NextResponse.json({
@@ -220,10 +445,11 @@ export async function POST(request: Request) {
       username: usernameFinal,
       tempPassword,
       tempPasswordExpiresAt: expiresAt.toISOString(),
+      clerkSync,
     });
   } catch (error) {
-    await client.query("rollback");
-    logError("api.admin.users.POST", error, { actorUserId: session.userId, email: emailLower, role });
+    await client.query("rollback").catch(() => {});
+    logError("api.admin.users.POST", error, { actorUserId: actor.userId, email: emailLower, role });
     return NextResponse.json({ error: "Failed to create user" }, { status: 500 });
   } finally {
     client.release();

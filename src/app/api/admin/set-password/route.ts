@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { getSessionFromRequest } from "@/lib/auth/session";
+import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
 import { hashPassword } from "@/lib/auth/password";
 import { dbQuery } from "@/lib/db";
 import { isNonEmptyString } from "@/lib/validators";
@@ -14,8 +14,11 @@ function isUndefinedColumn(error: unknown, column: string) {
 }
 
 export async function POST(request: Request) {
-  const session = await getSessionFromRequest();
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // Legacy first-login password reset flow for cookie-auth admins.
+  // Retire after full Clerk admin cutover and verified inactivity.
+  const auth = await requireStaffOrAdminRole();
+  if (!auth.ok) return auth.response;
+  const session = auth.session;
 
   const body = await request.json().catch(() => null);
   if (!(await requireCsrf(request, body?.csrfToken ?? null))) {
@@ -91,4 +94,3 @@ export async function POST(request: Request) {
 
   return NextResponse.json({ ok: true });
 }
-

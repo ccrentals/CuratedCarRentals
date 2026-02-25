@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { getSessionFromRequest } from "@/lib/auth/session";
+import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
 import { getDbPool } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
 import { requireCsrf } from "@/lib/security/csrf";
@@ -18,10 +18,9 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await getSessionFromRequest();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireStaffOrAdminRole();
+  if (!auth.ok) return auth.response;
+  const { actor } = auth;
 
   if (!(await requireCsrf(request))) {
     return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
@@ -72,7 +71,7 @@ export async function POST(
           payment_type: "balance",
           method: "ADMIN",
           method_label: "Manual / Admin",
-          entered_by: session.userId,
+          entered_by: actor.userId,
           created_at: new Date().toISOString(),
         },
       ],
@@ -80,7 +79,7 @@ export async function POST(
 
     const entitlementResolution = await maybeEntitleBookingAfterPayment(booking.id, {
       client,
-      auditUserId: session.userId,
+      auditUserId: actor.userId,
     });
     const after = await recalculateBookingPayments(booking.id, { client });
     const confirmed = entitlementResolution.state === "ENTITLED";
@@ -88,7 +87,7 @@ export async function POST(
     await client.query("commit");
 
     await writeAuditLog({
-      userId: session.userId,
+      userId: actor.userId,
       action: "BOOKING_MARK_FULLY_PAID",
       entityType: "booking",
       entityId: booking.id,
@@ -103,7 +102,7 @@ export async function POST(
 
     for (const overriddenBooking of entitlementResolution.cancelledOverlaps) {
       await writeAuditLog({
-        userId: session.userId,
+        userId: actor.userId,
         action: "BOOKING_OVERRIDDEN_BY_PAID_BOOKING",
         entityType: "booking",
         entityId: overriddenBooking.id,
@@ -193,7 +192,7 @@ export async function POST(
     return NextResponse.json({ ok: true, message: "Balance payment recorded" });
   } catch (error) {
     await client.query("rollback");
-    logError("admin_mark_fully_paid_failed", error, { bookingId: id });
+    logError("admin_mark_fully_paid_failed", error, { bookingId: id, userId: actor.userId });
     return NextResponse.json({ error: "Failed to mark fully paid" }, { status: 500 });
   } finally {
     client.release();

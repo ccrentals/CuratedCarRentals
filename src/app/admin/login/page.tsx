@@ -67,7 +67,13 @@ export default function AdminLoginPage() {
       <div className="w-full max-w-md rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-8 shadow-sm">
         <h1 className="text-2xl font-bold text-[var(--ccr-text)]">Admin Login</h1>
         <p className="mt-2 text-sm text-[var(--ccr-muted)]">
-          Sign in to manage vehicles, bookings, and payments.
+          Preferred admin sign-in uses Clerk. This legacy form stays available as a migration fallback.
+        </p>
+        <p className="mt-1 text-xs text-[var(--ccr-muted)]">
+          Clerk admin login:{" "}
+          <Link href="/sign-in" className="font-semibold text-[var(--ccr-accent-strong)] hover:underline">
+            /sign-in
+          </Link>
         </p>
 
         <form className="mt-6 space-y-4" onSubmit={handleSubmit}>

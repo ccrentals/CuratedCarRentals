@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { getSessionFromRequest } from "@/lib/auth/session";
+import { requireAdminRole } from "@/lib/auth/adminGuards";
 import { requireCsrf } from "@/lib/security/csrf";
 import { dbQuery } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
@@ -56,10 +56,9 @@ async function loadBookingContext() {
 }
 
 export async function POST(request: Request) {
-  const session = await getSessionFromRequest();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAdminRole();
+  if (!auth.ok) return auth.response;
+  const { actor } = auth;
 
   if (!(await requireCsrf(request))) {
     return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
@@ -102,12 +101,12 @@ export async function POST(request: Request) {
       vehicle: booking ? `${booking.vehicle_make} ${booking.vehicle_model}`.trim() : null,
       start_date: booking?.start_date ?? null,
       end_date: booking?.end_date ?? null,
-      created_by_user_id: session.userId,
+      created_by_user_id: actor.userId,
       created_at: finishedAt.toISOString(),
     };
 
     await writeAuditLog({
-      userId: session.userId,
+      userId: actor.userId,
       action: eventType,
       entityType: "booking",
       entityId: booking?.id,

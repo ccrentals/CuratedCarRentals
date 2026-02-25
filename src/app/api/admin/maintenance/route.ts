@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import {
   listUpcomingMaintenance,
@@ -8,13 +9,6 @@ import {
   type MaintenanceRecordStatus,
 } from "@/lib/vehicles/maintenance";
 import { isVehicleExtensionsMissingTableError } from "@/lib/vehicles/extensionTables";
-
-function isStaffRole(role: string | undefined) {
-  const normalized = String(role ?? "")
-    .trim()
-    .toUpperCase();
-  return normalized === "ADMIN" || normalized === "DEVELOPER" || normalized === "USER";
-}
 
 function parseCsv(input: string | null) {
   if (!input) return [];
@@ -80,13 +74,8 @@ const DEFAULT_DEPS: Deps = {
 };
 
 export async function handleAdminMaintenanceGet(request: Request, deps: Deps = DEFAULT_DEPS) {
-  const session = await deps.getSession();
-  if (!session) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
-  if (!isStaffRole(session.role)) {
-    return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
+  if (!auth.ok) return auth.response;
 
   const { searchParams } = new URL(request.url);
   const q = (searchParams.get("q") ?? "").trim().toLowerCase();

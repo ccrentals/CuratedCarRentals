@@ -1,26 +1,41 @@
 import { NextResponse } from "next/server";
 import { randomBytes } from "node:crypto";
+import { clerkClient } from "@clerk/nextjs/server";
 
-import { getSessionFromRequest } from "@/lib/auth/session";
+import { requireAdminRole } from "@/lib/auth/adminGuards";
+import { isDeveloperRole } from "@/lib/auth/roles";
 import { getDbPool } from "@/lib/db";
 import { requireCsrf } from "@/lib/security/csrf";
 import { writeAuditLog } from "@/lib/audit";
 import { hashPassword } from "@/lib/auth/password";
 import { logError } from "@/lib/log";
 import { isEmail, isNonEmptyString } from "@/lib/validators";
+import { buildClerkUsernameCandidates, isClerkUsernameError } from "@/lib/security/clerkUsernames";
+import { isClerkEnabled } from "@/lib/security/clerk";
 
-function isAdminRole(role: string | undefined) {
-  const normalized = String(role ?? "")
-    .trim()
-    .toUpperCase();
-  return normalized === "ADMIN" || normalized === "DEVELOPER";
-}
+type QueryResultRow = Record<string, unknown>;
+type QueryClient = {
+  query: (sql: string, values?: unknown[]) => Promise<{ rowCount: number; rows: QueryResultRow[] }>;
+};
 
-function isDeveloperRole(role: string | undefined) {
-  return String(role ?? "")
-    .trim()
-    .toUpperCase() === "DEVELOPER";
-}
+type ManagedUserRow = {
+  id: string;
+  email: string;
+  role: string;
+  full_name: string | null;
+  username: string | null;
+  clerk_user_id: string | null;
+  is_active?: boolean | null;
+  deactivated_at?: string | null;
+  locked_at?: string | null;
+};
+
+type ClerkPasswordResetSyncResult = {
+  status: "synced" | "skipped";
+  clerkUserId: string | null;
+  message: string;
+  localLinkWarning?: string;
+};
 
 function generateTempPassword() {
   // Short, copy-friendly, URL-safe, and strong enough as a temporary secret.
@@ -43,13 +58,238 @@ function isUndefinedColumn(error: unknown, column: string) {
   return code === "42703" && message.includes(`"${column}"`) && message.includes("does not exist");
 }
 
+async function loadUserForUpdate(client: QueryClient, userId: string): Promise<ManagedUserRow | null> {
+  try {
+    const result = await client.query(
+      "select id, email, role, full_name, username, clerk_user_id, is_active, deactivated_at, locked_at from users where id = $1 for update",
+      [userId],
+    );
+    const row = result.rows[0];
+    if (!row) {
+      return null;
+    }
+    return {
+      id: String(row.id),
+      email: String(row.email),
+      role: String(row.role),
+      full_name: typeof row.full_name === "string" ? row.full_name : null,
+      username: typeof row.username === "string" ? row.username : null,
+      clerk_user_id: typeof row.clerk_user_id === "string" ? row.clerk_user_id : null,
+      is_active: typeof row.is_active === "boolean" ? row.is_active : null,
+      deactivated_at: typeof row.deactivated_at === "string" ? row.deactivated_at : null,
+      locked_at: typeof row.locked_at === "string" ? row.locked_at : null,
+    };
+  } catch (error) {
+    if (
+      !isUndefinedColumn(error, "full_name") &&
+      !isUndefinedColumn(error, "username") &&
+      !isUndefinedColumn(error, "clerk_user_id")
+    ) {
+      throw error;
+    }
+  }
+
+  const fallback = await client.query(
+    "select id, email, role, is_active, deactivated_at, locked_at from users where id = $1 for update",
+    [userId],
+  );
+  const row = fallback.rows[0];
+  if (!row) {
+    return null;
+  }
+  return {
+    id: String(row.id),
+    email: String(row.email),
+    role: String(row.role),
+    full_name: null,
+    username: null,
+    clerk_user_id: null,
+    is_active: typeof row.is_active === "boolean" ? row.is_active : null,
+    deactivated_at: typeof row.deactivated_at === "string" ? row.deactivated_at : null,
+    locked_at: typeof row.locked_at === "string" ? row.locked_at : null,
+  };
+}
+
+async function linkLocalUserToClerkId({
+  client,
+  localUserId,
+  clerkUserId,
+}: {
+  client: QueryClient;
+  localUserId: string;
+  clerkUserId: string;
+}) {
+  try {
+    const result = await client.query(
+      "update users set clerk_user_id = $2 where id = $1 and (clerk_user_id is null or clerk_user_id = $2)",
+      [localUserId, clerkUserId],
+    );
+    if (result.rowCount > 0) {
+      return null;
+    }
+    return "users.clerk_user_id is already linked to a different Clerk user. Resolve mapping manually.";
+  } catch (error) {
+    if (isUndefinedColumn(error, "clerk_user_id")) {
+      return "users.clerk_user_id column is missing. Apply migration 020_clerk_user_mapping.sql.";
+    }
+    throw error;
+  }
+}
+
+function splitName(fullName: string | null, email: string) {
+  const clean = fullName?.trim() ?? "";
+  if (clean) {
+    const parts = clean.split(/\s+/).filter(Boolean);
+    if (parts.length === 1) {
+      return { firstName: parts[0], lastName: "Admin" };
+    }
+    return { firstName: parts[0], lastName: parts.slice(1).join(" ") };
+  }
+
+  const localPart = email.split("@")[0]?.trim() ?? "Admin";
+  return { firstName: localPart.slice(0, 64), lastName: "Admin" };
+}
+
+async function syncClerkPasswordReset({
+  client,
+  localUser,
+  tempPassword,
+}: {
+  client: QueryClient;
+  localUser: ManagedUserRow;
+  tempPassword: string;
+}): Promise<ClerkPasswordResetSyncResult> {
+  if (!isClerkEnabled()) {
+    return {
+      status: "skipped",
+      clerkUserId: null,
+      message: "Clerk is not configured in this environment. Applied legacy reset only.",
+    };
+  }
+
+  const email = localUser.email.trim().toLowerCase();
+  const clerk = await clerkClient();
+  const usernameCandidates = buildClerkUsernameCandidates({
+    localUsername: localUser.username,
+    email,
+    localUserId: localUser.id,
+  });
+
+  let clerkUser =
+    localUser.clerk_user_id?.trim() && localUser.clerk_user_id
+      ? await clerk.users.getUser(localUser.clerk_user_id).catch(() => null)
+      : null;
+
+  if (!clerkUser) {
+    const existingByEmail = await clerk.users.getUserList({
+      emailAddress: [email],
+      limit: 1,
+    });
+    clerkUser = existingByEmail.data[0] ?? null;
+  }
+
+  if (!clerkUser) {
+    const { firstName, lastName } = splitName(localUser.full_name, email);
+    let created:
+      | Awaited<ReturnType<Awaited<ReturnType<typeof clerkClient>>["users"]["createUser"]>>
+      | null = null;
+    let createError: unknown = null;
+
+    for (const candidate of [...usernameCandidates, ""]) {
+      try {
+        created = await clerk.users.createUser({
+          emailAddress: [email],
+          firstName,
+          lastName,
+          password: tempPassword,
+          skipLegalChecks: true,
+          ...(candidate ? { username: candidate } : {}),
+          privateMetadata: {
+            localUserId: localUser.id,
+            localRole: localUser.role,
+            authProvisionedBy: "admin-password-reset-bootstrap",
+          },
+        });
+        break;
+      } catch (error) {
+        createError = error;
+        if (candidate && isClerkUsernameError(error)) {
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    if (!created) {
+      throw createError ?? new Error("Unable to create Clerk user for password reset");
+    }
+    clerkUser = created;
+  } else {
+    const metadata = (clerkUser.privateMetadata ?? {}) as Record<string, unknown>;
+    const updateBase: {
+      password: string;
+      privateMetadata: Record<string, unknown>;
+      username?: string;
+    } = {
+      password: tempPassword,
+      privateMetadata: {
+        ...metadata,
+        localUserId: localUser.id,
+        localRole: localUser.role,
+        authProvisionedBy: "admin-password-reset",
+      },
+    };
+
+    if (clerkUser.username) {
+      await clerk.users.updateUser(clerkUser.id, updateBase);
+    } else {
+      let updated = false;
+      for (const candidate of usernameCandidates) {
+        try {
+          await clerk.users.updateUser(clerkUser.id, {
+            ...updateBase,
+            username: candidate,
+          });
+          updated = true;
+          break;
+        } catch (error) {
+          if (isClerkUsernameError(error)) {
+            continue;
+          }
+          throw error;
+        }
+      }
+      if (!updated) {
+        await clerk.users.updateUser(clerkUser.id, updateBase);
+      }
+    }
+  }
+
+  await clerk.users.setPasswordCompromised(clerkUser.id, {
+    revokeAllSessions: true,
+  });
+
+  const mappingWarning = await linkLocalUserToClerkId({
+    client,
+    localUserId: localUser.id,
+    clerkUserId: clerkUser.id,
+  });
+
+  return {
+    status: "synced",
+    clerkUserId: clerkUser.id,
+    message: "Clerk password reset is enforced. User must set a new password at next login.",
+    localLinkWarning: mappingWarning ?? undefined,
+  };
+}
+
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ userId: string }> },
 ) {
-  const session = await getSessionFromRequest();
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!isAdminRole(session.role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const auth = await requireAdminRole({ forbiddenMessage: "Forbidden" });
+  if (!auth.ok) return auth.response;
+  const session = auth.actor;
 
   if (!(await requireCsrf(request))) {
     return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
@@ -65,7 +305,7 @@ export async function PATCH(
     return NextResponse.json({ error: "Action is required" }, { status: 400 });
   }
 
-  if ((action === "deactivate" || action === "reset_password") && userId === session.userId) {
+  if (action === "deactivate" && userId === session.userId) {
     return NextResponse.json({ error: "You cannot modify your own account this way." }, { status: 400 });
   }
 
@@ -75,24 +315,11 @@ export async function PATCH(
   try {
     await client.query("begin");
 
-    const existingResult = await client.query(
-      "select id, email, role, is_active, deactivated_at, locked_at from users where id = $1 for update",
-      [userId],
-    );
-
-    if (existingResult.rowCount === 0) {
+    const existing = await loadUserForUpdate(client, userId);
+    if (!existing) {
       await client.query("rollback");
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
-
-    const existing = existingResult.rows[0] as {
-      id: string;
-      email: string;
-      role: string;
-      is_active?: boolean | null;
-      deactivated_at?: string | null;
-      locked_at?: string | null;
-    };
 
     const actorIsDeveloper = isDeveloperRole(session.role);
     const targetIsDeveloper = isDeveloperRole(existing.role);
@@ -287,6 +514,7 @@ export async function PATCH(
         await client.query("rollback");
         return NextResponse.json({ error: "Reason is required" }, { status: 400 });
       }
+      const isSelfReset = userId === session.userId;
 
       const tempPassword = generateTempPassword();
       const passwordHash = await hashPassword(tempPassword);
@@ -319,6 +547,29 @@ export async function PATCH(
       await client.query("delete from admin_login_attempts where email = $1", [
         String(existing.email ?? "").toLowerCase(),
       ]);
+
+      let clerkSync: ClerkPasswordResetSyncResult | null = null;
+      try {
+        clerkSync = await syncClerkPasswordReset({
+          client,
+          localUser: existing,
+          tempPassword,
+        });
+      } catch (error) {
+        await client.query("rollback");
+        logError("api.admin.users.PATCH.clerkResetSync", error, {
+          actorUserId: session.userId,
+          targetUserId: userId,
+        });
+        return NextResponse.json(
+          {
+            error:
+              "Password reset could not be synced with Clerk. No changes were applied. Try again or use legacy admin login flow.",
+          },
+          { status: 502 },
+        );
+      }
+
       await client.query("commit");
 
       await writeAuditLog({
@@ -326,13 +577,27 @@ export async function PATCH(
         action: "USER_PASSWORD_RESET",
         entityType: "user",
         entityId: userId,
-        details: { reason, tempPasswordExpiresAt: expiresAt.toISOString() },
+        details: {
+          reason,
+          tempPasswordExpiresAt: expiresAt.toISOString(),
+          clerkSyncStatus: clerkSync.status,
+          clerkUserId: clerkSync.clerkUserId,
+        },
       });
 
       return NextResponse.json({
         ok: true,
-        tempPassword,
-        tempPasswordExpiresAt: expiresAt.toISOString(),
+        ...(isSelfReset
+          ? {
+              selfReset: true,
+              message:
+                "Password reset initiated. You will be signed out and prompted to set a new password at sign-in.",
+            }
+          : {
+              tempPassword,
+              tempPasswordExpiresAt: expiresAt.toISOString(),
+            }),
+        clerkSync,
       });
     }
 

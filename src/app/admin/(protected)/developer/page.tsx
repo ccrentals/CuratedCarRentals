@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { isDeveloperRole } from "@/lib/auth/roles";
 
 import { DeveloperChecklistEditor } from "@/components/admin/DeveloperChecklistEditor";
 import { getSessionFromRequest } from "@/lib/auth/session";
@@ -15,13 +16,6 @@ const DOCUMENTATION_LINKS = [
   { href: "/admin/documentation/operations", label: "Operational Documentation" },
   { href: "/admin/developer/access", label: "Role Capability Matrix" },
 ];
-
-function isDeveloperRole(role: string | undefined) {
-  const normalized = String(role ?? "")
-    .trim()
-    .toUpperCase();
-  return normalized === "DEVELOPER";
-}
 
 export default async function AdminDeveloperPage() {
   const session = await getSessionFromRequest();

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import { logError } from "@/lib/log";
 import {
@@ -11,13 +12,6 @@ import {
   type UpdateAdminQuoteInput,
 } from "@/lib/quotes/adminQuotes";
 import { requireCsrf } from "@/lib/security/csrf";
-
-function isStaffRole(role: string | undefined) {
-  const normalized = String(role ?? "")
-    .trim()
-    .toUpperCase();
-  return normalized === "ADMIN" || normalized === "DEVELOPER" || normalized === "USER";
-}
 
 type QuoteRouteContext = {
   params: Promise<{ id: string }>;
@@ -42,13 +36,8 @@ export async function handleAdminQuoteGet(
   context: QuoteRouteContext,
   deps: AdminQuoteRouteDeps = DEFAULT_DEPS,
 ) {
-  const session = await deps.getSession();
-  if (!session) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
-  if (!isStaffRole(session.role)) {
-    return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
+  if (!auth.ok) return auth.response;
 
   const { id } = await context.params;
 
@@ -86,13 +75,9 @@ export async function handleAdminQuotePatch(
   context: QuoteRouteContext,
   deps: AdminQuoteRouteDeps = DEFAULT_DEPS,
 ) {
-  const session = await deps.getSession();
-  if (!session) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
-  if (!isStaffRole(session.role)) {
-    return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
+  if (!auth.ok) return auth.response;
+  const { actor } = auth;
 
   const { id } = await context.params;
   const body = await request.json().catch(() => null);
@@ -121,7 +106,7 @@ export async function handleAdminQuotePatch(
       insuranceEnabled: body?.insurance_enabled ?? body?.insuranceEnabled,
       insurancePlanId: body?.insurance_plan_id ?? body?.insurancePlanId,
       promoCode: body?.promo_code ?? body?.promoCode,
-      actorAdminUserId: session.userId,
+      actorAdminUserId: actor.userId,
     });
 
     if (!item) {

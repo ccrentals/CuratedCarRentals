@@ -1,6 +1,7 @@
 import { QuoteDetailClient } from "@/components/admin/quotes/QuoteDetailClient";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery } from "@/lib/db";
+import { isStaffRole } from "@/lib/auth/roles";
 
 type QuoteEventRow = {
   id: string;
@@ -9,13 +10,6 @@ type QuoteEventRow = {
   actor_email: string | null;
   meta: Record<string, unknown> | null;
 };
-
-function isStaffRole(role: string | undefined) {
-  const normalized = String(role ?? "")
-    .trim()
-    .toUpperCase();
-  return normalized === "ADMIN" || normalized === "DEVELOPER" || normalized === "USER";
-}
 
 function isQuoteEventsMissingTable(error: unknown) {
   const code = String((error as { code?: unknown } | null)?.code ?? "").toUpperCase();

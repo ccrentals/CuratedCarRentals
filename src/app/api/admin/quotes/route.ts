@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import { logError } from "@/lib/log";
 import {
@@ -14,13 +15,6 @@ import {
   type FetchAdminQuotesInput,
 } from "@/lib/quotes/adminQuotes";
 import { requireCsrf } from "@/lib/security/csrf";
-
-function isStaffRole(role: string | undefined) {
-  const normalized = String(role ?? "")
-    .trim()
-    .toUpperCase();
-  return normalized === "ADMIN" || normalized === "DEVELOPER" || normalized === "USER";
-}
 
 export type AdminQuotesRouteDeps = {
   getSession: () => Promise<AdminSession | null>;
@@ -40,13 +34,8 @@ export async function handleAdminQuotesGet(
   request: Request,
   deps: AdminQuotesRouteDeps = DEFAULT_DEPS,
 ) {
-  const session = await deps.getSession();
-  if (!session) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
-  if (!isStaffRole(session.role)) {
-    return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
+  if (!auth.ok) return auth.response;
 
   const { searchParams } = new URL(request.url);
   const sort = normalizeQuoteSort(searchParams);
@@ -92,13 +81,9 @@ export async function handleAdminQuotesPost(
   request: Request,
   deps: AdminQuotesRouteDeps = DEFAULT_DEPS,
 ) {
-  const session = await deps.getSession();
-  if (!session) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
-  if (!isStaffRole(session.role)) {
-    return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
+  if (!auth.ok) return auth.response;
+  const { actor } = auth;
 
   const body = await request.json().catch(() => null);
 
@@ -127,7 +112,7 @@ export async function handleAdminQuotesPost(
       commissionPartnerName: body?.commission_partner_name ?? body?.commissionPartnerName,
       clientPaysAtPartner: body?.client_pays_at_partner ?? body?.clientPaysAtPartner,
       rackPriceCents: body?.rack_price_cents ?? body?.rackPriceCents,
-      createdByAdminUserId: session.userId,
+      createdByAdminUserId: actor.userId,
     });
 
     return NextResponse.json({ ok: true, item });
@@ -148,7 +133,7 @@ export async function handleAdminQuotesPost(
       );
     }
 
-    logError("admin_quote_create_failed", error, { userId: session.userId });
+    logError("admin_quote_create_failed", error, { userId: actor.userId });
     return NextResponse.json({ ok: false, error: "Failed to create quote." }, { status: 500 });
   }
 }

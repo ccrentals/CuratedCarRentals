@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { isDeveloperRole } from "@/lib/auth/roles";
 
 import { getSessionFromRequest } from "@/lib/auth/session";
 
@@ -59,16 +60,6 @@ const CAPABILITIES: CapabilityRow[] = [
     user: "No",
   },
 ];
-
-function normalizeRole(role: string | undefined) {
-  return String(role ?? "")
-    .trim()
-    .toUpperCase();
-}
-
-function isDeveloperRole(role: string | undefined) {
-  return normalizeRole(role) === "DEVELOPER";
-}
 
 export default async function AdminDeveloperAccessPage() {
   const session = await getSessionFromRequest();

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { getSessionFromRequest } from "@/lib/auth/session";
+import { requireDeveloperRole } from "@/lib/auth/adminGuards";
 import {
   mergeChecklistEntries,
   normalizeDeveloperChecklistDocument,
@@ -10,13 +10,6 @@ import { logError } from "@/lib/log";
 import { requireCsrf } from "@/lib/security/csrf";
 
 const DOC_KEY = "developer_checklist";
-
-function isDeveloperRole(role: string | undefined) {
-  const normalized = String(role ?? "")
-    .trim()
-    .toUpperCase();
-  return normalized === "DEVELOPER";
-}
 
 function handleMissingTable(error: unknown) {
   const code =
@@ -36,13 +29,9 @@ function handleMissingTable(error: unknown) {
 }
 
 export async function GET() {
-  const session = await getSessionFromRequest();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  if (!isDeveloperRole(session.role)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requireDeveloperRole();
+  if (!auth.ok) return auth.response;
+  const { actor } = auth;
 
   try {
     const result = await dbQuery<{
@@ -70,19 +59,15 @@ export async function GET() {
   } catch (error) {
     const response = handleMissingTable(error);
     if (response) return response;
-    logError("api.admin.developer-checklist.GET", error, { userId: session.userId });
+    logError("api.admin.developer-checklist.GET", error, { userId: actor.userId });
     return NextResponse.json({ error: "Failed to load developer checklist." }, { status: 500 });
   }
 }
 
 export async function PATCH(request: Request) {
-  const session = await getSessionFromRequest();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  if (!isDeveloperRole(session.role)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requireDeveloperRole();
+  if (!auth.ok) return auth.response;
+  const { actor } = auth;
 
   const body = await request.json().catch(() => null);
   if (!(await requireCsrf(request, body?.csrfToken ?? null))) {
@@ -99,7 +84,7 @@ export async function PATCH(request: Request) {
       updated_by: string | null;
     }>(
       "insert into admin_documents (key, content, updated_by) values ($1, $2, $3) on conflict (key) do update set content = excluded.content, updated_by = excluded.updated_by, updated_at = now() returning content, updated_at, updated_by",
-      [DOC_KEY, JSON.stringify({ items, generalNotes }), session.userId],
+      [DOC_KEY, JSON.stringify({ items, generalNotes }), actor.userId],
     );
 
     const updatedBy = result.rows[0]?.updated_by ?? null;
@@ -121,7 +106,7 @@ export async function PATCH(request: Request) {
   } catch (error) {
     const response = handleMissingTable(error);
     if (response) return response;
-    logError("api.admin.developer-checklist.PATCH", error, { userId: session.userId });
+    logError("api.admin.developer-checklist.PATCH", error, { userId: actor.userId });
     return NextResponse.json({ error: "Failed to save developer checklist." }, { status: 500 });
   }
 }

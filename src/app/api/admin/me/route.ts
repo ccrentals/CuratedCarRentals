@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { getSessionFromRequest } from "@/lib/auth/session";
+import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
 import { dbQuery } from "@/lib/db";
 import { logError } from "@/lib/log";
 import { requireCsrf } from "@/lib/security/csrf";
@@ -42,10 +42,9 @@ function parseThemePreference(content: unknown): AppTheme | null {
 }
 
 export async function GET() {
-  const session = await getSessionFromRequest();
-  if (!session) {
-    return NextResponse.json({ ok: false }, { status: 401 });
-  }
+  const auth = await requireStaffOrAdminRole();
+  if (!auth.ok) return auth.response;
+  const session = auth.session;
 
   try {
     const userResult: { rows: UserRow[] } = await (async () => {
@@ -110,10 +109,9 @@ export async function GET() {
 }
 
 export async function PATCH(request: Request) {
-  const session = await getSessionFromRequest();
-  if (!session) {
-    return NextResponse.json({ ok: false }, { status: 401 });
-  }
+  const auth = await requireStaffOrAdminRole();
+  if (!auth.ok) return auth.response;
+  const session = auth.session;
 
   const body = await request.json().catch(() => null);
   if (!(await requireCsrf(request, body?.csrfToken ?? null))) {

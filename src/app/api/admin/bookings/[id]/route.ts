@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { getSessionFromRequest } from "@/lib/auth/session";
+import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
+import { isAdminRole } from "@/lib/auth/roles";
 import { dbQuery, getDbPool } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
 import { getInternalNotesRecipient, sendBookingNoteEmail } from "@/lib/notifications/email";
@@ -16,13 +17,6 @@ import {
   readPromoPricingFields,
 } from "@/lib/payments/pricing";
 import { requireCsrf } from "@/lib/security/csrf";
-
-function isAdminRole(role: string | undefined) {
-  const normalized = String(role ?? "")
-    .trim()
-    .toUpperCase();
-  return normalized === "ADMIN" || normalized === "DEVELOPER";
-}
 
 function isUndefinedColumn(error: unknown, column: string) {
   const code = (error as { code?: string } | null)?.code;
@@ -70,10 +64,9 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await getSessionFromRequest();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireStaffOrAdminRole();
+  if (!auth.ok) return auth.response;
+  const session = auth.session;
 
   const { id } = await params;
 
@@ -147,10 +140,9 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await getSessionFromRequest();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireStaffOrAdminRole();
+  if (!auth.ok) return auth.response;
+  const session = auth.session;
 
   const { id } = await params;
   const body = await request.json().catch(() => null);

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { getSessionFromRequest } from "@/lib/auth/session";
+import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
 import { dbQuery } from "@/lib/db";
 import { logError } from "@/lib/log";
 import { buildUploadcareCdnUrl, extractUploadcareFileId } from "@/lib/uploads/uploadcare";
@@ -51,10 +51,11 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string; documentType: string }> },
 ) {
-  const session = await getSessionFromRequest();
-  if (!session) {
-    return jsonNoStore({ error: "Unauthorized" }, 401);
+  const auth = await requireStaffOrAdminRole();
+  if (!auth.ok) {
+    return auth.response;
   }
+  const actor = auth.actor;
 
   const { id: bookingId, documentType: documentTypeRaw } = await params;
   const documentType = normalizeDocumentType(documentTypeRaw);
@@ -121,7 +122,7 @@ export async function GET(
     logError("admin.bookings.private-files.GET", error, {
       bookingId,
       documentType,
-      userId: session.userId,
+      userId: actor.userId,
     });
     return jsonNoStore({ error: "Failed to load booking file." }, 500);
   }

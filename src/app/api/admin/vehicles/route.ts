@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { getSessionFromRequest } from "@/lib/auth/session";
+import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
 import { dbQuery } from "@/lib/db";
 import { isNonEmptyString, parseIntSafe, parseMoneyToCents, parseImageUrls } from "@/lib/validators";
 import { requireCsrf } from "@/lib/security/csrf";
@@ -62,10 +62,8 @@ function slugify(value: string): string {
 }
 
 export async function GET() {
-  const session = await getSessionFromRequest();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireStaffOrAdminRole();
+  if (!auth.ok) return auth.response;
 
   const result = await dbQuery(
     "select id, make, model, year, daily_rate_cents, deposit_cents, status, created_at from vehicles order by created_at desc",
@@ -74,10 +72,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const session = await getSessionFromRequest();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireStaffOrAdminRole();
+  if (!auth.ok) return auth.response;
 
   const contentType = request.headers.get("content-type") ?? "";
   let body: Record<string, unknown> = {};

@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-import { getSessionFromRequest } from "@/lib/auth/session";
+import { resolveAdminActor } from "@/lib/auth/adminGuards";
 import { dbQuery } from "@/lib/db";
 import {
   getUnreadContactMessagesCount,
@@ -19,11 +19,15 @@ export default async function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const session = await getSessionFromRequest();
+  const access = await resolveAdminActor({ requirement: "staff" });
 
-  if (!session) {
+  if (!access.ok) {
+    if (access.reason === "forbidden") {
+      redirect("/admin/login?error=forbidden");
+    }
     redirect("/admin/login");
   }
+  const { session, actor } = access;
 
   type UserRow = {
     email: string;
@@ -35,13 +39,13 @@ export default async function AdminLayout({
     try {
       return await dbQuery<UserRow>(
         "select email, role, must_change_password from users where id = $1 limit 1",
-        [session.userId],
+        [actor.userId],
       );
     } catch (error) {
       // If the DB isn't migrated yet, skip the must-change gate to avoid crashing admin pages.
       if (isUndefinedColumn(error, "must_change_password")) {
         return await dbQuery<UserRow>("select email, role from users where id = $1 limit 1", [
-          session.userId,
+          actor.userId,
         ]);
       }
       throw error;
@@ -60,7 +64,7 @@ export default async function AdminLayout({
     }
   })();
 
-  if (user.must_change_password) {
+  if (session.source !== "clerk" && user.must_change_password) {
     redirect("/admin/set-password");
   }
 

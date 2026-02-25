@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import {
   DEPRECIATION_REPORT_SORT_COLUMNS,
@@ -21,13 +22,6 @@ type RouteDeps = {
   }) => ReturnType<typeof listDepreciationReport>;
 };
 
-function isStaffRole(role: string | undefined) {
-  const normalized = String(role ?? "")
-    .trim()
-    .toUpperCase();
-  return normalized === "ADMIN" || normalized === "DEVELOPER" || normalized === "USER";
-}
-
 function normalizeFilter(value: string | null) {
   const normalized = String(value ?? "").trim();
   return normalized ? normalized.slice(0, 80) : null;
@@ -42,13 +36,8 @@ export async function handleAdminDepreciationGet(
   request: Request,
   deps: RouteDeps = DEFAULT_DEPS,
 ) {
-  const session = await deps.getSession();
-  if (!session) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
-  if (!isStaffRole(session.role)) {
-    return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
+  if (!auth.ok) return auth.response;
 
   const { searchParams } = new URL(request.url);
   const asOfMonth = normalizeFilter(searchParams.get("asOfMonth"));

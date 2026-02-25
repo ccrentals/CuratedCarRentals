@@ -26,6 +26,7 @@ function formatCurrency(cents: number) {
 }
 
 export async function GET(request: Request) {
+  // Guard delegated to `handleAdminMaintenanceGet`, which enforces shared admin RBAC.
   const response = await handleAdminMaintenanceGet(request);
   if (!response.ok) return response;
 

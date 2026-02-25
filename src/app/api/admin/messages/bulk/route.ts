@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import {
   bulkUpdateAdminMessagesStatus,
@@ -14,13 +15,6 @@ import { logError } from "@/lib/log";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-function isStaffRole(role: string | undefined) {
-  const normalized = String(role ?? "")
-    .trim()
-    .toUpperCase();
-  return normalized === "ADMIN" || normalized === "DEVELOPER" || normalized === "USER";
-}
 
 function normalizeIds(value: unknown) {
   if (!Array.isArray(value)) return [];
@@ -65,13 +59,9 @@ export async function handleAdminMessagesBulkPost(
   request: Request,
   deps: AdminMessagesBulkRouteDeps = DEFAULT_DEPS,
 ) {
-  const session = await deps.getSession();
-  if (!session) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
-  if (!isStaffRole(session.role)) {
-    return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
+  if (!auth.ok) return auth.response;
+  const { actor } = auth;
 
   const body = await request.json().catch(() => null);
 
@@ -96,13 +86,13 @@ export async function handleAdminMessagesBulkPost(
     const result = await deps.bulkUpdate({
       ids,
       action,
-      actorUserId: session.userId,
+      actorUserId: actor.userId,
     });
 
     await Promise.all(
       result.changes.map((change) =>
         deps.writeAudit({
-          userId: session.userId,
+          userId: actor.userId,
           action: "CONTACT_MESSAGE_STATUS_UPDATED",
           entityType: "contact_message",
           entityId: change.id,

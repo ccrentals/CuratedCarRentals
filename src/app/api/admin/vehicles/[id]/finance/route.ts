@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import { loadAdminSettings } from "@/lib/adminSettings";
 import { dbQuery } from "@/lib/db";
@@ -54,13 +55,6 @@ type RouteDeps = {
   getFinance: (vehicleId: string) => Promise<VehicleFinanceRow | null>;
   upsertFinance: (vehicleId: string, payload: FinancePayload) => Promise<VehicleFinanceRow>;
 };
-
-function isStaffRole(role: string | undefined) {
-  const normalized = String(role ?? "")
-    .trim()
-    .toUpperCase();
-  return normalized === "ADMIN" || normalized === "DEVELOPER" || normalized === "USER";
-}
 
 function normalizeText(value: unknown) {
   if (typeof value !== "string") return "";
@@ -222,13 +216,8 @@ export async function handleAdminVehicleFinanceGet(
   context: FinanceRouteContext,
   deps: RouteDeps = DEFAULT_DEPS,
 ) {
-  const session = await deps.getSession();
-  if (!session) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
-  if (!isStaffRole(session.role)) {
-    return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
+  if (!auth.ok) return auth.response;
 
   const { id } = await context.params;
   if (!UUID_REGEX.test(id)) {
@@ -277,13 +266,8 @@ export async function handleAdminVehicleFinancePatch(
   context: FinanceRouteContext,
   deps: RouteDeps = DEFAULT_DEPS,
 ) {
-  const session = await deps.getSession();
-  if (!session) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
-  if (!isStaffRole(session.role)) {
-    return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
+  if (!auth.ok) return auth.response;
 
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
   if (

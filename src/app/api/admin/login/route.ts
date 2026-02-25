@@ -1,12 +1,20 @@
 import { NextResponse } from "next/server";
+import { randomBytes } from "node:crypto";
+import { clerkClient } from "@clerk/nextjs/server";
 
 import { dbQuery } from "@/lib/db";
 import { isEmail, isNonEmptyString } from "@/lib/validators";
 import { createSessionToken, setSessionCookie } from "@/lib/auth/session";
 import { verifyPassword } from "@/lib/auth/password";
 import { requireCsrf } from "@/lib/security/csrf";
+import {
+  buildClerkUsernameCandidates,
+  isClerkPasswordPolicyError,
+  isClerkUsernameError,
+} from "@/lib/security/clerkUsernames";
 import { writeAuditLog } from "@/lib/audit";
 import { logWarn } from "@/lib/log";
+import { isClerkEnabled } from "@/lib/security/clerk";
 import { isAppTheme, type AppTheme, THEME_COOKIE_NAME } from "@/lib/theme";
 
 function getClientIp(request: Request) {
@@ -41,7 +49,157 @@ function parseThemePreference(content: unknown): AppTheme | null {
   }
 }
 
+type LegacyLoginClerkLinkContext = {
+  userId: string;
+  email: string;
+  localUsername: string | null;
+  role: string;
+  fullName: string | null;
+  clerkUserId: string | null;
+  password: string;
+};
+
+function splitName(fullName: string | null, email: string) {
+  const clean = fullName?.trim() ?? "";
+  if (clean) {
+    const parts = clean.split(/\s+/).filter(Boolean);
+    if (parts.length === 1) {
+      return { firstName: parts[0], lastName: "Admin" };
+    }
+    return { firstName: parts[0], lastName: parts.slice(1).join(" ") };
+  }
+
+  const localPart = email.split("@")[0]?.trim() ?? "Admin";
+  return { firstName: localPart.slice(0, 64), lastName: "Admin" };
+}
+
+function generateClerkBootstrapPassword() {
+  return `Ccr!${randomBytes(24).toString("base64url")}Aa9`;
+}
+
+async function linkLocalUserToClerkId(localUserId: string, clerkUserId: string) {
+  try {
+    await dbQuery(
+      "update users set clerk_user_id = $2 where id = $1 and (clerk_user_id is null or clerk_user_id = $2)",
+      [localUserId, clerkUserId],
+    );
+  } catch (error) {
+    if (!isUndefinedColumn(error, "clerk_user_id")) {
+      throw error;
+    }
+  }
+}
+
+async function ensureClerkBridgeForLegacyLogin(context: LegacyLoginClerkLinkContext) {
+  if (!isClerkEnabled()) {
+    return;
+  }
+
+  const existingClerkId = context.clerkUserId?.trim();
+  if (existingClerkId) {
+    return;
+  }
+
+  try {
+    const clerk = await clerkClient();
+    const usernameCandidates = buildClerkUsernameCandidates({
+      localUsername: context.localUsername,
+      email: context.email,
+      localUserId: context.userId,
+    });
+    const existing = await clerk.users.getUserList({
+      emailAddress: [context.email],
+      limit: 1,
+    });
+
+    const existingUser = existing.data[0] ?? null;
+    let clerkUserId = existingUser?.id ?? "";
+
+    if (existingUser && !existingUser.username) {
+      for (const candidate of usernameCandidates) {
+        try {
+          await clerk.users.updateUser(existingUser.id, { username: candidate });
+          break;
+        } catch (error) {
+          if (isClerkUsernameError(error)) {
+            continue;
+          }
+          throw error;
+        }
+      }
+    }
+
+    if (!clerkUserId) {
+      const { firstName, lastName } = splitName(context.fullName, context.email);
+      const createWithPassword = async (password: string, forceResetAfterCreate: boolean) => {
+        let lastError: unknown = null;
+        const attempts = [...usernameCandidates, ""];
+        for (const candidate of attempts) {
+          try {
+            const created = await clerk.users.createUser({
+              emailAddress: [context.email],
+              password,
+              firstName,
+              lastName,
+              skipLegalChecks: true,
+              ...(candidate ? { username: candidate } : {}),
+              privateMetadata: {
+                localUserId: context.userId,
+                localRole: context.role,
+                authProvisionedBy: "legacy-admin-login",
+              },
+            });
+
+            if (forceResetAfterCreate) {
+              await clerk.users.setPasswordCompromised(created.id, {
+                revokeAllSessions: true,
+              });
+            }
+            return created.id;
+          } catch (error) {
+            lastError = error;
+            if (candidate && isClerkUsernameError(error)) {
+              continue;
+            }
+            throw error;
+          }
+        }
+        throw lastError ?? new Error("Unable to create Clerk user");
+      };
+
+      try {
+        clerkUserId = await createWithPassword(context.password, false);
+      } catch (error) {
+        if (!isClerkPasswordPolicyError(error)) {
+          throw error;
+        }
+        clerkUserId = await createWithPassword(generateClerkBootstrapPassword(), true);
+        logWarn("api.admin.login.clerkBridgePasswordPolicyFallback", {
+          userId: context.userId,
+          email: context.email,
+        });
+      }
+    }
+
+    if (!clerkUserId) {
+      return;
+    }
+
+    await linkLocalUserToClerkId(context.userId, clerkUserId);
+  } catch (error) {
+    logWarn("api.admin.login.clerkBridgeSyncFailed", {
+      userId: context.userId,
+      email: context.email,
+      code: (error as { errors?: Array<{ code?: string }>; code?: string } | null)?.errors?.[0]
+        ?.code,
+    });
+  }
+}
+
 export async function POST(request: Request) {
+  // Deprecated during Clerk admin migration:
+  // keep this endpoint for break-glass access until at least one stable release cycle passes
+  // with CLERK_PROTECT_ADMIN_ROUTES=1 and no fallback usage.
   const body = await request.json().catch(() => null);
   const identifierRaw = body?.identifier ?? body?.email;
   const identifier = typeof identifierRaw === "string" ? identifierRaw.trim() : "";
@@ -259,6 +417,44 @@ export async function POST(request: Request) {
       });
     }
   }
+
+  const clerkLinkResult = await (async () => {
+    try {
+      const mapping = await dbQuery<{
+        clerk_user_id: string | null;
+        full_name: string | null;
+        username: string | null;
+      }>(
+        "select clerk_user_id, full_name, username from users where id = $1 limit 1",
+        [user.id],
+      );
+      return {
+        clerkUserId: mapping.rows[0]?.clerk_user_id ?? null,
+        fullName: mapping.rows[0]?.full_name ?? null,
+        localUsername: mapping.rows[0]?.username ?? null,
+      };
+    } catch (error) {
+      if (
+        isUndefinedColumn(error, "clerk_user_id") ||
+        isUndefinedColumn(error, "full_name") ||
+        isUndefinedColumn(error, "username")
+      ) {
+        return { clerkUserId: null, fullName: null, localUsername: null };
+      }
+      throw error;
+    }
+  })();
+
+  // Best-effort compatibility bridge: keep legacy login functional even if Clerk provisioning fails.
+  await ensureClerkBridgeForLegacyLogin({
+    userId: user.id,
+    email: user.email,
+    localUsername: clerkLinkResult.localUsername,
+    role: user.role,
+    fullName: clerkLinkResult.fullName,
+    clerkUserId: clerkLinkResult.clerkUserId,
+    password,
+  });
 
   let theme: AppTheme = "light";
   try {

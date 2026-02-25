@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { isAdminRole } from "@/lib/auth/roles";
 
 import { AdminBookingsTable } from "@/components/admin/AdminBookingsTable";
 import { AdminCreateBookingModal } from "@/components/admin/AdminCreateBookingModal";
@@ -21,13 +22,6 @@ type CustomerPrefill = {
   email: string;
   phone: string;
 };
-
-function isAdminRole(role: string | undefined) {
-  const normalized = String(role ?? "")
-    .trim()
-    .toUpperCase();
-  return normalized === "ADMIN" || normalized === "DEVELOPER";
-}
 
 export default async function AdminBookingsPage({
   searchParams,

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { getSessionFromRequest } from "@/lib/auth/session";
+import { requireAdminRole } from "@/lib/auth/adminGuards";
 import { dbQuery, getDbPool } from "@/lib/db";
 import { logError } from "@/lib/log";
 import { requireCsrf } from "@/lib/security/csrf";
@@ -16,26 +16,15 @@ type BookingLocationRow = {
   updated_at: string;
 };
 
-function isAdminRole(role: string | undefined) {
-  const normalized = String(role ?? "")
-    .trim()
-    .toUpperCase();
-  return normalized === "ADMIN" || normalized === "DEVELOPER";
-}
-
 function normalizeText(value: unknown) {
   if (typeof value !== "string") return "";
   return value.trim();
 }
 
 export async function GET() {
-  const session = await getSessionFromRequest();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  if (!isAdminRole(session.role)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requireAdminRole();
+  if (!auth.ok) return auth.response;
+  const { actor } = auth;
 
   try {
     const result = await dbQuery<BookingLocationRow>(
@@ -43,19 +32,15 @@ export async function GET() {
     );
     return NextResponse.json({ locations: result.rows });
   } catch (error) {
-    logError("api.admin.booking-locations.GET", error, { userId: session.userId });
+    logError("api.admin.booking-locations.GET", error, { userId: actor.userId });
     return NextResponse.json({ error: "Failed to load booking locations." }, { status: 500 });
   }
 }
 
 export async function POST(request: Request) {
-  const session = await getSessionFromRequest();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  if (!isAdminRole(session.role)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requireAdminRole();
+  if (!auth.ok) return auth.response;
+  const { actor } = auth;
 
   const body = await request.json().catch(() => null);
   if (!(await requireCsrf(request, body?.csrfToken ?? null))) {
@@ -96,7 +81,7 @@ export async function POST(request: Request) {
     } else {
       await client.query(
         "insert into booking_locations (label, allow_pickup, allow_dropoff, is_active, sort_order, created_by) values ($1, $2, $3, true, $4, $5)",
-        [label, allowPickup, allowDropoff, sortOrder, session.userId],
+        [label, allowPickup, allowDropoff, sortOrder, actor.userId],
       );
     }
 
@@ -104,7 +89,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true });
   } catch (error) {
     await client.query("rollback");
-    logError("api.admin.booking-locations.POST", error, { userId: session.userId });
+    logError("api.admin.booking-locations.POST", error, { userId: actor.userId });
     return NextResponse.json({ error: "Failed to save booking location." }, { status: 500 });
   } finally {
     client.release();
@@ -112,13 +97,9 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const session = await getSessionFromRequest();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  if (!isAdminRole(session.role)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requireAdminRole();
+  if (!auth.ok) return auth.response;
+  const { actor } = auth;
 
   const body = await request.json().catch(() => null);
   if (!(await requireCsrf(request, body?.csrfToken ?? null))) {
@@ -140,7 +121,7 @@ export async function DELETE(request: Request) {
     }
     return NextResponse.json({ ok: true });
   } catch (error) {
-    logError("api.admin.booking-locations.DELETE", error, { userId: session.userId, locationId: id });
+    logError("api.admin.booking-locations.DELETE", error, { userId: actor.userId, locationId: id });
     return NextResponse.json({ error: "Failed to delete booking location." }, { status: 500 });
   }
 }

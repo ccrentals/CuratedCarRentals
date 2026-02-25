@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { isAdminRole } from "@/lib/auth/roles";
 
 import { TableDateTime } from "@/components/shared/TableDateTime";
 import { dbQuery } from "@/lib/db";
@@ -25,13 +26,6 @@ type UserRow = {
 type SessionRoleRow = {
   role: string | null;
 };
-
-function isAdminRole(role: string | undefined) {
-  const normalized = String(role ?? "")
-    .trim()
-    .toUpperCase();
-  return normalized === "ADMIN" || normalized === "DEVELOPER";
-}
 
 function isUndefinedColumn(error: unknown, column: string) {
   const code = (error as { code?: string } | null)?.code;

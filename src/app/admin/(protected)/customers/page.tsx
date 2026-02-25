@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { isAdminRole, isStaffRole } from "@/lib/auth/roles";
 
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { TableDateTime } from "@/components/shared/TableDateTime";
@@ -30,20 +31,6 @@ type CustomerListRow = {
   total_bookings: number;
   total_spend: number;
 };
-
-function isAdminRole(role: string | undefined) {
-  const normalized = String(role ?? "")
-    .trim()
-    .toUpperCase();
-  return normalized === "ADMIN" || normalized === "DEVELOPER";
-}
-
-function isStaffRole(role: string | undefined) {
-  const normalized = String(role ?? "")
-    .trim()
-    .toUpperCase();
-  return normalized === "ADMIN" || normalized === "DEVELOPER" || normalized === "USER";
-}
 
 const CUSTOMER_SORT_COLUMNS = ["customer", "bookings", "totalSpend", "lastBooked", "created"] as const;
 type CustomerSortBy = (typeof CUSTOMER_SORT_COLUMNS)[number];

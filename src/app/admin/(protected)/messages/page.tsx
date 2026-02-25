@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { isAdminRole, isStaffRole } from "@/lib/auth/roles";
 
 import { MessagesInboxTable } from "@/components/admin/MessagesInboxTable";
 import { PaginationSummaryNav } from "@/components/admin/PaginationSummaryNav";
@@ -26,20 +27,6 @@ type MessageListRow = {
 
 type MessageSortBy = (typeof ADMIN_MESSAGE_SORT_COLUMNS)[number];
 type MessageSortDir = SortDir;
-
-function isStaffRole(role: string | undefined) {
-  const normalized = String(role ?? "")
-    .trim()
-    .toUpperCase();
-  return normalized === "ADMIN" || normalized === "DEVELOPER" || normalized === "USER";
-}
-
-function isAdminRole(role: string | undefined) {
-  const normalized = String(role ?? "")
-    .trim()
-    .toUpperCase();
-  return normalized === "ADMIN" || normalized === "DEVELOPER";
-}
 
 export default async function AdminMessagesPage({
   searchParams,

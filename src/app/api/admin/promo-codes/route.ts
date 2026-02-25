@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { getSessionFromRequest } from "@/lib/auth/session";
+import { requireAdminRole } from "@/lib/auth/adminGuards";
 import { dbQuery } from "@/lib/db";
 import { requireCsrf } from "@/lib/security/csrf";
 import { normalizePromoInputCode } from "@/lib/promos";
@@ -22,13 +22,6 @@ type PromoListRow = {
   updated_at: string;
   redemption_count: number;
 };
-
-function isAdminRole(role: string | undefined) {
-  const normalized = String(role ?? "")
-    .trim()
-    .toUpperCase();
-  return normalized === "ADMIN" || normalized === "DEVELOPER";
-}
 
 function asInteger(value: unknown): number | null {
   if (value === null || value === undefined || value === "") return null;
@@ -61,13 +54,8 @@ function parseBlackoutDates(value: unknown) {
 }
 
 export async function GET(request: Request) {
-  const session = await getSessionFromRequest();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  if (!isAdminRole(session.role)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requireAdminRole();
+  if (!auth.ok) return auth.response;
 
   const url = new URL(request.url);
   const q = (url.searchParams.get("q") ?? "").trim();
@@ -92,13 +80,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const session = await getSessionFromRequest();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  if (!isAdminRole(session.role)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requireAdminRole();
+  if (!auth.ok) return auth.response;
+  const { actor } = auth;
 
   const body = await request.json().catch(() => null);
   if (!(await requireCsrf(request, body?.csrfToken ?? null))) {
@@ -152,13 +136,13 @@ export async function POST(request: Request) {
         JSON.stringify(allowedVehicleIds),
         JSON.stringify(excludedVehicleIds),
         JSON.stringify(blackoutDates),
-        session.userId,
+        actor.userId,
       ],
     );
 
     const promoId = insert.rows[0]?.id;
     await writeAuditLog({
-      userId: session.userId,
+      userId: actor.userId,
       action: "PROMO_CODE_CREATED",
       entityType: "promo_code",
       entityId: promoId,
@@ -171,7 +155,7 @@ export async function POST(request: Request) {
     if (codeError === "23505") {
       return NextResponse.json({ error: "Promo code already exists." }, { status: 409 });
     }
-    logError("api.admin.promo-codes.POST", error, { userId: session.userId });
+    logError("api.admin.promo-codes.POST", error, { userId: actor.userId });
     return NextResponse.json({ error: "Failed to create promo code." }, { status: 500 });
   }
 }
