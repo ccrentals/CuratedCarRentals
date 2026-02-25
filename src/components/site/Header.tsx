@@ -9,6 +9,7 @@ import { SiteLogo } from "@/components/site/SiteLogo";
 import { ThemeToggle } from "@/components/site/ThemeToggle";
 import { Button } from "@/components/ui/Button";
 import { siteContent } from "@/data/content";
+import { isStandaloneAuthRoute } from "@/lib/security/clerk";
 import { cn } from "@/lib/utils";
 
 const navLinks = [
@@ -24,6 +25,7 @@ const navLinks = [
 export function Header() {
   const pathname = usePathname();
   const isAdminRoute = pathname?.startsWith("/admin") ?? false;
+  const isStandaloneAuth = pathname ? isStandaloneAuthRoute(pathname) : false;
 
   const [isCompact, setIsCompact] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -96,7 +98,7 @@ export function Header() {
     return () => window.removeEventListener("scroll", onScroll);
   }, [isAdminRoute]);
 
-  if (isAdminRoute) return null;
+  if (isAdminRoute || isStandaloneAuth) return null;
 
   return (
     <>
@@ -130,8 +132,11 @@ export function Header() {
               href="/"
               className="inline-flex min-w-0 items-center gap-3 text-base font-extrabold tracking-tight text-[var(--ccr-text)]"
             >
-              <SiteLogo size={32} className="h-8 w-8" />
-              <span className="truncate">Curated Car Rentals</span>
+              <SiteLogo size={48} className="h-12 w-12" />
+              <span className="truncate">
+                <span className="ccr-wordmark-curated">Curated</span>{" "}
+                <span>Car Rentals</span>
+              </span>
             </Link>
             <button
               type="button"
@@ -216,8 +221,11 @@ export function Header() {
                 href="/"
                 className="inline-flex items-center gap-3 text-2xl font-extrabold tracking-tight text-[var(--ccr-text)]"
               >
-                <SiteLogo size={40} className="h-10 w-10" />
-                <span>Curated Car Rentals</span>
+                <SiteLogo size={60} className="h-[60px] w-[60px]" />
+                <span>
+                  <span className="ccr-wordmark-curated">Curated</span>{" "}
+                  <span>Car Rentals</span>
+                </span>
               </Link>
 
               <div className="min-w-0 grid gap-1 text-sm text-[var(--ccr-muted)] md:grid-cols-2 md:gap-4">
@@ -263,8 +271,8 @@ export function Header() {
                 )}
                 aria-label="Go to homepage"
               >
-                <SiteLogo size={28} className="h-7 w-7" />
-                <span className="ml-2 whitespace-nowrap text-sm font-bold uppercase tracking-wide text-[var(--ccr-primary)]">
+                <SiteLogo size={42} className="h-[42px] w-[42px]" />
+                <span className="ccr-wordmark-curated ml-2 whitespace-nowrap text-base text-[var(--ccr-primary)]">
                   Curated
                 </span>
               </Link>

@@ -15,6 +15,16 @@
   --ccr-primary-soft: #2a3b63;
   --ccr-on-primary: #f3f6ff;
   --ccr-on-primary-muted: #c8d1e6;
+  --ccr-clerk-surface: #ffffff;
+  --ccr-clerk-input-bg: #ffffff;
+  --ccr-clerk-border: #d4dced;
+  --ccr-clerk-text: #1a243b;
+  --ccr-clerk-muted: #5e6e8d;
+  --ccr-clerk-danger-bg: #fff2f2;
+  --ccr-clerk-danger-border: #fda4af;
+  --ccr-clerk-danger-text: #b42318;
+  --ccr-logo-accent: #c08212;
+  --ccr-logo-accent-strong: #9a6500;
   --background: var(--ccr-bg);
   --foreground: var(--ccr-text);
 }
@@ -33,6 +43,16 @@
   --ccr-primary-soft: #1c2a4c;
   --ccr-on-primary: #eef3ff;
   --ccr-on-primary-muted: #b4c2e2;
+  --ccr-clerk-surface: #1a2845;
+  --ccr-clerk-input-bg: #22355b;
+  --ccr-clerk-border: #3f5a8a;
+  --ccr-clerk-text: #f2f6ff;
+  --ccr-clerk-muted: #c0cdec;
+  --ccr-clerk-danger-bg: #3f1f2a;
+  --ccr-clerk-danger-border: #c74d69;
+  --ccr-clerk-danger-text: #ffc2cb;
+  --ccr-logo-accent: #f8c648;
+  --ccr-logo-accent-strong: #e4a611;
   --background: var(--ccr-bg);
   --foreground: var(--ccr-text);
 }
@@ -51,6 +71,16 @@
   --ccr-primary-soft: #121a2b;
   --ccr-on-primary: #eaf0ff;
   --ccr-on-primary-muted: #a7b5d3;
+  --ccr-clerk-surface: #1a2f4d;
+  --ccr-clerk-input-bg: #253d62;
+  --ccr-clerk-border: #5a84bb;
+  --ccr-clerk-text: #f4f7ff;
+  --ccr-clerk-muted: #c3d1eb;
+  --ccr-clerk-danger-bg: #4f2a38;
+  --ccr-clerk-danger-border: #e37795;
+  --ccr-clerk-danger-text: #ffe0e6;
+  --ccr-logo-accent: #5bc3ff;
+  --ccr-logo-accent-strong: #36b4f7;
   --background: var(--ccr-bg);
   --foreground: var(--ccr-text);
 }
@@ -69,6 +99,16 @@
   --ccr-primary-soft: #18344f;
   --ccr-on-primary: #eaf7ff;
   --ccr-on-primary-muted: #adc8dd;
+  --ccr-clerk-surface: #173553;
+  --ccr-clerk-input-bg: #1d3f61;
+  --ccr-clerk-border: #376289;
+  --ccr-clerk-text: #ecf7ff;
+  --ccr-clerk-muted: #b8d3e8;
+  --ccr-clerk-danger-bg: #43303a;
+  --ccr-clerk-danger-border: #c36f82;
+  --ccr-clerk-danger-text: #ffd7df;
+  --ccr-logo-accent: #35bdb6;
+  --ccr-logo-accent-strong: #229f99;
   --background: var(--ccr-bg);
   --foreground: var(--ccr-text);
 }
@@ -87,6 +127,16 @@
   --ccr-primary-soft: #4a3b27;
   --ccr-on-primary: #fff4de;
   --ccr-on-primary-muted: #e3cfa8;
+  --ccr-clerk-surface: #fff8ee;
+  --ccr-clerk-input-bg: #fff5e7;
+  --ccr-clerk-border: #ddc8a9;
+  --ccr-clerk-text: #2c2216;
+  --ccr-clerk-muted: #746048;
+  --ccr-clerk-danger-bg: #fff2ee;
+  --ccr-clerk-danger-border: #f3b1a4;
+  --ccr-clerk-danger-text: #b93821;
+  --ccr-logo-accent: #b17508;
+  --ccr-logo-accent-strong: #8f5d04;
   --background: var(--ccr-bg);
   --foreground: var(--ccr-text);
 }
@@ -105,6 +155,16 @@
   --ccr-primary-soft: #1f3528;
   --ccr-on-primary: #ebf6ef;
   --ccr-on-primary-muted: #acc4b4;
+  --ccr-clerk-surface: #1c342a;
+  --ccr-clerk-input-bg: #244133;
+  --ccr-clerk-border: #416b58;
+  --ccr-clerk-text: #eef7f1;
+  --ccr-clerk-muted: #bfd8ca;
+  --ccr-clerk-danger-bg: #452b32;
+  --ccr-clerk-danger-border: #c57183;
+  --ccr-clerk-danger-text: #ffd8df;
+  --ccr-logo-accent: #d2a54a;
+  --ccr-logo-accent-strong: #b98b2f;
   --background: var(--ccr-bg);
   --foreground: var(--ccr-text);
 }
@@ -206,6 +266,14 @@ input.booking-edit-date-input::-webkit-calendar-picker-indicator {
 
 .logo-pulse-once {
   animation: logo-pulse-once 900ms ease-in-out 1;
+}
+
+.ccr-wordmark-curated {
+  font-family: "Brush Script MT", "Segoe Script", "Snell Roundhand", cursive;
+  font-style: italic;
+  font-weight: 700;
+  font-size: 150%;
+  letter-spacing: 0.01em;
 }
 
 @keyframes ccrIconGlowPulse {

@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 
 import { Container } from "@/components/site/Container";
 import { siteContent } from "@/data/content";
+import { isStandaloneAuthRoute } from "@/lib/security/clerk";
 
 const footerLinks = [
   { href: "/fleet", label: "Fleet" },
@@ -16,14 +17,19 @@ const footerLinks = [
 
 export function Footer() {
   const pathname = usePathname();
-  if (pathname?.startsWith("/admin")) return null;
+  if (pathname?.startsWith("/admin") || (pathname ? isStandaloneAuthRoute(pathname) : false)) {
+    return null;
+  }
 
   return (
     <footer className="site-footer mt-16 border-t border-[var(--ccr-border)] bg-[var(--ccr-primary)] text-[var(--ccr-muted)]">
       <Container className="py-10">
         <div className="grid gap-8 md:grid-cols-3">
           <div>
-            <p className="text-lg font-bold text-white">{siteContent.brand}</p>
+            <p className="text-lg font-bold text-white">
+              <span className="ccr-wordmark-curated text-[1.45rem]">Curated</span>{" "}
+              <span>Car Rentals</span>
+            </p>
             <p className="mt-2 text-sm">{siteContent.location}</p>
           </div>
 
