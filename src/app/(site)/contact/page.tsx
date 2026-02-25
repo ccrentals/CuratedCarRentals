@@ -3,6 +3,7 @@
 import { type FormEvent, useRef, useState } from "react";
 
 import { SectionHeading } from "@/components/sections/SectionHeading";
+import { TurnstileWidget } from "@/components/security/TurnstileWidget";
 import { Container } from "@/components/site/Container";
 import { Button } from "@/components/ui/Button";
 import { siteContent } from "@/data/content";
@@ -13,6 +14,8 @@ export default function ContactPage() {
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState("");
   const [company, setCompany] = useState("");
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [turnstileResetKey, setTurnstileResetKey] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -20,6 +23,10 @@ export default function ContactPage() {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (isSubmitting) return;
+    if (!turnstileToken) {
+      setError("Please complete the security check before sending your message.");
+      return;
+    }
 
     setIsSubmitting(true);
     setError(null);
@@ -43,6 +50,7 @@ export default function ContactPage() {
           company,
           startedAt: startedAtRef.current,
           source: "contact_page",
+          turnstileToken,
         }),
       });
 
@@ -56,6 +64,8 @@ export default function ContactPage() {
         } else {
           setError(payload?.error || "Unable to send your message right now. Please try again.");
         }
+        setTurnstileToken(null);
+        setTurnstileResetKey((value) => value + 1);
         return;
       }
 
@@ -64,6 +74,8 @@ export default function ContactPage() {
       setEmail("");
       setMessage("");
       setCompany("");
+      setTurnstileToken(null);
+      setTurnstileResetKey((value) => value + 1);
       startedAtRef.current = Date.now();
       try {
         window.localStorage.setItem("ccr:contact-message-created-at", String(Date.now()));
@@ -144,6 +156,11 @@ export default function ContactPage() {
                   className="mt-1 min-h-28 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-[var(--ccr-text)] outline-none ring-[var(--ccr-accent)] focus:ring-2"
                 />
               </label>
+              <TurnstileWidget
+                action="public_contact"
+                onTokenChange={setTurnstileToken}
+                resetKey={turnstileResetKey}
+              />
               {success ? (
                 <p className="rounded-lg border border-emerald-300/50 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">
                   {success}

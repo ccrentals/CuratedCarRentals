@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
 
+import { TurnstileWidget } from "@/components/security/TurnstileWidget";
 import { calcDaysInclusive } from "@/lib/payments/dateMath";
 import { formatJmd } from "@/lib/money";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
@@ -302,6 +303,8 @@ export function PublicBookingWizard() {
     "DEPOSIT",
   );
   const [customPaymentAmount, setCustomPaymentAmount] = useState("");
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [turnstileResetKey, setTurnstileResetKey] = useState(0);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -1277,6 +1280,10 @@ export function PublicBookingWizard() {
   async function submitBooking() {
     if (submitting) return;
     if (!verifyStep(6)) return;
+    if (!turnstileToken) {
+      setErrorMessage("Please complete the security check before confirming your reservation.");
+      return;
+    }
 
     setSubmitting(true);
     setErrorMessage(null);
@@ -1287,16 +1294,17 @@ export function PublicBookingWizard() {
       const fallbackEmail = `no-email+${Date.now()}@curated.local`;
       const fallbackPhone = "0000000";
       const normalizedCustomAmount =
-        paymentOption === "CUSTOM" ? Math.max(1, Math.round(customPaymentNumber)) : null;
+              paymentOption === "CUSTOM" ? Math.max(1, Math.round(customPaymentNumber)) : null;
 
       const bookingResponse = await fetch("/api/public/bookings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          vehicleId: selectedVehicleId,
-          customerId,
-          fullName,
-          email: normalizeText(emailAddress) || fallbackEmail,
+              vehicleId: selectedVehicleId,
+              turnstileToken,
+              customerId,
+              fullName,
+              email: normalizeText(emailAddress) || fallbackEmail,
           phone: normalizeText(phoneNumber) || fallbackPhone,
           startDate: pickupDate,
           endDate: dropoffDate,
@@ -1341,6 +1349,8 @@ export function PublicBookingWizard() {
 
       const bookingData = (await bookingResponse.json().catch(() => ({}))) as BookingCreateResponse;
       if (!bookingResponse.ok || !bookingData.bookingId) {
+        setTurnstileToken(null);
+        setTurnstileResetKey((value) => value + 1);
         throw new Error(bookingData.error ?? "Unable to create booking.");
       }
 
@@ -1385,6 +1395,8 @@ export function PublicBookingWizard() {
       clearWizardDraft();
       await startWiPayFlow(bookingId, "CUSTOM", normalizedCustomAmount);
     } catch (error) {
+      setTurnstileToken(null);
+      setTurnstileResetKey((value) => value + 1);
       setErrorMessage(error instanceof Error ? error.message : "Unable to submit booking.");
     } finally {
       setSubmitting(false);
@@ -2042,11 +2054,23 @@ export function PublicBookingWizard() {
                     </div>
                   ) : null}
 
+                  <div className="mt-4 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                      Security Check
+                    </p>
+                    <TurnstileWidget
+                      action="public_booking"
+                      onTokenChange={setTurnstileToken}
+                      resetKey={turnstileResetKey}
+                      className="mt-2"
+                    />
+                  </div>
+
                   <div className="mt-5">
                     <button
                       type="button"
                       onClick={submitBooking}
-                      disabled={submitting || driversLicenseUploading}
+                      disabled={submitting || driversLicenseUploading || !turnstileToken}
                       className="rounded-xl bg-[var(--ccr-primary)] px-5 py-3 text-sm font-semibold text-[var(--ccr-on-primary)] disabled:opacity-60"
                     >
                       {submitting ? "Submitting..." : paymentOption === "NONE" ? "Confirm Reservation" : "Continue to Payment"}

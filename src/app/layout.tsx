@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { Geist, Geist_Mono } from "next/font/google";
 
 import { BreakpointOverlay } from "@/components/dev/BreakpointOverlay";
+import { OptionalClerkProvider } from "@/components/security/OptionalClerkProvider";
 import { CsrfBootstrap } from "@/components/site/CsrfBootstrap";
 import { Footer } from "@/components/site/Footer";
 import { Header } from "@/components/site/Header";
@@ -109,16 +110,18 @@ html[data-theme="forest"], html[data-theme="forest"] body {
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-[var(--ccr-bg)] text-[var(--ccr-text)]`}
       >
-        <CsrfBootstrap />
-        <div className="flex min-h-screen flex-col">
-          <div data-site-header>
-            <Header />
+        <OptionalClerkProvider>
+          <CsrfBootstrap />
+          <div className="flex min-h-screen flex-col">
+            <div data-site-header>
+              <Header />
+            </div>
+            <main className="flex-1">{children}</main>
+            <div data-site-footer>
+              <Footer />
+            </div>
           </div>
-          <main className="flex-1">{children}</main>
-          <div data-site-footer>
-            <Footer />
-          </div>
-        </div>
+        </OptionalClerkProvider>
         {showBreakpointOverlay ? <BreakpointOverlay /> : null}
       </body>
     </html>

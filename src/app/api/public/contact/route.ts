@@ -10,6 +10,7 @@ import {
   type ConsumeRateLimitResult,
   type RateLimitScope,
 } from "@/lib/rateLimitStore";
+import { extractTurnstileToken, verifyTurnstileToken } from "@/lib/security/turnstile";
 import { isEmail } from "@/lib/validators";
 
 const MAX_SUBMISSIONS_PER_HOUR_PER_IP = 5;
@@ -49,6 +50,14 @@ type ContactRouteDeps = {
     message: string;
     source: string;
   }) => Promise<void>;
+  verifyTurnstile: (input: {
+    token: string | null | undefined;
+    remoteIp?: string | null;
+    expectedAction: "public_contact";
+  }) => Promise<
+    | { ok: true; bypassed: boolean }
+    | { ok: false; status: number; userMessage: string; errorCodes: string[] }
+  >;
 };
 
 function getClientIpFromRequest(request: Request) {
@@ -157,6 +166,7 @@ const DEFAULT_DEPS: ContactRouteDeps = {
       });
     }
   },
+  verifyTurnstile: (input) => verifyTurnstileToken(input),
 };
 
 function validationError(field: string, error: string) {
@@ -177,6 +187,7 @@ export async function handleContactPost(request: Request, deps: ContactRouteDeps
   const emailLower = email.toLowerCase();
   const message = normalizeText(body?.message);
   const source = normalizeText(body?.source) || "contact_page";
+  const turnstileToken = extractTurnstileToken(body, request);
   const honeypot = normalizeText(body?.[HONEYPOT_FIELD_NAME]);
   const startedAtMs = parseStartedAtMs(body?.startedAt);
   const ip = deps.getClientIp(request);
@@ -188,6 +199,26 @@ export async function handleContactPost(request: Request, deps: ContactRouteDeps
       details: { ip, source },
     });
     return NextResponse.json({ ok: true });
+  }
+
+  const turnstileResult = await deps.verifyTurnstile({
+    token: turnstileToken,
+    remoteIp: ip,
+    expectedAction: "public_contact",
+  });
+  if (!turnstileResult.ok) {
+    await deps.writeAudit({
+      action: "CONTACT_MESSAGE_BLOCKED_TURNSTILE",
+      details: {
+        ip,
+        source,
+        errorCodes: turnstileResult.errorCodes,
+      },
+    });
+    return NextResponse.json(
+      { ok: false, error: turnstileResult.userMessage },
+      { status: turnstileResult.status },
+    );
   }
 
   if (name.length < 2 || name.length > 80) {

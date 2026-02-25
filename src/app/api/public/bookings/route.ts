@@ -11,6 +11,11 @@ import { isPublicVehicleUnavailableForWindow } from "@/lib/publicVehicles";
 import { createBookingAccessToken, hashBookingAccessToken } from "@/lib/bookings/privateAccess";
 import { normalizePromoInputCode, upsertPromoRedemption, validatePromoForBooking } from "@/lib/promos";
 import { computeBookingPricing, parsePaymentOptionInput } from "@/lib/payments/pricing";
+import {
+  extractTurnstileToken,
+  getClientIpFromRequest,
+  verifyTurnstileToken,
+} from "@/lib/security/turnstile";
 import { extractUploadcareFileId } from "@/lib/uploads/uploadcare";
 
 const UUID_REGEX =
@@ -51,6 +56,17 @@ function parseDataUrlMimeType(value: string) {
 
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
+  const clientIp = getClientIpFromRequest(request);
+  const turnstileToken = extractTurnstileToken(body, request);
+
+  const turnstileResult = await verifyTurnstileToken({
+    token: turnstileToken,
+    remoteIp: clientIp,
+    expectedAction: "public_booking",
+  });
+  if (!turnstileResult.ok) {
+    return NextResponse.json({ error: turnstileResult.userMessage }, { status: turnstileResult.status });
+  }
 
   const vehicleId = normalizeText(body?.vehicleId);
   const fullName = normalizeText(body?.fullName);

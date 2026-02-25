@@ -1,0 +1,101 @@
+.signInRoot :global(.cl-footerAction) {
+  display: none !important;
+}
+
+.signInRoot :global(.cl-formFieldAction__identifier) {
+  display: none !important;
+}
+
+.signInRoot :global(.cl-socialButtonsBlockButton),
+.signInRoot :global(.cl-socialButtonsIconButton) {
+  background-color: #ffffff !important;
+  border-color: color-mix(in srgb, var(--ccr-clerk-border) 85%, #ffffff 15%) !important;
+  color: #111827 !important;
+}
+
+.signInRoot :global(.cl-socialButtonsRoot) {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 0.5rem !important;
+}
+
+.signInRoot :global(.cl-socialButtons) {
+  display: contents !important;
+}
+
+.signInRoot :global(.cl-socialButtonsBlockButton),
+.signInRoot :global(.cl-socialButtonsIconButton) {
+  grid-column: auto !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  justify-content: center !important;
+}
+
+.signInRoot :global(.cl-socialButtonsBlockButtonText),
+.signInRoot :global(.cl-lastAuthenticationStrategyBadge) {
+  display: none !important;
+}
+
+.signInRoot :global(.cl-socialButtonsProviderIcon) {
+  margin-right: 0 !important;
+}
+
+.authActions {
+  --auth-cta-bg: var(--ccr-primary);
+  --auth-cta-border: color-mix(in srgb, var(--ccr-primary) 74%, #ffffff 26%);
+  --auth-cta-hover: color-mix(in srgb, var(--ccr-primary) 92%, #000000 8%);
+  --auth-cta-shadow: color-mix(in srgb, var(--ccr-primary) 52%, transparent);
+  --auth-cta-hover-shadow: color-mix(in srgb, var(--auth-cta-hover) 56%, transparent);
+}
+
+.authActionButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.75rem;
+  border: 1px solid var(--auth-cta-border);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--auth-cta-bg) 90%, #ffffff 10%) 0%,
+    var(--auth-cta-bg) 100%
+  );
+  color: #ffffff;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+  line-height: 1.25rem;
+  box-shadow:
+    0 1px 0 color-mix(in srgb, #ffffff 24%, transparent) inset,
+    0 8px 18px var(--auth-cta-shadow);
+  transform: translateY(0);
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
+}
+
+.authActionButton:hover {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--auth-cta-hover) 90%, #ffffff 10%) 0%,
+    var(--auth-cta-hover) 100%
+  );
+  border-color: color-mix(in srgb, var(--auth-cta-hover) 74%, #ffffff 26%);
+  box-shadow:
+    0 1px 0 color-mix(in srgb, #ffffff 28%, transparent) inset,
+    0 12px 24px var(--auth-cta-hover-shadow);
+  transform: translateY(-1px);
+}
+
+.authActionButton:active {
+  transform: translateY(0);
+}
+
+.authActionButton:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--ccr-bg),
+    0 0 0 4px var(--ccr-accent),
+    0 12px 22px color-mix(in srgb, var(--auth-cta-bg) 45%, transparent);
+}

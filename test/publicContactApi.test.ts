@@ -3,11 +3,13 @@ import test from "node:test";
 
 import { handleContactPost } from "@/app/api/public/contact/route";
 import type { RateLimitScope } from "@/lib/rateLimitStore";
+import type { TurnstileVerificationResult } from "@/lib/security/turnstile";
 
 function makeDeps(options?: {
   ipRateCount?: number;
   emailRateCount?: number;
   insertedId?: string;
+  turnstileResult?: TurnstileVerificationResult;
 }) {
   let insertCalled = 0;
   let auditCalled = 0;
@@ -52,6 +54,7 @@ function makeDeps(options?: {
       notifyNewMessage: async () => {
         notifyCalled += 1;
       },
+      verifyTurnstile: async () => options?.turnstileResult ?? { ok: true, bypassed: false },
     },
     getInsertCalled: () => insertCalled,
     getAuditCalled: () => auditCalled,
@@ -148,6 +151,37 @@ test("public contact API: per-IP rate limit returns 429", async () => {
   const body = (await response.json()) as { ok: boolean; error?: string };
   assert.equal(body.ok, false);
   assert.equal(body.error, "RATE_LIMIT");
+  assert.equal(context.getInsertCalled(), 0);
+  assert.equal(context.getAuditCalled(), 1);
+});
+
+test("public contact API: blocked when turnstile verification fails", async () => {
+  const context = makeDeps({
+    turnstileResult: {
+      ok: false,
+      status: 403,
+      userMessage: "Security check failed. Please retry and submit again.",
+      errorCodes: ["turnstile_rejected"],
+    },
+  });
+  const request = new Request("http://localhost/api/public/contact", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: "Damian Thompson",
+      email: "damian@example.com",
+      message: "Hello there. I would like rental details.",
+      startedAt: 1_700_000_000_000 - 5_000,
+      turnstileToken: "invalid-token",
+    }),
+  });
+
+  const response = await handleContactPost(request, context.deps);
+  assert.equal(response.status, 403);
+
+  const body = (await response.json()) as { ok: boolean; error?: string };
+  assert.equal(body.ok, false);
+  assert.equal(body.error, "Security check failed. Please retry and submit again.");
   assert.equal(context.getInsertCalled(), 0);
   assert.equal(context.getAuditCalled(), 1);
 });

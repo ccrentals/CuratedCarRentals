@@ -48,6 +48,17 @@ Important:
 - `ADMIN_SESSION_SECRET` is required (sessions).
 - `CSRF_SECRET` is required in production (CSRF protection). In development, a fallback secret is used and shown on `/admin/health`.
 - `SITE_URL` must be a valid `http(s)` URL.
+- Clerk auth requires `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` + `CLERK_SECRET_KEY`.
+- Public form bot protection requires `NEXT_PUBLIC_TURNSTILE_SITE_KEY` + `TURNSTILE_SECRET_KEY`.
+- `CSP_REPORT_ONLY=true` switches CSP to report-only mode (default behavior is enforce in production).
+
+### Netlify environment variable setup
+
+Set all values from `.env.example` in Netlify:
+1. Netlify dashboard → Site configuration → Environment variables.
+2. Add production values for Clerk, Turnstile, WiPay, Resend, PDFMonkey, and database keys.
+3. Deploy after saving env vars so `src/proxy.ts` and security headers run with the new values.
+4. Keep secrets server-side only (`CLERK_SECRET_KEY`, `TURNSTILE_SECRET_KEY`, payment keys, DB URLs).
 
 ## Database (Neon)
 
@@ -172,3 +183,8 @@ For a “goLiveReady: true” signal you must have:
 - PDFMonkey configured + reachable.
 - Uploadcare public key configured + reachable.
 - DB OK.
+
+## Security docs
+
+- Security stack overview: `docs/security/SECURITY_STACK.md`
+- Cloudflare setup playbook: `docs/security/CLOUDFLARE_WAF_SETUP.md`
