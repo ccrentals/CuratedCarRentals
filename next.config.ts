@@ -46,7 +46,7 @@ function buildCsp() {
     `script-src ${scriptSrc.join(" ")}`,
     `style-src 'self' 'unsafe-inline'`,
     `font-src 'self' data:`,
-    `img-src 'self' data: blob: ${UPLOADCARE_DOMAINS.join(" ")}`,
+    `img-src 'self' data: blob: ${[...CLERK_DOMAINS, ...UPLOADCARE_DOMAINS].join(" ")}`,
     `connect-src 'self' ${[...CLERK_DOMAINS, ...TURNSTILE_DOMAINS, ...UPLOADCARE_DOMAINS].join(
       " ",
     )}`,
