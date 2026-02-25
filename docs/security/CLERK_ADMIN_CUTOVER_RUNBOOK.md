@@ -10,9 +10,17 @@ It keeps break-glass fallback available to avoid admin lockout.
 - Admin web routes: `/admin/**`
 - Admin APIs: `/api/admin/**`
 - Public route exclusions kept intentionally:
+  - `/admin/auth`
   - `/admin/login`
   - `/admin/set-password`
   - `/api/admin/login`
+
+## Manual Failover Switch
+
+- `Admin -> Settings -> Primary Admin Login Method` (DEVELOPER-only)
+  - `Clerk (recommended)` => `/admin/auth` redirects to `/sign-in`
+  - `Legacy (fallback)` => `/admin/auth` redirects to `/admin/login`
+- Both direct routes remain valid regardless of switch value.
 
 ## Pre-Cutover Prerequisites
 
@@ -88,8 +96,9 @@ order by role, email;
 
 1. Set `CLERK_PROTECT_ADMIN_ROUTES=0` in Netlify Production env.
 2. Redeploy immediately.
-3. Verify legacy `/admin/login` and admin dashboard access.
-4. Review rollout logs and document failure cause before reattempt.
+3. In Admin Settings, set `Primary Admin Login Method` to `Legacy (fallback)` if needed.
+4. Verify legacy `/admin/login` and admin dashboard access.
+5. Review rollout logs and document failure cause before reattempt.
 
 ## Break-Glass Access Strategy
 

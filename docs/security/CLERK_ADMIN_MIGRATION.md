@@ -17,6 +17,26 @@
   - set `CLERK_PROTECT_ADMIN_ROUTES=1` only after validation
 - Admin APIs continue requiring server-side authorization checks.
 
+## Primary Admin Login Method Switch (Developer-only)
+
+- A server-side setting now controls the default admin sign-in entry path:
+  - settings field: `authLoginMethod`
+  - allowed values: `clerk` | `legacy`
+  - default: `clerk`
+- Source of truth remains DB-backed admin settings (`admin_documents.key='settings'`).
+- DEVELOPER-only control lives in `Admin -> Settings`:
+  - label: `Primary Admin Login Method`
+  - options:
+    - `Clerk (recommended)` -> defaults admin sign-in entry to `/sign-in`
+    - `Legacy (fallback)` -> defaults admin sign-in entry to `/admin/login`
+- Shared entry route:
+  - `/admin/auth` resolves to the active primary method.
+  - Header/admin sign-in entry points use `/admin/auth`.
+- Safety guarantees:
+  - direct `/sign-in` remains available
+  - direct `/admin/login` remains available
+  - non-DEVELOPER users cannot change `authLoginMethod` (API returns `403` when changed)
+
 ## Compatibility Bridge Behavior
 
 When `CLERK_PROTECT_ADMIN_ROUTES=1`:

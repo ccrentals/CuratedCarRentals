@@ -34,6 +34,7 @@ test("auth route helpers: account and admin matchers", () => {
   assert.equal(isAdminApiRoute("/api/public/bookings"), false);
 
   assert.equal(isAdminPublicRoute("/admin/login"), true);
+  assert.equal(isAdminPublicRoute("/admin/auth"), true);
   assert.equal(isAdminPublicRoute("/admin/set-password"), true);
   assert.equal(isAdminPublicRoute("/admin"), false);
   assert.equal(isAdminPublicRoute("/admin/bookings"), false);
@@ -41,6 +42,7 @@ test("auth route helpers: account and admin matchers", () => {
   assert.equal(isAdminPublicApiRoute("/api/admin/bookings"), false);
 
   assert.equal(isStagedAdminClerkProtectedRoute("/admin"), true);
+  assert.equal(isStagedAdminClerkProtectedRoute("/admin/auth"), false);
   assert.equal(isStagedAdminClerkProtectedRoute("/admin/login"), false);
   assert.equal(isStagedAdminClerkProtectedRoute("/api/admin/bookings"), true);
   assert.equal(isStagedAdminClerkProtectedRoute("/api/admin/login"), false);

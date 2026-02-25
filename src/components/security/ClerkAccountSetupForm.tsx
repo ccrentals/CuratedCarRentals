@@ -106,8 +106,8 @@ export function ClerkAccountSetupForm() {
 
       <p className="mt-5 text-sm text-[var(--ccr-muted)]">
         Ready to continue?{" "}
-        <Link href="/sign-in" className="font-semibold text-[var(--ccr-accent-strong)] hover:underline">
-          Return to sign in
+        <Link href="/admin/auth" className="font-semibold text-[var(--ccr-accent-strong)] hover:underline">
+          Return to admin sign in
         </Link>
         .
       </p>

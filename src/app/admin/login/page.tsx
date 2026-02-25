@@ -70,9 +70,9 @@ export default function AdminLoginPage() {
           Preferred admin sign-in uses Clerk. This legacy form stays available as a migration fallback.
         </p>
         <p className="mt-1 text-xs text-[var(--ccr-muted)]">
-          Clerk admin login:{" "}
-          <Link href="/sign-in" className="font-semibold text-[var(--ccr-accent-strong)] hover:underline">
-            /sign-in
+          Primary admin login:{" "}
+          <Link href="/admin/auth" className="font-semibold text-[var(--ccr-accent-strong)] hover:underline">
+            /admin/auth
           </Link>
         </p>
 

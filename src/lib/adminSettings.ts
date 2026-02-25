@@ -11,7 +11,12 @@ export type VehicleChecklistTemplateSetting = {
   isActive: boolean;
 };
 
+export const ADMIN_LOGIN_METHODS = ["clerk", "legacy"] as const;
+export type AdminLoginMethod = (typeof ADMIN_LOGIN_METHODS)[number];
+export const DEFAULT_ADMIN_LOGIN_METHOD: AdminLoginMethod = "clerk";
+
 export type AdminSettings = {
+  authLoginMethod: AdminLoginMethod;
   blockoutSupersedesBookings: boolean;
   requireRestoreReason: boolean;
   sendPickupReminder: boolean;
@@ -35,6 +40,7 @@ export type AdminSettings = {
 };
 
 export const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
+  authLoginMethod: DEFAULT_ADMIN_LOGIN_METHOD,
   blockoutSupersedesBookings: false,
   requireRestoreReason: true,
   sendPickupReminder: true,
@@ -109,6 +115,16 @@ export const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
   depreciationDefaultUsefulLifeMonths: 60,
   depreciationDefaultResidualPercent: 20,
 };
+
+export function normalizeAdminLoginMethod(value: unknown): AdminLoginMethod {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase();
+  if (normalized === "legacy") {
+    return "legacy";
+  }
+  return "clerk";
+}
 
 function cloneDefaultAdminSettings(): AdminSettings {
   return {
@@ -348,6 +364,9 @@ export function normalizeAdminSettingsValue(raw: unknown): AdminSettings {
   );
 
   return {
+    authLoginMethod: normalizeAdminLoginMethod(
+      value.authLoginMethod ?? value.auth_login_method,
+    ),
     blockoutSupersedesBookings:
       typeof value.blockoutSupersedesBookings === "boolean"
         ? value.blockoutSupersedesBookings

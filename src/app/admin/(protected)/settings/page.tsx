@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { isAdminRole } from "@/lib/auth/roles";
+import { isAdminRole, isDeveloperRole } from "@/lib/auth/roles";
 
 import { AdminSettingsForm } from "@/components/admin/AdminSettingsForm";
 import { BookingFlowConfigPanel } from "@/components/admin/BookingFlowConfigPanel";
@@ -29,6 +29,7 @@ function parseStoredSettings(content: unknown): AdminSettings {
 export default async function AdminSettingsPage() {
   const session = await getSessionFromRequest();
   const isAdmin = isAdminRole(session?.role);
+  const isDeveloper = isDeveloperRole(session?.role);
 
   let settings = { ...DEFAULT_ADMIN_SETTINGS };
   let updatedAt: string | null = null;
@@ -95,6 +96,7 @@ export default async function AdminSettingsPage() {
             updatedAt={updatedAt}
             updatedByEmail={updatedByEmail}
             disabled={!isAdmin}
+            showDeveloperControls={isDeveloper}
           />
         )}
 

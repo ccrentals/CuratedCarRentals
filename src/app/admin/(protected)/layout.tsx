@@ -23,9 +23,9 @@ export default async function AdminLayout({
 
   if (!access.ok) {
     if (access.reason === "forbidden") {
-      redirect("/admin/login?error=forbidden");
+      redirect("/admin/auth?error=forbidden");
     }
-    redirect("/admin/login");
+    redirect("/admin/auth");
   }
   const { session, actor } = access;
 

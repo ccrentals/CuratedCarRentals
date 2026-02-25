@@ -6,6 +6,7 @@ import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
 type AdminSettings = {
+  authLoginMethod: "clerk" | "legacy";
   blockoutSupersedesBookings: boolean;
   requireRestoreReason: boolean;
   sendPickupReminder: boolean;
@@ -41,6 +42,7 @@ type AdminSettingsFormProps = {
   updatedAt: string | null;
   updatedByEmail: string | null;
   disabled?: boolean;
+  showDeveloperControls?: boolean;
 };
 
 type ToggleField = {
@@ -96,6 +98,7 @@ export function AdminSettingsForm({
   updatedAt,
   updatedByEmail,
   disabled,
+  showDeveloperControls = false,
 }: AdminSettingsFormProps) {
   const [settings, setSettings] = useState<AdminSettings>(initialSettings);
   const [saving, setSaving] = useState(false);
@@ -324,6 +327,37 @@ export function AdminSettingsForm({
       </div>
 
       <div className="mt-5 space-y-3">
+        {showDeveloperControls ? (
+          <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
+            <p className="text-sm font-semibold text-[var(--ccr-text)]">Primary Admin Login Method</p>
+            <p className="mt-1 text-xs text-[var(--ccr-muted)]">
+              Both routes remain available. This changes the default Admin sign-in path.
+            </p>
+            <div className="mt-3 max-w-sm">
+              <select
+                value={settings.authLoginMethod}
+                disabled={disabled || saving}
+                onChange={(event) =>
+                  setSettings((current) => ({
+                    ...current,
+                    authLoginMethod: event.target.value === "legacy" ? "legacy" : "clerk",
+                  }))
+                }
+                className="w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+              >
+                <option value="clerk">Clerk (recommended)</option>
+                <option value="legacy">Legacy (fallback)</option>
+              </select>
+            </div>
+            <p className="mt-2 text-xs text-[var(--ccr-muted)]">
+              Active mode:{" "}
+              <span className="font-semibold text-[var(--ccr-text)]">
+                {settings.authLoginMethod === "legacy" ? "Legacy" : "Clerk"}
+              </span>
+            </p>
+          </div>
+        ) : null}
+
         <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
           <p className="text-sm font-semibold text-[var(--ccr-text)]">Day View booking limit</p>
           <p className="mt-1 text-xs text-[var(--ccr-muted)]">

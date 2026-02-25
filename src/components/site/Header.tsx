@@ -185,7 +185,7 @@ export function Header() {
           <div className="flex items-center justify-between gap-3 border-t border-[var(--ccr-border)] bg-[var(--ccr-primary-soft)]/55 px-4 py-4">
             <ThemeToggle />
             <Link
-              href="/admin"
+              href="/admin/auth"
               aria-label="Admin sign in"
               className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-[var(--ccr-border)] bg-white/10 px-3 py-2 text-xs font-semibold text-[var(--ccr-on-primary-muted)] transition hover:bg-white/15 hover:text-[var(--ccr-on-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ccr-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--ccr-primary)]"
             >
@@ -236,7 +236,7 @@ export function Header() {
               <div className="hidden items-center gap-2 lg:flex">
                 <ThemeToggle />
                 <Link
-                  href="/admin"
+                  href="/admin/auth"
                   aria-label="Admin sign in"
                   className="inline-flex items-center gap-2 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-muted)] hover:bg-[var(--ccr-surface-soft)]"
                 >
