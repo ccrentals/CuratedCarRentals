@@ -14,7 +14,10 @@ test.describe("visual @visual", () => {
 
   for (const route of ROUTES) {
     test(`responsive snapshot: ${route.name}`, async ({ page }) => {
-      await page.goto(route.path, { waitUntil: "networkidle" });
+      await page.goto(route.path, { waitUntil: "domcontentloaded" });
+      await page.waitForLoadState("networkidle", { timeout: 5_000 }).catch(() => {
+        // Some pages keep background requests open; best-effort settle only.
+      });
       await page.waitForTimeout(250);
 
       await expect(page).toHaveScreenshot(`${route.name}.png`, {

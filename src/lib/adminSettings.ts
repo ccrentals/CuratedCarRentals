@@ -34,6 +34,7 @@ export type AdminSettings = {
   maintenanceDueSoonDays: number;
   maintenanceDueSoonKm: number;
   maintenanceCategories: string[];
+  maintenancePriorities: string[];
   depreciationDefaultMethod: "STRAIGHT_LINE";
   depreciationDefaultUsefulLifeMonths: number;
   depreciationDefaultResidualPercent: number;
@@ -111,6 +112,7 @@ export const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
     "BATTERY",
     "OTHER",
   ],
+  maintenancePriorities: ["LOW", "NORMAL", "HIGH", "URGENT"],
   depreciationDefaultMethod: "STRAIGHT_LINE",
   depreciationDefaultUsefulLifeMonths: 60,
   depreciationDefaultResidualPercent: 20,
@@ -134,6 +136,7 @@ function cloneDefaultAdminSettings(): AdminSettings {
     vehicleChecklistTemplates: cloneDefaultChecklistTemplates(),
     vehicleChecklistTemplateItems: [...DEFAULT_ADMIN_SETTINGS.vehicleChecklistTemplateItems],
     maintenanceCategories: [...DEFAULT_ADMIN_SETTINGS.maintenanceCategories],
+    maintenancePriorities: [...DEFAULT_ADMIN_SETTINGS.maintenancePriorities],
   };
 }
 
@@ -185,6 +188,22 @@ function normalizeMaintenanceDueSoonKm(value: unknown) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return DEFAULT_ADMIN_SETTINGS.maintenanceDueSoonKm;
   return Math.min(25000, Math.max(0, Math.floor(parsed)));
+}
+
+function normalizeMaintenancePriorityList(value: unknown, fallback: string[]) {
+  const list = normalizeStringList(value, fallback)
+    .map((entry) => entry.trim().toUpperCase())
+    .filter(Boolean)
+    .slice(0, 20);
+
+  const deduped: string[] = [];
+  const seen = new Set<string>();
+  for (const entry of list) {
+    if (seen.has(entry)) continue;
+    seen.add(entry);
+    deduped.push(entry);
+  }
+  return deduped.length > 0 ? deduped : [...fallback];
 }
 
 function normalizeDepreciationDefaultMethod(value: unknown) {
@@ -415,6 +434,10 @@ export function normalizeAdminSettingsValue(raw: unknown): AdminSettings {
     maintenanceCategories: normalizeStringList(
       value.maintenanceCategories,
       DEFAULT_ADMIN_SETTINGS.maintenanceCategories,
+    ),
+    maintenancePriorities: normalizeMaintenancePriorityList(
+      value.maintenancePriorities,
+      DEFAULT_ADMIN_SETTINGS.maintenancePriorities,
     ),
     depreciationDefaultMethod: normalizeDepreciationDefaultMethod(
       value.depreciationDefaultMethod,

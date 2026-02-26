@@ -138,7 +138,7 @@ function toFinanceInput(row: DepreciationReportSourceRow): VehicleFinanceInput {
 
 export async function listDepreciationFilterOptions(): Promise<DepreciationFilterOptions> {
   const result = await dbQuery<{ vehicle_class: string | null; vehicle_type: string | null }>(
-    "select distinct vp.vehicle_class, vp.vehicle_type from vehicle_finance vf left join vehicle_profiles vp on vp.vehicle_id = vf.vehicle_id order by vp.vehicle_class asc nulls last, vp.vehicle_type asc nulls last",
+    "select distinct vp.vehicle_class, vp.vehicle_type from vehicle_depreciation_profiles dp left join vehicle_profiles vp on vp.vehicle_id = dp.vehicle_id where dp.is_active = true order by vp.vehicle_class asc nulls last, vp.vehicle_type asc nulls last",
   );
 
   const vehicleClasses = new Set<string>();
@@ -172,7 +172,7 @@ export async function listDepreciationReport(options: DepreciationReportOptions 
   const sortDir = options.sortDir === "desc" ? "desc" : "asc";
 
   const values: string[] = [];
-  const whereParts: string[] = [];
+  const whereParts: string[] = ["dp.is_active = true"];
 
   if (vehicleClass) {
     values.push(vehicleClass);
@@ -193,14 +193,14 @@ export async function listDepreciationReport(options: DepreciationReportOptions 
       v.year,
       vp.vehicle_type,
       vp.vehicle_class,
-      vf.purchase_date,
-      vf.purchase_cost_cents,
-      vf.residual_value_cents,
-      vf.useful_life_months,
-      vf.depreciation_method,
-      vf.notes
-    from vehicle_finance vf
-    join vehicles v on v.id = vf.vehicle_id
+      dp.purchase_date,
+      dp.purchase_price_cents as purchase_cost_cents,
+      dp.expected_rest_value_cents as residual_value_cents,
+      dp.depreciation_months as useful_life_months,
+      dp.method as depreciation_method,
+      dp.notes
+    from vehicle_depreciation_profiles dp
+    join vehicles v on v.id = dp.vehicle_id
     left join vehicle_profiles vp on vp.vehicle_id = v.id
     ${whereSql}`,
     values,

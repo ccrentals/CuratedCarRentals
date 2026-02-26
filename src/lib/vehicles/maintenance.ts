@@ -246,7 +246,7 @@ export function getMaintenanceDueState(
   return "UPCOMING";
 }
 
-type MaintenanceSummaryRow = {
+export type MaintenanceSummaryRow = {
   status: string;
   service_date: string | null;
   scheduled_date: string | null;
@@ -259,39 +259,22 @@ type MaintenanceSummaryRow = {
   current_odometer_km: number | null;
 };
 
-export async function summarizeVehicleMaintenance(
-  vehicleId: string,
-  now = new Date(),
-): Promise<VehicleMaintenanceSummary> {
-  const { settings } = await loadAdminSettings();
-
-  const result = await dbQuery<MaintenanceSummaryRow>(
-    `select
-      r.status,
-      r.service_date,
-      r.scheduled_date,
-      r.next_due_date,
-      r.next_due_odometer_km,
-      r.labor_cost_cents,
-      r.parts_cost_cents,
-      r.tax_cost_cents,
-      r.total_cost_cents,
-      p.odometer_value as current_odometer_km
-    from vehicle_maintenance_records r
-    left join vehicle_profiles p on p.vehicle_id = r.vehicle_id
-    where r.vehicle_id = $1::uuid
-      and r.archived_at is null
-    order by coalesce(r.next_due_date, r.scheduled_date, r.service_date) asc nulls last, r.created_at asc`,
-    [vehicleId],
-  );
-
+export function summarizeMaintenanceRows(
+  rows: MaintenanceSummaryRow[],
+  options: { now?: Date; dueSoonDays?: number; dueSoonKm?: number } = {},
+): VehicleMaintenanceSummary {
+  const now = options.now ?? new Date();
+  const dueConfig = normalizeMaintenanceDueConfig({
+    dueSoonDays: options.dueSoonDays,
+    dueSoonKm: options.dueSoonKm,
+  });
   let totalMaintenanceCostCents = 0;
   let overdueCount = 0;
   let openScheduledCount = 0;
   let lastServiceDate: string | null = null;
   let nextDueDate: string | null = null;
 
-  for (const row of result.rows) {
+  for (const row of rows) {
     const status = normalizeStatus(row.status);
     const canonicalTotal = computeMaintenanceRecordTotal(row);
     const persistedTotal = asOptionalNonNegativeInt(row.total_cost_cents);
@@ -306,8 +289,8 @@ export async function summarizeVehicleMaintenance(
     }
 
     const dueState = getMaintenanceDueState(row, now, row.current_odometer_km, {
-      dueSoonDays: settings.maintenanceDueSoonDays,
-      dueSoonKm: settings.maintenanceDueSoonKm,
+      dueSoonDays: dueConfig.dueSoonDays,
+      dueSoonKm: dueConfig.dueSoonKm,
     });
     if (dueState === "OVERDUE") {
       overdueCount += 1;
@@ -335,6 +318,39 @@ export async function summarizeVehicleMaintenance(
     overdueCount,
     openScheduledCount,
   };
+}
+
+export async function summarizeVehicleMaintenance(
+  vehicleId: string,
+  now = new Date(),
+): Promise<VehicleMaintenanceSummary> {
+  const { settings } = await loadAdminSettings();
+
+  const result = await dbQuery<MaintenanceSummaryRow>(
+    `select
+      r.status,
+      r.service_date,
+      r.scheduled_date,
+      r.next_due_date,
+      r.next_due_odometer_km,
+      r.labor_cost_cents,
+      r.parts_cost_cents,
+      r.tax_cost_cents,
+      r.total_cost_cents,
+      p.odometer_value as current_odometer_km
+    from vehicle_maintenance_records r
+    left join vehicle_profiles p on p.vehicle_id = r.vehicle_id
+    where r.vehicle_id = $1::uuid
+      and r.archived_at is null
+    order by coalesce(r.next_due_date, r.scheduled_date, r.service_date) asc nulls last, r.created_at asc`,
+    [vehicleId],
+  );
+
+  return summarizeMaintenanceRows(result.rows, {
+    now,
+    dueSoonDays: settings.maintenanceDueSoonDays,
+    dueSoonKm: settings.maintenanceDueSoonKm,
+  });
 }
 
 type UpcomingMaintenanceRow = {

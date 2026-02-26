@@ -112,7 +112,10 @@ export function VehicleBlockouts({ vehicle }: VehicleBlockoutsProps) {
   }, [activeBlockout, vehicle.id]);
 
   return (
-    <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4 shadow-sm sm:p-6">
+    <section
+      data-testid="vehicle-blockouts-panel"
+      className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4 shadow-sm sm:p-6"
+    >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-bold text-[var(--ccr-text)]">Blockouts</h2>
@@ -158,7 +161,13 @@ export function VehicleBlockouts({ vehicle }: VehicleBlockoutsProps) {
         <>
           <div className="mt-4 divide-y divide-[var(--ccr-border)] md:hidden">
             {blockouts.map((blockout) => (
-              <article key={`mobile-${blockout.id}`} className="space-y-3 py-4">
+              <article
+                key={`mobile-${blockout.id}`}
+                data-testid="vehicle-blockout-row"
+                data-blockout-id={blockout.id}
+                data-blockout-reason={blockout.reason}
+                className="space-y-3 py-4"
+              >
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="font-semibold text-[var(--ccr-text)]">{blockout.reason}</p>
@@ -219,7 +228,13 @@ export function VehicleBlockouts({ vehicle }: VehicleBlockoutsProps) {
               </thead>
               <tbody>
                 {blockouts.map((blockout) => (
-                  <tr key={blockout.id} className="border-b border-[var(--ccr-border)] last:border-b-0">
+                  <tr
+                    key={blockout.id}
+                    data-testid="vehicle-blockout-row"
+                    data-blockout-id={blockout.id}
+                    data-blockout-reason={blockout.reason}
+                    className="border-b border-[var(--ccr-border)] last:border-b-0"
+                  >
                     <td className="px-3 py-2 text-[var(--ccr-text)]">
                       <TableDateTime value={blockout.start_at} />
                     </td>

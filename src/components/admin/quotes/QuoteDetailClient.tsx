@@ -267,7 +267,7 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
   const rackPrice = item.rackPriceCents ?? item.baseTotalCents;
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
+    <div data-testid="quote-detail" className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Quote</p>
@@ -353,6 +353,7 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
             type="button"
             onClick={() => void patchQuote({ status: "SENT" })}
             disabled={saving || item.status === "SENT"}
+            data-testid="quote-mark-sent"
             className="inline-flex min-h-9 items-center justify-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-50"
           >
             Mark Sent

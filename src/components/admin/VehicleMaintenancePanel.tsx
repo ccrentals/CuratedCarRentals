@@ -34,12 +34,35 @@ type MaintenanceRecord = {
   partsCostCents: number | null;
   taxCostCents: number | null;
   totalCostCents: number;
+  estimatedCostCents: number | null;
+  actualCostCents: number | null;
+  reminderLeadDays: number | null;
+  linkedExpenseId: string | null;
+  linkedRepairOrderId: string | null;
+  completedDate: string | null;
   currency: string;
   priority: string;
   createdAt: string;
   updatedAt: string;
   archivedAt: string | null;
+  linkedBlockout: {
+    id: string;
+    startAt: string | null;
+    endAt: string | null;
+    reason: string | null;
+    source: string | null;
+  } | null;
   dueState: DueState;
+};
+
+type MaintenanceStatusHistoryEntry = {
+  id: string;
+  status: RecordStatus;
+  previousStatus: RecordStatus | null;
+  changedByUserId: string | null;
+  changedBy: string;
+  note: string | null;
+  createdAt: string;
 };
 
 type VehicleDocument = {
@@ -61,6 +84,18 @@ type MaintenanceSummary = {
   nextDueDate: string | null;
   overdueCount: number;
   openScheduledCount: number;
+};
+
+type MaintenancePaging = {
+  limit: number;
+  offset: number;
+  total: number;
+};
+
+type MaintenanceOptions = {
+  categories: string[];
+  priorities: string[];
+  defaultReminderLeadDays: number;
 };
 
 type UploadcareFileInfo = {
@@ -93,7 +128,7 @@ type UploadcareApi = {
   ) => UploadcareDialog | null;
 };
 
-const CATEGORY_OPTIONS = [
+const DEFAULT_CATEGORY_OPTIONS = [
   "SERVICE",
   "REPAIR",
   "INSPECTION",
@@ -104,6 +139,7 @@ const CATEGORY_OPTIONS = [
   "BATTERY",
   "OTHER",
 ] as const;
+const DEFAULT_PRIORITY_OPTIONS = ["LOW", "NORMAL", "HIGH", "URGENT"] as const;
 
 const STATUS_OPTIONS: RecordStatus[] = ["SCHEDULED", "IN_PROGRESS", "COMPLETED", "CANCELLED"];
 const DUE_FILTERS = [
@@ -115,6 +151,8 @@ const DUE_FILTERS = [
 ] as const;
 
 type DueFilter = (typeof DUE_FILTERS)[number]["key"];
+type MaintenanceSort = "dueDate" | "createdAt" | "cost";
+type SortDirection = "asc" | "desc";
 
 function normalizeText(value: string) {
   return value.trim();
@@ -151,6 +189,14 @@ function dueLabel(state: DueState) {
   if (state === "UPCOMING") return "Upcoming";
   if (state === "COMPLETED") return "Completed";
   return "Cancelled";
+}
+
+function dueFilterToView(filter: DueFilter) {
+  if (filter === "OVERDUE") return "overdue";
+  if (filter === "DUE_SOON") return "dueSoon";
+  if (filter === "UPCOMING") return "upcoming";
+  if (filter === "COMPLETED") return "completed";
+  return "all";
 }
 
 function formatCurrency(cents: number | null) {
@@ -210,6 +256,8 @@ function defaultFormState() {
     vendorName: "",
     vendorContact: "",
     referenceNumber: "",
+    linkedExpenseId: "",
+    linkedRepairOrderId: "",
     serviceDate: "",
     scheduledDate: "",
     odometerKm: "",
@@ -218,6 +266,14 @@ function defaultFormState() {
     laborCostCents: "",
     partsCostCents: "",
     taxCostCents: "",
+    estimatedCostCents: "",
+    actualCostCents: "",
+    reminderLeadDays: "7",
+    createBlockout: false,
+    blockoutStartAt: "",
+    blockoutEndAt: "",
+    blockoutReason: "",
+    blockoutNotes: "",
     priority: "NORMAL",
   };
 }
@@ -227,12 +283,23 @@ export function VehicleMaintenancePanel({ vehicleId, initialRecordId }: VehicleM
 
   const [items, setItems] = useState<MaintenanceRecord[]>([]);
   const [summary, setSummary] = useState<MaintenanceSummary | null>(null);
+  const [options, setOptions] = useState<MaintenanceOptions>({
+    categories: [...DEFAULT_CATEGORY_OPTIONS],
+    priorities: [...DEFAULT_PRIORITY_OPTIONS],
+    defaultReminderLeadDays: 7,
+  });
   const [docs, setDocs] = useState<VehicleDocument[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [activeDueFilter, setActiveDueFilter] = useState<DueFilter>("ALL");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortBy, setSortBy] = useState<MaintenanceSort>("dueDate");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+  const [pageSize, setPageSize] = useState(15);
+  const [offset, setOffset] = useState(0);
+  const [total, setTotal] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(initialRecordId ?? null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [documentType, setDocumentType] = useState("SERVICE_INVOICE");
@@ -244,35 +311,55 @@ export function VehicleMaintenancePanel({ vehicleId, initialRecordId }: VehicleM
     [items, selectedId],
   );
 
-  const filteredItems = useMemo(() => {
-    if (activeDueFilter === "ALL") return items;
-    if (activeDueFilter === "COMPLETED") {
-      return items.filter((item) => item.status === "COMPLETED" || item.dueState === "COMPLETED");
-    }
-    return items.filter((item) => item.dueState === activeDueFilter);
-  }, [activeDueFilter, items]);
-
   const selectedDocs = useMemo(
     () => docs.filter((doc) => doc.maintenanceRecordId === selectedRecord?.id && doc.archivedAt === null),
     [docs, selectedRecord?.id],
   );
+  const [statusHistory, setStatusHistory] = useState<MaintenanceStatusHistoryEntry[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const hasPrevPage = offset > 0;
+  const hasNextPage = offset + items.length < total;
+  const pageStart = total > 0 ? offset + 1 : 0;
+  const pageEnd = total > 0 ? offset + items.length : 0;
+  const maintenanceExportHref = useMemo(() => {
+    const params = new URLSearchParams();
+    params.set("view", dueFilterToView(activeDueFilter));
+    params.set("sort", sortBy);
+    params.set("dir", sortDirection);
+    if (searchQuery.trim()) {
+      params.set("q", searchQuery.trim());
+    }
+    return `/api/admin/vehicles/${vehicleId}/maintenance/export?${params.toString()}`;
+  }, [activeDueFilter, searchQuery, sortBy, sortDirection, vehicleId]);
 
   const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
 
     try {
-      const dueQuery = activeDueFilter === "ALL" ? "" : `?dueState=${activeDueFilter}`;
+      const params = new URLSearchParams();
+      params.set("view", dueFilterToView(activeDueFilter));
+      params.set("sort", sortBy);
+      params.set("dir", sortDirection);
+      params.set("limit", String(pageSize));
+      params.set("offset", String(offset));
+      if (searchQuery.trim()) {
+        params.set("q", searchQuery.trim());
+      }
+
       const [maintenanceResponse, docsResponse] = await Promise.all([
-        fetch(`/api/admin/vehicles/${vehicleId}/maintenance${dueQuery}`, { cache: "no-store" }),
+        fetch(`/api/admin/vehicles/${vehicleId}/maintenance?${params.toString()}`, { cache: "no-store" }),
         fetch(`/api/admin/vehicles/${vehicleId}/documents?includeArchived=1`, { cache: "no-store" }),
       ]);
 
       const maintenancePayload = (await maintenanceResponse.json().catch(() => ({}))) as {
         ok?: boolean;
         error?: string;
+        rows?: MaintenanceRecord[];
         items?: MaintenanceRecord[];
+        paging?: MaintenancePaging;
         summary?: MaintenanceSummary;
+        options?: MaintenanceOptions;
       };
 
       const docsPayload = (await docsResponse.json().catch(() => ({}))) as {
@@ -288,9 +375,29 @@ export function VehicleMaintenancePanel({ vehicleId, initialRecordId }: VehicleM
         throw new Error(docsPayload.error ?? "Unable to load maintenance documents.");
       }
 
-      const maintenanceItems = Array.isArray(maintenancePayload.items) ? maintenancePayload.items : [];
+      const maintenanceItems = Array.isArray(maintenancePayload.rows)
+        ? maintenancePayload.rows
+        : Array.isArray(maintenancePayload.items)
+          ? maintenancePayload.items
+          : [];
+      const categories = Array.isArray(maintenancePayload.options?.categories)
+        ? maintenancePayload.options?.categories.filter((entry) => typeof entry === "string" && entry.trim())
+        : [];
+      const priorities = Array.isArray(maintenancePayload.options?.priorities)
+        ? maintenancePayload.options?.priorities.filter((entry) => typeof entry === "string" && entry.trim())
+        : [];
       setItems(maintenanceItems);
+      setTotal(Number(maintenancePayload.paging?.total ?? maintenanceItems.length));
       setSummary(maintenancePayload.summary ?? null);
+      setOptions({
+        categories: categories.length > 0 ? categories : [...DEFAULT_CATEGORY_OPTIONS],
+        priorities: priorities.length > 0 ? priorities : [...DEFAULT_PRIORITY_OPTIONS],
+        defaultReminderLeadDays:
+          typeof maintenancePayload.options?.defaultReminderLeadDays === "number" &&
+          Number.isFinite(maintenancePayload.options?.defaultReminderLeadDays)
+            ? Math.max(0, Math.round(maintenancePayload.options?.defaultReminderLeadDays))
+            : 7,
+      });
       setDocs(Array.isArray(docsPayload.items) ? docsPayload.items : []);
 
       if (maintenanceItems.length < 1) {
@@ -301,42 +408,137 @@ export function VehicleMaintenancePanel({ vehicleId, initialRecordId }: VehicleM
       if (selectedId) {
         const stillExists = maintenanceItems.some((item) => item.id === selectedId);
         if (stillExists) return;
+        setSelectedId(null);
+        return;
       }
 
       const targetFromQuery = initialRecordId
         ? maintenanceItems.find((item) => item.id === initialRecordId)?.id ?? null
         : null;
-      setSelectedId(targetFromQuery ?? maintenanceItems[0].id);
+      if (targetFromQuery) {
+        setSelectedId(targetFromQuery);
+      }
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Unable to load maintenance data.");
       setItems([]);
+      setTotal(0);
       setSummary(null);
+      setOptions({
+        categories: [...DEFAULT_CATEGORY_OPTIONS],
+        priorities: [...DEFAULT_PRIORITY_OPTIONS],
+        defaultReminderLeadDays: 7,
+      });
       setDocs([]);
     } finally {
       setLoading(false);
     }
-  }, [activeDueFilter, initialRecordId, selectedId, vehicleId]);
+  }, [
+    activeDueFilter,
+    initialRecordId,
+    offset,
+    pageSize,
+    searchQuery,
+    selectedId,
+    sortBy,
+    sortDirection,
+    vehicleId,
+  ]);
+
+  const loadStatusHistory = useCallback(
+    async (recordId: string) => {
+      setHistoryLoading(true);
+      try {
+        const response = await fetch(`/api/admin/vehicles/${vehicleId}/maintenance/${recordId}`, {
+          cache: "no-store",
+        });
+        const payload = (await response.json().catch(() => ({}))) as {
+          ok?: boolean;
+          error?: string;
+          statusHistory?: MaintenanceStatusHistoryEntry[];
+        };
+        if (!response.ok || !payload.ok) {
+          throw new Error(payload.error ?? "Unable to load status history.");
+        }
+        setStatusHistory(Array.isArray(payload.statusHistory) ? payload.statusHistory : []);
+      } catch (requestError) {
+        setStatusHistory([]);
+        setError(
+          requestError instanceof Error
+            ? requestError.message
+            : "Unable to load status history.",
+        );
+      } finally {
+        setHistoryLoading(false);
+      }
+    },
+    [vehicleId],
+  );
 
   useEffect(() => {
     void loadData();
   }, [loadData]);
 
+  useEffect(() => {
+    if (!selectedRecord?.id) {
+      setStatusHistory([]);
+      setHistoryLoading(false);
+      return;
+    }
+    void loadStatusHistory(selectedRecord.id);
+  }, [loadStatusHistory, selectedRecord?.id, selectedRecord?.updatedAt]);
+
+  useEffect(() => {
+    setForm((current) => {
+      if (current.reminderLeadDays) return current;
+      return {
+        ...current,
+        reminderLeadDays: String(options.defaultReminderLeadDays),
+      };
+    });
+  }, [options.defaultReminderLeadDays]);
+
+  useEffect(() => {
+    setForm((current) => {
+      const nextCategory = options.categories.includes(current.category)
+        ? current.category
+        : (options.categories[0] ?? "SERVICE");
+      const nextPriority = options.priorities.includes(current.priority)
+        ? current.priority
+        : (options.priorities[0] ?? "NORMAL");
+      if (nextCategory === current.category && nextPriority === current.priority) {
+        return current;
+      }
+      return {
+        ...current,
+        category: nextCategory,
+        priority: nextPriority,
+      };
+    });
+  }, [options.categories, options.priorities]);
+
   function resetForm() {
-    setForm(defaultFormState());
+    setForm(() => ({
+      ...defaultFormState(),
+      category: options.categories[0] ?? "SERVICE",
+      priority: options.priorities[0] ?? "NORMAL",
+      reminderLeadDays: String(options.defaultReminderLeadDays),
+    }));
     setEditingId(null);
   }
 
-  function startEdit(item: MaintenanceRecord) {
-    setEditingId(item.id);
-    setForm({
+function startEdit(item: MaintenanceRecord) {
+  setEditingId(item.id);
+  setForm({
       status: item.status,
       category: item.category,
       title: item.title,
       description: item.description ?? "",
       vendorName: item.vendorName ?? "",
       vendorContact: item.vendorContact ?? "",
-      referenceNumber: item.referenceNumber ?? "",
-      serviceDate: item.serviceDate ?? "",
+    referenceNumber: item.referenceNumber ?? "",
+    linkedExpenseId: item.linkedExpenseId ?? "",
+    linkedRepairOrderId: item.linkedRepairOrderId ?? "",
+    serviceDate: item.serviceDate ?? "",
       scheduledDate: item.scheduledDate ?? "",
       odometerKm: item.odometerKm !== null ? String(item.odometerKm) : "",
       nextDueDate: item.nextDueDate ?? "",
@@ -344,6 +546,17 @@ export function VehicleMaintenancePanel({ vehicleId, initialRecordId }: VehicleM
       laborCostCents: item.laborCostCents !== null ? String(item.laborCostCents) : "",
       partsCostCents: item.partsCostCents !== null ? String(item.partsCostCents) : "",
       taxCostCents: item.taxCostCents !== null ? String(item.taxCostCents) : "",
+      estimatedCostCents: item.estimatedCostCents !== null ? String(item.estimatedCostCents) : "",
+      actualCostCents: item.actualCostCents !== null ? String(item.actualCostCents) : "",
+      reminderLeadDays:
+        item.reminderLeadDays !== null
+          ? String(item.reminderLeadDays)
+          : String(options.defaultReminderLeadDays),
+      createBlockout: Boolean(item.linkedBlockout),
+      blockoutStartAt: item.linkedBlockout?.startAt ? item.linkedBlockout.startAt.slice(0, 16) : "",
+      blockoutEndAt: item.linkedBlockout?.endAt ? item.linkedBlockout.endAt.slice(0, 16) : "",
+      blockoutReason: item.linkedBlockout?.reason ?? "",
+      blockoutNotes: "",
       priority: item.priority || "NORMAL",
     });
   }
@@ -377,6 +590,8 @@ export function VehicleMaintenancePanel({ vehicleId, initialRecordId }: VehicleM
         vendorName: normalizeText(form.vendorName) || null,
         vendorContact: normalizeText(form.vendorContact) || null,
         referenceNumber: normalizeText(form.referenceNumber) || null,
+        linkedExpenseId: normalizeText(form.linkedExpenseId) || null,
+        linkedRepairOrderId: normalizeText(form.linkedRepairOrderId) || null,
         scheduledDate: form.scheduledDate || null,
         serviceDate: form.serviceDate || null,
         odometerKm: form.odometerKm ? Number(form.odometerKm) : null,
@@ -385,8 +600,16 @@ export function VehicleMaintenancePanel({ vehicleId, initialRecordId }: VehicleM
         laborCostCents: form.laborCostCents ? Number(form.laborCostCents) : null,
         partsCostCents: form.partsCostCents ? Number(form.partsCostCents) : null,
         taxCostCents: form.taxCostCents ? Number(form.taxCostCents) : null,
+        estimatedCostCents: form.estimatedCostCents ? Number(form.estimatedCostCents) : null,
+        actualCostCents: form.actualCostCents ? Number(form.actualCostCents) : null,
+        reminderLeadDays: form.reminderLeadDays ? Number(form.reminderLeadDays) : null,
         totalCostCents: total,
         priority: form.priority,
+        createBlockout: form.createBlockout,
+        blockoutStartAt: form.blockoutStartAt || null,
+        blockoutEndAt: form.blockoutEndAt || null,
+        blockoutReason: normalizeText(form.blockoutReason) || null,
+        blockoutNotes: normalizeText(form.blockoutNotes) || null,
         csrfToken,
       };
 
@@ -424,7 +647,11 @@ export function VehicleMaintenancePanel({ vehicleId, initialRecordId }: VehicleM
     }
   }
 
-  async function updateRecordStatus(recordId: string, status: RecordStatus) {
+  async function updateRecordStatus(
+    recordId: string,
+    status: RecordStatus,
+    options?: { completedDate?: string | null; createBlockout?: boolean },
+  ) {
     if (saving) return;
     setSaving(true);
     setError(null);
@@ -440,7 +667,12 @@ export function VehicleMaintenancePanel({ vehicleId, initialRecordId }: VehicleM
         },
         body: JSON.stringify({
           status,
-          serviceDate: status === "COMPLETED" ? new Date().toISOString().slice(0, 10) : undefined,
+          serviceDate:
+            status === "COMPLETED"
+              ? new Date().toISOString().slice(0, 10)
+              : undefined,
+          completedDate: options?.completedDate,
+          createBlockout: options?.createBlockout,
           csrfToken,
         }),
       });
@@ -449,7 +681,13 @@ export function VehicleMaintenancePanel({ vehicleId, initialRecordId }: VehicleM
         throw new Error(result.error ?? "Unable to update status.");
       }
 
-      setMessage(`Record marked ${formatStatus(status)}.`);
+      if (status === "COMPLETED") {
+        setMessage("Record marked Completed.");
+      } else if (status === "SCHEDULED" && options?.completedDate === null) {
+        setMessage("Record reopened.");
+      } else {
+        setMessage(`Record marked ${formatStatus(status)}.`);
+      }
       await loadData();
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Unable to update status.");
@@ -488,6 +726,38 @@ export function VehicleMaintenancePanel({ vehicleId, initialRecordId }: VehicleM
       }
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Unable to archive record.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function removeLinkedBlockout(recordId: string) {
+    if (saving) return;
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const csrfToken = await ensureCsrfToken();
+      const response = await fetch(`/api/admin/vehicles/${vehicleId}/maintenance/${recordId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "x-csrf-token": csrfToken ?? "",
+        },
+        body: JSON.stringify({
+          removeBlockout: true,
+          csrfToken,
+        }),
+      });
+      const result = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!response.ok || !result.ok) {
+        throw new Error(result.error ?? "Unable to remove linked blockout.");
+      }
+      setMessage("Linked maintenance blockout removed.");
+      await loadData();
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Unable to remove linked blockout.");
     } finally {
       setSaving(false);
     }
@@ -661,7 +931,10 @@ export function VehicleMaintenancePanel({ vehicleId, initialRecordId }: VehicleM
             <button
               key={filter.key}
               type="button"
-              onClick={() => setActiveDueFilter(filter.key)}
+              onClick={() => {
+                setActiveDueFilter(filter.key);
+                setOffset(0);
+              }}
               className={`min-h-11 rounded-full border px-3 py-1.5 text-[11px] font-semibold leading-none transition sm:min-h-0 sm:px-4 sm:text-xs ${
                 active
                   ? "border-[var(--ccr-primary)] bg-[var(--ccr-primary)] text-white ring-1 ring-[var(--ccr-accent)]"
@@ -674,21 +947,98 @@ export function VehicleMaintenancePanel({ vehicleId, initialRecordId }: VehicleM
         })}
       </div>
 
-      <div className="mt-5 grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-        <section className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
+      <div className="mt-4 grid gap-3 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-3 lg:grid-cols-[minmax(0,1fr)_auto_auto_auto]">
+        <label className="grid gap-1 text-xs text-[var(--ccr-muted)]">
+          Search (title, category, status)
+          <input
+            type="search"
+            value={searchQuery}
+            onChange={(event) => {
+              setSearchQuery(event.currentTarget.value);
+              setOffset(0);
+            }}
+            placeholder="Search maintenance records"
+            data-testid="maintenance-search"
+            className="min-h-11 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 text-sm text-[var(--ccr-text)]"
+          />
+        </label>
+
+        <label className="grid gap-1 text-xs text-[var(--ccr-muted)]">
+          Sort
+          <select
+            value={sortBy}
+            onChange={(event) => {
+              setSortBy(event.currentTarget.value as MaintenanceSort);
+              setOffset(0);
+            }}
+            data-testid="maintenance-sort"
+            className="min-h-11 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 text-sm text-[var(--ccr-text)]"
+          >
+            <option value="dueDate">Due Date</option>
+            <option value="createdAt">Created</option>
+            <option value="cost">Cost</option>
+          </select>
+        </label>
+
+        <label className="grid gap-1 text-xs text-[var(--ccr-muted)]">
+          Direction
+          <select
+            value={sortDirection}
+            onChange={(event) => {
+              setSortDirection(event.currentTarget.value as SortDirection);
+              setOffset(0);
+            }}
+            className="min-h-11 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 text-sm text-[var(--ccr-text)]"
+          >
+            <option value="asc">Ascending</option>
+            <option value="desc">Descending</option>
+          </select>
+        </label>
+
+        <div className="grid gap-1 text-xs text-[var(--ccr-muted)]">
+          <span>&nbsp;</span>
+          <button
+            type="button"
+            onClick={() => {
+              setSearchQuery("");
+              setSortBy("dueDate");
+              setSortDirection("asc");
+              setOffset(0);
+            }}
+            className="min-h-11 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 text-sm font-semibold text-[var(--ccr-text)]"
+          >
+            Reset
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-6">
+        <section
+          data-testid="maintenance-list"
+          className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4"
+        >
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-sm font-semibold uppercase tracking-wide text-[var(--ccr-text)]">Maintenance Records</h3>
-            <button
-              type="button"
-              onClick={resetForm}
-              className="min-h-10 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
-            >
-              Add Maintenance
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <a
+                href={maintenanceExportHref}
+                className="inline-flex min-h-10 items-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+              >
+                Export CSV
+              </a>
+              <button
+                type="button"
+                onClick={resetForm}
+                data-testid="maintenance-add"
+                className="min-h-10 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+              >
+                Add Maintenance
+              </button>
+            </div>
           </div>
 
           {loading ? <p className="mt-3 text-sm text-[var(--ccr-muted)]">Loading records...</p> : null}
-          {!loading && filteredItems.length < 1 ? (
+          {!loading && items.length < 1 ? (
             <div className="mt-3 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-5">
               <p className="text-sm font-semibold text-[var(--ccr-text)]">No maintenance records found.</p>
               <p className="mt-1 text-xs text-[var(--ccr-muted)]">
@@ -697,12 +1047,14 @@ export function VehicleMaintenancePanel({ vehicleId, initialRecordId }: VehicleM
             </div>
           ) : null}
 
-          {!loading && filteredItems.length > 0 ? (
+          {!loading && items.length > 0 ? (
             <>
               <div className="mt-3 divide-y divide-[var(--ccr-border)] md:hidden">
-                {filteredItems.map((item) => (
+                {items.map((item) => (
                   <article
                     key={`mobile-${item.id}`}
+                    data-testid="maintenance-record-row"
+                    data-record-id={item.id}
                     className="space-y-2 py-3"
                     onClick={() => setSelectedId(item.id)}
                     role="button"
@@ -747,22 +1099,25 @@ export function VehicleMaintenancePanel({ vehicleId, initialRecordId }: VehicleM
                 <table className="min-w-full text-left text-sm">
                   <thead className="border-b border-[var(--ccr-border)] text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
                     <tr>
+                      <th className="px-3 py-2">Title</th>
                       <th className="px-3 py-2">Status</th>
                       <th className="px-3 py-2">Category</th>
-                      <th className="px-3 py-2">Title</th>
                       <th className="px-3 py-2">Due / Service Date</th>
                       <th className="px-3 py-2">Total Cost</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredItems.map((item) => (
+                    {items.map((item) => (
                       <tr
                         key={item.id}
+                        data-testid="maintenance-record-row"
+                        data-record-id={item.id}
                         className={`cursor-pointer border-b border-[var(--ccr-border)] last:border-b-0 ${
                           selectedId === item.id ? "bg-[var(--ccr-surface)]" : ""
                         }`}
                         onClick={() => setSelectedId(item.id)}
                       >
+                        <td className="px-3 py-2 text-[var(--ccr-text)]">{item.title}</td>
                         <td className="px-3 py-2">
                           <div className="flex flex-wrap gap-1">
                             <span className={`inline-flex min-h-7 items-center rounded-full border px-2 py-1 text-[11px] font-semibold ${statusTone(item.status)}`}>
@@ -774,7 +1129,6 @@ export function VehicleMaintenancePanel({ vehicleId, initialRecordId }: VehicleM
                           </div>
                         </td>
                         <td className="px-3 py-2 text-[var(--ccr-text)]">{item.category}</td>
-                        <td className="px-3 py-2 text-[var(--ccr-text)]">{item.title}</td>
                         <td className="px-3 py-2 text-[var(--ccr-text)]">
                           {item.nextDueDate ?? item.scheduledDate ?? item.serviceDate ?? "Not set"}
                         </td>
@@ -786,10 +1140,55 @@ export function VehicleMaintenancePanel({ vehicleId, initialRecordId }: VehicleM
               </div>
             </>
           ) : null}
+
+          <div
+            data-testid="maintenance-pagination"
+            className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--ccr-border)] pt-3 text-xs text-[var(--ccr-muted)]"
+          >
+            <p>
+              Showing {pageStart}-{pageEnd} of {total}
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="flex items-center gap-2">
+                <span>Page size</span>
+                <select
+                  value={pageSize}
+                  onChange={(event) => {
+                    setPageSize(Number(event.currentTarget.value));
+                    setOffset(0);
+                  }}
+                  data-testid="maintenance-page-size"
+                  className="min-h-9 rounded-md border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-2 text-xs text-[var(--ccr-text)]"
+                >
+                  <option value={10}>10</option>
+                  <option value={15}>15</option>
+                  <option value={25}>25</option>
+                </select>
+              </label>
+              <button
+                type="button"
+                onClick={() => setOffset((current) => Math.max(0, current - pageSize))}
+                disabled={!hasPrevPage}
+                data-testid="maintenance-page-prev"
+                className="min-h-9 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-1 font-semibold text-[var(--ccr-text)] disabled:opacity-50"
+              >
+                Prev
+              </button>
+              <button
+                type="button"
+                onClick={() => setOffset((current) => current + pageSize)}
+                disabled={!hasNextPage}
+                data-testid="maintenance-page-next"
+                className="min-h-9 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-1 font-semibold text-[var(--ccr-text)] disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+          </div>
         </section>
 
-        <section className="space-y-4">
-          <section className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
+        <section className="flex flex-col gap-4">
+          <section className="order-2 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
             <h3 className="text-sm font-semibold uppercase tracking-wide text-[var(--ccr-text)]">
               {editingId ? "Edit Maintenance" : "Add Maintenance"}
             </h3>
@@ -817,7 +1216,7 @@ export function VehicleMaintenancePanel({ vehicleId, initialRecordId }: VehicleM
                   onChange={(event) => setForm((current) => ({ ...current, category: event.target.value }))}
                   className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
                 >
-                  {CATEGORY_OPTIONS.map((option) => (
+                  {options.categories.map((option) => (
                     <option key={option} value={option}>
                       {option}
                     </option>
@@ -831,6 +1230,7 @@ export function VehicleMaintenancePanel({ vehicleId, initialRecordId }: VehicleM
                   type="text"
                   value={form.title}
                   onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
+                  data-testid="maintenance-form-title"
                   className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
                 />
               </label>
@@ -841,6 +1241,7 @@ export function VehicleMaintenancePanel({ vehicleId, initialRecordId }: VehicleM
                   type="date"
                   value={form.scheduledDate}
                   onChange={(event) => setForm((current) => ({ ...current, scheduledDate: event.target.value }))}
+                  data-testid="maintenance-form-scheduled-date"
                   className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
                 />
               </label>
@@ -851,6 +1252,7 @@ export function VehicleMaintenancePanel({ vehicleId, initialRecordId }: VehicleM
                   type="date"
                   value={form.serviceDate}
                   onChange={(event) => setForm((current) => ({ ...current, serviceDate: event.target.value }))}
+                  data-testid="maintenance-form-service-date"
                   className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
                 />
               </label>
@@ -873,10 +1275,11 @@ export function VehicleMaintenancePanel({ vehicleId, initialRecordId }: VehicleM
                   onChange={(event) => setForm((current) => ({ ...current, priority: event.target.value }))}
                   className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
                 >
-                  <option value="LOW">LOW</option>
-                  <option value="NORMAL">NORMAL</option>
-                  <option value="HIGH">HIGH</option>
-                  <option value="URGENT">URGENT</option>
+                  {options.priorities.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
                 </select>
               </label>
 
@@ -935,6 +1338,39 @@ export function VehicleMaintenancePanel({ vehicleId, initialRecordId }: VehicleM
               </label>
 
               <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                Estimated Cost (cents)
+                <input
+                  type="number"
+                  min={0}
+                  value={form.estimatedCostCents}
+                  onChange={(event) => setForm((current) => ({ ...current, estimatedCostCents: event.target.value }))}
+                  className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+                />
+              </label>
+
+              <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                Actual Cost (cents)
+                <input
+                  type="number"
+                  min={0}
+                  value={form.actualCostCents}
+                  onChange={(event) => setForm((current) => ({ ...current, actualCostCents: event.target.value }))}
+                  className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+                />
+              </label>
+
+              <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                Reminder Lead Days
+                <input
+                  type="number"
+                  min={0}
+                  value={form.reminderLeadDays}
+                  onChange={(event) => setForm((current) => ({ ...current, reminderLeadDays: event.target.value }))}
+                  className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+                />
+              </label>
+
+              <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
                 Vendor
                 <input
                   type="text"
@@ -964,6 +1400,44 @@ export function VehicleMaintenancePanel({ vehicleId, initialRecordId }: VehicleM
                 />
               </label>
 
+              <div className="sm:col-span-2 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                  Reference Links
+                </p>
+                <p className="mt-1 text-[11px] text-[var(--ccr-muted)]">
+                  Optional internal reference for reconciliation/reporting.
+                </p>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                    Linked Expense ID
+                    <input
+                      type="text"
+                      value={form.linkedExpenseId}
+                      onChange={(event) =>
+                        setForm((current) => ({ ...current, linkedExpenseId: event.target.value }))
+                      }
+                      data-testid="maintenance-form-linked-expense"
+                      placeholder="UUID"
+                      className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+                    />
+                  </label>
+
+                  <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                    Linked Repair Order ID
+                    <input
+                      type="text"
+                      value={form.linkedRepairOrderId}
+                      onChange={(event) =>
+                        setForm((current) => ({ ...current, linkedRepairOrderId: event.target.value }))
+                      }
+                      data-testid="maintenance-form-linked-repair-order"
+                      placeholder="UUID"
+                      className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+                    />
+                  </label>
+                </div>
+              </div>
+
               <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)] sm:col-span-2">
                 Description
                 <textarea
@@ -973,6 +1447,63 @@ export function VehicleMaintenancePanel({ vehicleId, initialRecordId }: VehicleM
                   className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
                 />
               </label>
+
+              <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)] sm:col-span-2">
+                <input
+                  type="checkbox"
+                  checked={form.createBlockout}
+                  onChange={(event) => setForm((current) => ({ ...current, createBlockout: event.target.checked }))}
+                  data-testid="maintenance-form-create-blockout"
+                  className="h-4 w-4 rounded border border-[var(--ccr-border)] bg-transparent"
+                />
+                Create / update linked blockout for this maintenance
+              </label>
+
+              {form.createBlockout ? (
+                <>
+                  <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                    Blockout Start
+                    <input
+                      type="datetime-local"
+                      value={form.blockoutStartAt}
+                      onChange={(event) => setForm((current) => ({ ...current, blockoutStartAt: event.target.value }))}
+                      className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+                    />
+                  </label>
+
+                  <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                    Blockout End
+                    <input
+                      type="datetime-local"
+                      value={form.blockoutEndAt}
+                      onChange={(event) => setForm((current) => ({ ...current, blockoutEndAt: event.target.value }))}
+                      className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+                    />
+                  </label>
+
+                  <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)] sm:col-span-2">
+                    Blockout Reason
+                    <input
+                      type="text"
+                      value={form.blockoutReason}
+                      onChange={(event) => setForm((current) => ({ ...current, blockoutReason: event.target.value }))}
+                      data-testid="maintenance-form-blockout-reason"
+                      placeholder="Maintenance window"
+                      className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+                    />
+                  </label>
+
+                  <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)] sm:col-span-2">
+                    Blockout Notes
+                    <textarea
+                      rows={2}
+                      value={form.blockoutNotes}
+                      onChange={(event) => setForm((current) => ({ ...current, blockoutNotes: event.target.value }))}
+                      className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+                    />
+                  </label>
+                </>
+              ) : null}
             </div>
 
             <p className="mt-3 text-xs font-semibold text-[var(--ccr-muted)]">
@@ -984,6 +1515,7 @@ export function VehicleMaintenancePanel({ vehicleId, initialRecordId }: VehicleM
                 type="button"
                 onClick={() => void saveRecord()}
                 disabled={saving}
+                data-testid="maintenance-save"
                 className="min-h-11 rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
               >
                 {saving ? "Saving..." : editingId ? "Save changes" : "Add maintenance"}
@@ -1001,7 +1533,10 @@ export function VehicleMaintenancePanel({ vehicleId, initialRecordId }: VehicleM
           </section>
 
           {selectedRecord ? (
-            <section className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
+            <section
+              data-testid="maintenance-detail"
+              className="order-1 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4"
+            >
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div>
                   <h3 className="text-sm font-semibold uppercase tracking-wide text-[var(--ccr-text)]">Record Details</h3>
@@ -1021,6 +1556,10 @@ export function VehicleMaintenancePanel({ vehicleId, initialRecordId }: VehicleM
               </div>
 
               <dl className="mt-3 grid gap-2 text-xs text-[var(--ccr-muted)] sm:grid-cols-2">
+                <div className="sm:col-span-2">
+                  <dt>Record UUID</dt>
+                  <dd className="font-mono text-[11px] text-[var(--ccr-muted)] break-all">{selectedRecord.id}</dd>
+                </div>
                 <div>
                   <dt>Due / Service Date</dt>
                   <dd className="text-sm text-[var(--ccr-text)]">
@@ -1041,16 +1580,140 @@ export function VehicleMaintenancePanel({ vehicleId, initialRecordId }: VehicleM
                   <dt>Reference</dt>
                   <dd className="text-sm text-[var(--ccr-text)] break-all">{selectedRecord.referenceNumber ?? "N/A"}</dd>
                 </div>
+                <div>
+                  <dt>Linked Expense ID</dt>
+                  <dd
+                    data-testid="maintenance-detail-linked-expense"
+                    className="text-sm text-[var(--ccr-text)] break-all"
+                  >
+                    {selectedRecord.linkedExpenseId ?? "N/A"}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Linked Repair Order ID</dt>
+                  <dd
+                    data-testid="maintenance-detail-linked-repair-order"
+                    className="text-sm text-[var(--ccr-text)] break-all"
+                  >
+                    {selectedRecord.linkedRepairOrderId ?? "N/A"}
+                  </dd>
+                </div>
               </dl>
 
               {selectedRecord.description ? (
                 <p className="mt-3 text-sm text-[var(--ccr-text)]">{selectedRecord.description}</p>
               ) : null}
 
+              <section
+                data-testid="maintenance-status-history"
+                className="mt-3 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3"
+              >
+                <h4 className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                  Status History
+                </h4>
+
+                {historyLoading ? (
+                  <p className="mt-2 text-xs text-[var(--ccr-muted)]">Loading status history...</p>
+                ) : null}
+
+                {!historyLoading && statusHistory.length < 1 ? (
+                  <p className="mt-2 text-xs text-[var(--ccr-muted)]">
+                    No status changes recorded yet.
+                  </p>
+                ) : null}
+
+                {!historyLoading && statusHistory.length > 0 ? (
+                  <ol className="mt-2 space-y-2">
+                    {statusHistory.map((entry) => (
+                      <li
+                        key={entry.id}
+                        data-testid="maintenance-history-row"
+                        className="rounded-md border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-2 py-2"
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span
+                            className={`inline-flex min-h-7 items-center rounded-full border px-2 py-1 text-[11px] font-semibold ${statusTone(entry.status)}`}
+                          >
+                            {formatStatus(entry.status)}
+                          </span>
+                          <span className="text-xs text-[var(--ccr-muted)]">
+                            <DateTimeInline value={entry.createdAt} />
+                          </span>
+                        </div>
+                        <p className="mt-1 text-xs text-[var(--ccr-muted)]">
+                          Changed by{" "}
+                          <span className="font-semibold text-[var(--ccr-text)]">
+                            {entry.changedBy || "system"}
+                          </span>
+                        </p>
+                        {entry.note ? (
+                          <p className="mt-1 text-xs text-[var(--ccr-muted)]">{entry.note}</p>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ol>
+                ) : null}
+              </section>
+
+              {selectedRecord.linkedBlockout ? (
+                <div
+                  data-testid="maintenance-linked-blockout"
+                  className="mt-3 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3"
+                >
+                  <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                    Linked Blockout
+                  </p>
+                  <dl className="mt-2 grid gap-2 text-xs text-[var(--ccr-muted)] sm:grid-cols-2">
+                    <div className="sm:col-span-2">
+                      <dt>Blockout UUID</dt>
+                      <dd className="font-mono text-[11px] text-[var(--ccr-muted)] break-all">
+                        {selectedRecord.linkedBlockout.id}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Start</dt>
+                      <dd className="text-sm text-[var(--ccr-text)]">
+                        {selectedRecord.linkedBlockout.startAt ? (
+                          <DateTimeInline value={selectedRecord.linkedBlockout.startAt} />
+                        ) : (
+                          "Not set"
+                        )}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>End</dt>
+                      <dd className="text-sm text-[var(--ccr-text)]">
+                        {selectedRecord.linkedBlockout.endAt ? (
+                          <DateTimeInline value={selectedRecord.linkedBlockout.endAt} />
+                        ) : (
+                          "Not set"
+                        )}
+                      </dd>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <dt>Reason</dt>
+                      <dd className="text-sm text-[var(--ccr-text)]">
+                        {selectedRecord.linkedBlockout.reason ?? "Maintenance window"}
+                      </dd>
+                    </div>
+                  </dl>
+                  <div className="mt-3">
+                    <button
+                      type="button"
+                      onClick={() => void removeLinkedBlockout(selectedRecord.id)}
+                      className="min-h-10 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+                    >
+                      Remove linked blockout
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
               <div className="mt-3 flex flex-wrap gap-2">
                 <button
                   type="button"
                   onClick={() => startEdit(selectedRecord)}
+                  data-testid="maintenance-edit"
                   className="min-h-10 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
                 >
                   Edit
@@ -1059,9 +1722,25 @@ export function VehicleMaintenancePanel({ vehicleId, initialRecordId }: VehicleM
                   <button
                     type="button"
                     onClick={() => void updateRecordStatus(selectedRecord.id, "COMPLETED")}
+                    data-testid="maintenance-mark-complete"
                     className="min-h-10 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
                   >
                     Mark Completed
+                  </button>
+                ) : null}
+                {selectedRecord.status === "COMPLETED" || selectedRecord.status === "CANCELLED" ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void updateRecordStatus(selectedRecord.id, "SCHEDULED", {
+                        completedDate: null,
+                        createBlockout: true,
+                      })
+                    }
+                    data-testid="maintenance-reopen"
+                    className="min-h-10 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+                  >
+                    Reopen
                   </button>
                 ) : null}
                 {selectedRecord.status !== "CANCELLED" ? (

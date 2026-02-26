@@ -63,8 +63,14 @@ test("Pricing SSoT: insurance-aware pricing is wired into promo + WiPay routes",
 
 test("Entitlement SSoT wiring: public availability and payment reconciliation use entitlement helper", () => {
   const publicVehicles = read("src/lib/publicVehicles.ts");
-  assert.match(publicVehicles, /listAvailableVehiclesEntitlementBased/);
-  assert.match(publicVehicles, /isVehicleUnavailableEntitlementBased/);
+  assert.match(
+    publicVehicles,
+    /listAvailableVehiclesWithAvailabilityRules|listAvailableVehiclesEntitlementBased/,
+  );
+  assert.match(
+    publicVehicles,
+    /isVehicleUnavailableWithAvailabilityRules|isVehicleUnavailableEntitlementBased/,
+  );
 
   const publicBookingsCreate = read("src/app/api/public/bookings/route.ts");
   assert.match(publicBookingsCreate, /isPublicVehicleUnavailableForWindow/);

@@ -1,5 +1,5 @@
 import { readSortFromSearchParams, type SortDir } from "@/components/admin/tableSort";
-import { isVehicleUnavailableEntitlementBased } from "@/lib/availability/entitlement";
+import { isVehicleUnavailableWithAvailabilityRules } from "@/lib/bookings/availabilityRules";
 import { dbQuery, getDbPool } from "@/lib/db";
 import { isEmail, isNonEmptyString } from "@/lib/validators";
 
@@ -172,6 +172,8 @@ export type CreateAdminQuoteInput = {
   commissionPartnerName?: string | null;
   clientPaysAtPartner?: boolean;
   rackPriceCents?: number | null;
+  deliverySelected?: boolean;
+  deliveryZoneLabel?: string | null;
   createdByAdminUserId?: string | null;
 };
 
@@ -194,6 +196,8 @@ export type UpdateAdminQuoteInput = {
   insuranceEnabled?: boolean;
   insurancePlanId?: string | null;
   promoCode?: string | null;
+  deliverySelected?: boolean;
+  deliveryZoneLabel?: string | null;
   actorAdminUserId?: string | null;
 };
 
@@ -613,19 +617,22 @@ async function ensureVehicleAvailability(input: {
   endAt: Date;
   client: Queryable;
 }) {
-  const unavailable = await isVehicleUnavailableEntitlementBased(
-    input.vehicleId,
+  const result = await isVehicleUnavailableWithAvailabilityRules(
     {
+      vehicleId: input.vehicleId,
       startAt: input.startAt.toISOString(),
       endAt: input.endAt.toISOString(),
     },
-    { client: input.client },
+    { client: input.client, includeBlockouts: true },
   );
 
-  if (unavailable) {
+  if (result.unavailable) {
+    const message =
+      result.reasons[0] ??
+      "Vehicle unavailable for the selected rental window.";
     throw new AdminQuoteError(
       "VEHICLE_UNAVAILABLE",
-      "Vehicle unavailable for the selected rental window.",
+      message,
       409,
     );
   }
@@ -657,6 +664,21 @@ function normalizePricingSummary(snapshot: QuotePricingSnapshot) {
     vehicle_class: snapshot.vehicleClass,
     rack_price_cents: snapshot.rackPriceCents,
   };
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return value as Record<string, unknown>;
+}
+
+function readPricingBoolean(pricing: unknown, key: string, fallback = false) {
+  const value = asRecord(pricing)[key];
+  return normalizeBoolean(value, fallback);
+}
+
+function readPricingText(pricing: unknown, key: string, fallback: string | null = null) {
+  const value = normalizeNullableText(asRecord(pricing)[key]);
+  return value ?? fallback;
 }
 
 export async function createAdminQuote(input: CreateAdminQuoteInput) {
@@ -705,12 +727,14 @@ export async function createAdminQuote(input: CreateAdminQuoteInput) {
           endAt,
           insuranceEnabled: input.insuranceEnabled,
           insurancePlanId: input.insurancePlanId,
-          promoCode: input.promoCode,
-          customerEmail: email,
-          rackPriceCents,
-        },
-        { client },
-      );
+            promoCode: input.promoCode,
+            customerEmail: email,
+            rackPriceCents,
+            deliverySelected: input.deliverySelected,
+            deliveryZoneLabel: input.deliveryZoneLabel,
+          },
+          { client },
+        );
     } catch (error) {
       rethrowPricingError(error);
     }
@@ -785,7 +809,9 @@ function hasPricingImpact(input: UpdateAdminQuoteInput) {
     input.insuranceEnabled !== undefined ||
     input.insurancePlanId !== undefined ||
     input.promoCode !== undefined ||
-    input.rackPriceCents !== undefined
+    input.rackPriceCents !== undefined ||
+    input.deliverySelected !== undefined ||
+    input.deliveryZoneLabel !== undefined
   );
 }
 
@@ -893,6 +919,8 @@ export async function updateAdminQuote(input: UpdateAdminQuoteInput) {
     let promoCode = normalizeNullableText(existing.promo_code);
     let insurancePlanId = normalizeUuidOrNull(existing.insurance_plan_id);
     let insuranceEnabled = normalizeBoolean(existing.insurance_enabled);
+    let deliverySelected = readPricingBoolean(existing.pricing_json, "delivery_selected");
+    let deliveryZoneLabel = readPricingText(existing.pricing_json, "delivery_zone_label");
     let vehicleLabel = normalizeText(existing.vehicle_label);
     let vehicleClass = normalizeNullableText(existing.vehicle_class);
     let rackPriceCents = existing.rack_price_cents == null ? null : Number(existing.rack_price_cents);
@@ -922,6 +950,12 @@ export async function updateAdminQuote(input: UpdateAdminQuoteInput) {
               input.rackPriceCents !== undefined
                 ? normalizeInteger(input.rackPriceCents)
                 : rackPriceCents,
+            deliverySelected:
+              input.deliverySelected !== undefined ? normalizeBoolean(input.deliverySelected) : deliverySelected,
+            deliveryZoneLabel:
+              input.deliveryZoneLabel !== undefined
+                ? normalizeNullableText(input.deliveryZoneLabel)
+                : deliveryZoneLabel,
           },
           { client },
         );
@@ -941,6 +975,8 @@ export async function updateAdminQuote(input: UpdateAdminQuoteInput) {
       promoCode = normalizeNullableText(summary.promo_code);
       insurancePlanId = normalizeUuidOrNull(summary.insurance_plan_id);
       insuranceEnabled = normalizeBoolean(summary.insurance_enabled);
+      deliverySelected = readPricingBoolean(summary.pricing_json, "delivery_selected", deliverySelected);
+      deliveryZoneLabel = readPricingText(summary.pricing_json, "delivery_zone_label", deliveryZoneLabel);
       vehicleLabel = normalizeText(summary.vehicle_label);
       vehicleClass = normalizeNullableText(summary.vehicle_class);
       rackPriceCents = summary.rack_price_cents == null ? null : Number(summary.rack_price_cents);

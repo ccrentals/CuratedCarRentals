@@ -1,9 +1,9 @@
 import { dbQuery } from "@/lib/db";
 import type { Vehicle } from "@/data/vehicles";
 import {
-  isVehicleUnavailableEntitlementBased,
-  listAvailableVehiclesEntitlementBased,
-} from "@/lib/availability/entitlement";
+  isVehicleUnavailableWithAvailabilityRules,
+  listAvailableVehiclesWithAvailabilityRules,
+} from "@/lib/bookings/availabilityRules";
 
 export type PublicVehicle = Vehicle & {
   make: string;
@@ -187,7 +187,7 @@ export async function getPublicVehiclesAvailableForWindow(
   const vehicles = await getPublicVehicles();
   if (vehicles.length === 0) return [];
 
-  return listAvailableVehiclesEntitlementBased(
+  return listAvailableVehiclesWithAvailabilityRules(
     vehicles,
     { startAt: window.startAtIso, endAt: window.endAtIso },
     { includeBlockouts: true },
@@ -200,11 +200,15 @@ export async function isPublicVehicleUnavailableForWindow(
 ): Promise<boolean> {
   const window = toNormalizedAvailabilityWindow(input);
   if (!window || !UUID_REGEX.test(vehicleId)) return true;
-  return isVehicleUnavailableEntitlementBased(
-    vehicleId,
-    { startAt: window.startAtIso, endAt: window.endAtIso },
+  const result = await isVehicleUnavailableWithAvailabilityRules(
+    {
+      vehicleId,
+      startAt: window.startAtIso,
+      endAt: window.endAtIso,
+    },
     { includeBlockouts: true },
   );
+  return result.unavailable;
 }
 
 export async function getPublicVehicleByIdentifier(identifier: string): Promise<PublicVehicle | null> {

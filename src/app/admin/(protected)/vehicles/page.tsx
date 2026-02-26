@@ -278,7 +278,10 @@ export default async function AdminVehiclesPage({
 
       <VehiclesFilters initialQuery={q} initialFilter={fleetFilter} initialSort={sort} />
 
-      <div className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)]">
+      <div
+        data-testid="vehicles-list"
+        className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)]"
+      >
         {sortedRows.length === 0 ? (
           <div className="px-6 py-10 text-center text-sm text-[var(--ccr-muted)]">
             No vehicles found.
@@ -382,7 +385,12 @@ export default async function AdminVehiclesPage({
                 </thead>
                 <tbody>
                   {visibleVehicles.map((vehicle) => (
-                    <tr key={vehicle.id} className="border-b border-[var(--ccr-border)] last:border-b-0">
+                    <tr
+                      key={vehicle.id}
+                      data-testid="vehicle-row"
+                      data-vehicle-id={vehicle.id}
+                      className="border-b border-[var(--ccr-border)] last:border-b-0"
+                    >
                       <td className="px-4 py-3 text-[var(--ccr-text)]">
                         <Link href={`/admin/vehicles/${vehicle.id}`} className="font-semibold text-[var(--ccr-text)]">
                           {vehicle.year} {vehicle.make} {vehicle.model}

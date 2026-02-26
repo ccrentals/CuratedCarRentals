@@ -720,15 +720,22 @@ export function AdminShell({
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      setLogoGlowOn(false);
-      return;
+      const resetTimer = window.setTimeout(() => {
+        setLogoGlowOn(false);
+      }, 0);
+      return () => {
+        window.clearTimeout(resetTimer);
+      };
     }
-    setLogoGlowOn(true);
-    const timer = window.setTimeout(() => {
+    const startTimer = window.setTimeout(() => {
+      setLogoGlowOn(true);
+    }, 0);
+    const stopTimer = window.setTimeout(() => {
       setLogoGlowOn(false);
     }, 1650);
     return () => {
-      window.clearTimeout(timer);
+      window.clearTimeout(startTimer);
+      window.clearTimeout(stopTimer);
     };
   }, [pathname]);
 

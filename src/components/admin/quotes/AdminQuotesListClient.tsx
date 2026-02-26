@@ -331,7 +331,7 @@ export function AdminQuotesListClient() {
   const mobileSortDir = sort.sortDir ?? defaultSortDirection(mobileSortBy);
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
+    <div data-testid="quotes-list" className="mx-auto w-full max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Bookings</p>
@@ -616,7 +616,12 @@ export function AdminQuotesListClient() {
               ) : (
                 rows.map((row) => {
                   return (
-                    <tr key={row.id} className="border-b border-[var(--ccr-border)] last:border-b-0">
+                    <tr
+                      key={row.id}
+                      data-testid="quote-row"
+                      data-quote-id={row.id}
+                      className="border-b border-[var(--ccr-border)] last:border-b-0"
+                    >
                       <td className="px-4 py-3 font-mono text-xs text-[var(--ccr-text)]">
                         <span className="inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 font-bold text-[var(--ccr-accent)]">
                           {shortQuoteId(row.id)}

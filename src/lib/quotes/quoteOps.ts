@@ -1,10 +1,9 @@
 import { siteContent } from "@/data/content";
-import { isVehicleUnavailableEntitlementBased } from "@/lib/availability/entitlement";
+import { isVehicleUnavailableWithAvailabilityRules } from "@/lib/bookings/availabilityRules";
 import { writeAuditLog } from "@/lib/audit";
 import { CustomerBlockedError, upsertCustomerForBooking } from "@/lib/customers";
 import { dbQuery, getDbPool } from "@/lib/db";
 import { logError, logWarn, redactText } from "@/lib/log";
-import { computeBookingPricing } from "@/lib/payments/pricing";
 import { upsertPromoRedemption, validatePromoForBooking } from "@/lib/promos";
 import { buildQuotePricingSnapshot } from "@/lib/quotes/quotePricing";
 
@@ -56,15 +55,6 @@ type QuoteRow = {
   last_emailed_at: string | Date | null;
   last_emailed_to: string | null;
   converted_booking_id: string | null;
-};
-
-type VehicleRow = {
-  id: string;
-  make: string;
-  model: string;
-  year: number;
-  daily_rate_cents: number;
-  deposit_cents: number;
 };
 
 export type QuoteOpsQuote = {
@@ -619,31 +609,22 @@ export async function convertQuoteToBooking(input: {
       );
     }
 
-    const unavailable = await isVehicleUnavailableEntitlementBased(
-      quote.vehicleId,
+    const availability = await isVehicleUnavailableWithAvailabilityRules(
       {
+        vehicleId: quote.vehicleId,
         startAt: startAt.toISOString(),
         endAt: endAt.toISOString(),
       },
-      { client },
+      { client, includeBlockouts: true },
     );
 
-    if (unavailable) {
+    if (availability.unavailable) {
       throw new QuoteOpsError(
         "VEHICLE_UNAVAILABLE",
-        "Vehicle is no longer available for the selected rental window.",
+        availability.reasons[0] ??
+          "Vehicle is no longer available for the selected rental window.",
         409,
       );
-    }
-
-    const vehicleResult = await client.query(
-      "select id, make, model, year, daily_rate_cents, deposit_cents from vehicles where id = $1::uuid and status <> 'INACTIVE' limit 1",
-      [quote.vehicleId],
-    );
-
-    const vehicle = vehicleResult.rows[0] as VehicleRow | undefined;
-    if (!vehicle) {
-      throw new QuoteOpsError("VEHICLE_NOT_FOUND", "Vehicle not found.", 404);
     }
 
     let customerUpsert;
@@ -678,6 +659,10 @@ export async function convertQuoteToBooking(input: {
         promoCode: quote.promoCode,
         customerEmail: quote.customerEmail,
         rackPriceCents: quote.rackPriceCents,
+        deliverySelected:
+          normalizeBoolean((quote.pricingJson ?? {})["delivery_selected"]) || false,
+        deliveryZoneLabel:
+          normalizeNullableText((quote.pricingJson ?? {})["delivery_zone_label"]) ?? null,
       },
       { client },
     );
@@ -716,43 +701,37 @@ export async function convertQuoteToBooking(input: {
       promoDiscount = promoValidation.discountAmountCents;
     }
 
-    const pricingSummary = computeBookingPricing({
-      bookingId: "quote-conversion",
-      bookingStatus: "PENDING_PAYMENT",
-      startDate,
-      endDate,
-      dailyRate: normalizeInt(vehicle.daily_rate_cents),
-      deposit: normalizeInt(vehicle.deposit_cents),
-      paymentOption: "DEPOSIT",
-      netPaidToDate: 0,
-      insuranceSelected: pricingSnapshot.insuranceEnabled,
-      insurancePricePerDay: readInsurancePricePerDay(pricingSnapshot.pricingJson),
-      promoCode,
-      promoDiscount,
-    });
+    const paymentOptionRaw = normalizeText(
+      (pricingSnapshot.pricingJson ?? {})["payment_option_selected"],
+    ).toUpperCase();
+    const paymentOption = paymentOptionRaw || "DEPOSIT";
+    const insurancePricePerDay = readInsurancePricePerDay(pricingSnapshot.pricingJson);
+    const deliveryFeeCents = normalizeInt((pricingSnapshot.pricingJson ?? {})["delivery_fee_cents"]);
+    const extraFeesCents = normalizeInt((pricingSnapshot.pricingJson ?? {})["extra_fees_cents"]);
 
     const bookingPricingJson = {
-      daily_rate_cents: pricingSummary.dailyRate,
-      deposit_cents: pricingSummary.deposit,
-      days: pricingSummary.days,
-      subtotal_cents: pricingSummary.subtotal,
-      promo_code: pricingSummary.promoCode,
+      ...pricingSnapshot.pricingJson,
       promo_code_id: promoId,
-      promo_discount_cents: pricingSummary.promoDiscount,
-      discount_total_cents: pricingSummary.discountTotal,
-      insurance_selected: pricingSummary.insuranceSelected,
+      promo_discount_cents: promoDiscount,
+      discount_total_cents: pricingSnapshot.summary.discountTotalCents,
+      insurance_selected: pricingSnapshot.insuranceEnabled,
       insurance_plan_id: pricingSnapshot.insurancePlanId,
-      insurance_price_per_day_cents: pricingSummary.insurancePricePerDay,
-      insurance_total_cents: pricingSummary.insuranceTotal,
-      base_total_cents: pricingSummary.baseTotal,
-      total_amount: pricingSummary.total,
-      total_cents: pricingSummary.total,
-      amount_paid: pricingSummary.netPaidToDate,
-      balance_due: pricingSummary.balanceDue,
-      amount_due_cents: pricingSummary.amountDue,
-      deposit_required_cents: pricingSummary.depositRequired,
-      payment_status: pricingSummary.paymentStatus,
-      payment_option_selected: pricingSummary.paymentOption,
+      insurance_price_per_day_cents: insurancePricePerDay,
+      insurance_total_cents: pricingSnapshot.summary.insuranceTotalCents,
+      base_total_cents: pricingSnapshot.summary.baseTotalCents,
+      delivery_fee_cents: deliveryFeeCents,
+      extra_fees_cents: extraFeesCents,
+      subtotal_cents: pricingSnapshot.summary.subtotalCents,
+      total_amount: pricingSnapshot.summary.totalCents,
+      total_cents: pricingSnapshot.summary.totalCents,
+      amount_paid: 0,
+      paid_to_date: 0,
+      balance_due: pricingSnapshot.summary.amountDueCents,
+      amount_due_cents: pricingSnapshot.summary.amountDueCents,
+      deposit_required_cents: pricingSnapshot.summary.depositRequiredCents,
+      deposit_cents: pricingSnapshot.summary.depositRequiredCents,
+      payment_status: "UNPAID",
+      payment_option_selected: paymentOption,
       currency: "JMD",
       quote_id: quote.id,
       quote_rack_price_cents: pricingSnapshot.rackPriceCents,
@@ -776,9 +755,9 @@ export async function convertQuoteToBooking(input: {
         endAt.toISOString(),
         pricingSnapshot.insuranceEnabled,
         pricingSnapshot.insurancePlanId,
-        pricingSummary.insurancePricePerDay,
-        pricingSummary.insuranceTotal,
-        pricingSummary.paymentOption,
+        insurancePricePerDay,
+        pricingSnapshot.summary.insuranceTotalCents,
+        paymentOption,
       ],
     );
 

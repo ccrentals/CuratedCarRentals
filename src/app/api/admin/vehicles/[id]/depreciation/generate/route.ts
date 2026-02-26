@@ -25,6 +25,7 @@ type VehicleFinanceRow = {
   residual_value_cents: number | null;
   useful_life_months: number | null;
   depreciation_method: string | null;
+  is_active: boolean;
 };
 
 type RouteDeps = {
@@ -56,7 +57,16 @@ const DEFAULT_DEPS: RouteDeps = {
   requireCsrfCheck: (request, bodyToken) => requireCsrf(request, bodyToken),
   getFinance: async (vehicleId) => {
     const result = await dbQuery<VehicleFinanceRow>(
-      "select purchase_date, purchase_cost_cents, residual_value_cents, useful_life_months, depreciation_method from vehicle_finance where vehicle_id = $1::uuid limit 1",
+      `select
+        purchase_date,
+        purchase_price_cents as purchase_cost_cents,
+        expected_rest_value_cents as residual_value_cents,
+        depreciation_months as useful_life_months,
+        method as depreciation_method,
+        is_active
+      from vehicle_depreciation_profiles
+      where vehicle_id = $1::uuid
+      limit 1`,
       [vehicleId],
     );
     return result.rows[0] ?? null;
@@ -108,7 +118,6 @@ export async function handleAdminVehicleDepreciationGeneratePost(
 ) {
   const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
   if (!auth.ok) return auth.response;
-  const session = auth.session;
 
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
   if (
@@ -143,6 +152,12 @@ export async function handleAdminVehicleDepreciationGeneratePost(
       return NextResponse.json(
         { ok: false, error: "Finance record not found for this vehicle." },
         { status: 404 },
+      );
+    }
+    if (!finance.is_active) {
+      return NextResponse.json(
+        { ok: false, error: "Depreciation profile is inactive for this vehicle." },
+        { status: 400 },
       );
     }
 

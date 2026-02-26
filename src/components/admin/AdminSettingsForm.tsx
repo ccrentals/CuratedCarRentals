@@ -23,6 +23,7 @@ type AdminSettings = {
   maintenanceDueSoonDays: number;
   maintenanceDueSoonKm: number;
   maintenanceCategories: string[];
+  maintenancePriorities: string[];
   depreciationDefaultMethod: "STRAIGHT_LINE";
   depreciationDefaultUsefulLifeMonths: number;
   depreciationDefaultResidualPercent: number;
@@ -301,9 +302,13 @@ export function AdminSettingsForm({
   const vehicleDocumentTypeOptionsValue = settings.vehicleDocumentTypeOptions.join("\n");
   const vehicleChecklistTemplateItemsValue = settings.vehicleChecklistTemplateItems.join("\n");
   const maintenanceCategoriesValue = settings.maintenanceCategories.join("\n");
+  const maintenancePrioritiesValue = settings.maintenancePriorities.join("\n");
 
   return (
-    <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
+    <section
+      data-testid="admin-settings"
+      className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6"
+    >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-bold text-[var(--ccr-text)]">Platform Settings</h2>
@@ -475,6 +480,7 @@ export function AdminSettingsForm({
                 max={180}
                 value={maintenanceDueSoonDaysValue}
                 disabled={disabled || saving}
+                data-testid="settings-maintenanceDueSoonDays"
                 onChange={(event) =>
                   setSettings((current) => ({
                     ...current,
@@ -681,6 +687,32 @@ export function AdminSettingsForm({
               }
               className="w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
               placeholder={"SERVICE\nREPAIR\nINSPECTION\nREGISTRATION\nINSURANCE"}
+            />
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
+          <p className="text-sm font-semibold text-[var(--ccr-text)]">Maintenance priorities</p>
+          <p className="mt-1 text-xs text-[var(--ccr-muted)]">
+            One priority per line. These values are available in maintenance forms and filtering.
+          </p>
+          <div className="mt-3">
+            <textarea
+              value={maintenancePrioritiesValue}
+              disabled={disabled || saving}
+              rows={4}
+              onChange={(event) =>
+                setSettings((current) => ({
+                  ...current,
+                  maintenancePriorities: event.target.value
+                    .split(/\n|,|;/)
+                    .map((entry) => entry.trim().toUpperCase())
+                    .filter(Boolean)
+                    .slice(0, 20),
+                }))
+              }
+              className="w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+              placeholder={"LOW\nNORMAL\nHIGH\nURGENT"}
             />
           </div>
         </div>
@@ -954,6 +986,7 @@ export function AdminSettingsForm({
           type="button"
           onClick={save}
           disabled={disabled || saving}
+          data-testid="settings-save"
           className="rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
         >
           {saving ? "Saving..." : "Save settings"}

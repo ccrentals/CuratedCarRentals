@@ -116,9 +116,16 @@ test("vehicle detail tabs switch and files UI is visible on mobile", async ({ pa
   await expect(page.locator('[data-testid="vehicle-files-panel"]')).toBeVisible();
   await expect(page.locator('[data-testid="vehicle-files-upload-button"]')).toBeVisible();
 
-  const hasFileCards = (await page.locator('[data-testid="vehicle-file-card"]').count()) > 0;
-  if (!hasFileCards) {
-    await expect(page.getByText("No files in this folder.")).toBeVisible();
+  const fileCards = page.locator('[data-testid="vehicle-file-card"]:visible');
+  const emptyFilesState = page.getByText("No files in this folder.");
+  await expect
+    .poll(
+      async () => (await fileCards.count()) + (await emptyFilesState.count()),
+      { timeout: 15_000 },
+    )
+    .toBeGreaterThan(0);
+  if ((await fileCards.count()) < 1) {
+    await expect(emptyFilesState).toBeVisible();
   }
 
   await page.locator('[data-testid="vehicle-detail-tab-blockouts"]').click();

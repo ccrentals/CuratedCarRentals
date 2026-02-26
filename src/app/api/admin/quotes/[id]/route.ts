@@ -106,6 +106,8 @@ export async function handleAdminQuotePatch(
       insuranceEnabled: body?.insurance_enabled ?? body?.insuranceEnabled,
       insurancePlanId: body?.insurance_plan_id ?? body?.insurancePlanId,
       promoCode: body?.promo_code ?? body?.promoCode,
+      deliverySelected: body?.delivery_selected ?? body?.deliverySelected,
+      deliveryZoneLabel: body?.delivery_zone_label ?? body?.deliveryZoneLabel,
       actorAdminUserId: actor.userId,
     });
 

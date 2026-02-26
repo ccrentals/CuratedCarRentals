@@ -57,107 +57,13 @@ export default async function AdminMessageDetailPage({
   const markRead = query.markRead !== "0";
   const backHref = safeBackHref(typeof query.back === "string" ? query.back : undefined);
 
+  let result: Awaited<ReturnType<typeof fetchAdminMessageByIdWithOptionalMarkRead>> | null = null;
   try {
-    const result = await fetchAdminMessageByIdWithOptionalMarkRead({
+    result = await fetchAdminMessageByIdWithOptionalMarkRead({
       id,
       markRead,
       actorUserId: session.userId,
     });
-
-    if (!result.item) {
-      notFound();
-    }
-
-    if (markRead && result.statusChanged && result.previousStatus === "NEW") {
-      await writeAuditLog({
-        userId: session.userId,
-        action: "CONTACT_MESSAGE_MARKED_READ",
-        entityType: "contact_message",
-        entityId: id,
-        details: {
-          trigger: "DETAIL_PAGE_VIEW",
-          previousStatus: "NEW",
-          nextStatus: result.item.status,
-        },
-      });
-    }
-
-    return (
-      <div className="mx-auto w-full max-w-4xl px-4 py-10 sm:px-6 lg:px-8">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Admin</p>
-            <h1 className="text-3xl font-bold text-[var(--ccr-text)]">Message</h1>
-          </div>
-          <Link
-            href={backHref}
-            className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
-          >
-            Back to messages
-          </Link>
-        </div>
-
-        <div className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-5">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="text-xl font-bold text-[var(--ccr-text)]">{result.item.name}</p>
-              <p className="text-sm text-[var(--ccr-muted)]">{result.item.email}</p>
-              <p className="mt-1 text-xs text-[var(--ccr-muted)]">
-                Received{" "}
-                <DateTimeInline
-                  value={result.item.createdAt}
-                  className="inline-flex text-[var(--ccr-text)]"
-                />
-              </p>
-            </div>
-            <span
-              className={`inline-flex rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wide ${statusBadgeClass(
-                result.item.status,
-              )}`}
-            >
-              {result.item.status}
-            </span>
-          </div>
-
-          <dl className="mt-4 grid gap-2 text-xs text-[var(--ccr-muted)] sm:grid-cols-2">
-            <div>
-              <dt className="font-semibold uppercase tracking-wide">Source</dt>
-              <dd className="mt-0.5 text-[var(--ccr-text)]">{result.item.source}</dd>
-            </div>
-            <div>
-              <dt className="font-semibold uppercase tracking-wide">Read at</dt>
-              <dd className="mt-0.5 text-[var(--ccr-text)]">
-                {result.item.readAt ? (
-                  <DateTimeInline value={result.item.readAt} className="inline-flex" />
-                ) : (
-                  "Not read yet"
-                )}
-              </dd>
-            </div>
-          </dl>
-
-          <div className="mt-5 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-4">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-              Message
-            </p>
-            <p className="whitespace-pre-wrap text-sm leading-6 text-[var(--ccr-text)]">
-              {result.item.message}
-            </p>
-          </div>
-
-          <div className="mt-5 border-t border-[var(--ccr-border)] pt-4">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-              Actions
-            </p>
-            <MessageStatusActions
-              messageId={result.item.id}
-              status={result.item.status}
-              didAutoMarkRead={Boolean(markRead && result.statusChanged && result.previousStatus === "NEW")}
-            />
-          </div>
-        </div>
-      </div>
-    );
   } catch (error) {
     if (isContactMessagesMissingTableError(error)) {
       return (
@@ -174,4 +80,96 @@ export default async function AdminMessageDetailPage({
 
     throw error;
   }
+
+  if (!result?.item) {
+    notFound();
+  }
+
+  if (markRead && result.statusChanged && result.previousStatus === "NEW") {
+    await writeAuditLog({
+      userId: session.userId,
+      action: "CONTACT_MESSAGE_MARKED_READ",
+      entityType: "contact_message",
+      entityId: id,
+      details: {
+        trigger: "DETAIL_PAGE_VIEW",
+        previousStatus: "NEW",
+        nextStatus: result.item.status,
+      },
+    });
+  }
+
+  return (
+    <div className="mx-auto w-full max-w-4xl px-4 py-10 sm:px-6 lg:px-8">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Admin</p>
+          <h1 className="text-3xl font-bold text-[var(--ccr-text)]">Message</h1>
+        </div>
+        <Link
+          href={backHref}
+          className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+        >
+          Back to messages
+        </Link>
+      </div>
+
+      <div className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-xl font-bold text-[var(--ccr-text)]">{result.item.name}</p>
+            <p className="text-sm text-[var(--ccr-muted)]">{result.item.email}</p>
+            <p className="mt-1 text-xs text-[var(--ccr-muted)]">
+              Received{" "}
+              <DateTimeInline value={result.item.createdAt} className="inline-flex text-[var(--ccr-text)]" />
+            </p>
+          </div>
+          <span
+            className={`inline-flex rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wide ${statusBadgeClass(
+              result.item.status,
+            )}`}
+          >
+            {result.item.status}
+          </span>
+        </div>
+
+        <dl className="mt-4 grid gap-2 text-xs text-[var(--ccr-muted)] sm:grid-cols-2">
+          <div>
+            <dt className="font-semibold uppercase tracking-wide">Source</dt>
+            <dd className="mt-0.5 text-[var(--ccr-text)]">{result.item.source}</dd>
+          </div>
+          <div>
+            <dt className="font-semibold uppercase tracking-wide">Read at</dt>
+            <dd className="mt-0.5 text-[var(--ccr-text)]">
+              {result.item.readAt ? (
+                <DateTimeInline value={result.item.readAt} className="inline-flex" />
+              ) : (
+                "Not read yet"
+              )}
+            </dd>
+          </div>
+        </dl>
+
+        <div className="mt-5 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-4">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+            Message
+          </p>
+          <p className="whitespace-pre-wrap text-sm leading-6 text-[var(--ccr-text)]">
+            {result.item.message}
+          </p>
+        </div>
+
+        <div className="mt-5 border-t border-[var(--ccr-border)] pt-4">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+            Actions
+          </p>
+          <MessageStatusActions
+            messageId={result.item.id}
+            status={result.item.status}
+            didAutoMarkRead={Boolean(markRead && result.statusChanged && result.previousStatus === "NEW")}
+          />
+        </div>
+      </div>
+    </div>
+  );
 }

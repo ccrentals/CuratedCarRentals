@@ -340,6 +340,8 @@ export default async function AdminDepreciationPage({
                   {visibleRows.map((row) => (
                     <tr
                       key={row.vehicleId}
+                      data-testid="depreciation-snapshot-row"
+                      data-vehicle-id={row.vehicleId}
                       className="border-b border-[var(--ccr-border)] last:border-b-0"
                     >
                       <td className="px-4 py-3 text-[var(--ccr-text)]">

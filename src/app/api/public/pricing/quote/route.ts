@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 
-import { dbQuery } from "@/lib/db";
 import { logError } from "@/lib/log";
-import { computeBookingPricing, parsePaymentOptionInput } from "@/lib/payments/pricing";
-import { normalizePromoInputCode, validatePromoForBooking } from "@/lib/promos";
+import { parsePaymentOptionInput } from "@/lib/payments/pricing";
+import {
+  buildQuotePricingSnapshot,
+  QuotePricingError,
+} from "@/lib/quotes/quotePricing";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -21,10 +23,6 @@ function toDate(value: unknown) {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-function toDateKey(value: Date) {
-  return value.toISOString().slice(0, 10);
-}
-
 function parseAmount(value: unknown) {
   if (typeof value === "number" && Number.isFinite(value)) return Math.round(value);
   if (typeof value === "string" && value.trim().length > 0) {
@@ -34,34 +32,15 @@ function parseAmount(value: unknown) {
   return null;
 }
 
-type VehicleRow = {
-  id: string;
-  daily_rate_cents: number;
-  deposit_cents: number;
-  status: string;
-};
+function parseInteger(value: unknown, fallback = 0) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.round(parsed);
+}
 
-type InsurancePlanRow = {
-  id: string;
-  vehicle_id: string | null;
-  is_enabled: boolean;
-  price_per_day_cents: number;
-  is_global_default: boolean;
-};
-
-async function resolveInsuranceForVehicle(vehicleId: string) {
-  const vehiclePlan = await dbQuery<InsurancePlanRow>(
-    "select id, vehicle_id, is_enabled, price_per_day_cents, is_global_default from insurance_plans where vehicle_id = $1 limit 1",
-    [vehicleId],
-  );
-
-  if (vehiclePlan.rowCount > 0) return vehiclePlan.rows[0];
-
-  const globalPlan = await dbQuery<InsurancePlanRow>(
-    "select id, vehicle_id, is_enabled, price_per_day_cents, is_global_default from insurance_plans where is_global_default = true limit 1",
-  );
-
-  return globalPlan.rows[0] ?? null;
+function asRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return value as Record<string, unknown>;
 }
 
 export async function POST(request: Request) {
@@ -72,11 +51,14 @@ export async function POST(request: Request) {
     const startAt = toDate(body?.startAt);
     const endAt = toDate(body?.endAt);
     const insuranceSelected = body?.insuranceSelected === true;
-    const promoCodeInput = normalizePromoInputCode(normalizeText(body?.promoCode));
+    const insurancePlanId = normalizeText(body?.insurancePlanId) || null;
+    const promoCode = normalizeText(body?.promoCode) || null;
     const customerEmail = normalizeText(body?.customerEmail).toLowerCase() || null;
     const paymentOptionInput = parsePaymentOptionInput(body?.paymentOption);
     const paymentOption = paymentOptionInput ?? "DEPOSIT";
     const customAmount = parseAmount(body?.customAmount);
+    const deliverySelected = body?.deliverySelected === true;
+    const deliveryZoneLabel = normalizeText(body?.deliveryZoneLabel) || null;
 
     if (!UUID_REGEX.test(vehicleId)) {
       return NextResponse.json({ ok: false, error: "Invalid vehicle." }, { status: 400 });
@@ -93,89 +75,27 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: "Invalid payment option." }, { status: 400 });
     }
 
-    const startDate = toDateKey(startAt);
-    const endDate = toDateKey(endAt);
-
-    const vehicleResult = await dbQuery<VehicleRow>(
-      "select id, status, daily_rate_cents, deposit_cents from vehicles where id = $1 and status <> 'INACTIVE' limit 1",
-      [vehicleId],
-    );
-
-    if (vehicleResult.rowCount === 0) {
-      return NextResponse.json({ ok: false, error: "Vehicle not found." }, { status: 404 });
-    }
-
-    const vehicle = vehicleResult.rows[0];
-    const insurancePlan = await resolveInsuranceForVehicle(vehicleId);
-
-    if (insuranceSelected && (!insurancePlan || !insurancePlan.is_enabled)) {
-      return NextResponse.json(
-        { ok: false, error: "Full Coverage Insurance Plan is unavailable for this vehicle." },
-        { status: 400 },
-      );
-    }
-
-    const insurancePricePerDay =
-      insuranceSelected && insurancePlan && insurancePlan.is_enabled
-        ? Math.max(0, Number(insurancePlan.price_per_day_cents ?? 0))
-        : 0;
-
-    const baseSummary = computeBookingPricing({
-      bookingId: "public-quote",
-      bookingStatus: "PENDING_PAYMENT",
+    const snapshot = await buildQuotePricingSnapshot({
+      vehicleId,
       startAt,
       endAt,
-      dailyRate: Math.max(0, Number(vehicle.daily_rate_cents ?? 0)),
-      deposit: Math.max(0, Number(vehicle.deposit_cents ?? 0)),
-      paymentOption,
-      netPaidToDate: 0,
-      insuranceSelected,
-      insurancePricePerDay,
-      promoCode: null,
-      promoDiscount: 0,
-    });
-
-    let promoCode: string | null = null;
-    let promoDiscount = 0;
-
-    if (promoCodeInput) {
-      const promoValidation = await validatePromoForBooking({
-        code: promoCodeInput,
-        vehicleId,
-        startDate,
-        endDate,
-        subtotalCents: baseSummary.subtotal,
-        customerEmail,
-      });
-
-      if (!promoValidation.ok) {
-        return NextResponse.json({ ok: false, error: promoValidation.message }, { status: 400 });
-      }
-
-      promoCode = promoValidation.code;
-      promoDiscount = promoValidation.discountAmountCents;
-    }
-
-    const summary = computeBookingPricing({
-      bookingId: "public-quote",
-      bookingStatus: "PENDING_PAYMENT",
-      startAt,
-      endAt,
-      dailyRate: Math.max(0, Number(vehicle.daily_rate_cents ?? 0)),
-      deposit: Math.max(0, Number(vehicle.deposit_cents ?? 0)),
-      paymentOption,
-      netPaidToDate: 0,
-      insuranceSelected,
-      insurancePricePerDay,
+      insuranceEnabled: insuranceSelected,
+      insurancePlanId,
       promoCode,
-      promoDiscount,
+      customerEmail,
+      deliverySelected,
+      deliveryZoneLabel,
     });
+
+    const pricing = asRecord(snapshot.pricingJson);
+    const days = parseInteger(pricing.days, 0);
+    const insurancePricePerDay = parseInteger(pricing.insurance_price_per_day_cents, 0);
 
     const customAmountWarning =
       paymentOption === "CUSTOM"
-        ? customAmount === null || customAmount <= 0 || customAmount > summary.amountDue
+        ? customAmount === null || customAmount <= 0 || customAmount > snapshot.summary.amountDueCents
           ? "Custom payment must be greater than 0 and not exceed amount due."
-          : customAmount < summary.depositRequired
+          : customAmount < snapshot.summary.depositRequiredCents
             ? "Custom payment is below deposit and may not guarantee the vehicle."
             : null
         : null;
@@ -183,24 +103,28 @@ export async function POST(request: Request) {
     return NextResponse.json({
       ok: true,
       summary: {
-        days: summary.days,
-        baseTotal: summary.baseTotal,
-        insurancePricePerDay: summary.insurancePricePerDay,
-        insuranceTotal: summary.insuranceTotal,
-        discountTotal: summary.discountTotal,
-        subtotal: summary.subtotal,
-        total: summary.total,
-        amountDue: summary.amountDue,
-        depositRequired: summary.depositRequired,
-        paidToDate: summary.netPaidToDate,
-        balanceDue: summary.balanceDue,
-        paymentOption: summary.paymentOption,
-        promoCode: summary.promoCode,
+        days,
+        baseTotal: snapshot.summary.baseTotalCents,
+        insurancePricePerDay,
+        insuranceTotal: snapshot.summary.insuranceTotalCents,
+        discountTotal: snapshot.summary.discountTotalCents,
+        subtotal: snapshot.summary.subtotalCents,
+        total: snapshot.summary.totalCents,
+        amountDue: snapshot.summary.amountDueCents,
+        depositRequired: snapshot.summary.depositRequiredCents,
+        paidToDate: 0,
+        balanceDue: snapshot.summary.amountDueCents,
+        paymentOption,
+        promoCode: snapshot.promoCode,
       },
       customAmountWarning,
-      currency: "JMD",
+      currency: String(pricing.currency ?? "JMD"),
     });
   } catch (error) {
+    if (error instanceof QuotePricingError) {
+      return NextResponse.json({ ok: false, error: error.message }, { status: error.status });
+    }
+
     logError("api.public.pricing.quote.POST", error);
     return NextResponse.json({ ok: false, error: "Unable to generate pricing quote." }, { status: 500 });
   }

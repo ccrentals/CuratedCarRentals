@@ -26,8 +26,10 @@ type VehicleFinanceRow = {
   purchase_date: string | null;
   purchase_cost_cents: number | null;
   residual_value_cents: number | null;
+  odometer_at_purchase: number | null;
   useful_life_months: number | null;
   depreciation_method: string;
+  is_active: boolean;
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -37,8 +39,10 @@ type FinancePayload = {
   purchaseDate: string | null;
   purchaseCostCents: number | null;
   residualValueCents: number | null;
+  odometerAtPurchase: number | null;
   usefulLifeMonths: number | null;
   depreciationMethod: DepreciationMethod;
+  isActive: boolean;
   notes: string | null;
 };
 
@@ -92,6 +96,23 @@ function normalizeNullablePositiveInt(value: unknown) {
   return rounded >= 1 ? rounded : null;
 }
 
+function hasNegativeNumber(value: unknown) {
+  if (value === null || value === undefined || value === "") return false;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed < 0;
+}
+
+function normalizeBoolean(value: unknown, fallback = true) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value === 1;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["1", "true", "yes", "y"].includes(normalized)) return true;
+    if (["0", "false", "no", "n"].includes(normalized)) return false;
+  }
+  return fallback;
+}
+
 function normalizeDepreciationMethod(
   value: unknown,
   fallback: DepreciationMethod,
@@ -114,8 +135,10 @@ function mapFinance(row: VehicleFinanceRow | null, defaults: FinanceDefaults) {
       purchaseDate: null,
       purchaseCostCents: null,
       residualValueCents: null,
+      odometerAtPurchase: null,
       usefulLifeMonths: defaults.usefulLifeMonths,
       depreciationMethod: defaults.depreciationMethod,
+      isActive: true,
       notes: null,
       createdAt: null,
       updatedAt: null,
@@ -126,8 +149,10 @@ function mapFinance(row: VehicleFinanceRow | null, defaults: FinanceDefaults) {
     purchaseDate: row.purchase_date,
     purchaseCostCents: row.purchase_cost_cents,
     residualValueCents: row.residual_value_cents,
+    odometerAtPurchase: row.odometer_at_purchase,
     usefulLifeMonths: row.useful_life_months,
     depreciationMethod: row.depreciation_method,
+    isActive: row.is_active,
     notes: row.notes,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -138,10 +163,20 @@ function metricsForFinance(finance: {
   purchaseDate: string | null;
   purchaseCostCents: number | null;
   residualValueCents: number | null;
+  odometerAtPurchase: number | null;
   usefulLifeMonths: number | null;
   depreciationMethod: string | null;
+  isActive: boolean;
 }) {
   const asOfMonth = monthStartIso(new Date()) ?? monthStartIso(new Date())!;
+  if (!finance.isActive) {
+    return {
+      asOfMonth,
+      metrics: null,
+      incompleteReason: "Depreciation profile is inactive.",
+    };
+  }
+
   const computed = computeBookValueAtMonth(
     {
       purchaseDate: finance.purchaseDate,
@@ -162,15 +197,18 @@ function metricsForFinance(finance: {
   }
 
   return {
-    asOfMonth: computed.asOfMonth,
-    metrics: {
-      monthlyDepreciationCents: computed.monthlyDepreciationCents,
-      depreciationForMonthCents: computed.depreciationForMonthCents,
-      accumulatedDepreciationCents: computed.accumulatedDepreciationCents,
-      bookValueCents: computed.bookValueCents,
-    },
-    incompleteReason: null,
-  };
+      asOfMonth: computed.asOfMonth,
+      metrics: {
+        monthlyDepreciationCents: computed.monthlyDepreciationCents,
+        depreciationForMonthCents: computed.depreciationForMonthCents,
+        depreciatedAmountCents: computed.accumulatedDepreciationCents,
+        accumulatedDepreciationCents: computed.accumulatedDepreciationCents,
+        bookValueCents: computed.bookValueCents,
+        monthsElapsed: computed.monthsElapsed,
+        monthsRemaining: computed.monthsRemaining,
+      },
+      incompleteReason: null,
+    };
 }
 
 const DEFAULT_DEPS: RouteDeps = {
@@ -189,21 +227,71 @@ const DEFAULT_DEPS: RouteDeps = {
   },
   getFinance: async (vehicleId) => {
     const result = await dbQuery<VehicleFinanceRow>(
-      "select vehicle_id, purchase_date, purchase_cost_cents, residual_value_cents, useful_life_months, depreciation_method, notes, created_at, updated_at from vehicle_finance where vehicle_id = $1::uuid limit 1",
+      `select
+        vehicle_id,
+        purchase_date,
+        purchase_price_cents as purchase_cost_cents,
+        expected_rest_value_cents as residual_value_cents,
+        odometer_at_purchase_km as odometer_at_purchase,
+        depreciation_months as useful_life_months,
+        method as depreciation_method,
+        is_active,
+        notes,
+        created_at,
+        updated_at
+      from vehicle_depreciation_profiles
+      where vehicle_id = $1::uuid
+      limit 1`,
       [vehicleId],
     );
     return result.rows[0] ?? null;
   },
   upsertFinance: async (vehicleId, payload) => {
     const result = await dbQuery<VehicleFinanceRow>(
-      "insert into vehicle_finance (vehicle_id, purchase_date, purchase_cost_cents, residual_value_cents, useful_life_months, depreciation_method, notes) values ($1::uuid, $2::date, $3, $4, $5, $6, $7) on conflict (vehicle_id) do update set purchase_date = excluded.purchase_date, purchase_cost_cents = excluded.purchase_cost_cents, residual_value_cents = excluded.residual_value_cents, useful_life_months = excluded.useful_life_months, depreciation_method = excluded.depreciation_method, notes = excluded.notes, updated_at = now() returning vehicle_id, purchase_date, purchase_cost_cents, residual_value_cents, useful_life_months, depreciation_method, notes, created_at, updated_at",
+      `insert into vehicle_depreciation_profiles (
+        vehicle_id,
+        purchase_date,
+        purchase_price_cents,
+        expected_rest_value_cents,
+        odometer_at_purchase_km,
+        depreciation_months,
+        method,
+        is_active,
+        notes
+      )
+      values ($1::uuid, $2::date, $3, $4, $5, $6, $7, $8, $9)
+      on conflict (vehicle_id)
+      do update set
+        purchase_date = excluded.purchase_date,
+        purchase_price_cents = excluded.purchase_price_cents,
+        expected_rest_value_cents = excluded.expected_rest_value_cents,
+        odometer_at_purchase_km = excluded.odometer_at_purchase_km,
+        depreciation_months = excluded.depreciation_months,
+        method = excluded.method,
+        is_active = excluded.is_active,
+        notes = excluded.notes,
+        updated_at = now()
+      returning
+        vehicle_id,
+        purchase_date,
+        purchase_price_cents as purchase_cost_cents,
+        expected_rest_value_cents as residual_value_cents,
+        odometer_at_purchase_km as odometer_at_purchase,
+        depreciation_months as useful_life_months,
+        method as depreciation_method,
+        is_active,
+        notes,
+        created_at,
+        updated_at`,
       [
         vehicleId,
         payload.purchaseDate,
         payload.purchaseCostCents,
         payload.residualValueCents,
+        payload.odometerAtPurchase,
         payload.usefulLifeMonths,
         payload.depreciationMethod,
+        payload.isActive,
         payload.notes,
       ],
     );
@@ -250,7 +338,7 @@ export async function handleAdminVehicleFinanceGet(
     }
     if (isVehicleExtensionsMissingTableError(error)) {
       return NextResponse.json(
-        { ok: false, error: "Vehicle finance tables are not installed." },
+        { ok: false, error: "Vehicle depreciation profile tables are not installed." },
         { status: 503 },
       );
     }
@@ -289,12 +377,16 @@ export async function handleAdminVehicleFinancePatch(
 
   try {
     const defaults = await deps.getDefaults();
+    const rawUsefulLifeMonths = body?.usefulLifeMonths ?? body?.useful_life_months;
 
     const purchaseCostCents = normalizeNullableNonNegativeInt(
       body?.purchaseCostCents ?? body?.purchase_cost_cents,
     );
     const residualValueCents = normalizeNullableNonNegativeInt(
       body?.residualValueCents ?? body?.residual_value_cents,
+    );
+    const odometerAtPurchase = normalizeNullableNonNegativeInt(
+      body?.odometerAtPurchase ?? body?.odometer_at_purchase,
     );
     const usefulLifeMonths = normalizeNullablePositiveInt(
       body?.usefulLifeMonths ?? body?.useful_life_months,
@@ -316,6 +408,29 @@ export async function handleAdminVehicleFinancePatch(
     }
 
     if (
+      hasNegativeNumber(body?.purchaseCostCents ?? body?.purchase_cost_cents) ||
+      hasNegativeNumber(body?.residualValueCents ?? body?.residual_value_cents) ||
+      hasNegativeNumber(body?.odometerAtPurchase ?? body?.odometer_at_purchase)
+    ) {
+      return NextResponse.json(
+        { ok: false, error: "Negative values are not allowed." },
+        { status: 400 },
+      );
+    }
+
+    if (
+      rawUsefulLifeMonths !== undefined &&
+      rawUsefulLifeMonths !== null &&
+      rawUsefulLifeMonths !== "" &&
+      usefulLifeMonths === null
+    ) {
+      return NextResponse.json(
+        { ok: false, error: "Useful life months must be at least 1." },
+        { status: 400 },
+      );
+    }
+
+    if (
       purchaseCostCents !== null &&
       residualValueCents !== null &&
       residualValueCents > purchaseCostCents
@@ -332,11 +447,13 @@ export async function handleAdminVehicleFinancePatch(
       ),
       purchaseCostCents,
       residualValueCents,
+      odometerAtPurchase,
       usefulLifeMonths,
       depreciationMethod: normalizeDepreciationMethod(
         depreciationMethodInput,
         defaults.depreciationMethod,
       ),
+      isActive: normalizeBoolean(body?.isActive ?? body?.is_active, true),
       notes: normalizeNullableText(body?.notes, 4000),
     };
 
@@ -355,7 +472,7 @@ export async function handleAdminVehicleFinancePatch(
   } catch (error) {
     if (isVehicleExtensionsMissingTableError(error)) {
       return NextResponse.json(
-        { ok: false, error: "Vehicle finance tables are not installed." },
+        { ok: false, error: "Vehicle depreciation profile tables are not installed." },
         { status: 503 },
       );
     }

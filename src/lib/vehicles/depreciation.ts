@@ -15,6 +15,8 @@ export type DepreciationMetrics = {
   depreciationForMonthCents: number;
   accumulatedDepreciationCents: number;
   bookValueCents: number;
+  monthsElapsed: number;
+  monthsRemaining: number;
 };
 
 export type DepreciationSnapshotRow = {
@@ -141,6 +143,8 @@ export function computeBookValueAtMonth(
       depreciationForMonthCents: 0,
       accumulatedDepreciationCents: 0,
       bookValueCents: purchaseCostCents,
+      monthsElapsed: 0,
+      monthsRemaining: usefulLifeMonths,
     };
   }
 
@@ -165,6 +169,8 @@ export function computeBookValueAtMonth(
     depreciationForMonthCents,
     accumulatedDepreciationCents,
     bookValueCents,
+    monthsElapsed: elapsedMonths,
+    monthsRemaining: Math.max(usefulLifeMonths - elapsedMonths, 0),
   };
 }
 
@@ -210,4 +216,3 @@ export function generateSnapshots(
 
   return { snapshots, incompleteReason: null };
 }
-

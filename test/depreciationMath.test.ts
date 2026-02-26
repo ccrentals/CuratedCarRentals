@@ -32,6 +32,8 @@ test("depreciation math: book value computes for target month", () => {
   assert.equal(result.monthlyDepreciationCents, 2_000_000);
   assert.equal(result.accumulatedDepreciationCents, 6_000_000);
   assert.equal(result.bookValueCents, 114_000_000);
+  assert.equal(result.monthsElapsed, 3);
+  assert.equal(result.monthsRemaining, 47);
 });
 
 test("depreciation math: month before purchase has zero depreciation", () => {
@@ -53,6 +55,8 @@ test("depreciation math: month before purchase has zero depreciation", () => {
   assert.equal(result.depreciationForMonthCents, 0);
   assert.equal(result.accumulatedDepreciationCents, 0);
   assert.equal(result.bookValueCents, 50_000_000);
+  assert.equal(result.monthsElapsed, 0);
+  assert.equal(result.monthsRemaining, 40);
 });
 
 test("depreciation math: generate snapshots validates complete finance input", () => {

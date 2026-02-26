@@ -1,19 +1,9 @@
 import { dbQuery } from "@/lib/db";
-import { computeBookingPricing } from "@/lib/payments/pricing";
+import { computeQuotePrice, getVehiclePricingProfile } from "@/lib/bookings/pricingRules";
 import { normalizePromoInputCode, validatePromoForBooking } from "@/lib/promos";
 
 type Queryable = {
   query: (text: string, params?: unknown[]) => Promise<{ rows: unknown[]; rowCount: number }>;
-};
-
-type VehicleRow = {
-  id: string;
-  make: string;
-  model: string;
-  year: number;
-  daily_rate_cents: number;
-  deposit_cents: number;
-  features_json: unknown;
 };
 
 type InsurancePlanRow = {
@@ -58,6 +48,8 @@ export type QuotePricingInput = {
   promoCode?: string | null;
   customerEmail?: string | null;
   rackPriceCents?: number | null;
+  deliverySelected?: boolean;
+  deliveryZoneLabel?: string | null;
 };
 
 export type QuotePricingSnapshot = {
@@ -103,24 +95,10 @@ function toInteger(value: unknown, fallback = 0) {
   return Math.round(numeric);
 }
 
-function toRecord(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-  return value as Record<string, unknown>;
-}
-
 function normalizeOptionalText(value: unknown) {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
-}
-
-function resolveVehicleClass(featuresJson: unknown) {
-  const features = toRecord(featuresJson);
-  const category = normalizeOptionalText(features.category);
-  if (category) return category;
-  const className = normalizeOptionalText(features.class);
-  if (className) return className;
-  return null;
 }
 
 async function resolveInsurancePlan(input: {
@@ -215,40 +193,28 @@ export async function buildQuotePricingSnapshot(
     );
   }
 
-  const vehicleResult = await db.query(
-    "select id, make, model, year, daily_rate_cents, deposit_cents, features_json from vehicles where id = $1 and status <> 'INACTIVE' limit 1",
-    [input.vehicleId],
-  );
-  if (vehicleResult.rowCount < 1) {
+  const pricingProfile = await getVehiclePricingProfile(input.vehicleId, { client: db });
+  if (!pricingProfile) {
     throw new QuotePricingError("VEHICLE_NOT_FOUND", "Vehicle not found.", 404);
   }
 
-  const vehicle = vehicleResult.rows[0] as VehicleRow;
   const insurance = await resolveInsurancePlan({
     db,
-    vehicleId: vehicle.id,
+    vehicleId: input.vehicleId,
     insuranceEnabled: input.insuranceEnabled === true,
     insurancePlanId: input.insurancePlanId,
   });
 
-  const vehicleLabel = `${String(vehicle.make ?? "").trim()} ${String(vehicle.model ?? "").trim()}`.trim();
-  const vehicleClass = resolveVehicleClass(vehicle.features_json);
-  const dailyRateCents = Math.max(0, toInteger(vehicle.daily_rate_cents));
-  const depositCents = Math.max(0, toInteger(vehicle.deposit_cents));
-
-  const baseSummary = computeBookingPricing({
-    bookingId: "quote-pricing",
-    bookingStatus: "DRAFT",
+  const baseComputed = computeQuotePrice({
+    profile: pricingProfile,
     startAt,
     endAt,
-    dailyRate: dailyRateCents,
-    deposit: depositCents,
-    paymentOption: "DEPOSIT",
-    netPaidToDate: 0,
     insuranceSelected: insurance.insuranceEnabled,
-    insurancePricePerDay: insurance.insurancePricePerDayCents,
+    insurancePricePerDayCents: insurance.insurancePricePerDayCents,
     promoCode: null,
-    promoDiscount: 0,
+    promoDiscountCents: 0,
+    deliverySelected: input.deliverySelected === true,
+    deliveryZoneLabel: input.deliveryZoneLabel,
   });
 
   const promoCodeInput = normalizePromoInputCode(String(input.promoCode ?? ""));
@@ -261,7 +227,7 @@ export async function buildQuotePricingSnapshot(
       vehicleId: input.vehicleId,
       startDate: toDateKey(startAt),
       endDate: toDateKey(endAt),
-      subtotalCents: baseSummary.subtotal,
+      subtotalCents: baseComputed.subtotalCents,
       customerEmail: normalizeOptionalText(input.customerEmail)?.toLowerCase() ?? null,
       client: db,
     });
@@ -274,73 +240,55 @@ export async function buildQuotePricingSnapshot(
     promoDiscountCents = promoValidation.discountAmountCents;
   }
 
-  const summary = computeBookingPricing({
-    bookingId: "quote-pricing",
-    bookingStatus: "DRAFT",
+  const computed = computeQuotePrice({
+    profile: pricingProfile,
     startAt,
     endAt,
-    dailyRate: dailyRateCents,
-    deposit: depositCents,
-    paymentOption: "DEPOSIT",
-    netPaidToDate: 0,
     insuranceSelected: insurance.insuranceEnabled,
-    insurancePricePerDay: insurance.insurancePricePerDayCents,
+    insurancePricePerDayCents: insurance.insurancePricePerDayCents,
     promoCode,
-    promoDiscount: promoDiscountCents,
+    promoDiscountCents,
+    deliverySelected: input.deliverySelected === true,
+    deliveryZoneLabel: input.deliveryZoneLabel,
   });
 
-  const rackPriceFallback = Math.max(0, toInteger(input.rackPriceCents, baseSummary.baseTotal));
-  const rackPriceCents = input.rackPriceCents == null ? baseSummary.baseTotal : rackPriceFallback;
+  const rackPriceFallback = Math.max(0, toInteger(input.rackPriceCents, computed.baseTotalCents));
+  const rackPriceCents = input.rackPriceCents == null ? computed.baseTotalCents : rackPriceFallback;
 
   const pricingJson: Record<string, unknown> = {
-    booking_id: summary.bookingId,
-    booking_status: summary.bookingStatus,
-    start_date: summary.startDate,
-    end_date: summary.endDate,
-    days: summary.days,
-    currency: "JMD",
-    daily_rate_cents: summary.dailyRate,
-    base_total_cents: summary.baseTotal,
-    insurance_selected: summary.insuranceSelected,
+    ...computed.pricingSnapshotJson,
     insurance_plan_id: insurance.insurancePlanId,
-    insurance_price_per_day_cents: summary.insurancePricePerDay,
-    insurance_total_cents: summary.insuranceTotal,
-    promo_code: summary.promoCode,
-    promo_discount_cents: summary.promoDiscount,
-    discount_total_cents: summary.discountTotal,
-    subtotal_cents: summary.subtotal,
-    total_cents: summary.total,
-    total_amount: summary.total,
-    amount_due_cents: summary.amountDue,
-    amount_due: summary.amountDue,
-    deposit_required_cents: summary.depositRequired,
-    deposit_cents: summary.deposit,
-    amount_paid: summary.netPaidToDate,
-    paid_to_date: summary.netPaidToDate,
-    balance_due_cents: summary.balanceDue,
-    balance_due: summary.balanceDue,
-    payment_option_selected: summary.paymentOption,
-    payment_status: summary.paymentStatus,
-    refund_required: summary.refundRequired,
     rack_price_cents: rackPriceCents,
+    vehicle_label: pricingProfile.vehicleLabel,
+    vehicle_class: pricingProfile.vehicleClass,
+    delivery_selected: computed.deliverySelected,
+    delivery_zone_label: computed.deliveryZoneLabel,
+    delivery_fee_cents: computed.deliveryFeeCents,
+    extra_fees_cents: computed.extraFeesTotalCents,
+    discount_total_cents: computed.discountTotalCents,
+    subtotal_cents: computed.subtotalCents,
+    total_cents: computed.totalCents,
+    amount_due_cents: computed.amountDueCents,
+    deposit_required_cents: computed.depositRequiredCents,
+    currency: computed.currency,
   };
 
   return {
-    vehicleLabel,
-    vehicleClass,
+    vehicleLabel: pricingProfile.vehicleLabel,
+    vehicleClass: pricingProfile.vehicleClass,
     insuranceEnabled: insurance.insuranceEnabled,
     insurancePlanId: insurance.insurancePlanId,
-    promoCode: summary.promoCode,
+    promoCode,
     rackPriceCents,
     pricingJson,
     summary: {
-      baseTotalCents: summary.baseTotal,
-      insuranceTotalCents: summary.insuranceTotal,
-      discountTotalCents: summary.discountTotal,
-      subtotalCents: summary.subtotal,
-      totalCents: summary.total,
-      depositRequiredCents: summary.depositRequired,
-      amountDueCents: summary.amountDue,
+      baseTotalCents: computed.baseTotalCents,
+      insuranceTotalCents: computed.insuranceTotalCents,
+      discountTotalCents: computed.discountTotalCents,
+      subtotalCents: computed.subtotalCents,
+      totalCents: computed.totalCents,
+      depositRequiredCents: computed.depositRequiredCents,
+      amountDueCents: computed.amountDueCents,
     },
   };
 }

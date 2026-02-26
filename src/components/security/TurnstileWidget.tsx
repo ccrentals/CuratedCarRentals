@@ -89,17 +89,17 @@ export function TurnstileWidget({
     if (!TURNSTILE_SITE_KEY) {
       if (process.env.NODE_ENV !== "production") {
         onTokenChange(TURNSTILE_DEV_BYPASS_TOKEN);
-        setRenderError(null);
       } else {
         onTokenChange(null);
-        setRenderError("Security check is unavailable right now. Please try again later.");
       }
       return;
     }
 
     onTokenChange(null);
-    setRenderError(null);
     let cancelled = false;
+    const clearErrorTimer = window.setTimeout(() => {
+      setRenderError(null);
+    }, 0);
 
     loadTurnstileScript()
       .then(() => {
@@ -132,6 +132,7 @@ export function TurnstileWidget({
 
     return () => {
       cancelled = true;
+      window.clearTimeout(clearErrorTimer);
       if (widgetIdRef.current && window.turnstile) {
         window.turnstile.remove(widgetIdRef.current);
       }
@@ -142,8 +143,13 @@ export function TurnstileWidget({
   useEffect(() => {
     if (!TURNSTILE_SITE_KEY || !widgetIdRef.current || !window.turnstile) return;
     onTokenChange(null);
-    setRenderError(null);
+    const clearErrorTimer = window.setTimeout(() => {
+      setRenderError(null);
+    }, 0);
     window.turnstile.reset(widgetIdRef.current);
+    return () => {
+      window.clearTimeout(clearErrorTimer);
+    };
   }, [onTokenChange, resetKey]);
 
   return (
