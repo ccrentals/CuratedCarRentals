@@ -12,6 +12,7 @@ type RouteContext = {
 
 type MaintenanceExportRow = {
   id: string;
+  publicId?: string;
   title: string;
   status: string;
   category: string;
@@ -126,7 +127,7 @@ export async function handleVehicleMaintenanceExportGet(
   if (errorResponse) return errorResponse;
 
   const header = [
-    "record_id",
+    "record_public_id",
     "title",
     "status",
     "category",
@@ -143,7 +144,7 @@ export async function handleVehicleMaintenanceExportGet(
   for (const row of rows) {
     lines.push(
       [
-        csvEscape(row.id),
+        csvEscape(row.publicId ?? row.id),
         csvEscape(row.title),
         csvEscape(row.status),
         csvEscape(row.category),

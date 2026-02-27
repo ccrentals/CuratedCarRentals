@@ -17,6 +17,7 @@ type RecordStatus = "SCHEDULED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
 
 type MaintenanceRecord = {
   id: string;
+  publicId: string;
   vehicleId: string;
   status: RecordStatus;
   category: string;
@@ -949,7 +950,7 @@ function startEdit(item: MaintenanceRecord) {
 
       <div className="mt-4 grid gap-3 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-3 lg:grid-cols-[minmax(0,1fr)_auto_auto_auto]">
         <label className="grid gap-1 text-xs text-[var(--ccr-muted)]">
-          Search (title, category, status)
+          Search (title, category, status, record ID)
           <input
             type="search"
             value={searchQuery}
@@ -957,7 +958,7 @@ function startEdit(item: MaintenanceRecord) {
               setSearchQuery(event.currentTarget.value);
               setOffset(0);
             }}
-            placeholder="Search maintenance records"
+            placeholder="Search maintenance records or ME ID"
             data-testid="maintenance-search"
             className="min-h-11 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 text-sm text-[var(--ccr-text)]"
           />
@@ -1069,6 +1070,12 @@ function startEdit(item: MaintenanceRecord) {
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <p className="font-semibold text-[var(--ccr-text)] break-words">{item.title}</p>
+                        <p
+                          data-testid="maintenance-record-public-id"
+                          className="font-mono text-[11px] text-[var(--ccr-muted)]"
+                        >
+                          {item.publicId}
+                        </p>
                         <p className="text-xs text-[var(--ccr-muted)]">{item.category}</p>
                       </div>
                       <span className={`inline-flex min-h-7 items-center rounded-full border px-3 py-1 text-xs font-semibold ${dueTone(item.dueState)}`}>
@@ -1117,7 +1124,15 @@ function startEdit(item: MaintenanceRecord) {
                         }`}
                         onClick={() => setSelectedId(item.id)}
                       >
-                        <td className="px-3 py-2 text-[var(--ccr-text)]">{item.title}</td>
+                        <td className="px-3 py-2 text-[var(--ccr-text)]">
+                          <p className="font-semibold">{item.title}</p>
+                          <p
+                            data-testid="maintenance-record-public-id"
+                            className="font-mono text-[11px] text-[var(--ccr-muted)]"
+                          >
+                            {item.publicId}
+                          </p>
+                        </td>
                         <td className="px-3 py-2">
                           <div className="flex flex-wrap gap-1">
                             <span className={`inline-flex min-h-7 items-center rounded-full border px-2 py-1 text-[11px] font-semibold ${statusTone(item.status)}`}>
@@ -1541,6 +1556,12 @@ function startEdit(item: MaintenanceRecord) {
                 <div>
                   <h3 className="text-sm font-semibold uppercase tracking-wide text-[var(--ccr-text)]">Record Details</h3>
                   <p className="mt-1 text-sm font-semibold text-[var(--ccr-text)]">{selectedRecord.title}</p>
+                  <p
+                    data-testid="maintenance-detail-public-id"
+                    className="mt-1 font-mono text-[11px] text-[var(--ccr-muted)]"
+                  >
+                    {selectedRecord.publicId}
+                  </p>
                   <p className="text-xs text-[var(--ccr-muted)]">
                     {selectedRecord.category} · Updated <DateTimeInline value={selectedRecord.updatedAt} />
                   </p>
@@ -1557,8 +1578,13 @@ function startEdit(item: MaintenanceRecord) {
 
               <dl className="mt-3 grid gap-2 text-xs text-[var(--ccr-muted)] sm:grid-cols-2">
                 <div className="sm:col-span-2">
-                  <dt>Record UUID</dt>
-                  <dd className="font-mono text-[11px] text-[var(--ccr-muted)] break-all">{selectedRecord.id}</dd>
+                  <dt>Record ID</dt>
+                  <dd
+                    data-testid="maintenance-detail-record-id"
+                    className="font-mono text-[11px] text-[var(--ccr-muted)] break-all"
+                  >
+                    {selectedRecord.publicId}
+                  </dd>
                 </div>
                 <div>
                   <dt>Due / Service Date</dt>
@@ -1664,12 +1690,6 @@ function startEdit(item: MaintenanceRecord) {
                     Linked Blockout
                   </p>
                   <dl className="mt-2 grid gap-2 text-xs text-[var(--ccr-muted)] sm:grid-cols-2">
-                    <div className="sm:col-span-2">
-                      <dt>Blockout UUID</dt>
-                      <dd className="font-mono text-[11px] text-[var(--ccr-muted)] break-all">
-                        {selectedRecord.linkedBlockout.id}
-                      </dd>
-                    </div>
                     <div>
                       <dt>Start</dt>
                       <dd className="text-sm text-[var(--ccr-text)]">

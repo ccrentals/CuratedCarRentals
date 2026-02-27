@@ -48,6 +48,7 @@ type RouteContext = {
 
 type MaintenanceRecordRow = {
   id: string;
+  public_id: string | null;
   vehicle_id: string;
   status: string;
   category: string;
@@ -426,6 +427,7 @@ function mapRow(
 
   return {
     id: row.id,
+    publicId: normalizeText(row.public_id, 32) || row.id,
     vehicleId: row.vehicle_id,
     status: normalizeStatus(row.status),
     category: normalizeText(row.category, 40).toUpperCase() || "OTHER",
@@ -488,6 +490,7 @@ const TOTAL_COST_SQL =
 const BASE_SELECT = `
   select
     r.id,
+    r.public_id,
     r.vehicle_id,
     r.status,
     r.category,
@@ -588,7 +591,7 @@ const DEFAULT_DEPS: VehicleMaintenanceRouteDeps = {
     if (filters.query) {
       values.push(`%${filters.query}%`);
       where.push(
-        `(r.title ilike $${values.length} or r.category ilike $${values.length} or r.status ilike $${values.length})`,
+        `(r.title ilike $${values.length} or r.category ilike $${values.length} or r.status ilike $${values.length} or r.public_id ilike $${values.length})`,
       );
     }
 

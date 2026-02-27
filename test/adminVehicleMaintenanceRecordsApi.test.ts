@@ -29,6 +29,7 @@ function adminSession() {
 function maintenanceRow(overrides: Record<string, unknown> = {}) {
   return {
     id: RECORD_ID,
+    public_id: "ME000001",
     vehicle_id: VEHICLE_ID,
     status: "SCHEDULED",
     category: "SERVICE",
@@ -139,11 +140,12 @@ test("admin vehicle maintenance API: GET applies pagination/search/sort paramete
 
   const body = (await response.json()) as {
     ok?: boolean;
-    rows?: unknown[];
+    rows?: Array<{ publicId?: string }>;
     paging?: { total?: number; limit?: number; offset?: number };
   };
   assert.equal(body.ok, true);
   assert.equal(body.rows?.length, 1);
+  assert.equal(body.rows?.[0]?.publicId, "ME000001");
   assert.equal(body.paging?.total, 42);
   assert.equal(body.paging?.limit, 50);
   assert.equal(body.paging?.offset, 0);
@@ -696,9 +698,11 @@ test("admin maintenance record API: GET includes sorted status history for selec
   assert.equal(response.status, 200);
   const body = (await response.json()) as {
     ok?: boolean;
+    item?: { publicId?: string };
     statusHistory?: Array<{ status?: string; changedBy?: string; note?: string }>;
   };
   assert.equal(body.ok, true);
+  assert.equal(body.item?.publicId, "ME000001");
   assert.equal(body.statusHistory?.length, 1);
   assert.equal(body.statusHistory?.[0]?.status, "IN_PROGRESS");
   assert.equal(body.statusHistory?.[0]?.changedBy, "admin@example.com");
@@ -746,6 +750,7 @@ test("admin vehicle maintenance export API: returns CSV with expected headers", 
             rows: [
               {
                 id: RECORD_ID,
+                publicId: "ME000123",
                 title: "Oil change",
                 status: "COMPLETED",
                 category: "SERVICE",
@@ -770,7 +775,10 @@ test("admin vehicle maintenance export API: returns CSV with expected headers", 
 
   assert.equal(response.status, 200);
   const csv = await response.text();
-  assert.match(csv, /record_id,title,status,category,scheduled_date,service_date,next_due_date,total_cost_jmd/);
-  assert.match(csv, new RegExp(RECORD_ID));
+  assert.match(
+    csv,
+    /record_public_id,title,status,category,scheduled_date,service_date,next_due_date,total_cost_jmd/,
+  );
+  assert.match(csv, /ME000123/);
   assert.match(csv, /Oil change/);
 });
