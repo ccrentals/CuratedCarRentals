@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
 import { isAdminRole } from "@/lib/auth/roles";
+import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery, getDbPool } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
 import { getInternalNotesRecipient, sendBookingNoteEmail } from "@/lib/notifications/email";
@@ -60,11 +61,24 @@ function buildWindowFromDates(startDate: string, endDate: string) {
   };
 }
 
-export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> },
+type BookingByIdRouteContext = {
+  params: Promise<{ id: string }>;
+};
+
+export type AdminBookingByIdGetDeps = {
+  getSession: () => Promise<AdminSession | null>;
+};
+
+const DEFAULT_BOOKING_BY_ID_GET_DEPS: AdminBookingByIdGetDeps = {
+  getSession: () => getSessionFromRequest(),
+};
+
+export async function handleAdminBookingByIdGet(
+  _request: Request,
+  { params }: BookingByIdRouteContext,
+  deps: AdminBookingByIdGetDeps = DEFAULT_BOOKING_BY_ID_GET_DEPS,
 ) {
-  const auth = await requireStaffOrAdminRole();
+  const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
   if (!auth.ok) return auth.response;
   const session = auth.session;
 
@@ -79,10 +93,22 @@ export async function GET(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const paymentsResult = await dbQuery(
-    "select id, provider, status, deposit_amount_cents, currency, created_at from payments where booking_id = $1 order by created_at desc",
-    [id],
-  );
+  const paymentsResult = await (async () => {
+    try {
+      return await dbQuery(
+        "select id, public_id, provider, status, deposit_amount_cents, currency, created_at from payments where booking_id = $1 order by created_at desc",
+        [id],
+      );
+    } catch (error) {
+      if (isUndefinedColumn(error, "public_id")) {
+        return dbQuery(
+          "select id, id as public_id, provider, status, deposit_amount_cents, currency, created_at from payments where booking_id = $1 order by created_at desc",
+          [id],
+        );
+      }
+      throw error;
+    }
+  })();
 
   const booking = bookingResult.rows[0];
   const pricing = (booking.pricing_json ?? {}) as Record<string, unknown>;
@@ -135,6 +161,10 @@ export async function GET(
     },
     payments: paymentsResult.rows,
   });
+}
+
+export async function GET(request: Request, context: BookingByIdRouteContext) {
+  return handleAdminBookingByIdGet(request, context);
 }
 
 export async function PATCH(

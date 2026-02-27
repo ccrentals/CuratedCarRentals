@@ -62,11 +62,10 @@ export function PaymentsFilters({ initialQuery }: PaymentsFiltersProps) {
           name="q"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search name, email, phone, booking ID, payment ID"
+          placeholder="Search name, email, phone, booking ID (BK...), payment ID (PA...)"
           className="mt-2 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
         />
       </label>
     </div>
   );
 }
-

@@ -24,7 +24,9 @@ type ArchivedBookingRow = {
 
 type DeletedPaymentRow = {
   id: string;
+  public_id: string;
   booking_id: string;
+  booking_public_id: string | null;
   provider: string;
   status: string;
   deposit_amount_cents: number;
@@ -74,7 +76,7 @@ export default async function AdminBookingsArchivePage() {
     try {
       return {
         result: await dbQuery<DeletedPaymentRow>(
-          "select p.id, p.booking_id, p.provider, p.status, p.deposit_amount_cents, p.currency, p.created_at, p.deleted_at, p.deleted_reason, u.email as deleted_by_email from payments p join bookings b on b.id = p.booking_id left join users u on u.id = p.deleted_by_user_id where p.deleted_at is not null and p.provider = 'MANUAL' order by p.deleted_at desc nulls last, p.created_at desc",
+          "select p.id, p.public_id, p.booking_id, b.public_id as booking_public_id, p.provider, p.status, p.deposit_amount_cents, p.currency, p.created_at, p.deleted_at, p.deleted_reason, u.email as deleted_by_email from payments p join bookings b on b.id = p.booking_id left join users u on u.id = p.deleted_by_user_id where p.deleted_at is not null and p.provider = 'MANUAL' order by p.deleted_at desc nulls last, p.created_at desc",
         ),
         deletedPaymentsNotConfigured: false,
       };
@@ -225,14 +227,14 @@ export default async function AdminBookingsArchivePage() {
                 {deletedPayments.rows.map((payment) => (
                   <tr key={payment.id} className="border-b border-[var(--ccr-border)] last:border-b-0">
                     <td className="px-4 py-3 font-mono text-xs text-[var(--ccr-text)]">
-                      {payment.id.slice(0, 8)}
+                      {payment.public_id}
                     </td>
                     <td className="px-4 py-3">
                       <Link
                         href={`/admin/bookings/${payment.booking_id}`}
                         className="font-mono text-xs font-semibold text-[var(--ccr-text)] hover:underline"
                       >
-                        {payment.booking_id.slice(0, 8)}
+                        {payment.booking_public_id ?? payment.booking_id}
                       </Link>
                     </td>
                     <td className="px-4 py-3 text-[var(--ccr-text)]">{payment.provider}</td>

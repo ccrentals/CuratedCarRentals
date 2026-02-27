@@ -15,7 +15,9 @@ function isDigitsOnly(value: string) {
 
 type RecentPayment = {
   id: string;
+  public_id: string;
   booking_id: string;
+  booking_public_id: string | null;
   status: string;
   deposit_amount_cents: number;
   provider_ref: string | null;
@@ -55,7 +57,7 @@ export async function GET() {
   });
 
   const recent = await dbQuery<RecentPayment>(
-    "select id, booking_id, status, deposit_amount_cents, provider_ref, provider_transaction_id, metadata_json, created_at from payments where provider = 'WIPAY' order by created_at desc limit 5",
+    "select p.id, p.public_id, p.booking_id, b.public_id as booking_public_id, p.status, p.deposit_amount_cents, p.provider_ref, p.provider_transaction_id, p.metadata_json, p.created_at from payments p join bookings b on b.id = p.booking_id where p.provider = 'WIPAY' order by p.created_at desc limit 5",
   );
 
   return NextResponse.json({

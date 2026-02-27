@@ -66,6 +66,7 @@ type BookingDetails = {
 
 type PaymentRow = {
   id: string;
+  public_id: string;
   provider: string;
   status: string;
   deposit_amount_cents: number;
@@ -280,14 +281,14 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
   let payments: { rows: PaymentRow[]; rowCount: number };
   try {
     payments = await dbQuery<PaymentRow>(
-      "select id, provider, status, deposit_amount_cents, currency, created_at, metadata_json, deleted_at, deleted_reason from payments where booking_id = $1 order by created_at desc",
+      "select id, public_id, provider, status, deposit_amount_cents, currency, created_at, metadata_json, deleted_at, deleted_reason from payments where booking_id = $1 order by created_at desc",
       [id],
     );
   } catch (error) {
     // Graceful fallback if the DB hasn't been migrated yet.
-    if (isUndefinedColumn(error, "deleted_at")) {
+    if (isAnyUndefinedColumn(error, ["deleted_at", "public_id"])) {
       payments = await dbQuery<PaymentRow>(
-        "select id, provider, status, deposit_amount_cents, currency, created_at, metadata_json from payments where booking_id = $1 order by created_at desc",
+        "select id, id as public_id, provider, status, deposit_amount_cents, currency, created_at, metadata_json from payments where booking_id = $1 order by created_at desc",
         [id],
       );
     } else {
@@ -400,7 +401,8 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
           "Manual"
         : payment.provider;
 
-    const parts = [`Payment ${payment.id.slice(0, 8)} (${providerLabel})`];
+    const paymentPublicId = String(payment.public_id ?? "").trim() || payment.id;
+    const parts = [`Payment ${paymentPublicId} (${providerLabel})`];
     if (reference) parts.push(`Ref: ${reference}`);
     if (note) parts.push(`Note: ${note}`);
 
@@ -732,8 +734,11 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
                       }`}
                       title={payment.deleted_reason ? `Deleted: ${payment.deleted_reason}` : undefined}
                     >
-                      <td className="px-3 py-2 font-mono text-xs text-[var(--ccr-text)]">
-                        {payment.id.slice(0, 8)}
+                      <td
+                        data-testid="booking-payment-public-id"
+                        className="px-3 py-2 font-mono text-xs text-[var(--ccr-text)]"
+                      >
+                        {payment.public_id}
                       </td>
                       <td className="px-3 py-2 text-[var(--ccr-text)]">
                         <div className="flex items-center gap-2">

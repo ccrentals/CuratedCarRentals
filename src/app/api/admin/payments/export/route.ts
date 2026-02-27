@@ -11,7 +11,9 @@ function csvEscape(value: string) {
 
 type ExportRow = {
   id: string;
+  public_id: string;
   booking_id: string;
+  booking_public_id: string | null;
   provider: string;
   status: string;
   deposit_amount_cents: number;
@@ -58,7 +60,7 @@ export async function GET(request: Request) {
   if (q) {
     values.push(`${q}%`);
     conditions.push(
-      `(c.full_name ilike $${values.length} or c.email ilike $${values.length} or c.phone ilike $${values.length} or b.id::text ilike $${values.length} or p.id::text ilike $${values.length})`,
+      `(c.full_name ilike $${values.length} or c.email ilike $${values.length} or c.phone ilike $${values.length} or b.id::text ilike $${values.length} or b.public_id ilike $${values.length} or p.id::text ilike $${values.length} or p.public_id ilike $${values.length})`,
     );
   }
   if (bookingId) {
@@ -74,31 +76,31 @@ export async function GET(request: Request) {
 
   const orderBySql =
     sortBy === "payment"
-      ? `order by p.id::text ${directionSql}`
+      ? `order by p.public_id ${directionSql}, p.id::text ${directionSql}`
       : sortBy === "booking"
-        ? `order by p.booking_id::text ${directionSql}, p.id::text ${directionSql}`
+        ? `order by b.public_id ${directionSql}, p.public_id ${directionSql}`
         : sortBy === "customer"
-          ? `order by lower(c.full_name) ${directionSql}, lower(c.email) ${directionSql}, p.id::text ${directionSql}`
+          ? `order by lower(c.full_name) ${directionSql}, lower(c.email) ${directionSql}, p.public_id ${directionSql}`
           : sortBy === "vehicle"
-            ? `order by lower(v.make) ${directionSql}, lower(v.model) ${directionSql}, p.id::text ${directionSql}`
+            ? `order by lower(v.make) ${directionSql}, lower(v.model) ${directionSql}, p.public_id ${directionSql}`
             : sortBy === "provider"
-              ? `order by lower(p.provider) ${directionSql}, p.id::text ${directionSql}`
+              ? `order by lower(p.provider) ${directionSql}, p.public_id ${directionSql}`
               : sortBy === "status"
-                ? `order by upper(p.status) ${directionSql}, p.id::text ${directionSql}`
+                ? `order by upper(p.status) ${directionSql}, p.public_id ${directionSql}`
                 : sortBy === "amount"
-                  ? `order by p.deposit_amount_cents ${directionSql}, p.id::text ${directionSql}`
-                  : `order by p.created_at ${directionSql}, p.id::text ${directionSql}`;
+                  ? `order by p.deposit_amount_cents ${directionSql}, p.public_id ${directionSql}`
+                  : `order by p.created_at ${directionSql}, p.public_id ${directionSql}`;
 
   const queryText =
-    "select p.id, p.booking_id, p.provider, p.status, p.deposit_amount_cents, p.created_at, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model from payments p join bookings b on b.id = p.booking_id join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id " +
+    "select p.id, p.public_id, p.booking_id, b.public_id as booking_public_id, p.provider, p.status, p.deposit_amount_cents, p.created_at, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model from payments p join bookings b on b.id = p.booking_id join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id " +
     (conditions.length ? `where ${conditions.join(" and ")} ` : "") +
     orderBySql;
 
   const rows = await dbQuery<ExportRow>(queryText, values);
 
   const header = [
-    "payment_id",
-    "booking_id",
+    "payment_public_id",
+    "booking_public_id",
     "customer_name",
     "customer_email",
     "vehicle",
@@ -111,8 +113,8 @@ export async function GET(request: Request) {
   const csvLines = [header.join(",")];
   for (const row of rows.rows) {
     const values = [
-      row.id,
-      row.booking_id,
+      row.public_id,
+      row.booking_public_id ?? row.booking_id,
       row.customer_name,
       row.customer_email,
       `${row.vehicle_make} ${row.vehicle_model}`,

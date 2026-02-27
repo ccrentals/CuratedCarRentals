@@ -53,7 +53,9 @@ function extractError(meta: Record<string, unknown> | null) {
 
 type PaymentRow = {
   id: string;
+  public_id: string;
   booking_id: string;
+  booking_public_id: string | null;
   provider: string;
   status: string;
   deposit_amount_cents: number;
@@ -67,7 +69,9 @@ type PaymentRow = {
 
 type WipayRow = {
   id: string;
+  public_id: string;
   booking_id: string;
+  booking_public_id: string | null;
   status: string;
   deposit_amount_cents: number;
   provider_ref: string | null;
@@ -125,7 +129,7 @@ export default async function AdminPaymentsPage({
   if (q) {
     values.push(`${q}%`);
     conditions.push(
-      `(c.full_name ilike $${values.length} or c.email ilike $${values.length} or c.phone ilike $${values.length} or b.id::text ilike $${values.length} or p.id::text ilike $${values.length})`,
+      `(c.full_name ilike $${values.length} or c.email ilike $${values.length} or c.phone ilike $${values.length} or b.id::text ilike $${values.length} or b.public_id ilike $${values.length} or p.id::text ilike $${values.length} or p.public_id ilike $${values.length})`,
     );
   }
   if (bookingId) {
@@ -141,23 +145,23 @@ export default async function AdminPaymentsPage({
 
   const orderBySql =
     sortBy === "payment"
-      ? `order by p.id::text ${directionSql}`
+      ? `order by p.public_id ${directionSql}, p.id::text ${directionSql}`
       : sortBy === "booking"
-        ? `order by p.booking_id::text ${directionSql}, p.id::text ${directionSql}`
+        ? `order by b.public_id ${directionSql}, p.public_id ${directionSql}`
         : sortBy === "customer"
-          ? `order by lower(c.full_name) ${directionSql}, lower(c.email) ${directionSql}, p.id::text ${directionSql}`
+          ? `order by lower(c.full_name) ${directionSql}, lower(c.email) ${directionSql}, p.public_id ${directionSql}`
           : sortBy === "vehicle"
-            ? `order by lower(v.make) ${directionSql}, lower(v.model) ${directionSql}, p.id::text ${directionSql}`
+            ? `order by lower(v.make) ${directionSql}, lower(v.model) ${directionSql}, p.public_id ${directionSql}`
             : sortBy === "provider"
-              ? `order by lower(p.provider) ${directionSql}, p.id::text ${directionSql}`
+              ? `order by lower(p.provider) ${directionSql}, p.public_id ${directionSql}`
               : sortBy === "status"
-                ? `order by upper(p.status) ${directionSql}, p.id::text ${directionSql}`
+                ? `order by upper(p.status) ${directionSql}, p.public_id ${directionSql}`
                 : sortBy === "amount"
-                  ? `order by p.deposit_amount_cents ${directionSql}, p.id::text ${directionSql}`
-                  : `order by p.created_at ${directionSql}, p.id::text ${directionSql}`;
+                  ? `order by p.deposit_amount_cents ${directionSql}, p.public_id ${directionSql}`
+                  : `order by p.created_at ${directionSql}, p.public_id ${directionSql}`;
 
   const queryText =
-    "select p.id, p.booking_id, p.provider, p.status, p.deposit_amount_cents, p.created_at, p.metadata_json, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model from payments p join bookings b on b.id = p.booking_id join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id " +
+    "select p.id, p.public_id, p.booking_id, b.public_id as booking_public_id, p.provider, p.status, p.deposit_amount_cents, p.created_at, p.metadata_json, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model from payments p join bookings b on b.id = p.booking_id join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id " +
     (conditions.length ? `where ${conditions.join(" and ")} ` : "") +
     orderBySql;
 
@@ -165,7 +169,7 @@ export default async function AdminPaymentsPage({
   const visibleCount = Math.max(rowsPerPage, requestedVisible ?? rowsPerPage);
   const visiblePayments = payments.rows.slice(0, visibleCount);
   const wipayRecent = await dbQuery<WipayRow>(
-    "select id, booking_id, status, deposit_amount_cents, provider_ref, provider_transaction_id, metadata_json, created_at from payments where provider = 'WIPAY' order by created_at desc limit 5",
+    "select p.id, p.public_id, p.booking_id, b.public_id as booking_public_id, p.status, p.deposit_amount_cents, p.provider_ref, p.provider_transaction_id, p.metadata_json, p.created_at from payments p join bookings b on b.id = p.booking_id where p.provider = 'WIPAY' order by p.created_at desc limit 5",
   );
 
   const accountNumber = process.env.WIPAY_ACCOUNT_NUMBER?.trim() ?? "";
@@ -357,7 +361,7 @@ export default async function AdminPaymentsPage({
                     <div className="mt-2 text-xs text-[var(--ccr-muted)]">
                       Booking:{" "}
                       <span className="font-mono font-semibold text-[var(--ccr-text)]">
-                        {row.booking_id.slice(0, 8)}
+                        {row.booking_public_id ?? row.booking_id}
                       </span>{" "}
                       · Order: {row.provider_ref ?? "-"}
                     </div>
@@ -403,7 +407,7 @@ export default async function AdminPaymentsPage({
                         className="inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 font-mono text-[11px] font-bold text-[var(--ccr-accent)]"
                         title="Open booking"
                       >
-                        {payment.id.slice(0, 8)}
+                        {payment.public_id}
                       </Link>
                       <DateTimeInline
                         value={payment.created_at}
@@ -424,7 +428,7 @@ export default async function AdminPaymentsPage({
                         <dt className="uppercase tracking-wide text-[var(--ccr-muted)]">Booking</dt>
                         <dd>
                           <Link href={bookingHref} className="font-semibold text-[var(--ccr-text)]">
-                            {payment.booking_id.slice(0, 8)}
+                            {payment.booking_public_id ?? payment.booking_id}
                           </Link>
                         </dd>
                       </div>
@@ -487,7 +491,7 @@ export default async function AdminPaymentsPage({
                             className="inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-[11px] font-bold text-[var(--ccr-accent)] transition hover:bg-[var(--ccr-accent)] hover:text-[var(--ccr-primary)]"
                             title="Open booking"
                           >
-                            {payment.id.slice(0, 8)}
+                            {payment.public_id}
                           </Link>
                         </td>
                         <td className="px-4 py-3">
@@ -495,7 +499,7 @@ export default async function AdminPaymentsPage({
                             href={bookingHref}
                             className="text-sm font-semibold text-[var(--ccr-text)]"
                           >
-                            {payment.booking_id.slice(0, 8)}
+                            {payment.booking_public_id ?? payment.booking_id}
                           </Link>
                         </td>
                         <td className="px-4 py-3">
