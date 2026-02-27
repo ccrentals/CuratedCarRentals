@@ -12,6 +12,7 @@ import { buildLoadedPaginationProgress, STANDARD_PAGE_SIZE_OPTIONS } from "@/lib
 
 type PromoRow = {
   id: string;
+  public_id: string;
   code: string;
   is_active: boolean;
   discount_type: "PERCENT" | "FIXED";
@@ -477,11 +478,11 @@ export default function AdminPromoCodesPage() {
       <div className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
         <div className="flex flex-wrap items-end gap-3">
           <label className="min-w-[260px] flex-1 text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-            Search code
+            Search code or promo ID
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="SUMMER, VIP, etc."
+              placeholder="SUMMER, PR000123, etc."
               className="mt-2 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
             />
           </label>
@@ -529,7 +530,7 @@ export default function AdminPromoCodesPage() {
                 <tr key={promo.id} className="border-b border-[var(--ccr-border)] last:border-b-0">
                   <td className="px-4 py-3">
                     <p className="font-semibold text-[var(--ccr-text)]">{promo.code}</p>
-                    <p className="mt-1 font-mono text-[10px] text-[var(--ccr-muted)]">{promo.id.slice(0, 8)}</p>
+                    <p className="mt-1 font-mono text-[10px] text-[var(--ccr-muted)]">{promo.public_id}</p>
                   </td>
                   <td className="px-4 py-3 text-[var(--ccr-text)]">
                     {promo.discount_type === "PERCENT"

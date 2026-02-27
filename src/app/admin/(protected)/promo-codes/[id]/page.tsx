@@ -10,6 +10,7 @@ import { formatJmd } from "@/lib/money";
 
 type PromoDetails = {
   id: string;
+  public_id: string;
   code: string;
   is_active: boolean;
   discount_type: "PERCENT" | "FIXED";
@@ -29,6 +30,7 @@ type PromoDetails = {
 type RedemptionRow = {
   id: string;
   booking_id: string;
+  booking_public_id: string | null;
   customer_email: string | null;
   discount_amount_cents: number;
   created_at: string;
@@ -276,6 +278,7 @@ export default function AdminPromoCodeDetailPage() {
           <h1 className="text-3xl font-bold text-[var(--ccr-text)]">
             {promo ? promo.code : "Promo Code"}
           </h1>
+          {promo ? <p className="mt-1 font-mono text-xs text-[var(--ccr-muted)]">{promo.public_id}</p> : null}
         </div>
         <div className="flex items-center gap-2">
           <Link
@@ -509,7 +512,7 @@ export default function AdminPromoCodeDetailPage() {
                       <tr key={row.id} className="border-b border-[var(--ccr-border)] last:border-b-0">
                         <td className="px-3 py-2">
                           <Link href={`/admin/bookings/${row.booking_id}`} className="font-mono text-xs text-[var(--ccr-text)]">
-                            {row.booking_id.slice(0, 8)}
+                            {row.booking_public_id ?? row.booking_id}
                           </Link>
                         </td>
                         <td className="px-3 py-2 text-[var(--ccr-text)]">{row.customer_email ?? "Unknown"}</td>

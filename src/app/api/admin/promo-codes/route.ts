@@ -9,6 +9,7 @@ import { logError } from "@/lib/log";
 
 type PromoListRow = {
   id: string;
+  public_id: string;
   code: string;
   is_active: boolean;
   discount_type: "PERCENT" | "FIXED";
@@ -22,6 +23,26 @@ type PromoListRow = {
   updated_at: string;
   redemption_count: number;
 };
+
+export async function fetchAdminPromoCodes(input: { q?: string } = {}) {
+  const q = (input.q ?? "").trim();
+  const values = q ? [`${q}%`] : [];
+  const whereSql = q ? "where (p.code ilike $1 or p.public_id ilike $1)" : "";
+
+  const result = await dbQuery<PromoListRow>(
+    "select p.id, p.public_id, p.code, p.is_active, p.discount_type, p.discount_value, p.min_subtotal_cents, p.max_redemptions, p.max_redemptions_per_customer, p.start_at, p.end_at, p.created_at, p.updated_at, count(r.id)::int as redemption_count from promo_codes p left join promo_redemptions r on r.promo_code_id = p.id " +
+      whereSql +
+      " group by p.id, p.public_id, p.code, p.is_active, p.discount_type, p.discount_value, p.min_subtotal_cents, p.max_redemptions, p.max_redemptions_per_customer, p.start_at, p.end_at, p.created_at, p.updated_at order by p.created_at desc",
+    values,
+  );
+
+  return result.rows.map((row: PromoListRow) => ({
+    ...row,
+    discount_value: Number(row.discount_value ?? 0),
+    remaining_redemptions:
+      row.max_redemptions === null ? null : Math.max(0, row.max_redemptions - row.redemption_count),
+  }));
+}
 
 function asInteger(value: unknown): number | null {
   if (value === null || value === undefined || value === "") return null;
@@ -58,23 +79,8 @@ export async function GET(request: Request) {
   if (!auth.ok) return auth.response;
 
   const url = new URL(request.url);
-  const q = (url.searchParams.get("q") ?? "").trim();
-  const values = q ? [`${q}%`] : [];
-  const whereSql = q ? "where p.code ilike $1" : "";
-
-  const result = await dbQuery<PromoListRow>(
-    "select p.id, p.code, p.is_active, p.discount_type, p.discount_value, p.min_subtotal_cents, p.max_redemptions, p.max_redemptions_per_customer, p.start_at, p.end_at, p.created_at, p.updated_at, count(r.id)::int as redemption_count from promo_codes p left join promo_redemptions r on r.promo_code_id = p.id " +
-      whereSql +
-      " group by p.id, p.code, p.is_active, p.discount_type, p.discount_value, p.min_subtotal_cents, p.max_redemptions, p.max_redemptions_per_customer, p.start_at, p.end_at, p.created_at, p.updated_at order by p.created_at desc",
-    values,
-  );
-
-  const promos = result.rows.map((row: PromoListRow) => ({
-    ...row,
-    discount_value: Number(row.discount_value ?? 0),
-    remaining_redemptions:
-      row.max_redemptions === null ? null : Math.max(0, row.max_redemptions - row.redemption_count),
-  }));
+  const q = url.searchParams.get("q") ?? "";
+  const promos = await fetchAdminPromoCodes({ q });
 
   return NextResponse.json({ promos });
 }
@@ -121,8 +127,8 @@ export async function POST(request: Request) {
   }
 
   try {
-    const insert = await dbQuery<{ id: string }>(
-      "insert into promo_codes (code, is_active, discount_type, discount_value, min_subtotal_cents, max_redemptions, max_redemptions_per_customer, start_at, end_at, allowed_vehicle_ids_json, excluded_vehicle_ids_json, blackout_dates_json, created_by) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb, $12::jsonb, $13) returning id",
+    const insert = await dbQuery<{ id: string; public_id: string }>(
+      "insert into promo_codes (code, is_active, discount_type, discount_value, min_subtotal_cents, max_redemptions, max_redemptions_per_customer, start_at, end_at, allowed_vehicle_ids_json, excluded_vehicle_ids_json, blackout_dates_json, created_by) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb, $12::jsonb, $13) returning id, public_id",
       [
         code,
         isActive,
@@ -141,6 +147,7 @@ export async function POST(request: Request) {
     );
 
     const promoId = insert.rows[0]?.id;
+    const promoPublicId = insert.rows[0]?.public_id;
     await writeAuditLog({
       userId: actor.userId,
       action: "PROMO_CODE_CREATED",
@@ -149,7 +156,7 @@ export async function POST(request: Request) {
       details: { code, discountType, discountValue, isActive },
     });
 
-    return NextResponse.json({ ok: true, promoId });
+    return NextResponse.json({ ok: true, promoId, promoPublicId });
   } catch (error) {
     const codeError = (error as { code?: string } | null)?.code;
     if (codeError === "23505") {

@@ -9,6 +9,7 @@ import { logError } from "@/lib/log";
 
 type PromoRow = {
   id: string;
+  public_id: string;
   code: string;
   is_active: boolean;
   discount_type: "PERCENT" | "FIXED";
@@ -28,6 +29,7 @@ type PromoRow = {
 type RedemptionRow = {
   id: string;
   booking_id: string;
+  booking_public_id: string | null;
   customer_email: string | null;
   discount_amount_cents: number;
   created_at: string;
@@ -69,6 +71,17 @@ function normalizePromoPayload(row: PromoRow) {
   };
 }
 
+export async function fetchAdminPromoCodeById(id: string) {
+  const promo = await dbQuery<PromoRow>(
+    "select id, public_id, code, is_active, discount_type, discount_value, min_subtotal_cents, max_redemptions, max_redemptions_per_customer, start_at, end_at, allowed_vehicle_ids_json, excluded_vehicle_ids_json, blackout_dates_json, created_at, updated_at from promo_codes where id = $1 limit 1",
+    [id],
+  );
+  if (promo.rowCount === 0) {
+    return null;
+  }
+  return normalizePromoPayload(promo.rows[0]);
+}
+
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -77,21 +90,18 @@ export async function GET(
   if (!auth.ok) return auth.response;
 
   const { id } = await params;
-  const promo = await dbQuery<PromoRow>(
-    "select id, code, is_active, discount_type, discount_value, min_subtotal_cents, max_redemptions, max_redemptions_per_customer, start_at, end_at, allowed_vehicle_ids_json, excluded_vehicle_ids_json, blackout_dates_json, created_at, updated_at from promo_codes where id = $1 limit 1",
-    [id],
-  );
-  if (promo.rowCount === 0) {
+  const promo = await fetchAdminPromoCodeById(id);
+  if (!promo) {
     return NextResponse.json({ error: "Promo code not found." }, { status: 404 });
   }
 
   const redemptions = await dbQuery<RedemptionRow>(
-    "select id, booking_id, customer_email, discount_amount_cents, created_at from promo_redemptions where promo_code_id = $1 order by created_at desc limit 100",
+    "select r.id, r.booking_id, b.public_id as booking_public_id, r.customer_email, r.discount_amount_cents, r.created_at from promo_redemptions r left join bookings b on b.id = r.booking_id where r.promo_code_id = $1 order by r.created_at desc limit 100",
     [id],
   );
 
   return NextResponse.json({
-    promo: normalizePromoPayload(promo.rows[0]),
+    promo,
     redemptions: redemptions.rows,
   });
 }
