@@ -75,7 +75,7 @@ export async function GET() {
   if (!auth.ok) return auth.response;
 
   const result = await dbQuery(
-    "select id, make, model, year, seat_count, daily_rate_cents, deposit_cents, status, created_at from vehicles order by created_at desc",
+    "select id, public_id, make, model, year, seat_count, daily_rate_cents, deposit_cents, status, created_at from vehicles order by created_at desc",
   );
   return NextResponse.json({ vehicles: result.rows });
 }
@@ -160,7 +160,7 @@ export async function POST(request: Request) {
   };
 
   const result = await dbQuery(
-    "insert into vehicles (make, model, year, seat_count, daily_rate_cents, deposit_cents, status, image_urls_json, features_json) values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning id, make, model, year, seat_count, daily_rate_cents, deposit_cents, status, created_at",
+    "insert into vehicles (make, model, year, seat_count, daily_rate_cents, deposit_cents, status, image_urls_json, features_json) values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning id, public_id, make, model, year, seat_count, daily_rate_cents, deposit_cents, status, created_at",
     [
       makeValue,
       modelValue,

@@ -80,6 +80,7 @@ export function vehicleFilterWhereSql(
     const baseSearch = [
       `v.make ilike $${values.length}`,
       `v.model ilike $${values.length}`,
+      `v.public_id ilike $${values.length}`,
       `v.id::text ilike $${values.length}`,
       `cast(v.year as text) ilike $${values.length}`,
     ];

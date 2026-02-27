@@ -40,7 +40,7 @@ export async function GET(
 
   const { id } = await params;
   const vehicleResult = await dbQuery(
-    "select id, make, model, year, seat_count, daily_rate_cents, deposit_cents, status, created_at, updated_at from vehicles where id = $1",
+    "select id, public_id, make, model, year, seat_count, daily_rate_cents, deposit_cents, status, created_at, updated_at from vehicles where id = $1",
     [id],
   );
 
@@ -148,7 +148,7 @@ export async function PATCH(
   const updateResult = await dbQuery(
     `update vehicles set ${updates.join(", ")}, updated_at = now() where id = $${
       index
-    } returning id, make, model, year, seat_count, daily_rate_cents, deposit_cents, status`,
+    } returning id, public_id, make, model, year, seat_count, daily_rate_cents, deposit_cents, status`,
     values,
   );
 

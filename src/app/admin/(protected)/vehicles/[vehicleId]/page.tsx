@@ -17,6 +17,7 @@ import { isVehicleExtensionsMissingTableError } from "@/lib/vehicles/extensionTa
 
 type VehicleDetail = {
   id: string;
+  public_id: string;
   make: string;
   model: string;
   year: number;
@@ -92,7 +93,7 @@ export default async function AdminVehicleDetailPage({
       : null;
 
   const vehicleResult = await dbQuery<VehicleDetail>(
-    "select id, make, model, year, seat_count, daily_rate_cents, deposit_cents, status, image_urls_json from vehicles where id = $1::uuid",
+    "select id, public_id, make, model, year, seat_count, daily_rate_cents, deposit_cents, status, image_urls_json from vehicles where id = $1::uuid",
     [vehicleId],
   );
 

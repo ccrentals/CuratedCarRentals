@@ -177,7 +177,7 @@ export function VehiclesFilters({ initialQuery, initialFilter, initialSort }: Ve
             name="q"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search make, model, year, ID, VIN, or plate"
+            placeholder="Search make, model, year, public ID, VIN, or plate"
             className="mt-2 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
           />
         </label>

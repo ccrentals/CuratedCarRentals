@@ -34,6 +34,7 @@ import {
 
 type VehicleRow = {
   id: string;
+  public_id: string;
   make: string;
   model: string;
   year: number;
@@ -125,6 +126,7 @@ export default async function AdminVehiclesPage({
     const vehicles = await dbQuery<VehicleRow>(
       `select
           v.id,
+          v.public_id,
           v.make,
           v.model,
           v.year,
@@ -149,6 +151,7 @@ export default async function AdminVehiclesPage({
     const vehicles = await dbQuery<VehicleRow>(
       `select
           v.id,
+          v.public_id,
           v.make,
           v.model,
           v.year,
@@ -297,6 +300,12 @@ export default async function AdminVehiclesPage({
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
+                      <p
+                        data-testid="vehicle-public-id"
+                        className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]"
+                      >
+                        {vehicle.public_id}
+                      </p>
                       <p className="font-semibold text-[var(--ccr-text)]">
                         {vehicle.year} {vehicle.make} {vehicle.model}
                       </p>
@@ -393,6 +402,12 @@ export default async function AdminVehiclesPage({
                     >
                       <td className="px-4 py-3 text-[var(--ccr-text)]">
                         <Link href={`/admin/vehicles/${vehicle.id}`} className="font-semibold text-[var(--ccr-text)]">
+                          <span
+                            data-testid="vehicle-public-id"
+                            className="mr-2 inline-flex rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]"
+                          >
+                            {vehicle.public_id}
+                          </span>
                           {vehicle.year} {vehicle.make} {vehicle.model}
                         </Link>
                       </td>

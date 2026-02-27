@@ -9,6 +9,7 @@ import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
 type VehicleDetail = {
   id: string;
+  public_id: string;
   make: string;
   model: string;
   year: number;
@@ -304,7 +305,12 @@ export function VehicleDetailForm({ vehicle, profile, initialNotes }: VehicleDet
     <div className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4 shadow-sm sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Vehicle</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+            Vehicle{" "}
+            <span data-testid="vehicle-detail-public-id" className="text-[var(--ccr-text)]">
+              {vehicle.public_id}
+            </span>
+          </p>
           <div className="mt-1 flex flex-wrap items-center gap-3">
             <h1 className="text-2xl font-bold text-[var(--ccr-text)]">
               {vehicle.year} {vehicle.make} {vehicle.model}
