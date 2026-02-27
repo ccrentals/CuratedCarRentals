@@ -64,7 +64,7 @@ export function UsersFilters({ initialQuery }: UsersFiltersProps) {
             name="q"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search name, email, or username"
+            placeholder="Search name, email, username, or UR ID"
             className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
           />
         </label>

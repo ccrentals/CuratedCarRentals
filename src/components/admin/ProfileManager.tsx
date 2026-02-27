@@ -16,6 +16,7 @@ type MeResponse = {
   ok: boolean;
   error?: string;
   userId?: string;
+  publicId?: string | null;
   email?: string;
   role?: string;
   fullName?: string | null;
@@ -92,7 +93,7 @@ export function ProfileManager() {
       createdAt: profile.createdAt ?? null,
       lastLoginAt: profile.lastLoginAt ?? null,
       status: profile.isActive === false ? "Inactive" : "Active",
-      userId: profile.userId ?? "—",
+      publicId: profile.publicId ?? null,
     };
   }, [profile]);
 
@@ -183,8 +184,10 @@ export function ProfileManager() {
               <p className="font-semibold text-[var(--ccr-text)]">{userSummary?.username ?? "—"}</p>
             </div>
             <div>
-              <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">User ID</p>
-              <p className="break-all font-mono text-xs text-[var(--ccr-text)]">{userSummary?.userId ?? "—"}</p>
+              <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">User reference</p>
+              <p className="break-all font-mono text-xs text-[var(--ccr-text)]">
+                {userSummary?.publicId ?? "UR pending"}
+              </p>
             </div>
             <div>
               <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Member since</p>

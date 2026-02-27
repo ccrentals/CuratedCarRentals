@@ -12,6 +12,7 @@ import { normalizePageSize, parsePositiveIntParam } from "@/lib/pagination/share
 
 type UserRow = {
   id: string;
+  public_id: string | null;
   email: string;
   username?: string | null;
   full_name?: string | null;
@@ -67,15 +68,17 @@ export default async function AdminUsersPage({
   let whereSql = "";
   if (q) {
     values.push(`${q}%`);
-    whereSql = "where (email ilike $1 or username ilike $1 or full_name ilike $1)";
+    whereSql = "where (email ilike $1 or username ilike $1 or full_name ilike $1 or public_id ilike $1)";
   }
 
   const queryWithLifecycle =
-    "select id, email, username, full_name, role, is_active, deactivated_at, locked_at, created_at, last_login_at from users " +
+    "select id, public_id, email, username, full_name, role, is_active, deactivated_at, locked_at, created_at, last_login_at from users " +
     whereSql +
     " order by created_at desc";
   const queryBasic =
-    "select id, email, role, locked_at, created_at from users " + (q ? "where email ilike $1" : "") + " order by created_at desc";
+    "select id, null::text as public_id, email, role, locked_at, created_at from users " +
+    (q ? "where email ilike $1" : "") +
+    " order by created_at desc";
 
   const usersQuery = await (async (): Promise<{
     result: Awaited<ReturnType<typeof dbQuery<UserRow>>>;
@@ -92,13 +95,25 @@ export default async function AdminUsersPage({
       if (isUndefinedColumn(error, "username")) {
         return {
           result: await dbQuery<UserRow>(
-            "select id, email, full_name, role, is_active, deactivated_at, locked_at, created_at, last_login_at from users " +
-              whereSql.replace("username ilike $1 or ", "") +
+            "select id, null::text as public_id, email, full_name, role, is_active, deactivated_at, locked_at, created_at, last_login_at from users " +
+              whereSql.replace("username ilike $1 or ", "").replace(" or public_id ilike $1", "") +
               " order by created_at desc",
             values,
           ),
           lifecycleNotConfigured: false,
           usernamesNotConfigured: true,
+        };
+      }
+      if (isUndefinedColumn(error, "public_id")) {
+        return {
+          result: await dbQuery<UserRow>(
+            "select id, null::text as public_id, email, username, full_name, role, is_active, deactivated_at, locked_at, created_at, last_login_at from users " +
+              whereSql.replace(" or public_id ilike $1", "") +
+              " order by created_at desc",
+            values,
+          ),
+          lifecycleNotConfigured: false,
+          usernamesNotConfigured: false,
         };
       }
       if (isUndefinedColumn(error, "is_active") || isUndefinedColumn(error, "full_name")) {
@@ -185,14 +200,9 @@ export default async function AdminUsersPage({
                       <p className="font-semibold text-[var(--ccr-text)]">
                         {(user.full_name ?? "").trim() || user.email}
                       </p>
-                      <details className="relative">
-                        <summary className="list-none cursor-pointer rounded-md border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)] hover:border-[var(--ccr-accent)] hover:text-[var(--ccr-text)]">
-                          ID
-                        </summary>
-                        <div className="absolute left-0 top-full z-10 mt-1 w-56 break-all rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-2 py-1 font-mono text-[10px] text-[var(--ccr-text)] shadow-lg">
-                          {user.id}
-                        </div>
-                      </details>
+                      <span className="rounded-md border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                        {user.public_id ?? "UR pending"}
+                      </span>
                     </div>
                     <p className="text-xs text-[var(--ccr-muted)]">{user.email}</p>
                     {user.username ? (

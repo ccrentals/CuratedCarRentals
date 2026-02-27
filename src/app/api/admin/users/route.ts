@@ -41,6 +41,49 @@ function isUndefinedColumn(error: unknown, column: string) {
   return code === "42703" && message.includes(`\"${column}\"`) && message.includes("does not exist");
 }
 
+export type AdminUserListRow = {
+  id: string;
+  public_id: string | null;
+  email: string;
+  username: string | null;
+  full_name: string | null;
+  role: string;
+  is_active: boolean | null;
+  deactivated_at: string | null;
+  locked_at: string | null;
+  created_at: string;
+  last_login_at: string | null;
+};
+
+export async function fetchAdminUsers(input: { q?: string } = {}) {
+  const q = (input.q ?? "").trim();
+  const values = q ? [`%${q}%`] : [];
+
+  try {
+    const result = await dbQuery<AdminUserListRow>(
+      "select id, public_id, email, username, full_name, role, is_active, deactivated_at, locked_at, created_at, last_login_at from users" +
+        (q
+          ? " where (email ilike $1 or username ilike $1 or full_name ilike $1 or public_id ilike $1)"
+          : "") +
+        " order by created_at desc",
+      values,
+    );
+    return result.rows;
+  } catch (error) {
+    if (!isUndefinedColumn(error, "public_id")) {
+      throw error;
+    }
+
+    const fallback = await dbQuery<AdminUserListRow>(
+      "select id, null::text as public_id, email, username, full_name, role, is_active, deactivated_at, locked_at, created_at, last_login_at from users" +
+        (q ? " where (email ilike $1 or username ilike $1 or full_name ilike $1)" : "") +
+        " order by created_at desc",
+      values,
+    );
+    return fallback.rows;
+  }
+}
+
 type ClerkSyncResult =
   | {
       status: "skipped";
@@ -258,20 +301,8 @@ export async function GET(request: Request) {
   if (!auth.ok) return auth.response;
 
   const { searchParams } = new URL(request.url);
-  const q = (searchParams.get("q") ?? "").trim();
-
-  if (!q) {
-    const result = await dbQuery(
-      "select id, email, username, full_name, role, is_active, deactivated_at, locked_at, created_at, last_login_at from users order by created_at desc",
-    );
-    return NextResponse.json({ users: result.rows });
-  }
-
-  const result = await dbQuery(
-    "select id, email, username, full_name, role, is_active, deactivated_at, locked_at, created_at, last_login_at from users where (email ilike $1 or username ilike $1 or full_name ilike $1) order by created_at desc",
-    [`%${q}%`],
-  );
-  return NextResponse.json({ users: result.rows });
+  const users = await fetchAdminUsers({ q: searchParams.get("q") ?? "" });
+  return NextResponse.json({ users });
 }
 
 export async function POST(request: Request) {
@@ -388,7 +419,7 @@ export async function POST(request: Request) {
     const insert = await (async () => {
       try {
         return await client.query(
-          "insert into users (email, username, full_name, password_hash, role, is_active, must_change_password, temp_password_expires_at, password_updated_at) values ($1, $2, $3, $4, $5, true, true, $6, now()) returning id",
+          "insert into users (email, username, full_name, password_hash, role, is_active, must_change_password, temp_password_expires_at, password_updated_at) values ($1, $2, $3, $4, $5, true, true, $6, now()) returning id, public_id",
           [emailLower, usernameFinal, fullNameFinal, passwordHash, role, expiresAt.toISOString()],
         );
       } catch (error) {
@@ -411,6 +442,7 @@ export async function POST(request: Request) {
       );
     }
     const newUserId = String(insert.rows[0]?.id);
+    const newUserPublicId = String(insert.rows[0]?.public_id ?? "").trim() || null;
 
     await client.query("commit");
 
@@ -442,6 +474,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       ok: true,
       userId: newUserId,
+      userPublicId: newUserPublicId,
       username: usernameFinal,
       tempPassword,
       tempPasswordExpiresAt: expiresAt.toISOString(),

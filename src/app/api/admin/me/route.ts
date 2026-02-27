@@ -7,6 +7,7 @@ import { requireCsrf } from "@/lib/security/csrf";
 import { type AppTheme, isAppTheme, THEME_COOKIE_NAME } from "@/lib/theme";
 
 type UserRow = {
+  public_id?: string | null;
   email: string;
   role: string | null;
   full_name?: string | null;
@@ -50,18 +51,19 @@ export async function GET() {
     const userResult: { rows: UserRow[] } = await (async () => {
       try {
         return await dbQuery<UserRow>(
-          "select email, role, full_name, username, created_at, last_login_at, is_active from users where id = $1 limit 1",
+          "select public_id, email, role, full_name, username, created_at, last_login_at, is_active from users where id = $1 limit 1",
           [session.userId],
         );
       } catch (error) {
         if (
+          isUndefinedColumn(error, "public_id") ||
           isUndefinedColumn(error, "username") ||
           isUndefinedColumn(error, "full_name") ||
           isUndefinedColumn(error, "last_login_at") ||
           isUndefinedColumn(error, "is_active")
         ) {
           return await dbQuery<UserRow>(
-            "select email, role, created_at from users where id = $1 limit 1",
+            "select null::text as public_id, email, role, created_at from users where id = $1 limit 1",
             [session.userId],
           );
         }
@@ -91,6 +93,7 @@ export async function GET() {
     return NextResponse.json({
       ok: true,
       userId: session.userId,
+      publicId: typeof user.public_id === "string" ? user.public_id : null,
       role: user.role ?? session.role,
       email: user.email,
       fullName: user.full_name ?? null,
