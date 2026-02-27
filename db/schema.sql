@@ -3,6 +3,7 @@
 
 create table if not exists users (
   id uuid primary key default gen_random_uuid(),
+  public_id text not null,
   email text unique not null,
   clerk_user_id text unique,
   username text,
@@ -30,6 +31,9 @@ alter table users
 
 alter table users
   add column if not exists username text;
+
+alter table users
+  add column if not exists public_id text;
 
 alter table users
   add column if not exists clerk_user_id text;
@@ -71,6 +75,7 @@ create table if not exists admin_login_attempts (
 
 create table if not exists vehicles (
   id uuid primary key default gen_random_uuid(),
+  public_id text not null,
   make text not null,
   model text not null,
   year int not null,
@@ -89,6 +94,9 @@ create table if not exists vehicles (
 
 alter table vehicles
   add column if not exists seat_count int;
+
+alter table vehicles
+  add column if not exists public_id text;
 
 alter table vehicles
   drop constraint if exists vehicles_seat_count_range;
@@ -146,8 +154,13 @@ alter table customers
 alter table customers
   add column if not exists blocked_reason text;
 
+create sequence if not exists users_public_id_seq start 1;
+create sequence if not exists vehicles_public_id_seq start 1;
 create sequence if not exists bookings_public_id_seq start 1;
 create sequence if not exists quotes_public_id_seq start 1;
+create sequence if not exists payments_public_id_seq start 1;
+create sequence if not exists promo_codes_public_id_seq start 1;
+create sequence if not exists vehicle_maintenance_records_public_id_seq start 1;
 
 create or replace function format_public_id(prefix text, n bigint, width int default 6)
 returns text
@@ -157,13 +170,37 @@ as $$
   select prefix || lpad(n::text, width, '0');
 $$;
 
+create or replace function assign_users_public_id()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.public_id is null or btrim(new.public_id) = '' then
+    new.public_id := format_public_id('UR', nextval('users_public_id_seq'));
+  end if;
+  return new;
+end;
+$$;
+
 create or replace function assign_bookings_public_id()
 returns trigger
 language plpgsql
 as $$
 begin
   if new.public_id is null or btrim(new.public_id) = '' then
-    new.public_id := format_public_id('B', nextval('bookings_public_id_seq'));
+    new.public_id := format_public_id('BK', nextval('bookings_public_id_seq'));
+  end if;
+  return new;
+end;
+$$;
+
+create or replace function assign_vehicles_public_id()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.public_id is null or btrim(new.public_id) = '' then
+    new.public_id := format_public_id('VE', nextval('vehicles_public_id_seq'));
   end if;
   return new;
 end;
@@ -175,11 +212,149 @@ language plpgsql
 as $$
 begin
   if new.public_id is null or btrim(new.public_id) = '' then
-    new.public_id := format_public_id('Q', nextval('quotes_public_id_seq'));
+    new.public_id := format_public_id('QU', nextval('quotes_public_id_seq'));
   end if;
   return new;
 end;
 $$;
+
+create or replace function assign_payments_public_id()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.public_id is null or btrim(new.public_id) = '' then
+    new.public_id := format_public_id('PA', nextval('payments_public_id_seq'));
+  end if;
+  return new;
+end;
+$$;
+
+create or replace function assign_promo_codes_public_id()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.public_id is null or btrim(new.public_id) = '' then
+    new.public_id := format_public_id('PR', nextval('promo_codes_public_id_seq'));
+  end if;
+  return new;
+end;
+$$;
+
+create or replace function assign_vehicle_maintenance_records_public_id()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.public_id is null or btrim(new.public_id) = '' then
+    new.public_id := format_public_id('ME', nextval('vehicle_maintenance_records_public_id_seq'));
+  end if;
+  return new;
+end;
+$$;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_trigger
+    where tgname = 'users_assign_public_id'
+      and tgrelid = 'users'::regclass
+      and not tgisinternal
+  ) then
+    create trigger users_assign_public_id
+      before insert on users
+      for each row
+      execute function assign_users_public_id();
+  end if;
+end $$;
+
+with ordered as (
+  select u.id,
+         row_number() over (order by u.created_at asc, u.id asc) as rn
+  from users u
+  where u.public_id is null
+),
+base as (
+  select coalesce(max((substring(u.public_id from '^UR([0-9]+)$'))::bigint), 0) as max_n
+  from users u
+  where u.public_id ~ '^UR[0-9]+$'
+)
+update users u
+set public_id = format_public_id('UR', base.max_n + ordered.rn)
+from ordered, base
+where u.id = ordered.id;
+
+do $$
+declare
+  users_max bigint;
+begin
+  select max((substring(public_id from '^UR([0-9]+)$'))::bigint)
+    into users_max
+  from users
+  where public_id ~ '^UR[0-9]+$';
+
+  if users_max is null then
+    perform setval('users_public_id_seq', 1, false);
+  else
+    perform setval('users_public_id_seq', users_max, true);
+  end if;
+end $$;
+
+alter table users
+  alter column public_id set not null;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_trigger
+    where tgname = 'vehicles_assign_public_id'
+      and tgrelid = 'vehicles'::regclass
+      and not tgisinternal
+  ) then
+    create trigger vehicles_assign_public_id
+      before insert on vehicles
+      for each row
+      execute function assign_vehicles_public_id();
+  end if;
+end $$;
+
+with ordered as (
+  select v.id,
+         row_number() over (order by v.created_at asc, v.id asc) as rn
+  from vehicles v
+  where v.public_id is null
+),
+base as (
+  select coalesce(max((substring(v.public_id from '^VE([0-9]+)$'))::bigint), 0) as max_n
+  from vehicles v
+  where v.public_id ~ '^VE[0-9]+$'
+)
+update vehicles v
+set public_id = format_public_id('VE', base.max_n + ordered.rn)
+from ordered, base
+where v.id = ordered.id;
+
+do $$
+declare
+  vehicles_max bigint;
+begin
+  select max((substring(public_id from '^VE([0-9]+)$'))::bigint)
+    into vehicles_max
+  from vehicles
+  where public_id ~ '^VE[0-9]+$';
+
+  if vehicles_max is null then
+    perform setval('vehicles_public_id_seq', 1, false);
+  else
+    perform setval('vehicles_public_id_seq', vehicles_max, true);
+  end if;
+end $$;
+
+alter table vehicles
+  alter column public_id set not null;
 
 create table if not exists bookings (
   id uuid primary key default gen_random_uuid(),
@@ -227,6 +402,10 @@ begin
   end if;
 end $$;
 
+update bookings
+set public_id = 'BK' || substring(public_id from 2)
+where public_id ~ '^B[0-9]{6,}$';
+
 with ordered as (
   select b.id,
          row_number() over (order by b.created_at asc, b.id asc) as rn
@@ -234,12 +413,12 @@ with ordered as (
   where b.public_id is null
 ),
 base as (
-  select coalesce(max((substring(b.public_id from '^B([0-9]+)$'))::bigint), 0) as max_n
+  select coalesce(max((substring(b.public_id from '^BK([0-9]+)$'))::bigint), 0) as max_n
   from bookings b
-  where b.public_id ~ '^B[0-9]+$'
+  where b.public_id ~ '^BK[0-9]+$'
 )
 update bookings b
-set public_id = format_public_id('B', base.max_n + ordered.rn)
+set public_id = format_public_id('BK', base.max_n + ordered.rn)
 from ordered, base
 where b.id = ordered.id;
 
@@ -247,10 +426,10 @@ do $$
 declare
   bookings_max bigint;
 begin
-  select max((substring(public_id from '^B([0-9]+)$'))::bigint)
+  select max((substring(public_id from '^BK([0-9]+)$'))::bigint)
     into bookings_max
   from bookings
-  where public_id ~ '^B[0-9]+$';
+  where public_id ~ '^BK[0-9]+$';
 
   if bookings_max is null then
     perform setval('bookings_public_id_seq', 1, false);
@@ -264,6 +443,7 @@ alter table bookings
 
 create table if not exists payments (
   id uuid primary key default gen_random_uuid(),
+  public_id text not null,
   booking_id uuid not null references bookings(id) on delete cascade,
   provider text not null,
   deposit_amount_cents int not null,
@@ -280,6 +460,9 @@ create table if not exists payments (
 );
 
 alter table payments
+  add column if not exists public_id text;
+
+alter table payments
   add column if not exists deleted_at timestamptz;
 
 alter table payments
@@ -287,6 +470,57 @@ alter table payments
 
 alter table payments
   add column if not exists deleted_reason text;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_trigger
+    where tgname = 'payments_assign_public_id'
+      and tgrelid = 'payments'::regclass
+      and not tgisinternal
+  ) then
+    create trigger payments_assign_public_id
+      before insert on payments
+      for each row
+      execute function assign_payments_public_id();
+  end if;
+end $$;
+
+with ordered as (
+  select p.id,
+         row_number() over (order by p.created_at asc, p.id asc) as rn
+  from payments p
+  where p.public_id is null
+),
+base as (
+  select coalesce(max((substring(p.public_id from '^PA([0-9]+)$'))::bigint), 0) as max_n
+  from payments p
+  where p.public_id ~ '^PA[0-9]+$'
+)
+update payments p
+set public_id = format_public_id('PA', base.max_n + ordered.rn)
+from ordered, base
+where p.id = ordered.id;
+
+do $$
+declare
+  payments_max bigint;
+begin
+  select max((substring(public_id from '^PA([0-9]+)$'))::bigint)
+    into payments_max
+  from payments
+  where public_id ~ '^PA[0-9]+$';
+
+  if payments_max is null then
+    perform setval('payments_public_id_seq', 1, false);
+  else
+    perform setval('payments_public_id_seq', payments_max, true);
+  end if;
+end $$;
+
+alter table payments
+  alter column public_id set not null;
 
 create table if not exists blockouts (
   id uuid primary key default gen_random_uuid(),
@@ -310,6 +544,7 @@ create table if not exists admin_documents (
 
 create table if not exists promo_codes (
   id uuid primary key default gen_random_uuid(),
+  public_id text not null,
   code text not null,
   is_active boolean not null default true,
   discount_type text not null,
@@ -328,6 +563,59 @@ create table if not exists promo_codes (
   constraint promo_codes_discount_type_check check (discount_type in ('PERCENT', 'FIXED'))
 );
 
+alter table promo_codes
+  add column if not exists public_id text;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_trigger
+    where tgname = 'promo_codes_assign_public_id'
+      and tgrelid = 'promo_codes'::regclass
+      and not tgisinternal
+  ) then
+    create trigger promo_codes_assign_public_id
+      before insert on promo_codes
+      for each row
+      execute function assign_promo_codes_public_id();
+  end if;
+end $$;
+
+with ordered as (
+  select p.id,
+         row_number() over (order by p.created_at asc, p.id asc) as rn
+  from promo_codes p
+  where p.public_id is null
+),
+base as (
+  select coalesce(max((substring(p.public_id from '^PR([0-9]+)$'))::bigint), 0) as max_n
+  from promo_codes p
+  where p.public_id ~ '^PR[0-9]+$'
+)
+update promo_codes p
+set public_id = format_public_id('PR', base.max_n + ordered.rn)
+from ordered, base
+where p.id = ordered.id;
+
+do $$
+declare
+  promo_codes_max bigint;
+begin
+  select max((substring(public_id from '^PR([0-9]+)$'))::bigint)
+    into promo_codes_max
+  from promo_codes
+  where public_id ~ '^PR[0-9]+$';
+
+  if promo_codes_max is null then
+    perform setval('promo_codes_public_id_seq', 1, false);
+  else
+    perform setval('promo_codes_public_id_seq', promo_codes_max, true);
+  end if;
+end $$;
+
+alter table promo_codes
+  alter column public_id set not null;
 create unique index if not exists promo_codes_code_lower_unique on promo_codes (lower(code));
 
 create table if not exists promo_redemptions (
@@ -437,14 +725,17 @@ create index if not exists customers_legal_id_number_idx on customers(legal_id_n
 create index if not exists payments_booking_id_idx on payments(booking_id);
 create index if not exists payments_status_idx on payments(status);
 create index if not exists payments_deleted_at_idx on payments(deleted_at);
+create unique index if not exists payments_public_id_unique_idx on payments(public_id);
 create index if not exists users_email_idx on users(email);
 create index if not exists users_username_idx on users(username);
+create unique index if not exists users_public_id_unique_idx on users(public_id);
 create unique index if not exists users_username_lower_unique on users ((lower(username))) where username is not null;
 create unique index if not exists users_clerk_user_id_unique on users (clerk_user_id) where clerk_user_id is not null;
 create index if not exists users_role_idx on users(role);
 create index if not exists users_is_active_idx on users(is_active);
 create index if not exists user_invites_user_id_idx on user_invites(user_id);
 create index if not exists user_invites_expires_at_idx on user_invites(expires_at);
+create unique index if not exists vehicles_public_id_unique_idx on vehicles(public_id);
 create index if not exists vehicles_status_idx on vehicles(status);
 create index if not exists admin_login_attempts_email_idx on admin_login_attempts(email);
 create index if not exists admin_login_attempts_ip_idx on admin_login_attempts(ip);
@@ -455,6 +746,7 @@ create index if not exists admin_documents_key_idx on admin_documents(key);
 create index if not exists promo_codes_active_idx on promo_codes(is_active);
 create index if not exists promo_codes_start_idx on promo_codes(start_at);
 create index if not exists promo_codes_end_idx on promo_codes(end_at);
+create unique index if not exists promo_codes_public_id_unique_idx on promo_codes(public_id);
 create index if not exists promo_redemptions_promo_code_id_idx on promo_redemptions(promo_code_id);
 create index if not exists promo_redemptions_booking_id_idx on promo_redemptions(booking_id);
 create index if not exists promo_redemptions_customer_id_idx on promo_redemptions(customer_id);
@@ -573,6 +865,10 @@ begin
   end if;
 end $$;
 
+update quotes
+set public_id = 'QU' || substring(public_id from 2)
+where public_id ~ '^Q[0-9]{6,}$';
+
 with ordered as (
   select q.id,
          row_number() over (order by q.created_at asc, q.id asc) as rn
@@ -580,12 +876,12 @@ with ordered as (
   where q.public_id is null
 ),
 base as (
-  select coalesce(max((substring(q.public_id from '^Q([0-9]+)$'))::bigint), 0) as max_n
+  select coalesce(max((substring(q.public_id from '^QU([0-9]+)$'))::bigint), 0) as max_n
   from quotes q
-  where q.public_id ~ '^Q[0-9]+$'
+  where q.public_id ~ '^QU[0-9]+$'
 )
 update quotes q
-set public_id = format_public_id('Q', base.max_n + ordered.rn)
+set public_id = format_public_id('QU', base.max_n + ordered.rn)
 from ordered, base
 where q.id = ordered.id;
 
@@ -593,10 +889,10 @@ do $$
 declare
   quotes_max bigint;
 begin
-  select max((substring(public_id from '^Q([0-9]+)$'))::bigint)
+  select max((substring(public_id from '^QU([0-9]+)$'))::bigint)
     into quotes_max
   from quotes
-  where public_id ~ '^Q[0-9]+$';
+  where public_id ~ '^QU[0-9]+$';
 
   if quotes_max is null then
     perform setval('quotes_public_id_seq', 1, false);
@@ -939,6 +1235,7 @@ create table if not exists maintenance_reminders (
 
 create table if not exists vehicle_maintenance_records (
   id uuid primary key default gen_random_uuid(),
+  public_id text not null,
   vehicle_id uuid not null references vehicles(id) on delete cascade,
   status text not null,
   category text not null,
@@ -1004,6 +1301,60 @@ create table if not exists vehicle_maintenance_records (
     total_cost_cents is null or total_cost_cents >= 0
   )
 );
+
+alter table vehicle_maintenance_records
+  add column if not exists public_id text;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_trigger
+    where tgname = 'vehicle_maintenance_records_assign_public_id'
+      and tgrelid = 'vehicle_maintenance_records'::regclass
+      and not tgisinternal
+  ) then
+    create trigger vehicle_maintenance_records_assign_public_id
+      before insert on vehicle_maintenance_records
+      for each row
+      execute function assign_vehicle_maintenance_records_public_id();
+  end if;
+end $$;
+
+with ordered as (
+  select r.id,
+         row_number() over (order by r.created_at asc, r.id asc) as rn
+  from vehicle_maintenance_records r
+  where r.public_id is null
+),
+base as (
+  select coalesce(max((substring(r.public_id from '^ME([0-9]+)$'))::bigint), 0) as max_n
+  from vehicle_maintenance_records r
+  where r.public_id ~ '^ME[0-9]+$'
+)
+update vehicle_maintenance_records r
+set public_id = format_public_id('ME', base.max_n + ordered.rn)
+from ordered, base
+where r.id = ordered.id;
+
+do $$
+declare
+  maintenance_max bigint;
+begin
+  select max((substring(public_id from '^ME([0-9]+)$'))::bigint)
+    into maintenance_max
+  from vehicle_maintenance_records
+  where public_id ~ '^ME[0-9]+$';
+
+  if maintenance_max is null then
+    perform setval('vehicle_maintenance_records_public_id_seq', 1, false);
+  else
+    perform setval('vehicle_maintenance_records_public_id_seq', maintenance_max, true);
+  end if;
+end $$;
+
+alter table vehicle_maintenance_records
+  alter column public_id set not null;
 
 alter table vehicle_documents
   add column if not exists maintenance_record_id uuid references vehicle_maintenance_records(id) on delete set null;
@@ -1155,6 +1506,8 @@ create index if not exists vehicle_maintenance_records_category_idx
   on vehicle_maintenance_records(category);
 create index if not exists vehicle_maintenance_records_archived_at_idx
   on vehicle_maintenance_records(archived_at);
+create unique index if not exists vehicle_maintenance_records_public_id_unique_idx
+  on vehicle_maintenance_records(public_id);
 create index if not exists vehicle_finance_snapshots_vehicle_date_idx
   on vehicle_finance_snapshots(vehicle_id, snapshot_date desc);
 create index if not exists vehicle_finance_snapshots_snapshot_date_idx
