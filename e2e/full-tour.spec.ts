@@ -166,12 +166,22 @@ test.describe("@tour full app tour", () => {
 
     await page.goto("/admin/vehicles", { waitUntil: "networkidle" });
     await expect(page.locator('[data-testid="vehicles-list"]')).toBeVisible();
+    const uuidPattern =
+      /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/i;
 
     const vehicleRowLink = page
       .locator(`[data-testid="vehicle-row"][data-vehicle-id="${vehicleId}"] a[href="/admin/vehicles/${vehicleId}"]`)
       .first();
 
     if ((await vehicleRowLink.count()) > 0) {
+      const seededVehicleRow = page
+        .locator(`[data-testid="vehicle-row"][data-vehicle-id="${vehicleId}"]`)
+        .first();
+      await expect(seededVehicleRow.locator('[data-testid="vehicle-public-id"]').first()).toHaveText(
+        /^VE\d{6}$/,
+      );
+      const seededVehicleRowText = (await seededVehicleRow.textContent()) ?? "";
+      expect(seededVehicleRowText).not.toMatch(uuidPattern);
       await vehicleRowLink.click();
     } else {
       await page.goto(`/admin/vehicles/${vehicleId}`, { waitUntil: "networkidle" });
@@ -180,6 +190,7 @@ test.describe("@tour full app tour", () => {
     await expect(page).toHaveURL(new RegExp(`/admin/vehicles/${vehicleId}`));
     await expect(page.locator('[data-testid="vehicle-detail"]')).toBeVisible();
     await expect(page.locator('[data-testid="vehicle-tabs"]')).toBeVisible();
+    await expect(page.locator('[data-testid="vehicle-detail-public-id"]')).toHaveText(/^VE\d{6}$/);
 
     await page.locator('[data-testid="vehicle-detail-tab-overview"]').click();
     await page.getByRole("button", { name: "Edit" }).click();
@@ -275,8 +286,6 @@ test.describe("@tour full app tour", () => {
     const maintenanceTitle = `E2E Tour Maintenance ${runTag}`;
     const blockoutReasonInitial = `E2E Tour Blockout ${runTag}`;
     const blockoutReasonUpdated = `${blockoutReasonInitial} Updated`;
-    const linkedExpenseId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-    const linkedRepairOrderId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
     const initialDate = new Date();
     initialDate.setDate(initialDate.getDate() + 5);
     const updatedDate = new Date();
@@ -285,8 +294,6 @@ test.describe("@tour full app tour", () => {
     await page.locator('[data-testid="maintenance-add"]').click();
     await page.locator('[data-testid="maintenance-form-title"]').fill(maintenanceTitle);
     await page.locator('[data-testid="maintenance-form-scheduled-date"]').fill(formatDate(initialDate));
-    await page.locator('[data-testid="maintenance-form-linked-expense"]').fill(linkedExpenseId);
-    await page.locator('[data-testid="maintenance-form-linked-repair-order"]').fill(linkedRepairOrderId);
 
     const createBlockoutToggle = page.locator('[data-testid="maintenance-form-create-blockout"]');
     if (!(await createBlockoutToggle.isChecked())) {
@@ -300,8 +307,16 @@ test.describe("@tour full app tour", () => {
     const maintenanceRow = maintenanceRows.filter({ hasText: maintenanceTitle }).first();
     await expect(maintenanceRow).toBeVisible();
     await maintenanceRow.click();
+    const rowPublicIdText =
+      (await maintenanceRow.locator('[data-testid="maintenance-record-public-id"]').textContent())?.trim() ?? "";
+    expect(rowPublicIdText).toMatch(/^ME\d{6,}$/);
+    expect(rowPublicIdText).not.toMatch(UUID_PATTERN);
     await expect(page.locator('[data-testid="maintenance-pagination"]')).toBeVisible();
     await expect(page.locator('[data-testid="maintenance-detail"]')).toBeVisible();
+    const detailPublicIdText =
+      (await page.locator('[data-testid="maintenance-detail-public-id"]').textContent())?.trim() ?? "";
+    expect(detailPublicIdText).toMatch(/^ME\d{6,}$/);
+    expect(detailPublicIdText).not.toMatch(UUID_PATTERN);
     const listBox = await page.locator('[data-testid="maintenance-list"]').boundingBox();
     const detailBox = await page.locator('[data-testid="maintenance-detail"]').boundingBox();
     expect(listBox).toBeTruthy();
@@ -309,23 +324,19 @@ test.describe("@tour full app tour", () => {
     if (listBox && detailBox) {
       expect(detailBox.y).toBeGreaterThan(listBox.y + 20);
     }
-    await expect(page.locator('[data-testid="maintenance-detail-linked-expense"]')).toContainText(
-      linkedExpenseId,
-    );
-    await expect(
-      page.locator('[data-testid="maintenance-detail-linked-repair-order"]'),
-    ).toContainText(linkedRepairOrderId);
+    const maintenanceDetailText = (await page.locator('[data-testid="maintenance-detail"]').innerText()).trim();
+    expect(maintenanceDetailText).not.toMatch(UUID_PATTERN);
 
     await page.reload({ waitUntil: "networkidle" });
     await page.locator('[data-testid="vehicle-detail-tab-maintenance"]').click();
     await expect(maintenanceRows.filter({ hasText: maintenanceTitle }).first()).toBeVisible();
     await maintenanceRows.filter({ hasText: maintenanceTitle }).first().click();
-    await expect(page.locator('[data-testid="maintenance-detail-linked-expense"]')).toContainText(
-      linkedExpenseId,
+    await expect(page.locator('[data-testid="maintenance-detail-public-id"]')).toHaveText(
+      detailPublicIdText,
     );
-    await expect(
-      page.locator('[data-testid="maintenance-detail-linked-repair-order"]'),
-    ).toContainText(linkedRepairOrderId);
+    const maintenanceDetailTextAfterReload =
+      (await page.locator('[data-testid="maintenance-detail"]').innerText()).trim();
+    expect(maintenanceDetailTextAfterReload).not.toMatch(UUID_PATTERN);
 
     await page.locator('[data-testid="vehicle-detail-tab-blockouts"]').click();
     const blockoutRowByReason = (reason: string) =>
@@ -454,7 +465,7 @@ test.describe("@tour full app tour", () => {
     });
     await expect(page.locator('[data-testid="quote-detail"]')).toBeVisible();
     const quotePublicId = (await page.locator('[data-testid="quote-public-id"]').textContent())?.trim() ?? "";
-    expect(quotePublicId).toMatch(/^Quote Q\d{6,}$/);
+    expect(quotePublicId).toMatch(/^Quote QU\d{6,}$/);
     expect(quotePublicId).not.toMatch(UUID_PATTERN);
     await expect(page.getByRole("heading", { name: "Activity Log" })).toBeVisible();
     await page.locator('[data-testid="quote-mark-sent"]').click();
@@ -467,14 +478,22 @@ test.describe("@tour full app tour", () => {
     await page.waitForURL(/\/admin\/bookings\/[^/]+$/, { timeout: 25_000 });
 
     const bookingPublicId = (await page.locator('[data-testid="booking-public-id"]').textContent())?.trim() ?? "";
-    expect(bookingPublicId).toMatch(/^B\d{6,}$/);
+    expect(bookingPublicId).toMatch(/^BK\d{6,}$/);
     expect(bookingPublicId).not.toMatch(UUID_PATTERN);
+
+    const bookingPaymentPublicIds = page.locator('[data-testid="booking-payment-public-id"]');
+    if ((await bookingPaymentPublicIds.count()) > 0) {
+      const paymentPublicIdText =
+        (await bookingPaymentPublicIds.first().textContent())?.trim() ?? "";
+      expect(paymentPublicIdText).toMatch(/^PA\d{6,}$/);
+      expect(paymentPublicIdText).not.toMatch(UUID_PATTERN);
+    }
 
     await page.goto(`/admin/bookings/quotes?q=${encodeURIComponent(runTag)}`, { waitUntil: "networkidle" });
     await expect(page.locator('[data-testid="quotes-list"]')).toContainText(runTag);
     const quoteListPublicId =
       (await page.locator('[data-testid="quote-row-public-id"]').first().textContent())?.trim() ?? "";
-    expect(quoteListPublicId).toMatch(/^Q\d{6,}$/);
+    expect(quoteListPublicId).toMatch(/^QU\d{6,}$/);
     expect(quoteListPublicId).not.toMatch(UUID_PATTERN);
 
     await page.goto("/admin/settings", { waitUntil: "networkidle" });

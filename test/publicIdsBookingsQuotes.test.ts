@@ -151,8 +151,8 @@ test("public_id trigger generation: bookings + quotes receive formatted IDs", as
     const quote = await insertQuote(runTag);
     quoteIds.push(quote.id);
 
-    assert.match(booking.public_id, /^B\d{6,}$/);
-    assert.match(quote.public_id, /^Q\d{6,}$/);
+    assert.match(booking.public_id, /^BK\d{6,}$/);
+    assert.match(quote.public_id, /^QU\d{6,}$/);
   } finally {
     await cleanup({ quoteIds, bookingIds, customerIds, vehicleIds });
   }
