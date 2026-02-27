@@ -41,8 +41,15 @@ export function isTurnstileConfigured() {
   );
 }
 
+function isTurnstileDevBypassEnabled() {
+  if (process.env.NODE_ENV === "production") {
+    return false;
+  }
+  return readEnv("TURNSTILE_DEV_BYPASS") === "1" || readEnv("NEXT_PUBLIC_TURNSTILE_DEV_BYPASS") === "1";
+}
+
 function isDevelopmentBypassMode() {
-  return process.env.NODE_ENV !== "production" && !isTurnstileConfigured();
+  return process.env.NODE_ENV !== "production" && !isTurnstileConfigured() && isTurnstileDevBypassEnabled();
 }
 
 export function extractTurnstileToken(body: unknown, request?: Request) {
@@ -101,15 +108,16 @@ export async function verifyTurnstileToken(input: {
   const token = normalizeText(input.token);
 
   if (isDevelopmentBypassMode()) {
-    if (!token || token === TURNSTILE_DEV_BYPASS_TOKEN) {
-      return { ok: true, bypassed: true };
-    }
+    if (!token || token === TURNSTILE_DEV_BYPASS_TOKEN) return { ok: true, bypassed: true };
   }
 
   if (!isTurnstileConfigured()) {
+    const isDevelopment = process.env.NODE_ENV !== "production";
     return makeFailure(
       503,
-      "Security verification is unavailable. Please try again shortly.",
+      isDevelopment
+        ? "Security check is not configured. Set Turnstile keys or TURNSTILE_DEV_BYPASS=1 for local testing."
+        : "Security verification is unavailable. Please try again shortly.",
       ["turnstile_not_configured"],
     );
   }

@@ -39,6 +39,7 @@ function buildQuoteFixture(): AdminQuoteDetailItem {
 
   return {
     id: "c3ad4e53-f14f-4ac9-98fd-f4bacf1ec3d2",
+    publicId: "Q000123",
     createdAt: "2026-02-22T12:00:00.000Z",
     updatedAt: "2026-02-22T12:00:00.000Z",
     status: "DRAFT",

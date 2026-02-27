@@ -15,6 +15,7 @@ function adminSession() {
 function quoteFixture() {
   return {
     id: "c3ad4e53-f14f-4ac9-98fd-f4bacf1ec3d2",
+    publicId: "Q000123",
     createdAt: "2026-02-22T12:00:00.000Z",
     updatedAt: "2026-02-22T12:00:00.000Z",
     status: "DRAFT",
@@ -162,4 +163,48 @@ test("admin quotes email API: blocks the 4th quote email in an hour", async () =
   assert.equal(third.status, 200);
   assert.equal(fourth.status, 429);
   assert.equal(sendAttempts, 3);
+});
+
+test("admin quotes email API: blocks expired quote", async () => {
+  let sendAttempted = false;
+
+  const response = await handleAdminQuoteEmailPost(
+    new Request("http://localhost/api/admin/quotes/c3ad4e53-f14f-4ac9-98fd-f4bacf1ec3d2/email", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-csrf-token": "token" },
+      body: JSON.stringify({ csrfToken: "token" }),
+    }),
+    { params: Promise.resolve({ id: "c3ad4e53-f14f-4ac9-98fd-f4bacf1ec3d2" }) },
+    {
+      getSession: async () => adminSession(),
+      requireCsrfCheck: async () => true,
+      nowMs: () => Date.UTC(2026, 3, 1),
+      getQuote: async () => ({
+        ...quoteFixture(),
+        expiresAt: "2026-03-01T00:00:00.000Z",
+      }),
+      consumeRateLimitCheck: async ({ limit }) => ({
+        count: 1,
+        limit,
+        allowed: true,
+        remaining: Math.max(0, limit - 1),
+        resetAt: "2026-02-22T01:00:00.000Z",
+      }),
+      buildPdf: () => Buffer.from("%PDF-1.4\nmock", "utf8"),
+      sendEmail: async () => {
+        sendAttempted = true;
+        return { ok: true, providerMessageId: "resend-message-id" };
+      },
+      updateQuoteLastEmailedAt: async () => undefined,
+      logQuoteEvent: async () => undefined,
+      logQuoteEmail: async () => undefined,
+    },
+  );
+
+  assert.equal(response.status, 409);
+  assert.equal(sendAttempted, false);
+
+  const body = (await response.json()) as { ok: boolean; code?: string };
+  assert.equal(body.ok, false);
+  assert.equal(body.code, "QUOTE_EXPIRED");
 });

@@ -9,6 +9,12 @@ import {
   getInternalNotesRecipient,
   sendBookingCancelledByBlockoutEmail,
 } from "@/lib/notifications/email";
+import {
+  buildBookingBlocksAvailabilitySql,
+  buildBookingWindowEndSql,
+  buildBookingWindowStartSql,
+  isBookingBlockingAvailability,
+} from "@/lib/bookings/bookingBlocking";
 import { recalculateBookingPayments } from "@/lib/payments/recalculateBooking";
 import { requireCsrf } from "@/lib/security/csrf";
 import { createBlockout, listBlockouts } from "@/lib/blockouts/shared";
@@ -105,10 +111,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid date range" }, { status: 400 });
     }
 
+    const overlapWindowStartSql = buildBookingWindowStartSql("b");
+    const overlapWindowEndSql = buildBookingWindowEndSql("b");
+    const overlapBlocksAvailabilitySql = buildBookingBlocksAvailabilitySql("b");
     const overlap = await dbQuery<{
       id: string;
       start_date: string;
       end_date: string;
+      start_at: string | null;
+      end_at: string | null;
       status: string;
       pickup_location: string;
       pricing_json: Record<string, unknown> | null;
@@ -117,13 +128,32 @@ export async function POST(request: Request) {
       vehicle_make: string;
       vehicle_model: string;
     }>(
-      "select b.id, b.start_date, b.end_date, b.status, b.pickup_location, b.pricing_json, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.vehicle_id = $1 and b.status not in ('CANCELLED','RETURNED') and tstzrange($2::timestamptz, $3::timestamptz, '[)') && tstzrange(b.start_date::timestamptz, (b.end_date + interval '1 day')::timestamptz, '[)') order by b.start_date asc",
+      "select b.id, b.start_date, b.end_date, " +
+        `${overlapWindowStartSql} as start_at, ${overlapWindowEndSql} as end_at, ` +
+        "b.status, b.pickup_location, b.pricing_json, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model " +
+        "from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id " +
+        "where b.vehicle_id = $1 and " +
+        overlapBlocksAvailabilitySql +
+        " and " +
+        overlapWindowStartSql +
+        " < $3::timestamptz and " +
+        overlapWindowEndSql +
+        " > $2::timestamptz order by " +
+        overlapWindowStartSql +
+        " asc",
       [vehicleId, startAt.toISOString(), endAt.toISOString()],
+    );
+    const blockingOverlapRows = overlap.rows.filter(
+      (booking: { status: string; pricing_json: Record<string, unknown> | null }) =>
+        isBookingBlockingAvailability({
+          status: booking.status,
+          pricing_json: booking.pricing_json,
+        }),
     );
 
     const { settings } = await loadAdminSettings();
 
-    if (overlap.rowCount > 0) {
+    if (blockingOverlapRows.length > 0) {
       if (settings.blockoutSupersedesBookings) {
         const db = getDbPool();
         const client = await db.connect();
@@ -147,7 +177,8 @@ export async function POST(request: Request) {
             [vehicleId, startAt.toISOString(), endAt.toISOString(), reason, notes || null, actor.userId],
           );
 
-          for (const booking of overlap.rows) {
+          const updateBlocksAvailabilitySql = buildBookingBlocksAvailabilitySql("bookings");
+          for (const booking of blockingOverlapRows) {
             const pricing = booking.pricing_json ?? {};
             const existingNotes = Array.isArray(pricing.admin_notes)
               ? pricing.admin_notes.filter(
@@ -163,7 +194,8 @@ export async function POST(request: Request) {
             };
 
             await client.query(
-              "update bookings set status = 'CANCELLED', pricing_json = $1, updated_at = now() where id = $2",
+              "update bookings set status = 'CANCELLED', pricing_json = $1, updated_at = now() where id = $2 and " +
+                updateBlocksAvailabilitySql,
               [updatedPricing, booking.id],
             );
 
@@ -239,7 +271,7 @@ export async function POST(request: Request) {
         }
       }
 
-      const booking = overlap.rows[0];
+      const booking = blockingOverlapRows[0];
       return NextResponse.json(
         {
           error: "This blockout overlaps an existing booking.",

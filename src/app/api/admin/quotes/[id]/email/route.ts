@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import { logError } from "@/lib/log";
+import { isQuoteExpired } from "@/lib/quotes/lifecycle";
 import {
   buildQuoteEmailContent,
   buildQuotePdfBuffer,
@@ -109,14 +110,20 @@ export async function handleAdminQuoteEmailPost(
       return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
     }
 
+    const nowMs = deps.nowMs();
+    if (isQuoteExpired(quote.expiresAt, new Date(nowMs))) {
+      return NextResponse.json(
+        { ok: false, error: "Quote is expired", code: "QUOTE_EXPIRED" },
+        { status: 409 },
+      );
+    }
+
     const toEmail = String(body?.toEmail ?? quote.customerEmail ?? "")
       .trim()
       .toLowerCase();
     if (!isEmail(toEmail)) {
       return NextResponse.json({ ok: false, error: "Invalid recipient email" }, { status: 400 });
     }
-
-    const nowMs = deps.nowMs();
 
     const perQuote = await deps.consumeRateLimitCheck({
       scope: "QUOTE_EMAIL_QUOTE",

@@ -20,6 +20,7 @@ import { deriveBookingPhase, type DerivedBookingPhase } from "@/lib/vehicles/veh
 
 type BookingDbRow = {
   id: string;
+  public_id: string;
   archived_at: string | Date | null;
   start_at: string | Date | null;
   end_at: string | Date | null;
@@ -46,6 +47,7 @@ export type BookingSubstatusIndicator = {
 
 export type AdminBookingListItem = {
   id: string;
+  publicId: string;
   customerName: string;
   customerEmail: string;
   vehicleLabel: string;
@@ -183,6 +185,7 @@ function resolveSubstatusIndicators(input: {
   pricing: Record<string, unknown>;
   nonBlocking: boolean;
   overriddenByBookingId: string | null;
+  overriddenByPublicId: string | null;
 }) {
   const indicators: BookingSubstatusIndicator[] = [];
   const bookingStatus = String(input.bookingStatus ?? "")
@@ -195,10 +198,11 @@ function resolveSubstatusIndicators(input: {
   const isClosed = ["CANCELLED", "RETURNED", "COMPLETED"].includes(bookingStatus);
 
   if (input.overriddenByBookingId) {
+    const overriddenLabel = input.overriddenByPublicId || input.overriddenByBookingId;
     indicators.push({
       key: "overridden",
       variant: "overridden",
-      message: `Overridden by paid booking ${input.overriddenByBookingId.slice(0, 8)}`,
+      message: `Overridden by paid booking ${overriddenLabel}`,
       priority: 1,
     });
   }
@@ -347,7 +351,7 @@ function buildBookingsQuery(input: {
 
   if (input.q) {
     whereClauses.push(
-      `(c.full_name ilike $${index} or c.email ilike $${index} or c.phone ilike $${index} or b.id::text ilike $${index})`,
+      `(c.full_name ilike $${index} or c.email ilike $${index} or c.phone ilike $${index} or b.id::text ilike $${index} or b.public_id ilike $${index})`,
     );
     values.push(`${input.q}%`);
     index += 1;
@@ -379,7 +383,7 @@ function buildBookingsQuery(input: {
   const directionSql = input.sortDir === "asc" ? "asc" : "desc";
   const orderBySql =
     input.sortBy === "booking"
-      ? `order by b.id::text ${directionSql}`
+      ? `order by b.public_id ${directionSql}, b.id::text ${directionSql}`
       : input.sortBy === "customer"
         ? `order by lower(c.full_name) ${directionSql}, lower(c.email) ${directionSql}, b.id::text ${directionSql}`
         : input.sortBy === "vehicle"
@@ -395,7 +399,7 @@ function buildBookingsQuery(input: {
   values.push(Math.max(0, input.offset));
   const offsetIndex = values.length;
   const text =
-    "select b.id, b.archived_at, b.start_at, b.end_at, b.start_date, b.end_date, b.created_at, b.status, b.pricing_json, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model, v.deposit_cents as vehicle_deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id " +
+    "select b.id, b.public_id, b.archived_at, b.start_at, b.end_at, b.start_date, b.end_date, b.created_at, b.status, b.pricing_json, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model, v.deposit_cents as vehicle_deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id " +
     whereSql +
     ` ${orderBySql} limit $${limitIndex} offset $${offsetIndex}`;
 
@@ -495,15 +499,20 @@ export async function fetchAdminBookingsPage(input: AdminBookingListQueryInput):
     ),
   );
   const overriddenByNameByBookingId = new Map<string, string>();
+  const overriddenByPublicIdByBookingId = new Map<string, string>();
   if (overriddenByBookingIds.length > 0) {
-    const overriddenBookings = await dbQuery<{ id: string; customer_name: string }>(
-      "select b.id::text as id, c.full_name as customer_name from bookings b join customers c on c.id = b.customer_id where b.id::text = any($1::text[])",
+    const overriddenBookings = await dbQuery<{ id: string; public_id: string; customer_name: string }>(
+      "select b.id::text as id, b.public_id, c.full_name as customer_name from bookings b join customers c on c.id = b.customer_id where b.id::text = any($1::text[])",
       [overriddenByBookingIds],
     );
     for (const row of overriddenBookings.rows) {
       const customerName = String(row.customer_name ?? "").trim();
       if (customerName) {
         overriddenByNameByBookingId.set(String(row.id), customerName);
+      }
+      const publicId = String(row.public_id ?? "").trim();
+      if (publicId) {
+        overriddenByPublicIdByBookingId.set(String(row.id), publicId);
       }
     }
   }
@@ -548,6 +557,7 @@ export async function fetchAdminBookingsPage(input: AdminBookingListQueryInput):
 
     return {
       id: row.id,
+      publicId: row.public_id,
       customerName: row.customer_name,
       customerEmail: row.customer_email,
       vehicleLabel: `${row.vehicle_make} ${row.vehicle_model}`.trim(),
@@ -567,6 +577,9 @@ export async function fetchAdminBookingsPage(input: AdminBookingListQueryInput):
         pricing,
         nonBlocking,
         overriddenByBookingId: overrideInfo.overriddenByBookingId,
+        overriddenByPublicId: overrideInfo.overriddenByBookingId
+          ? overriddenByPublicIdByBookingId.get(overrideInfo.overriddenByBookingId) ?? null
+          : null,
       }),
       overriddenByBookingId: overrideInfo.overriddenByBookingId,
       overriddenByCustomerName: overrideInfo.overriddenByBookingId

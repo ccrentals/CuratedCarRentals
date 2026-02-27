@@ -33,6 +33,7 @@ import {
 
 type QuoteListItem = {
   id: string;
+  publicId: string;
   createdAt: string;
   status: string;
   expiresAt: string | null;
@@ -528,7 +529,9 @@ export function AdminQuotesListClient() {
                   <dl className="grid grid-cols-2 gap-2 text-xs text-[var(--ccr-muted)]">
                     <div>
                       <dt>Quote</dt>
-                      <dd className="font-mono text-[var(--ccr-text)]">{shortQuoteId(row.id)}</dd>
+                      <dd className="font-mono text-[var(--ccr-text)]">
+                        {shortQuoteId(row.id, row.publicId)}
+                      </dd>
                     </div>
                     <div>
                       <dt>Total</dt>
@@ -623,8 +626,11 @@ export function AdminQuotesListClient() {
                       className="border-b border-[var(--ccr-border)] last:border-b-0"
                     >
                       <td className="px-4 py-3 font-mono text-xs text-[var(--ccr-text)]">
-                        <span className="inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 font-bold text-[var(--ccr-accent)]">
-                          {shortQuoteId(row.id)}
+                        <span
+                          data-testid="quote-row-public-id"
+                          className="inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 font-bold text-[var(--ccr-accent)]"
+                        >
+                          {shortQuoteId(row.id, row.publicId)}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-[var(--ccr-text)]">Reservations</td>
@@ -717,6 +723,7 @@ export function AdminQuotesListClient() {
           emailTarget
             ? {
                 id: emailTarget.id,
+                publicId: emailTarget.publicId,
                 customerFullName: emailTarget.customerFullName,
                 customerEmail: emailTarget.customerEmail,
                 startAt: emailTarget.startAt,

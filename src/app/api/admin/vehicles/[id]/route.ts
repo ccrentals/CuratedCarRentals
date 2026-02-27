@@ -20,6 +20,16 @@ const ALLOWED_STATUSES = new Set([
   "RESERVED",
   "RENTED",
 ]);
+const INVALID_SEAT_COUNT = Symbol("INVALID_SEAT_COUNT");
+
+function normalizeSeatCount(value: unknown): number | null | typeof INVALID_SEAT_COUNT {
+  if (value === undefined) return null;
+  if (value === null || value === "") return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) return INVALID_SEAT_COUNT;
+  if (parsed < 1 || parsed > 60) return INVALID_SEAT_COUNT;
+  return parsed;
+}
 
 export async function GET(
   request: Request,
@@ -30,7 +40,7 @@ export async function GET(
 
   const { id } = await params;
   const vehicleResult = await dbQuery(
-    "select id, make, model, year, daily_rate_cents, deposit_cents, status, created_at, updated_at from vehicles where id = $1",
+    "select id, make, model, year, seat_count, daily_rate_cents, deposit_cents, status, created_at, updated_at from vehicles where id = $1",
     [id],
   );
 
@@ -72,10 +82,11 @@ export async function PATCH(
           : undefined;
 
   const statusRaw = typeof body?.status === "string" ? body.status : undefined;
+  const seatCountRaw = body?.seat_count ?? body?.seatCount;
   const imageUrls = parseImageUrls(body?.image_urls_json);
 
   const updates: string[] = [];
-  const values: Array<string | number | string[]> = [];
+  const values: Array<string | number | string[] | null> = [];
   let index = 1;
 
   if (dailyRateRaw !== undefined) {
@@ -115,6 +126,19 @@ export async function PATCH(
     index += 1;
   }
 
+  if (seatCountRaw !== undefined) {
+    const parsedSeatCount = normalizeSeatCount(seatCountRaw);
+    if (parsedSeatCount === INVALID_SEAT_COUNT) {
+      return NextResponse.json(
+        { error: "Invalid seat count. Number of seats must be an integer between 1 and 60." },
+        { status: 400 },
+      );
+    }
+    updates.push(`seat_count = $${index}`);
+    values.push(parsedSeatCount);
+    index += 1;
+  }
+
   if (updates.length === 0) {
     return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });
   }
@@ -124,7 +148,7 @@ export async function PATCH(
   const updateResult = await dbQuery(
     `update vehicles set ${updates.join(", ")}, updated_at = now() where id = $${
       index
-    } returning id, make, model, year, daily_rate_cents, deposit_cents, status`,
+    } returning id, make, model, year, seat_count, daily_rate_cents, deposit_cents, status`,
     values,
   );
 

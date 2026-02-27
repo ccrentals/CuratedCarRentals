@@ -11,6 +11,7 @@ type TurnstileWidgetProps = {
   resetKey?: number;
   className?: string;
   theme?: "auto" | "light" | "dark";
+  devBypassEnabled?: boolean;
 };
 
 type TurnstileApi = {
@@ -36,6 +37,8 @@ declare global {
 }
 
 const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY?.trim() ?? "";
+const TURNSTILE_PUBLIC_DEV_BYPASS =
+  (process.env.NEXT_PUBLIC_TURNSTILE_DEV_BYPASS?.trim() ?? "") === "1";
 const SCRIPT_ID = "ccr-turnstile-script";
 const TURNSTILE_SCRIPT_URL = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
 let scriptLoadPromise: Promise<void> | null = null;
@@ -74,25 +77,59 @@ function loadTurnstileScript() {
   return scriptLoadPromise;
 }
 
+function resetTurnstileScriptState() {
+  scriptLoadPromise = null;
+  if (typeof window !== "undefined") {
+    window.turnstile = undefined;
+    const existing = document.getElementById(SCRIPT_ID);
+    if (existing) existing.remove();
+  }
+}
+
 export function TurnstileWidget({
   action,
   onTokenChange,
   resetKey = 0,
   className,
   theme = "auto",
+  devBypassEnabled = TURNSTILE_PUBLIC_DEV_BYPASS,
 }: TurnstileWidgetProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const widgetIdRef = useRef<string | null>(null);
   const [renderError, setRenderError] = useState<string | null>(null);
+  const [widgetRenderKey, setWidgetRenderKey] = useState(0);
+
+  function retryRender() {
+    onTokenChange(null);
+    setRenderError(null);
+    if (widgetIdRef.current && window.turnstile) {
+      window.turnstile.remove(widgetIdRef.current);
+    }
+    widgetIdRef.current = null;
+    resetTurnstileScriptState();
+    setWidgetRenderKey((value) => value + 1);
+  }
 
   useEffect(() => {
     if (!TURNSTILE_SITE_KEY) {
-      if (process.env.NODE_ENV !== "production") {
+      let nextError: string | null = null;
+      if (process.env.NODE_ENV !== "production" && devBypassEnabled) {
         onTokenChange(TURNSTILE_DEV_BYPASS_TOKEN);
       } else {
         onTokenChange(null);
+        if (process.env.NODE_ENV !== "production") {
+          nextError =
+            "Security check isn't configured for this environment. Configure Turnstile keys or set TURNSTILE_DEV_BYPASS=1 for local testing.";
+        } else {
+          nextError = "Security check is currently unavailable. Please try again.";
+        }
       }
-      return;
+      const errorTimer = window.setTimeout(() => {
+        setRenderError(nextError);
+      }, 0);
+      return () => {
+        window.clearTimeout(errorTimer);
+      };
     }
 
     onTokenChange(null);
@@ -127,7 +164,10 @@ export function TurnstileWidget({
       .catch(() => {
         if (cancelled) return;
         onTokenChange(null);
-        setRenderError("Unable to load security check. Refresh and try again.");
+        resetTurnstileScriptState();
+        setRenderError(
+          "Security check couldn't load. Please disable ad-blockers or try another network, then Retry.",
+        );
       });
 
     return () => {
@@ -138,7 +178,7 @@ export function TurnstileWidget({
       }
       widgetIdRef.current = null;
     };
-  }, [action, onTokenChange, theme]);
+  }, [action, devBypassEnabled, onTokenChange, theme, widgetRenderKey]);
 
   useEffect(() => {
     if (!TURNSTILE_SITE_KEY || !widgetIdRef.current || !window.turnstile) return;
@@ -154,13 +194,29 @@ export function TurnstileWidget({
 
   return (
     <div className={cn("space-y-2", className)}>
-      {TURNSTILE_SITE_KEY ? <div ref={containerRef} /> : null}
-      {!TURNSTILE_SITE_KEY && process.env.NODE_ENV !== "production" ? (
-        <p className="text-xs text-[var(--ccr-muted)]">
+      {TURNSTILE_SITE_KEY ? <div ref={containerRef} key={widgetRenderKey} data-testid="turnstile-container" /> : null}
+      {!TURNSTILE_SITE_KEY && process.env.NODE_ENV !== "production" && devBypassEnabled ? (
+        <p className="text-xs text-[var(--ccr-muted)]" data-testid="turnstile-dev-bypass-note">
           Turnstile bypass is active in local development because keys are not configured.
         </p>
       ) : null}
-      {renderError ? <p className="text-xs text-rose-600">{renderError}</p> : null}
+      {renderError ? (
+        <div className="space-y-2">
+          <p className="text-xs text-rose-600" data-testid="turnstile-error-message">
+            {renderError}
+          </p>
+          {TURNSTILE_SITE_KEY ? (
+            <button
+              type="button"
+              onClick={retryRender}
+              className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-xs font-semibold text-[var(--ccr-text)]"
+              data-testid="turnstile-retry-button"
+            >
+              Retry security check
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

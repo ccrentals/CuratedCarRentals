@@ -206,6 +206,20 @@ async function main() {
     );
 
     await remove(
+      "bookings",
+      `delete from bookings
+       where ($1::uuid is not null and vehicle_id = $1::uuid)
+          or ($2::uuid is not null and customer_id = $2::uuid)
+          or exists (
+            select 1
+            from customers c
+            where c.id = bookings.customer_id
+              and c.email ilike $3
+          )`,
+      [vehicleId, customerId, runMarker],
+    );
+
+    await remove(
       "booking_locations",
       `delete from booking_locations
        where id = any(

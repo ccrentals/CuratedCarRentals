@@ -14,6 +14,7 @@ const ADMIN_IDENTIFIER =
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? process.env.E2E_ADMIN_PASS ?? "";
 const ADMIN_SESSION_SECRET = process.env.ADMIN_SESSION_SECRET ?? "";
 const FIXTURES_PATH = path.join(process.cwd(), ".artifacts", "e2e-fixtures.json");
+const UUID_PATTERN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/i;
 
 type E2EFixtures = {
   runId: string;
@@ -156,6 +157,12 @@ test.describe("@tour full app tour", () => {
     const runTag = `${fixtures.runId}-${Date.now()}`;
 
     await authenticateAdmin(page, fixtures);
+    const desktopSidebar = page.locator("[data-admin-sidebar]");
+    const bookingsNavToggle = desktopSidebar.locator('[data-testid="admin-nav-toggle-bookings"]');
+    await expect(bookingsNavToggle).toBeVisible();
+    await bookingsNavToggle.click();
+    await expect(desktopSidebar.locator('[data-testid="admin-subnav-bookings-icon"]')).toBeVisible();
+    await expect(desktopSidebar.locator('[data-testid="admin-subnav-quotes-icon"]')).toBeVisible();
 
     await page.goto("/admin/vehicles", { waitUntil: "networkidle" });
     await expect(page.locator('[data-testid="vehicles-list"]')).toBeVisible();
@@ -173,6 +180,25 @@ test.describe("@tour full app tour", () => {
     await expect(page).toHaveURL(new RegExp(`/admin/vehicles/${vehicleId}`));
     await expect(page.locator('[data-testid="vehicle-detail"]')).toBeVisible();
     await expect(page.locator('[data-testid="vehicle-tabs"]')).toBeVisible();
+
+    await page.locator('[data-testid="vehicle-detail-tab-overview"]').click();
+    await page.getByRole("button", { name: "Edit" }).click();
+    const seatCountInput = page.locator('[data-testid="vehicle-profile-seat-count"]');
+    await expect(seatCountInput).toBeVisible();
+    await seatCountInput.fill("6");
+    const saveProfileResponsePromise = page.waitForResponse((response) => {
+      return (
+        response.request().method() === "PATCH" &&
+        response.url().includes(`/api/admin/vehicles/${vehicleId}/profile`) &&
+        response.ok()
+      );
+    });
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await saveProfileResponsePromise;
+
+    await page.reload({ waitUntil: "networkidle" });
+    await page.locator('[data-testid="vehicle-detail-tab-overview"]').click();
+    await expect(page.locator('[data-testid="vehicle-profile-seat-count"]')).toHaveValue("6");
 
     await page.locator('[data-testid="vehicle-detail-tab-reservations"]').click();
     const reservationsPanel = page.locator('[data-testid="vehicle-reservations-panel"]');
@@ -342,6 +368,7 @@ test.describe("@tour full app tour", () => {
     const depreciationPanel = page.locator('[data-testid="vehicle-depreciation-panel"]:visible').first();
     await expect(depreciationPanel.locator('[data-testid="depreciation-form"]')).toBeVisible();
     const notesTextarea = depreciationPanel.locator('[data-testid="depreciation-notes"]');
+    await expect(notesTextarea).toHaveValue(/E2E (seed|tour note) /);
     const depreciationNoteValue = `E2E tour note ${runTag}`;
     await notesTextarea.fill(depreciationNoteValue);
     await expect(notesTextarea).toHaveValue(depreciationNoteValue);
@@ -354,6 +381,7 @@ test.describe("@tour full app tour", () => {
     const saveDepreciationResponse = await saveDepreciationResponsePromise;
     expect(saveDepreciationResponse.ok()).toBeTruthy();
     await expect(page.getByText("Depreciation finance details saved.")).toBeVisible();
+    await expect(notesTextarea).toHaveValue(depreciationNoteValue);
 
     await page.reload({ waitUntil: "networkidle" });
     await page.locator('[data-testid="vehicle-detail-tab-depreciation"]').click();
@@ -404,6 +432,7 @@ test.describe("@tour full app tour", () => {
     const quoteEmail = `tour+${runTag}@example.com`;
     await quoteModal.getByLabel("Customer full name").fill(quoteName);
     await quoteModal.getByLabel("Customer email").fill(quoteEmail);
+    await quoteModal.getByLabel("Customer phone").fill("8765550101");
 
     await selectPreferredOptionWithRetry(
       quoteModal.getByRole("combobox", { name: "Pickup location", exact: true }),
@@ -424,11 +453,29 @@ test.describe("@tour full app tour", () => {
       timeout: 25_000,
     });
     await expect(page.locator('[data-testid="quote-detail"]')).toBeVisible();
+    const quotePublicId = (await page.locator('[data-testid="quote-public-id"]').textContent())?.trim() ?? "";
+    expect(quotePublicId).toMatch(/^Quote Q\d{6,}$/);
+    expect(quotePublicId).not.toMatch(UUID_PATTERN);
+    await expect(page.getByRole("heading", { name: "Activity Log" })).toBeVisible();
     await page.locator('[data-testid="quote-mark-sent"]').click();
     await expect(page.getByText("Quote updated.")).toBeVisible();
+    await page.getByRole("button", { name: "Mark Accepted" }).click();
+    await expect(page.getByText("Quote updated.")).toBeVisible();
+    await page.getByRole("button", { name: "Convert to Booking" }).click();
+    await expect(page.getByRole("link", { name: "Open booking" })).toBeVisible();
+    await page.getByRole("link", { name: "Open booking" }).click();
+    await page.waitForURL(/\/admin\/bookings\/[^/]+$/, { timeout: 25_000 });
+
+    const bookingPublicId = (await page.locator('[data-testid="booking-public-id"]').textContent())?.trim() ?? "";
+    expect(bookingPublicId).toMatch(/^B\d{6,}$/);
+    expect(bookingPublicId).not.toMatch(UUID_PATTERN);
 
     await page.goto(`/admin/bookings/quotes?q=${encodeURIComponent(runTag)}`, { waitUntil: "networkidle" });
     await expect(page.locator('[data-testid="quotes-list"]')).toContainText(runTag);
+    const quoteListPublicId =
+      (await page.locator('[data-testid="quote-row-public-id"]').first().textContent())?.trim() ?? "";
+    expect(quoteListPublicId).toMatch(/^Q\d{6,}$/);
+    expect(quoteListPublicId).not.toMatch(UUID_PATTERN);
 
     await page.goto("/admin/settings", { waitUntil: "networkidle" });
     await expect(page.locator('[data-testid="admin-settings"]')).toBeVisible();

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } f
 import { useRouter } from "next/navigation";
 
 import { TurnstileWidget } from "@/components/security/TurnstileWidget";
+import { clearBookingDraft } from "@/lib/bookings/draft";
 import { calcDaysInclusive } from "@/lib/payments/dateMath";
 import { formatJmd } from "@/lib/money";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
@@ -219,19 +220,49 @@ function parseWizardStep(value: unknown): WizardStep {
   return 1;
 }
 
-export function PublicBookingWizard() {
+function draftContainsMeaningfulProgress(draft: BookingWizardDraft) {
+  const step = parseWizardStep(draft.step);
+  if (step > 1) return true;
+  if (normalizeText(draft.selectedVehicleId ?? "").length > 0) return true;
+  if (normalizeText(draft.pickupCustomAddress ?? "").length > 0) return true;
+  if (normalizeText(draft.dropoffCustomAddress ?? "").length > 0) return true;
+  if (draft.insuranceSelected === true) return true;
+  if (normalizeText(draft.couponCode ?? "").length > 0) return true;
+  if (normalizeText(draft.couponAppliedCode ?? "").length > 0) return true;
+  if ((draft.couponDiscount ?? 0) > 0) return true;
+  if (normalizeText(draft.firstName ?? "").length > 0) return true;
+  if (normalizeText(draft.lastName ?? "").length > 0) return true;
+  if (normalizeText(draft.emailAddress ?? "").length > 0) return true;
+  if (normalizeText(draft.phoneNumber ?? "").length > 0) return true;
+  if (normalizeText(draft.driversLicenseNumber ?? "").length > 0) return true;
+  if (normalizeText(draft.customPaymentAmount ?? "").length > 0) return true;
+  if (draft.paymentOption === "FULL" || draft.paymentOption === "CUSTOM" || draft.paymentOption === "NONE") {
+    return true;
+  }
+  return false;
+}
+
+type PublicBookingWizardProps = {
+  turnstileDevBypassEnabled?: boolean;
+};
+
+export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: PublicBookingWizardProps) {
   const router = useRouter();
   const [requestedVehicleFromQuery, setRequestedVehicleFromQuery] = useState("");
   const draftHydratedRef = useRef(false);
   const preselectedVehicleIdRef = useRef("");
+  const initialPickupDateRef = useRef(dateInputForOffset(0));
+  const initialDropoffDateRef = useRef(dateInputForOffset(3));
 
   const [step, setStep] = useState<WizardStep>(1);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [draftWasRestored, setDraftWasRestored] = useState(false);
+  const [showStartOverConfirm, setShowStartOverConfirm] = useState(false);
 
-  const [pickupDate, setPickupDate] = useState(() => dateInputForOffset(0));
+  const [pickupDate, setPickupDate] = useState(() => initialPickupDateRef.current);
   const [pickupTime, setPickupTime] = useState("11:00");
-  const [dropoffDate, setDropoffDate] = useState(() => dateInputForOffset(3));
+  const [dropoffDate, setDropoffDate] = useState(() => initialDropoffDateRef.current);
   const [dropoffTime, setDropoffTime] = useState("11:00");
 
   const [locationOptions, setLocationOptions] = useState<LocationOption[]>(DEFAULT_LOCATIONS);
@@ -330,8 +361,7 @@ export function PublicBookingWizard() {
   }, []);
 
   const clearWizardDraft = useCallback(() => {
-    if (typeof window === "undefined") return;
-    window.sessionStorage.removeItem(WIZARD_DRAFT_STORAGE_KEY);
+    clearBookingDraft({ keys: [WIZARD_DRAFT_STORAGE_KEY] });
   }, []);
 
   useEffect(() => {
@@ -354,6 +384,7 @@ export function PublicBookingWizard() {
       const raw = window.sessionStorage.getItem(WIZARD_DRAFT_STORAGE_KEY);
       if (!raw) return;
       const draft = JSON.parse(raw) as BookingWizardDraft;
+      if (!draftContainsMeaningfulProgress(draft)) return;
 
       setStep(parseWizardStep(draft.step));
       if (typeof draft.pickupDate === "string") setPickupDate(draft.pickupDate);
@@ -408,6 +439,7 @@ export function PublicBookingWizard() {
       setStatusMessage(
         "Draft restored. For security, please re-upload your driver's license image and signature.",
       );
+      setDraftWasRestored(true);
     } catch {
       // Ignore invalid draft payloads.
     } finally {
@@ -451,6 +483,33 @@ export function PublicBookingWizard() {
       customPaymentAmount,
       acceptTerms,
     };
+
+    const shouldPersistDraft =
+      step > 1 ||
+      pickupDate !== initialPickupDateRef.current ||
+      pickupTime !== "11:00" ||
+      dropoffDate !== initialDropoffDateRef.current ||
+      dropoffTime !== "11:00" ||
+      normalizeText(pickupCustomAddress).length > 0 ||
+      normalizeText(dropoffCustomAddress).length > 0 ||
+      normalizeText(selectedVehicleId).length > 0 ||
+      insuranceSelected ||
+      normalizeText(couponCode).length > 0 ||
+      normalizeText(couponAppliedCode ?? "").length > 0 ||
+      couponDiscount > 0 ||
+      normalizeText(firstName).length > 0 ||
+      normalizeText(lastName).length > 0 ||
+      normalizeText(emailAddress).length > 0 ||
+      normalizeText(phoneNumber).length > 0 ||
+      normalizeText(driversLicenseNumber).length > 0 ||
+      normalizeText(customPaymentAmount).length > 0 ||
+      paymentOption !== "DEPOSIT" ||
+      acceptTerms;
+
+    if (!shouldPersistDraft) {
+      clearWizardDraft();
+      return;
+    }
     window.sessionStorage.setItem(WIZARD_DRAFT_STORAGE_KEY, JSON.stringify(draft));
   }, [
     acceptTerms,
@@ -484,6 +543,7 @@ export function PublicBookingWizard() {
     street,
     street2,
     zip,
+    clearWizardDraft,
   ]);
 
   const pickupOptions = useMemo(
@@ -1025,6 +1085,121 @@ export function PublicBookingWizard() {
     setStep((current) => (current > 1 ? ((current - 1) as WizardStep) : current));
   }
 
+  function handleChangeDates() {
+    resetMessages();
+    setStep(1);
+    setSelectedVehicleId("");
+    setVehicleOptions([]);
+    setInsuranceSelected(false);
+    setCouponAppliedCode(null);
+    setCouponDiscount(0);
+    setPricingQuote(null);
+    setPaymentOption("DEPOSIT");
+    setCustomPaymentAmount("");
+    setTurnstileToken(null);
+    setTurnstileResetKey((value) => value + 1);
+    setStatusMessage("Update your dates and continue through vehicle selection.");
+  }
+
+  function handleChangeVehicle() {
+    resetMessages();
+    setStep(2);
+    setSelectedVehicleId("");
+    setInsuranceSelected(false);
+    setCouponAppliedCode(null);
+    setCouponDiscount(0);
+    setPricingQuote(null);
+    setPaymentOption("DEPOSIT");
+    setCustomPaymentAmount("");
+    setTurnstileToken(null);
+    setTurnstileResetKey((value) => value + 1);
+    setStatusMessage("Choose a vehicle again for the selected dates.");
+  }
+
+  function handleStartOver() {
+    clearWizardDraft();
+    preselectedVehicleIdRef.current = "";
+    setRequestedVehicleFromQuery("");
+    setShowStartOverConfirm(false);
+    setDraftWasRestored(false);
+
+    const defaultPickupDate = dateInputForOffset(0);
+    const defaultDropoffDate = dateInputForOffset(3);
+    initialPickupDateRef.current = defaultPickupDate;
+    initialDropoffDateRef.current = defaultDropoffDate;
+    const defaultPickupLocation = locationOptions.find((location) => location.allowPickup)?.id ?? "";
+    const defaultDropoffLocation =
+      locationOptions.find((location) => location.allowDropoff)?.id ?? defaultPickupLocation;
+
+    setStep(1);
+    setPickupDate(defaultPickupDate);
+    setPickupTime("11:00");
+    setDropoffDate(defaultDropoffDate);
+    setDropoffTime("11:00");
+    setPickupLocationId(defaultPickupLocation);
+    setDropoffLocationId(defaultDropoffLocation);
+    setPickupCustomAddress("");
+    setDropoffCustomAddress("");
+
+    setSelectedVehicleId("");
+    setVehicleOptions([]);
+    setInsuranceSelected(false);
+    setInsuranceEnabled(false);
+    setInsurancePlanId(null);
+    setInsurancePricePerDay(0);
+    setCouponCode("");
+    setCouponAppliedCode(null);
+    setCouponDiscount(0);
+    setPricingQuote(null);
+    setPricingQuoteError(null);
+
+    setFirstName("");
+    setLastName("");
+    setEmailAddress("");
+    setPhoneNumber("");
+    setStreet("");
+    setStreet2("");
+    setCity("");
+    setState("");
+    setZip("");
+    setCountry("Jamaica");
+    setBirthday("");
+    setDriversLicenseNumber("");
+    setDriversLicenseExpirationDate("");
+    setDriversLicenseImageUrl("");
+    setCustomerId(null);
+    setAcceptTerms(false);
+    setSignatureDataUrl("");
+    signatureDirtyRef.current = false;
+    signatureDrawingRef.current = false;
+    const signatureCanvas = signatureCanvasRef.current;
+    if (signatureCanvas) {
+      const context = signatureCanvas.getContext("2d");
+      if (context) {
+        context.clearRect(0, 0, signatureCanvas.width, signatureCanvas.height);
+      }
+    }
+
+    setPaymentOption("DEPOSIT");
+    setCustomPaymentAmount("");
+    setTurnstileToken(null);
+    setTurnstileResetKey((value) => value + 1);
+    setReturningTurnstileToken(null);
+    setReturningTurnstileResetKey((value) => value + 1);
+    setShowReturningCustomerModal(false);
+    setReturningStage("lookup");
+    setReturningError(null);
+    setReturningChallengeToken("");
+    setReturningOtpCode("");
+    setReturningLastName("");
+    setReturningBirthday("");
+    setReturningBusy(false);
+    setSubmitting(false);
+    setErrorMessage(null);
+    setStatusMessage("Booking draft cleared. Start again with dates and vehicle selection.");
+    router.replace("/book");
+  }
+
   async function uploadDriversLicenseFile(file: File) {
     setErrorMessage(null);
     setDriversLicenseUploading(true);
@@ -1485,7 +1660,7 @@ export function PublicBookingWizard() {
           <div className="grid gap-0 lg:grid-cols-[1.25fr_0.75fr]">
             <div className="px-4 py-6 md:px-8 md:py-8">
               {step === 1 ? (
-                <section>
+                <section data-testid="booking-step-dates">
                   <h2 className="text-xl font-bold text-[var(--ccr-text)]">Date & Time</h2>
                   <p className="mt-1 text-sm text-[var(--ccr-muted)]">
                     Select pickup and dropoff date/time plus location options.
@@ -1594,7 +1769,7 @@ export function PublicBookingWizard() {
               ) : null}
 
               {step === 2 ? (
-                <section>
+                <section data-testid="booking-step-vehicles">
                   <h2 className="text-xl font-bold text-[var(--ccr-text)]">Available Vehicle Classes</h2>
                   <p className="mt-1 text-sm text-[var(--ccr-muted)]">
                     Choose one vehicle to continue. Selection is revalidated before confirmation.
@@ -2002,7 +2177,7 @@ export function PublicBookingWizard() {
               ) : null}
 
               {step === 6 ? (
-                <section>
+                <section data-testid="booking-step-payments">
                   <h2 className="text-xl font-bold text-[var(--ccr-text)]">Payments</h2>
                   <p className="mt-1 text-sm text-[var(--ccr-muted)]">
                     Choose your payment option in JMD. WiPay is the final step for online payment.
@@ -2084,7 +2259,10 @@ export function PublicBookingWizard() {
                     </div>
                   ) : null}
 
-                  <div className="mt-4 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3">
+                  <div
+                    className="mt-4 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3"
+                    data-testid="booking-security-check"
+                  >
                     <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
                       Security Check
                     </p>
@@ -2092,6 +2270,7 @@ export function PublicBookingWizard() {
                       action="public_booking"
                       onTokenChange={setTurnstileToken}
                       resetKey={turnstileResetKey}
+                      devBypassEnabled={turnstileDevBypassEnabled}
                       className="mt-2"
                     />
                   </div>
@@ -2123,6 +2302,15 @@ export function PublicBookingWizard() {
               <div className="mt-6 flex flex-wrap items-center gap-3">
                 <button
                   type="button"
+                  onClick={() => setShowStartOverConfirm(true)}
+                  disabled={submitting}
+                  className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 disabled:opacity-40"
+                  data-testid="booking-start-over"
+                >
+                  Start over
+                </button>
+                <button
+                  type="button"
                   onClick={moveToPreviousStep}
                   disabled={step === 1 || submitting}
                   className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] disabled:opacity-40"
@@ -2144,6 +2332,34 @@ export function PublicBookingWizard() {
 
             <aside className="border-t border-[var(--ccr-border)] bg-[var(--ccr-primary)] px-4 py-6 text-[var(--ccr-on-primary)] md:px-8 lg:border-l lg:border-t-0">
               <h3 className="text-xl font-bold">Summary</h3>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={handleChangeDates}
+                  className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-primary-soft)]/60 px-3 py-1 text-xs font-semibold text-[var(--ccr-on-primary)]"
+                  data-testid="booking-summary-change-dates"
+                >
+                  Change dates
+                </button>
+                <button
+                  type="button"
+                  onClick={handleChangeVehicle}
+                  className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-primary-soft)]/60 px-3 py-1 text-xs font-semibold text-[var(--ccr-on-primary)]"
+                  data-testid="booking-summary-change-vehicle"
+                >
+                  Change vehicle
+                </button>
+                {draftWasRestored ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowStartOverConfirm(true)}
+                    className="rounded-lg border border-rose-300 bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-900"
+                    data-testid="booking-summary-start-over"
+                  >
+                    Clear draft
+                  </button>
+                ) : null}
+              </div>
               <div className="mt-4 space-y-2 text-sm">
                 <p>
                   <span className="text-[var(--ccr-on-primary-muted)]">Pickup:</span> {pickupDate} {pickupTime}
@@ -2304,6 +2520,7 @@ export function PublicBookingWizard() {
                 action="public_returning_customer"
                 onTokenChange={setReturningTurnstileToken}
                 resetKey={returningTurnstileResetKey}
+                devBypassEnabled={turnstileDevBypassEnabled}
                 className="mt-2"
               />
             </div>
@@ -2321,6 +2538,44 @@ export function PublicBookingWizard() {
             >
               Close
             </button>
+          </div>
+        </div>
+      ) : null}
+
+      {showStartOverConfirm ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--ccr-primary)]/60 p-4">
+          <div
+            className="w-full max-w-md rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-5 shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="booking-start-over-title"
+            aria-describedby="booking-start-over-description"
+            data-testid="booking-start-over-dialog"
+          >
+            <h4 id="booking-start-over-title" className="text-lg font-bold text-[var(--ccr-text)]">
+              Start over?
+            </h4>
+            <p id="booking-start-over-description" className="mt-2 text-sm text-[var(--ccr-muted)]">
+              This will clear your current draft and you&apos;ll restart from the beginning.
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowStartOverConfirm(false)}
+                className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)]"
+                data-testid="booking-start-over-cancel"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleStartOver}
+                className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white"
+                data-testid="booking-start-over-confirm"
+              >
+                Start over
+              </button>
+            </div>
           </div>
         </div>
       ) : null}

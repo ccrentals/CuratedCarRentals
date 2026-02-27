@@ -1,5 +1,6 @@
 "use client";
 
+import { CalendarCheck, FileText, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -15,6 +16,8 @@ const DRAWER_FOCUSABLE_SELECTOR =
 type NavChild = {
   label: string;
   href: string;
+  icon?: LucideIcon;
+  testId?: string;
 };
 
 type NavItem = {
@@ -55,8 +58,18 @@ const DOCUMENTATION_CHILDREN: NavChild[] = [
 ];
 
 const BOOKINGS_CHILDREN: NavChild[] = [
-  { label: "Bookings", href: "/admin/bookings" },
-  { label: "Quotes", href: "/admin/bookings/quotes" },
+  {
+    label: "Bookings",
+    href: "/admin/bookings",
+    icon: CalendarCheck,
+    testId: "admin-subnav-bookings",
+  },
+  {
+    label: "Quotes",
+    href: "/admin/bookings/quotes",
+    icon: FileText,
+    testId: "admin-subnav-quotes",
+  },
 ];
 
 const NAV_ITEMS: NavItem[] = [
@@ -512,6 +525,7 @@ function AdminNavLinks({
     const showChildren = hasChildren && isExpanded;
     const messageBadgeCount = item.href === "/admin/messages" ? unreadMessagesCount : 0;
     const badgeLabel = messageBadgeCount > 99 ? "99+" : String(messageBadgeCount);
+    const itemSlug = item.href.replace(/^\/admin\/?/, "").replace(/\//g, "-") || "dashboard";
     return (
       <div key={item.href} className={`flex flex-col ${collapsedState ? "items-center" : ""}`}>
         <div className={`flex items-center gap-2 ${collapsedState ? "w-full justify-center" : "w-full"}`}>
@@ -564,6 +578,7 @@ function AdminNavLinks({
                   [item.href]: !current[item.href],
                 }))
               }
+              data-testid={`admin-nav-toggle-${itemSlug}`}
               aria-label={`${isExpanded ? "Collapse" : "Expand"} ${item.label}`}
               className={`rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-1.5 text-[var(--ccr-text)] transition hover:border-[var(--ccr-accent)] ${ADMIN_HOVER_TEXT_CLASS}`}
             >
@@ -587,19 +602,28 @@ function AdminNavLinks({
           <div className="mt-1 flex flex-col gap-1 pl-12">
             {item.children?.map((child) => {
               const childActive = pathname.startsWith(child.href);
+              const ChildIcon = child.icon;
               return (
                 <Link
                   key={child.href}
                   href={child.href}
                   onClick={onNavigate}
+                  data-testid={child.testId}
                   aria-current={childActive ? "page" : undefined}
-                  className={`rounded-lg px-3 py-2 text-xs font-semibold ${
+                  className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${
                     childActive
                       ? "bg-[var(--ccr-surface-soft)] text-[var(--ccr-text)]"
                       : `text-[var(--ccr-muted)] hover:bg-[var(--ccr-surface-soft)] ${ADMIN_HOVER_TEXT_CLASS}`
                   }`}
                 >
-                  {child.label}
+                  {ChildIcon ? (
+                    <ChildIcon
+                      className="h-4 w-4 shrink-0"
+                      aria-hidden="true"
+                      data-testid={child.testId ? `${child.testId}-icon` : undefined}
+                    />
+                  ) : null}
+                  <span className="truncate">{child.label}</span>
                 </Link>
               );
             })}

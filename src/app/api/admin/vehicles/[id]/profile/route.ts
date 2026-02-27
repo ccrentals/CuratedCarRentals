@@ -14,6 +14,7 @@ type VehicleProfileRow = {
   vehicle_class: string | null;
   year: number | null;
   color: string | null;
+  seat_count: number | null;
   current_location_label: string | null;
   odometer_value: number | null;
   odometer_unit: string | null;
@@ -37,6 +38,7 @@ type ProfilePayload = {
   vehicle_class: string | null;
   year: number | null;
   color: string | null;
+  seat_count: number | null;
   current_location_label: string | null;
   odometer_value: number | null;
   odometer_unit: string | null;
@@ -46,6 +48,12 @@ type ProfilePayload = {
   entry_date: string | null;
   exit_date: string | null;
 };
+
+type ParsedProfilePayload = Omit<ProfilePayload, "seat_count"> & {
+  seat_count: number | null | typeof INVALID_SEAT_COUNT;
+};
+
+const INVALID_SEAT_COUNT = Symbol("INVALID_SEAT_COUNT");
 
 export type AdminVehicleProfileRouteDeps = {
   getSession: () => Promise<AdminSession | null>;
@@ -80,11 +88,19 @@ function normalizeNullableInt(value: unknown) {
   return Math.round(parsed);
 }
 
+function normalizeNullableSeatCount(value: unknown): number | null | typeof INVALID_SEAT_COUNT {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) return INVALID_SEAT_COUNT;
+  if (parsed < 1 || parsed > 60) return INVALID_SEAT_COUNT;
+  return parsed;
+}
+
 function normalizeFuelLevel(value: unknown) {
   return normalizeNullableInt(value);
 }
 
-function normalizePayload(body: Record<string, unknown> | null): ProfilePayload {
+function normalizePayload(body: Record<string, unknown> | null): ParsedProfilePayload {
   return {
     vin: normalizeNullableText(body?.vin, 64),
     license_plate: normalizeNullableText(body?.license_plate ?? body?.licensePlate, 64),
@@ -92,6 +108,7 @@ function normalizePayload(body: Record<string, unknown> | null): ProfilePayload 
     vehicle_class: normalizeNullableText(body?.vehicle_class ?? body?.vehicleClass, 80),
     year: normalizeNullableInt(body?.year),
     color: normalizeNullableText(body?.color, 64),
+    seat_count: normalizeNullableSeatCount(body?.seat_count ?? body?.seatCount ?? body?.seats),
     current_location_label: normalizeNullableText(
       body?.current_location_label ?? body?.currentLocationLabel ?? body?.current_location ?? body?.currentLocation,
       180,
@@ -113,14 +130,18 @@ const DEFAULT_DEPS: AdminVehicleProfileRouteDeps = {
   requireCsrfCheck: (request, bodyToken) => requireCsrf(request, bodyToken),
   getProfile: async (vehicleId) => {
     const result = await dbQuery<VehicleProfileRow>(
-      "select vehicle_id, vin, license_plate, vehicle_type, vehicle_class, year, color, current_location_label, odometer_value, odometer_unit, fuel_level_value, available_from, available_until, entry_date, exit_date, created_at, updated_at from vehicle_profiles where vehicle_id = $1::uuid limit 1",
+      "select v.id as vehicle_id, p.vin, p.license_plate, p.vehicle_type, p.vehicle_class, p.year, p.color, v.seat_count, p.current_location_label, p.odometer_value, p.odometer_unit, p.fuel_level_value, p.available_from, p.available_until, p.entry_date, p.exit_date, coalesce(p.created_at, v.created_at) as created_at, coalesce(p.updated_at, v.updated_at) as updated_at from vehicles v left join vehicle_profiles p on p.vehicle_id = v.id where v.id = $1::uuid limit 1",
       [vehicleId],
     );
     return result.rows[0] ?? null;
   },
   upsertProfile: async (vehicleId, payload) => {
+    await dbQuery("update vehicles set seat_count = $2, updated_at = now() where id = $1::uuid", [
+      vehicleId,
+      payload.seat_count,
+    ]);
     const result = await dbQuery<VehicleProfileRow>(
-      "insert into vehicle_profiles (vehicle_id, vin, license_plate, vehicle_type, vehicle_class, year, color, current_location_label, odometer_value, odometer_unit, fuel_level_value, available_from, available_until, entry_date, exit_date) values ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::date, $13::date, $14::date, $15::date) on conflict (vehicle_id) do update set vin = excluded.vin, license_plate = excluded.license_plate, vehicle_type = excluded.vehicle_type, vehicle_class = excluded.vehicle_class, year = excluded.year, color = excluded.color, current_location_label = excluded.current_location_label, odometer_value = excluded.odometer_value, odometer_unit = excluded.odometer_unit, fuel_level_value = excluded.fuel_level_value, available_from = excluded.available_from, available_until = excluded.available_until, entry_date = excluded.entry_date, exit_date = excluded.exit_date, updated_at = now() returning vehicle_id, vin, license_plate, vehicle_type, vehicle_class, year, color, current_location_label, odometer_value, odometer_unit, fuel_level_value, available_from, available_until, entry_date, exit_date, created_at, updated_at",
+      "insert into vehicle_profiles (vehicle_id, vin, license_plate, vehicle_type, vehicle_class, year, color, current_location_label, odometer_value, odometer_unit, fuel_level_value, available_from, available_until, entry_date, exit_date) values ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::date, $13::date, $14::date, $15::date) on conflict (vehicle_id) do update set vin = excluded.vin, license_plate = excluded.license_plate, vehicle_type = excluded.vehicle_type, vehicle_class = excluded.vehicle_class, year = excluded.year, color = excluded.color, current_location_label = excluded.current_location_label, odometer_value = excluded.odometer_value, odometer_unit = excluded.odometer_unit, fuel_level_value = excluded.fuel_level_value, available_from = excluded.available_from, available_until = excluded.available_until, entry_date = excluded.entry_date, exit_date = excluded.exit_date, updated_at = now() returning vehicle_id, vin, license_plate, vehicle_type, vehicle_class, year, color, $16::int as seat_count, current_location_label, odometer_value, odometer_unit, fuel_level_value, available_from, available_until, entry_date, exit_date, created_at, updated_at",
       [
         vehicleId,
         payload.vin,
@@ -137,6 +158,7 @@ const DEFAULT_DEPS: AdminVehicleProfileRouteDeps = {
         payload.available_until,
         payload.entry_date,
         payload.exit_date,
+        payload.seat_count,
       ],
     );
     return result.rows[0];
@@ -180,19 +202,32 @@ export async function handleAdminVehicleProfilePatch(
   }
 
   const payload = normalizePayload(body);
-  if (payload.year !== null && (payload.year < 1900 || payload.year > 2100)) {
+  if (payload.seat_count === INVALID_SEAT_COUNT) {
+    return NextResponse.json(
+      { ok: false, error: "Invalid seat count. Number of seats must be an integer between 1 and 60." },
+      { status: 400 },
+    );
+  }
+  const normalizedPayload: ProfilePayload = {
+    ...payload,
+    seat_count: payload.seat_count,
+  };
+  if (normalizedPayload.year !== null && (normalizedPayload.year < 1900 || normalizedPayload.year > 2100)) {
     return NextResponse.json({ ok: false, error: "Invalid year" }, { status: 400 });
   }
-  if (payload.odometer_value !== null && payload.odometer_value < 0) {
+  if (normalizedPayload.odometer_value !== null && normalizedPayload.odometer_value < 0) {
     return NextResponse.json({ ok: false, error: "Invalid odometer" }, { status: 400 });
   }
-  if (payload.fuel_level_value !== null && (payload.fuel_level_value < 0 || payload.fuel_level_value > 100)) {
+  if (
+    normalizedPayload.fuel_level_value !== null &&
+    (normalizedPayload.fuel_level_value < 0 || normalizedPayload.fuel_level_value > 100)
+  ) {
     return NextResponse.json({ ok: false, error: "Invalid fuel level" }, { status: 400 });
   }
 
   const { id } = await context.params;
   try {
-    const profile = await deps.upsertProfile(id, payload);
+    const profile = await deps.upsertProfile(id, normalizedPayload);
     return NextResponse.json({ ok: true, profile });
   } catch (error) {
     if (isVehicleExtensionsMissingTableError(error)) {

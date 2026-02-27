@@ -10,6 +10,7 @@ type QuotePayload = {
 };
 
 const VEHICLE_ID = "11111111-1111-4111-8111-111111111111";
+const HAS_TURNSTILE_SITE_KEY = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY?.trim());
 
 function calcDaysInclusive(startAt: string, endAt: string) {
   const start = new Date(startAt);
@@ -153,6 +154,30 @@ async function mockBookingApis(page: Page) {
   });
 }
 
+async function advanceToPaymentsStep(page: Page) {
+  await page.getByRole("button", { name: "Next Step" }).click();
+  await page.getByRole("button", { name: "Select Vehicle" }).click();
+  await page.getByRole("button", { name: "Next Step" }).click();
+  await page.getByRole("button", { name: "Next Step" }).click();
+
+  await page.getByLabel("First Name *").fill("Draft");
+  await page.getByLabel("Last Name *").fill("Restore");
+  await page.getByLabel("DL Number *").fill("D1234567");
+  const fileInputs = page.locator('input[type="file"]');
+  await fileInputs.first().setInputFiles({
+    name: "dl.jpg",
+    mimeType: "image/jpeg",
+    buffer: Buffer.from("fake-dl-image"),
+  });
+  await page.getByRole("button", { name: "Next Step" }).click();
+
+  const signatureCanvas = page.locator("canvas").first();
+  await signatureCanvas.click({ position: { x: 20, y: 20 } });
+  await page.getByLabel("By clicking here, I confirm that I accept the privacy policy and terms.").check();
+  await page.getByRole("button", { name: "Next Step" }).click();
+  await expect(page.locator('[data-testid="booking-step-payments"]')).toBeVisible();
+}
+
 test.beforeEach(async ({ page }) => {
   await mockBookingApis(page);
 });
@@ -269,4 +294,52 @@ test("insurance and promo update totals using pricing quote", async ({ page }) =
     paymentOption: "DEPOSIT",
   });
   expect(quoteWithInsuranceAndPromoJson.summary.total).toBe(expectedSummary.total);
+});
+
+test("booking draft can be restored then cleared with start over", async ({ page }) => {
+  await page.goto("/book", { waitUntil: "networkidle" });
+  await advanceToPaymentsStep(page);
+
+  await page.reload({ waitUntil: "networkidle" });
+  await expect(
+    page.getByText("Draft restored. For security, please re-upload your driver's license image and signature."),
+  ).toBeVisible();
+
+  await page.locator('[data-testid="booking-start-over"]').click();
+  await expect(page.locator('[data-testid="booking-start-over-dialog"]')).toBeVisible();
+  await page.locator('[data-testid="booking-start-over-confirm"]').click();
+
+  await expect(page.locator('[data-testid="booking-step-dates"]')).toBeVisible();
+  await expect(page.locator('[data-testid="booking-step-payments"]')).toHaveCount(0);
+
+  await page.reload({ waitUntil: "networkidle" });
+  await expect(page.getByText(/Draft restored\./)).toHaveCount(0);
+});
+
+test("summary shortcuts return user to date and vehicle steps", async ({ page }) => {
+  await page.goto("/book", { waitUntil: "networkidle" });
+  await advanceToPaymentsStep(page);
+
+  await page.locator('[data-testid="booking-summary-change-vehicle"]').click();
+  await expect(page.locator('[data-testid="booking-step-vehicles"]')).toBeVisible();
+
+  await page.locator('[data-testid="booking-summary-change-dates"]').click();
+  await expect(page.locator('[data-testid="booking-step-dates"]')).toBeVisible();
+});
+
+test("turnstile retry guidance appears when widget script fails to load", async ({ page }) => {
+  test.skip(!HAS_TURNSTILE_SITE_KEY, "Requires Turnstile site key in the test environment.");
+
+  await page.route("https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit", async (route) => {
+    await route.abort("failed");
+  });
+
+  await page.goto("/book", { waitUntil: "networkidle" });
+  await advanceToPaymentsStep(page);
+
+  const securityPanel = page.locator('[data-testid="booking-security-check"]');
+  await expect(securityPanel.locator('[data-testid="turnstile-error-message"]')).toContainText(
+    "Security check couldn't load.",
+  );
+  await expect(securityPanel.locator('[data-testid="turnstile-retry-button"]')).toBeVisible();
 });

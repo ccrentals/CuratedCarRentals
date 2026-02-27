@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 
 import { dbQuery } from "@/lib/db";
 import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
@@ -7,6 +8,11 @@ import {
   sendBookingCreatedEmail,
   sendDepositReceiptEmail,
 } from "@/lib/notifications/email";
+import {
+  computeDedupeKey,
+  markDedupeResult,
+  tryAcquireDedupe,
+} from "@/lib/notifications/dedupe";
 import { readPromoPricingFields } from "@/lib/payments/pricing";
 
 const ALLOWED_TYPES = ["booking_created", "deposit_receipt"] as const;
@@ -60,6 +66,28 @@ export async function POST(
   const depositValue = Number(
     (pricing as Record<string, unknown>).deposit_cents ?? booking.deposit_cents,
   );
+  const eventType =
+    type === "booking_created"
+      ? "RESEND_BOOKING_CREATED_EMAIL"
+      : "RESEND_DEPOSIT_RECEIPT_EMAIL";
+  const dedupeKey = computeDedupeKey({
+    entityType: "booking",
+    entityId: booking.id,
+    eventType,
+    // Manual resend should remain intentional and repeatable.
+    extra: randomUUID(),
+  });
+
+  await tryAcquireDedupe(
+    {
+      dedupeKey,
+      entityType: "booking",
+      entityId: booking.id,
+      eventType,
+      provider: "resend",
+    },
+    dbQuery,
+  );
 
   if (type === "booking_created") {
     const result = await sendBookingCreatedEmail({
@@ -77,12 +105,29 @@ export async function POST(
     });
 
     if (!result.ok) {
+      await markDedupeResult(
+        {
+          dedupeKey,
+          status: result.skipped ? "SKIPPED" : "FAILED",
+          provider: "resend",
+          error: result.error ?? "Email failed",
+        },
+        dbQuery,
+      );
       return NextResponse.json(
         { error: result.error ?? "Email failed" },
         { status: result.skipped ? 400 : 500 },
       );
     }
 
+    await markDedupeResult(
+      {
+        dedupeKey,
+        status: "SENT",
+        provider: "resend",
+      },
+      dbQuery,
+    );
     return NextResponse.json({ ok: true });
   }
 
@@ -109,11 +154,28 @@ export async function POST(
   });
 
   if (!receiptResult.ok) {
+    await markDedupeResult(
+      {
+        dedupeKey,
+        status: receiptResult.skipped ? "SKIPPED" : "FAILED",
+        provider: "resend",
+        error: receiptResult.error ?? "Email failed",
+      },
+      dbQuery,
+    );
     return NextResponse.json(
       { error: receiptResult.error ?? "Email failed" },
       { status: receiptResult.skipped ? 400 : 500 },
     );
   }
 
+  await markDedupeResult(
+    {
+      dedupeKey,
+      status: "SENT",
+      provider: "resend",
+    },
+    dbQuery,
+  );
   return NextResponse.json({ ok: true });
 }

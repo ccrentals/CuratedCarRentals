@@ -8,6 +8,7 @@ import { useDialogA11y } from "@/components/admin/useDialogA11y";
 
 type QuoteEmailTarget = {
   id: string;
+  publicId: string;
   customerFullName: string;
   customerEmail: string;
   startAt: string;
@@ -59,6 +60,7 @@ export function QuoteEmailModal({ open, target, onClose, onSent }: QuoteEmailMod
     if (!target) return null;
     return buildQuoteEmailDraft({
       quoteId: target.id,
+      quotePublicId: target.publicId,
       customerName: target.customerFullName,
       customerEmail: target.customerEmail,
       startAt: target.startAt,

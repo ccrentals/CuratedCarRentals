@@ -3,10 +3,13 @@ import { NextResponse } from "next/server";
 import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import { logError } from "@/lib/log";
+import { isQuoteExpired } from "@/lib/quotes/lifecycle";
 import {
   convertQuoteToBooking,
+  fetchQuoteByIdForOps,
   isQuoteOpsMissingTableError,
   QuoteOpsError,
+  type QuoteOpsQuote,
 } from "@/lib/quotes/quoteOps";
 import { requireCsrf } from "@/lib/security/csrf";
 
@@ -17,6 +20,7 @@ type RouteContext = {
 export type AdminQuoteConvertRouteDeps = {
   getSession: () => Promise<AdminSession | null>;
   requireCsrfCheck: (request: Request, bodyToken?: string | null) => Promise<boolean>;
+  getQuote: (id: string) => Promise<QuoteOpsQuote | null>;
   convertQuote: (input: {
     quoteId: string;
     actorAdminUserId?: string | null;
@@ -26,6 +30,7 @@ export type AdminQuoteConvertRouteDeps = {
 const DEFAULT_DEPS: AdminQuoteConvertRouteDeps = {
   getSession: () => getSessionFromRequest(),
   requireCsrfCheck: (request, bodyToken) => requireCsrf(request, bodyToken),
+  getQuote: (id) => fetchQuoteByIdForOps(id),
   convertQuote: (input) => convertQuoteToBooking(input),
 };
 
@@ -46,6 +51,17 @@ export async function handleAdminQuoteConvertPost(
   const { id } = await context.params;
 
   try {
+    const quote = await deps.getQuote(id);
+    if (!quote) {
+      return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
+    }
+    if (isQuoteExpired(quote.expiresAt) && !quote.convertedBookingId) {
+      return NextResponse.json(
+        { ok: false, error: "Quote is expired", code: "QUOTE_EXPIRED" },
+        { status: 409 },
+      );
+    }
+
     const converted = await deps.convertQuote({
       quoteId: id,
       actorAdminUserId: actor.userId,

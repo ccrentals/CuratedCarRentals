@@ -74,14 +74,29 @@ create table if not exists vehicles (
   make text not null,
   model text not null,
   year int not null,
+  seat_count int,
   daily_rate_cents int not null,
   deposit_cents int not null,
   status text not null default 'ACTIVE',
   features_json jsonb not null default '[]'::jsonb,
   image_urls_json jsonb not null default '[]'::jsonb,
+  constraint vehicles_seat_count_range check (
+    seat_count is null or (seat_count >= 1 and seat_count <= 60)
+  ),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table vehicles
+  add column if not exists seat_count int;
+
+alter table vehicles
+  drop constraint if exists vehicles_seat_count_range;
+
+alter table vehicles
+  add constraint vehicles_seat_count_range check (
+    seat_count is null or (seat_count >= 1 and seat_count <= 60)
+  );
 
 create table if not exists customers (
   id uuid primary key default gen_random_uuid(),
@@ -131,8 +146,44 @@ alter table customers
 alter table customers
   add column if not exists blocked_reason text;
 
+create sequence if not exists bookings_public_id_seq start 1;
+create sequence if not exists quotes_public_id_seq start 1;
+
+create or replace function format_public_id(prefix text, n bigint, width int default 6)
+returns text
+language sql
+immutable
+as $$
+  select prefix || lpad(n::text, width, '0');
+$$;
+
+create or replace function assign_bookings_public_id()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.public_id is null or btrim(new.public_id) = '' then
+    new.public_id := format_public_id('B', nextval('bookings_public_id_seq'));
+  end if;
+  return new;
+end;
+$$;
+
+create or replace function assign_quotes_public_id()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.public_id is null or btrim(new.public_id) = '' then
+    new.public_id := format_public_id('Q', nextval('quotes_public_id_seq'));
+  end if;
+  return new;
+end;
+$$;
+
 create table if not exists bookings (
   id uuid primary key default gen_random_uuid(),
+  public_id text not null,
   vehicle_id uuid not null references vehicles(id) on delete restrict,
   customer_id uuid not null references customers(id) on delete restrict,
   start_date date not null,
@@ -156,6 +207,60 @@ alter table bookings
 
 alter table bookings
   add column if not exists archived_reason text;
+
+alter table bookings
+  add column if not exists public_id text;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_trigger
+    where tgname = 'bookings_assign_public_id'
+      and tgrelid = 'bookings'::regclass
+      and not tgisinternal
+  ) then
+    create trigger bookings_assign_public_id
+      before insert on bookings
+      for each row
+      execute function assign_bookings_public_id();
+  end if;
+end $$;
+
+with ordered as (
+  select b.id,
+         row_number() over (order by b.created_at asc, b.id asc) as rn
+  from bookings b
+  where b.public_id is null
+),
+base as (
+  select coalesce(max((substring(b.public_id from '^B([0-9]+)$'))::bigint), 0) as max_n
+  from bookings b
+  where b.public_id ~ '^B[0-9]+$'
+)
+update bookings b
+set public_id = format_public_id('B', base.max_n + ordered.rn)
+from ordered, base
+where b.id = ordered.id;
+
+do $$
+declare
+  bookings_max bigint;
+begin
+  select max((substring(public_id from '^B([0-9]+)$'))::bigint)
+    into bookings_max
+  from bookings
+  where public_id ~ '^B[0-9]+$';
+
+  if bookings_max is null then
+    perform setval('bookings_public_id_seq', 1, false);
+  else
+    perform setval('bookings_public_id_seq', bookings_max, true);
+  end if;
+end $$;
+
+alter table bookings
+  alter column public_id set not null;
 
 create table if not exists payments (
   id uuid primary key default gen_random_uuid(),
@@ -244,6 +349,50 @@ create table if not exists webhook_events (
   unique(provider, event_id)
 );
 
+create table if not exists notification_dispatch_log (
+  id uuid primary key default gen_random_uuid(),
+  entity_type text not null,
+  entity_id uuid not null,
+  event_type text not null,
+  dedupe_key text not null,
+  channel text not null default 'email',
+  provider text,
+  provider_message_id text,
+  status text not null,
+  error text,
+  created_at timestamptz not null default now()
+);
+
+create unique index if not exists notification_dispatch_log_dedupe_key_unique
+  on notification_dispatch_log(dedupe_key);
+
+create index if not exists notification_dispatch_log_entity_idx
+  on notification_dispatch_log(entity_type, entity_id);
+
+create index if not exists notification_dispatch_log_event_created_idx
+  on notification_dispatch_log(event_type, created_at desc);
+
+create table if not exists booking_invoice_documents (
+  id uuid primary key default gen_random_uuid(),
+  booking_id uuid not null references bookings(id) on delete cascade,
+  source text not null default 'PDFMONKEY',
+  template_id text,
+  provider_document_id text,
+  provider_status text,
+  download_url text,
+  payload_hash text not null,
+  generated_at timestamptz not null default now(),
+  emailed_at timestamptz,
+  last_error text,
+  created_by_user_id uuid references users(id) on delete set null
+);
+
+create index if not exists booking_invoice_documents_booking_generated_idx
+  on booking_invoice_documents(booking_id, generated_at desc);
+
+create unique index if not exists booking_invoice_documents_booking_payload_unique
+  on booking_invoice_documents(booking_id, payload_hash);
+
 create table if not exists audit_logs (
   id uuid primary key default gen_random_uuid(),
   user_id uuid references users(id) on delete set null,
@@ -312,7 +461,6 @@ create index if not exists promo_redemptions_customer_id_idx on promo_redemption
 create index if not exists promo_redemptions_customer_email_lower_idx on promo_redemptions (lower(customer_email));
 create index if not exists contact_messages_status_created_idx on contact_messages(status, created_at desc);
 create index if not exists contact_messages_created_idx on contact_messages(created_at desc);
-
 -- Booking revamp foundation (additive / backward-compatible)
 create table if not exists booking_locations (
   id uuid primary key default gen_random_uuid(),
@@ -356,6 +504,7 @@ create index if not exists insurance_plans_enabled_idx
 
 create table if not exists quotes (
   id uuid primary key default gen_random_uuid(),
+  public_id text not null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   status text not null default 'DRAFT',
@@ -405,6 +554,60 @@ create table if not exists quotes (
   constraint quotes_window_check check (end_at > start_at)
 );
 
+alter table quotes
+  add column if not exists public_id text;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_trigger
+    where tgname = 'quotes_assign_public_id'
+      and tgrelid = 'quotes'::regclass
+      and not tgisinternal
+  ) then
+    create trigger quotes_assign_public_id
+      before insert on quotes
+      for each row
+      execute function assign_quotes_public_id();
+  end if;
+end $$;
+
+with ordered as (
+  select q.id,
+         row_number() over (order by q.created_at asc, q.id asc) as rn
+  from quotes q
+  where q.public_id is null
+),
+base as (
+  select coalesce(max((substring(q.public_id from '^Q([0-9]+)$'))::bigint), 0) as max_n
+  from quotes q
+  where q.public_id ~ '^Q[0-9]+$'
+)
+update quotes q
+set public_id = format_public_id('Q', base.max_n + ordered.rn)
+from ordered, base
+where q.id = ordered.id;
+
+do $$
+declare
+  quotes_max bigint;
+begin
+  select max((substring(public_id from '^Q([0-9]+)$'))::bigint)
+    into quotes_max
+  from quotes
+  where public_id ~ '^Q[0-9]+$';
+
+  if quotes_max is null then
+    perform setval('quotes_public_id_seq', 1, false);
+  else
+    perform setval('quotes_public_id_seq', quotes_max, true);
+  end if;
+end $$;
+
+alter table quotes
+  alter column public_id set not null;
+
 create table if not exists quote_events (
   id uuid primary key default gen_random_uuid(),
   quote_id uuid not null references quotes(id) on delete cascade,
@@ -437,6 +640,10 @@ create index if not exists quotes_customer_email_lower_idx
   on quotes(lower(customer_email));
 create index if not exists quotes_vehicle_id_idx
   on quotes(vehicle_id);
+create unique index if not exists bookings_public_id_unique_idx
+  on bookings(public_id);
+create unique index if not exists quotes_public_id_unique_idx
+  on quotes(public_id);
 create index if not exists quote_events_quote_created_idx
   on quote_events(quote_id, created_at desc);
 create index if not exists quote_events_event_type_idx

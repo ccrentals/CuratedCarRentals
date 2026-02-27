@@ -9,6 +9,11 @@ import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { InlineDateTimeRange } from "@/components/shared/InlineDateTimeRange";
 import { formatJmd } from "@/lib/money";
 import {
+  formatQuoteActivityActorLabel,
+  formatQuoteActivityMeta,
+  formatQuoteActivityTitle,
+} from "@/lib/quotes/activityLog";
+import {
   formatTagsInput,
   parseTagsInput,
   quoteStatusLabel,
@@ -30,6 +35,7 @@ type QuoteEventItem = {
 
 type QuoteDetailItem = {
   id: string;
+  publicId: string;
   createdAt: string;
   updatedAt: string;
   status: string;
@@ -86,30 +92,6 @@ type QuoteDetailClientProps = {
   createdFlag?: boolean;
   initialEvents: QuoteEventItem[];
 };
-
-function formatEventType(value: string) {
-  const normalized = String(value ?? "")
-    .trim()
-    .toUpperCase();
-  if (!normalized) return "Event";
-  return normalized
-    .split("_")
-    .map((part) => part[0] + part.slice(1).toLowerCase())
-    .join(" ");
-}
-
-function formatMeta(meta: Record<string, unknown>) {
-  const entries = Object.entries(meta ?? {}).filter(([, value]) => value !== null && value !== undefined && value !== "");
-  if (entries.length === 0) return null;
-  return entries
-    .map(([key, value]) => {
-      if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-        return `${key}: ${String(value)}`;
-      }
-      return `${key}: ${JSON.stringify(value)}`;
-    })
-    .join(" · ");
-}
 
 export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, initialEvents }: QuoteDetailClientProps) {
   const router = useRouter();
@@ -271,7 +253,9 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Quote</p>
-          <h1 className="text-3xl font-bold text-[var(--ccr-text)]">{shortQuoteId(item.id)}</h1>
+          <h1 data-testid="quote-public-id" className="text-3xl font-bold text-[var(--ccr-text)]">
+            Quote {shortQuoteId(item.id, item.publicId)}
+          </h1>
           <p className="mt-1 text-sm text-[var(--ccr-muted)]">Manage quote status, metadata, pricing snapshot, and actions.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -317,9 +301,9 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
       {message ? <p className="mt-2 text-xs font-semibold text-emerald-200">{message}</p> : null}
       {convertedBookingId ? (
         <p className="mt-2 text-xs font-semibold text-emerald-200">
-          Booking created:{" "}
+          Booking created.{" "}
           <Link href={`/admin/bookings/${convertedBookingId}`} className="underline">
-            {convertedBookingId.slice(0, 8)}
+            Open booking
           </Link>
         </p>
       ) : null}
@@ -408,7 +392,6 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
           <h2 className="text-sm font-bold uppercase tracking-wide text-[var(--ccr-muted)]">Vehicle</h2>
           <p className="mt-3 text-base font-semibold text-[var(--ccr-text)]">{item.vehicleLabel}</p>
           <p className="text-sm text-[var(--ccr-muted)]">Class: {item.vehicleClass || "—"}</p>
-          <p className="text-sm text-[var(--ccr-muted)]">Vehicle ID: {item.vehicleId || "—"}</p>
         </div>
 
         <div className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-5">
@@ -538,25 +521,31 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
       </section>
 
       <section className="mt-4 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-5">
-        <h2 className="text-sm font-bold uppercase tracking-wide text-[var(--ccr-muted)]">Events</h2>
+        <h2 className="text-sm font-bold uppercase tracking-wide text-[var(--ccr-muted)]">Activity Log</h2>
         {eventRows.length === 0 ? (
           <p className="mt-3 text-sm text-[var(--ccr-muted)]">No events recorded yet.</p>
         ) : (
           <ul className="mt-3 space-y-2">
-            {eventRows.map((event) => (
-              <li key={event.id} className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm font-semibold text-[var(--ccr-text)]">{formatEventType(event.eventType)}</p>
-                  <p className="text-xs text-[var(--ccr-muted)]">
-                    <DateTimeInline value={event.createdAt} />
+            {eventRows.map((event) => {
+              const metaText = formatQuoteActivityMeta(event.meta);
+              const actorLabel = formatQuoteActivityActorLabel(event.eventType);
+              return (
+                <li key={event.id} className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-[var(--ccr-text)]">
+                      {formatQuoteActivityTitle(event.eventType)}
+                    </p>
+                    <p className="text-xs text-[var(--ccr-muted)]">
+                      <DateTimeInline value={event.createdAt} />
+                    </p>
+                  </div>
+                  <p className="mt-1 text-xs text-[var(--ccr-muted)]">
+                    {actorLabel} {event.actorEmail || "System"}
                   </p>
-                </div>
-                <p className="mt-1 text-xs text-[var(--ccr-muted)]">Actor: {event.actorEmail || "System"}</p>
-                {formatMeta(event.meta) ? (
-                  <p className="mt-1 text-xs text-[var(--ccr-muted)]">{formatMeta(event.meta)}</p>
-                ) : null}
-              </li>
-            ))}
+                  {metaText ? <p className="mt-1 text-xs text-[var(--ccr-muted)]">{metaText}</p> : null}
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>
@@ -571,6 +560,7 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
         }}
         target={{
           id: item.id,
+          publicId: item.publicId,
           customerFullName: item.customerFullName,
           customerEmail: item.customerEmail,
           startAt: item.startAt,

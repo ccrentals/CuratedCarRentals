@@ -5,6 +5,7 @@ import { CustomerBlockedError, upsertCustomerForBooking } from "@/lib/customers"
 import { dbQuery, getDbPool } from "@/lib/db";
 import { logError, logWarn, redactText } from "@/lib/log";
 import { upsertPromoRedemption, validatePromoForBooking } from "@/lib/promos";
+import { resolveEffectiveQuoteStatus } from "@/lib/quotes/lifecycle";
 import { buildQuotePricingSnapshot } from "@/lib/quotes/quotePricing";
 
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
@@ -194,11 +195,12 @@ function escapeHtml(value: string) {
 }
 
 function mapQuoteRow(row: QuoteRow): QuoteOpsQuote {
+  const status = resolveEffectiveQuoteStatus(row.status, row.expires_at);
   return {
     id: row.id,
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at),
-    status: normalizeText(row.status).toUpperCase(),
+    status,
     expiresAt: row.expires_at ? toIso(row.expires_at) : null,
     customerFullName: normalizeText(row.customer_full_name),
     customerEmail: normalizeText(row.customer_email),
@@ -589,6 +591,10 @@ export async function convertQuoteToBooking(input: {
     if (quote.convertedBookingId) {
       await client.query("commit");
       return { bookingId: quote.convertedBookingId, alreadyConverted: true };
+    }
+
+    if (quote.status === "EXPIRED") {
+      throw new QuoteOpsError("QUOTE_EXPIRED", "Quote is expired.", 409);
     }
 
     if (!quote.vehicleId) {

@@ -6,6 +6,7 @@ import { isNonEmptyString, parseIntSafe, parseMoneyToCents, parseImageUrls } fro
 import { requireCsrf } from "@/lib/security/csrf";
 
 const allowedStatuses = ["AVAILABLE", "RESERVED", "RENTED", "MAINTENANCE", "INACTIVE"];
+const INVALID_SEAT_COUNT = Symbol("INVALID_SEAT_COUNT");
 
 function validateStatus(value: unknown) {
   return typeof value === "string" && allowedStatuses.includes(value);
@@ -61,12 +62,20 @@ function slugify(value: string): string {
     .slice(0, 80);
 }
 
+function normalizeSeatCount(value: unknown): number | null | typeof INVALID_SEAT_COUNT {
+  if (value === undefined || value === null || value === "") return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) return INVALID_SEAT_COUNT;
+  if (parsed < 1 || parsed > 60) return INVALID_SEAT_COUNT;
+  return parsed;
+}
+
 export async function GET() {
   const auth = await requireStaffOrAdminRole();
   if (!auth.ok) return auth.response;
 
   const result = await dbQuery(
-    "select id, make, model, year, daily_rate_cents, deposit_cents, status, created_at from vehicles order by created_at desc",
+    "select id, make, model, year, seat_count, daily_rate_cents, deposit_cents, status, created_at from vehicles order by created_at desc",
   );
   return NextResponse.json({ vehicles: result.rows });
 }
@@ -105,6 +114,7 @@ export async function POST(request: Request) {
   const status = body.status ?? "AVAILABLE";
   const imageUrls = parseImageUrls(body.image_urls_json);
   const parsedFeatures = parseFeaturesInput(body.features_json);
+  const seatCount = normalizeSeatCount(body.seat_count ?? body.seatCount ?? parsedFeatures.seats);
 
   const currentYear = new Date().getFullYear() + 1;
 
@@ -123,6 +133,12 @@ export async function POST(request: Request) {
   if (!validateStatus(status)) {
     return NextResponse.json({ error: "Invalid status" }, { status: 400 });
   }
+  if (seatCount === INVALID_SEAT_COUNT) {
+    return NextResponse.json(
+      { error: "Invalid seat count. Number of seats must be an integer between 1 and 60." },
+      { status: 400 },
+    );
+  }
 
   const makeValue = String(make).trim();
   const modelValue = String(model).trim();
@@ -133,7 +149,7 @@ export async function POST(request: Request) {
     slug: toStringValue(parsedFeatures.slug, slugify(vehicleName)),
     category: toStringValue(parsedFeatures.category, "Vehicle"),
     transmission: toStringValue(parsedFeatures.transmission, "Automatic"),
-    seats: Math.max(1, toNumberValue(parsedFeatures.seats, 5)),
+    seats: seatCount ?? Math.max(1, toNumberValue(parsedFeatures.seats, 5)),
     bags: Math.max(0, toNumberValue(parsedFeatures.bags, 2)),
     description: toStringValue(
       parsedFeatures.description,
@@ -144,11 +160,12 @@ export async function POST(request: Request) {
   };
 
   const result = await dbQuery(
-    "insert into vehicles (make, model, year, daily_rate_cents, deposit_cents, status, image_urls_json, features_json) values ($1, $2, $3, $4, $5, $6, $7, $8) returning id, make, model, year, daily_rate_cents, deposit_cents, status, created_at",
+    "insert into vehicles (make, model, year, seat_count, daily_rate_cents, deposit_cents, status, image_urls_json, features_json) values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning id, make, model, year, seat_count, daily_rate_cents, deposit_cents, status, created_at",
     [
       makeValue,
       modelValue,
       year,
+      seatCount,
       dailyRate,
       deposit,
       status,

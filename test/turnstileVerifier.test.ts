@@ -16,12 +16,14 @@ test("turnstile verifier: local dev bypass works when keys are missing", { concu
   const originalNodeEnv = process.env.NODE_ENV;
   const originalSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
   const originalSecret = process.env.TURNSTILE_SECRET_KEY;
+  const originalBypass = process.env.TURNSTILE_DEV_BYPASS;
   const originalFetch = globalThis.fetch;
 
   try {
     setEnv("NODE_ENV", "development");
     setEnv("NEXT_PUBLIC_TURNSTILE_SITE_KEY", undefined);
     setEnv("TURNSTILE_SECRET_KEY", undefined);
+    setEnv("TURNSTILE_DEV_BYPASS", "1");
     globalThis.fetch = (async () => {
       throw new Error("fetch should not be called during bypass");
     }) as typeof fetch;
@@ -39,7 +41,38 @@ test("turnstile verifier: local dev bypass works when keys are missing", { concu
     setEnv("NODE_ENV", originalNodeEnv);
     setEnv("NEXT_PUBLIC_TURNSTILE_SITE_KEY", originalSiteKey);
     setEnv("TURNSTILE_SECRET_KEY", originalSecret);
+    setEnv("TURNSTILE_DEV_BYPASS", originalBypass);
     globalThis.fetch = originalFetch;
+  }
+});
+
+test("turnstile verifier: dev mode without bypass flag still fails closed when keys are missing", { concurrency: false }, async () => {
+  const originalNodeEnv = process.env.NODE_ENV;
+  const originalSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+  const originalSecret = process.env.TURNSTILE_SECRET_KEY;
+  const originalBypass = process.env.TURNSTILE_DEV_BYPASS;
+
+  try {
+    setEnv("NODE_ENV", "development");
+    setEnv("NEXT_PUBLIC_TURNSTILE_SITE_KEY", undefined);
+    setEnv("TURNSTILE_SECRET_KEY", undefined);
+    setEnv("TURNSTILE_DEV_BYPASS", undefined);
+
+    const result = await verifyTurnstileToken({
+      token: TURNSTILE_DEV_BYPASS_TOKEN,
+      expectedAction: "public_booking",
+    });
+
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.status, 503);
+      assert.equal(result.errorCodes.includes("turnstile_not_configured"), true);
+    }
+  } finally {
+    setEnv("NODE_ENV", originalNodeEnv);
+    setEnv("NEXT_PUBLIC_TURNSTILE_SITE_KEY", originalSiteKey);
+    setEnv("TURNSTILE_SECRET_KEY", originalSecret);
+    setEnv("TURNSTILE_DEV_BYPASS", originalBypass);
   }
 });
 
@@ -47,11 +80,13 @@ test("turnstile verifier: fails closed in production when keys are missing", { c
   const originalNodeEnv = process.env.NODE_ENV;
   const originalSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
   const originalSecret = process.env.TURNSTILE_SECRET_KEY;
+  const originalBypass = process.env.TURNSTILE_DEV_BYPASS;
 
   try {
     setEnv("NODE_ENV", "production");
     setEnv("NEXT_PUBLIC_TURNSTILE_SITE_KEY", undefined);
     setEnv("TURNSTILE_SECRET_KEY", undefined);
+    setEnv("TURNSTILE_DEV_BYPASS", "1");
 
     const result = await verifyTurnstileToken({
       token: "missing-config-token",
@@ -67,6 +102,7 @@ test("turnstile verifier: fails closed in production when keys are missing", { c
     setEnv("NODE_ENV", originalNodeEnv);
     setEnv("NEXT_PUBLIC_TURNSTILE_SITE_KEY", originalSiteKey);
     setEnv("TURNSTILE_SECRET_KEY", originalSecret);
+    setEnv("TURNSTILE_DEV_BYPASS", originalBypass);
   }
 });
 

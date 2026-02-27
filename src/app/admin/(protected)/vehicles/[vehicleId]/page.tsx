@@ -20,6 +20,7 @@ type VehicleDetail = {
   make: string;
   model: string;
   year: number;
+  seat_count: number | null;
   daily_rate_cents: number;
   deposit_cents: number;
   status: string;
@@ -33,6 +34,7 @@ type VehicleProfileRow = {
   vehicle_class: string | null;
   year: number | null;
   color: string | null;
+  seat_count: number | null;
   current_location_label: string | null;
   odometer_value: number | null;
   odometer_unit: string | null;
@@ -90,7 +92,7 @@ export default async function AdminVehicleDetailPage({
       : null;
 
   const vehicleResult = await dbQuery<VehicleDetail>(
-    "select id, make, model, year, daily_rate_cents, deposit_cents, status, image_urls_json from vehicles where id = $1::uuid",
+    "select id, make, model, year, seat_count, daily_rate_cents, deposit_cents, status, image_urls_json from vehicles where id = $1::uuid",
     [vehicleId],
   );
 
@@ -102,7 +104,7 @@ export default async function AdminVehicleDetailPage({
   let vehicleProfile: VehicleProfileRow | null = null;
   try {
     const profileResult = await dbQuery<VehicleProfileRow>(
-      "select vin, license_plate, vehicle_type, vehicle_class, year, color, current_location_label, odometer_value, odometer_unit, fuel_level_value, available_from, available_until, entry_date, exit_date from vehicle_profiles where vehicle_id = $1::uuid limit 1",
+      "select p.vin, p.license_plate, p.vehicle_type, p.vehicle_class, p.year, p.color, v.seat_count, p.current_location_label, p.odometer_value, p.odometer_unit, p.fuel_level_value, p.available_from, p.available_until, p.entry_date, p.exit_date from vehicles v left join vehicle_profiles p on p.vehicle_id = v.id where v.id = $1::uuid limit 1",
       [vehicle.id],
     );
     vehicleProfile = profileResult.rows[0] ?? null;

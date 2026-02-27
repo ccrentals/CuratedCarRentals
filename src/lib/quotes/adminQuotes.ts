@@ -1,6 +1,13 @@
 import { readSortFromSearchParams, type SortDir } from "@/components/admin/tableSort";
 import { isVehicleUnavailableWithAvailabilityRules } from "@/lib/bookings/availabilityRules";
 import { dbQuery, getDbPool } from "@/lib/db";
+import {
+  getQuoteStatusTransitionError,
+  normalizeQuoteStatus,
+  QUOTE_STATUSES,
+  resolveEffectiveQuoteStatus,
+  type QuoteStatus,
+} from "@/lib/quotes/lifecycle";
 import { isEmail, isNonEmptyString } from "@/lib/validators";
 
 import {
@@ -8,6 +15,9 @@ import {
   QuotePricingError,
   type QuotePricingSnapshot,
 } from "@/lib/quotes/quotePricing";
+
+export { QUOTE_STATUSES };
+export type { QuoteStatus };
 
 type Queryable = {
   query: (text: string, params?: unknown[]) => Promise<{ rows: unknown[]; rowCount: number }>;
@@ -21,6 +31,7 @@ type QuoteCursor = {
 
 type QuoteRow = {
   id: string;
+  public_id: string;
   created_at: string | Date;
   updated_at: string | Date;
   status: string;
@@ -59,17 +70,6 @@ type QuoteRow = {
   converted_booking_id: string | null;
 };
 
-export const QUOTE_STATUSES = [
-  "DRAFT",
-  "SENT",
-  "ACCEPTED",
-  "EXPIRED",
-  "CONVERTED",
-  "CANCELLED",
-] as const;
-
-export type QuoteStatus = (typeof QUOTE_STATUSES)[number];
-
 export const QUOTE_SORT_COLUMNS = [
   "created",
   "customer",
@@ -90,6 +90,7 @@ export type QuoteSortState = {
 
 export type AdminQuoteListItem = {
   id: string;
+  publicId: string;
   createdAt: string;
   status: QuoteStatus;
   expiresAt: string | null;
@@ -271,13 +272,7 @@ function normalizeInteger(value: unknown): number | null {
 }
 
 function normalizeStatus(value: unknown): QuoteStatus | null {
-  const normalized = String(value ?? "")
-    .trim()
-    .toUpperCase();
-  if (QUOTE_STATUSES.includes(normalized as QuoteStatus)) {
-    return normalized as QuoteStatus;
-  }
-  return null;
+  return normalizeQuoteStatus(value);
 }
 
 function normalizeSortBy(value: unknown): QuoteSortBy | null {
@@ -353,10 +348,12 @@ function normalizeUuidOrNull(value: unknown) {
 }
 
 function mapListItem(row: QuoteRow): AdminQuoteListItem {
+  const status = resolveEffectiveQuoteStatus(row.status, row.expires_at);
   return {
     id: row.id,
+    publicId: normalizeText(row.public_id),
     createdAt: toIsoTimestamp(row.created_at),
-    status: (normalizeStatus(row.status) ?? "DRAFT") as QuoteStatus,
+    status,
     expiresAt: row.expires_at ? toIsoTimestamp(row.expires_at) : null,
     customerFullName: normalizeText(row.customer_full_name),
     customerEmail: normalizeText(row.customer_email),
@@ -487,7 +484,15 @@ export async function fetchAdminQuotesPage(input: FetchAdminQuotesInput): Promis
   const values: Array<string | number> = [];
   let paramIndex = 1;
 
-  if (status) {
+  if (status === "EXPIRED") {
+    whereClauses.push(
+      "(q.status = 'EXPIRED' or (q.status in ('DRAFT', 'SENT', 'ACCEPTED') and q.expires_at is not null and now() > q.expires_at))",
+    );
+  } else if (status === "DRAFT" || status === "SENT" || status === "ACCEPTED") {
+    whereClauses.push(`(q.status = $${paramIndex} and (q.expires_at is null or now() <= q.expires_at))`);
+    values.push(status);
+    paramIndex += 1;
+  } else if (status) {
     whereClauses.push(`q.status = $${paramIndex}`);
     values.push(status);
     paramIndex += 1;
@@ -495,7 +500,7 @@ export async function fetchAdminQuotesPage(input: FetchAdminQuotesInput): Promis
 
   if (q) {
     whereClauses.push(
-      `(q.customer_full_name ilike $${paramIndex} or q.customer_email ilike $${paramIndex} or coalesce(q.customer_phone, '') ilike $${paramIndex} or q.id::text ilike $${paramIndex})`,
+      `(q.customer_full_name ilike $${paramIndex} or q.customer_email ilike $${paramIndex} or coalesce(q.customer_phone, '') ilike $${paramIndex} or q.id::text ilike $${paramIndex} or q.public_id ilike $${paramIndex})`,
     );
     values.push(`%${q}%`);
     paramIndex += 1;
@@ -545,7 +550,7 @@ export async function fetchAdminQuotesPage(input: FetchAdminQuotesInput): Promis
   const offsetIndex = values.length;
 
   const rowsResult = await dbQuery<QuoteRow>(
-    `select id, created_at, updated_at, status, expires_at, customer_full_name, customer_email, customer_phone, start_at, end_at, pickup_location_id, dropoff_location_id, pickup_location_text, dropoff_location_text, vehicle_id, vehicle_label, vehicle_class, pricing_json, base_total_cents, insurance_total_cents, discount_total_cents, subtotal_cents, total_cents, deposit_required_cents, amount_due_cents, promo_code, insurance_plan_id, insurance_enabled, tags, comments, commission_partner_name, client_pays_at_partner, rack_price_cents, created_by_admin_user_id, last_emailed_at, last_emailed_to, converted_booking_id from quotes q${whereSql} ${orderBySql} limit $${limitIndex} offset $${offsetIndex}`,
+    `select id, public_id, created_at, updated_at, status, expires_at, customer_full_name, customer_email, customer_phone, start_at, end_at, pickup_location_id, dropoff_location_id, pickup_location_text, dropoff_location_text, vehicle_id, vehicle_label, vehicle_class, pricing_json, base_total_cents, insurance_total_cents, discount_total_cents, subtotal_cents, total_cents, deposit_required_cents, amount_due_cents, promo_code, insurance_plan_id, insurance_enabled, tags, comments, commission_partner_name, client_pays_at_partner, rack_price_cents, created_by_admin_user_id, last_emailed_at, last_emailed_to, converted_booking_id from quotes q${whereSql} ${orderBySql} limit $${limitIndex} offset $${offsetIndex}`,
     values,
   );
 
@@ -580,7 +585,7 @@ export async function fetchAdminQuoteById(id: string) {
   }
 
   const result = await dbQuery<QuoteRow>(
-    "select id, created_at, updated_at, status, expires_at, customer_full_name, customer_email, customer_phone, start_at, end_at, pickup_location_id, dropoff_location_id, pickup_location_text, dropoff_location_text, vehicle_id, vehicle_label, vehicle_class, pricing_json, base_total_cents, insurance_total_cents, discount_total_cents, subtotal_cents, total_cents, deposit_required_cents, amount_due_cents, promo_code, insurance_plan_id, insurance_enabled, tags, comments, commission_partner_name, client_pays_at_partner, rack_price_cents, created_by_admin_user_id, last_emailed_at, last_emailed_to, converted_booking_id from quotes where id = $1 limit 1",
+    "select id, public_id, created_at, updated_at, status, expires_at, customer_full_name, customer_email, customer_phone, start_at, end_at, pickup_location_id, dropoff_location_id, pickup_location_text, dropoff_location_text, vehicle_id, vehicle_label, vehicle_class, pricing_json, base_total_cents, insurance_total_cents, discount_total_cents, subtotal_cents, total_cents, deposit_required_cents, amount_due_cents, promo_code, insurance_plan_id, insurance_enabled, tags, comments, commission_partner_name, client_pays_at_partner, rack_price_cents, created_by_admin_user_id, last_emailed_at, last_emailed_to, converted_booking_id from quotes where id = $1 limit 1",
     [id],
   );
 
@@ -742,7 +747,7 @@ export async function createAdminQuote(input: CreateAdminQuoteInput) {
     const pricing = normalizePricingSummary(pricingSnapshot);
 
     const insertResult = await client.query(
-      "insert into quotes (status, expires_at, customer_full_name, customer_email, customer_phone, start_at, end_at, pickup_location_id, dropoff_location_id, pickup_location_text, dropoff_location_text, vehicle_id, vehicle_label, vehicle_class, pricing_json, base_total_cents, insurance_total_cents, discount_total_cents, subtotal_cents, total_cents, deposit_required_cents, amount_due_cents, promo_code, insurance_plan_id, insurance_enabled, tags, comments, commission_partner_name, client_pays_at_partner, rack_price_cents, created_by_admin_user_id) values ('DRAFT', $1::timestamptz, $2, $3, $4, $5::timestamptz, $6::timestamptz, $7::uuid, $8::uuid, $9, $10, $11::uuid, $12, $13, $14::jsonb, $15, $16, $17, $18, $19, $20, $21, $22, $23::uuid, $24, $25::text[], $26, $27, $28, $29, $30::uuid) returning id, created_at, updated_at, status, expires_at, customer_full_name, customer_email, customer_phone, start_at, end_at, pickup_location_id, dropoff_location_id, pickup_location_text, dropoff_location_text, vehicle_id, vehicle_label, vehicle_class, pricing_json, base_total_cents, insurance_total_cents, discount_total_cents, subtotal_cents, total_cents, deposit_required_cents, amount_due_cents, promo_code, insurance_plan_id, insurance_enabled, tags, comments, commission_partner_name, client_pays_at_partner, rack_price_cents, created_by_admin_user_id, last_emailed_at, last_emailed_to, converted_booking_id",
+      "insert into quotes (status, expires_at, customer_full_name, customer_email, customer_phone, start_at, end_at, pickup_location_id, dropoff_location_id, pickup_location_text, dropoff_location_text, vehicle_id, vehicle_label, vehicle_class, pricing_json, base_total_cents, insurance_total_cents, discount_total_cents, subtotal_cents, total_cents, deposit_required_cents, amount_due_cents, promo_code, insurance_plan_id, insurance_enabled, tags, comments, commission_partner_name, client_pays_at_partner, rack_price_cents, created_by_admin_user_id) values ('DRAFT', $1::timestamptz, $2, $3, $4, $5::timestamptz, $6::timestamptz, $7::uuid, $8::uuid, $9, $10, $11::uuid, $12, $13, $14::jsonb, $15, $16, $17, $18, $19, $20, $21, $22, $23::uuid, $24, $25::text[], $26, $27, $28, $29, $30::uuid) returning id, public_id, created_at, updated_at, status, expires_at, customer_full_name, customer_email, customer_phone, start_at, end_at, pickup_location_id, dropoff_location_id, pickup_location_text, dropoff_location_text, vehicle_id, vehicle_label, vehicle_class, pricing_json, base_total_cents, insurance_total_cents, discount_total_cents, subtotal_cents, total_cents, deposit_required_cents, amount_due_cents, promo_code, insurance_plan_id, insurance_enabled, tags, comments, commission_partner_name, client_pays_at_partner, rack_price_cents, created_by_admin_user_id, last_emailed_at, last_emailed_to, converted_booking_id",
       [
         expiresAt,
         normalizeText(input.customerFullName),
@@ -831,7 +836,7 @@ export async function updateAdminQuote(input: UpdateAdminQuoteInput) {
     await client.query("begin");
 
     const existingResult = await client.query(
-      "select id, created_at, updated_at, status, expires_at, customer_full_name, customer_email, customer_phone, start_at, end_at, pickup_location_id, dropoff_location_id, pickup_location_text, dropoff_location_text, vehicle_id, vehicle_label, vehicle_class, pricing_json, base_total_cents, insurance_total_cents, discount_total_cents, subtotal_cents, total_cents, deposit_required_cents, amount_due_cents, promo_code, insurance_plan_id, insurance_enabled, tags, comments, commission_partner_name, client_pays_at_partner, rack_price_cents, created_by_admin_user_id, last_emailed_at, last_emailed_to, converted_booking_id from quotes where id = $1 for update",
+      "select id, public_id, created_at, updated_at, status, expires_at, customer_full_name, customer_email, customer_phone, start_at, end_at, pickup_location_id, dropoff_location_id, pickup_location_text, dropoff_location_text, vehicle_id, vehicle_label, vehicle_class, pricing_json, base_total_cents, insurance_total_cents, discount_total_cents, subtotal_cents, total_cents, deposit_required_cents, amount_due_cents, promo_code, insurance_plan_id, insurance_enabled, tags, comments, commission_partner_name, client_pays_at_partner, rack_price_cents, created_by_admin_user_id, last_emailed_at, last_emailed_to, converted_booking_id from quotes where id = $1 for update",
       [input.id],
     );
 
@@ -841,9 +846,19 @@ export async function updateAdminQuote(input: UpdateAdminQuoteInput) {
       return null;
     }
 
-    const nextStatus = input.status !== undefined ? normalizeStatus(input.status) : normalizeStatus(existing.status);
-    if (!nextStatus) {
+    const existingStatus = normalizeStatus(existing.status) ?? "DRAFT";
+    const effectiveExistingStatus = resolveEffectiveQuoteStatus(existingStatus, existing.expires_at);
+    const requestedStatus = input.status !== undefined ? normalizeStatus(input.status) : null;
+    if (input.status !== undefined && !requestedStatus) {
       throw new AdminQuoteError("INVALID_STATUS", "Invalid quote status.", 400);
+    }
+    const nextStatus = requestedStatus ?? existingStatus;
+
+    if (requestedStatus) {
+      const transitionError = getQuoteStatusTransitionError(effectiveExistingStatus, requestedStatus);
+      if (transitionError) {
+        throw new AdminQuoteError("INVALID_STATUS_TRANSITION", transitionError, 400);
+      }
     }
 
     const nextStartAt = input.startAt !== undefined ? toDate(input.startAt) : toDate(existing.start_at);
@@ -983,7 +998,7 @@ export async function updateAdminQuote(input: UpdateAdminQuoteInput) {
     }
 
     const updateResult = await client.query(
-      "update quotes set status = $2, expires_at = $3::timestamptz, start_at = $4::timestamptz, end_at = $5::timestamptz, pickup_location_id = $6::uuid, dropoff_location_id = $7::uuid, pickup_location_text = $8, dropoff_location_text = $9, vehicle_id = $10::uuid, vehicle_label = $11, vehicle_class = $12, pricing_json = $13::jsonb, base_total_cents = $14, insurance_total_cents = $15, discount_total_cents = $16, subtotal_cents = $17, total_cents = $18, deposit_required_cents = $19, amount_due_cents = $20, promo_code = $21, insurance_plan_id = $22::uuid, insurance_enabled = $23, tags = $24::text[], comments = $25, commission_partner_name = $26, client_pays_at_partner = $27, rack_price_cents = $28, updated_at = now() where id = $1 returning id, created_at, updated_at, status, expires_at, customer_full_name, customer_email, customer_phone, start_at, end_at, pickup_location_id, dropoff_location_id, pickup_location_text, dropoff_location_text, vehicle_id, vehicle_label, vehicle_class, pricing_json, base_total_cents, insurance_total_cents, discount_total_cents, subtotal_cents, total_cents, deposit_required_cents, amount_due_cents, promo_code, insurance_plan_id, insurance_enabled, tags, comments, commission_partner_name, client_pays_at_partner, rack_price_cents, created_by_admin_user_id, last_emailed_at, last_emailed_to, converted_booking_id",
+      "update quotes set status = $2, expires_at = $3::timestamptz, start_at = $4::timestamptz, end_at = $5::timestamptz, pickup_location_id = $6::uuid, dropoff_location_id = $7::uuid, pickup_location_text = $8, dropoff_location_text = $9, vehicle_id = $10::uuid, vehicle_label = $11, vehicle_class = $12, pricing_json = $13::jsonb, base_total_cents = $14, insurance_total_cents = $15, discount_total_cents = $16, subtotal_cents = $17, total_cents = $18, deposit_required_cents = $19, amount_due_cents = $20, promo_code = $21, insurance_plan_id = $22::uuid, insurance_enabled = $23, tags = $24::text[], comments = $25, commission_partner_name = $26, client_pays_at_partner = $27, rack_price_cents = $28, updated_at = now() where id = $1 returning id, public_id, created_at, updated_at, status, expires_at, customer_full_name, customer_email, customer_phone, start_at, end_at, pickup_location_id, dropoff_location_id, pickup_location_text, dropoff_location_text, vehicle_id, vehicle_label, vehicle_class, pricing_json, base_total_cents, insurance_total_cents, discount_total_cents, subtotal_cents, total_cents, deposit_required_cents, amount_due_cents, promo_code, insurance_plan_id, insurance_enabled, tags, comments, commission_partner_name, client_pays_at_partner, rack_price_cents, created_by_admin_user_id, last_emailed_at, last_emailed_to, converted_booking_id",
       [
         input.id,
         nextStatus,
@@ -1032,13 +1047,13 @@ export async function updateAdminQuote(input: UpdateAdminQuoteInput) {
       },
     });
 
-    if (hasStatusChange(existing.status, nextStatus)) {
+    if (hasStatusChange(effectiveExistingStatus, nextStatus)) {
       await insertQuoteEvent(client, {
         quoteId: input.id,
         eventType: "STATUS_CHANGED",
         actorAdminUserId,
         meta: {
-          fromStatus: existing.status,
+          fromStatus: effectiveExistingStatus,
           toStatus: nextStatus,
         },
       });

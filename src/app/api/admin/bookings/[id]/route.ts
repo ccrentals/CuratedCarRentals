@@ -108,6 +108,7 @@ export async function GET(
   return NextResponse.json({
     booking: {
       id: booking.id,
+      public_id: booking.public_id ?? null,
       start_date: booking.start_date,
       end_date: booking.end_date,
       pickup_location: booking.pickup_location,

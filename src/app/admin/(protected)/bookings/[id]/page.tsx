@@ -31,6 +31,7 @@ import { isEntitledBooking } from "@/lib/availability/entitlement";
 
 type BookingDetails = {
   id: string;
+  public_id: string;
   start_date: string;
   end_date: string;
   start_at: string | null;
@@ -88,6 +89,7 @@ type SettingsRow = {
 
 type OverriddenByThisBooking = {
   id: string;
+  public_id: string;
   start_date: string;
   end_date: string;
   customer_name: string;
@@ -171,7 +173,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
   let bookingResult;
   try {
     bookingResult = await dbQuery<BookingDetails>(
-      "select b.id, b.start_date, b.end_date, b.start_at, b.end_at, b.pickup_time::text as pickup_time, b.dropoff_time::text as dropoff_time, b.pickup_location, b.dropoff_location, b.pickup_location_text_snapshot, b.dropoff_location_text_snapshot, b.vehicle_id, b.insurance_selected, b.insurance_price_per_day_cents, b.insurance_total_cents, b.payment_option, b.custom_payment_amount_cents, b.drivers_license_number, b.drivers_license_expiration_date::text as drivers_license_expiration_date, b.status, b.pricing_json, c.full_name as customer_name, c.email as customer_email, c.phone as customer_phone, c.legal_id_type as customer_legal_id_type, c.legal_id_number as customer_legal_id_number, v.make as vehicle_make, v.model as vehicle_model, v.year as vehicle_year, v.daily_rate_cents, v.deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.id = $1",
+      "select b.id, b.public_id, b.start_date, b.end_date, b.start_at, b.end_at, b.pickup_time::text as pickup_time, b.dropoff_time::text as dropoff_time, b.pickup_location, b.dropoff_location, b.pickup_location_text_snapshot, b.dropoff_location_text_snapshot, b.vehicle_id, b.insurance_selected, b.insurance_price_per_day_cents, b.insurance_total_cents, b.payment_option, b.custom_payment_amount_cents, b.drivers_license_number, b.drivers_license_expiration_date::text as drivers_license_expiration_date, b.status, b.pricing_json, c.full_name as customer_name, c.email as customer_email, c.phone as customer_phone, c.legal_id_type as customer_legal_id_type, c.legal_id_number as customer_legal_id_number, v.make as vehicle_make, v.model as vehicle_model, v.year as vehicle_year, v.daily_rate_cents, v.deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.id = $1",
       [id],
     );
   } catch (error) {
@@ -192,6 +194,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
         "custom_payment_amount_cents",
         "drivers_license_number",
         "drivers_license_expiration_date",
+        "public_id",
       ])
     ) {
       throw error;
@@ -218,7 +221,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
         | "customer_legal_id_number"
       >
     >(
-      "select b.id, b.start_date, b.end_date, b.pickup_location, b.status, b.pricing_json, c.full_name as customer_name, c.email as customer_email, c.phone as customer_phone, v.make as vehicle_make, v.model as vehicle_model, v.year as vehicle_year, v.daily_rate_cents, v.deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.id = $1",
+      "select b.id, b.id as public_id, b.start_date, b.end_date, b.pickup_location, b.status, b.pricing_json, c.full_name as customer_name, c.email as customer_email, c.phone as customer_phone, v.make as vehicle_make, v.model as vehicle_model, v.year as vehicle_year, v.daily_rate_cents, v.deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.id = $1",
       [id],
     );
     bookingResult = {
@@ -426,12 +429,19 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
   }
 
   const overriddenByThis = await dbQuery<OverriddenByThisBooking>(
-    "select b.id, b.start_date, b.end_date, c.full_name as customer_name from bookings b join customers c on c.id = b.customer_id where coalesce(b.pricing_json->>'overridden_by_booking_id', '') = $1 order by b.updated_at desc",
+    "select b.id, b.public_id, b.start_date, b.end_date, c.full_name as customer_name from bookings b join customers c on c.id = b.customer_id where coalesce(b.pricing_json->>'overridden_by_booking_id', '') = $1 order by b.updated_at desc",
     [booking.id],
   );
   const overriddenByThisRows = overriddenByThis.rows as OverriddenByThisBooking[];
-
-  const shortBookingId = booking.id.slice(-5);
+  const bookingPublicId = String(booking.public_id ?? "").trim() || booking.id;
+  const overriddenByBookingPublicId = overriddenByBookingId
+    ? (
+        await dbQuery<{ public_id: string }>(
+          "select public_id from bookings where id = $1 limit 1",
+          [overriddenByBookingId],
+        )
+      ).rows[0]?.public_id ?? overriddenByBookingId
+    : null;
 
   return (
     <div className="mx-auto w-full max-w-5xl px-6 py-10">
@@ -443,22 +453,12 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
       <div className="mt-3 space-y-3">
         <div className="flex flex-wrap items-center gap-3 md:gap-4">
           <span className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Booking</span>
-          <details className="group relative">
-            <summary className="flex cursor-pointer list-none items-center gap-1.5">
-              <span className="font-mono text-lg font-bold leading-none text-[var(--ccr-text)] md:text-xl">
-                …{shortBookingId}
-              </span>
-              <span
-                className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-[var(--ccr-border)] text-xs font-semibold leading-none text-[var(--ccr-accent)] transition-transform group-open:rotate-180"
-                aria-hidden
-              >
-                ▾
-              </span>
-            </summary>
-            <div className="absolute left-0 top-full z-20 mt-2 w-max max-w-[90vw] overflow-x-auto whitespace-nowrap rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 font-mono text-sm text-[var(--ccr-text)] shadow-lg">
-              {booking.id}
-            </div>
-          </details>
+          <span
+            data-testid="booking-public-id"
+            className="font-mono text-lg font-bold leading-none text-[var(--ccr-text)] md:text-xl"
+          >
+            {bookingPublicId}
+          </span>
           <span
             className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${statusBadge(
               displayStatus,
@@ -818,7 +818,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
                   href={`/admin/bookings/${overriddenByBookingId}`}
                   className="break-all underline underline-offset-2"
                 >
-                  {overriddenByBookingId}
+                  {overriddenByBookingPublicId ?? overriddenByBookingId}
                 </Link>
               ) : (
                 "N/A"
@@ -848,7 +848,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
               {overriddenByThisRows.map((item: OverriddenByThisBooking) => (
                 <li key={item.id} className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-2">
                   <Link href={`/admin/bookings/${item.id}`} className="font-mono text-xs text-[var(--ccr-text)] underline underline-offset-2">
-                    {item.id}
+                    {item.public_id}
                   </Link>
                   <p className="mt-1 text-[var(--ccr-text)]">{item.customer_name}</p>
                   <p className="text-[var(--ccr-muted)]">

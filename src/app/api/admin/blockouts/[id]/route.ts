@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 
 import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
+import {
+  buildBookingBlocksAvailabilitySql,
+  buildBookingWindowEndSql,
+  buildBookingWindowStartSql,
+  isBookingBlockingAvailability,
+} from "@/lib/bookings/bookingBlocking";
 import { dbQuery } from "@/lib/db";
 import { logError } from "@/lib/log";
 import { requireCsrf } from "@/lib/security/csrf";
@@ -40,13 +46,35 @@ export async function PATCH(
       return NextResponse.json({ error: "Invalid date range" }, { status: 400 });
     }
 
-    const overlap = await dbQuery(
-      "select id, start_date, end_date from bookings where vehicle_id = $1 and status <> 'CANCELLED' and tstzrange($2::timestamptz, $3::timestamptz, '[)') && tstzrange(start_date::timestamptz, (end_date + interval '1 day')::timestamptz, '[)')",
+    const overlapWindowStartSql = buildBookingWindowStartSql("b");
+    const overlapWindowEndSql = buildBookingWindowEndSql("b");
+    const overlapBlocksAvailabilitySql = buildBookingBlocksAvailabilitySql("b");
+    const overlap = await dbQuery<{
+      id: string;
+      start_date: string;
+      end_date: string;
+      status: string;
+      pricing_json: Record<string, unknown> | null;
+    }>(
+      "select b.id, b.start_date, b.end_date, b.status, b.pricing_json from bookings b where b.vehicle_id = $1 and " +
+        overlapBlocksAvailabilitySql +
+        " and " +
+        overlapWindowStartSql +
+        " < $3::timestamptz and " +
+        overlapWindowEndSql +
+        " > $2::timestamptz",
       [vehicleId, startAt.toISOString(), endAt.toISOString()],
     );
+    const blockingOverlapRows = overlap.rows.filter(
+      (booking: { status: string; pricing_json: Record<string, unknown> | null }) =>
+        isBookingBlockingAvailability({
+          status: booking.status,
+          pricing_json: booking.pricing_json,
+        }),
+    );
 
-    if (overlap.rowCount > 0) {
-      const booking = overlap.rows[0];
+    if (blockingOverlapRows.length > 0) {
+      const booking = blockingOverlapRows[0];
       return NextResponse.json(
         {
           error: "This blockout overlaps an existing booking.",

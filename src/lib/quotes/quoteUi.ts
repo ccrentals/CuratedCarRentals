@@ -65,7 +65,9 @@ export function quoteStatusPillToneClass(status: string | null | undefined) {
   return "border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] text-[var(--ccr-text)]";
 }
 
-export function shortQuoteId(value: string) {
+export function shortQuoteId(value: string, publicId?: string | null) {
+  const normalizedPublicId = String(publicId ?? "").trim();
+  if (normalizedPublicId.length > 0) return normalizedPublicId;
   return String(value ?? "").slice(0, 8);
 }
 
@@ -138,6 +140,7 @@ export function toIsoFromDateTimeLocal(value: string | null | undefined) {
 
 type QuoteEmailInput = {
   quoteId: string;
+  quotePublicId?: string | null;
   customerName: string;
   customerEmail: string;
   startAt: string;
@@ -153,12 +156,13 @@ type QuoteEmailInput = {
 };
 
 export function buildQuoteEmailDraft(input: QuoteEmailInput) {
-  const subject = `Your Quote from ${siteContent.brand} (${shortQuoteId(input.quoteId)})`;
+  const displayQuoteId = shortQuoteId(input.quoteId, input.quotePublicId);
+  const subject = `Your Quote from ${siteContent.brand} (${displayQuoteId})`;
   const lines = [
     `Hello ${input.customerName || "Customer"},`,
     "",
     `Thank you for choosing ${siteContent.brand}. Here is your quote summary:`,
-    `Quote ID: ${input.quoteId}`,
+    `Quote ID: ${displayQuoteId}`,
     `Vehicle: ${input.vehicleLabel || "—"}`,
     `Pickup: ${fmtDateNoSeconds(input.startAt)} (${input.pickupLocation || "—"})`,
     `Dropoff: ${fmtDateNoSeconds(input.endAt)} (${input.dropoffLocation || "—"})`,

@@ -1,4 +1,9 @@
-import { redactText } from "@/lib/log";
+import {
+  getOrCreateInvoiceLedgerRow,
+  hashInvoicePayload,
+  markInvoiceProviderInfo,
+} from "@/lib/invoices/ledger";
+import { logError, redactText } from "@/lib/log";
 
 const PDFMONKEY_BASE_URL = "https://api.pdfmonkey.io/api/v1";
 
@@ -27,6 +32,11 @@ export type InvoicePayloadInput = {
   paidToDate: number;
   balanceDue: number;
   payments: InvoicePaymentLine[];
+};
+
+type GenerateInvoicePdfOptions = {
+  createdByUserId?: string | null;
+  source?: string;
 };
 
 type PdfMonkeyDocument = {
@@ -138,63 +148,123 @@ async function fetchDocument(documentId: string) {
   return data.document ?? null;
 }
 
-export async function generateInvoicePdf(payload: Record<string, unknown>, bookingId: string) {
+export async function generateInvoicePdf(
+  payload: Record<string, unknown>,
+  bookingId: string,
+  options: GenerateInvoicePdfOptions = {},
+) {
+  const templateId = getTemplateId();
+  const payloadHash = hashInvoicePayload(payload);
+  let ledgerId: string | null = null;
+
+  try {
+    const ledger = await getOrCreateInvoiceLedgerRow({
+      bookingId,
+      payloadHash,
+      source: options.source ?? "PDFMONKEY",
+      templateId,
+      createdByUserId: options.createdByUserId ?? null,
+    });
+    ledgerId = ledger.id;
+  } catch (error) {
+    logError("invoice_ledger_upsert_failed", error, { bookingId });
+  }
+
   const meta = {
     _filename: `invoice-${bookingId.slice(0, 8)}.pdf`,
     booking_id: bookingId,
   };
 
-  let document = await createDocumentSync(payload, meta);
-  if (!document) return null;
-
-  const status = document.status ?? "";
-  const statusNormalized = status.toLowerCase();
-
-  // Treat explicit failures as errors, but allow "pending"/"generating" by polling briefly.
-  if (statusNormalized && statusNormalized !== "success") {
-    if (["failure", "failed", "error", "canceled", "cancelled"].includes(statusNormalized)) {
-      throw new Error(document.failure_cause ?? "PDFMonkey generation failed");
+  try {
+    let document = await createDocumentSync(payload, meta);
+    if (!document) {
+      if (ledgerId) {
+        await markInvoiceProviderInfo({
+          ledgerId,
+          providerStatus: "SKIPPED",
+        });
+      }
+      return null;
     }
 
-    if (document.id) {
-      const delays = [200, 300, 500, 800];
-      for (const delay of delays) {
-        await sleep(delay);
-        const refreshed = await fetchDocument(document.id);
-        if (!refreshed) continue;
-        const refreshedStatus = (refreshed.status ?? "").toLowerCase();
-        if (refreshedStatus === "success") {
-          document = refreshed;
-          break;
-        }
-        if (["failure", "failed", "error", "canceled", "cancelled"].includes(refreshedStatus)) {
-          throw new Error(refreshed.failure_cause ?? "PDFMonkey generation failed");
+    const status = document.status ?? "";
+    const statusNormalized = status.toLowerCase();
+
+    // Treat explicit failures as errors, but allow "pending"/"generating" by polling briefly.
+    if (statusNormalized && statusNormalized !== "success") {
+      if (["failure", "failed", "error", "canceled", "cancelled"].includes(statusNormalized)) {
+        throw new Error(document.failure_cause ?? "PDFMonkey generation failed");
+      }
+
+      if (document.id) {
+        const delays = [200, 300, 500, 800];
+        for (const delay of delays) {
+          await sleep(delay);
+          const refreshed = await fetchDocument(document.id);
+          if (!refreshed) continue;
+          const refreshedStatus = (refreshed.status ?? "").toLowerCase();
+          if (refreshedStatus === "success") {
+            document = refreshed;
+            break;
+          }
+          if (["failure", "failed", "error", "canceled", "cancelled"].includes(refreshedStatus)) {
+            throw new Error(refreshed.failure_cause ?? "PDFMonkey generation failed");
+          }
         }
       }
     }
-  }
 
-  if ((document.status ?? "").toLowerCase() !== "success") {
-    // Still pending after retries.
-    return null;
-  }
-
-  let downloadUrl = document.download_url ?? undefined;
-  let previewUrl = document.preview_url ?? undefined;
-
-  if ((!downloadUrl || !previewUrl) && document.id) {
-    const refreshed = await fetchDocument(document.id);
-    if (refreshed && (refreshed.status ?? "").toLowerCase() === "success") {
-      downloadUrl = refreshed.download_url ?? downloadUrl;
-      previewUrl = refreshed.preview_url ?? previewUrl;
+    if ((document.status ?? "").toLowerCase() !== "success") {
+      // Still pending after retries.
+      if (ledgerId) {
+        await markInvoiceProviderInfo({
+          ledgerId,
+          providerDocumentId: document.id ?? null,
+          providerStatus: document.status ?? "PENDING",
+        });
+      }
+      return null;
     }
-  }
 
-  return {
-    downloadUrl,
-    previewUrl,
-    documentId: document.id,
-  };
+    let downloadUrl = document.download_url ?? undefined;
+    let previewUrl = document.preview_url ?? undefined;
+
+    if ((!downloadUrl || !previewUrl) && document.id) {
+      const refreshed = await fetchDocument(document.id);
+      if (refreshed && (refreshed.status ?? "").toLowerCase() === "success") {
+        downloadUrl = refreshed.download_url ?? downloadUrl;
+        previewUrl = refreshed.preview_url ?? previewUrl;
+      }
+    }
+
+    if (ledgerId) {
+      await markInvoiceProviderInfo({
+        ledgerId,
+        providerDocumentId: document.id ?? null,
+        providerStatus: document.status ?? "SUCCESS",
+        downloadUrl: downloadUrl ?? null,
+      });
+    }
+
+    return {
+      downloadUrl,
+      previewUrl,
+      documentId: document.id,
+    };
+  } catch (error) {
+    if (ledgerId) {
+      try {
+        await markInvoiceProviderInfo({
+          ledgerId,
+          providerStatus: "FAILED",
+          lastError: error instanceof Error ? error.message : String(error),
+        });
+      } catch (markError) {
+        logError("invoice_ledger_error_update_failed", markError, { bookingId, payloadHash });
+      }
+    }
+    throw error;
+  }
 }
 
 export async function downloadPdfBase64(downloadUrl: string) {

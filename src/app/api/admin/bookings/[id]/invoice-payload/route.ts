@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 
 import { dbQuery } from "@/lib/db";
 import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
+import { getOrCreateInvoiceLedgerRow, hashInvoicePayload } from "@/lib/invoices/ledger";
+import { logError } from "@/lib/log";
 import { buildInvoicePayload } from "@/lib/pdfmonkey";
 import {
   computeBookingPricing,
@@ -122,6 +124,21 @@ export async function GET(
     balanceDue: summary.balanceDue,
     payments,
   });
+
+  try {
+    await getOrCreateInvoiceLedgerRow({
+      bookingId: booking.id,
+      payloadHash: hashInvoicePayload(payload),
+      source: "PDFMONKEY",
+      templateId: process.env.PDFMONKEY_TEMPLATE_ID ?? null,
+      createdByUserId: auth.actor.userId,
+    });
+  } catch (error) {
+    logError("booking_invoice_payload_ledger_upsert_failed", error, {
+      bookingId: booking.id,
+      actorUserId: auth.actor.userId,
+    });
+  }
 
   return NextResponse.json({ payload });
 }

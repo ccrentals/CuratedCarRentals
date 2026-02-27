@@ -12,6 +12,7 @@ type VehicleDetail = {
   make: string;
   model: string;
   year: number;
+  seat_count: number | null;
   daily_rate_cents: number;
   deposit_cents?: number;
   status: string;
@@ -25,6 +26,7 @@ type VehicleProfile = {
   vehicle_class: string | null;
   year: number | null;
   color: string | null;
+  seat_count: number | null;
   current_location_label: string | null;
   odometer_value: number | null;
   odometer_unit: string | null;
@@ -60,6 +62,7 @@ type OverviewFormState = {
   vehicleClass: string;
   profileYear: string;
   color: string;
+  seatCount: string;
   currentLocationLabel: string;
   odometerValue: string;
   odometerUnit: string;
@@ -101,6 +104,12 @@ function buildFormState(vehicle: VehicleDetail, profile: VehicleProfile | null):
     vehicleClass: profile?.vehicle_class ?? "",
     profileYear: profile?.year ? String(profile.year) : "",
     color: profile?.color ?? "",
+    seatCount:
+      profile?.seat_count === null || profile?.seat_count === undefined
+        ? vehicle.seat_count === null || vehicle.seat_count === undefined
+          ? ""
+          : String(vehicle.seat_count)
+        : String(profile.seat_count),
     currentLocationLabel: profile?.current_location_label ?? "",
     odometerValue:
       profile?.odometer_value === null || profile?.odometer_value === undefined
@@ -177,6 +186,7 @@ export function VehicleDetailForm({ vehicle, profile, initialNotes }: VehicleDet
           vehicle_class: form.vehicleClass,
           year: form.profileYear.trim() ? Number(form.profileYear) : null,
           color: form.color,
+          seat_count: form.seatCount.trim() ? Number(form.seatCount) : null,
           current_location_label: form.currentLocationLabel,
           odometer_value: form.odometerValue.trim() ? Number(form.odometerValue) : null,
           odometer_unit: form.odometerUnit,
@@ -459,6 +469,21 @@ export function VehicleDetailForm({ vehicle, profile, initialNotes }: VehicleDet
               }
               className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)] read-only:cursor-default read-only:opacity-80"
               placeholder="Airport lot"
+            />
+          </label>
+          <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+            NUMBER OF SEATS
+            <input
+              data-testid="vehicle-profile-seat-count"
+              type="number"
+              step="1"
+              min="1"
+              max="60"
+              value={form.seatCount}
+              readOnly={!isEditing}
+              onChange={(event) => setForm((current) => ({ ...current, seatCount: event.target.value }))}
+              className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)] read-only:cursor-default read-only:opacity-80"
+              placeholder="5"
             />
           </label>
           <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">

@@ -11,6 +11,7 @@ import { quoteStatusLabel, shortQuoteId } from "@/lib/quotes/quoteUi";
 
 type QuoteDetailItem = {
   id: string;
+  publicId: string;
   createdAt: string;
   status: string;
   expiresAt: string | null;
@@ -97,7 +98,9 @@ export function QuotePrintClient({ quoteId }: { quoteId: string }) {
           <div className="space-y-5 text-[var(--ccr-text)]">
             <header className="border-b border-[var(--ccr-border)] pb-4">
               <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">{siteContent.brand}</p>
-              <h1 className="mt-1 text-2xl font-bold">Quote {shortQuoteId(item.id)}</h1>
+              <h1 className="mt-1 text-2xl font-bold">
+                Quote {shortQuoteId(item.id, item.publicId)}
+              </h1>
               <p className="mt-1 text-sm text-[var(--ccr-muted)]">Status: {quoteStatusLabel(item.status)}</p>
               <p className="text-sm text-[var(--ccr-muted)]">Created: <DateTimeInline value={item.createdAt} /></p>
               <p className="text-sm text-[var(--ccr-muted)]">

@@ -53,6 +53,25 @@ const PAYMENT_STATUS_SQL = `upper(coalesce(b.pricing_json->>'payment_status', 'U
 const ACTIVE_BOOKING_SQL = "upper(coalesce(b.status, '')) not in ('CANCELLED', 'RETURNED', 'OVERRIDDEN')";
 const ENTITLED_SQL = `(${PAYMENT_STATUS_SQL} = 'PAID_IN_FULL' or ${AMOUNT_PAID_SQL} >= ${DEPOSIT_REQUIRED_SQL})`;
 const TENTATIVE_SQL = `(not ${ENTITLED_SQL})`;
+const ENTITLED_AT_SQL = `(
+  case
+    when coalesce(b.pricing_json->>'entitled_at', '') ~ '^\\d{4}-\\d{2}-\\d{2}T' then (b.pricing_json->>'entitled_at')::timestamptz
+    else null
+  end
+)`;
+const ENTITLED_AT_FROM_PAYMENTS_SQL = `(
+  select candidate.created_at
+  from (
+    select p.id, p.created_at, sum(p.deposit_amount_cents) over (order by p.created_at asc, p.id asc) as running_paid_cents
+    from payments p
+    where p.booking_id = b.id
+      and p.status in ('DEPOSIT_PAID', 'REFUNDED')
+  ) as candidate
+  where candidate.running_paid_cents >= ${DEPOSIT_REQUIRED_SQL}
+  order by candidate.created_at asc, candidate.id asc
+  limit 1
+)`;
+const ENTITLEMENT_SORT_SQL = `coalesce(${ENTITLED_AT_SQL}, ${ENTITLED_AT_FROM_PAYMENTS_SQL}, b.created_at)`;
 
 type MaybeRecord = Record<string, unknown> | null | undefined;
 
@@ -71,6 +90,7 @@ export type EntitledOverlapBooking = {
   endAt: string;
   amountPaid: number;
   depositRequired: number;
+  entitlementSortAt: string | null;
 };
 
 export type CancelledTentativeBooking = {
@@ -234,14 +254,14 @@ export async function findOverlappingEntitledBooking(
 
   const result = await db.query(
     "select b.id, b.status, b.vehicle_id, b.start_date, b.end_date, coalesce(b.start_at, b.start_date::timestamptz) as start_at, coalesce(b.end_at, (b.end_date::timestamptz + interval '1 day')) as end_at, " +
-      `${AMOUNT_PAID_SQL} as amount_paid, ${DEPOSIT_REQUIRED_SQL} as deposit_required ` +
+      `${AMOUNT_PAID_SQL} as amount_paid, ${DEPOSIT_REQUIRED_SQL} as deposit_required, ${ENTITLEMENT_SORT_SQL} as entitlement_sort_at, b.created_at as booking_created_at ` +
       "from bookings b join vehicles v on v.id = b.vehicle_id " +
       "where b.vehicle_id = $1 and " +
       ACTIVE_BOOKING_SQL +
       " and coalesce(b.start_at, b.start_date::timestamptz) < $3::timestamptz and coalesce(b.end_at, (b.end_date::timestamptz + interval '1 day')) > $2::timestamptz " +
       "and ($4::uuid is null or b.id <> $4::uuid) and " +
       ENTITLED_SQL +
-      " order by b.created_at asc limit 1" +
+      " order by entitlement_sort_at asc, booking_created_at asc, b.id asc limit 1" +
       (options.forUpdate ? " for update" : ""),
     [vehicleId, normalized.startAt, normalized.endAt, options.excludeBookingId ?? null],
   );
@@ -257,6 +277,7 @@ export async function findOverlappingEntitledBooking(
     end_at: string | Date;
     amount_paid: number;
     deposit_required: number;
+    entitlement_sort_at: string | Date | null;
   };
 
   return {
@@ -269,6 +290,7 @@ export async function findOverlappingEntitledBooking(
     endAt: toText(row.end_at),
     amountPaid: toNumber(row.amount_paid),
     depositRequired: Math.max(0, toNumber(row.deposit_required)),
+    entitlementSortAt: toIso(row.entitlement_sort_at),
   };
 }
 
@@ -368,6 +390,8 @@ function buildLostPricingSnapshot(input: {
     entitlement_status: "LOST",
     entitlement_lost_at: input.nowIso,
     entitlement_lost_to_booking_id: input.winnerBookingId,
+    lost_email_sent_at: null,
+    lost_email_sent_by_booking_id: null,
     refund_review_required: input.paidToDate > 0,
   };
 }
@@ -527,7 +551,7 @@ export async function maybeEntitleBookingAfterPayment(
       window.startAt,
       window.endAt,
       client,
-      { excludeBookingId: booking.id, forUpdate: true },
+      { excludeBookingId: null, forUpdate: true },
     );
 
     if (winner && winner.id !== booking.id) {

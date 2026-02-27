@@ -5,6 +5,11 @@ import {
   sendDepositReceiptEmail,
   sendPaymentCompleteEmail,
 } from "@/lib/notifications/email";
+import {
+  computeDedupeKey,
+  markDedupeResult,
+  tryAcquireDedupe,
+} from "@/lib/notifications/dedupe";
 import { dbQuery, getDbPool } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
 import { recalculateBookingPayments } from "@/lib/payments/recalculateBooking";
@@ -27,6 +32,36 @@ type ReconcileResult = {
   ok: boolean;
   bookingId?: string;
   reason?: "not_found" | "bad_hash" | "overlap" | "failed_status" | "db_error";
+};
+
+type ReconcileDependencies = {
+  dbQuery: typeof dbQuery;
+  getDbPool: typeof getDbPool;
+  writeAuditLog: typeof writeAuditLog;
+  recalculateBookingPayments: typeof recalculateBookingPayments;
+  readPromoPricingFields: typeof readPromoPricingFields;
+  maybeEntitleBookingAfterPayment: typeof maybeEntitleBookingAfterPayment;
+  sendBookingOverriddenByPaidBookingEmail: typeof sendBookingOverriddenByPaidBookingEmail;
+  sendDepositReceiptEmail: typeof sendDepositReceiptEmail;
+  sendPaymentCompleteEmail: typeof sendPaymentCompleteEmail;
+  getInternalNotesRecipient: typeof getInternalNotesRecipient;
+  tryAcquireDedupe: typeof tryAcquireDedupe;
+  markDedupeResult: typeof markDedupeResult;
+};
+
+const DEFAULT_RECONCILE_DEPENDENCIES: ReconcileDependencies = {
+  dbQuery,
+  getDbPool,
+  writeAuditLog,
+  recalculateBookingPayments,
+  readPromoPricingFields,
+  maybeEntitleBookingAfterPayment,
+  sendBookingOverriddenByPaidBookingEmail,
+  sendDepositReceiptEmail,
+  sendPaymentCompleteEmail,
+  getInternalNotesRecipient,
+  tryAcquireDedupe,
+  markDedupeResult,
 };
 
 function mergeMetadata(existing: Record<string, unknown> | null, incoming: Record<string, unknown>) {
@@ -53,10 +88,31 @@ function buildTotalCandidates(totalDecimal: string, rawTotal?: string) {
   return Array.from(candidates).filter((value) => value.length > 0);
 }
 
-export async function reconcileWiPayPayment(input: ReconcileInput): Promise<ReconcileResult> {
+async function markLostBookingEmailSent(
+  bookingId: string,
+  winnerBookingId: string,
+  deps: Pick<ReconcileDependencies, "dbQuery">,
+) {
+  const result = await deps.dbQuery(
+    "update bookings set pricing_json = jsonb_set(jsonb_set(coalesce(pricing_json, '{}'::jsonb), '{lost_email_sent_at}', to_jsonb(now()::text), true), '{lost_email_sent_by_booking_id}', to_jsonb($2::text), true), updated_at = now() " +
+      "where id = $1 and upper(coalesce(status, '')) = 'CANCELLED' and upper(coalesce(pricing_json->>'cancel_reason', '')) = 'LOST_TO_FIRST_DEPOSIT' and coalesce(pricing_json->>'overridden_by_booking_id', '') = $2 and coalesce(pricing_json->>'lost_email_sent_at', '') = '' " +
+      "returning id",
+    [bookingId, winnerBookingId],
+  );
+  return result.rowCount > 0;
+}
+
+export async function reconcileWiPayPayment(
+  input: ReconcileInput,
+  dependencyOverrides: Partial<ReconcileDependencies> = {},
+): Promise<ReconcileResult> {
+  const deps: ReconcileDependencies = {
+    ...DEFAULT_RECONCILE_DEPENDENCIES,
+    ...dependencyOverrides,
+  };
   const statusNormalized = input.status.toLowerCase();
 
-  const paymentResult = await dbQuery<{
+  const paymentResult = await deps.dbQuery<{
     id: string;
     booking_id: string;
     status: string;
@@ -83,7 +139,7 @@ export async function reconcileWiPayPayment(input: ReconcileInput): Promise<Reco
 
   if (payment.status === "DEPOSIT_PAID") {
     if (input.transactionId && payment.provider_transaction_id !== input.transactionId) {
-      await dbQuery(
+      await deps.dbQuery(
         "update payments set provider_transaction_id = $1, metadata_json = $2, updated_at = now() where id = $3",
         [
           input.transactionId,
@@ -97,7 +153,7 @@ export async function reconcileWiPayPayment(input: ReconcileInput): Promise<Reco
   }
 
   if (statusNormalized !== "success") {
-    await dbQuery(
+    await deps.dbQuery(
       "update payments set status = 'FAILED', metadata_json = $1, updated_at = now() where id = $2",
       [mergeMetadata(metadata, { ...input, status: input.status }), payment.id],
     );
@@ -105,7 +161,7 @@ export async function reconcileWiPayPayment(input: ReconcileInput): Promise<Reco
   }
 
   if (!input.transactionId || !input.hash || !totalDecimal) {
-    await dbQuery(
+    await deps.dbQuery(
       "update payments set status = 'FAILED', metadata_json = $1, updated_at = now() where id = $2",
       [mergeMetadata(metadata, { ...input, status: input.status }), payment.id],
     );
@@ -132,7 +188,7 @@ export async function reconcileWiPayPayment(input: ReconcileInput): Promise<Reco
       hashVerified = false;
       hashMatchedTotal = totalDecimal || input.total || "";
     } else {
-      await dbQuery(
+      await deps.dbQuery(
         "update payments set status = 'FAILED', metadata_json = $1, updated_at = now() where id = $2",
         [
           mergeMetadata(metadata, {
@@ -148,7 +204,7 @@ export async function reconcileWiPayPayment(input: ReconcileInput): Promise<Reco
     }
   }
 
-  const pool = getDbPool();
+  const pool = deps.getDbPool();
   const client = await pool.connect();
 
   try {
@@ -168,11 +224,11 @@ export async function reconcileWiPayPayment(input: ReconcileInput): Promise<Reco
       ],
     );
 
-    const entitlementResolution = await maybeEntitleBookingAfterPayment(payment.booking_id, {
+    const entitlementResolution = await deps.maybeEntitleBookingAfterPayment(payment.booking_id, {
       client,
       auditUserId: "system",
     });
-    const recalculated = await recalculateBookingPayments(payment.booking_id, { client });
+    const recalculated = await deps.recalculateBookingPayments(payment.booking_id, { client });
 
     if (entitlementResolution.state === "LOST") {
       await client.query(
@@ -185,7 +241,7 @@ export async function reconcileWiPayPayment(input: ReconcileInput): Promise<Reco
       );
 
       await client.query("commit");
-      await writeAuditLog({
+      await deps.writeAuditLog({
         userId: "system",
         action:
           paymentType === "full"
@@ -223,7 +279,7 @@ export async function reconcileWiPayPayment(input: ReconcileInput): Promise<Reco
 
     await client.query("commit");
 
-    await writeAuditLog({
+    await deps.writeAuditLog({
       userId: "system",
       action:
         paymentType === "deposit"
@@ -246,98 +302,208 @@ export async function reconcileWiPayPayment(input: ReconcileInput): Promise<Reco
     });
 
     for (const overriddenBooking of entitlementResolution.cancelledOverlaps) {
-      await writeAuditLog({
-        userId: "system",
-        action: "BOOKING_OVERRIDDEN_BY_PAID_BOOKING",
+      const shouldSendLostEmail = await markLostBookingEmailSent(
+        overriddenBooking.id,
+        booking.id,
+        deps,
+      );
+      if (!shouldSendLostEmail) {
+        continue;
+      }
+
+      const overriddenDedupeKey = computeDedupeKey({
         entityType: "booking",
         entityId: overriddenBooking.id,
-        details: {
-          overriddenByBookingId: booking.id,
-          overrideReason: "Overridden by paid booking",
+        eventType: "OVERRIDDEN_NOTICE",
+        extra: booking.id,
+      });
+      const overriddenDedupe = await deps.tryAcquireDedupe(
+        {
+          dedupeKey: overriddenDedupeKey,
+          entityType: "booking",
+          entityId: overriddenBooking.id,
+          eventType: "OVERRIDDEN_NOTICE",
+          provider: "resend",
         },
-      });
+        deps.dbQuery,
+      );
 
-      await sendBookingOverriddenByPaidBookingEmail({
-        recipientType: "customer",
-        recipientEmail: overriddenBooking.customerEmail,
-        bookingId: overriddenBooking.id,
-        customerName: overriddenBooking.customerName,
-        customerEmail: overriddenBooking.customerEmail,
-        vehicleLabel: overriddenBooking.vehicleLabel,
-        startDate: overriddenBooking.startDate,
-        endDate: overriddenBooking.endDate,
-        pickupLocation: overriddenBooking.pickupLocation,
-        overriddenByBookingId: booking.id,
-      });
+      if (!overriddenDedupe.acquired) {
+        continue;
+      }
 
-      await sendBookingOverriddenByPaidBookingEmail({
-        recipientType: "internal",
-        recipientEmail: getInternalNotesRecipient(),
-        bookingId: overriddenBooking.id,
-        customerName: overriddenBooking.customerName,
-        customerEmail: overriddenBooking.customerEmail,
-        vehicleLabel: overriddenBooking.vehicleLabel,
-        startDate: overriddenBooking.startDate,
-        endDate: overriddenBooking.endDate,
-        pickupLocation: overriddenBooking.pickupLocation,
-        overriddenByBookingId: booking.id,
-      });
-    }
-
-    if (!receiptSent) {
       try {
-        const bookingPricing = (
-          booking.pricing_json && typeof booking.pricing_json === "object"
-            ? (booking.pricing_json as Record<string, unknown>)
-            : null
-        );
-        const { promoCode, promoDiscount } = readPromoPricingFields(bookingPricing);
+        await deps.writeAuditLog({
+          userId: "system",
+          action: "BOOKING_OVERRIDDEN_BY_PAID_BOOKING",
+          entityType: "booking",
+          entityId: overriddenBooking.id,
+          details: {
+            overriddenByBookingId: booking.id,
+            overrideReason: "Overridden by paid booking",
+          },
+        });
 
-        if (paymentType !== "deposit") {
-          await sendPaymentCompleteEmail({
-            bookingId: booking.id,
-            customerEmail: booking.customer_email,
-            customerName: booking.customer_name,
-            vehicleLabel: `${booking.vehicle_year} ${booking.vehicle_make} ${booking.vehicle_model}`.trim(),
-            startDate: booking.start_date,
-            endDate: booking.end_date,
-            pickupLocation: booking.pickup_location,
-            dailyRate: Number(booking.daily_rate_cents || 0),
-            deposit: Number(booking.deposit_cents || 0),
-            total: recalculated.totalAmount,
-            paidToDate: recalculated.netPaidToDate,
-            balanceDue: recalculated.balanceDue,
-          });
-        } else {
-          const depositValue = Number(booking.deposit_cents || 0);
-          await sendDepositReceiptEmail({
-            bookingId: booking.id,
-            customerEmail: booking.customer_email,
-            customerName: booking.customer_name,
-            vehicleLabel: `${booking.vehicle_year} ${booking.vehicle_make} ${booking.vehicle_model}`.trim(),
-            startDate: booking.start_date,
-            endDate: booking.end_date,
-            pickupLocation: booking.pickup_location,
-            dailyRate: Number(booking.daily_rate_cents || 0),
-            deposit: depositValue,
-            paidToDate: recalculated.netPaidToDate,
-            promoCode,
-            promoDiscount,
-          });
-        }
+        await deps.sendBookingOverriddenByPaidBookingEmail({
+          recipientType: "customer",
+          recipientEmail: overriddenBooking.customerEmail,
+          bookingId: overriddenBooking.id,
+          customerName: overriddenBooking.customerName,
+          customerEmail: overriddenBooking.customerEmail,
+          vehicleLabel: overriddenBooking.vehicleLabel,
+          startDate: overriddenBooking.startDate,
+          endDate: overriddenBooking.endDate,
+          pickupLocation: overriddenBooking.pickupLocation,
+          overriddenByBookingId: booking.id,
+        });
 
-        await dbQuery(
-          "update payments set metadata_json = jsonb_set(metadata_json, '{receipt_email_sent}', 'true'::jsonb, true), updated_at = now() where id = $1",
-          [payment.id],
+        await deps.sendBookingOverriddenByPaidBookingEmail({
+          recipientType: "internal",
+          recipientEmail: deps.getInternalNotesRecipient(),
+          bookingId: overriddenBooking.id,
+          customerName: overriddenBooking.customerName,
+          customerEmail: overriddenBooking.customerEmail,
+          vehicleLabel: overriddenBooking.vehicleLabel,
+          startDate: overriddenBooking.startDate,
+          endDate: overriddenBooking.endDate,
+          pickupLocation: overriddenBooking.pickupLocation,
+          overriddenByBookingId: booking.id,
+        });
+
+        await deps.markDedupeResult(
+          {
+            dedupeKey: overriddenDedupeKey,
+            status: "SENT",
+            provider: "resend",
+          },
+          deps.dbQuery,
         );
       } catch (error) {
-        logError(paymentType !== "deposit" ? "wipay_payment_complete_email_failed" : "wipay_deposit_receipt_email_failed", error, {
-          bookingId: booking.id,
-          paymentId: payment.id,
+        await deps.markDedupeResult(
+          {
+            dedupeKey: overriddenDedupeKey,
+            status: "FAILED",
+            provider: "resend",
+            error: error instanceof Error ? error.message : String(error),
+          },
+          deps.dbQuery,
+        );
+        logError("wipay_overridden_notice_email_failed", error, {
+          bookingId: overriddenBooking.id,
+          winnerBookingId: booking.id,
           orderId: input.orderId,
           transactionId: input.transactionId,
           source: input.source,
         });
+      }
+    }
+
+    if (!receiptSent) {
+      const paymentEmailEventType =
+        paymentType !== "deposit" ? "PAYMENT_COMPLETE" : "DEPOSIT_RECEIPT";
+      const paymentEmailDedupeKey = computeDedupeKey({
+        entityType: "booking",
+        entityId: booking.id,
+        eventType: paymentEmailEventType,
+        extra: payment.id,
+      });
+
+      const dedupeDecision = await deps.tryAcquireDedupe(
+        {
+          dedupeKey: paymentEmailDedupeKey,
+          entityType: "booking",
+          entityId: booking.id,
+          eventType: paymentEmailEventType,
+          provider: "resend",
+        },
+        deps.dbQuery,
+      );
+
+      if (!dedupeDecision.acquired) {
+        await deps.dbQuery(
+          "update payments set metadata_json = jsonb_set(metadata_json, '{receipt_email_sent}', 'true'::jsonb, true), updated_at = now() where id = $1",
+          [payment.id],
+        );
+      } else {
+        try {
+          const bookingPricing = (
+            booking.pricing_json && typeof booking.pricing_json === "object"
+              ? (booking.pricing_json as Record<string, unknown>)
+              : null
+          );
+          const { promoCode, promoDiscount } = deps.readPromoPricingFields(bookingPricing);
+
+          if (paymentType !== "deposit") {
+            await deps.sendPaymentCompleteEmail({
+              bookingId: booking.id,
+              customerEmail: booking.customer_email,
+              customerName: booking.customer_name,
+              vehicleLabel: `${booking.vehicle_year} ${booking.vehicle_make} ${booking.vehicle_model}`.trim(),
+              startDate: booking.start_date,
+              endDate: booking.end_date,
+              pickupLocation: booking.pickup_location,
+              dailyRate: Number(booking.daily_rate_cents || 0),
+              deposit: Number(booking.deposit_cents || 0),
+              total: recalculated.totalAmount,
+              paidToDate: recalculated.netPaidToDate,
+              balanceDue: recalculated.balanceDue,
+            });
+          } else {
+            const depositValue = Number(booking.deposit_cents || 0);
+            await deps.sendDepositReceiptEmail({
+              bookingId: booking.id,
+              customerEmail: booking.customer_email,
+              customerName: booking.customer_name,
+              vehicleLabel: `${booking.vehicle_year} ${booking.vehicle_make} ${booking.vehicle_model}`.trim(),
+              startDate: booking.start_date,
+              endDate: booking.end_date,
+              pickupLocation: booking.pickup_location,
+              dailyRate: Number(booking.daily_rate_cents || 0),
+              deposit: depositValue,
+              paidToDate: recalculated.netPaidToDate,
+              promoCode,
+              promoDiscount,
+            });
+          }
+
+          await deps.markDedupeResult(
+            {
+              dedupeKey: paymentEmailDedupeKey,
+              status: "SENT",
+              provider: "resend",
+            },
+            deps.dbQuery,
+          );
+
+          await deps.dbQuery(
+            "update payments set metadata_json = jsonb_set(metadata_json, '{receipt_email_sent}', 'true'::jsonb, true), updated_at = now() where id = $1",
+            [payment.id],
+          );
+        } catch (error) {
+          await deps.markDedupeResult(
+            {
+              dedupeKey: paymentEmailDedupeKey,
+              status: "FAILED",
+              provider: "resend",
+              error: error instanceof Error ? error.message : String(error),
+            },
+            deps.dbQuery,
+          );
+
+          logError(
+            paymentType !== "deposit"
+              ? "wipay_payment_complete_email_failed"
+              : "wipay_deposit_receipt_email_failed",
+            error,
+            {
+              bookingId: booking.id,
+              paymentId: payment.id,
+              orderId: input.orderId,
+              transactionId: input.transactionId,
+              source: input.source,
+            },
+          );
+        }
       }
     }
 

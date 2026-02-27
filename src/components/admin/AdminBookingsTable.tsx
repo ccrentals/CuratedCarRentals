@@ -206,7 +206,10 @@ export function AdminBookingsTable({
   const pagination = buildLoadedPaginationProgress(rows.length, totalCount, pageSize);
 
   return (
-    <div className="mt-6 overflow-x-auto rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)]">
+    <div
+      data-testid="bookings-list"
+      className="mt-6 overflow-x-auto rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)]"
+    >
       {rows.length === 0 ? (
         <div className="px-6 py-10 text-center text-sm text-[var(--ccr-muted)]">
           No bookings found for these filters.
@@ -266,10 +269,11 @@ export function AdminBookingsTable({
                 <td className="px-4 py-3 font-mono text-xs text-[var(--ccr-text)]">
                   <Link
                     href={`/admin/bookings/${booking.id}`}
+                    data-testid="booking-public-id"
                     className="inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-[11px] font-bold text-[var(--ccr-accent)] transition hover:bg-[var(--ccr-accent)] hover:text-[var(--ccr-primary)]"
                     title="Open booking"
                   >
-                    {booking.id.slice(0, 8)}
+                    {booking.publicId}
                   </Link>
                 </td>
                 <td className="px-4 py-3">
