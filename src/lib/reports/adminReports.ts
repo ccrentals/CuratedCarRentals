@@ -164,12 +164,104 @@ export type CancellationRefundImpactReport = {
   refunds: RefundRow[];
 };
 
+export type VehicleProfitabilityRow = {
+  vehicleId: string;
+  vehicleLabel: string;
+  bookingCount: number;
+  grossRevenue: number;
+  refunds: number;
+  maintenanceCost: number;
+  netProfit: number;
+  marginPercent: number;
+};
+
+export type VehicleProfitabilityReport = {
+  totals: {
+    vehicleCount: number;
+    grossRevenue: number;
+    refunds: number;
+    maintenanceCost: number;
+    netProfit: number;
+  };
+  rows: VehicleProfitabilityRow[];
+};
+
+export type AgingReceivableBucketLabel = "Current" | "1-15 days" | "16-30 days" | "30+ days";
+
+export type AgingReceivablesRow = {
+  bookingId: string;
+  customerName: string;
+  vehicleLabel: string;
+  pickupDate: string;
+  returnDate: string;
+  balanceDue: number;
+  daysPastDue: number;
+  bucket: AgingReceivableBucketLabel;
+};
+
+export type AgingReceivablesReport = {
+  totals: {
+    totalOutstandingAmount: number;
+    outstandingCount: number;
+    overdueAmount: number;
+    overdueCount: number;
+  };
+  buckets: Array<{
+    label: AgingReceivableBucketLabel;
+    count: number;
+    amount: number;
+  }>;
+  rows: AgingReceivablesRow[];
+};
+
+export type CustomerCohortRow = {
+  cohortMonth: string;
+  cohortLabel: string;
+  customerCount: number;
+  bookingCount: number;
+  revenue: number;
+};
+
+export type CustomerCohortReport = {
+  summary: {
+    totalCustomers: number;
+    newCustomers: number;
+    repeatCustomers: number;
+    repeatRate: number | null;
+  };
+  rows: CustomerCohortRow[];
+};
+
+export type LocationPerformanceRow = {
+  locationLabel: string;
+  bookingCount: number;
+  revenue: number;
+  amountPaid: number;
+  outstanding: number;
+  cancellationCount: number;
+};
+
+export type LocationPerformanceReport = {
+  totals: {
+    bookingCount: number;
+    revenue: number;
+    amountPaid: number;
+    outstanding: number;
+    cancellationCount: number;
+  };
+  rows: LocationPerformanceRow[];
+};
+
 export type AdminReportsPayload = {
   filters: ReportsFilters;
   generatedAt: string;
   revenue: RevenueReport;
+  vehicleProfitability: VehicleProfitabilityReport;
   utilization: UtilizationReport;
   outstandingBalances: OutstandingBalancesReport;
+  agingReceivables: AgingReceivablesReport;
+  customerCohort: CustomerCohortReport;
+  locationPerformance: LocationPerformanceReport;
   funnel: FunnelReport;
   upcoming: UpcomingPickupsReturnsReport;
   cancellationRefundImpact: CancellationRefundImpactReport;
@@ -352,6 +444,23 @@ function asNumber(value: unknown) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return 0;
   return numeric;
+}
+
+function toCohortLabel(value: string) {
+  const date = dateOnlyUtc(`${value}T00:00:00Z`);
+  if (!date) return value;
+  return date.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    timeZone: "UTC",
+  });
+}
+
+function agingBucketForDaysPastDue(daysPastDue: number): AgingReceivableBucketLabel {
+  if (daysPastDue <= 0) return "Current";
+  if (daysPastDue <= 15) return "1-15 days";
+  if (daysPastDue <= 30) return "16-30 days";
+  return "30+ days";
 }
 
 function csvEscape(value: unknown) {
@@ -540,6 +649,402 @@ async function buildRevenueReport(db: Queryable, filters: ReportsFilters): Promi
     granularity: filters.revenueGranularity,
     totals,
     points,
+  };
+}
+
+async function buildVehicleProfitabilityReport(
+  db: Queryable,
+  filters: ReportsFilters,
+): Promise<VehicleProfitabilityReport> {
+  const range = buildRange(filters.dateFrom, filters.dateTo);
+  if (!range) {
+    throw new Error("Unable to normalize reports date range.");
+  }
+
+  const bookingRangeWhere = buildBookingRangeWhere({
+    rangeStart: range.rangeStartIso,
+    rangeEnd: range.rangeEndIso,
+    bookingAlias: "b",
+  });
+  const bookingValues: unknown[] = [...bookingRangeWhere.values];
+  const vehicleClause = buildVehicleFilterClause(filters.vehicleId, bookingValues, "b.vehicle_id");
+
+  const bookingRows = await db.query(
+    "select b.vehicle_id, " +
+      "count(*)::int as booking_count, " +
+      `coalesce(sum(${TOTAL_SQL}), 0)::numeric as gross_revenue, ` +
+      "coalesce(sum(( " +
+      "  select coalesce(sum(case when p.status = 'REFUNDED' or p.deposit_amount_cents < 0 then abs(p.deposit_amount_cents) else 0 end), 0)::numeric " +
+      "  from payments p where p.booking_id = b.id and p.deleted_at is null " +
+      ")), 0)::numeric as refunds " +
+      "from bookings b " +
+      "join vehicles v on v.id = b.vehicle_id " +
+      `where ${bookingRangeWhere.clause} ` +
+      "and b.status not in ('CANCELLED','OVERRIDDEN') " +
+      "and coalesce(b.pricing_json->>'overridden_by_booking_id', '') = '' " +
+      vehicleClause +
+      "group by b.vehicle_id",
+    bookingValues,
+  );
+
+  const maintenanceValues: unknown[] = [filters.dateFrom, filters.dateTo];
+  const maintenanceVehicleClause = buildVehicleFilterClause(
+    filters.vehicleId,
+    maintenanceValues,
+    "m.vehicle_id",
+  );
+  let maintenanceRows:
+    | {
+        rows: Array<{
+          vehicle_id: string;
+          maintenance_cost: number;
+        }>;
+      }
+    | { rows: [] } = { rows: [] };
+  try {
+    maintenanceRows = await db.query(
+      "select m.vehicle_id, " +
+        "coalesce(sum(coalesce(m.total_cost_cents, coalesce(m.labor_cost_cents, 0) + coalesce(m.parts_cost_cents, 0) + coalesce(m.tax_cost_cents, 0))), 0)::numeric as maintenance_cost " +
+        "from vehicle_maintenance_records m " +
+        "where m.archived_at is null " +
+        "and coalesce(m.service_date, m.scheduled_date, m.created_at::date) between $1 and $2 " +
+        maintenanceVehicleClause +
+        "group by m.vehicle_id",
+      maintenanceValues,
+    ) as {
+      rows: Array<{
+        vehicle_id: string;
+        maintenance_cost: number;
+      }>;
+    };
+  } catch (error) {
+    const code = (error as { code?: string } | null)?.code;
+    if (code !== "42P01") throw error;
+    maintenanceRows = { rows: [] };
+  }
+
+  const vehicleValues: unknown[] = [];
+  const filteredVehicleClause = buildVehicleFilterClause(filters.vehicleId, vehicleValues, "v.id");
+  const vehicles = await db.query(
+    "select v.id, v.make, v.model from vehicles v where v.status <> 'INACTIVE' " +
+      filteredVehicleClause +
+      "order by v.make, v.model",
+    vehicleValues,
+  );
+
+  const vehicleLabelById = new Map<string, string>();
+  for (const row of vehicles.rows as Array<{ id: string; make: string; model: string }>) {
+    vehicleLabelById.set(row.id, `${row.make} ${row.model}`.trim());
+  }
+
+  const bookingsByVehicle = new Map<
+    string,
+    {
+      bookingCount: number;
+      grossRevenue: number;
+      refunds: number;
+    }
+  >();
+  for (const row of bookingRows.rows as Array<{
+    vehicle_id: string;
+    booking_count: number;
+    gross_revenue: number;
+    refunds: number;
+  }>) {
+    bookingsByVehicle.set(row.vehicle_id, {
+      bookingCount: asNumber(row.booking_count),
+      grossRevenue: asNumber(row.gross_revenue),
+      refunds: asNumber(row.refunds),
+    });
+  }
+
+  const maintenanceByVehicle = new Map<string, number>();
+  for (const row of maintenanceRows.rows as Array<{ vehicle_id: string; maintenance_cost: number }>) {
+    maintenanceByVehicle.set(row.vehicle_id, asNumber(row.maintenance_cost));
+  }
+
+  const vehicleIds = new Set<string>([
+    ...Array.from(bookingsByVehicle.keys()),
+    ...Array.from(maintenanceByVehicle.keys()),
+  ]);
+  if (filters.vehicleId) {
+    vehicleIds.add(filters.vehicleId);
+  }
+
+  const rows: VehicleProfitabilityRow[] = Array.from(vehicleIds).map((vehicleId) => {
+    const booking = bookingsByVehicle.get(vehicleId);
+    const grossRevenue = booking?.grossRevenue ?? 0;
+    const refunds = booking?.refunds ?? 0;
+    const maintenanceCost = maintenanceByVehicle.get(vehicleId) ?? 0;
+    const netProfit = grossRevenue - refunds - maintenanceCost;
+    const marginPercent = grossRevenue > 0 ? clampPercent((netProfit / grossRevenue) * 100) : 0;
+
+    return {
+      vehicleId,
+      vehicleLabel: vehicleLabelById.get(vehicleId) ?? "Unknown vehicle",
+      bookingCount: booking?.bookingCount ?? 0,
+      grossRevenue,
+      refunds,
+      maintenanceCost,
+      netProfit,
+      marginPercent,
+    };
+  });
+
+  const totals = rows.reduce(
+    (acc, row) => {
+      acc.vehicleCount += 1;
+      acc.grossRevenue += row.grossRevenue;
+      acc.refunds += row.refunds;
+      acc.maintenanceCost += row.maintenanceCost;
+      acc.netProfit += row.netProfit;
+      return acc;
+    },
+    {
+      vehicleCount: 0,
+      grossRevenue: 0,
+      refunds: 0,
+      maintenanceCost: 0,
+      netProfit: 0,
+    },
+  );
+
+  return { totals, rows };
+}
+
+function buildAgingReceivablesReport(
+  outstandingBalances: OutstandingBalancesReport,
+): AgingReceivablesReport {
+  const today = dateOnlyUtc(new Date()) ?? new Date();
+  const utcToday = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+  const dayMs = 1000 * 60 * 60 * 24;
+
+  const rows: AgingReceivablesRow[] = outstandingBalances.rows
+    .map((row) => {
+      const returnDate = dateOnlyUtc(`${row.returnDate}T00:00:00Z`) ?? dateOnlyUtc(row.returnDate);
+      const daysPastDue =
+        returnDate === null
+          ? 0
+          : Math.max(0, Math.floor((utcToday.getTime() - returnDate.getTime()) / dayMs));
+      const bucket = agingBucketForDaysPastDue(daysPastDue);
+      return {
+        bookingId: row.bookingId,
+        customerName: row.customerName,
+        vehicleLabel: row.vehicleLabel,
+        pickupDate: row.pickupDate,
+        returnDate: row.returnDate,
+        balanceDue: row.balanceDue,
+        daysPastDue,
+        bucket,
+      };
+    })
+    .sort((left, right) => {
+      const byDays = right.daysPastDue - left.daysPastDue;
+      if (byDays !== 0) return byDays;
+      const byAmount = right.balanceDue - left.balanceDue;
+      if (byAmount !== 0) return byAmount;
+      return left.bookingId.localeCompare(right.bookingId);
+    });
+
+  const bucketOrder: AgingReceivableBucketLabel[] = [
+    "Current",
+    "1-15 days",
+    "16-30 days",
+    "30+ days",
+  ];
+  const bucketMap = new Map<AgingReceivableBucketLabel, { count: number; amount: number }>();
+  for (const bucket of bucketOrder) {
+    bucketMap.set(bucket, { count: 0, amount: 0 });
+  }
+  for (const row of rows) {
+    const current = bucketMap.get(row.bucket)!;
+    current.count += 1;
+    current.amount += row.balanceDue;
+  }
+
+  const overdueRows = rows.filter((row) => row.daysPastDue > 0);
+
+  return {
+    totals: {
+      totalOutstandingAmount: rows.reduce((sum, row) => sum + row.balanceDue, 0),
+      outstandingCount: rows.length,
+      overdueAmount: overdueRows.reduce((sum, row) => sum + row.balanceDue, 0),
+      overdueCount: overdueRows.length,
+    },
+    buckets: bucketOrder.map((label) => ({
+      label,
+      count: bucketMap.get(label)?.count ?? 0,
+      amount: bucketMap.get(label)?.amount ?? 0,
+    })),
+    rows,
+  };
+}
+
+async function buildCustomerCohortReport(
+  db: Queryable,
+  filters: ReportsFilters,
+): Promise<CustomerCohortReport> {
+  const values: unknown[] = [filters.dateFrom, filters.dateTo];
+  const scopedVehicleClause = buildVehicleFilterClause(filters.vehicleId, values, "b.vehicle_id");
+  const firstBookingVehicleClause = filters.vehicleId
+    ? `and b.vehicle_id = $${values.length} `
+    : "";
+
+  const cohortRows = await db.query(
+    "with scoped_bookings as (" +
+      "  select b.customer_id, b.id, b.created_at::date as created_date, " +
+      `    ${TOTAL_SQL} as total_amount ` +
+      "  from bookings b " +
+      "  join vehicles v on v.id = b.vehicle_id " +
+      "  where b.created_at::date between $1 and $2 " +
+      "    and b.status not in ('CANCELLED','OVERRIDDEN') " +
+      "    and coalesce(b.pricing_json->>'overridden_by_booking_id', '') = '' " +
+      scopedVehicleClause +
+      "), first_bookings as (" +
+      "  select b.customer_id, min(b.created_at::date) as first_booking_date " +
+      "  from bookings b " +
+      "  where b.status not in ('CANCELLED','OVERRIDDEN') " +
+      "    and coalesce(b.pricing_json->>'overridden_by_booking_id', '') = '' " +
+      firstBookingVehicleClause +
+      "  group by b.customer_id" +
+      ") " +
+      "select date_trunc('month', f.first_booking_date)::date as cohort_month, " +
+      "  count(distinct s.customer_id)::int as customer_count, " +
+      "  count(*)::int as booking_count, " +
+      "  coalesce(sum(s.total_amount), 0)::numeric as revenue " +
+      "from scoped_bookings s " +
+      "join first_bookings f on f.customer_id = s.customer_id " +
+      "group by 1 " +
+      "order by 1",
+    values,
+  );
+
+  const summaryRow = await db.query(
+    "with scoped_bookings as (" +
+      "  select b.customer_id " +
+      "  from bookings b " +
+      "  where b.created_at::date between $1 and $2 " +
+      "    and b.status not in ('CANCELLED','OVERRIDDEN') " +
+      "    and coalesce(b.pricing_json->>'overridden_by_booking_id', '') = '' " +
+      scopedVehicleClause +
+      "), first_bookings as (" +
+      "  select b.customer_id, min(b.created_at::date) as first_booking_date " +
+      "  from bookings b " +
+      "  where b.status not in ('CANCELLED','OVERRIDDEN') " +
+      "    and coalesce(b.pricing_json->>'overridden_by_booking_id', '') = '' " +
+      firstBookingVehicleClause +
+      "  group by b.customer_id" +
+      ") " +
+      "select " +
+      "  count(distinct s.customer_id)::int as total_customers, " +
+      "  count(distinct case when f.first_booking_date between $1 and $2 then s.customer_id end)::int as new_customers, " +
+      "  count(distinct case when f.first_booking_date < $1 then s.customer_id end)::int as repeat_customers " +
+      "from scoped_bookings s " +
+      "join first_bookings f on f.customer_id = s.customer_id",
+    values,
+  );
+
+  const rows: CustomerCohortRow[] = (cohortRows.rows as Array<{
+    cohort_month: string | Date;
+    customer_count: number;
+    booking_count: number;
+    revenue: number;
+  }>).map((row) => {
+    const cohortMonth = dateFromKey(row.cohort_month);
+    return {
+      cohortMonth,
+      cohortLabel: toCohortLabel(cohortMonth),
+      customerCount: asNumber(row.customer_count),
+      bookingCount: asNumber(row.booking_count),
+      revenue: asNumber(row.revenue),
+    };
+  });
+
+  const summary = (summaryRow.rows[0] ?? {}) as {
+    total_customers?: number;
+    new_customers?: number;
+    repeat_customers?: number;
+  };
+  const totalCustomers = asNumber(summary.total_customers);
+  const repeatCustomers = asNumber(summary.repeat_customers);
+
+  return {
+    summary: {
+      totalCustomers,
+      newCustomers: asNumber(summary.new_customers),
+      repeatCustomers,
+      repeatRate: totalCustomers > 0 ? clampPercent((repeatCustomers / totalCustomers) * 100) : null,
+    },
+    rows,
+  };
+}
+
+async function buildLocationPerformanceReport(
+  db: Queryable,
+  filters: ReportsFilters,
+): Promise<LocationPerformanceReport> {
+  const values: unknown[] = [filters.dateFrom, filters.dateTo, [...PAYMENT_NET_STATUSES]];
+  const vehicleClause = buildVehicleFilterClause(filters.vehicleId, values, "b.vehicle_id");
+
+  const result = await db.query(
+    "select " +
+      "coalesce(nullif(trim(b.pickup_location), ''), 'Unknown') as location_label, " +
+      "count(*) filter (where upper(b.status) not in ('CANCELLED','OVERRIDDEN'))::int as booking_count, " +
+      `coalesce(sum(case when upper(b.status) not in ('CANCELLED','OVERRIDDEN') then ${TOTAL_SQL} else 0 end), 0)::numeric as revenue, ` +
+      "coalesce(sum(case when upper(b.status) not in ('CANCELLED','OVERRIDDEN') then (" +
+      "  select coalesce(sum(case when p.status = any($3::text[]) then p.deposit_amount_cents else 0 end), 0)::numeric " +
+      "  from payments p where p.booking_id = b.id and p.deleted_at is null" +
+      ") else 0 end), 0)::numeric as amount_paid, " +
+      "sum(case when upper(b.status) in ('CANCELLED','OVERRIDDEN') or coalesce(b.pricing_json->>'overridden_by_booking_id', '') <> '' then 1 else 0 end)::int as cancellation_count " +
+      "from bookings b " +
+      "join vehicles v on v.id = b.vehicle_id " +
+      "where b.start_date between $1 and $2 " +
+      vehicleClause +
+      "group by 1 " +
+      "order by 1",
+    values,
+  );
+
+  const rows: LocationPerformanceRow[] = (result.rows as Array<{
+    location_label: string;
+    booking_count: number;
+    revenue: number;
+    amount_paid: number;
+    cancellation_count: number;
+  }>).map((row) => {
+    const revenue = asNumber(row.revenue);
+    const amountPaid = asNumber(row.amount_paid);
+    return {
+      locationLabel: maybeText(row.location_label) || "Unknown",
+      bookingCount: asNumber(row.booking_count),
+      revenue,
+      amountPaid,
+      outstanding: Math.max(0, revenue - amountPaid),
+      cancellationCount: asNumber(row.cancellation_count),
+    };
+  });
+
+  const totals = rows.reduce(
+    (acc, row) => {
+      acc.bookingCount += row.bookingCount;
+      acc.revenue += row.revenue;
+      acc.amountPaid += row.amountPaid;
+      acc.outstanding += row.outstanding;
+      acc.cancellationCount += row.cancellationCount;
+      return acc;
+    },
+    {
+      bookingCount: 0,
+      revenue: 0,
+      amountPaid: 0,
+      outstanding: 0,
+      cancellationCount: 0,
+    },
+  );
+
+  return {
+    totals,
+    rows,
   };
 }
 
@@ -1090,22 +1595,40 @@ export async function getAdminReportsPayload(
   const filters = normalizeReportsFilters(filtersInput);
   const db = getQueryable(options.db);
 
-  const [revenue, utilization, outstandingBalances, funnel, upcoming, cancellationRefundImpact] =
+  const [
+    revenue,
+    vehicleProfitability,
+    utilization,
+    outstandingBalances,
+    customerCohort,
+    locationPerformance,
+    funnel,
+    upcoming,
+    cancellationRefundImpact,
+  ] =
     await Promise.all([
       buildRevenueReport(db, filters),
+      buildVehicleProfitabilityReport(db, filters),
       buildUtilizationReport(db, filters),
       buildOutstandingBalancesReport(db, filters),
+      buildCustomerCohortReport(db, filters),
+      buildLocationPerformanceReport(db, filters),
       buildFunnelReport(db, filters),
       buildUpcomingPickupsReturnsReport(db, filters),
       buildCancellationRefundImpactReport(db, filters),
     ]);
+  const agingReceivables = buildAgingReceivablesReport(outstandingBalances);
 
   return {
     filters,
     generatedAt: new Date().toISOString(),
     revenue,
+    vehicleProfitability,
     utilization,
     outstandingBalances,
+    agingReceivables,
+    customerCohort,
+    locationPerformance,
     funnel,
     upcoming,
     cancellationRefundImpact,

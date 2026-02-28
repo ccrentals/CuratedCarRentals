@@ -113,7 +113,13 @@ export function SortableTh({
           )}
         </button>
       ) : href ? (
-        <Link href={href} title={title ?? label} className={commonControlClass} aria-label={`Sort by ${label}`}>
+        <Link
+          href={href}
+          scroll={false}
+          title={title ?? label}
+          className={commonControlClass}
+          aria-label={`Sort by ${label}`}
+        >
           <span>{label}</span>
           {isActive ? (
             sortDir === "desc" ? (
@@ -131,4 +137,3 @@ export function SortableTh({
     </th>
   );
 }
-

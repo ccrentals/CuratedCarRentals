@@ -173,9 +173,9 @@ export default async function AdminCustomersPage({
           <CreateCustomerForm />
           <Link
             href="/admin/bookings?create=1"
-            className="inline-flex w-full items-center justify-center rounded-xl border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] ring-1 ring-[var(--ccr-accent)] sm:w-auto"
+            className="inline-flex w-full items-center justify-center whitespace-nowrap rounded-xl border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] ring-1 ring-[var(--ccr-accent)] sm:w-auto"
           >
-            New booking
+            New Booking
           </Link>
         </div>
       </div>
@@ -192,10 +192,13 @@ export default async function AdminCustomersPage({
             <div className="divide-y divide-[var(--ccr-border)] md:hidden">
               {visibleCustomers.map((customer: CustomerListRow) => (
                 <article key={`mobile-${customer.id}`} className="space-y-3 px-4 py-4">
-                  <div>
+                  <Link
+                    href={`/admin/customers/${customer.id}`}
+                    className="block rounded-lg border border-transparent p-1 -m-1 transition hover:border-[var(--ccr-border)]"
+                  >
                     <p className="font-semibold text-[var(--ccr-text)]">{customer.full_name}</p>
                     <p className="text-xs text-[var(--ccr-muted)]">{customer.email}</p>
-                  </div>
+                  </Link>
                   <dl className="grid grid-cols-2 gap-2 text-xs">
                     <div>
                       <dt className="uppercase tracking-wide text-[var(--ccr-muted)]">Phone</dt>
@@ -229,9 +232,9 @@ export default async function AdminCustomersPage({
                     <Link
                       href={customer.is_blocked ? "#" : `/admin/bookings?create=1&customerId=${customer.id}`}
                       aria-disabled={customer.is_blocked}
-                      className={`rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] ${customer.is_blocked ? "pointer-events-none opacity-50" : ""}`}
+                      className={`whitespace-nowrap rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] ${customer.is_blocked ? "pointer-events-none opacity-50" : ""}`}
                     >
-                      New booking
+                      New Booking
                     </Link>
                     <Link
                       href={`/admin/customers/${customer.id}`}
@@ -283,8 +286,13 @@ export default async function AdminCustomersPage({
                   {visibleCustomers.map((customer: CustomerListRow) => (
                     <tr key={customer.id} className="border-b border-[var(--ccr-border)] last:border-b-0">
                       <td className="px-4 py-3">
-                        <p className="font-semibold text-[var(--ccr-text)]">{customer.full_name}</p>
-                        <p className="text-xs text-[var(--ccr-muted)]">{customer.email}</p>
+                        <Link
+                          href={`/admin/customers/${customer.id}`}
+                          className="block rounded-lg border border-transparent p-1 -m-1 transition hover:border-[var(--ccr-border)]"
+                        >
+                          <p className="font-semibold text-[var(--ccr-text)]">{customer.full_name}</p>
+                          <p className="text-xs text-[var(--ccr-muted)]">{customer.email}</p>
+                        </Link>
                       </td>
                       <td className="px-4 py-3 text-[var(--ccr-text)]">{customer.phone}</td>
                       <td className="px-4 py-3 text-[var(--ccr-text)]">{customer.total_bookings}</td>
@@ -303,9 +311,9 @@ export default async function AdminCustomersPage({
                           <Link
                             href={customer.is_blocked ? "#" : `/admin/bookings?create=1&customerId=${customer.id}`}
                             aria-disabled={customer.is_blocked}
-                            className={`rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] ${customer.is_blocked ? "pointer-events-none opacity-50" : ""}`}
+                            className={`whitespace-nowrap rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] ${customer.is_blocked ? "pointer-events-none opacity-50" : ""}`}
                           >
-                            New booking
+                            New Booking
                           </Link>
                           <Link
                             href={`/admin/customers/${customer.id}`}

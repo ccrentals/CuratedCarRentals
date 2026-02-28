@@ -23,6 +23,16 @@ const mockPayload: AdminReportsPayload = {
     },
     points: [],
   },
+  vehicleProfitability: {
+    totals: {
+      vehicleCount: 1,
+      grossRevenue: 1000,
+      refunds: 100,
+      maintenanceCost: 250,
+      netProfit: 650,
+    },
+    rows: [],
+  },
   utilization: {
     rangeDays: 28,
     includesBlockouts: true,
@@ -32,6 +42,40 @@ const mockPayload: AdminReportsPayload = {
     totals: {
       totalOutstandingAmount: 250,
       outstandingCount: 1,
+    },
+    rows: [],
+  },
+  agingReceivables: {
+    totals: {
+      totalOutstandingAmount: 250,
+      outstandingCount: 1,
+      overdueAmount: 125,
+      overdueCount: 1,
+    },
+    buckets: [
+      { label: "Current", count: 0, amount: 0 },
+      { label: "1-15 days", count: 1, amount: 125 },
+      { label: "16-30 days", count: 0, amount: 0 },
+      { label: "30+ days", count: 0, amount: 0 },
+    ],
+    rows: [],
+  },
+  customerCohort: {
+    summary: {
+      totalCustomers: 3,
+      newCustomers: 2,
+      repeatCustomers: 1,
+      repeatRate: 33.3,
+    },
+    rows: [],
+  },
+  locationPerformance: {
+    totals: {
+      bookingCount: 2,
+      revenue: 1000,
+      amountPaid: 750,
+      outstanding: 250,
+      cancellationCount: 0,
     },
     rows: [],
   },
@@ -90,8 +134,12 @@ test("admin reports API: returns report payload shape for authorized admin", asy
   assert.equal(body.ok, true);
   assert.ok(body.report);
   assert.ok(body.report?.revenue);
+  assert.ok(body.report?.vehicleProfitability);
   assert.ok(body.report?.utilization);
   assert.ok(body.report?.outstandingBalances);
+  assert.ok(body.report?.agingReceivables);
+  assert.ok(body.report?.customerCohort);
+  assert.ok(body.report?.locationPerformance);
   assert.ok(body.report?.funnel);
   assert.ok(body.report?.upcoming);
   assert.ok(body.report?.cancellationRefundImpact);

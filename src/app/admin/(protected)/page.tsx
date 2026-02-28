@@ -55,6 +55,7 @@ export default async function AdminDashboardPage() {
   });
   const pickupsToday = await dbQuery<{
     id: string;
+    public_id: string;
     status: string;
     start_at: string;
     start_date: string;
@@ -63,7 +64,7 @@ export default async function AdminDashboardPage() {
     vehicle_make: string;
     vehicle_model: string;
   }>(
-    "select b.id, b.status, coalesce(b.start_at, b.start_date::timestamptz) as start_at, b.start_date, b.end_date, c.full_name as customer_name, v.make as vehicle_make, v.model as vehicle_model from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where " +
+    "select b.id, b.public_id, b.status, coalesce(b.start_at, b.start_date::timestamptz) as start_at, b.start_date, b.end_date, c.full_name as customer_name, v.make as vehicle_make, v.model as vehicle_model from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where " +
       pickupsTodayWhere.clause +
       ` order by ${bookingStartSqlExpr("b")} asc, b.created_at desc limit 5`,
     pickupsTodayWhere.values,
@@ -71,6 +72,7 @@ export default async function AdminDashboardPage() {
 
   const outstandingBalances = await dbQuery<{
     id: string;
+    public_id: string;
     status: string;
     start_date: string;
     end_date: string;
@@ -80,7 +82,7 @@ export default async function AdminDashboardPage() {
     vehicle_model: string;
     balance_due: string;
   }>(
-    "select b.id, b.status, b.start_date, b.end_date, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model, coalesce((b.pricing_json->>'balance_due')::numeric, 0) as balance_due from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.status not in ('CANCELLED','RETURNED') and coalesce((b.pricing_json->>'balance_due')::numeric, 0) > 0 order by balance_due desc, b.created_at desc limit 5",
+    "select b.id, b.public_id, b.status, b.start_date, b.end_date, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model, coalesce((b.pricing_json->>'balance_due')::numeric, 0) as balance_due from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.status not in ('CANCELLED','RETURNED') and coalesce((b.pricing_json->>'balance_due')::numeric, 0) > 0 order by balance_due desc, b.created_at desc limit 5",
   );
 
   const maintenanceVehicles = await dbQuery<{
@@ -96,6 +98,7 @@ export default async function AdminDashboardPage() {
 
   const recentBookings = await dbQuery<{
     id: string;
+    public_id: string;
     status: string;
     start_date: string;
     end_date: string;
@@ -103,7 +106,7 @@ export default async function AdminDashboardPage() {
     vehicle_make: string;
     vehicle_model: string;
   }>(
-    "select b.id, b.status, b.start_date, b.end_date, c.full_name as customer_name, v.make as vehicle_make, v.model as vehicle_model from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id order by b.created_at desc limit 5",
+    "select b.id, b.public_id, b.status, b.start_date, b.end_date, c.full_name as customer_name, v.make as vehicle_make, v.model as vehicle_model from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id order by b.created_at desc limit 5",
   );
 
   const recentVehicles = await dbQuery<{
@@ -198,6 +201,7 @@ export default async function AdminDashboardPage() {
             <ul className="mt-4 space-y-3 text-sm">
               {(pickupsToday.rows as Array<{
                 id: string;
+                public_id: string;
                 status: string;
                 start_at: string;
                 start_date: string;
@@ -205,35 +209,38 @@ export default async function AdminDashboardPage() {
                 customer_name: string;
                 vehicle_make: string;
                 vehicle_model: string;
-              }>).map((booking) => (
-                <li key={booking.id} className="rounded-xl border border-[var(--ccr-border)] p-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <Link
-                        href={`/admin/bookings/${booking.id}`}
-                        className={`inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-bold text-[var(--ccr-accent)] transition hover:border-[var(--ccr-accent-strong)] hover:bg-[var(--ccr-surface)] ${hoverTextClass}`}
-                        title="Open booking"
-                      >
-                        {booking.id.slice(0, 8)}
-                      </Link>
-                      <p className="mt-1 break-words text-xs text-[var(--ccr-muted)]">
-                        {booking.customer_name} • {booking.vehicle_make} {booking.vehicle_model}
-                      </p>
-                      <p className="text-xs text-[var(--ccr-muted)]">
-                        <InlineDateTimeRange
-                          startLabel={fmtDate(booking.start_date)}
-                          endLabel={fmtDate(booking.end_date)}
-                        />
-                      </p>
+              }>).map((booking) => {
+                const bookingPublicId = String(booking.public_id ?? "").trim() || booking.id;
+                return (
+                  <li key={booking.id} className="rounded-xl border border-[var(--ccr-border)] p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <Link
+                          href={`/admin/bookings/${booking.id}`}
+                          className={`inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-bold text-[var(--ccr-accent)] transition hover:border-[var(--ccr-accent-strong)] hover:bg-[var(--ccr-surface)] ${hoverTextClass}`}
+                          title="Open booking"
+                        >
+                          {bookingPublicId}
+                        </Link>
+                        <p className="mt-1 break-words text-xs text-[var(--ccr-muted)]">
+                          {booking.customer_name} • {booking.vehicle_make} {booking.vehicle_model}
+                        </p>
+                        <p className="text-xs text-[var(--ccr-muted)]">
+                          <InlineDateTimeRange
+                            startLabel={fmtDate(booking.start_date)}
+                            endLabel={fmtDate(booking.end_date)}
+                          />
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 flex-col items-end gap-1">
+                        <span className="rounded-full bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-semibold text-[var(--ccr-text)]">
+                          {formatDashboardStatus(booking.status)}
+                        </span>
+                      </div>
                     </div>
-                    <div className="flex shrink-0 flex-col items-end gap-1">
-                      <span className="rounded-full bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-semibold text-[var(--ccr-text)]">
-                        {formatDashboardStatus(booking.status)}
-                      </span>
-                    </div>
-                  </div>
-                </li>
-              ))}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </section>
@@ -251,6 +258,7 @@ export default async function AdminDashboardPage() {
             <ul className="mt-4 space-y-3 text-sm">
               {(outstandingBalances.rows as Array<{
                 id: string;
+                public_id: string;
                 status: string;
                 start_date: string;
                 end_date: string;
@@ -261,6 +269,7 @@ export default async function AdminDashboardPage() {
                 balance_due: string;
               }>).map((booking) => {
                 const balanceDue = Number(booking.balance_due ?? 0);
+                const bookingPublicId = String(booking.public_id ?? "").trim() || booking.id;
                 return (
                   <li key={booking.id} className="rounded-xl border border-[var(--ccr-border)]">
                     <details className="group">
@@ -268,7 +277,7 @@ export default async function AdminDashboardPage() {
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <span className="inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-bold text-[var(--ccr-accent)]">
-                              {booking.id.slice(0, 8)}
+                              {bookingPublicId}
                             </span>
                             <p className="mt-1 text-xs text-[var(--ccr-muted)]">Booking details</p>
                           </div>
@@ -399,6 +408,7 @@ export default async function AdminDashboardPage() {
             <ul className="mt-4 space-y-3 text-sm">
               {(recentBookings.rows as Array<{
                 id: string;
+                public_id: string;
                 status: string;
                 start_date: string;
                 end_date: string;
@@ -412,7 +422,7 @@ export default async function AdminDashboardPage() {
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <span className="inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-bold text-[var(--ccr-accent)]">
-                            {booking.id.slice(0, 8)}
+                            {String(booking.public_id ?? "").trim() || booking.id}
                           </span>
                           <p className="mt-1 text-xs text-[var(--ccr-muted)]">Booking details</p>
                         </div>

@@ -571,9 +571,11 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
               <p className="font-semibold text-[var(--ccr-text)]">{booking.customer_name}</p>
               <p className="text-[var(--ccr-muted)]">{booking.customer_email}</p>
               <p className="text-[var(--ccr-muted)]">{booking.customer_phone}</p>
-              <p className="mt-2 text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Driver&apos;s License</p>
-              <p className="text-[var(--ccr-muted)]">
-                Number: {booking.drivers_license_number || booking.customer_legal_id_number || "Not provided"}
+              <p className="mt-2 text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
+                Driver&apos;s License Number
+              </p>
+              <p className="font-semibold text-[var(--ccr-text)]">
+                {booking.drivers_license_number || booking.customer_legal_id_number || "Not provided"}
               </p>
               {hasDriversLicenseDoc || hasSignatureDoc ? (
                 <div className="mt-2 flex flex-wrap items-center gap-4 text-xs font-semibold">
