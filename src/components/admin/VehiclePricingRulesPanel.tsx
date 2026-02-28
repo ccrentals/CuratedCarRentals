@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
@@ -134,7 +134,6 @@ function addDeliveryZone(form: FormState) {
 export function VehiclePricingRulesPanel({ vehicleId }: VehiclePricingRulesPanelProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [defaultsApplied, setDefaultsApplied] = useState(true);
   const [form, setForm] = useState<FormState>({
     baseDailyRateCents: "",
     baseDepositCents: "",
@@ -155,22 +154,39 @@ export function VehiclePricingRulesPanel({ vehicleId }: VehiclePricingRulesPanel
     setMessage(null);
 
     try {
-      const response = await fetch(`/api/admin/vehicles/${vehicleId}/pricing-rules`, {
-        cache: "no-store",
-      });
-      const payload = (await response.json().catch(() => ({}))) as {
+      const [rulesResponse, vehicleResponse] = await Promise.all([
+        fetch(`/api/admin/vehicles/${vehicleId}/pricing-rules`, {
+          cache: "no-store",
+        }),
+        fetch(`/api/admin/vehicles/${vehicleId}`, {
+          cache: "no-store",
+        }),
+      ]);
+
+      const payload = (await rulesResponse.json().catch(() => ({}))) as {
         ok?: boolean;
         rules?: RulesPayload;
-        defaultsApplied?: boolean;
+        error?: string;
+      };
+      const vehiclePayload = (await vehicleResponse.json().catch(() => ({}))) as {
+        vehicle?: {
+          daily_rate_cents?: number;
+          deposit_cents?: number;
+        };
         error?: string;
       };
 
-      if (!response.ok || !payload.ok || !payload.rules) {
+      if (!rulesResponse.ok || !payload.ok || !payload.rules) {
         throw new Error(payload.error ?? "Failed to load pricing rules.");
       }
+      if (!vehicleResponse.ok || !vehiclePayload.vehicle) {
+        throw new Error(vehiclePayload.error ?? "Failed to load vehicle pricing.");
+      }
 
-      setForm(toFormState(payload.rules));
-      setDefaultsApplied(Boolean(payload.defaultsApplied));
+      const next = toFormState(payload.rules);
+      next.baseDailyRateCents = toInput(vehiclePayload.vehicle.daily_rate_cents ?? 0);
+      next.baseDepositCents = toInput(vehiclePayload.vehicle.deposit_cents ?? 0);
+      setForm(next);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Failed to load pricing rules.");
     } finally {
@@ -182,27 +198,20 @@ export function VehiclePricingRulesPanel({ vehicleId }: VehiclePricingRulesPanel
     void loadRules();
   }, [loadRules]);
 
-  const helperText = useMemo(() => {
-    if (defaultsApplied) {
-      return "Defaults are active. Save once to create vehicle-level pricing overrides.";
-    }
-    return "Vehicle-level pricing overrides are active for server-side quote and booking pricing.";
-  }, [defaultsApplied]);
-
   async function handleSave(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSaving(true);
     setError(null);
     setMessage(null);
 
-    const baseDaily = parseOptionalMoney(form.baseDailyRateCents, "Base daily rate");
+    const baseDaily = parseRequiredMoney(form.baseDailyRateCents, "Daily rate");
     if (baseDaily.error) {
       setSaving(false);
       setError(baseDaily.error);
       return;
     }
 
-    const baseDeposit = parseOptionalMoney(form.baseDepositCents, "Base deposit");
+    const baseDeposit = parseRequiredMoney(form.baseDepositCents, "Deposit");
     if (baseDeposit.error) {
       setSaving(false);
       setError(baseDeposit.error);
@@ -289,6 +298,29 @@ export function VehiclePricingRulesPanel({ vehicleId }: VehiclePricingRulesPanel
 
     try {
       const csrfToken = await ensureCsrfToken();
+      const vehicleResponse = await fetch(`/api/admin/vehicles/${vehicleId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "x-csrf-token": csrfToken ?? "",
+        },
+        body: JSON.stringify({
+          daily_rate_cents: baseDaily.value ?? 0,
+          deposit_cents: baseDeposit.value ?? 0,
+        }),
+      });
+
+      const vehiclePayload = (await vehicleResponse.json().catch(() => ({}))) as {
+        vehicle?: {
+          daily_rate_cents?: number;
+          deposit_cents?: number;
+        };
+        error?: string;
+      };
+      if (!vehicleResponse.ok || !vehiclePayload.vehicle) {
+        throw new Error(vehiclePayload.error ?? "Failed to save vehicle pricing.");
+      }
+
       const response = await fetch(`/api/admin/vehicles/${vehicleId}/pricing-rules`, {
         method: "PATCH",
         headers: {
@@ -296,8 +328,9 @@ export function VehiclePricingRulesPanel({ vehicleId }: VehiclePricingRulesPanel
           "x-csrf-token": csrfToken ?? "",
         },
         body: JSON.stringify({
-          baseDailyRateCents: baseDaily.value,
-          baseDepositCents: baseDeposit.value,
+          // Base rates are now managed on the vehicle record so all pricing surfaces stay in sync.
+          baseDailyRateCents: null,
+          baseDepositCents: null,
           weekendDailyRateCents: weekendDaily.value,
           dateRangeOverrides,
           deliveryEnabled: form.deliveryEnabled,
@@ -318,11 +351,13 @@ export function VehiclePricingRulesPanel({ vehicleId }: VehiclePricingRulesPanel
         throw new Error(payload.error ?? "Failed to save pricing rules.");
       }
 
-      setForm(toFormState(payload.rules));
-      setDefaultsApplied(false);
-      setMessage("Pricing rules saved.");
+      const next = toFormState(payload.rules);
+      next.baseDailyRateCents = toInput(vehiclePayload.vehicle.daily_rate_cents ?? 0);
+      next.baseDepositCents = toInput(vehiclePayload.vehicle.deposit_cents ?? 0);
+      setForm(next);
+      setMessage("Vehicle pricing saved.");
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Failed to save pricing rules.");
+      setError(requestError instanceof Error ? requestError.message : "Failed to save vehicle pricing.");
     } finally {
       setSaving(false);
     }
@@ -335,13 +370,13 @@ export function VehiclePricingRulesPanel({ vehicleId }: VehiclePricingRulesPanel
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-bold text-[var(--ccr-text)]">Pricing Rules</h2>
+          <h2 className="text-lg font-bold text-[var(--ccr-text)]">Vehicle Pricing</h2>
           <p className="mt-1 text-xs text-[var(--ccr-muted)]">
-            Configure vehicle-level pricing overrides, delivery fees, and date-based rates.
+            Manage base vehicle pricing, delivery fees, and date-based pricing behavior.
           </p>
         </div>
         <p className="rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-muted)]">
-          {defaultsApplied ? "Defaults" : "Vehicle override"}
+          Vehicle pricing
         </p>
       </div>
 
@@ -351,13 +386,15 @@ export function VehiclePricingRulesPanel({ vehicleId }: VehiclePricingRulesPanel
 
       {!loading ? (
         <form className="mt-4 space-y-6" onSubmit={handleSave}>
-          <p className="text-xs text-[var(--ccr-muted)]">{helperText}</p>
+          <p className="text-xs text-[var(--ccr-muted)]">
+            Daily rate and deposit update the vehicle record directly and are used across bookings, quotes, and reports.
+          </p>
 
           <label className="flex items-center justify-between gap-3 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-4 py-3">
             <span>
               <span className="block text-sm font-semibold text-[var(--ccr-text)]">Rules active</span>
               <span className="block text-xs text-[var(--ccr-muted)]">
-                Disable to use vehicle base rates without pricing-rule overrides.
+                Disable to use only vehicle base pricing without advanced pricing rules.
               </span>
             </span>
             <input
@@ -375,7 +412,7 @@ export function VehiclePricingRulesPanel({ vehicleId }: VehiclePricingRulesPanel
 
           <div className="grid gap-4 sm:grid-cols-3">
             <label className="space-y-1">
-              <span className="text-xs font-semibold text-[var(--ccr-muted)]">Daily rate override (cents)</span>
+              <span className="text-xs font-semibold text-[var(--ccr-muted)]">Daily rate (cents)</span>
               <input
                 data-testid="pricing-base-daily"
                 type="number"
@@ -393,7 +430,7 @@ export function VehiclePricingRulesPanel({ vehicleId }: VehiclePricingRulesPanel
             </label>
 
             <label className="space-y-1">
-              <span className="text-xs font-semibold text-[var(--ccr-muted)]">Deposit override (cents)</span>
+              <span className="text-xs font-semibold text-[var(--ccr-muted)]">Deposit (cents)</span>
               <input
                 data-testid="pricing-base-deposit"
                 type="number"
@@ -645,7 +682,7 @@ export function VehiclePricingRulesPanel({ vehicleId }: VehiclePricingRulesPanel
             disabled={saving}
             className="inline-flex min-h-11 items-center justify-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-primary)] px-4 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {saving ? "Saving..." : "Save pricing rules"}
+            {saving ? "Saving..." : "Save pricing"}
           </button>
         </form>
       ) : null}

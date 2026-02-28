@@ -3,7 +3,11 @@ import { NextResponse } from "next/server";
 import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery } from "@/lib/db";
-import { buildUploadcareCdnUrl, extractUploadcareFileId } from "@/lib/uploads/uploadcare";
+import {
+  buildUploadcareCdnUrl,
+  extractUploadcareDeliveryUrl,
+  extractUploadcareFileId,
+} from "@/lib/uploads/uploadcare";
 import { isVehicleExtensionsMissingTableError } from "@/lib/vehicles/extensionTables";
 
 const UUID_REGEX =
@@ -33,6 +37,15 @@ function sanitizeFileName(value: string) {
   return normalized || "document";
 }
 
+function isExpectedMimeMismatch(expectedMime: string | null, actualMime: string | null) {
+  if (!expectedMime) return false;
+  if (!actualMime) return false;
+  const expected = expectedMime.toLowerCase();
+  const actual = actualMime.toLowerCase();
+  if (expected.startsWith("text/html")) return false;
+  return actual.startsWith("text/html");
+}
+
 const DEFAULT_DEPS: AdminVehicleDocumentDownloadRouteDeps = {
   getSession: () => getSessionFromRequest(),
   getDocument: async (vehicleId, docId) => {
@@ -45,7 +58,7 @@ const DEFAULT_DEPS: AdminVehicleDocumentDownloadRouteDeps = {
 };
 
 export async function handleAdminVehicleDocumentDownload(
-  _request: Request,
+  request: Request,
   context: VehicleDocumentDownloadRouteContext,
   deps: AdminVehicleDocumentDownloadRouteDeps = DEFAULT_DEPS,
 ) {
@@ -59,6 +72,14 @@ export async function handleAdminVehicleDocumentDownload(
     );
   }
   const { id, docId } = await context.params;
+  const requestUrl = new URL(request.url);
+  const inlineParam = requestUrl.searchParams.get("inline");
+  const dispositionParam = requestUrl.searchParams.get("disposition");
+  const isInline =
+    requestUrl.pathname.includes("/file") ||
+    inlineParam === "1" ||
+    inlineParam?.toLowerCase() === "true" ||
+    dispositionParam?.toLowerCase() === "inline";
   if (!UUID_REGEX.test(id) || !UUID_REGEX.test(docId)) {
     return NextResponse.json(
       { ok: false, error: "Invalid request." },
@@ -83,18 +104,39 @@ export async function handleAdminVehicleDocumentDownload(
       );
     }
 
+    const deliveryUrl = extractUploadcareDeliveryUrl(doc.storage_key);
     const fileId = extractUploadcareFileId(doc.storage_key);
-    if (!fileId) {
+    if (!deliveryUrl && !fileId) {
       return NextResponse.json(
         { ok: false, error: "Invalid storage key." },
         { status: 500, headers: { "cache-control": "no-store" } },
       );
     }
 
-    const upstream = await fetch(buildUploadcareCdnUrl(fileId));
-    if (!upstream.ok || !upstream.body) {
+    const candidateUrls: string[] = [];
+    if (deliveryUrl) candidateUrls.push(deliveryUrl);
+    if (fileId) candidateUrls.push(buildUploadcareCdnUrl(fileId));
+
+    let upstream: Response | null = null;
+    for (const candidate of candidateUrls) {
+      const response = await fetch(candidate);
+      const contentType = response.headers.get("content-type");
+      if (
+        response.ok &&
+        response.body &&
+        !isExpectedMimeMismatch(doc.mime_type, contentType)
+      ) {
+        upstream = response;
+        break;
+      }
+    }
+
+    if (!upstream) {
       return NextResponse.json(
-        { ok: false, error: "Unable to load file from storage." },
+        {
+          ok: false,
+          error: "Unable to load file from storage. Re-upload this file if the issue persists.",
+        },
         { status: 502, headers: { "cache-control": "no-store" } },
       );
     }
@@ -104,7 +146,7 @@ export async function handleAdminVehicleDocumentDownload(
       status: 200,
       headers: {
         "content-type": doc.mime_type || upstream.headers.get("content-type") || "application/octet-stream",
-        "content-disposition": `attachment; filename="${filename}"`,
+        "content-disposition": `${isInline ? "inline" : "attachment"}; filename="${filename}"`,
         "cache-control": "private, max-age=0, no-store",
       },
     });

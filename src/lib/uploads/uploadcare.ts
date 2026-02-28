@@ -11,7 +11,7 @@ export function extractUploadcareFileId(value: unknown): string | null {
   if (UPLOADCARE_FILE_ID_RE.test(normalized)) return normalized;
 
   const match = normalized.match(
-    /(?:https?:\/\/)?(?:www\.)?ucarecdn\.com\/([0-9a-f-]{36}(?:~\d+)?)\/?/i,
+    /(?:https?:\/\/)?(?:[\w-]+\.)?(?:ucarecdn\.com|ucarecd\.net)\/([0-9a-f-]{36}(?:~\d+)?)(?:[/?#]|$)/i,
   );
   if (match?.[1] && UPLOADCARE_FILE_ID_RE.test(match[1])) {
     return match[1];
@@ -20,8 +20,32 @@ export function extractUploadcareFileId(value: unknown): string | null {
   return null;
 }
 
+export function extractUploadcareDeliveryUrl(value: unknown): string | null {
+  const normalized = normalizeText(value);
+  if (!normalized) return null;
+  try {
+    const parsed = new URL(normalized);
+    if (!["https:", "http:"].includes(parsed.protocol)) return null;
+    const host = parsed.hostname.toLowerCase();
+    const pathMatch = parsed.pathname.match(/\/([0-9a-f-]{36}(?:~\d+)?)(?:\/|$)/i);
+    const hasFileIdInPath = Boolean(pathMatch?.[1] && UPLOADCARE_FILE_ID_RE.test(pathMatch[1]));
+    if (
+      !host.endsWith("ucarecdn.com") &&
+      !host.endsWith("ucarecd.net") &&
+      !hasFileIdInPath
+    ) {
+      return null;
+    }
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
 export function buildUploadcareCdnUrl(fileId: string) {
-  return `https://ucarecdn.com/${encodeURIComponent(fileId)}/`;
+  const base = normalizeText(process.env.UPLOADCARE_CDN_BASE_URL) || "https://ucarecdn.com";
+  const normalizedBase = base.replace(/\/+$/, "");
+  return `${normalizedBase}/${encodeURIComponent(fileId)}/`;
 }
 
 function decodeDataUrl(dataUrl: string) {

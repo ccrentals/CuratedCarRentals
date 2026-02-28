@@ -426,7 +426,7 @@ export function VehicleReservationsPanel({ vehicleId }: VehicleReservationsPanel
                     </td>
                     <td className="px-3 py-2">
                       <span
-                        className={`inline-flex min-h-7 items-center rounded-full border px-3 py-1 text-xs font-semibold ${statusTone(
+                        className={`inline-flex min-h-7 items-center whitespace-nowrap rounded-full border px-3 py-1 text-xs font-semibold ${statusTone(
                           row.status,
                         )}`}
                       >

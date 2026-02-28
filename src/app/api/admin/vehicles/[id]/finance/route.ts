@@ -52,12 +52,27 @@ type FinanceDefaults = {
   residualPercent: number;
 };
 
+type VehicleDepreciationSnapshotRow = {
+  as_of_month: string;
+  book_value_cents: number;
+  accumulated_depreciation_cents: number;
+  depreciation_for_month_cents: number;
+};
+
+type VehicleDepreciationSnapshot = {
+  asOfMonth: string;
+  bookValueCents: number;
+  accumulatedDepreciationCents: number;
+  depreciationForMonthCents: number;
+};
+
 type RouteDeps = {
   getSession: () => Promise<AdminSession | null>;
   requireCsrfCheck: (request: Request, bodyToken?: string | null) => Promise<boolean>;
   getDefaults: () => Promise<FinanceDefaults>;
   getFinance: (vehicleId: string) => Promise<VehicleFinanceRow | null>;
   upsertFinance: (vehicleId: string, payload: FinancePayload) => Promise<VehicleFinanceRow>;
+  listSnapshots?: (vehicleId: string) => Promise<VehicleDepreciationSnapshotRow[]>;
 };
 
 function normalizeText(value: unknown) {
@@ -211,6 +226,15 @@ function metricsForFinance(finance: {
     };
 }
 
+function mapSnapshots(rows: VehicleDepreciationSnapshotRow[]): VehicleDepreciationSnapshot[] {
+  return rows.map((row) => ({
+    asOfMonth: row.as_of_month,
+    bookValueCents: row.book_value_cents,
+    accumulatedDepreciationCents: row.accumulated_depreciation_cents,
+    depreciationForMonthCents: row.depreciation_for_month_cents,
+  }));
+}
+
 const DEFAULT_DEPS: RouteDeps = {
   getSession: () => getSessionFromRequest(),
   requireCsrfCheck: (request, bodyToken) => requireCsrf(request, bodyToken),
@@ -297,6 +321,21 @@ const DEFAULT_DEPS: RouteDeps = {
     );
     return result.rows[0];
   },
+  listSnapshots: async (vehicleId) => {
+    const result = await dbQuery<VehicleDepreciationSnapshotRow>(
+      `select
+         as_of_month::text as as_of_month,
+         book_value_cents,
+         accumulated_depreciation_cents,
+         depreciation_for_month_cents
+       from vehicle_depreciation_snapshots
+       where vehicle_id = $1::uuid
+       order by as_of_month desc
+       limit 120`,
+      [vehicleId],
+    );
+    return result.rows;
+  },
 };
 
 export async function handleAdminVehicleFinanceGet(
@@ -313,10 +352,12 @@ export async function handleAdminVehicleFinanceGet(
   }
 
   try {
+    const listSnapshots = deps.listSnapshots ?? (async () => []);
     const [defaults, financeRow] = await Promise.all([
       deps.getDefaults(),
       deps.getFinance(id),
     ]);
+    const snapshotRows = await listSnapshots(id);
     const finance = mapFinance(financeRow, defaults);
     const computed = metricsForFinance(finance);
 
@@ -327,6 +368,7 @@ export async function handleAdminVehicleFinanceGet(
       asOfMonth: computed.asOfMonth,
       metrics: computed.metrics,
       incompleteReason: computed.incompleteReason,
+      snapshots: mapSnapshots(snapshotRows),
     });
   } catch (error) {
     const code = String((error as { code?: unknown } | null)?.code ?? "");
@@ -376,6 +418,7 @@ export async function handleAdminVehicleFinancePatch(
   }
 
   try {
+    const listSnapshots = deps.listSnapshots ?? (async () => []);
     const defaults = await deps.getDefaults();
     const rawUsefulLifeMonths = body?.usefulLifeMonths ?? body?.useful_life_months;
 
@@ -458,6 +501,7 @@ export async function handleAdminVehicleFinancePatch(
     };
 
     const row = await deps.upsertFinance(id, payload);
+    const snapshotRows = await listSnapshots(id);
     const finance = mapFinance(row, defaults);
     const computed = metricsForFinance(finance);
 
@@ -468,6 +512,7 @@ export async function handleAdminVehicleFinancePatch(
       asOfMonth: computed.asOfMonth,
       metrics: computed.metrics,
       incompleteReason: computed.incompleteReason,
+      snapshots: mapSnapshots(snapshotRows),
     });
   } catch (error) {
     if (isVehicleExtensionsMissingTableError(error)) {

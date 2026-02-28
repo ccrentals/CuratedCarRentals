@@ -128,6 +128,69 @@ test("admin vehicle documents API: POST stores opaque Uploadcare id", async () =
   assert.equal("storageKey" in body.item, false);
 });
 
+test("admin vehicle documents API: POST preserves signed delivery URL references", async () => {
+  let capturedInput: Record<string, unknown> | null = null;
+  const signedUrl = `https://ucarecdn.com/${FILE_ID}/-/preview/?token=test-token`;
+
+  const response = await handleAdminVehicleDocumentsPost(
+    new Request(`http://localhost/api/admin/vehicles/${VEHICLE_ID}/documents`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-csrf-token": "token",
+      },
+      body: JSON.stringify({
+        folder: "Paperwork",
+        title: "Signed URL document",
+        document_type: "Registration Card",
+        uploadcare_file_id: signedUrl,
+        storage_provider: "UPLOADCARE_FILE_ID",
+        mime_type: "image/png",
+        size_bytes: 4567,
+        csrfToken: "token",
+      }),
+    }),
+    { params: Promise.resolve({ id: VEHICLE_ID }) },
+    {
+      getSession: async () => ({
+        userId: "admin-user-id",
+        role: "ADMIN",
+        issuedAt: Date.now(),
+        expiresAt: Date.now() + 60_000,
+      }),
+      requireCsrfCheck: async () => true,
+      listDocuments: async () => [],
+      createDocument: async (_vehicleId, input) => {
+        capturedInput = input as unknown as Record<string, unknown>;
+        return {
+          id: DOC_ID,
+          vehicle_id: VEHICLE_ID,
+          maintenance_record_id: null,
+          maintenance_title: null,
+          folder: input.folder,
+          document_type: input.documentType,
+          title: input.title,
+          label: null,
+          storage_provider: input.storageProvider,
+          mime_type: input.mimeType,
+          size_bytes: input.sizeBytes,
+          file_size_bytes: input.fileSizeBytes,
+          tags: input.tags,
+          uploaded_by_user_id: "admin-user-id",
+          created_at: "2026-02-22T10:00:00.000Z",
+          archived_at: null,
+        };
+      },
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.ok(capturedInput);
+  const saved = capturedInput as { storageKey?: unknown; storageProvider?: unknown };
+  assert.equal(saved.storageKey, signedUrl);
+  assert.equal(saved.storageProvider, "UPLOADCARE_FILE_ID");
+});
+
 test("admin vehicle documents API: download endpoint requires auth", async () => {
   const response = await handleAdminVehicleDocumentDownload(
     new Request(`http://localhost/api/admin/vehicles/${VEHICLE_ID}/documents/${DOC_ID}/download`),
@@ -140,6 +203,46 @@ test("admin vehicle documents API: download endpoint requires auth", async () =>
 
   assert.equal(response.status, 401);
   assert.equal(response.headers.get("cache-control"), "no-store");
+});
+
+test("admin vehicle documents API: download rejects html placeholder responses", async () => {
+  const originalFetch = global.fetch;
+  global.fetch = (async () =>
+    new Response("<!doctype html><html><body>Uploadcare CDN</body></html>", {
+      status: 200,
+      headers: {
+        "content-type": "text/html; charset=utf-8",
+      },
+    })) as typeof fetch;
+
+  try {
+    const response = await handleAdminVehicleDocumentDownload(
+      new Request(`http://localhost/api/admin/vehicles/${VEHICLE_ID}/documents/${DOC_ID}/download`),
+      { params: Promise.resolve({ id: VEHICLE_ID, docId: DOC_ID }) },
+      {
+        getSession: async () => ({
+          userId: "admin-user-id",
+          role: "ADMIN",
+          issuedAt: Date.now(),
+          expiresAt: Date.now() + 60_000,
+        }),
+        getDocument: async () => ({
+          id: DOC_ID,
+          title: "Document.png",
+          storage_provider: "UPLOADCARE_FILE_ID",
+          storage_key: `https://ucarecd.net/${FILE_ID}/`,
+          mime_type: "image/png",
+        }),
+      },
+    );
+
+    assert.equal(response.status, 502);
+    const payload = (await response.json()) as { ok?: boolean; error?: string };
+    assert.equal(payload.ok, false);
+    assert.match(String(payload.error), /Unable to load file from storage/i);
+  } finally {
+    global.fetch = originalFetch;
+  }
 });
 
 test("admin vehicle documents API: PATCH archives and relabels document", async () => {

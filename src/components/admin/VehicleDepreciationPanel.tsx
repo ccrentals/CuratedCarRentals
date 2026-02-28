@@ -36,6 +36,12 @@ type FinanceResponse = {
     monthsRemaining: number;
   } | null;
   incompleteReason?: string | null;
+  snapshots?: Array<{
+    asOfMonth: string;
+    bookValueCents: number;
+    accumulatedDepreciationCents: number;
+    depreciationForMonthCents: number;
+  }>;
 };
 
 type VehicleDepreciationPanelProps = {
@@ -67,6 +73,15 @@ function toAmountInput(value: number | null | undefined) {
   return formatJmdDecimalFromCents(value);
 }
 
+function formatSnapshotMonth(value: string) {
+  const raw = String(value || "").trim();
+  const monthMatch = raw.match(/^(\d{4}-\d{2})/);
+  if (monthMatch) return monthMatch[1];
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return raw || "—";
+  return parsed.toISOString().slice(0, 7);
+}
+
 export function VehicleDepreciationPanel({ vehicleId }: VehicleDepreciationPanelProps) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -94,6 +109,14 @@ export function VehicleDepreciationPanel({ vehicleId }: VehicleDepreciationPanel
   const [defaultResidualPercent, setDefaultResidualPercent] = useState(20);
   const [generateStartMonth, setGenerateStartMonth] = useState(currentMonthValue());
   const [generateEndMonth, setGenerateEndMonth] = useState(currentMonthValue());
+  const [snapshotHistory, setSnapshotHistory] = useState<
+    Array<{
+      asOfMonth: string;
+      bookValueCents: number;
+      accumulatedDepreciationCents: number;
+      depreciationForMonthCents: number;
+    }>
+  >([]);
 
   const applyPayload = useCallback((payload: FinanceResponse) => {
     const defaults = payload.defaults;
@@ -150,6 +173,7 @@ export function VehicleDepreciationPanel({ vehicleId }: VehicleDepreciationPanel
       typeof payload.metrics?.monthsRemaining === "number" ? payload.metrics.monthsRemaining : null,
     );
     setIncompleteReason(payload.incompleteReason ?? null);
+    setSnapshotHistory(Array.isArray(payload.snapshots) ? payload.snapshots : []);
   }, []);
 
   const loadFinance = useCallback(async () => {
@@ -546,6 +570,56 @@ export function VehicleDepreciationPanel({ vehicleId }: VehicleDepreciationPanel
             </div>
           </div>
         </div>
+      </div>
+
+      <div className="mt-6 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-[var(--ccr-text)]">
+          Snapshot History
+        </h3>
+        <p className="mt-1 text-xs text-[var(--ccr-muted)]">
+          Month-by-month depreciation snapshots saved for this vehicle.
+        </p>
+
+        {snapshotHistory.length < 1 ? (
+          <p className="mt-3 text-xs text-[var(--ccr-muted)]">
+            No snapshots saved yet. Generate snapshots to populate this history.
+          </p>
+        ) : (
+          <div className="mt-3 overflow-x-auto">
+            <table className="min-w-full text-left text-sm">
+              <thead className="border-b border-[var(--ccr-border)] text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
+                <tr>
+                  <th className="px-3 py-2">Month</th>
+                  <th className="px-3 py-2">Book Value</th>
+                  <th className="px-3 py-2">Accumulated</th>
+                  <th className="px-3 py-2">Monthly Depreciation</th>
+                </tr>
+              </thead>
+              <tbody>
+                {snapshotHistory.map((snapshot) => (
+                  <tr
+                    key={snapshot.asOfMonth}
+                    className="border-b border-[var(--ccr-border)] last:border-b-0"
+                    data-testid="vehicle-depreciation-snapshot-row"
+                  >
+                    <td className="px-3 py-2 text-[var(--ccr-text)]">
+                      {formatSnapshotMonth(snapshot.asOfMonth)}
+                    </td>
+                    <td className="px-3 py-2 text-[var(--ccr-text)]">
+                      {formatJmdFromCents(snapshot.bookValueCents)}
+                    </td>
+                    <td className="px-3 py-2 text-[var(--ccr-text)]">
+                      {formatJmdFromCents(snapshot.accumulatedDepreciationCents)}
+                    </td>
+                    <td className="px-3 py-2 text-[var(--ccr-text)]">
+                      {formatJmdFromCents(snapshot.depreciationForMonthCents)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </section>
   );

@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { UploadcareImagesInput } from "@/components/admin/UploadcareImagesInput";
@@ -129,6 +130,7 @@ function buildFormState(vehicle: VehicleDetail, profile: VehicleProfile | null):
 }
 
 export function VehicleDetailForm({ vehicle, profile, initialNotes }: VehicleDetailFormProps) {
+  const router = useRouter();
   const initialForm = buildFormState(vehicle, profile);
 
   const [isEditing, setIsEditing] = useState(false);
@@ -139,8 +141,22 @@ export function VehicleDetailForm({ vehicle, profile, initialNotes }: VehicleDet
   const [noteDraft, setNoteDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [savingNote, setSavingNote] = useState(false);
+  const [deletingVehicle, setDeletingVehicle] = useState(false);
+  const [showDeleteVehicleModal, setShowDeleteVehicleModal] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const toastMessage = error ?? message;
+  const toastTone: "error" | "success" = error ? "error" : "success";
+
+  useEffect(() => {
+    if (!toastMessage) return;
+    const timeoutId = window.setTimeout(() => {
+      setMessage((current) => (current === toastMessage ? null : current));
+      setError((current) => (current === toastMessage ? null : current));
+    }, 4500);
+    return () => window.clearTimeout(timeoutId);
+  }, [toastMessage]);
 
   const displayStatus =
     form.status === "maintenance" ? "MAINTENANCE" : form.status === "unavailable" ? "INACTIVE" : "AVAILABLE";
@@ -301,6 +317,44 @@ export function VehicleDetailForm({ vehicle, profile, initialNotes }: VehicleDet
     }
   }
 
+  async function handleDeleteVehicle() {
+    if (deletingVehicle) return;
+    setDeletingVehicle(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const csrfToken = await ensureCsrfToken();
+      const response = await fetch(`/api/admin/vehicles/${vehicle.id}`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          "x-csrf-token": csrfToken ?? "",
+        },
+        body: JSON.stringify({ csrfToken }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+      };
+      if (!response.ok || !payload.ok) {
+        if (response.status === 409) {
+          setShowDeleteVehicleModal(false);
+          setError(
+            "This vehicle is currently in use or has an upcoming booking, so it cannot be deleted right now.",
+          );
+          return;
+        }
+        setError(payload.error ?? "Unable to delete vehicle.");
+        return;
+      }
+      setShowDeleteVehicleModal(false);
+      router.push("/admin/vehicles?deleted=1");
+    } finally {
+      setDeletingVehicle(false);
+    }
+  }
+
   return (
     <div className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4 shadow-sm sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -331,6 +385,19 @@ export function VehicleDetailForm({ vehicle, profile, initialNotes }: VehicleDet
           >
             View in Calendar
           </Link>
+          <button
+            type="button"
+            disabled={saving || deletingVehicle}
+            onClick={() => {
+              setError(null);
+              setMessage(null);
+              setShowDeleteVehicleModal(true);
+            }}
+            className="min-h-11 rounded-xl border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-4 py-2 text-xs font-semibold text-[var(--ccr-accent-strong)] disabled:opacity-60"
+            data-testid="vehicle-delete-button"
+          >
+            Delete vehicle
+          </button>
           {!isEditing ? (
             <button
               type="button"
@@ -683,7 +750,7 @@ export function VehicleDetailForm({ vehicle, profile, initialNotes }: VehicleDet
                   <button
                     type="button"
                     onClick={() => void handleDeleteNote(note.id)}
-                    className="min-h-9 rounded-lg border border-red-300 bg-red-50 px-3 py-1 text-xs font-semibold text-red-700"
+                    className="min-h-9 rounded-lg border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-3 py-1 text-xs font-semibold text-[var(--ccr-accent-strong)]"
                   >
                     Delete
                   </button>
@@ -694,8 +761,75 @@ export function VehicleDetailForm({ vehicle, profile, initialNotes }: VehicleDet
         )}
       </div>
 
-      {message ? <p className="mt-3 text-xs text-green-700">{message}</p> : null}
-      {error ? <p className="mt-3 text-xs text-red-600">{error}</p> : null}
+      {toastMessage ? (
+        <div className="fixed inset-x-0 top-4 z-[60] flex justify-center px-4">
+          <div
+            className={`w-full max-w-2xl rounded-xl border px-4 py-3 text-sm shadow-lg ${
+              toastTone === "success"
+                ? "border-emerald-400/40 bg-emerald-500/15 text-emerald-100"
+                : "border-[var(--ccr-clerk-danger-border)] bg-[var(--ccr-clerk-danger-bg)] text-[var(--ccr-clerk-danger-text)]"
+            }`}
+            role="status"
+            aria-live="polite"
+            data-testid="vehicle-detail-toast"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <p>{toastMessage}</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setMessage(null);
+                  setError(null);
+                }}
+                className="rounded-md border border-current/40 px-2 py-1 text-xs font-semibold"
+                aria-label="Dismiss notification"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showDeleteVehicleModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--ccr-primary)]/60 p-4">
+          <div
+            className="w-full max-w-md rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-5 shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="vehicle-delete-title"
+            aria-describedby="vehicle-delete-description"
+            data-testid="vehicle-delete-modal"
+          >
+            <h4 id="vehicle-delete-title" className="text-lg font-bold text-[var(--ccr-text)]">
+              Delete vehicle?
+            </h4>
+            <p id="vehicle-delete-description" className="mt-2 text-sm text-[var(--ccr-muted)]">
+              This will delete the vehicle and remove it from the fleet list.
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowDeleteVehicleModal(false)}
+                disabled={deletingVehicle}
+                className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] disabled:opacity-60"
+                data-testid="vehicle-delete-cancel"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleDeleteVehicle()}
+                disabled={deletingVehicle}
+                className="rounded-xl border border-[var(--ccr-clerk-danger-border)] bg-[var(--ccr-clerk-danger-bg)] px-4 py-2 text-sm font-semibold text-[var(--ccr-clerk-danger-text)] disabled:opacity-60"
+                data-testid="vehicle-delete-confirm"
+              >
+                {deletingVehicle ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

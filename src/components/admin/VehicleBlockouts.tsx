@@ -206,7 +206,7 @@ export function VehicleBlockouts({ vehicle }: VehicleBlockoutsProps) {
                   <button
                     type="button"
                     onClick={() => handleDelete(blockout)}
-                    className="min-h-10 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-600"
+                    className="min-h-10 rounded-lg border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-accent-strong)]"
                   >
                     Delete
                   </button>
@@ -260,7 +260,7 @@ export function VehicleBlockouts({ vehicle }: VehicleBlockoutsProps) {
                         <button
                           type="button"
                           onClick={() => handleDelete(blockout)}
-                          className="rounded-lg border border-red-200 bg-red-50 px-3 py-1 text-xs font-semibold text-red-600"
+                          className="rounded-lg border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-3 py-1 text-xs font-semibold text-[var(--ccr-accent-strong)]"
                         >
                           Delete
                         </button>

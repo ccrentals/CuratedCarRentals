@@ -11,6 +11,7 @@ import { VehicleReservationsPanel } from "@/components/admin/VehicleReservations
 import { VehiclePerformancePanel } from "@/components/admin/VehiclePerformancePanel";
 import { VehicleAvailabilityRulesPanel } from "@/components/admin/VehicleAvailabilityRulesPanel";
 import { VehiclePricingRulesPanel } from "@/components/admin/VehiclePricingRulesPanel";
+import { AdminPillTabs } from "@/components/admin/AdminPillTabs";
 import { DEFAULT_ADMIN_SETTINGS, loadAdminSettings } from "@/lib/adminSettings";
 import { dbQuery } from "@/lib/db";
 import { isVehicleExtensionsMissingTableError } from "@/lib/vehicles/extensionTables";
@@ -152,31 +153,17 @@ export default async function AdminVehicleDetailPage({
         Back to vehicles
       </Link>
 
-      <nav
-        aria-label="Vehicle detail tabs"
-        data-testid="vehicle-tabs"
-        className="mt-4 overflow-x-auto rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-1"
-      >
-        <div className="flex min-w-max items-center gap-1">
-          {VEHICLE_DETAIL_TABS.map((tab) => {
-            const active = activeTab === tab.key;
-            return (
-              <Link
-                key={tab.key}
-                href={`/admin/vehicles/${vehicle.id}?tab=${tab.key}`}
-                data-testid={`vehicle-detail-tab-${tab.key}`}
-                className={`inline-flex min-h-11 items-center rounded-full border px-3 py-2 text-xs font-semibold whitespace-nowrap transition sm:min-h-0 ${
-                  active
-                    ? "border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] text-[var(--ccr-text)] shadow-sm ring-1 ring-[var(--ccr-accent)]/40"
-                    : "border-transparent text-[var(--ccr-text)] hover:border-[var(--ccr-border)] hover:bg-[var(--ccr-surface-soft)]"
-                }`}
-              >
-                {tab.label}
-              </Link>
-            );
-          })}
-        </div>
-      </nav>
+      <AdminPillTabs
+        tabs={VEHICLE_DETAIL_TABS.map((tab) => ({
+          key: tab.key,
+          label: tab.label,
+          href: `/admin/vehicles/${vehicle.id}?tab=${tab.key}`,
+        }))}
+        activeKey={activeTab}
+        ariaLabel="Vehicle detail tabs"
+        navTestId="vehicle-tabs"
+        tabTestIdPrefix="vehicle-detail-tab"
+      />
 
       <div className="mt-4 grid gap-6">
         {activeTab === "overview" ? (

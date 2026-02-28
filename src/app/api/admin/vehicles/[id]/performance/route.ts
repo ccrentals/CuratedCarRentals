@@ -349,11 +349,11 @@ async function queryMainAggregates(input: VehiclePerformanceQueryInput, blockout
      ),
      booking_stats as (
        select
-         count(*)::int filter (where b.status <> all($4::text[])) as booking_count,
-         avg(greatest(1, (least((b.end_at - interval '1 second')::date, $3::date) - greatest(b.start_at::date, $2::date) + 1)))::numeric
-           filter (where b.status <> all($4::text[])) as avg_booking_days,
-         sum(b.total_cents)::numeric filter (where b.status = any($5::text[])) as revenue_cents,
-         sum(b.deposit_cents)::numeric filter (where b.status = any($5::text[])) as deposit_cents
+         count(*) filter (where b.status <> all($4::text[]))::int as booking_count,
+         avg(greatest(1, (least((b.end_at - interval '1 second')::date, $3::date) - greatest(b.start_at::date, $2::date) + 1)))
+           filter (where b.status <> all($4::text[]))::numeric as avg_booking_days,
+         sum(b.total_cents) filter (where b.status = any($5::text[]))::numeric as revenue_cents,
+         sum(b.deposit_cents) filter (where b.status = any($5::text[]))::numeric as deposit_cents
        from booking_rows b
      )
      select
@@ -434,8 +434,8 @@ async function queryByMonth(input: VehiclePerformanceQueryInput, blockoutPredica
      booking_counts as (
        select
          date_trunc('month', b.start_at)::date as month_start,
-         count(*)::int filter (where b.status <> all($4::text[])) as booking_count,
-         sum(b.total_cents)::numeric filter (where b.status = any($5::text[])) as revenue_cents
+         count(*) filter (where b.status <> all($4::text[]))::int as booking_count,
+         sum(b.total_cents) filter (where b.status = any($5::text[]))::numeric as revenue_cents
        from booking_rows b
        group by 1
      )

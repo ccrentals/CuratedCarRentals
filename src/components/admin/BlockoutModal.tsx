@@ -267,7 +267,7 @@ export function BlockoutModal({
               type="button"
               onClick={handleDelete}
               disabled={saving}
-              className="min-h-11 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-xs font-semibold text-red-600 disabled:opacity-60"
+              className="min-h-11 rounded-xl border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-4 py-2 text-xs font-semibold text-[var(--ccr-accent-strong)] disabled:opacity-60"
             >
               Delete
             </button>

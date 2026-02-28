@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { SortableTh } from "@/components/admin/SortableTh";
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
@@ -75,6 +76,7 @@ type VehicleDocument = {
   title: string;
   mimeType: string | null;
   sizeBytes: number | null;
+  canDownload?: boolean;
   createdAt: string;
   archivedAt: string | null;
 };
@@ -106,6 +108,14 @@ type UploadcareFileInfo = {
   originalFilename?: string;
   size?: number;
   mimeType?: string;
+};
+
+type PendingDocumentUpload = {
+  maintenanceRecordId: string;
+  reference: string;
+  fileName: string;
+  mimeType: string | null;
+  sizeBytes: number | null;
 };
 
 type UploadcareSingleFile = {
@@ -150,10 +160,26 @@ const DUE_FILTERS = [
   { key: "UPCOMING", label: "Upcoming" },
   { key: "COMPLETED", label: "Completed" },
 ] as const;
+const MOBILE_PAGE_MEDIA_QUERY = "(max-width: 767px)";
+const DESKTOP_PAGE_SIZE = 10;
+const MOBILE_PAGE_SIZE = 5;
+
+const DOCUMENT_TYPE_LABELS: Record<string, string> = {
+  SERVICE_INVOICE: "Service Invoice",
+  REPAIR_ESTIMATE: "Repair Estimate",
+  RECEIPT: "Receipt",
+  PHOTO: "Photo",
+  OTHER: "Other",
+};
 
 type DueFilter = (typeof DUE_FILTERS)[number]["key"];
-type MaintenanceSort = "dueDate" | "createdAt" | "cost";
+type MaintenanceSort = "dueDate" | "createdAt" | "cost" | "title" | "status" | "category";
 type SortDirection = "asc" | "desc";
+
+function defaultSortDirection(column: MaintenanceSort): SortDirection {
+  if (column === "cost") return "desc";
+  return "asc";
+}
 
 function normalizeText(value: string) {
   return value.trim();
@@ -203,6 +229,60 @@ function dueFilterToView(filter: DueFilter) {
 function formatCurrency(cents: number | null) {
   if (cents === null || !Number.isFinite(cents)) return "N/A";
   return new Intl.NumberFormat("en-JM", { style: "currency", currency: "JMD" }).format(cents / 100);
+}
+
+function formatServiceDateTime(value: string | null) {
+  if (!value) return "Not set";
+  const raw = String(value).trim();
+  if (!raw) return "Not set";
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return raw;
+  return new Intl.DateTimeFormat("en-US", {
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(parsed);
+}
+
+function dueServiceDateLabel(record: MaintenanceRecord) {
+  return formatServiceDateTime(record.nextDueDate ?? record.scheduledDate ?? record.serviceDate);
+}
+
+function formatDocumentTypeLabel(value: string) {
+  const normalized = normalizeText(value).toUpperCase();
+  if (!normalized) return "Other";
+  if (DOCUMENT_TYPE_LABELS[normalized]) return DOCUMENT_TYPE_LABELS[normalized];
+  return normalized
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0) + part.slice(1).toLowerCase())
+    .join(" ");
+}
+
+function normalizeDocumentDisplayTitle(value: string | null | undefined) {
+  const normalized = normalizeText(String(value ?? ""));
+  if (!normalized) return "";
+  if (/^seed invoice$/i.test(normalized)) return "Invoice";
+  if (/^e2e seed invoice\b/i.test(normalized)) return "Invoice";
+  return normalized;
+}
+
+function formatDocumentTitle(doc: VehicleDocument) {
+  const label = normalizeDocumentDisplayTitle(doc.label);
+  if (label) return label;
+  const title = normalizeDocumentDisplayTitle(doc.title);
+  if (title) return title;
+  return formatDocumentTypeLabel(doc.documentType);
+}
+
+function statusHistoryNote(note: string | null) {
+  const normalized = String(note ?? "").trim();
+  if (!normalized) return "";
+  if (/^seeded for\s+/i.test(normalized)) return "";
+  return normalized;
 }
 
 function formatBytes(value: number | null) {
@@ -298,14 +378,24 @@ export function VehicleMaintenancePanel({ vehicleId, initialRecordId }: VehicleM
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<MaintenanceSort>("dueDate");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
-  const [pageSize, setPageSize] = useState(15);
+  const [pageSize, setPageSize] = useState(DESKTOP_PAGE_SIZE);
   const [offset, setOffset] = useState(0);
   const [total, setTotal] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(initialRecordId ?? null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [documentType, setDocumentType] = useState("SERVICE_INVOICE");
   const [documentLabel, setDocumentLabel] = useState("");
+  const [pendingDocumentUpload, setPendingDocumentUpload] = useState<PendingDocumentUpload | null>(null);
   const [form, setForm] = useState(defaultFormState);
+  const detailSectionRef = useRef<HTMLElement | null>(null);
+  const shouldScrollToDetailRef = useRef(false);
+  const tableSortState = useMemo(() => ({ sortBy, sortDir: sortDirection }), [sortBy, sortDirection]);
+
+  const handleTableSortChange = useCallback((nextSortBy: MaintenanceSort, nextSortDirection: SortDirection) => {
+    setSortBy(nextSortBy);
+    setSortDirection(nextSortDirection);
+    setOffset(0);
+  }, []);
 
   const selectedRecord = useMemo(
     () => items.find((item) => item.id === selectedId) ?? null,
@@ -316,6 +406,7 @@ export function VehicleMaintenancePanel({ vehicleId, initialRecordId }: VehicleM
     () => docs.filter((doc) => doc.maintenanceRecordId === selectedRecord?.id && doc.archivedAt === null),
     [docs, selectedRecord?.id],
   );
+  const hasPendingDocumentForSelection = pendingDocumentUpload?.maintenanceRecordId === selectedRecord?.id;
   const [statusHistory, setStatusHistory] = useState<MaintenanceStatusHistoryEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const hasPrevPage = offset > 0;
@@ -332,6 +423,11 @@ export function VehicleMaintenancePanel({ vehicleId, initialRecordId }: VehicleM
     }
     return `/api/admin/vehicles/${vehicleId}/maintenance/export?${params.toString()}`;
   }, [activeDueFilter, searchQuery, sortBy, sortDirection, vehicleId]);
+
+  const selectRecordFromList = useCallback((recordId: string) => {
+    shouldScrollToDetailRef.current = true;
+    setSelectedId(recordId);
+  }, []);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -480,6 +576,32 @@ export function VehicleMaintenancePanel({ vehicleId, initialRecordId }: VehicleM
   }, [loadData]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mediaQuery = window.matchMedia(MOBILE_PAGE_MEDIA_QUERY);
+    const applyPageSize = (isMobile: boolean) => {
+      setPageSize(isMobile ? MOBILE_PAGE_SIZE : DESKTOP_PAGE_SIZE);
+    };
+
+    applyPageSize(mediaQuery.matches);
+
+    const onChange = (event: MediaQueryListEvent) => {
+      applyPageSize(event.matches);
+    };
+
+    if (typeof mediaQuery.addEventListener === "function") {
+      mediaQuery.addEventListener("change", onChange);
+      return () => mediaQuery.removeEventListener("change", onChange);
+    }
+
+    mediaQuery.addListener(onChange);
+    return () => mediaQuery.removeListener(onChange);
+  }, []);
+
+  useEffect(() => {
+    setOffset(0);
+  }, [pageSize]);
+
+  useEffect(() => {
     if (!selectedRecord?.id) {
       setStatusHistory([]);
       setHistoryLoading(false);
@@ -487,6 +609,19 @@ export function VehicleMaintenancePanel({ vehicleId, initialRecordId }: VehicleM
     }
     void loadStatusHistory(selectedRecord.id);
   }, [loadStatusHistory, selectedRecord?.id, selectedRecord?.updatedAt]);
+
+  useEffect(() => {
+    setPendingDocumentUpload(null);
+  }, [selectedRecord?.id]);
+
+  useEffect(() => {
+    if (!selectedRecord?.id || !shouldScrollToDetailRef.current) return;
+    shouldScrollToDetailRef.current = false;
+    detailSectionRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  }, [selectedRecord?.id]);
 
   useEffect(() => {
     setForm((current) => {
@@ -786,6 +921,53 @@ function startEdit(item: MaintenanceRecord) {
   }
 
   async function uploadDocument(record: MaintenanceRecord) {
+    if (saving) return;
+
+    if (pendingDocumentUpload?.maintenanceRecordId === record.id) {
+      setSaving(true);
+      setError(null);
+      setMessage(null);
+
+      try {
+        const csrfToken = await ensureCsrfToken();
+        const response = await fetch(`/api/admin/vehicles/${vehicleId}/documents`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-csrf-token": csrfToken ?? "",
+          },
+          body: JSON.stringify({
+            folder: "Maintenance",
+            maintenanceRecordId: record.id,
+            documentType,
+            title: pendingDocumentUpload.fileName,
+            label: normalizeText(documentLabel) || null,
+            storageProvider: "UPLOADCARE_FILE_ID",
+            storageKey: pendingDocumentUpload.reference,
+            mimeType: pendingDocumentUpload.mimeType,
+            sizeBytes: pendingDocumentUpload.sizeBytes,
+            tags: ["maintenance"],
+            csrfToken,
+          }),
+        });
+
+        const result = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+        if (!response.ok || !result.ok) {
+          throw new Error(result.error ?? "Unable to save uploaded document.");
+        }
+
+        setMessage("Maintenance document saved.");
+        setPendingDocumentUpload(null);
+        setDocumentLabel("");
+        await loadData();
+      } catch (requestError) {
+        setError(requestError instanceof Error ? requestError.message : "Unable to save uploaded document.");
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+
     if (!publicKey) {
       setError("Uploadcare is not configured.");
       return;
@@ -833,48 +1015,27 @@ function startEdit(item: MaintenanceRecord) {
         dialog.fail((dialogError) => reject(new Error(dialogError?.message ?? "Upload cancelled.")));
       });
 
-      const reference = String(fileInfo.uuid ?? fileInfo.cdnUrl ?? "").trim();
+      const reference = String(fileInfo.cdnUrl ?? fileInfo.uuid ?? "").trim();
       if (!reference) {
         throw new Error("Upload returned an invalid file reference.");
       }
 
-      const csrfToken = await ensureCsrfToken();
       const fileName =
         normalizeText(String(fileInfo.originalFilename ?? fileInfo.name ?? "Maintenance document")) ||
         "Maintenance document";
+      const sizeBytes =
+        typeof fileInfo.size === "number" && Number.isFinite(fileInfo.size)
+          ? Math.round(fileInfo.size)
+          : null;
 
-      const response = await fetch(`/api/admin/vehicles/${vehicleId}/documents`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-csrf-token": csrfToken ?? "",
-        },
-        body: JSON.stringify({
-          folder: "Maintenance",
-          maintenanceRecordId: record.id,
-          documentType,
-          title: fileName,
-          label: normalizeText(documentLabel) || null,
-          storageProvider: "UPLOADCARE_FILE_ID",
-          storageKey: reference,
-          mimeType: typeof fileInfo.mimeType === "string" ? fileInfo.mimeType : null,
-          sizeBytes:
-            typeof fileInfo.size === "number" && Number.isFinite(fileInfo.size)
-              ? Math.round(fileInfo.size)
-              : null,
-          tags: ["maintenance"],
-          csrfToken,
-        }),
+      setPendingDocumentUpload({
+        maintenanceRecordId: record.id,
+        reference,
+        fileName,
+        mimeType: typeof fileInfo.mimeType === "string" ? fileInfo.mimeType : null,
+        sizeBytes,
       });
-
-      const result = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string };
-      if (!response.ok || !result.ok) {
-        throw new Error(result.error ?? "Unable to save uploaded document.");
-      }
-
-      setMessage("Maintenance document uploaded.");
-      setDocumentLabel("");
-      await loadData();
+      setMessage(`Document ready to save: ${fileName}`);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Unable to upload document.");
     } finally {
@@ -969,7 +1130,12 @@ function startEdit(item: MaintenanceRecord) {
           <select
             value={sortBy}
             onChange={(event) => {
-              setSortBy(event.currentTarget.value as MaintenanceSort);
+              const nextSortBy = event.currentTarget.value as MaintenanceSort;
+              setSortBy(nextSortBy);
+              setSortDirection((current) => {
+                if (sortBy === nextSortBy) return current;
+                return defaultSortDirection(nextSortBy);
+              });
               setOffset(0);
             }}
             data-testid="maintenance-sort"
@@ -978,6 +1144,9 @@ function startEdit(item: MaintenanceRecord) {
             <option value="dueDate">Due Date</option>
             <option value="createdAt">Created</option>
             <option value="cost">Cost</option>
+            <option value="title">Title</option>
+            <option value="status">Status</option>
+            <option value="category">Category</option>
           </select>
         </label>
 
@@ -1057,13 +1226,13 @@ function startEdit(item: MaintenanceRecord) {
                     data-testid="maintenance-record-row"
                     data-record-id={item.id}
                     className="space-y-2 py-3"
-                    onClick={() => setSelectedId(item.id)}
+                    onClick={() => selectRecordFromList(item.id)}
                     role="button"
                     tabIndex={0}
                     onKeyDown={(event) => {
                       if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
-                        setSelectedId(item.id);
+                        selectRecordFromList(item.id);
                       }
                     }}
                   >
@@ -1093,9 +1262,7 @@ function startEdit(item: MaintenanceRecord) {
                       </div>
                       <div className="col-span-2">
                         <dt>Due / Service Date</dt>
-                        <dd className="text-sm text-[var(--ccr-text)]">
-                          {item.nextDueDate ?? item.scheduledDate ?? item.serviceDate ?? "Not set"}
-                        </dd>
+                        <dd className="text-sm text-[var(--ccr-text)]">{dueServiceDateLabel(item)}</dd>
                       </div>
                     </dl>
                   </article>
@@ -1106,11 +1273,67 @@ function startEdit(item: MaintenanceRecord) {
                 <table className="min-w-full text-left text-sm">
                   <thead className="border-b border-[var(--ccr-border)] text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
                     <tr>
-                      <th className="px-3 py-2">Title</th>
-                      <th className="px-3 py-2">Status</th>
-                      <th className="px-3 py-2">Category</th>
-                      <th className="px-3 py-2">Due / Service Date</th>
-                      <th className="px-3 py-2">Total Cost</th>
+                      <SortableTh
+                        label="Title"
+                        columnKey="title"
+                        sort={tableSortState}
+                        className="px-3 py-2"
+                        onChange={(next) =>
+                          handleTableSortChange(
+                            (next.sortBy as MaintenanceSort | undefined) ?? "title",
+                            (next.sortDir ?? "asc") as SortDirection,
+                          )
+                        }
+                      />
+                      <SortableTh
+                        label="Status"
+                        columnKey="status"
+                        sort={tableSortState}
+                        className="px-3 py-2"
+                        onChange={(next) =>
+                          handleTableSortChange(
+                            (next.sortBy as MaintenanceSort | undefined) ?? "status",
+                            (next.sortDir ?? "asc") as SortDirection,
+                          )
+                        }
+                      />
+                      <SortableTh
+                        label="Category"
+                        columnKey="category"
+                        sort={tableSortState}
+                        className="px-3 py-2"
+                        onChange={(next) =>
+                          handleTableSortChange(
+                            (next.sortBy as MaintenanceSort | undefined) ?? "category",
+                            (next.sortDir ?? "asc") as SortDirection,
+                          )
+                        }
+                      />
+                      <SortableTh
+                        label="Due / Service Date"
+                        columnKey="dueDate"
+                        sort={tableSortState}
+                        className="px-3 py-2"
+                        onChange={(next) =>
+                          handleTableSortChange(
+                            (next.sortBy as MaintenanceSort | undefined) ?? "dueDate",
+                            (next.sortDir ?? "asc") as SortDirection,
+                          )
+                        }
+                      />
+                      <SortableTh
+                        label="Total Cost"
+                        columnKey="cost"
+                        sort={tableSortState}
+                        className="px-3 py-2"
+                        defaultDirection="desc"
+                        onChange={(next) =>
+                          handleTableSortChange(
+                            (next.sortBy as MaintenanceSort | undefined) ?? "cost",
+                            (next.sortDir ?? "desc") as SortDirection,
+                          )
+                        }
+                      />
                     </tr>
                   </thead>
                   <tbody>
@@ -1122,7 +1345,7 @@ function startEdit(item: MaintenanceRecord) {
                         className={`cursor-pointer border-b border-[var(--ccr-border)] last:border-b-0 ${
                           selectedId === item.id ? "bg-[var(--ccr-surface)]" : ""
                         }`}
-                        onClick={() => setSelectedId(item.id)}
+                        onClick={() => selectRecordFromList(item.id)}
                       >
                         <td className="px-3 py-2 text-[var(--ccr-text)]">
                           <p className="font-semibold">{item.title}</p>
@@ -1144,9 +1367,7 @@ function startEdit(item: MaintenanceRecord) {
                           </div>
                         </td>
                         <td className="px-3 py-2 text-[var(--ccr-text)]">{item.category}</td>
-                        <td className="px-3 py-2 text-[var(--ccr-text)]">
-                          {item.nextDueDate ?? item.scheduledDate ?? item.serviceDate ?? "Not set"}
-                        </td>
+                        <td className="px-3 py-2 text-[var(--ccr-text)]">{dueServiceDateLabel(item)}</td>
                         <td className="px-3 py-2 font-semibold text-[var(--ccr-text)]">{formatCurrency(item.totalCostCents)}</td>
                       </tr>
                     ))}
@@ -1164,22 +1385,9 @@ function startEdit(item: MaintenanceRecord) {
               Showing {pageStart}-{pageEnd} of {total}
             </p>
             <div className="flex flex-wrap items-center gap-2">
-              <label className="flex items-center gap-2">
-                <span>Page size</span>
-                <select
-                  value={pageSize}
-                  onChange={(event) => {
-                    setPageSize(Number(event.currentTarget.value));
-                    setOffset(0);
-                  }}
-                  data-testid="maintenance-page-size"
-                  className="min-h-9 rounded-md border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-2 text-xs text-[var(--ccr-text)]"
-                >
-                  <option value={10}>10</option>
-                  <option value={15}>15</option>
-                  <option value={25}>25</option>
-                </select>
-              </label>
+              <span className="rounded-md border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-2 py-1 text-xs text-[var(--ccr-text)]">
+                Page size: {pageSize}
+              </span>
               <button
                 type="button"
                 onClick={() => setOffset((current) => Math.max(0, current - pageSize))}
@@ -1549,6 +1757,7 @@ function startEdit(item: MaintenanceRecord) {
 
           {selectedRecord ? (
             <section
+              ref={detailSectionRef}
               data-testid="maintenance-detail"
               className="order-1 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4"
             >
@@ -1588,9 +1797,7 @@ function startEdit(item: MaintenanceRecord) {
                 </div>
                 <div>
                   <dt>Due / Service Date</dt>
-                  <dd className="text-sm text-[var(--ccr-text)]">
-                    {selectedRecord.nextDueDate ?? selectedRecord.scheduledDate ?? selectedRecord.serviceDate ?? "Not set"}
-                  </dd>
+                  <dd className="text-sm text-[var(--ccr-text)]">{dueServiceDateLabel(selectedRecord)}</dd>
                 </div>
                 <div>
                   <dt>Total Cost</dt>
@@ -1650,33 +1857,34 @@ function startEdit(item: MaintenanceRecord) {
 
                 {!historyLoading && statusHistory.length > 0 ? (
                   <ol className="mt-2 space-y-2">
-                    {statusHistory.map((entry) => (
-                      <li
-                        key={entry.id}
-                        data-testid="maintenance-history-row"
-                        className="rounded-md border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-2 py-2"
-                      >
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span
-                            className={`inline-flex min-h-7 items-center rounded-full border px-2 py-1 text-[11px] font-semibold ${statusTone(entry.status)}`}
-                          >
-                            {formatStatus(entry.status)}
-                          </span>
-                          <span className="text-xs text-[var(--ccr-muted)]">
-                            <DateTimeInline value={entry.createdAt} />
-                          </span>
-                        </div>
-                        <p className="mt-1 text-xs text-[var(--ccr-muted)]">
-                          Changed by{" "}
-                          <span className="font-semibold text-[var(--ccr-text)]">
-                            {entry.changedBy || "system"}
-                          </span>
-                        </p>
-                        {entry.note ? (
-                          <p className="mt-1 text-xs text-[var(--ccr-muted)]">{entry.note}</p>
-                        ) : null}
-                      </li>
-                    ))}
+                    {statusHistory.map((entry) => {
+                      const note = statusHistoryNote(entry.note);
+                      return (
+                        <li
+                          key={entry.id}
+                          data-testid="maintenance-history-row"
+                          className="rounded-md border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-2 py-2"
+                        >
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span
+                              className={`inline-flex min-h-7 items-center rounded-full border px-2 py-1 text-[11px] font-semibold ${statusTone(entry.status)}`}
+                            >
+                              {formatStatus(entry.status)}
+                            </span>
+                            <span className="text-xs text-[var(--ccr-muted)]">
+                              <DateTimeInline value={entry.createdAt} />
+                            </span>
+                          </div>
+                          <p className="mt-1 text-xs text-[var(--ccr-muted)]">
+                            Changed by{" "}
+                            <span className="font-semibold text-[var(--ccr-text)]">
+                              {entry.changedBy || "system"}
+                            </span>
+                          </p>
+                          {note ? <p className="mt-1 text-xs text-[var(--ccr-muted)]">{note}</p> : null}
+                        </li>
+                      );
+                    })}
                   </ol>
                 ) : null}
               </section>
@@ -1775,7 +1983,7 @@ function startEdit(item: MaintenanceRecord) {
                 <button
                   type="button"
                   onClick={() => void archiveRecord(selectedRecord.id)}
-                  className="min-h-10 rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700"
+                  className="min-h-10 rounded-lg border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-accent-strong)]"
                 >
                   Archive
                 </button>
@@ -1815,9 +2023,15 @@ function startEdit(item: MaintenanceRecord) {
                     disabled={saving}
                     className="min-h-10 rounded-lg bg-[var(--ccr-primary)] px-3 py-2 text-xs font-semibold text-white disabled:opacity-60"
                   >
-                    Upload Document
+                    {saving ? "Saving..." : hasPendingDocumentForSelection ? "Save now" : "Upload Document"}
                   </button>
                 </div>
+
+                {hasPendingDocumentForSelection ? (
+                  <p className="mt-2 text-xs text-[var(--ccr-muted)]">
+                    Ready to save: {pendingDocumentUpload?.fileName ?? "Selected document"}
+                  </p>
+                ) : null}
 
                 <div className="mt-3 space-y-2">
                   {selectedDocs.length < 1 ? (
@@ -1827,25 +2041,31 @@ function startEdit(item: MaintenanceRecord) {
                       <article key={doc.id} className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-2">
                         <div className="flex flex-wrap items-start justify-between gap-2">
                           <div>
-                            <p className="text-sm font-semibold text-[var(--ccr-text)] break-words">{doc.label || doc.title}</p>
+                            <p className="text-sm font-semibold text-[var(--ccr-text)] break-words">{formatDocumentTitle(doc)}</p>
                             <p className="text-xs text-[var(--ccr-muted)]">
-                              {doc.documentType} · {doc.mimeType || "Unknown type"} · {formatBytes(doc.sizeBytes)}
+                              {formatDocumentTypeLabel(doc.documentType)} · {doc.mimeType || "Unknown type"} · {formatBytes(doc.sizeBytes)}
                             </p>
                             <p className="text-xs text-[var(--ccr-muted)]">
                               Uploaded <DateTimeInline value={doc.createdAt} />
                             </p>
                           </div>
                           <div className="flex flex-wrap gap-2">
-                            <a
-                              href={`/api/admin/vehicles/${vehicleId}/documents/${doc.id}/download`}
-                              className="min-h-9 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
-                            >
-                              View
-                            </a>
+                            {doc.canDownload ? (
+                              <a
+                                href={`/api/admin/vehicles/${vehicleId}/documents/${doc.id}/download`}
+                                className="min-h-9 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+                              >
+                                View
+                              </a>
+                            ) : (
+                              <span className="inline-flex min-h-9 items-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-muted)]">
+                                Unavailable
+                              </span>
+                            )}
                             <button
                               type="button"
                               onClick={() => void archiveDocument(doc.id)}
-                              className="min-h-9 rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700"
+                              className="min-h-9 rounded-lg border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-accent-strong)]"
                             >
                               Archive
                             </button>

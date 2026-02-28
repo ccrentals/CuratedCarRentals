@@ -117,7 +117,7 @@ type CreateMaintenanceRecordInput = {
 type ListMaintenanceFilters = {
   view: "all" | "overdue" | "dueSoon" | "upcoming" | "completed";
   query: string | null;
-  sort: "dueDate" | "createdAt" | "cost";
+  sort: "dueDate" | "createdAt" | "cost" | "title" | "status" | "category";
   dir: "asc" | "desc";
   limit: number;
   offset: number;
@@ -338,6 +338,9 @@ function normalizeSort(value: string | null): ListMaintenanceFilters["sort"] {
   const normalized = normalizeText(value, 30).toLowerCase();
   if (normalized === "createdat") return "createdAt";
   if (normalized === "cost") return "cost";
+  if (normalized === "title") return "title";
+  if (normalized === "status") return "status";
+  if (normalized === "category") return "category";
   return "dueDate";
 }
 
@@ -624,6 +627,12 @@ const DEFAULT_DEPS: VehicleMaintenanceRouteDeps = {
         ? "r.created_at"
         : filters.sort === "cost"
           ? TOTAL_COST_SQL
+          : filters.sort === "title"
+            ? "lower(r.title)"
+            : filters.sort === "status"
+              ? "upper(r.status)"
+              : filters.sort === "category"
+                ? "upper(r.category)"
           : DUE_DATE_SQL;
 
     const rowsResult = await dbQuery<MaintenanceRecordRow>(

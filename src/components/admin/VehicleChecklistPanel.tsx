@@ -297,26 +297,12 @@ export function VehicleChecklistPanel({ vehicleId, folders: configuredFolders, t
         {items.map((item) => (
           <article
             key={item.id}
-            className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4"
+            className="relative rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4 pr-36 sm:pr-44"
           >
-            <div className="flex flex-wrap items-start justify-between gap-2">
+            <div className="flex flex-wrap items-start gap-2">
               <div>
                 <p className="font-semibold text-[var(--ccr-text)] break-words">{item.label}</p>
                 <p className="text-xs text-[var(--ccr-muted)]">Folder: {item.folder}</p>
-              </div>
-              <div className="flex items-center gap-2">
-                {item.required ? (
-                  <span className="rounded-full border border-amber-300/50 bg-amber-500/15 px-2 py-1 text-[11px] font-semibold text-amber-100">
-                    Required
-                  </span>
-                ) : null}
-                <button
-                  type="button"
-                  onClick={() => void handleDelete(item.id)}
-                  className="min-h-10 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700"
-                >
-                  Delete
-                </button>
               </div>
             </div>
 
@@ -326,6 +312,21 @@ export function VehicleChecklistPanel({ vehicleId, folders: configuredFolders, t
                 Expiration: {item.expirationDate ? item.expirationDate : "Not set"}
                 {item.uploadedDocumentId ? " · Document attached" : ""}
               </p>
+            </div>
+
+            <div className="absolute right-4 top-1/2 flex -translate-y-1/2 items-center gap-2">
+              {item.required ? (
+                <span className="rounded-full border border-amber-300/50 bg-amber-500/15 px-2 py-1 text-[11px] font-semibold text-[var(--ccr-required-text)]">
+                  Required
+                </span>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => void handleDelete(item.id)}
+                className="rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-accent-strong)]"
+              >
+                Delete
+              </button>
             </div>
           </article>
         ))}

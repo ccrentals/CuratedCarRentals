@@ -4,7 +4,10 @@ import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery } from "@/lib/db";
 import { requireCsrf } from "@/lib/security/csrf";
-import { extractUploadcareFileId } from "@/lib/uploads/uploadcare";
+import {
+  extractUploadcareDeliveryUrl,
+  extractUploadcareFileId,
+} from "@/lib/uploads/uploadcare";
 import { isVehicleExtensionsMissingTableError } from "@/lib/vehicles/extensionTables";
 
 const UUID_REGEX =
@@ -20,6 +23,7 @@ type VehicleDocumentRow = {
   title: string;
   label: string | null;
   storage_provider: string;
+  storage_key?: string | null;
   mime_type: string | null;
   size_bytes: number | null;
   file_size_bytes: number | null;
@@ -110,7 +114,30 @@ function normalizeRecordId(value: unknown) {
   return UUID_REGEX.test(text) ? text : null;
 }
 
+function shouldPreserveDeliveryUrl(deliveryUrl: string | null) {
+  if (!deliveryUrl) return false;
+  try {
+    const parsed = new URL(deliveryUrl);
+    const host = parsed.hostname.toLowerCase();
+    const isLegacyHost = host.endsWith("ucarecdn.com");
+    const hasQuery = parsed.search.length > 0;
+    const hasModifiers = parsed.pathname.toLowerCase().includes("/-/");
+    return !isLegacyHost || hasQuery || hasModifiers;
+  } catch {
+    return false;
+  }
+}
+
 function mapDocument(row: VehicleDocumentRow) {
+  const normalizedProvider = row.storage_provider.trim().toUpperCase();
+  const providerIsSupported =
+    !normalizedProvider || ["UPLOADCARE_FILE_ID", "UPLOADCARE", "UPLOADCARE_TOKEN"].includes(normalizedProvider);
+  const hasDeliveryUrl = Boolean(extractUploadcareDeliveryUrl(row.storage_key ?? ""));
+  const hasKnownFileId = Boolean(extractUploadcareFileId(row.storage_key ?? ""));
+  const hasLegacyDeliveryBase = Boolean(String(process.env.UPLOADCARE_CDN_BASE_URL ?? "").trim());
+  const canDownload =
+    providerIsSupported &&
+    (hasDeliveryUrl || (hasKnownFileId && hasLegacyDeliveryBase));
   return {
     id: row.id,
     vehicleId: row.vehicle_id,
@@ -123,6 +150,7 @@ function mapDocument(row: VehicleDocumentRow) {
     storageProvider: row.storage_provider,
     mimeType: row.mime_type,
     sizeBytes: row.file_size_bytes ?? row.size_bytes,
+    canDownload,
     tags: row.tags ?? [],
     uploadedByUserId: row.uploaded_by_user_id,
     createdAt: row.created_at,
@@ -141,6 +169,7 @@ const BASE_SELECT = `
     d.title,
     d.label,
     d.storage_provider,
+    d.storage_key,
     d.mime_type,
     d.size_bytes,
     d.file_size_bytes,
@@ -262,7 +291,6 @@ export async function handleAdminVehicleDocumentsGet(
 ) {
   const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
   if (!auth.ok) return auth.response;
-  const session = auth.session;
 
   const { id } = await context.params;
   if (!UUID_REGEX.test(id)) {
@@ -317,7 +345,12 @@ export async function handleAdminVehicleDocumentsPost(
     body?.uploadcare_file_id ??
     body?.fileId ??
     body?.cdnUrl;
+  const rawStorageText = normalizeText(rawStorageReference);
   const uploadcareFileId = extractUploadcareFileId(rawStorageReference);
+  const uploadcareDeliveryUrl = extractUploadcareDeliveryUrl(rawStorageText);
+  const normalizedStorageKey = shouldPreserveDeliveryUrl(uploadcareDeliveryUrl)
+    ? uploadcareDeliveryUrl
+    : uploadcareFileId;
   const title = normalizeTitle(body?.title, documentType || "Document");
   const label = normalizeNullableText(body?.label, 140);
   const maintenanceRecordId = normalizeRecordId(
@@ -331,7 +364,7 @@ export async function handleAdminVehicleDocumentsPost(
   if (!folder) {
     return NextResponse.json({ ok: false, error: "Folder is required." }, { status: 400 });
   }
-  if (!uploadcareFileId) {
+  if (!normalizedStorageKey) {
     return NextResponse.json(
       { ok: false, error: "Invalid upload reference. Upload a file first." },
       { status: 400 },
@@ -352,7 +385,7 @@ export async function handleAdminVehicleDocumentsPost(
       title,
       label,
       storageProvider,
-      storageKey: uploadcareFileId,
+      storageKey: normalizedStorageKey,
       mimeType,
       sizeBytes,
       fileSizeBytes,
