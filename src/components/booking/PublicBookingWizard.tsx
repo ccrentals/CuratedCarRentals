@@ -5,12 +5,22 @@ import { useRouter } from "next/navigation";
 
 import { TurnstileWidget } from "@/components/security/TurnstileWidget";
 import { clearBookingDraft } from "@/lib/bookings/draft";
+import {
+  createPricingLifecycleState,
+  displayPricingSnapshot,
+  draftRestoreSecurityState,
+  pricingIsLoadingWithoutSnapshot,
+  pricingIsUpdatingWithSnapshot,
+  resolvePricingLifecycleError,
+  resolvePricingLifecycleSuccess,
+  restoreSelectionFieldsFromDraft,
+  startPricingLifecycleRefresh,
+  type WizardStep,
+} from "@/lib/bookings/publicBookingWizardState";
 import { calcDaysInclusive } from "@/lib/payments/dateMath";
 import { formatJmd } from "@/lib/money";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 import { cn } from "@/lib/utils";
-
-type WizardStep = 1 | 2 | 3 | 4 | 5 | 6;
 
 type LocationOption = {
   id: string;
@@ -95,12 +105,6 @@ type BookingCreateResponse = {
   error?: string;
 };
 
-type PaymentStartResponse = {
-  ok?: boolean;
-  error?: string;
-  redirectUrl?: string;
-};
-
 type PublicLocationsResponse = {
   locations?: Array<{
     id?: string;
@@ -120,6 +124,7 @@ type PublicInsuranceResponse = {
 
 type BookingWizardDraft = {
   step?: number;
+  maxStepCompleted?: number;
   pickupDate?: string;
   pickupTime?: string;
   dropoffDate?: string;
@@ -160,10 +165,12 @@ const STEPS: Array<{ step: WizardStep; title: string }> = [
   { step: 5, title: "Confirm" },
   { step: 6, title: "Payments" },
 ];
+const CHECKOUT_STEP = { step: 7, title: "WiPay" } as const;
 
 const CUSTOM_PICKUP_ID = "__CUSTOM_PICKUP__";
 const CUSTOM_DROPOFF_ID = "__CUSTOM_DROPOFF__";
 const WIZARD_DRAFT_STORAGE_KEY = "ccr_booking_wizard_draft_v1";
+const WIZARD_DEBUG_ENABLED = process.env.NEXT_PUBLIC_WIZARD_DEBUG === "1";
 
 const DEFAULT_LOCATIONS: LocationOption[] = [
   {
@@ -220,6 +227,15 @@ function parseWizardStep(value: unknown): WizardStep {
   return 1;
 }
 
+function parseMaxStepCompleted(value: unknown): WizardStep {
+  const parsed = Number(value);
+  if (parsed <= 1) return 1;
+  if (parsed === 2 || parsed === 3 || parsed === 4 || parsed === 5 || parsed === 6) {
+    return parsed;
+  }
+  return 6;
+}
+
 function draftContainsMeaningfulProgress(draft: BookingWizardDraft) {
   const step = parseWizardStep(draft.step);
   if (step > 1) return true;
@@ -255,6 +271,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
   const initialDropoffDateRef = useRef(dateInputForOffset(3));
 
   const [step, setStep] = useState<WizardStep>(1);
+  const [maxStepCompleted, setMaxStepCompleted] = useState<WizardStep>(1);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [draftWasRestored, setDraftWasRestored] = useState(false);
@@ -275,6 +292,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
   const [vehicleOptions, setVehicleOptions] = useState<PublicVehicle[]>([]);
   const [vehicleLoading, setVehicleLoading] = useState(false);
   const [selectedVehicleId, setSelectedVehicleId] = useState("");
+  const [vehicleSelectionUnavailable, setVehicleSelectionUnavailable] = useState(false);
 
   const [insuranceSelected, setInsuranceSelected] = useState(false);
   const [insuranceEnabled, setInsuranceEnabled] = useState(false);
@@ -286,12 +304,21 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
   const [couponAppliedCode, setCouponAppliedCode] = useState<string | null>(null);
   const [couponDiscount, setCouponDiscount] = useState(0);
   const [couponBusy, setCouponBusy] = useState(false);
-  const [pricingQuote, setPricingQuote] = useState<PricingQuoteSummary | null>(null);
-  const [pricingQuoteLoading, setPricingQuoteLoading] = useState(false);
-  const [pricingQuoteUpdating, setPricingQuoteUpdating] = useState(false);
-  const [pricingQuoteError, setPricingQuoteError] = useState<string | null>(null);
-  const pricingQuoteRequestRef = useRef(0);
-  const pricingQuoteValueRef = useRef<PricingQuoteSummary | null>(null);
+  const [hydrated, setHydrated] = useState(false);
+  const [pricingState, setPricingState] = useState(() =>
+    createPricingLifecycleState<PricingQuoteSummary>(),
+  );
+  const selectedVehicleIdRef = useRef("");
+  const latestVehiclesKeyRef = useRef("");
+  const latestVehiclesRequestIdRef = useRef(0);
+  const lastVehiclesSuccessKeyRef = useRef("");
+  const inFlightVehiclesRef = useRef<{ key: string; controller: AbortController } | null>(null);
+  const vehiclesRequestCountRef = useRef(0);
+  const vehicleOptionsRef = useRef<PublicVehicle[]>([]);
+  const latestQuoteKeyRef = useRef("");
+  const lastQuoteSuccessKeyRef = useRef("");
+  const inFlightQuoteRef = useRef<{ key: string; controller: AbortController } | null>(null);
+  const quoteRequestCountRef = useRef(0);
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -340,9 +367,23 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
   const [turnstileResetKey, setTurnstileResetKey] = useState(0);
   const [submitting, setSubmitting] = useState(false);
 
+  const debugWizardRequest = useCallback((label: string, detail: Record<string, unknown>) => {
+    if (!WIZARD_DEBUG_ENABLED || typeof window === "undefined") return;
+    console.debug(`[booking-wizard] ${label}`, detail);
+  }, []);
+
   useEffect(() => {
-    pricingQuoteValueRef.current = pricingQuote;
-  }, [pricingQuote]);
+    return () => {
+      if (inFlightVehiclesRef.current) {
+        inFlightVehiclesRef.current.controller.abort();
+        inFlightVehiclesRef.current = null;
+      }
+      if (inFlightQuoteRef.current) {
+        inFlightQuoteRef.current.controller.abort();
+        inFlightQuoteRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -386,17 +427,37 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
       const draft = JSON.parse(raw) as BookingWizardDraft;
       if (!draftContainsMeaningfulProgress(draft)) return;
 
-      setStep(parseWizardStep(draft.step));
-      if (typeof draft.pickupDate === "string") setPickupDate(draft.pickupDate);
-      if (typeof draft.pickupTime === "string") setPickupTime(draft.pickupTime);
-      if (typeof draft.dropoffDate === "string") setDropoffDate(draft.dropoffDate);
-      if (typeof draft.dropoffTime === "string") setDropoffTime(draft.dropoffTime);
-      if (typeof draft.pickupLocationId === "string") setPickupLocationId(draft.pickupLocationId);
-      if (typeof draft.dropoffLocationId === "string") setDropoffLocationId(draft.dropoffLocationId);
+      const restoredStep = parseWizardStep(draft.step);
+      const restoredMaxStep = parseMaxStepCompleted(draft.maxStepCompleted);
+      const restoredSelections = restoreSelectionFieldsFromDraft(
+        draft as Record<string, unknown>,
+        {
+          pickupDate,
+          pickupTime,
+          dropoffDate,
+          dropoffTime,
+          pickupLocationId,
+          dropoffLocationId,
+          selectedVehicleId,
+          insuranceSelected,
+          paymentOption,
+        },
+      );
+      setStep(restoredStep);
+      setMaxStepCompleted(
+        restoredMaxStep > restoredStep ? restoredMaxStep : restoredStep,
+      );
+      setPickupDate(restoredSelections.pickupDate);
+      setPickupTime(restoredSelections.pickupTime);
+      setDropoffDate(restoredSelections.dropoffDate);
+      setDropoffTime(restoredSelections.dropoffTime);
+      setPickupLocationId(restoredSelections.pickupLocationId);
+      setDropoffLocationId(restoredSelections.dropoffLocationId);
+      setSelectedVehicleId(restoredSelections.selectedVehicleId);
+      setInsuranceSelected(restoredSelections.insuranceSelected);
+      setPaymentOption(restoredSelections.paymentOption);
       if (typeof draft.pickupCustomAddress === "string") setPickupCustomAddress(draft.pickupCustomAddress);
       if (typeof draft.dropoffCustomAddress === "string") setDropoffCustomAddress(draft.dropoffCustomAddress);
-      if (typeof draft.selectedVehicleId === "string") setSelectedVehicleId(draft.selectedVehicleId);
-      if (typeof draft.insuranceSelected === "boolean") setInsuranceSelected(draft.insuranceSelected);
       if (typeof draft.couponCode === "string") setCouponCode(draft.couponCode);
       if (typeof draft.couponAppliedCode === "string" || draft.couponAppliedCode === null) {
         setCouponAppliedCode(draft.couponAppliedCode ?? null);
@@ -422,36 +483,41 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
       if (typeof draft.customerId === "string" || draft.customerId === null) {
         setCustomerId(draft.customerId ?? null);
       }
-      if (
-        draft.paymentOption === "FULL" ||
-        draft.paymentOption === "DEPOSIT" ||
-        draft.paymentOption === "CUSTOM" ||
-        draft.paymentOption === "NONE"
-      ) {
-        setPaymentOption(draft.paymentOption);
-      }
       if (typeof draft.customPaymentAmount === "string") setCustomPaymentAmount(draft.customPaymentAmount);
       if (typeof draft.acceptTerms === "boolean") setAcceptTerms(draft.acceptTerms);
 
       // For security, DL uploads and signatures are never restored from browser storage.
-      setDriversLicenseImageUrl("");
-      setSignatureDataUrl("");
-      setStatusMessage(
-        "Draft restored. For security, please re-upload your driver's license image and signature.",
-      );
+      const security = draftRestoreSecurityState();
+      setDriversLicenseImageUrl(security.driversLicenseImageUrl);
+      setSignatureDataUrl(security.signatureDataUrl);
+      if (security.requiresDriversLicenseUpload || security.requiresSignatureUpload) {
+        setStatusMessage(security.notice);
+      }
       setDraftWasRestored(true);
     } catch {
       // Ignore invalid draft payloads.
     } finally {
       draftHydratedRef.current = true;
+      setHydrated(true);
     }
-  }, []);
+  }, [
+    dropoffDate,
+    dropoffLocationId,
+    dropoffTime,
+    insuranceSelected,
+    paymentOption,
+    pickupDate,
+    pickupLocationId,
+    pickupTime,
+    selectedVehicleId,
+  ]);
 
   useEffect(() => {
-    if (typeof window === "undefined" || !draftHydratedRef.current) return;
+    if (typeof window === "undefined" || !hydrated) return;
 
     const draft: BookingWizardDraft = {
       step,
+      maxStepCompleted,
       pickupDate,
       pickupTime,
       dropoffDate,
@@ -540,6 +606,8 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     selectedVehicleId,
     state,
     step,
+    maxStepCompleted,
+    hydrated,
     street,
     street2,
     zip,
@@ -570,6 +638,21 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     () => vehicleOptions.find((vehicle) => vehicle.id === selectedVehicleId) ?? null,
     [vehicleOptions, selectedVehicleId],
   );
+  const hasSelectedVehicleId = normalizeText(selectedVehicleId).length > 0;
+  const hasResolvedVehicle =
+    hasSelectedVehicleId && selectedVehicle !== null && !vehicleSelectionUnavailable;
+  const pricingQuote = displayPricingSnapshot(pricingState);
+  const pricingQuoteLoading = pricingIsLoadingWithoutSnapshot(pricingState);
+  const pricingQuoteUpdating = pricingIsUpdatingWithSnapshot(pricingState);
+  const pricingQuoteError = pricingState.status === "error" ? pricingState.error : null;
+
+  useEffect(() => {
+    selectedVehicleIdRef.current = selectedVehicleId;
+  }, [selectedVehicleId]);
+
+  useEffect(() => {
+    vehicleOptionsRef.current = vehicleOptions;
+  }, [vehicleOptions]);
 
   const rentalDays = pricingQuote?.days ?? calcDaysInclusive(pickupDate, dropoffDate);
   const baseTotal = pricingQuote?.baseTotal ?? (selectedVehicle ? selectedVehicle.daily_rate_cents * rentalDays : 0);
@@ -596,79 +679,209 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     if (dropoffLocationId === CUSTOM_DROPOFF_ID) return normalizeText(dropoffCustomAddress);
     return dropoffOptions.find((location) => location.id === dropoffLocationId)?.label ?? "";
   }, [dropoffCustomAddress, dropoffLocationId, dropoffOptions]);
+  const deliverySelected =
+    pickupLocationId === CUSTOM_PICKUP_ID || dropoffLocationId === CUSTOM_DROPOFF_ID;
+  const deliveryZoneLabel = [pickupLocationText, dropoffLocationText].filter(Boolean).join(" → ");
 
-  const loadAvailableVehicles = useCallback(async () => {
-    if (!pickupDate || !dropoffDate || !datesValid) {
-      setVehicleOptions([]);
-      setSelectedVehicleId("");
-      return [];
-    }
-
-    const response = await fetch(
-      `/api/public/vehicles?pickupDate=${encodeURIComponent(
-        pickupDate,
-      )}&pickupTime=${encodeURIComponent(pickupTime)}&dropoffDate=${encodeURIComponent(
-        dropoffDate,
-      )}&dropoffTime=${encodeURIComponent(dropoffTime)}`,
-      { cache: "no-store" },
-    );
-    const data = (await response.json().catch(() => ({}))) as {
-      vehicles?: Array<Record<string, unknown>>;
-      error?: string;
-    };
-    if (!response.ok) {
-      throw new Error(data.error ?? "Unable to load available vehicles.");
-    }
-
-    const vehicles = Array.isArray(data.vehicles) ? data.vehicles : [];
-    const mapped = vehicles
-      .filter(
-        (vehicle): vehicle is Record<string, unknown> =>
-          typeof vehicle.id === "string" &&
-          typeof vehicle.make === "string" &&
-          typeof vehicle.model === "string",
-      )
-      .map((vehicle) => ({
-        id: String(vehicle.id),
-        name: typeof vehicle.name === "string" ? vehicle.name : "",
-        make: String(vehicle.make),
-        model: String(vehicle.model),
-        daily_rate_cents:
-          typeof vehicle.daily_rate_cents === "number" ? vehicle.daily_rate_cents : 0,
-        deposit_cents: typeof vehicle.deposit_cents === "number" ? vehicle.deposit_cents : 0,
-        images: Array.isArray(vehicle.images)
-          ? vehicle.images.filter((image): image is string => typeof image === "string")
-          : [],
-        category: typeof vehicle.category === "string" ? vehicle.category : "",
-        seats: typeof vehicle.seats === "number" ? vehicle.seats : 0,
-        transmission:
-          typeof vehicle.transmission === "string" ? vehicle.transmission : "",
-      }));
-
-    let nextSelectedVehicleId = mapped.some((vehicle) => vehicle.id === selectedVehicleId)
-      ? selectedVehicleId
-      : "";
-
-    const pendingPreselect = preselectedVehicleIdRef.current;
-    if (pendingPreselect && nextSelectedVehicleId && nextSelectedVehicleId === pendingPreselect) {
-      preselectedVehicleIdRef.current = "";
-    }
-    if (!nextSelectedVehicleId && pendingPreselect) {
-      if (mapped.some((vehicle) => vehicle.id === pendingPreselect)) {
-        nextSelectedVehicleId = pendingPreselect;
-        setStatusMessage("Vehicle preselected from your fleet selection.");
-        setErrorMessage(null);
-      } else {
-        setStatusMessage(null);
-        setErrorMessage("Requested vehicle is unavailable for the selected pickup/dropoff window.");
+  const loadAvailableVehicles = useCallback(
+    async (options?: { reason?: "effect" | "revalidate" | "select"; force?: boolean }) => {
+      const reason = options?.reason ?? "effect";
+      if (!pickupDate || !dropoffDate || !datesValid) {
+        latestVehiclesRequestIdRef.current = 0;
+        latestVehiclesKeyRef.current = "";
+        lastVehiclesSuccessKeyRef.current = "";
+        if (inFlightVehiclesRef.current) {
+          inFlightVehiclesRef.current.controller.abort();
+          inFlightVehiclesRef.current = null;
+        }
+        setVehicleOptions([]);
+        setVehicleSelectionUnavailable(false);
+        debugWizardRequest("vehicles:reset", { reason });
+        return [];
       }
-      preselectedVehicleIdRef.current = "";
-    }
 
-    setVehicleOptions(mapped);
-    setSelectedVehicleId(nextSelectedVehicleId);
-    return mapped;
-  }, [datesValid, dropoffDate, dropoffTime, pickupDate, pickupTime, selectedVehicleId]);
+      const vehiclesKey = JSON.stringify({
+        pickupDate,
+        pickupTime,
+        dropoffDate,
+        dropoffTime,
+        pickupLocationId,
+        dropoffLocationId,
+      });
+      latestVehiclesKeyRef.current = vehiclesKey;
+
+      if (inFlightVehiclesRef.current?.key === vehiclesKey) {
+        if (options?.force) {
+          inFlightVehiclesRef.current.controller.abort();
+          inFlightVehiclesRef.current = null;
+          debugWizardRequest("vehicles:abort:force_refresh", { key: vehiclesKey, reason });
+        } else {
+          debugWizardRequest("vehicles:skip:inflight", { key: vehiclesKey, reason });
+          return vehicleOptionsRef.current;
+        }
+      }
+
+      if (
+        !options?.force &&
+        lastVehiclesSuccessKeyRef.current === vehiclesKey
+      ) {
+        debugWizardRequest("vehicles:skip:dedupe", { key: vehiclesKey, reason });
+        return vehicleOptionsRef.current;
+      }
+
+      if (inFlightVehiclesRef.current && inFlightVehiclesRef.current.key !== vehiclesKey) {
+        inFlightVehiclesRef.current.controller.abort();
+        inFlightVehiclesRef.current = null;
+      }
+
+      const controller = new AbortController();
+      inFlightVehiclesRef.current = { key: vehiclesKey, controller };
+      const requestCount = vehiclesRequestCountRef.current + 1;
+      vehiclesRequestCountRef.current = requestCount;
+      const requestId = latestVehiclesRequestIdRef.current + 1;
+      latestVehiclesRequestIdRef.current = requestId;
+      debugWizardRequest("vehicles:start", {
+        key: vehiclesKey,
+        reason,
+        count: requestCount,
+        requestId,
+      });
+
+      try {
+        const response = await fetch(
+          `/api/public/vehicles?pickupDate=${encodeURIComponent(
+            pickupDate,
+          )}&pickupTime=${encodeURIComponent(pickupTime)}&dropoffDate=${encodeURIComponent(
+            dropoffDate,
+          )}&dropoffTime=${encodeURIComponent(dropoffTime)}`,
+          { cache: "no-store", signal: controller.signal },
+        );
+        const data = (await response.json().catch(() => ({}))) as {
+          vehicles?: Array<Record<string, unknown>>;
+          error?: string;
+        };
+        if (!response.ok) {
+          throw new Error(data.error ?? "Unable to load available vehicles.");
+        }
+
+        const vehicles = Array.isArray(data.vehicles) ? data.vehicles : [];
+        const mapped = vehicles
+          .filter(
+            (vehicle): vehicle is Record<string, unknown> =>
+              typeof vehicle.id === "string" &&
+              typeof vehicle.make === "string" &&
+              typeof vehicle.model === "string",
+          )
+          .map((vehicle) => ({
+            id: String(vehicle.id),
+            name: typeof vehicle.name === "string" ? vehicle.name : "",
+            make: String(vehicle.make),
+            model: String(vehicle.model),
+            daily_rate_cents:
+              typeof vehicle.daily_rate_cents === "number" ? vehicle.daily_rate_cents : 0,
+            deposit_cents: typeof vehicle.deposit_cents === "number" ? vehicle.deposit_cents : 0,
+            images: Array.isArray(vehicle.images)
+              ? vehicle.images.filter((image): image is string => typeof image === "string")
+              : [],
+            category: typeof vehicle.category === "string" ? vehicle.category : "",
+            seats: typeof vehicle.seats === "number" ? vehicle.seats : 0,
+            transmission:
+              typeof vehicle.transmission === "string" ? vehicle.transmission : "",
+          }));
+
+        let nextSelectedVehicleId = selectedVehicleIdRef.current;
+        let nextVehicleUnavailable = false;
+
+        const pendingPreselect = preselectedVehicleIdRef.current;
+        if (pendingPreselect && nextSelectedVehicleId && nextSelectedVehicleId === pendingPreselect) {
+          preselectedVehicleIdRef.current = "";
+        }
+        if (!nextSelectedVehicleId && pendingPreselect) {
+          if (mapped.some((vehicle) => vehicle.id === pendingPreselect)) {
+            nextSelectedVehicleId = pendingPreselect;
+            setStatusMessage("Vehicle preselected from your fleet selection.");
+            setErrorMessage(null);
+          } else {
+            setStatusMessage(null);
+            setErrorMessage("Requested vehicle is unavailable for the selected pickup/dropoff window.");
+          }
+          preselectedVehicleIdRef.current = "";
+        }
+
+        if (
+          nextSelectedVehicleId &&
+          !mapped.some((vehicle) => vehicle.id === nextSelectedVehicleId)
+        ) {
+          nextVehicleUnavailable = true;
+        }
+
+        if (latestVehiclesKeyRef.current !== vehiclesKey) {
+          debugWizardRequest("vehicles:skip:stale", {
+            key: vehiclesKey,
+            reason,
+            count: requestCount,
+            requestId,
+          });
+          return mapped;
+        }
+
+        if (latestVehiclesRequestIdRef.current !== requestId) {
+          debugWizardRequest("vehicles:skip:outdated_request", {
+            key: vehiclesKey,
+            reason,
+            count: requestCount,
+            requestId,
+          });
+          return mapped;
+        }
+
+        lastVehiclesSuccessKeyRef.current = vehiclesKey;
+        setVehicleOptions(mapped);
+        setVehicleSelectionUnavailable(nextVehicleUnavailable);
+        setSelectedVehicleId(nextSelectedVehicleId);
+        debugWizardRequest("vehicles:success", {
+          key: vehiclesKey,
+          reason,
+          count: requestCount,
+          requestId,
+          matched: mapped.length,
+        });
+        return mapped;
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          debugWizardRequest("vehicles:aborted", {
+            key: vehiclesKey,
+            reason,
+            count: requestCount,
+          });
+          return vehicleOptionsRef.current;
+        }
+        const message = error instanceof Error ? error.message : "unknown error";
+        debugWizardRequest("vehicles:error", {
+          key: vehiclesKey,
+          reason,
+          count: requestCount,
+          message,
+        });
+        throw error;
+      } finally {
+        if (inFlightVehiclesRef.current?.key === vehiclesKey) {
+          inFlightVehiclesRef.current = null;
+        }
+      }
+    },
+    [
+      datesValid,
+      debugWizardRequest,
+      dropoffDate,
+      dropoffLocationId,
+      dropoffTime,
+      pickupDate,
+      pickupLocationId,
+      pickupTime,
+      selectedVehicleId,
+    ],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -731,11 +944,18 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
   useEffect(() => {
     let cancelled = false;
     async function loadInsurance() {
+      if (!hydrated) return;
       if (!selectedVehicleId) {
         setInsuranceEnabled(false);
         setInsurancePlanId(null);
         setInsurancePricePerDay(0);
         setInsuranceSelected(false);
+        return;
+      }
+      if (!selectedVehicle || vehicleSelectionUnavailable) {
+        setInsuranceEnabled(false);
+        setInsurancePlanId(null);
+        setInsurancePricePerDay(0);
         return;
       }
 
@@ -781,42 +1001,88 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     return () => {
       cancelled = true;
     };
-  }, [selectedVehicleId]);
+  }, [hydrated, selectedVehicle, selectedVehicleId, vehicleSelectionUnavailable]);
 
   useEffect(() => {
-    if (!selectedVehicleId || !datesValid) {
-      setPricingQuote(null);
-      setPricingQuoteError(null);
-      setPricingQuoteLoading(false);
-      setPricingQuoteUpdating(false);
+    if (!hydrated) return;
+    if (!hasSelectedVehicleId || !datesValid) {
+      latestQuoteKeyRef.current = "";
+      lastQuoteSuccessKeyRef.current = "";
+      if (inFlightQuoteRef.current) {
+        inFlightQuoteRef.current.controller.abort();
+        inFlightQuoteRef.current = null;
+      }
+      setPricingState((previous) => ({
+        status: "idle",
+        current: null,
+        lastGood: previous.lastGood,
+        error: null,
+      }));
+      debugWizardRequest("quote:reset", { reason: "missing_prerequisites" });
       return;
     }
+
+    if (!hasResolvedVehicle) return;
 
     const pickup = combineDateTime(pickupDate, pickupTime);
     const dropoff = combineDateTime(dropoffDate, dropoffTime);
     if (!pickup || !dropoff) {
-      setPricingQuote(null);
-      setPricingQuoteError(null);
-      setPricingQuoteLoading(false);
-      setPricingQuoteUpdating(false);
+      latestQuoteKeyRef.current = "";
+      setPricingState((previous) => ({
+        status: "idle",
+        current: null,
+        lastGood: previous.lastGood,
+        error: null,
+      }));
+      debugWizardRequest("quote:reset", { reason: "invalid_datetime" });
       return;
     }
 
-    const requestId = pricingQuoteRequestRef.current + 1;
-    pricingQuoteRequestRef.current = requestId;
-    const hasExistingQuote = pricingQuoteValueRef.current !== null;
+    const quoteKey = JSON.stringify({
+      vehicleId: selectedVehicleId,
+      startAt: pickup.toISOString(),
+      endAt: dropoff.toISOString(),
+      insuranceSelected: insuranceEnabled && insuranceSelected,
+      promoCode: couponAppliedCode,
+      paymentOption,
+      customAmount: paymentOption === "CUSTOM" ? customPaymentAmount : null,
+      customerEmail: normalizeText(emailAddress),
+      deliverySelected,
+      deliveryZoneLabel: deliveryZoneLabel || null,
+    });
+    latestQuoteKeyRef.current = quoteKey;
 
-    const timer = window.setTimeout(async () => {
-      if (hasExistingQuote) {
-        setPricingQuoteUpdating(true);
-      } else {
-        setPricingQuoteLoading(true);
-      }
-      setPricingQuoteError(null);
+    if (lastQuoteSuccessKeyRef.current === quoteKey) {
+      debugWizardRequest("quote:skip:dedupe", { key: quoteKey });
+      return;
+    }
+
+    if (inFlightQuoteRef.current?.key === quoteKey) {
+      debugWizardRequest("quote:skip:inflight", { key: quoteKey });
+      return;
+    }
+
+    if (inFlightQuoteRef.current && inFlightQuoteRef.current.key !== quoteKey) {
+      inFlightQuoteRef.current.controller.abort();
+      inFlightQuoteRef.current = null;
+    }
+
+    const controller = new AbortController();
+    inFlightQuoteRef.current = { key: quoteKey, controller };
+    const requestCount = quoteRequestCountRef.current + 1;
+    quoteRequestCountRef.current = requestCount;
+    setPricingState((previous) => startPricingLifecycleRefresh(previous));
+    debugWizardRequest("quote:start", {
+      key: quoteKey,
+      count: requestCount,
+    });
+
+    void (async () => {
       try {
         const response = await fetch("/api/public/pricing/quote", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
           body: JSON.stringify({
             vehicleId: selectedVehicleId,
             startAt: pickup.toISOString(),
@@ -826,42 +1092,80 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
             paymentOption,
             customAmount: paymentOption === "CUSTOM" ? customPaymentAmount : undefined,
             customerEmail: normalizeText(emailAddress),
+            deliverySelected,
+            deliveryZoneLabel: deliveryZoneLabel || null,
           }),
         });
         const data = (await response.json().catch(() => ({}))) as PricingQuoteResponse;
-        if (requestId !== pricingQuoteRequestRef.current) return;
+        if (latestQuoteKeyRef.current !== quoteKey) {
+          debugWizardRequest("quote:skip:stale", {
+            key: quoteKey,
+            count: requestCount,
+          });
+          return;
+        }
         if (!response.ok || !data.ok || !data.summary) {
           throw new Error(data.error ?? "Unable to refresh pricing.");
         }
-        setPricingQuote(data.summary);
-      } catch {
-        if (requestId !== pricingQuoteRequestRef.current) return;
-        setPricingQuoteError(
-          "Live pricing quote is temporarily unavailable. Totals will be revalidated before payment.",
+        lastQuoteSuccessKeyRef.current = quoteKey;
+        setPricingState(resolvePricingLifecycleSuccess(data.summary));
+        debugWizardRequest("quote:success", {
+          key: quoteKey,
+          count: requestCount,
+        });
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          debugWizardRequest("quote:aborted", {
+            key: quoteKey,
+            count: requestCount,
+          });
+          return;
+        }
+        if (latestQuoteKeyRef.current !== quoteKey) return;
+        const message = error instanceof Error ? error.message : "unknown error";
+        setPricingState((previous) =>
+          resolvePricingLifecycleError(
+            previous,
+            "Live pricing quote is temporarily unavailable. Totals will be revalidated before payment.",
+          ),
         );
+        debugWizardRequest("quote:error", {
+          key: quoteKey,
+          count: requestCount,
+          message,
+        });
       } finally {
-        if (requestId !== pricingQuoteRequestRef.current) return;
-        setPricingQuoteLoading(false);
-        setPricingQuoteUpdating(false);
+        if (inFlightQuoteRef.current?.key === quoteKey) {
+          inFlightQuoteRef.current = null;
+        }
       }
-    }, 250);
+    })();
 
     return () => {
-      clearTimeout(timer);
+      if (inFlightQuoteRef.current?.key === quoteKey) {
+        inFlightQuoteRef.current.controller.abort();
+      }
     };
   }, [
     couponAppliedCode,
     customPaymentAmount,
     datesValid,
+    debugWizardRequest,
+    deliverySelected,
+    deliveryZoneLabel,
     dropoffDate,
     dropoffTime,
     emailAddress,
+    hasResolvedVehicle,
+    hasSelectedVehicleId,
+    hydrated,
     insuranceEnabled,
     insuranceSelected,
     paymentOption,
     pickupDate,
     pickupTime,
     selectedVehicleId,
+    step,
   ]);
 
   useEffect(() => {
@@ -917,9 +1221,14 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
 
   useEffect(() => {
     let cancelled = false;
+    if (!hydrated) {
+      return () => {
+        cancelled = true;
+      };
+    }
     if (!pickupDate || !dropoffDate || !datesValid) {
       setVehicleOptions([]);
-      setSelectedVehicleId("");
+      setVehicleSelectionUnavailable(false);
       return () => {
         cancelled = true;
       };
@@ -928,11 +1237,9 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     async function loadVehicles() {
       setVehicleLoading(true);
       try {
-        await loadAvailableVehicles();
+        await loadAvailableVehicles({ reason: "effect" });
       } catch {
         if (cancelled) return;
-        setVehicleOptions([]);
-        setSelectedVehicleId("");
       } finally {
         if (!cancelled) setVehicleLoading(false);
       }
@@ -943,7 +1250,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     return () => {
       cancelled = true;
     };
-  }, [datesValid, dropoffDate, loadAvailableVehicles, pickupDate]);
+  }, [datesValid, dropoffDate, hydrated, loadAvailableVehicles, pickupDate]);
 
   useEffect(() => {
     const canvas = signatureCanvasRef.current;
@@ -971,6 +1278,93 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     setStatusMessage(null);
   }
 
+  function clearSelectedVehicleSelection(
+    options?: {
+      message?: string;
+      clearVehicleOptions?: boolean;
+      clearCouponCode?: boolean;
+    },
+  ) {
+    const shouldClearVehicleOptions = options?.clearVehicleOptions === true;
+    const shouldClearCouponCode = options?.clearCouponCode === true;
+    setSelectedVehicleId("");
+    setVehicleSelectionUnavailable(false);
+    if (shouldClearVehicleOptions) setVehicleOptions([]);
+    setInsuranceSelected(false);
+    setInsuranceEnabled(false);
+    setInsurancePlanId(null);
+    setInsurancePricePerDay(0);
+    if (shouldClearCouponCode) setCouponCode("");
+    setCouponAppliedCode(null);
+    setCouponDiscount(0);
+    setPricingState((previous) => ({
+      status: "idle",
+      current: null,
+      lastGood: previous.lastGood,
+      error: null,
+    }));
+    setPaymentOption("DEPOSIT");
+    setCustomPaymentAmount("");
+    setTurnstileToken(null);
+    setTurnstileResetKey((value) => value + 1);
+    if (options?.message) {
+      setErrorMessage(null);
+      setStatusMessage(options.message);
+    }
+  }
+
+  const step1Complete = datesValid && Boolean(pickupLocationText) && Boolean(dropoffLocationText);
+  const step2Complete = step1Complete && hasResolvedVehicle;
+  const step3Complete = step2Complete;
+  const step4Complete =
+    step3Complete &&
+    Boolean(normalizeText(firstName)) &&
+    Boolean(normalizeText(lastName)) &&
+    Boolean(normalizeText(driversLicenseNumber)) &&
+    Boolean(driversLicenseImageUrl);
+  const step5Complete = step4Complete && Boolean(signatureDataUrl) && acceptTerms;
+
+  function getEarliestMissingStep(targetStep: WizardStep): WizardStep | null {
+    if (targetStep >= 2 && !step1Complete) return 1;
+    if (targetStep >= 3 && !step2Complete) return 2;
+    if (targetStep >= 4 && !step3Complete) return 3;
+    if (targetStep >= 5 && !step4Complete) return 4;
+    if (targetStep >= 6 && !step5Complete) return 5;
+    return null;
+  }
+
+  function jumpToStep(targetStep: WizardStep) {
+    if (submitting) return;
+    resetMessages();
+    const scrollToWizardTop = () => {
+      if (typeof window !== "undefined") {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
+    };
+
+    if (targetStep < step) {
+      setStep(targetStep);
+      scrollToWizardTop();
+      return;
+    }
+
+    if (targetStep > maxStepCompleted) {
+      setErrorMessage(`Complete Step ${maxStepCompleted} first to unlock this step.`);
+      return;
+    }
+
+    const missingStep = getEarliestMissingStep(targetStep);
+    if (missingStep) {
+      setStep(missingStep);
+      setErrorMessage(`Please complete Step ${missingStep} before continuing.`);
+      scrollToWizardTop();
+      return;
+    }
+
+    setStep(targetStep);
+    scrollToWizardTop();
+  }
+
   function verifyStep(stepToValidate: WizardStep) {
     resetMessages();
 
@@ -990,8 +1384,12 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     }
 
     if (stepToValidate === 2) {
-      if (!selectedVehicleId) {
+      if (!hasSelectedVehicleId) {
         setErrorMessage("Select a vehicle to continue.");
+        return false;
+      }
+      if (vehicleSelectionUnavailable || !selectedVehicle) {
+        setErrorMessage("Selected vehicle is no longer available for these dates. Choose another.");
         return false;
       }
     }
@@ -1023,8 +1421,16 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     }
 
     if (stepToValidate === 6) {
-      if (!selectedVehicleId) {
-        setErrorMessage("Vehicle selection is required.");
+      if (!hasSelectedVehicleId) {
+        setErrorMessage("Select a vehicle to continue.");
+        return false;
+      }
+      if (vehicleSelectionUnavailable || !selectedVehicle) {
+        setErrorMessage("Selected vehicle is no longer available for these dates. Choose another.");
+        return false;
+      }
+      if (!pricingQuote) {
+        setErrorMessage("Live pricing is still refreshing. Please wait before continuing.");
         return false;
       }
       if (!driversLicenseImageUrl || !normalizeText(driversLicenseNumber)) {
@@ -1042,15 +1448,19 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
 
   async function revalidateSelectedVehicleAvailability(vehicleId: string) {
     try {
-      const availableVehicles = await loadAvailableVehicles();
+      const availableVehicles = await loadAvailableVehicles({
+        reason: "revalidate",
+        force: true,
+      });
       const stillAvailable = availableVehicles.some((vehicle) => vehicle.id === vehicleId);
       if (!stillAvailable) {
-        setSelectedVehicleId("");
+        setVehicleSelectionUnavailable(true);
         setErrorMessage(
-          "The selected vehicle is no longer available for this date/time range. Please reselect a vehicle.",
+          "Selected vehicle is no longer available for these dates. Choose another.",
         );
         return false;
       }
+      setVehicleSelectionUnavailable(false);
       return true;
     } catch {
       setErrorMessage("Unable to verify vehicle availability. Please try again.");
@@ -1064,9 +1474,19 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     const available = await revalidateSelectedVehicleAvailability(vehicleId);
     if (available) {
       setSelectedVehicleId(vehicleId);
+      setVehicleSelectionUnavailable(false);
       setStatusMessage("Vehicle selected and availability confirmed.");
     }
     setVehicleLoading(false);
+  }
+
+  function handleDeselectVehicle() {
+    resetMessages();
+    setStep(2);
+    setMaxStepCompleted((current) => (current > 2 ? 2 : current));
+    clearSelectedVehicleSelection({
+      message: "Vehicle deselected. Choose a vehicle to continue.",
+    });
   }
 
   async function moveToNextStep() {
@@ -1077,7 +1497,10 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
       setVehicleLoading(false);
       if (!available) return;
     }
-    setStep((current) => (current < 6 ? ((current + 1) as WizardStep) : current));
+    if (step >= 6) return;
+    const nextStep = (step + 1) as WizardStep;
+    setStep(nextStep);
+    setMaxStepCompleted((previous) => (nextStep > previous ? nextStep : previous));
   }
 
   function moveToPreviousStep() {
@@ -1088,37 +1511,36 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
   function handleChangeDates() {
     resetMessages();
     setStep(1);
-    setSelectedVehicleId("");
-    setVehicleOptions([]);
-    setInsuranceSelected(false);
-    setCouponAppliedCode(null);
-    setCouponDiscount(0);
-    setPricingQuote(null);
-    setPaymentOption("DEPOSIT");
-    setCustomPaymentAmount("");
-    setTurnstileToken(null);
-    setTurnstileResetKey((value) => value + 1);
+    setMaxStepCompleted(1);
+    clearSelectedVehicleSelection({
+      clearVehicleOptions: true,
+    });
     setStatusMessage("Update your dates and continue through vehicle selection.");
   }
 
   function handleChangeVehicle() {
     resetMessages();
     setStep(2);
-    setSelectedVehicleId("");
-    setInsuranceSelected(false);
-    setCouponAppliedCode(null);
-    setCouponDiscount(0);
-    setPricingQuote(null);
-    setPaymentOption("DEPOSIT");
-    setCustomPaymentAmount("");
-    setTurnstileToken(null);
-    setTurnstileResetKey((value) => value + 1);
-    setStatusMessage("Choose a vehicle again for the selected dates.");
+    setMaxStepCompleted((current) => (current < 2 ? 2 : current));
+    setStatusMessage("Review your selected vehicle or choose another.");
   }
 
   function handleStartOver() {
     clearWizardDraft();
     preselectedVehicleIdRef.current = "";
+    latestVehiclesRequestIdRef.current = 0;
+    latestVehiclesKeyRef.current = "";
+    lastVehiclesSuccessKeyRef.current = "";
+    if (inFlightVehiclesRef.current) {
+      inFlightVehiclesRef.current.controller.abort();
+      inFlightVehiclesRef.current = null;
+    }
+    latestQuoteKeyRef.current = "";
+    lastQuoteSuccessKeyRef.current = "";
+    if (inFlightQuoteRef.current) {
+      inFlightQuoteRef.current.controller.abort();
+      inFlightQuoteRef.current = null;
+    }
     setRequestedVehicleFromQuery("");
     setShowStartOverConfirm(false);
     setDraftWasRestored(false);
@@ -1132,6 +1554,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
       locationOptions.find((location) => location.allowDropoff)?.id ?? defaultPickupLocation;
 
     setStep(1);
+    setMaxStepCompleted(1);
     setPickupDate(defaultPickupDate);
     setPickupTime("11:00");
     setDropoffDate(defaultDropoffDate);
@@ -1142,6 +1565,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     setDropoffCustomAddress("");
 
     setSelectedVehicleId("");
+    setVehicleSelectionUnavailable(false);
     setVehicleOptions([]);
     setInsuranceSelected(false);
     setInsuranceEnabled(false);
@@ -1150,8 +1574,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     setCouponCode("");
     setCouponAppliedCode(null);
     setCouponDiscount(0);
-    setPricingQuote(null);
-    setPricingQuoteError(null);
+    setPricingState(createPricingLifecycleState<PricingQuoteSummary>());
 
     setFirstName("");
     setLastName("");
@@ -1447,37 +1870,19 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     }
   }
 
-  async function startWiPayFlow(
+  function buildCheckoutRoute(
     bookingId: string,
     mode: "DEPOSIT" | "FULL" | "CUSTOM",
     customAmountCents?: number,
   ) {
-    const csrfToken = await ensureCsrfToken();
-    const endpoint =
-      mode === "FULL"
-        ? "/api/payments/wipay/full/start"
-        : mode === "CUSTOM"
-          ? "/api/payments/wipay/custom/start"
-          : "/api/payments/wipay/start";
-
-    const payload =
-      mode === "CUSTOM"
-        ? { bookingId, customAmountCents: Math.max(1, Math.round(customAmountCents ?? 0)) }
-        : { bookingId };
-
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-csrf-token": csrfToken ?? "",
-      },
-      body: JSON.stringify(payload),
+    const query = new URLSearchParams({
+      bookingId,
+      paymentOption: mode,
     });
-    const data = (await response.json().catch(() => ({}))) as PaymentStartResponse;
-    if (!response.ok || !data.redirectUrl) {
-      throw new Error(data.error ?? "Unable to start payment.");
+    if (mode === "CUSTOM") {
+      query.set("customAmountCents", String(Math.max(1, Math.round(customAmountCents ?? 0))));
     }
-    window.location.href = data.redirectUrl;
+    return `/book/checkout?${query.toString()}`;
   }
 
   async function submitBooking() {
@@ -1563,9 +1968,11 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
           bookingData.bookingAccessToken,
         )}; Path=/; Max-Age=2592000; SameSite=Lax`;
       }
-      const csrfToken = await ensureCsrfToken();
-
       if (paymentOption === "NONE") {
+        const csrfToken = await ensureCsrfToken();
+        if (!csrfToken) {
+          throw new Error("Unable to verify your session. Refresh the page and try again.");
+        }
         const response = await fetch(`/api/public/bookings/${bookingId}/pay-on-pickup`, {
           method: "POST",
           headers: { "x-csrf-token": csrfToken ?? "" },
@@ -1581,22 +1988,19 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
       }
 
       if (paymentOption === "FULL") {
-        clearWizardDraft();
-        await startWiPayFlow(bookingId, "FULL");
+        router.push(buildCheckoutRoute(bookingId, "FULL"));
         return;
       }
 
       if (paymentOption === "DEPOSIT") {
-        clearWizardDraft();
-        await startWiPayFlow(bookingId, "DEPOSIT");
+        router.push(buildCheckoutRoute(bookingId, "DEPOSIT"));
         return;
       }
 
       if (!normalizedCustomAmount) {
         throw new Error("Custom payment amount is required.");
       }
-      clearWizardDraft();
-      await startWiPayFlow(bookingId, "CUSTOM", normalizedCustomAmount);
+      router.push(buildCheckoutRoute(bookingId, "CUSTOM", normalizedCustomAmount));
     } catch (error) {
       setTurnstileToken(null);
       setTurnstileResetKey((value) => value + 1);
@@ -1612,9 +2016,68 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
       : paymentOption === "CUSTOM" && customPaymentIsValid && customPaymentNumber < depositRequired
         ? "Custom payment is below deposit. This may not guarantee the vehicle."
         : null;
+  const unavailableVehicleWarning = hasSelectedVehicleId && vehicleSelectionUnavailable
+    ? "Selected vehicle is no longer available for these dates. Choose another."
+    : null;
+  const step6VehicleWarning = !hasSelectedVehicleId
+    ? "Select a vehicle to continue."
+    : unavailableVehicleWarning
+      ? unavailableVehicleWarning
+      : !hasResolvedVehicle
+        ? "Refreshing selected vehicle..."
+      : null;
+  const step6PricingWarning =
+    hasSelectedVehicleId && !pricingQuote
+      ? pricingQuoteLoading || pricingQuoteUpdating
+        ? "Refreshing live pricing…"
+        : pricingState.status === "error"
+          ? "Live pricing could not be loaded. Return to Step 2 and reselect your vehicle."
+          : null
+      : null;
+  const continueToPaymentDisabled =
+    submitting ||
+    driversLicenseUploading ||
+    !turnstileToken ||
+    !hasResolvedVehicle ||
+    vehicleSelectionUnavailable ||
+    !pricingQuote ||
+    (paymentOption === "CUSTOM" && !customPaymentIsValid);
+  const statusIsDraftRestoreNotice =
+    draftWasRestored &&
+    typeof statusMessage === "string" &&
+    statusMessage.startsWith("Draft restored.");
+  const summaryVehicleLabel = selectedVehicle
+    ? displayVehicleName(selectedVehicle)
+    : hasSelectedVehicleId
+      ? vehicleSelectionUnavailable
+        ? "Unavailable for selected dates"
+        : "Refreshing selection..."
+      : "Not selected";
+  const hideFallbackTotals = hasSelectedVehicleId && !pricingQuote;
+
+  if (!hydrated) {
+    return (
+      <div className="min-h-screen bg-[var(--ccr-bg)] py-8 md:py-12" data-testid="booking-draft-loading">
+        <div className="mx-auto w-full max-w-3xl px-4 sm:px-6 lg:px-8">
+          <div className="rounded-3xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-8 shadow-xl shadow-[var(--ccr-primary)]/10">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--ccr-muted)]">
+              Curated Car Rentals
+            </p>
+            <h1 className="mt-2 text-2xl font-bold text-[var(--ccr-text)]">Loading your draft...</h1>
+            <p className="mt-2 text-sm text-[var(--ccr-muted)]">
+              Restoring your previous selections and pricing details.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-[var(--ccr-bg)] py-8 md:py-12">
+    <div
+      className="min-h-screen bg-[var(--ccr-bg)] py-8 md:py-12"
+      data-testid="booking-wizard-hydrated"
+    >
       <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="overflow-hidden rounded-3xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] shadow-xl shadow-[var(--ccr-primary)]/10">
           <div className="bg-gradient-to-r from-[var(--ccr-primary)] to-[var(--ccr-primary-soft)] px-6 py-8 text-[var(--ccr-on-primary)] md:px-10">
@@ -1625,35 +2088,63 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
               Reservation Wizard
             </h1>
             <p className="mt-2 max-w-2xl text-sm text-[var(--ccr-on-primary-muted)] md:text-base">
-              Complete all six steps to reserve your vehicle. Availability is rechecked before
-              confirmation.
+              Complete six steps to review and confirm, then continue to Step 7 WiPay checkout.
             </p>
           </div>
 
           <div className="border-b border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-4 py-4 md:px-8">
-            <ol className="grid grid-cols-3 gap-3 md:grid-cols-6">
+            <ol className="grid grid-cols-4 gap-3 md:grid-cols-7">
               {STEPS.map((item) => {
                 const isActive = item.step === step;
                 const isDone = item.step < step;
+                const isUnlocked = item.step <= maxStepCompleted;
                 return (
-                  <li
-                    key={item.step}
-                    className={cn(
-                      "rounded-2xl border px-3 py-2 text-center transition",
-                      isActive
-                        ? "border-[var(--ccr-accent)] bg-[var(--ccr-accent)]/10 text-[var(--ccr-text)]"
-                        : isDone
-                          ? "border-[var(--ccr-accent)]/40 bg-[var(--ccr-accent)]/5 text-[var(--ccr-text)]"
-                          : "border-[var(--ccr-border)] bg-[var(--ccr-surface)] text-[var(--ccr-muted)]",
-                    )}
-                  >
-                    <p className="text-xs font-semibold uppercase tracking-wide">
-                      Step {item.step}
-                    </p>
-                    <p className="mt-1 text-sm font-semibold">{item.title}</p>
+                  <li key={item.step}>
+                    <button
+                      type="button"
+                      onClick={() => jumpToStep(item.step)}
+                      disabled={!isUnlocked || submitting}
+                      className={cn(
+                        "w-full rounded-2xl border px-3 py-2 text-center transition disabled:opacity-55",
+                        isActive
+                          ? "border-[var(--ccr-accent)] bg-[var(--ccr-accent)]/10 text-[var(--ccr-text)]"
+                          : isDone
+                            ? "border-[var(--ccr-accent)]/40 bg-[var(--ccr-accent)]/5 text-[var(--ccr-text)]"
+                            : "border-[var(--ccr-border)] bg-[var(--ccr-surface)] text-[var(--ccr-muted)]",
+                      )}
+                      data-testid={`booking-step-tab-${item.step}`}
+                    >
+                      <p className="text-xs font-semibold uppercase tracking-wide">
+                        Step {item.step}
+                      </p>
+                      <p className="mt-1 text-sm font-semibold">{item.title}</p>
+                    </button>
                   </li>
                 );
               })}
+              <li>
+                <button
+                  type="button"
+                  onClick={() => {
+                    resetMessages();
+                    setStep(6);
+                    setStatusMessage("Step 7 launches when you continue from Payments.");
+                  }}
+                  disabled={maxStepCompleted < 6 || submitting}
+                  className={cn(
+                    "w-full rounded-2xl border px-3 py-2 text-center transition disabled:opacity-55",
+                    maxStepCompleted >= 6
+                      ? "border-[var(--ccr-accent)]/40 bg-[var(--ccr-accent)]/5 text-[var(--ccr-text)]"
+                      : "border-[var(--ccr-border)] bg-[var(--ccr-surface)] text-[var(--ccr-muted)]",
+                  )}
+                  data-testid="booking-step-tab-7"
+                >
+                  <p className="text-xs font-semibold uppercase tracking-wide">
+                    Step {CHECKOUT_STEP.step}
+                  </p>
+                  <p className="mt-1 text-sm font-semibold">{CHECKOUT_STEP.title}</p>
+                </button>
+              </li>
             </ol>
           </div>
 
@@ -1774,6 +2265,23 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                   <p className="mt-1 text-sm text-[var(--ccr-muted)]">
                     Choose one vehicle to continue. Selection is revalidated before confirmation.
                   </p>
+                  {unavailableVehicleWarning ? (
+                    <div className="mt-4 rounded-xl border border-[var(--ccr-clerk-danger-border)] bg-[var(--ccr-clerk-danger-bg)] px-4 py-3 text-sm text-[var(--ccr-clerk-danger-text)]">
+                      {unavailableVehicleWarning}
+                    </div>
+                  ) : null}
+                  {hasSelectedVehicleId ? (
+                    <div className="mt-3">
+                      <button
+                        type="button"
+                        onClick={handleDeselectVehicle}
+                        className="rounded-xl border border-[var(--ccr-clerk-danger-border)] bg-[var(--ccr-surface-soft)] px-3 py-2 text-xs font-semibold text-[var(--ccr-clerk-danger-text)]"
+                        data-testid="booking-step2-deselect-vehicle"
+                      >
+                        Deselect vehicle
+                      </button>
+                    </div>
+                  ) : null}
 
                   {vehicleLoading ? <p className="mt-4 text-sm text-[var(--ccr-muted)]">Checking availability…</p> : null}
 
@@ -1805,19 +2313,30 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                             </div>
                           </div>
                           <div className="mt-4">
-                            <button
-                              type="button"
-                              onClick={() => void handleVehicleSelect(vehicle.id)}
-                              disabled={vehicleLoading}
-                              className={cn(
-                                "rounded-xl px-4 py-2 text-sm font-semibold",
-                                selected
-                                  ? "bg-[var(--ccr-primary)] text-[var(--ccr-on-primary)]"
-                                  : "border border-[var(--ccr-border)] bg-[var(--ccr-surface)] text-[var(--ccr-text)]",
-                              )}
-                            >
-                              {selected ? "Selected" : "Select Vehicle"}
-                            </button>
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={() => void handleVehicleSelect(vehicle.id)}
+                                disabled={vehicleLoading}
+                                className={cn(
+                                  "rounded-xl px-4 py-2 text-sm font-semibold",
+                                  selected
+                                    ? "bg-[var(--ccr-primary)] text-[var(--ccr-on-primary)]"
+                                    : "border border-[var(--ccr-border)] bg-[var(--ccr-surface)] text-[var(--ccr-text)]",
+                                )}
+                              >
+                                {selected ? "Selected" : "Select Vehicle"}
+                              </button>
+                              {selected ? (
+                                <button
+                                  type="button"
+                                  onClick={handleDeselectVehicle}
+                                  className="rounded-xl border border-[var(--ccr-clerk-danger-border)] bg-[var(--ccr-surface-soft)] px-4 py-2 text-sm font-semibold text-[var(--ccr-clerk-danger-text)]"
+                                >
+                                  Deselect
+                                </button>
+                              ) : null}
+                            </div>
                           </div>
                         </article>
                       );
@@ -2116,7 +2635,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                   <div className="mt-5 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4 text-sm text-[var(--ccr-muted)]">
                     <p>
                       <span className="font-semibold text-[var(--ccr-text)]">Vehicle:</span>{" "}
-                      {selectedVehicle ? displayVehicleName(selectedVehicle) : "Not selected"}
+                      {summaryVehicleLabel}
                     </p>
                     <p className="mt-1">
                       <span className="font-semibold text-[var(--ccr-text)]">Pickup:</span> {pickupDate}{" "}
@@ -2180,8 +2699,24 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                 <section data-testid="booking-step-payments">
                   <h2 className="text-xl font-bold text-[var(--ccr-text)]">Payments</h2>
                   <p className="mt-1 text-sm text-[var(--ccr-muted)]">
-                    Choose your payment option in JMD. WiPay is the final step for online payment.
+                    Choose your payment option in JMD. Step 7 launches hosted WiPay checkout.
                   </p>
+                  {step6VehicleWarning ? (
+                    <div
+                      className="mt-4 rounded-xl border border-[var(--ccr-clerk-danger-border)] bg-[var(--ccr-clerk-danger-bg)] px-4 py-3 text-sm text-[var(--ccr-clerk-danger-text)]"
+                      data-testid="booking-step6-vehicle-warning"
+                    >
+                      {step6VehicleWarning}
+                    </div>
+                  ) : null}
+                  {step6PricingWarning ? (
+                    <div
+                      className="mt-4 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-4 py-3 text-sm text-[var(--ccr-text)]"
+                      data-testid="booking-step6-pricing-warning"
+                    >
+                      {step6PricingWarning}
+                    </div>
+                  ) : null}
 
                   <div className="mt-5 grid gap-3 md:grid-cols-2">
                     <button
@@ -2279,10 +2814,15 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                     <button
                       type="button"
                       onClick={submitBooking}
-                      disabled={submitting || driversLicenseUploading || !turnstileToken}
+                      disabled={continueToPaymentDisabled}
                       className="rounded-xl bg-[var(--ccr-primary)] px-5 py-3 text-sm font-semibold text-[var(--ccr-on-primary)] disabled:opacity-60"
+                      data-testid="booking-continue-payment"
                     >
-                      {submitting ? "Submitting..." : paymentOption === "NONE" ? "Confirm Reservation" : "Continue to Payment"}
+                      {submitting
+                        ? "Submitting..."
+                        : paymentOption === "NONE"
+                          ? "Confirm Booking"
+                          : "Continue to WiPay"}
                     </button>
                   </div>
                 </section>
@@ -2294,7 +2834,14 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                 </p>
               ) : null}
               {statusMessage ? (
-                <p className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                <p
+                  className={cn(
+                    "mt-4 rounded-xl border px-4 py-3 text-sm",
+                    statusIsDraftRestoreNotice
+                      ? "border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] text-[var(--ccr-text)] shadow-sm shadow-black/5"
+                      : "border-emerald-200 bg-emerald-50 text-emerald-800",
+                  )}
+                >
                   {statusMessage}
                 </p>
               ) : null}
@@ -2304,7 +2851,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                   type="button"
                   onClick={() => setShowStartOverConfirm(true)}
                   disabled={submitting}
-                  className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 disabled:opacity-40"
+                  className="rounded-xl border border-[var(--ccr-clerk-danger-border)] bg-[var(--ccr-surface-soft)] px-4 py-2 text-sm font-semibold text-[var(--ccr-clerk-danger-text)] disabled:opacity-40"
                   data-testid="booking-start-over"
                 >
                   Start over
@@ -2349,11 +2896,21 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                 >
                   Change vehicle
                 </button>
+                {hasSelectedVehicleId ? (
+                  <button
+                    type="button"
+                    onClick={handleDeselectVehicle}
+                    className="rounded-lg border border-[var(--ccr-clerk-danger-border)] bg-[var(--ccr-primary-soft)]/40 px-3 py-1 text-xs font-semibold text-[var(--ccr-clerk-danger-text)]"
+                    data-testid="booking-summary-deselect-vehicle"
+                  >
+                    Deselect vehicle
+                  </button>
+                ) : null}
                 {draftWasRestored ? (
                   <button
                     type="button"
                     onClick={() => setShowStartOverConfirm(true)}
-                    className="rounded-lg border border-rose-300 bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-900"
+                    className="rounded-lg border border-[var(--ccr-clerk-danger-border)] bg-[var(--ccr-primary-soft)]/40 px-3 py-1 text-xs font-semibold text-[var(--ccr-clerk-danger-text)]"
                     data-testid="booking-summary-start-over"
                   >
                     Clear draft
@@ -2377,7 +2934,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                 </p>
                 <p>
                   <span className="text-[var(--ccr-on-primary-muted)]">Vehicle:</span>{" "}
-                  {selectedVehicle ? displayVehicleName(selectedVehicle) : "Not selected"}
+                  {summaryVehicleLabel}
                 </p>
               </div>
 
@@ -2392,37 +2949,40 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                   </div>
                 ) : (
                   <div className="mt-3 space-y-2 text-sm">
+                    {hideFallbackTotals ? (
+                      <p className="text-xs text-[var(--ccr-on-primary-muted)]">Calculating...</p>
+                    ) : null}
                     {pricingQuoteUpdating ? (
                       <p className="text-xs text-[var(--ccr-on-primary-muted)]">Updating...</p>
                     ) : null}
                     <div className="flex items-center justify-between">
                       <span>Days</span>
-                      <span className="font-semibold">{rentalDays}</span>
+                      <span className="font-semibold">{hideFallbackTotals ? "—" : rentalDays}</span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span>Base rental</span>
-                      <span className="font-semibold">{formatJmd(baseTotal)}</span>
+                      <span className="font-semibold">{hideFallbackTotals ? "—" : formatJmd(baseTotal)}</span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span>Insurance</span>
-                      <span className="font-semibold">{formatJmd(insuranceTotal)}</span>
+                      <span className="font-semibold">{hideFallbackTotals ? "—" : formatJmd(insuranceTotal)}</span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span>Coupon</span>
-                      <span className="font-semibold">-{formatJmd(discountTotal)}</span>
+                      <span className="font-semibold">{hideFallbackTotals ? "—" : `-${formatJmd(discountTotal)}`}</span>
                     </div>
                     <div className="my-2 h-px bg-[var(--ccr-border)]" />
                     <div className="flex items-center justify-between text-base">
                       <span className="font-semibold">Total</span>
-                      <span className="font-bold">{formatJmd(amountDue)}</span>
+                      <span className="font-bold">{hideFallbackTotals ? "—" : formatJmd(amountDue)}</span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span>Amount Required to Reserve</span>
-                      <span className="font-semibold">{formatJmd(depositRequired)}</span>
+                      <span className="font-semibold">{hideFallbackTotals ? "—" : formatJmd(depositRequired)}</span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span>Balance Due on Pickup</span>
-                      <span className="font-semibold">{formatJmd(balanceDueOnPickup)}</span>
+                      <span className="font-semibold">{hideFallbackTotals ? "—" : formatJmd(balanceDueOnPickup)}</span>
                     </div>
                   </div>
                 )}
@@ -2570,7 +3130,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
               <button
                 type="button"
                 onClick={handleStartOver}
-                className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white"
+                className="rounded-xl border border-[var(--ccr-clerk-danger-border)] bg-[var(--ccr-clerk-danger-bg)] px-4 py-2 text-sm font-semibold text-[var(--ccr-clerk-danger-text)]"
                 data-testid="booking-start-over-confirm"
               >
                 Start over

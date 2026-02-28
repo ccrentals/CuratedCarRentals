@@ -209,9 +209,11 @@ test.describe("@tour full app tour", () => {
 
     await page.reload({ waitUntil: "networkidle" });
     await page.locator('[data-testid="vehicle-detail-tab-overview"]').click();
+    await expect(page).toHaveURL(new RegExp(`/admin/vehicles/${vehicleId}\\?tab=overview`));
     await expect(page.locator('[data-testid="vehicle-profile-seat-count"]')).toHaveValue("6");
 
     await page.locator('[data-testid="vehicle-detail-tab-reservations"]').click();
+    await expect(page).toHaveURL(new RegExp(`/admin/vehicles/${vehicleId}\\?tab=reservations`));
     const reservationsPanel = page.locator('[data-testid="vehicle-reservations-panel"]');
     await expect(reservationsPanel).toBeVisible();
     await expect(reservationsPanel.locator('[data-testid="vehicle-reservations-summary"]')).toBeVisible();
@@ -226,6 +228,7 @@ test.describe("@tour full app tour", () => {
     }
 
     await page.locator('[data-testid="vehicle-detail-tab-performance"]').click();
+    await expect(page).toHaveURL(new RegExp(`/admin/vehicles/${vehicleId}\\?tab=performance`));
     const performancePanel = page.locator('[data-testid="vehicle-performance-panel"]');
     await expect(performancePanel).toBeVisible();
     await expect(performancePanel.locator('[data-testid="performance-range-selector"]')).toBeVisible();
@@ -249,6 +252,7 @@ test.describe("@tour full app tour", () => {
     await expect(page.locator('[data-testid="vehicle-blockouts-panel"]')).toBeVisible();
 
     await page.locator('[data-testid="vehicle-detail-tab-availability"]').click();
+    await expect(page).toHaveURL(new RegExp(`/admin/vehicles/${vehicleId}\\?tab=availability`));
     const availabilityPanel = page.locator('[data-testid="vehicle-availability-rules-panel"]');
     await expect(availabilityPanel).toBeVisible();
     const advanceNoticeInput = availabilityPanel.locator('[data-testid="availability-rules-advance-notice"]');
@@ -258,12 +262,14 @@ test.describe("@tour full app tour", () => {
     await expect(page.getByText("Availability rules saved.")).toBeVisible();
 
     await page.reload({ waitUntil: "networkidle" });
-    await page.locator('[data-testid="vehicle-detail-tab-availability"]').click();
+    await expect(page).toHaveURL(new RegExp(`/admin/vehicles/${vehicleId}\\?tab=availability`));
+    await expect(page.locator('[data-testid="vehicle-availability-rules-panel"]')).toBeVisible();
     await expect(
       page.locator('[data-testid="availability-rules-advance-notice"]'),
     ).toHaveValue(String(nextAdvanceNotice));
 
     await page.locator('[data-testid="vehicle-detail-tab-pricing"]').click();
+    await expect(page).toHaveURL(new RegExp(`/admin/vehicles/${vehicleId}\\?tab=pricing`));
     const pricingPanel = page.locator('[data-testid="vehicle-pricing-panel"]');
     await expect(pricingPanel).toBeVisible();
 
@@ -497,6 +503,17 @@ test.describe("@tour full app tour", () => {
     expect(quoteListPublicId).not.toMatch(UUID_PATTERN);
 
     await page.goto("/admin/settings", { waitUntil: "networkidle" });
+    await expect(page.locator('[data-testid="settings-tabs"]')).toBeVisible();
+    await page.locator('[data-testid="settings-tab-notifications"]').click();
+    await expect(page).toHaveURL(/\/admin\/settings\?tab=notifications/);
+    await expect(page.locator('[data-testid="settings-panel-notifications"]:visible').first()).toBeVisible();
+    await page.locator('[data-testid="settings-tab-maintenance"]').click();
+    await expect(page).toHaveURL(/\/admin\/settings\?tab=maintenance/);
+    await expect(page.locator('[data-testid="settings-panel-maintenance"]:visible').first()).toBeVisible();
+
+    await page.reload({ waitUntil: "networkidle" });
+    await expect(page).toHaveURL(/\/admin\/settings\?tab=maintenance/);
+    await expect(page.locator('[data-testid="settings-panel-maintenance"]:visible').first()).toBeVisible();
     await expect(page.locator('[data-testid="admin-settings"]')).toBeVisible();
 
     const dueSoonDaysInput = page.locator('[data-testid="settings-maintenanceDueSoonDays"]');
@@ -515,9 +532,50 @@ test.describe("@tour full app tour", () => {
         .first(),
     ).toBeVisible();
 
-    await page.goto("/admin/settings", { waitUntil: "networkidle" });
+    await page.goto("/admin/settings?tab=maintenance", { waitUntil: "networkidle" });
     await dueSoonDaysInput.fill(String(originalDueSoonDays));
     await page.locator('[data-testid="settings-save"]').click();
     await expect(page.getByText("Settings saved.")).toBeVisible();
+
+    const deleteCandidateMake = `TourDelete${Date.now()}`;
+    const createDeleteCandidateResponse = await page.request.post("/api/admin/vehicles", {
+      headers: {
+        "x-csrf-token": csrfToken ?? "",
+      },
+      data: {
+        make: deleteCandidateMake,
+        model: "Archive",
+        year: 2024,
+        daily_rate_jmd: 14500,
+        deposit_jmd: 3500,
+        status: "AVAILABLE",
+        csrfToken: csrfToken ?? "",
+      },
+    });
+    expect(createDeleteCandidateResponse.ok()).toBeTruthy();
+    const createDeleteCandidatePayload = (await createDeleteCandidateResponse.json()) as {
+      vehicle?: { id?: string };
+    };
+    const deleteCandidateId = String(createDeleteCandidatePayload.vehicle?.id ?? "");
+    expect(deleteCandidateId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    );
+
+    await page.goto(`/admin/vehicles/${deleteCandidateId}`, { waitUntil: "networkidle" });
+    await expect(page.locator('[data-testid="vehicle-delete-button"]')).toBeVisible();
+    await page.locator('[data-testid="vehicle-delete-button"]').click();
+    await expect(page.locator('[data-testid="vehicle-delete-modal"]')).toBeVisible();
+    await page.locator('[data-testid="vehicle-delete-confirm"]').click();
+    await page.waitForURL(/\/admin\/vehicles(\?.*)?$/);
+    await expect(page.getByText("Vehicle archived successfully.")).toBeVisible();
+    await expect(
+      page.locator(`[data-testid="vehicle-row"][data-vehicle-id="${deleteCandidateId}"]`),
+    ).toHaveCount(0);
+
+    await page.locator('[data-testid="vehicles-view-archived"]').click();
+    await expect(page).toHaveURL(/includeDeleted=1/);
+    await expect(
+      page.locator(`[data-testid="vehicle-row"][data-vehicle-id="${deleteCandidateId}"]`).first(),
+    ).toBeVisible();
   });
 });

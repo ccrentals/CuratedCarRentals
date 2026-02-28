@@ -58,6 +58,8 @@ function formatJmd(amount: number) {
   });
 }
 
+const WIZARD_DRAFT_STORAGE_KEY = "ccr_booking_wizard_draft_v1";
+
 async function mockBookingApis(page: Page) {
   await page.route("**/api/public/locations", async (route) => {
     await route.fulfill({
@@ -296,14 +298,290 @@ test("insurance and promo update totals using pricing quote", async ({ page }) =
   expect(quoteWithInsuranceAndPromoJson.summary.total).toBe(expectedSummary.total);
 });
 
+test("step 6 hydrates pricing quote from draft vehicle and renders non-zero totals", async ({ page }) => {
+  await page.addInitScript(({ storageKey, vehicleId }) => {
+    window.sessionStorage.setItem(
+      storageKey,
+      JSON.stringify({
+        step: 6,
+        maxStepCompleted: 6,
+        pickupDate: "2099-05-10",
+        pickupTime: "10:00",
+        dropoffDate: "2099-05-12",
+        dropoffTime: "10:00",
+        pickupLocationId: "L1",
+        dropoffLocationId: "L1",
+        selectedVehicleId: vehicleId,
+        paymentOption: "DEPOSIT",
+      }),
+    );
+  }, { storageKey: WIZARD_DRAFT_STORAGE_KEY, vehicleId: VEHICLE_ID });
+
+  const quoteResponsePromise = page.waitForResponse((response) => {
+    if (!response.url().includes("/api/public/pricing/quote")) return false;
+    const body = response.request().postData() ?? "";
+    return body.includes(`\"vehicleId\":\"${VEHICLE_ID}\"`);
+  });
+
+  await page.goto("/book", { waitUntil: "networkidle" });
+  await expect(page.locator('[data-testid="booking-step-payments"]')).toBeVisible();
+
+  const quoteResponse = await quoteResponsePromise;
+  const quoteJson = (await quoteResponse.json()) as { summary: { baseTotal: number; total: number } };
+  const pricingPanel = page.locator("aside").filter({ hasText: "Pricing (JMD)" });
+  await expect(pricingPanel).toContainText(formatJmd(quoteJson.summary.baseTotal));
+  await expect(pricingPanel).toContainText(formatJmd(quoteJson.summary.total));
+});
+
+test("step 6 shows missing vehicle warning and disables continue", async ({ page }) => {
+  await page.addInitScript(({ storageKey }) => {
+    window.sessionStorage.setItem(
+      storageKey,
+      JSON.stringify({
+        step: 6,
+        maxStepCompleted: 6,
+        pickupDate: "2099-05-10",
+        pickupTime: "10:00",
+        dropoffDate: "2099-05-12",
+        dropoffTime: "10:00",
+        pickupLocationId: "L1",
+        dropoffLocationId: "L1",
+        paymentOption: "DEPOSIT",
+      }),
+    );
+  }, { storageKey: WIZARD_DRAFT_STORAGE_KEY });
+
+  await page.goto("/book", { waitUntil: "networkidle" });
+  await expect(page.locator('[data-testid="booking-step-payments"]')).toBeVisible();
+  await expect(page.locator('[data-testid="booking-step6-vehicle-warning"]')).toContainText(
+    "Select a vehicle to continue.",
+  );
+  await expect(page.locator('[data-testid="booking-continue-payment"]')).toBeDisabled();
+});
+
+test("step 6 idle stays stable without request loop", async ({ page }) => {
+  test.setTimeout(120_000);
+
+  let vehicleRequestCount = 0;
+  let quoteRequestCount = 0;
+
+  await page.unroute("**/api/public/vehicles**");
+  await page.unroute("**/api/public/pricing/quote");
+
+  await page.route("**/api/public/vehicles**", async (route) => {
+    vehicleRequestCount += 1;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        vehicles: [
+          {
+            id: VEHICLE_ID,
+            name: "Toyota Test",
+            make: "Toyota",
+            model: "Yaris",
+            daily_rate_cents: 10000,
+            deposit_cents: 3000,
+            transmission: "Automatic",
+            seats: 5,
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route("**/api/public/pricing/quote", async (route) => {
+    quoteRequestCount += 1;
+    const payload = route.request().postDataJSON() as QuotePayload;
+    const summary = buildQuoteSummary(payload);
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: true, summary, currency: "JMD" }),
+    });
+  });
+
+  await page.goto("/book", { waitUntil: "networkidle" });
+  await advanceToPaymentsStep(page);
+
+  const summaryPanel = page.locator("aside").filter({ hasText: "Pricing (JMD)" });
+  await expect(summaryPanel).toContainText("Vehicle: Toyota Test");
+
+  const vehicleCountBeforeIdle = vehicleRequestCount;
+  const quoteCountBeforeIdle = quoteRequestCount;
+
+  await page.waitForTimeout(75_000);
+
+  const vehiclesDuringIdle = vehicleRequestCount - vehicleCountBeforeIdle;
+  const quotesDuringIdle = quoteRequestCount - quoteCountBeforeIdle;
+  const summaryText = (await summaryPanel.textContent()) ?? "";
+
+  await expect(page.locator('[data-testid="booking-step6-vehicle-warning"]')).toHaveCount(0);
+  await expect(summaryPanel).toContainText("Vehicle: Toyota Test");
+  expect(summaryText).not.toMatch(/Total\s*\$0\.00/);
+  expect(vehiclesDuringIdle).toBeLessThanOrEqual(3);
+  expect(quotesDuringIdle).toBeLessThanOrEqual(3);
+});
+
+test("restored unavailable vehicle is retained until explicitly deselected", async ({ page }) => {
+  const unavailableVehicleId = "99999999-9999-4999-8999-999999999999";
+
+  await page.addInitScript(({ storageKey, vehicleId }) => {
+    window.sessionStorage.setItem(
+      storageKey,
+      JSON.stringify({
+        step: 6,
+        maxStepCompleted: 6,
+        pickupDate: "2099-05-10",
+        pickupTime: "10:00",
+        dropoffDate: "2099-05-12",
+        dropoffTime: "10:00",
+        pickupLocationId: "L1",
+        dropoffLocationId: "L1",
+        selectedVehicleId: vehicleId,
+        paymentOption: "DEPOSIT",
+      }),
+    );
+  }, { storageKey: WIZARD_DRAFT_STORAGE_KEY, vehicleId: unavailableVehicleId });
+
+  await page.goto("/book", { waitUntil: "networkidle" });
+  await expect(page.locator('[data-testid="booking-step-payments"]')).toBeVisible();
+  await expect(page.locator('[data-testid="booking-step6-vehicle-warning"]')).toContainText(
+    "Selected vehicle is no longer available for these dates. Choose another.",
+  );
+
+  const summaryPanel = page.locator("aside").filter({ hasText: "Summary" });
+  await expect(summaryPanel).toContainText("Vehicle: Unavailable for selected dates");
+  await expect(page.locator('[data-testid="booking-continue-payment"]')).toBeDisabled();
+
+  await page.locator('[data-testid="booking-summary-deselect-vehicle"]').click();
+  await expect(page.locator('[data-testid="booking-step-vehicles"]')).toBeVisible();
+  await expect(summaryPanel).toContainText("Vehicle: Not selected");
+});
+
+test("step tabs unlock by completion and preserve entered Step 3 values", async ({ page }) => {
+  await page.goto("/book", { waitUntil: "networkidle" });
+
+  await expect(page.locator('[data-testid="booking-step-tab-2"]')).toBeDisabled();
+  await page.getByRole("button", { name: "Next Step" }).click();
+  await expect(page.locator('[data-testid="booking-step-tab-3"]')).toBeDisabled();
+
+  await page.getByRole("button", { name: "Select Vehicle" }).click();
+  await page.getByRole("button", { name: "Next Step" }).click();
+  await expect(page.locator('[data-testid="booking-step-tab-4"]')).toBeDisabled();
+
+  const quoteWithPromoPromise = page.waitForResponse((response) => {
+    if (!response.url().includes("/api/public/pricing/quote")) return false;
+    const body = response.request().postData() ?? "";
+    return body.includes(`\"vehicleId\":\"${VEHICLE_ID}\"`) && body.includes("\"promoCode\":\"SAVE5\"");
+  });
+
+  await page.getByLabel("Add plan").check();
+  await page.getByPlaceholder("Enter coupon code").fill("SAVE5");
+  await page.getByRole("button", { name: "Apply" }).click();
+  const quoteWithPromoJson = (await (await quoteWithPromoPromise).json()) as { summary: { total: number } };
+
+  await page.getByRole("button", { name: "Next Step" }).click();
+  await page.getByLabel("First Name *").fill("Step");
+  await page.getByLabel("Last Name *").fill("Tabs");
+  await page.getByLabel("DL Number *").fill("D1234567");
+  const fileInputs = page.locator('input[type="file"]');
+  await fileInputs.first().setInputFiles({
+    name: "dl.jpg",
+    mimeType: "image/jpeg",
+    buffer: Buffer.from("fake-dl-image"),
+  });
+  await page.getByRole("button", { name: "Next Step" }).click();
+
+  const signatureCanvas = page.locator("canvas").first();
+  await signatureCanvas.click({ position: { x: 20, y: 20 } });
+  await page.getByLabel("By clicking here, I confirm that I accept the privacy policy and terms.").check();
+  await page.getByRole("button", { name: "Next Step" }).click();
+  await expect(page.locator('[data-testid="booking-step-payments"]')).toBeVisible();
+
+  await page.locator('[data-testid="booking-step-tab-3"]').click();
+  await expect(page.getByRole("heading", { name: "Protections & Coverage" })).toBeVisible();
+  await expect(page.getByLabel("Add plan")).toBeChecked();
+  await expect(page.getByPlaceholder("Enter coupon code")).toHaveValue("SAVE5");
+
+  await page.locator('[data-testid="booking-step-tab-6"]').click();
+  await expect(page.locator('[data-testid="booking-step-payments"]')).toBeVisible();
+  await expect(page.locator("aside").filter({ hasText: "Pricing (JMD)" })).toContainText(
+    formatJmd(quoteWithPromoJson.summary.total),
+  );
+});
+
+test("step 5 does not show vehicle as not selected while draft selection resolves", async ({ page }) => {
+  await page.addInitScript(({ storageKey, vehicleId }) => {
+    window.sessionStorage.setItem(
+      storageKey,
+      JSON.stringify({
+        step: 5,
+        maxStepCompleted: 5,
+        pickupDate: "2099-05-10",
+        pickupTime: "10:00",
+        dropoffDate: "2099-05-12",
+        dropoffTime: "10:00",
+        pickupLocationId: "L1",
+        dropoffLocationId: "L1",
+        selectedVehicleId: vehicleId,
+        firstName: "Draft",
+        lastName: "User",
+        driversLicenseNumber: "D1234567",
+      }),
+    );
+  }, { storageKey: WIZARD_DRAFT_STORAGE_KEY, vehicleId: VEHICLE_ID });
+
+  await page.goto("/book", { waitUntil: "networkidle" });
+  await expect(page.getByRole("heading", { name: "Confirm Reservation" })).toBeVisible();
+  const confirmPanel = page.locator("section").filter({ hasText: "Confirm Reservation" });
+  await expect(confirmPanel).not.toContainText("Vehicle: Not selected");
+});
+
+test("step 7 checkout route starts WiPay and follows redirect URL", async ({ page }) => {
+  let startCallCount = 0;
+
+  await page.route("**/api/payments/wipay/start", async (route) => {
+    startCallCount += 1;
+    const payload = route.request().postDataJSON() as { bookingId?: string };
+    expect(payload.bookingId).toBe("booking-123");
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        redirectUrl: "/mock-wipay-checkout",
+      }),
+    });
+  });
+
+  await page.route("**/mock-wipay-checkout", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "text/html",
+      body: "<html><body><h1>Mock WiPay Checkout</h1></body></html>",
+    });
+  });
+
+  await page.goto("/book/checkout?bookingId=booking-123&paymentOption=DEPOSIT", { waitUntil: "networkidle" });
+  await page.waitForURL("**/mock-wipay-checkout");
+  expect(startCallCount).toBe(1);
+  await expect(page.getByRole("heading", { name: "Mock WiPay Checkout" })).toBeVisible();
+});
+
 test("booking draft can be restored then cleared with start over", async ({ page }) => {
   await page.goto("/book", { waitUntil: "networkidle" });
   await advanceToPaymentsStep(page);
 
   await page.reload({ waitUntil: "networkidle" });
+  await expect(page.locator('[data-testid="booking-draft-loading"]')).toHaveCount(0);
   await expect(
     page.getByText("Draft restored. For security, please re-upload your driver's license image and signature."),
   ).toBeVisible();
+  const summaryPanel = page.locator("aside").filter({ hasText: "Pricing (JMD)" }).first();
+  await expect(summaryPanel).not.toContainText("Vehicle: Not selected");
+  const summaryText = (await summaryPanel.textContent()) ?? "";
+  expect(summaryText).not.toMatch(/Total\s*\$0\.00/);
 
   await page.locator('[data-testid="booking-start-over"]').click();
   await expect(page.locator('[data-testid="booking-start-over-dialog"]')).toBeVisible();
