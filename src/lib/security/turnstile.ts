@@ -1,4 +1,4 @@
-import { TURNSTILE_DEV_BYPASS_TOKEN, type TurnstileAction } from "@/lib/security/turnstileShared";
+import { type TurnstileAction } from "@/lib/security/turnstileShared";
 
 const TURNSTILE_SITEVERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 
@@ -42,14 +42,7 @@ export function isTurnstileConfigured() {
 }
 
 function isTurnstileDevBypassEnabled() {
-  if (process.env.NODE_ENV === "production") {
-    return false;
-  }
-  return readEnv("TURNSTILE_DEV_BYPASS") === "1" || readEnv("NEXT_PUBLIC_TURNSTILE_DEV_BYPASS") === "1";
-}
-
-function isDevelopmentBypassMode() {
-  return process.env.NODE_ENV !== "production" && !isTurnstileConfigured() && isTurnstileDevBypassEnabled();
+  return process.env.NODE_ENV !== "production" && readEnv("TURNSTILE_DEV_BYPASS") === "1";
 }
 
 export function extractTurnstileToken(body: unknown, request?: Request) {
@@ -105,11 +98,11 @@ export async function verifyTurnstileToken(input: {
   remoteIp?: string | null;
   expectedAction: TurnstileAction;
 }): Promise<TurnstileVerificationResult> {
-  const token = normalizeText(input.token);
-
-  if (isDevelopmentBypassMode()) {
-    if (!token || token === TURNSTILE_DEV_BYPASS_TOKEN) return { ok: true, bypassed: true };
+  if (isTurnstileDevBypassEnabled()) {
+    return { ok: true, bypassed: true };
   }
+
+  const token = normalizeText(input.token);
 
   if (!isTurnstileConfigured()) {
     const isDevelopment = process.env.NODE_ENV !== "production";

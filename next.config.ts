@@ -38,6 +38,15 @@ function buildCsp() {
     ...UPLOADCARE_DOMAINS,
   ];
 
+  // In dev, Next.js HMR uses websockets (ws/wss). CSP `connect-src 'self'` does not cover ws/wss.
+  const connectSrc = [
+    "'self'",
+    ...CLERK_DOMAINS,
+    ...TURNSTILE_DOMAINS,
+    ...UPLOADCARE_DOMAINS,
+    ...(!IS_PRODUCTION ? ["ws:", "wss:"] : []),
+  ];
+
   const directives = [
     `default-src 'self'`,
     `base-uri 'self'`,
@@ -47,9 +56,7 @@ function buildCsp() {
     `style-src 'self' 'unsafe-inline'`,
     `font-src 'self' data:`,
     `img-src 'self' data: blob: ${[...CLERK_DOMAINS, ...UPLOADCARE_DOMAINS].join(" ")}`,
-    `connect-src 'self' ${[...CLERK_DOMAINS, ...TURNSTILE_DOMAINS, ...UPLOADCARE_DOMAINS].join(
-      " ",
-    )}`,
+    `connect-src ${connectSrc.join(" ")}`,
     `frame-src 'self' ${[...CLERK_DOMAINS, ...TURNSTILE_DOMAINS, ...WIPAY_DOMAINS].join(" ")}`,
     `worker-src 'self' blob:`,
     `media-src 'self' blob:`,
@@ -88,6 +95,15 @@ const SECURITY_HEADERS: Array<{ key: string; value: string }> = [
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   reactCompiler: true,
+
+  // Allow Next dev to serve /_next assets when using a custom local hostname (ccr.test).
+  allowedDevOrigins: [
+    "http://ccr.test:3000",
+    "http://localhost:3000",
+    "https://ccr.test:3000",
+    "https://localhost:3000",
+  ],
+
   async headers() {
     return [
       {

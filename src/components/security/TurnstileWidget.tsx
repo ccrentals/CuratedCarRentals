@@ -98,8 +98,14 @@ export function TurnstileWidget({
   const widgetIdRef = useRef<string | null>(null);
   const [renderError, setRenderError] = useState<string | null>(null);
   const [widgetRenderKey, setWidgetRenderKey] = useState(0);
+  const devBypassActive = process.env.NODE_ENV !== "production" && devBypassEnabled;
 
   function retryRender() {
+    if (devBypassActive) {
+      onTokenChange(TURNSTILE_DEV_BYPASS_TOKEN);
+      setRenderError(null);
+      return;
+    }
     onTokenChange(null);
     setRenderError(null);
     if (widgetIdRef.current && window.turnstile) {
@@ -111,18 +117,24 @@ export function TurnstileWidget({
   }
 
   useEffect(() => {
+    if (devBypassActive) {
+      onTokenChange(TURNSTILE_DEV_BYPASS_TOKEN);
+      const clearErrorTimer = window.setTimeout(() => {
+        setRenderError(null);
+      }, 0);
+      return () => {
+        window.clearTimeout(clearErrorTimer);
+      };
+    }
+
     if (!TURNSTILE_SITE_KEY) {
       let nextError: string | null = null;
-      if (process.env.NODE_ENV !== "production" && devBypassEnabled) {
-        onTokenChange(TURNSTILE_DEV_BYPASS_TOKEN);
+      onTokenChange(null);
+      if (process.env.NODE_ENV !== "production") {
+        nextError =
+          "Security check isn't configured for this environment. Configure Turnstile keys or set TURNSTILE_DEV_BYPASS=1 for local testing.";
       } else {
-        onTokenChange(null);
-        if (process.env.NODE_ENV !== "production") {
-          nextError =
-            "Security check isn't configured for this environment. Configure Turnstile keys or set TURNSTILE_DEV_BYPASS=1 for local testing.";
-        } else {
-          nextError = "Security check is currently unavailable. Please try again.";
-        }
+        nextError = "Security check is currently unavailable. Please try again.";
       }
       const errorTimer = window.setTimeout(() => {
         setRenderError(nextError);
@@ -178,9 +190,18 @@ export function TurnstileWidget({
       }
       widgetIdRef.current = null;
     };
-  }, [action, devBypassEnabled, onTokenChange, theme, widgetRenderKey]);
+  }, [action, devBypassActive, onTokenChange, theme, widgetRenderKey]);
 
   useEffect(() => {
+    if (devBypassActive) {
+      onTokenChange(TURNSTILE_DEV_BYPASS_TOKEN);
+      const clearErrorTimer = window.setTimeout(() => {
+        setRenderError(null);
+      }, 0);
+      return () => {
+        window.clearTimeout(clearErrorTimer);
+      };
+    }
     if (!TURNSTILE_SITE_KEY || !widgetIdRef.current || !window.turnstile) return;
     onTokenChange(null);
     const clearErrorTimer = window.setTimeout(() => {
@@ -190,14 +211,16 @@ export function TurnstileWidget({
     return () => {
       window.clearTimeout(clearErrorTimer);
     };
-  }, [onTokenChange, resetKey]);
+  }, [devBypassActive, onTokenChange, resetKey]);
 
   return (
     <div className={cn("space-y-2", className)}>
-      {TURNSTILE_SITE_KEY ? <div ref={containerRef} key={widgetRenderKey} data-testid="turnstile-container" /> : null}
-      {!TURNSTILE_SITE_KEY && process.env.NODE_ENV !== "production" && devBypassEnabled ? (
+      {!devBypassActive && TURNSTILE_SITE_KEY ? (
+        <div ref={containerRef} key={widgetRenderKey} data-testid="turnstile-container" />
+      ) : null}
+      {devBypassActive ? (
         <p className="text-xs text-[var(--ccr-muted)]" data-testid="turnstile-dev-bypass-note">
-          Turnstile bypass is active in local development because keys are not configured.
+          Security check disabled (local dev)
         </p>
       ) : null}
       {renderError ? (
@@ -205,7 +228,7 @@ export function TurnstileWidget({
           <p className="text-xs text-rose-600" data-testid="turnstile-error-message">
             {renderError}
           </p>
-          {TURNSTILE_SITE_KEY ? (
+          {!devBypassActive ? (
             <button
               type="button"
               onClick={retryRender}
