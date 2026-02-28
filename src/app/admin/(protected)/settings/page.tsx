@@ -2,7 +2,10 @@ import Link from "next/link";
 import { isAdminRole, isDeveloperRole } from "@/lib/auth/roles";
 
 import { AdminSettingsForm } from "@/components/admin/AdminSettingsForm";
+import type { AdminSettingsFormTab } from "@/components/admin/AdminSettingsForm";
+import { AdminPillTabs } from "@/components/admin/AdminPillTabs";
 import { BookingFlowConfigPanel } from "@/components/admin/BookingFlowConfigPanel";
+import { SettingsVehiclesPanel } from "@/components/admin/SettingsVehiclesPanel";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { DEFAULT_ADMIN_SETTINGS, normalizeAdminSettingsValue } from "@/lib/adminSettings";
 import { dbQuery } from "@/lib/db";
@@ -13,6 +16,47 @@ type SettingRow = {
   updated_at: string;
   updated_by_email: string | null;
 };
+
+const SETTINGS_TABS = [
+  { key: "general", label: "General" },
+  { key: "notifications", label: "Notifications" },
+  { key: "maintenance", label: "Maintenance" },
+  { key: "documents", label: "Vehicle Docs" },
+  { key: "vehicles", label: "Vehicles" },
+  { key: "depreciation", label: "Depreciation" },
+  { key: "booking-flow", label: "Booking Flow" },
+] as const;
+
+type AdminSettingsTab = (typeof SETTINGS_TABS)[number]["key"];
+
+function normalizeAdminSettingsTab(value: string | string[] | undefined): AdminSettingsTab {
+  const candidate = typeof value === "string" ? value.toLowerCase().trim() : "";
+  const match = SETTINGS_TABS.find((tab) => tab.key === candidate);
+  return match?.key ?? "general";
+}
+
+function isSettingsFormTab(tab: AdminSettingsTab): tab is AdminSettingsFormTab {
+  return (
+    tab === "general" ||
+    tab === "notifications" ||
+    tab === "maintenance" ||
+    tab === "documents" ||
+    tab === "depreciation"
+  );
+}
+
+function buildSettingsTabHref(
+  tab: AdminSettingsTab,
+  params: Record<string, string | string[] | undefined>,
+) {
+  const nextQuery = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (typeof value !== "string" || key === "tab") continue;
+    nextQuery.set(key, value);
+  }
+  nextQuery.set("tab", tab);
+  return `/admin/settings?${nextQuery.toString()}`;
+}
 
 function parseStoredSettings(content: unknown): AdminSettings {
   if (typeof content !== "string" || !content.trim()) {
@@ -26,7 +70,13 @@ function parseStoredSettings(content: unknown): AdminSettings {
   }
 }
 
-export default async function AdminSettingsPage() {
+export default async function AdminSettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const query = await searchParams;
+  const activeTab = normalizeAdminSettingsTab(query.tab);
   const session = await getSessionFromRequest();
   const isAdmin = isAdminRole(session?.role);
   const isDeveloper = isDeveloperRole(session?.role);
@@ -79,28 +129,47 @@ export default async function AdminSettingsPage() {
           <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
             <p className="text-sm font-semibold text-[var(--ccr-text)]">Admin access required.</p>
             <p className="mt-2 text-sm text-[var(--ccr-muted)]">
-              Only ADMIN users can modify platform settings.
-            </p>
-          </section>
-        ) : tableMissing ? (
-          <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
-            <p className="text-sm font-semibold text-[var(--ccr-text)]">Settings storage not configured.</p>
-            <p className="mt-2 text-sm text-[var(--ccr-muted)]">
-              The <code>admin_documents</code> table is missing. Apply the current schema in Neon and
-              refresh this page.
-            </p>
+            Only ADMIN users can modify platform settings.
+          </p>
           </section>
         ) : (
-          <AdminSettingsForm
-            initialSettings={settings}
-            updatedAt={updatedAt}
-            updatedByEmail={updatedByEmail}
-            disabled={!isAdmin}
-            showDeveloperControls={isDeveloper}
-          />
-        )}
+          <>
+            <AdminPillTabs
+              tabs={SETTINGS_TABS.map((tab) => ({
+                key: tab.key,
+                label: tab.label,
+                href: buildSettingsTabHref(tab.key, query),
+              }))}
+              activeKey={activeTab}
+              ariaLabel="Admin settings tabs"
+              navTestId="settings-tabs"
+              tabTestIdPrefix="settings-tab"
+            />
 
-        {isAdmin ? <BookingFlowConfigPanel /> : null}
+            {activeTab === "booking-flow" ? (
+              <BookingFlowConfigPanel />
+            ) : activeTab === "vehicles" ? (
+              <SettingsVehiclesPanel />
+            ) : tableMissing ? (
+              <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
+                <p className="text-sm font-semibold text-[var(--ccr-text)]">Settings storage not configured.</p>
+                <p className="mt-2 text-sm text-[var(--ccr-muted)]">
+                  The <code>admin_documents</code> table is missing. Apply the current schema in Neon and
+                  refresh this page.
+                </p>
+              </section>
+            ) : isSettingsFormTab(activeTab) ? (
+              <AdminSettingsForm
+                initialSettings={settings}
+                updatedAt={updatedAt}
+                updatedByEmail={updatedByEmail}
+                activeTab={activeTab}
+                disabled={!isAdmin}
+                showDeveloperControls={isDeveloper}
+              />
+            ) : null}
+          </>
+        )}
       </div>
     </div>
   );

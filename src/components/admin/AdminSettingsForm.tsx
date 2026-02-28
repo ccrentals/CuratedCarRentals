@@ -42,9 +42,17 @@ type AdminSettingsFormProps = {
   initialSettings: AdminSettings;
   updatedAt: string | null;
   updatedByEmail: string | null;
+  activeTab: AdminSettingsFormTab;
   disabled?: boolean;
   showDeveloperControls?: boolean;
 };
+
+export type AdminSettingsFormTab =
+  | "general"
+  | "notifications"
+  | "maintenance"
+  | "documents"
+  | "depreciation";
 
 type ToggleField = {
   key:
@@ -94,10 +102,20 @@ const TOGGLE_FIELDS: ToggleField[] = [
   },
 ];
 
+const TOGGLE_FIELD_TAB_MAP: Record<ToggleField["key"], AdminSettingsFormTab> = {
+  blockoutSupersedesBookings: "general",
+  requireRestoreReason: "general",
+  sendPickupReminder: "notifications",
+  sendDropoffReminder: "notifications",
+  sendLateDropoffAlert: "notifications",
+  maintenanceRemindersEnabled: "maintenance",
+};
+
 export function AdminSettingsForm({
   initialSettings,
   updatedAt,
   updatedByEmail,
+  activeTab,
   disabled,
   showDeveloperControls = false,
 }: AdminSettingsFormProps) {
@@ -303,6 +321,14 @@ export function AdminSettingsForm({
   const vehicleChecklistTemplateItemsValue = settings.vehicleChecklistTemplateItems.join("\n");
   const maintenanceCategoriesValue = settings.maintenanceCategories.join("\n");
   const maintenancePrioritiesValue = settings.maintenancePriorities.join("\n");
+  const isGeneralTab = activeTab === "general";
+  const isNotificationsTab = activeTab === "notifications";
+  const isMaintenanceTab = activeTab === "maintenance";
+  const isDocumentsTab = activeTab === "documents";
+  const isDepreciationTab = activeTab === "depreciation";
+  const visibleToggleFields = TOGGLE_FIELDS.filter(
+    (field) => TOGGLE_FIELD_TAB_MAP[field.key] === activeTab,
+  );
 
   return (
     <section
@@ -332,8 +358,11 @@ export function AdminSettingsForm({
       </div>
 
       <div className="mt-5 space-y-3">
-        {showDeveloperControls ? (
-          <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
+        {showDeveloperControls && isGeneralTab ? (
+          <div
+            data-testid="settings-panel-general"
+            className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4"
+          >
             <p className="text-sm font-semibold text-[var(--ccr-text)]">Primary Admin Login Method</p>
             <p className="mt-1 text-xs text-[var(--ccr-muted)]">
               Both routes remain available. This changes the default Admin sign-in path.
@@ -363,7 +392,10 @@ export function AdminSettingsForm({
           </div>
         ) : null}
 
-        <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
+        <div
+          data-testid="settings-panel-general"
+          className={`${isGeneralTab ? "" : "hidden"} rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4`}
+        >
           <p className="text-sm font-semibold text-[var(--ccr-text)]">Day View booking limit</p>
           <p className="mt-1 text-xs text-[var(--ccr-muted)]">
             Controls how many bookings are shown first in Calendar Day View before “Show more”.
@@ -391,7 +423,10 @@ export function AdminSettingsForm({
           </div>
         </div>
 
-        <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
+        <div
+          data-testid="settings-panel-notifications"
+          className={`${isNotificationsTab ? "" : "hidden"} rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4`}
+        >
           <p className="text-sm font-semibold text-[var(--ccr-text)]">Message notification recipients</p>
           <p className="mt-1 text-xs text-[var(--ccr-muted)]">
             Comma-separated emails for contact message alerts. Leave empty to use <code>ADMIN_NOTIFY_EMAILS</code>.
@@ -413,7 +448,10 @@ export function AdminSettingsForm({
           </div>
         </div>
 
-        <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
+        <div
+          data-testid="settings-panel-notifications"
+          className={`${isNotificationsTab ? "" : "hidden"} rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4`}
+        >
           <p className="text-sm font-semibold text-[var(--ccr-text)]">Contact notification cooldown</p>
           <p className="mt-1 text-xs text-[var(--ccr-muted)]">
             Prevent duplicate alerts by sending at most once per cooldown window.
@@ -439,7 +477,10 @@ export function AdminSettingsForm({
           </div>
         </div>
 
-        <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
+        <div
+          data-testid="settings-panel-maintenance"
+          className={`${isMaintenanceTab ? "" : "hidden"} rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4`}
+        >
           <p className="text-sm font-semibold text-[var(--ccr-text)]">Maintenance reminder lead time</p>
           <p className="mt-1 text-xs text-[var(--ccr-muted)]">
             Number of days before due date to generate maintenance reminders.
@@ -466,7 +507,10 @@ export function AdminSettingsForm({
           </div>
         </div>
 
-        <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
+        <div
+          data-testid="settings-panel-maintenance"
+          className={`${isMaintenanceTab ? "" : "hidden"} rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4`}
+        >
           <p className="text-sm font-semibold text-[var(--ccr-text)]">Maintenance due-soon thresholds</p>
           <p className="mt-1 text-xs text-[var(--ccr-muted)]">
             Used by maintenance due-state labels in vehicles and fleet-wide maintenance views.
@@ -517,7 +561,10 @@ export function AdminSettingsForm({
           </div>
         </div>
 
-        <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
+        <div
+          data-testid="settings-panel-depreciation"
+          className={`${isDepreciationTab ? "" : "hidden"} rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4`}
+        >
           <p className="text-sm font-semibold text-[var(--ccr-text)]">Depreciation defaults</p>
           <p className="mt-1 text-xs text-[var(--ccr-muted)]">
             Default method and life assumptions used when creating vehicle finance records.
@@ -587,7 +634,10 @@ export function AdminSettingsForm({
           </div>
         </div>
 
-        <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
+        <div
+          data-testid="settings-panel-documents"
+          className={`${isDocumentsTab ? "" : "hidden"} rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4`}
+        >
           <p className="text-sm font-semibold text-[var(--ccr-text)]">Vehicle document folders</p>
           <p className="mt-1 text-xs text-[var(--ccr-muted)]">
             One folder per line. These options appear in the vehicle Files and Checklist tabs.
@@ -613,7 +663,10 @@ export function AdminSettingsForm({
           </div>
         </div>
 
-        <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
+        <div
+          data-testid="settings-panel-documents"
+          className={`${isDocumentsTab ? "" : "hidden"} rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4`}
+        >
           <p className="text-sm font-semibold text-[var(--ccr-text)]">Vehicle document types</p>
           <p className="mt-1 text-xs text-[var(--ccr-muted)]">
             One type per line. Used as quick type suggestions in vehicle document forms.
@@ -639,7 +692,10 @@ export function AdminSettingsForm({
           </div>
         </div>
 
-        <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
+        <div
+          data-testid="settings-panel-documents"
+          className={`${isDocumentsTab ? "" : "hidden"} rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4`}
+        >
           <p className="text-sm font-semibold text-[var(--ccr-text)]">Vehicle checklist template items</p>
           <p className="mt-1 text-xs text-[var(--ccr-muted)]">
             One checklist item per line. Used by the Checklist tab quick template action.
@@ -665,7 +721,10 @@ export function AdminSettingsForm({
           </div>
         </div>
 
-        <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
+        <div
+          data-testid="settings-panel-maintenance"
+          className={`${isMaintenanceTab ? "" : "hidden"} rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4`}
+        >
           <p className="text-sm font-semibold text-[var(--ccr-text)]">Maintenance categories</p>
           <p className="mt-1 text-xs text-[var(--ccr-muted)]">
             One category per line. These values are available in maintenance forms and filters.
@@ -691,7 +750,10 @@ export function AdminSettingsForm({
           </div>
         </div>
 
-        <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
+        <div
+          data-testid="settings-panel-maintenance"
+          className={`${isMaintenanceTab ? "" : "hidden"} rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4`}
+        >
           <p className="text-sm font-semibold text-[var(--ccr-text)]">Maintenance priorities</p>
           <p className="mt-1 text-xs text-[var(--ccr-muted)]">
             One priority per line. These values are available in maintenance forms and filtering.
@@ -717,7 +779,10 @@ export function AdminSettingsForm({
           </div>
         </div>
 
-        <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
+        <div
+          data-testid="settings-panel-maintenance"
+          className={`${isMaintenanceTab ? "" : "hidden"} rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4`}
+        >
           <p className="text-sm font-semibold text-[var(--ccr-text)]">Maintenance service types</p>
           <p className="mt-1 text-xs text-[var(--ccr-muted)]">
             Create and manage default service types and intervals used by vehicle maintenance schedules.
@@ -953,9 +1018,10 @@ export function AdminSettingsForm({
           ) : null}
         </div>
 
-        {TOGGLE_FIELDS.map((field) => (
+        {visibleToggleFields.map((field) => (
           <label
             key={field.key}
+            data-testid={`settings-panel-${TOGGLE_FIELD_TAB_MAP[field.key]}`}
             className="flex items-start justify-between gap-4 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4"
           >
             <div>

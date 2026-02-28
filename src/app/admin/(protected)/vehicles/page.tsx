@@ -43,6 +43,7 @@ type VehicleRow = {
   status: string;
   needs_cleaning: boolean;
   created_at: string;
+  deleted_at: string | null;
 };
 
 type VehicleBookingRow = VehicleStatusBookingLike & {
@@ -113,6 +114,8 @@ export default async function AdminVehiclesPage({
 
   const q = typeof params.q === "string" ? params.q.trim() : "";
   const fleetFilter = normalizeVehicleFilter(params.fleet);
+  const includeDeleted = typeof params.includeDeleted === "string" && params.includeDeleted === "1";
+  const deletedNotice = typeof params.deleted === "string" && params.deleted === "1";
   const sort = normalizeVehicleSort(queryParams);
   const rowsPerPage = normalizePageSize(typeof params.rows === "string" ? params.rows : undefined);
   const requestedVisible = parsePositiveIntParam(params.visible);
@@ -120,6 +123,10 @@ export default async function AdminVehiclesPage({
   const now = new Date();
 
   const { whereSql, values } = vehicleFilterWhereSql(fleetFilter, q);
+  const deletedFilterSql = includeDeleted ? "v.deleted_at is not null" : "v.deleted_at is null";
+  const combinedWhereSql = whereSql
+    ? `${whereSql} and ${deletedFilterSql}`
+    : `where ${deletedFilterSql}`;
 
   let vehicleRows: VehicleRow[] = [];
   try {
@@ -134,10 +141,11 @@ export default async function AdminVehiclesPage({
           v.deposit_cents,
           v.status,
           coalesce((to_jsonb(p)->>'needs_cleaning')::boolean, false) as needs_cleaning,
-          v.created_at
+          v.created_at,
+          v.deleted_at
        from vehicles v
        left join vehicle_profiles p on p.vehicle_id = v.id
-       ${whereSql}
+       ${combinedWhereSql}
        order by v.created_at desc, v.id::text desc`,
       values,
     );
@@ -148,6 +156,9 @@ export default async function AdminVehiclesPage({
     }
 
     const fallback = vehicleFilterWhereSql(fleetFilter, q, { includeProfileSearch: false });
+    const fallbackCombinedWhereSql = fallback.whereSql
+      ? `${fallback.whereSql} and ${deletedFilterSql}`
+      : `where ${deletedFilterSql}`;
     const vehicles = await dbQuery<VehicleRow>(
       `select
           v.id,
@@ -159,9 +170,10 @@ export default async function AdminVehiclesPage({
           v.deposit_cents,
           v.status,
           false as needs_cleaning,
-          v.created_at
+          v.created_at,
+          v.deleted_at
        from vehicles v
-       ${fallback.whereSql}
+       ${fallbackCombinedWhereSql}
        order by v.created_at desc, v.id::text desc`,
       fallback.values,
     );
@@ -249,6 +261,19 @@ export default async function AdminVehiclesPage({
     return nextQuery ? `/admin/vehicles?${nextQuery}` : "/admin/vehicles";
   };
 
+  const viewHref = (showArchived: boolean) => {
+    const nextParams = new URLSearchParams(queryParams.toString());
+    if (showArchived) {
+      nextParams.set("includeDeleted", "1");
+    } else {
+      nextParams.delete("includeDeleted");
+    }
+    nextParams.delete("deleted");
+    nextParams.delete("visible");
+    const nextQuery = nextParams.toString();
+    return nextQuery ? `/admin/vehicles?${nextQuery}` : "/admin/vehicles";
+  };
+
   const statusPillTone = (status: DerivedVehicleStatus) => {
     if (status === "AVAILABLE") {
       return "border-emerald-300/40 bg-emerald-500/15 text-emerald-100";
@@ -268,6 +293,35 @@ export default async function AdminVehiclesPage({
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6">
       <h1 className="text-3xl font-bold text-[var(--ccr-text)]">Vehicles</h1>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Link
+          href={viewHref(false)}
+          data-testid="vehicles-view-active"
+          className={`inline-flex min-h-10 items-center rounded-full border px-4 py-2 text-xs font-semibold ${
+            includeDeleted
+              ? "border-[var(--ccr-border)] bg-[var(--ccr-surface)] text-[var(--ccr-text)]"
+              : "border-[var(--ccr-primary)] bg-[var(--ccr-primary)] text-white"
+          }`}
+        >
+          Active
+        </Link>
+        <Link
+          href={viewHref(true)}
+          data-testid="vehicles-view-archived"
+          className={`inline-flex min-h-10 items-center rounded-full border px-4 py-2 text-xs font-semibold ${
+            includeDeleted
+              ? "border-[var(--ccr-primary)] bg-[var(--ccr-primary)] text-white"
+              : "border-[var(--ccr-border)] bg-[var(--ccr-surface)] text-[var(--ccr-text)]"
+          }`}
+        >
+          Archived
+        </Link>
+      </div>
+      {deletedNotice ? (
+        <p className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+          Vehicle archived successfully.
+        </p>
+      ) : null}
 
       <div className="mt-6">
         <SlideDownPanel
@@ -279,7 +333,12 @@ export default async function AdminVehiclesPage({
         </SlideDownPanel>
       </div>
 
-      <VehiclesFilters initialQuery={q} initialFilter={fleetFilter} initialSort={sort} />
+      <VehiclesFilters
+        initialQuery={q}
+        initialFilter={fleetFilter}
+        initialSort={sort}
+        includeDeleted={includeDeleted}
+      />
 
       <div
         data-testid="vehicles-list"
@@ -287,7 +346,7 @@ export default async function AdminVehiclesPage({
       >
         {sortedRows.length === 0 ? (
           <div className="px-6 py-10 text-center text-sm text-[var(--ccr-muted)]">
-            No vehicles found.
+            {includeDeleted ? "No archived vehicles found." : "No vehicles found."}
           </div>
         ) : (
           <>
@@ -314,11 +373,13 @@ export default async function AdminVehiclesPage({
                       </p>
                     </div>
                     <span
-                      className={`inline-flex min-h-7 items-center rounded-full border px-3 py-1 text-xs font-semibold leading-none ${statusPillTone(
-                        vehicle.derived_status,
-                      )}`}
+                      className={`inline-flex min-h-7 items-center rounded-full border px-3 py-1 text-xs font-semibold leading-none ${
+                        includeDeleted
+                          ? "border-slate-300/40 bg-slate-500/15 text-slate-100"
+                          : statusPillTone(vehicle.derived_status)
+                      }`}
                     >
-                      {vehicleDerivedStatusLabel(vehicle.derived_status)}
+                      {includeDeleted ? "Archived" : vehicleDerivedStatusLabel(vehicle.derived_status)}
                     </span>
                   </div>
 
@@ -424,11 +485,13 @@ export default async function AdminVehiclesPage({
                       <td className="px-4 py-3 text-[var(--ccr-muted)]">
                         <Link href={`/admin/vehicles/${vehicle.id}`} className="inline-flex items-center">
                           <span
-                            className={`inline-flex min-h-7 items-center rounded-full border px-3 py-1 text-xs font-semibold leading-none ${statusPillTone(
-                              vehicle.derived_status,
-                            )}`}
+                            className={`inline-flex min-h-7 items-center rounded-full border px-3 py-1 text-xs font-semibold leading-none ${
+                              includeDeleted
+                                ? "border-slate-300/40 bg-slate-500/15 text-slate-100"
+                                : statusPillTone(vehicle.derived_status)
+                            }`}
                           >
-                            {vehicleDerivedStatusLabel(vehicle.derived_status)}
+                            {includeDeleted ? "Archived" : vehicleDerivedStatusLabel(vehicle.derived_status)}
                           </span>
                         </Link>
                       </td>

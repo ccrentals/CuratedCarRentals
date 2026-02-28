@@ -17,6 +17,7 @@ type VehiclesFiltersProps = {
   initialQuery: string;
   initialFilter: VehicleFilterOption;
   initialSort: VehicleSortState;
+  includeDeleted?: boolean;
 };
 
 const FILTER_LABELS: Record<VehicleFilterOption, string> = {
@@ -41,7 +42,12 @@ function normalizeSortBy(value: string | null, fallback: VehicleSortBy): Vehicle
   return value as VehicleSortBy;
 }
 
-export function VehiclesFilters({ initialQuery, initialFilter, initialSort }: VehiclesFiltersProps) {
+export function VehiclesFilters({
+  initialQuery,
+  initialFilter,
+  initialSort,
+  includeDeleted = false,
+}: VehiclesFiltersProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -184,6 +190,7 @@ export function VehiclesFilters({ initialQuery, initialFilter, initialSort }: Ve
         <input type="hidden" name="fleet" value={filter === "all" ? "" : filter} />
         <input type="hidden" name="sortBy" value={sortBy} />
         <input type="hidden" name="sortDir" value={sortDir} />
+        <input type="hidden" name="includeDeleted" value={includeDeleted ? "1" : ""} />
         <button
           type="submit"
           className="min-h-11 rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-xs font-semibold text-white sm:w-auto"
@@ -191,7 +198,7 @@ export function VehiclesFilters({ initialQuery, initialFilter, initialSort }: Ve
           Apply
         </button>
         <Link
-          href="/admin/vehicles"
+          href={includeDeleted ? "/admin/vehicles?includeDeleted=1" : "/admin/vehicles"}
           className="inline-flex min-h-11 items-center justify-center rounded-xl border border-[var(--ccr-border)] px-4 py-2 text-xs font-semibold text-[var(--ccr-text)] sm:w-auto"
         >
           Reset

@@ -85,6 +85,7 @@ create table if not exists vehicles (
   status text not null default 'ACTIVE',
   features_json jsonb not null default '[]'::jsonb,
   image_urls_json jsonb not null default '[]'::jsonb,
+  deleted_at timestamptz,
   constraint vehicles_seat_count_range check (
     seat_count is null or (seat_count >= 1 and seat_count <= 60)
   ),
@@ -97,6 +98,9 @@ alter table vehicles
 
 alter table vehicles
   add column if not exists public_id text;
+
+alter table vehicles
+  add column if not exists deleted_at timestamptz;
 
 alter table vehicles
   drop constraint if exists vehicles_seat_count_range;
@@ -737,6 +741,7 @@ create index if not exists user_invites_user_id_idx on user_invites(user_id);
 create index if not exists user_invites_expires_at_idx on user_invites(expires_at);
 create unique index if not exists vehicles_public_id_unique_idx on vehicles(public_id);
 create index if not exists vehicles_status_idx on vehicles(status);
+create index if not exists vehicles_deleted_at_idx on vehicles(deleted_at);
 create index if not exists admin_login_attempts_email_idx on admin_login_attempts(email);
 create index if not exists admin_login_attempts_ip_idx on admin_login_attempts(ip);
 create index if not exists admin_login_attempts_created_idx on admin_login_attempts(created_at);

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
+import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
 import { requireCsrf } from "@/lib/security/csrf";
@@ -21,6 +22,59 @@ const ALLOWED_STATUSES = new Set([
   "RENTED",
 ]);
 const INVALID_SEAT_COUNT = Symbol("INVALID_SEAT_COUNT");
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+type VehicleRouteContext = { params: Promise<{ id: string }> };
+
+type AdminVehicleDeleteDeps = {
+  getSession: () => Promise<AdminSession | null>;
+  requireCsrfCheck: (request: Request, bodyToken?: string | null) => Promise<boolean>;
+  findVehicleById: (vehicleId: string) => Promise<{ id: string; deleted_at: string | null } | null>;
+  countBlockingBookings: (vehicleId: string) => Promise<number>;
+  softDeleteVehicle: (vehicleId: string) => Promise<boolean>;
+  writeDeleteAudit: (input: { userId: string; vehicleId: string }) => Promise<void>;
+};
+
+const DEFAULT_DELETE_DEPS: AdminVehicleDeleteDeps = {
+  getSession: () => getSessionFromRequest(),
+  requireCsrfCheck: (request, bodyToken) => requireCsrf(request, bodyToken),
+  findVehicleById: async (vehicleId) => {
+    const result = await dbQuery<{ id: string; deleted_at: string | null }>(
+      "select id, deleted_at from vehicles where id = $1::uuid limit 1",
+      [vehicleId],
+    );
+    return result.rows[0] ?? null;
+  },
+  countBlockingBookings: async (vehicleId) => {
+    const result = await dbQuery<{ blocking_count: number }>(
+      `select count(*)::int as blocking_count
+       from bookings b
+       where b.vehicle_id = $1::uuid
+         and b.archived_at is null
+         and upper(coalesce(b.status, '')) not in ('CANCELLED', 'RETURNED', 'COMPLETED', 'NO_SHOW', 'OVERRIDDEN', 'LOST', 'ARCHIVED')
+         and coalesce(b.end_at, (b.end_date::timestamptz + interval '1 day')) > now()`,
+      [vehicleId],
+    );
+    return Number(result.rows[0]?.blocking_count ?? 0);
+  },
+  softDeleteVehicle: async (vehicleId) => {
+    const result = await dbQuery(
+      "update vehicles set deleted_at = now(), updated_at = now() where id = $1::uuid and deleted_at is null returning id",
+      [vehicleId],
+    );
+    return result.rowCount > 0;
+  },
+  writeDeleteAudit: async ({ userId, vehicleId }) => {
+    await writeAuditLog({
+      userId,
+      action: "VEHICLE_DELETE",
+      entityType: "vehicle",
+      entityId: vehicleId,
+      details: { mode: "soft_delete" },
+    });
+  },
+};
 
 function normalizeSeatCount(value: unknown): number | null | typeof INVALID_SEAT_COUNT {
   if (value === undefined) return null;
@@ -33,7 +87,7 @@ function normalizeSeatCount(value: unknown): number | null | typeof INVALID_SEAT
 
 export async function GET(
   request: Request,
-  { params }: { params: Promise<{ id: string }> },
+  { params }: VehicleRouteContext,
 ) {
   const auth = await requireStaffOrAdminRole();
   if (!auth.ok) return auth.response;
@@ -53,7 +107,7 @@ export async function GET(
 
 export async function PATCH(
   request: Request,
-  { params }: { params: Promise<{ id: string }> },
+  { params }: VehicleRouteContext,
 ) {
   const auth = await requireStaffOrAdminRole();
   if (!auth.ok) return auth.response;
@@ -165,4 +219,55 @@ export async function PATCH(
   });
 
   return NextResponse.json({ vehicle: updateResult.rows[0] });
+}
+
+export async function handleAdminVehicleDelete(
+  request: Request,
+  context: VehicleRouteContext,
+  deps: AdminVehicleDeleteDeps = DEFAULT_DELETE_DEPS,
+) {
+  const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
+  if (!auth.ok) return auth.response;
+  const { actor } = auth;
+
+  const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+  if (!(await deps.requireCsrfCheck(request, (body?.csrfToken as string | null | undefined) ?? null))) {
+    return NextResponse.json({ ok: false, error: "Invalid CSRF token" }, { status: 403 });
+  }
+
+  const { id } = await context.params;
+  if (!UUID_REGEX.test(id)) {
+    return NextResponse.json({ ok: false, error: "Invalid vehicle id" }, { status: 400 });
+  }
+
+  const vehicle = await deps.findVehicleById(id);
+  if (!vehicle) {
+    return NextResponse.json({ ok: false, error: "Vehicle not found" }, { status: 404 });
+  }
+  if (vehicle.deleted_at) {
+    return NextResponse.json({ ok: true, alreadyDeleted: true });
+  }
+
+  const blockingCount = await deps.countBlockingBookings(id);
+  if (blockingCount > 0) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "Vehicle has active or upcoming bookings and cannot be deleted.",
+      },
+      { status: 409 },
+    );
+  }
+
+  const deleted = await deps.softDeleteVehicle(id);
+  if (!deleted) {
+    return NextResponse.json({ ok: false, error: "Vehicle could not be deleted." }, { status: 500 });
+  }
+
+  await deps.writeDeleteAudit({ userId: actor.userId, vehicleId: id });
+  return NextResponse.json({ ok: true });
+}
+
+export async function DELETE(request: Request, context: VehicleRouteContext) {
+  return handleAdminVehicleDelete(request, context);
 }

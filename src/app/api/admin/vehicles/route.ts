@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
+import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery } from "@/lib/db";
 import { isNonEmptyString, parseIntSafe, parseMoneyToCents, parseImageUrls } from "@/lib/validators";
 import { requireCsrf } from "@/lib/security/csrf";
@@ -70,14 +71,53 @@ function normalizeSeatCount(value: unknown): number | null | typeof INVALID_SEAT
   return parsed;
 }
 
-export async function GET() {
-  const auth = await requireStaffOrAdminRole();
+type AdminVehiclesGetDeps = {
+  getSession: () => Promise<AdminSession | null>;
+  listVehicles: (options: { includeDeleted: boolean }) => Promise<
+    Array<{
+      id: string;
+      public_id: string;
+      make: string;
+      model: string;
+      year: number;
+      seat_count: number | null;
+      daily_rate_cents: number;
+      deposit_cents: number;
+      status: string;
+      created_at: string;
+      deleted_at: string | null;
+    }>
+  >;
+};
+
+const DEFAULT_GET_DEPS: AdminVehiclesGetDeps = {
+  getSession: () => getSessionFromRequest(),
+  listVehicles: async ({ includeDeleted }) => {
+    const whereClause = includeDeleted ? "where deleted_at is not null" : "where deleted_at is null";
+    const result = await dbQuery(
+      `select id, public_id, make, model, year, seat_count, daily_rate_cents, deposit_cents, status, created_at, deleted_at
+       from vehicles
+       ${whereClause}
+       order by created_at desc`,
+    );
+    return result.rows;
+  },
+};
+
+export async function handleAdminVehiclesGet(
+  request: Request,
+  deps: AdminVehiclesGetDeps = DEFAULT_GET_DEPS,
+) {
+  const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
   if (!auth.ok) return auth.response;
 
-  const result = await dbQuery(
-    "select id, public_id, make, model, year, seat_count, daily_rate_cents, deposit_cents, status, created_at from vehicles order by created_at desc",
-  );
-  return NextResponse.json({ vehicles: result.rows });
+  const includeDeleted = new URL(request.url).searchParams.get("includeDeleted") === "1";
+  const vehicles = await deps.listVehicles({ includeDeleted });
+  return NextResponse.json({ vehicles });
+}
+
+export async function GET(request: Request) {
+  return handleAdminVehiclesGet(request);
 }
 
 export async function POST(request: Request) {
