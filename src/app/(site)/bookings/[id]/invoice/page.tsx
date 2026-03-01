@@ -1,11 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import InvoiceAutoPrint from "@/components/payments/InvoiceAutoPrint";
 import PrintInvoiceButton from "@/components/payments/PrintInvoiceButton";
 import { DateRangeArrow } from "@/components/shared/DateRangeArrow";
 import { dbQuery } from "@/lib/db";
 import { fmtDateOnly } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
+import { formatPaymentStatus } from "@/lib/payments/formatPaymentStatus";
 import {
   computeBookingPricing,
   fetchNetPaidToDate,
@@ -24,13 +26,18 @@ type PaymentRow = {
 
 export default async function BookingInvoicePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { id } = await params;
+  const query = await searchParams;
+  const autoPrint = query.autoprint === "1";
 
   const bookingResult = await dbQuery<{
     id: string;
+    public_id: string | null;
     start_date: string;
     end_date: string;
     pickup_location: string;
@@ -45,7 +52,7 @@ export default async function BookingInvoicePage({
     daily_rate_cents: number;
     deposit_cents: number;
   }>(
-    "select b.id, b.start_date, b.end_date, b.pickup_location, b.status, b.pricing_json, c.full_name as customer_name, c.email as customer_email, c.phone as customer_phone, v.make as vehicle_make, v.model as vehicle_model, v.year as vehicle_year, v.daily_rate_cents, v.deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.id = $1",
+    "select b.id, b.public_id, b.start_date, b.end_date, b.pickup_location, b.status, b.pricing_json, c.full_name as customer_name, c.email as customer_email, c.phone as customer_phone, v.make as vehicle_make, v.model as vehicle_model, v.year as vehicle_year, v.daily_rate_cents, v.deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.id = $1",
     [id],
   );
 
@@ -53,6 +60,7 @@ export default async function BookingInvoicePage({
   if (!booking) {
     notFound();
   }
+  const bookingRef = (booking.public_id ?? "").trim() || "—";
 
   let payments: PaymentRow[] = [];
   try {
@@ -99,17 +107,18 @@ export default async function BookingInvoicePage({
 
   return (
     <div className="invoice-page mx-auto w-full max-w-3xl px-6 py-12">
+      {autoPrint ? <InvoiceAutoPrint /> : null}
       <div className="rounded-3xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-8 shadow-sm print:border-none print:bg-white print:shadow-none">
         <div className="print-hide flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold text-[var(--ccr-text)]">Invoice</h1>
-            <p className="text-xs text-[var(--ccr-muted)]">Booking #{booking.id.slice(0, 8)}</p>
+            <p className="text-xs text-[var(--ccr-muted)]">Booking #{bookingRef}</p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <PrintInvoiceButton />
+          <div className="flex flex-nowrap items-center gap-2 overflow-x-auto">
+            <PrintInvoiceButton className="shrink-0 whitespace-nowrap rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)]" />
             <Link
               href={`/bookings/${booking.id}`}
-              className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)]"
+              className="shrink-0 whitespace-nowrap rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)]"
             >
               Back to Booking
             </Link>
@@ -119,7 +128,7 @@ export default async function BookingInvoicePage({
         <div className="invoice-card mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-6 print:border-none print:bg-white">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-lg font-semibold text-[var(--ccr-text)]">Invoice</h2>
-            <span className="text-xs text-[var(--ccr-muted)]">Booking #{booking.id.slice(0, 8)}</span>
+            <span className="text-xs text-[var(--ccr-muted)]">Booking #{bookingRef}</span>
           </div>
           <div className="mt-4 grid gap-4 text-sm text-[var(--ccr-text)] sm:grid-cols-2">
             <div>
@@ -166,7 +175,14 @@ export default async function BookingInvoicePage({
               <ul className="mt-2 space-y-1 text-xs">
                 {payments.map((payment: PaymentRow) => (
                   <li key={payment.id}>
-                    {payment.provider} · {payment.status} · {formatJmd(payment.deposit_amount_cents)} · {fmtDateOnly(payment.created_at)}
+                    {payment.provider} ·{" "}
+                    {formatPaymentStatus(payment.status, {
+                      paymentType:
+                        typeof payment.metadata_json?.payment_type === "string"
+                          ? String(payment.metadata_json.payment_type)
+                          : null,
+                    })}{" "}
+                    · {formatJmd(payment.deposit_amount_cents)} · {fmtDateOnly(payment.created_at)}
                   </li>
                 ))}
               </ul>

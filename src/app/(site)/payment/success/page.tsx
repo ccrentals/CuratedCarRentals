@@ -1,18 +1,35 @@
 import Link from "next/link";
 
-import { DateRangeArrow } from "@/components/shared/DateRangeArrow";
 import PrintInvoiceButton from "@/components/payments/PrintInvoiceButton";
+import { DateRangeArrow } from "@/components/shared/DateRangeArrow";
 import { dbQuery } from "@/lib/db";
 import { fmtDateOnly } from "@/lib/dateFormat";
-import { logError } from "@/lib/log";
 import { formatJmd } from "@/lib/money";
+import { formatPaymentStatus } from "@/lib/payments/formatPaymentStatus";
 import {
   computeBookingPricing,
   fetchNetPaidToDate,
   readInsurancePricingFields,
   readPromoPricingFields,
 } from "@/lib/payments/pricing";
-import { buildInvoicePayload, generateInvoicePdf } from "@/lib/pdfmonkey";
+
+type BookingRow = {
+  id: string;
+  public_id: string | null;
+  start_date: string;
+  end_date: string;
+  pickup_location: string;
+  status: string;
+  pricing_json: Record<string, unknown> | null;
+  customer_name: string;
+  customer_email: string;
+  customer_phone: string;
+  vehicle_make: string;
+  vehicle_model: string;
+  vehicle_year: number;
+  daily_rate_cents: number;
+  deposit_cents: number;
+};
 
 type PaymentRow = {
   id: string;
@@ -23,6 +40,101 @@ type PaymentRow = {
   metadata_json: Record<string, unknown> | null;
 };
 
+type InvoiceSnapshotCardProps = {
+  booking: BookingRow;
+  bookingRef: string;
+  days: number;
+  total: number;
+  depositPaid: number;
+  paidToDate: number;
+  balanceDue: number;
+  promoCode: string | null;
+  promoDiscount: number;
+  payments: PaymentRow[];
+};
+
+function InvoiceSnapshotCard({
+  booking,
+  bookingRef,
+  days,
+  total,
+  depositPaid,
+  paidToDate,
+  balanceDue,
+  promoCode,
+  promoDiscount,
+  payments,
+}: InvoiceSnapshotCardProps) {
+  return (
+    <div className="invoice-card rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-6 print:border-none print:bg-white">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-lg font-semibold text-[var(--ccr-text)]">Invoice</h2>
+        <span className="text-xs text-[var(--ccr-muted)]">Booking #{bookingRef || "—"}</span>
+      </div>
+      <div className="mt-4 grid gap-4 text-sm text-[var(--ccr-text)] sm:grid-cols-2">
+        <div>
+          <p className="text-xs uppercase text-[var(--ccr-muted)]">Customer</p>
+          <p className="font-semibold">{booking.customer_name}</p>
+          <p className="text-[var(--ccr-muted)]">{booking.customer_email}</p>
+          <p className="text-[var(--ccr-muted)]">{booking.customer_phone}</p>
+        </div>
+        <div>
+          <p className="text-xs uppercase text-[var(--ccr-muted)]">Vehicle</p>
+          <p className="font-semibold">
+            {booking.vehicle_year} {booking.vehicle_make} {booking.vehicle_model}
+          </p>
+          <p className="text-[var(--ccr-muted)]">Daily rate: {formatJmd(booking.daily_rate_cents)}</p>
+        </div>
+        <div>
+          <p className="text-xs uppercase text-[var(--ccr-muted)]">Rental</p>
+          <p>
+            <span className="inline-flex items-center">
+              {fmtDateOnly(booking.start_date)}
+              <DateRangeArrow />
+              {fmtDateOnly(booking.end_date)}
+            </span>{" "}
+            ({days} days)
+          </p>
+          <p className="text-[var(--ccr-muted)]">Pickup: {booking.pickup_location}</p>
+        </div>
+        <div>
+          <p className="text-xs uppercase text-[var(--ccr-muted)]">Charges</p>
+          <p>Total rental: {formatJmd(total)}</p>
+          {promoDiscount > 0 ? (
+            <p>
+              Promo{promoCode ? ` (${promoCode})` : ""}: -{formatJmd(promoDiscount)}
+            </p>
+          ) : null}
+          <p>Deposit paid: {formatJmd(depositPaid)}</p>
+          <p>Paid to date: {formatJmd(paidToDate)}</p>
+          <p className="font-semibold">Balance on pickup: {formatJmd(balanceDue)}</p>
+        </div>
+      </div>
+      <div className="mt-4 border-t border-[var(--ccr-border)] pt-4 text-sm text-[var(--ccr-muted)]">
+        <p>Status: {booking.status}</p>
+        {payments.length ? (
+          <ul className="mt-2 space-y-1 text-xs">
+            {payments.map((payment: PaymentRow) => (
+              <li key={payment.id}>
+                {payment.provider} ·{" "}
+                {formatPaymentStatus(payment.status, {
+                  paymentType:
+                    typeof payment.metadata_json?.payment_type === "string"
+                      ? String(payment.metadata_json.payment_type)
+                      : null,
+                })}{" "}
+                · {formatJmd(payment.deposit_amount_cents)} · {fmtDateOnly(payment.created_at)}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-2 text-xs">No payments recorded yet.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default async function PaymentSuccessPage({
   searchParams,
 }: {
@@ -30,31 +142,16 @@ export default async function PaymentSuccessPage({
 }) {
   const params = await searchParams;
   const bookingId = typeof params.bookingId === "string" ? params.bookingId : "";
-  const shortId = bookingId ? bookingId.slice(0, 8) : "";
 
   const bookingResult = bookingId
-    ? await dbQuery<{
-        id: string;
-        start_date: string;
-        end_date: string;
-        pickup_location: string;
-        status: string;
-        pricing_json: Record<string, unknown> | null;
-        customer_name: string;
-        customer_email: string;
-        customer_phone: string;
-        vehicle_make: string;
-        vehicle_model: string;
-        vehicle_year: number;
-        daily_rate_cents: number;
-        deposit_cents: number;
-      }>(
-        "select b.id, b.start_date, b.end_date, b.pickup_location, b.status, b.pricing_json, c.full_name as customer_name, c.email as customer_email, c.phone as customer_phone, v.make as vehicle_make, v.model as vehicle_model, v.year as vehicle_year, v.daily_rate_cents, v.deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.id = $1",
+    ? await dbQuery<BookingRow>(
+        "select b.id, b.public_id, b.start_date, b.end_date, b.pickup_location, b.status, b.pricing_json, c.full_name as customer_name, c.email as customer_email, c.phone as customer_phone, v.make as vehicle_make, v.model as vehicle_model, v.year as vehicle_year, v.daily_rate_cents, v.deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.id = $1",
         [bookingId],
       )
     : null;
 
   const booking = bookingResult?.rowCount ? bookingResult.rows[0] : null;
+  const bookingRef = (booking?.public_id ?? "").trim();
 
   let payments: PaymentRow[] = [];
   if (bookingId) {
@@ -67,7 +164,6 @@ export default async function PaymentSuccessPage({
     } catch (error) {
       const code = (error as { code?: string } | null)?.code;
       const message = String((error as { message?: unknown } | null)?.message ?? "");
-      // Graceful fallback if DB hasn't been migrated yet.
       if (code === "42703" && message.includes("\"deleted_at\"") && message.includes("does not exist")) {
         const paymentsResult = await dbQuery<PaymentRow>(
           "select id, provider, status, deposit_amount_cents, created_at, metadata_json from payments where booking_id = $1 order by created_at asc",
@@ -112,14 +208,11 @@ export default async function PaymentSuccessPage({
     if (payment.status !== "DEPOSIT_PAID") return sum;
     const metadata = payment.metadata_json ?? {};
     const paymentType = typeof metadata.payment_type === "string" ? String(metadata.payment_type) : "";
-    // Only count explicit deposit payments (avoid defaulting older rows into "deposit").
     if (paymentType !== "deposit") return sum;
     return sum + Number(payment.deposit_amount_cents || 0);
   }, 0);
 
-  const latestSuccessfulPayment = [...payments]
-    .reverse()
-    .find((payment) => payment.status === "DEPOSIT_PAID" && payment.provider === "WIPAY");
+  const latestSuccessfulPayment = [...payments].reverse().find((payment) => payment.status === "DEPOSIT_PAID");
   const latestPaymentType =
     latestSuccessfulPayment?.metadata_json &&
     typeof latestSuccessfulPayment.metadata_json.payment_type === "string"
@@ -131,180 +224,92 @@ export default async function PaymentSuccessPage({
       ? "Your booking is now paid in full."
       : "Your booking is confirmed. We will follow up with pickup details shortly.";
 
-  let pdfPreviewUrl: string | undefined;
-  let pdfDownloadUrl: string | undefined;
-  let pdfError: string | null = null;
-
-  if (booking) {
-    try {
-      const pdfConfigured = Boolean(process.env.PDFMONKEY_API_KEY && process.env.PDFMONKEY_TEMPLATE_ID);
-      const payload = buildInvoicePayload({
-        bookingId: booking.id,
-        bookingStatus: booking.status,
-        startDate: booking.start_date,
-        endDate: booking.end_date,
-        pickupLocation: booking.pickup_location,
-        customerName: booking.customer_name,
-        customerEmail: booking.customer_email,
-        customerPhone: booking.customer_phone,
-        vehicleMake: booking.vehicle_make,
-        vehicleModel: booking.vehicle_model,
-        vehicleYear: booking.vehicle_year,
-        dailyRate: Number(booking.daily_rate_cents || 0),
-        deposit: depositPaid,
-        total,
-        paidToDate,
-        balanceDue,
-        payments: payments.map((payment) => ({
-          provider: payment.provider,
-          status: payment.status,
-          amount: Number(payment.deposit_amount_cents || 0),
-          date: payment.created_at,
-        })),
-      });
-      const pdf = await generateInvoicePdf(payload, booking.id);
-      pdfPreviewUrl = pdf?.previewUrl ?? undefined;
-      pdfDownloadUrl = pdf?.downloadUrl ?? undefined;
-
-      if (!pdf && pdfConfigured) {
-        pdfError = "Invoice PDF is generating. Refresh in a moment or check your email.";
-      }
-    } catch (error) {
-      logError("pdfmonkey_preview_failed", error, { bookingId: booking.id });
-      const rawMessage = error instanceof Error ? error.message.toLowerCase() : "";
-      if (rawMessage.includes("quota")) {
-        pdfError = "Invoice PDF is temporarily unavailable (quota reached). We will email it shortly.";
-      } else {
-        pdfError =
-          error instanceof Error
-            ? "Invoice PDF is temporarily unavailable. We will email it shortly."
-            : "Invoice PDF is temporarily unavailable.";
-      }
-    }
-  }
-
   return (
     <div className="invoice-page mx-auto w-full max-w-3xl px-6 py-12">
       <div className="rounded-3xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-8 shadow-sm print:border-none print:bg-white print:shadow-none">
         <div className="print-hide">
           <h1 className="text-3xl font-bold text-[var(--ccr-text)]">{headline}</h1>
           <p className="mt-3 text-sm text-[var(--ccr-muted)]">{subheadline}</p>
-          {shortId ? (
+          {bookingRef ? (
             <p className="mt-4 text-sm text-[var(--ccr-text)]">
-              Booking reference: <span className="font-semibold">{shortId}</span>
+              Booking reference: <span className="font-semibold">{bookingRef}</span>
             </p>
           ) : null}
         </div>
-        {booking ? (
-          <div className="invoice-card mt-8 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-6 print:border-none print:bg-white">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-lg font-semibold text-[var(--ccr-text)]">Invoice</h2>
-              <span className="text-xs text-[var(--ccr-muted)]">Booking #{shortId}</span>
-            </div>
-            {pdfPreviewUrl ? (
-              <div className="mt-4">
-                <iframe
-                  title="Invoice PDF"
-                  src={pdfPreviewUrl}
-                  className="h-[720px] w-full rounded-xl border border-[var(--ccr-border)]"
-                />
+
+        {booking && summary ? (
+          <>
+            <div className="mt-8 print-hide">
+              <div className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Invoice preview</h2>
+                  <span className="text-xs text-[var(--ccr-muted)]">Booking #{bookingRef || "—"}</span>
+                </div>
+                <div className="overflow-x-auto rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3">
+                  <div className="mx-auto min-w-[720px] max-w-[760px]">
+                    <InvoiceSnapshotCard
+                      booking={booking}
+                      bookingRef={bookingRef}
+                      days={days}
+                      total={total}
+                      depositPaid={depositPaid}
+                      paidToDate={paidToDate}
+                      balanceDue={balanceDue}
+                      promoCode={summary.promoCode}
+                      promoDiscount={summary.promoDiscount}
+                      payments={payments}
+                    />
+                  </div>
+                </div>
               </div>
-            ) : (
-              <>
-                {pdfError ? (
-                  <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                    {pdfError}
-                  </div>
-                ) : null}
-                <div className="mt-4 grid gap-4 text-sm text-[var(--ccr-text)] sm:grid-cols-2">
-                  <div>
-                    <p className="text-xs uppercase text-[var(--ccr-muted)]">Customer</p>
-                    <p className="font-semibold">{booking.customer_name}</p>
-                    <p className="text-[var(--ccr-muted)]">{booking.customer_email}</p>
-                    <p className="text-[var(--ccr-muted)]">{booking.customer_phone}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs uppercase text-[var(--ccr-muted)]">Vehicle</p>
-                    <p className="font-semibold">
-                      {booking.vehicle_year} {booking.vehicle_make} {booking.vehicle_model}
-                    </p>
-                    <p className="text-[var(--ccr-muted)]">
-                      Daily rate: {formatJmd(booking.daily_rate_cents)}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs uppercase text-[var(--ccr-muted)]">Rental</p>
-                    <p>
-                      <span className="inline-flex items-center">
-                        {fmtDateOnly(booking.start_date)}
-                        <DateRangeArrow />
-                        {fmtDateOnly(booking.end_date)}
-                      </span>{" "}
-                      ({days} days)
-                    </p>
-                    <p className="text-[var(--ccr-muted)]">Pickup: {booking.pickup_location}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs uppercase text-[var(--ccr-muted)]">Charges</p>
-                    <p>Total rental: {formatJmd(total)}</p>
-                    {summary?.promoDiscount ? (
-                      <p>
-                        Promo{summary.promoCode ? ` (${summary.promoCode})` : ""}: -{formatJmd(summary.promoDiscount)}
-                      </p>
-                    ) : null}
-                    <p>Deposit paid: {formatJmd(depositPaid)}</p>
-                    <p>Paid to date: {formatJmd(paidToDate)}</p>
-                    <p className="font-semibold">Balance on pickup: {formatJmd(balanceDue)}</p>
-                  </div>
-                </div>
-                <div className="mt-4 border-t border-[var(--ccr-border)] pt-4 text-sm text-[var(--ccr-muted)]">
-                  <p>Status: {booking.status}</p>
-                  {payments.length ? (
-                    <ul className="mt-2 space-y-1 text-xs">
-                      {payments.map((payment: PaymentRow) => (
-                        <li key={payment.id}>
-                          {payment.provider} · {payment.status} ·{" "}
-                          {formatJmd(payment.deposit_amount_cents)} ·{" "}
-                          {fmtDateOnly(payment.created_at)}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="mt-2 text-xs">No payments recorded yet.</p>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
+            </div>
+
+            <div className="mt-8 hidden print:block">
+              <InvoiceSnapshotCard
+                booking={booking}
+                bookingRef={bookingRef}
+                days={days}
+                total={total}
+                depositPaid={depositPaid}
+                paidToDate={paidToDate}
+                balanceDue={balanceDue}
+                promoCode={summary.promoCode}
+                promoDiscount={summary.promoDiscount}
+                payments={payments}
+              />
+            </div>
+          </>
         ) : null}
 
-        <div className="mt-6 flex flex-wrap gap-3 print-hide">
+        <div className="mt-6 flex flex-nowrap items-center gap-3 overflow-x-auto pb-1 print-hide">
           {booking ? (
             <Link
               href={`/bookings/${booking.id}/invoice`}
-              className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] transition hover:border-[var(--ccr-accent)] hover:bg-[var(--ccr-accent)] hover:text-[var(--ccr-primary)]"
+              className="shrink-0 whitespace-nowrap rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] transition hover:border-[var(--ccr-accent)] hover:bg-[var(--ccr-accent)] hover:text-[var(--ccr-primary)]"
             >
               View Invoice
             </Link>
           ) : null}
-          <PrintInvoiceButton className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] transition hover:border-[var(--ccr-accent)] hover:bg-[var(--ccr-accent)] hover:text-[var(--ccr-primary)]" />
-          {pdfDownloadUrl ? (
-            <a
-              href={pdfDownloadUrl}
-              className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] transition hover:border-[var(--ccr-accent)] hover:bg-[var(--ccr-accent)] hover:text-[var(--ccr-primary)]"
+          <PrintInvoiceButton className="shrink-0 whitespace-nowrap rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] transition hover:border-[var(--ccr-accent)] hover:bg-[var(--ccr-accent)] hover:text-[var(--ccr-primary)]" />
+          {booking ? (
+            <Link
+              href={`/bookings/${booking.id}/invoice?autoprint=1`}
+              target="_blank"
+              rel="noreferrer"
+              className="shrink-0 whitespace-nowrap rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] transition hover:border-[var(--ccr-accent)] hover:bg-[var(--ccr-accent)] hover:text-[var(--ccr-primary)]"
             >
               Download PDF
-            </a>
+            </Link>
           ) : null}
           <Link
             href="/fleet"
-            className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] transition hover:border-[var(--ccr-accent)] hover:bg-[var(--ccr-accent)] hover:text-[var(--ccr-primary)]"
+            className="shrink-0 whitespace-nowrap rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] transition hover:border-[var(--ccr-accent)] hover:bg-[var(--ccr-accent)] hover:text-[var(--ccr-primary)]"
           >
             View Fleet
           </Link>
           <Link
             href="/contact"
-            className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] transition hover:border-[var(--ccr-accent)] hover:bg-[var(--ccr-accent)] hover:text-[var(--ccr-primary)]"
+            className="shrink-0 whitespace-nowrap rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] transition hover:border-[var(--ccr-accent)] hover:bg-[var(--ccr-accent)] hover:text-[var(--ccr-primary)]"
           >
             Contact Support
           </Link>
