@@ -1,8 +1,9 @@
 import { buildInvoicePayload, downloadPdfBase64, generateInvoicePdf } from "@/lib/pdfmonkey";
 import { logError, logWarn, redactText } from "@/lib/log";
-import { computeBookingPricing, readInsurancePricingFields, readPromoPricingFields } from "@/lib/payments/pricing";
+import { readInsurancePricingFields, readPromoPricingFields } from "@/lib/payments/pricing";
 import { dbQuery } from "@/lib/db";
 import { formatPaymentStatus } from "@/lib/payments/formatPaymentStatus";
+import { calcDaysInclusive } from "@/lib/payments/dateMath";
 
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
 
@@ -400,6 +401,103 @@ async function buildRequiredInvoiceAttachment(input: InvoiceAttachmentInput) {
   };
 }
 
+type EmailFinancialSummary = {
+  bookingReference: string;
+  promoCode: string | null;
+  promoDiscount: number;
+  insuranceTotal: number;
+  subtotal: number;
+  baseTotal: number;
+  totalAfterDiscount: number;
+  depositRequired: number;
+  paidToDate: number;
+  balanceDue: number;
+};
+
+type EmailFinancialSummaryInput = {
+  bookingId: string;
+  total?: number;
+  deposit?: number;
+  paidToDate?: number;
+  balanceDue?: number;
+  promoCode?: string | null;
+  promoDiscount?: number;
+  insuranceTotal?: number;
+};
+
+function readOptionalMoney(value: unknown): number | null {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return null;
+  return Math.max(0, amount);
+}
+
+async function resolveEmailFinancialSummary(
+  input: EmailFinancialSummaryInput,
+): Promise<EmailFinancialSummary> {
+  const context = await loadInvoiceContext(input.bookingId).catch(() => null);
+  const bookingReference =
+    normalizeText(context?.bookingPublicId) || input.bookingId.slice(0, 8);
+  const promoCode = normalizeText(input.promoCode) || context?.promoCode || null;
+  const promoDiscount =
+    readOptionalMoney(input.promoDiscount) ?? context?.promoDiscount ?? 0;
+  const insuranceTotal =
+    readOptionalMoney(input.insuranceTotal) ?? context?.insuranceTotal ?? 0;
+  const totalAfterDiscountInput = readOptionalMoney(input.total);
+  const subtotal =
+    context?.subtotalAmount ??
+    (totalAfterDiscountInput !== null ? totalAfterDiscountInput + promoDiscount : 0);
+  const totalAfterDiscount =
+    totalAfterDiscountInput ?? Math.max(0, subtotal - promoDiscount);
+  const depositRequired =
+    readOptionalMoney(input.deposit) ?? context?.depositAmount ?? 0;
+  const paidToDate =
+    readOptionalMoney(input.paidToDate) ?? context?.paidToDateAmount ?? 0;
+  const balanceDue =
+    readOptionalMoney(input.balanceDue) ??
+    context?.balanceDueAmount ??
+    Math.max(0, totalAfterDiscount - paidToDate);
+  const baseTotal = Math.max(0, subtotal - insuranceTotal);
+
+  return {
+    bookingReference,
+    promoCode,
+    promoDiscount,
+    insuranceTotal,
+    subtotal,
+    baseTotal,
+    totalAfterDiscount,
+    depositRequired,
+    paidToDate,
+    balanceDue,
+  };
+}
+
+function renderEmailChargeSummary(
+  summary: EmailFinancialSummary,
+  options: {
+    depositLabel: string;
+    balanceLabel: string;
+  },
+) {
+  return `
+      <p><strong>Rental subtotal:</strong> ${formatAmount(summary.baseTotal)}</p>
+      ${
+        summary.insuranceTotal > 0
+          ? `<p><strong>Insurance total:</strong> ${formatAmount(summary.insuranceTotal)}</p>`
+          : ""
+      }
+      ${
+        summary.promoDiscount > 0
+          ? `<p><strong>Promo${summary.promoCode ? ` (${summary.promoCode})` : ""}:</strong> -${formatAmount(summary.promoDiscount)}</p>`
+          : ""
+      }
+      <p><strong>${options.depositLabel}:</strong> ${formatAmount(summary.depositRequired)}</p>
+      <p><strong>Paid to date:</strong> ${formatAmount(summary.paidToDate)}</p>
+      <p><strong>Total of booking:</strong> ${formatAmount(summary.totalAfterDiscount)}</p>
+      <p><strong>${options.balanceLabel}:</strong> ${formatAmount(summary.balanceDue)}</p>
+  `;
+}
+
 export async function sendBookingCreatedEmail(input: {
   bookingId: string;
   customerEmail: string;
@@ -413,45 +511,35 @@ export async function sendBookingCreatedEmail(input: {
   promoCode?: string | null;
   promoDiscount?: number;
 }) {
-  const summary = computeBookingPricing({
+  const days = Math.max(1, calcDaysInclusive(input.startDate, input.endDate));
+  const summary = await resolveEmailFinancialSummary({
     bookingId: input.bookingId,
-    bookingStatus: "PENDING_PAYMENT",
-    startDate: input.startDate,
-    endDate: input.endDate,
-    dailyRate: input.dailyRate,
     deposit: input.deposit,
-    netPaidToDate: 0,
     promoCode: input.promoCode ?? null,
     promoDiscount: input.promoDiscount ?? 0,
+    paidToDate: 0,
   });
-  const days = summary.days;
-  const total = summary.total;
-  const balance = Math.max(0, summary.total - summary.deposit);
   const bookingLink = `${baseUrl()}/bookings/${input.bookingId}`;
   const invoiceLink = `${baseUrl()}/bookings/${input.bookingId}/invoice`;
+  const paymentStatusLabel = summary.balanceDue > 0 ? "Payment incomplete" : "Paid in full";
 
   const html = `
     <div style="font-family: Arial, sans-serif; color: #0f172a;">
       <h2>Booking received</h2>
       <p>Hi ${input.customerName},</p>
       <p>Your booking request has been received. Please pay the deposit to confirm your reservation.</p>
-      <p><strong>Booking reference:</strong> ${input.bookingId.slice(0, 8)}</p>
+      <p><strong>Booking reference:</strong> ${summary.bookingReference}</p>
       <p><strong>Vehicle:</strong> ${input.vehicleLabel}</p>
       <p><strong>Dates:</strong> ${formatDateOnly(input.startDate)} → ${formatDateOnly(input.endDate)} (${days} days)</p>
       <p><strong>Pickup location:</strong> ${input.pickupLocation}</p>
       <hr />
-      <p><strong>Total rental:</strong> ${formatAmount(total)}</p>
-      ${
-        summary.promoDiscount > 0
-          ? `<p><strong>Promo${summary.promoCode ? ` (${summary.promoCode})` : ""}:</strong> -${formatAmount(summary.promoDiscount)}</p>`
-          : ""
-      }
-      <p><strong>Deposit online:</strong> ${formatAmount(input.deposit)}</p>
-      <p><strong>Balance on pickup:</strong> ${formatAmount(balance)}</p>
+      ${renderEmailChargeSummary(summary, { depositLabel: "Deposit online", balanceLabel: "Balance on pickup" })}
+      <p><strong>Payment status:</strong> ${paymentStatusLabel}</p>
       <p style="margin-top: 16px;">
         <a href="${bookingLink}" style="background:#1f2d4d; color:#fff; padding:10px 16px; border-radius:8px; text-decoration:none;">Pay Deposit</a>
         <a href="${invoiceLink}" style="margin-left:12px; color:#1f2d4d; text-decoration:underline;">View Invoice</a>
       </p>
+      <p style="font-size:12px; color:#64748b;">The attached invoice includes your live payment ledger.</p>
       ${policyHtml()}
       <p style="font-size:12px; color:#64748b;">Need help? Reply to this email.</p>
     </div>
@@ -459,6 +547,7 @@ export async function sendBookingCreatedEmail(input: {
 
   const attachments = await buildInvoiceAttachment({
     bookingId: input.bookingId,
+    bookingPublicId: summary.bookingReference,
     bookingStatus: "PENDING_PAYMENT",
     startDate: input.startDate,
     endDate: input.endDate,
@@ -470,10 +559,13 @@ export async function sendBookingCreatedEmail(input: {
     vehicleModel: "",
     vehicleYear: 0,
     dailyRate: input.dailyRate,
-    deposit: input.deposit,
-    total,
-    paidToDate: 0,
-    balanceDue: balance,
+    deposit: summary.depositRequired,
+    insuranceTotal: summary.insuranceTotal,
+    promoCode: summary.promoCode,
+    promoDiscount: summary.promoDiscount,
+    total: summary.subtotal,
+    paidToDate: summary.paidToDate,
+    balanceDue: summary.balanceDue,
     payments: [],
   });
 
@@ -499,46 +591,35 @@ export async function sendDepositReceiptEmail(input: {
   promoCode?: string | null;
   promoDiscount?: number;
 }) {
-  const summary = computeBookingPricing({
+  const days = Math.max(1, calcDaysInclusive(input.startDate, input.endDate));
+  const summary = await resolveEmailFinancialSummary({
     bookingId: input.bookingId,
-    bookingStatus: "CONFIRMED",
-    startDate: input.startDate,
-    endDate: input.endDate,
-    dailyRate: input.dailyRate,
     deposit: input.deposit,
-    netPaidToDate: input.paidToDate,
+    paidToDate: input.paidToDate,
     promoCode: input.promoCode ?? null,
     promoDiscount: input.promoDiscount ?? 0,
   });
-  const days = summary.days;
-  const total = summary.total;
-  const balance = summary.balanceDue;
   const bookingLink = `${baseUrl()}/bookings/${input.bookingId}`;
   const invoiceLink = `${baseUrl()}/bookings/${input.bookingId}/invoice`;
+  const paymentStatusLabel = summary.balanceDue > 0 ? "Payment incomplete" : "Paid in full";
 
   const html = `
     <div style="font-family: Arial, sans-serif; color: #0f172a;">
       <h2>Deposit received</h2>
       <p>Hi ${input.customerName},</p>
       <p>Your deposit payment was received and your booking is confirmed.</p>
-      <p><strong>Booking reference:</strong> ${input.bookingId.slice(0, 8)}</p>
+      <p><strong>Booking reference:</strong> ${summary.bookingReference}</p>
       <p><strong>Vehicle:</strong> ${input.vehicleLabel}</p>
       <p><strong>Dates:</strong> ${formatDateOnly(input.startDate)} → ${formatDateOnly(input.endDate)} (${days} days)</p>
       <p><strong>Pickup location:</strong> ${input.pickupLocation}</p>
       <hr />
-      <p><strong>Total rental:</strong> ${formatAmount(total)}</p>
-      ${
-        summary.promoDiscount > 0
-          ? `<p><strong>Promo${summary.promoCode ? ` (${summary.promoCode})` : ""}:</strong> -${formatAmount(summary.promoDiscount)}</p>`
-          : ""
-      }
-      <p><strong>Deposit paid:</strong> ${formatAmount(input.deposit)}</p>
-      <p><strong>Paid to date:</strong> ${formatAmount(input.paidToDate)}</p>
-      <p><strong>Balance on pickup:</strong> ${formatAmount(balance)}</p>
+      ${renderEmailChargeSummary(summary, { depositLabel: "Deposit paid", balanceLabel: "Balance on pickup" })}
+      <p><strong>Payment status:</strong> ${paymentStatusLabel}</p>
       <p style="margin-top: 16px;">
         <a href="${bookingLink}" style="background:#1f2d4d; color:#fff; padding:10px 16px; border-radius:8px; text-decoration:none;">View Booking</a>
         <a href="${invoiceLink}" style="margin-left:12px; color:#1f2d4d; text-decoration:underline;">View Invoice</a>
       </p>
+      <p style="font-size:12px; color:#64748b;">The attached invoice includes your live payment ledger.</p>
       ${policyHtml()}
       <p style="font-size:12px; color:#64748b;">Need help? Reply to this email.</p>
     </div>
@@ -546,6 +627,7 @@ export async function sendDepositReceiptEmail(input: {
 
   const invoiceAttachment = await buildRequiredInvoiceAttachment({
     bookingId: input.bookingId,
+    bookingPublicId: summary.bookingReference,
     bookingStatus: "CONFIRMED",
     startDate: input.startDate,
     endDate: input.endDate,
@@ -557,10 +639,13 @@ export async function sendDepositReceiptEmail(input: {
     vehicleModel: "",
     vehicleYear: 0,
     dailyRate: input.dailyRate,
-    deposit: input.deposit,
-    total,
-    paidToDate: input.paidToDate,
-    balanceDue: balance,
+    deposit: summary.depositRequired,
+    insuranceTotal: summary.insuranceTotal,
+    promoCode: summary.promoCode,
+    promoDiscount: summary.promoDiscount,
+    total: summary.subtotal,
+    paidToDate: summary.paidToDate,
+    balanceDue: summary.balanceDue,
     payments: [],
   });
 
@@ -597,6 +682,14 @@ export async function sendPaymentUpdateEmail(input: {
   const bookingLink = `${baseUrl()}/bookings/${input.bookingId}`;
   const invoiceLink = `${baseUrl()}/bookings/${input.bookingId}/invoice`;
   const balanceLink = `${baseUrl()}/bookings/${input.bookingId}/balance`;
+  const summary = await resolveEmailFinancialSummary({
+    bookingId: input.bookingId,
+    total: input.total,
+    deposit: input.deposit,
+    paidToDate: input.paidToDate,
+    balanceDue: input.balanceDue,
+  });
+  const paymentStatusLabel = summary.balanceDue > 0 ? "Payment incomplete" : "Paid in full";
 
   const html = `
     <div style="font-family: Arial, sans-serif; color: #0f172a;">
@@ -616,19 +709,19 @@ export async function sendPaymentUpdateEmail(input: {
       `
           : ""
       }
-      <p><strong>Booking reference:</strong> ${input.bookingId.slice(0, 8)}</p>
+      <p><strong>Booking reference:</strong> ${summary.bookingReference}</p>
       <p><strong>Vehicle:</strong> ${input.vehicleLabel}</p>
       <p><strong>Dates:</strong> ${formatDateOnly(input.startDate)} → ${formatDateOnly(input.endDate)}</p>
       <p><strong>Pickup location:</strong> ${input.pickupLocation}</p>
       <hr />
-      <p><strong>Total rental:</strong> ${formatAmount(input.total)}</p>
-      <p><strong>Paid to date:</strong> ${formatAmount(input.paidToDate)}</p>
-      <p><strong>Balance outstanding:</strong> ${formatAmount(input.balanceDue)}</p>
+      ${renderEmailChargeSummary(summary, { depositLabel: "Deposit required", balanceLabel: "Balance outstanding" })}
+      <p><strong>Payment status:</strong> ${paymentStatusLabel}</p>
       <p style="margin-top: 16px;">
         <a href="${bookingLink}" style="background:#1f2d4d; color:#fff; padding:10px 16px; border-radius:8px; text-decoration:none;">View Booking</a>
         <a href="${balanceLink}" style="margin-left:12px; background:#e2a100; color:#111827; padding:10px 16px; border-radius:8px; text-decoration:none;">Pay Balance</a>
         <a href="${invoiceLink}" style="margin-left:12px; color:#1f2d4d; text-decoration:underline;">View Invoice</a>
       </p>
+      <p style="font-size:12px; color:#64748b;">The attached invoice includes your live payment ledger.</p>
       ${policyHtml()}
       <p style="font-size:12px; color:#64748b;">Need help? Reply to this email.</p>
     </div>
@@ -636,6 +729,7 @@ export async function sendPaymentUpdateEmail(input: {
 
   const invoiceAttachment = await buildRequiredInvoiceAttachment({
     bookingId: input.bookingId,
+    bookingPublicId: summary.bookingReference,
     bookingStatus: "CONFIRMED",
     startDate: input.startDate,
     endDate: input.endDate,
@@ -647,10 +741,13 @@ export async function sendPaymentUpdateEmail(input: {
     vehicleModel: "",
     vehicleYear: 0,
     dailyRate: input.dailyRate,
-    deposit: input.deposit,
-    total: input.total,
-    paidToDate: input.paidToDate,
-    balanceDue: input.balanceDue,
+    deposit: summary.depositRequired,
+    insuranceTotal: summary.insuranceTotal,
+    promoCode: summary.promoCode,
+    promoDiscount: summary.promoDiscount,
+    total: summary.subtotal,
+    paidToDate: summary.paidToDate,
+    balanceDue: summary.balanceDue,
     payments: [],
   });
 
@@ -686,6 +783,14 @@ export async function sendPaymentCompleteEmail(input: {
 }) {
   const bookingLink = `${baseUrl()}/bookings/${input.bookingId}`;
   const invoiceLink = `${baseUrl()}/bookings/${input.bookingId}/invoice`;
+  const summary = await resolveEmailFinancialSummary({
+    bookingId: input.bookingId,
+    total: input.total,
+    deposit: input.deposit,
+    paidToDate: input.paidToDate,
+    balanceDue: input.balanceDue,
+  });
+  const paymentStatusLabel = summary.balanceDue > 0 ? "Payment incomplete" : "Paid in full";
 
   const html = `
     <div style="font-family: Arial, sans-serif; color: #0f172a;">
@@ -705,18 +810,18 @@ export async function sendPaymentCompleteEmail(input: {
       `
           : ""
       }
-      <p><strong>Booking reference:</strong> ${input.bookingId.slice(0, 8)}</p>
+      <p><strong>Booking reference:</strong> ${summary.bookingReference}</p>
       <p><strong>Vehicle:</strong> ${input.vehicleLabel}</p>
       <p><strong>Dates:</strong> ${formatDateOnly(input.startDate)} → ${formatDateOnly(input.endDate)}</p>
       <p><strong>Pickup location:</strong> ${input.pickupLocation}</p>
       <hr />
-      <p><strong>Total rental:</strong> ${formatAmount(input.total)}</p>
-      <p><strong>Paid to date:</strong> ${formatAmount(input.paidToDate)}</p>
-      <p><strong>Balance outstanding:</strong> ${formatAmount(input.balanceDue)}</p>
+      ${renderEmailChargeSummary(summary, { depositLabel: "Deposit required", balanceLabel: "Balance outstanding" })}
+      <p><strong>Payment status:</strong> ${paymentStatusLabel}</p>
       <p style="margin-top: 16px;">
         <a href="${bookingLink}" style="background:#1f2d4d; color:#fff; padding:10px 16px; border-radius:8px; text-decoration:none;">View Booking</a>
         <a href="${invoiceLink}" style="margin-left:12px; color:#1f2d4d; text-decoration:underline;">View Invoice</a>
       </p>
+      <p style="font-size:12px; color:#64748b;">The attached invoice includes your live payment ledger.</p>
       ${policyHtml()}
       <p style="font-size:12px; color:#64748b;">Need help? Reply to this email.</p>
     </div>
@@ -724,6 +829,7 @@ export async function sendPaymentCompleteEmail(input: {
 
   const invoiceAttachment = await buildRequiredInvoiceAttachment({
     bookingId: input.bookingId,
+    bookingPublicId: summary.bookingReference,
     bookingStatus: "CONFIRMED",
     startDate: input.startDate,
     endDate: input.endDate,
@@ -735,10 +841,13 @@ export async function sendPaymentCompleteEmail(input: {
     vehicleModel: "",
     vehicleYear: 0,
     dailyRate: input.dailyRate,
-    deposit: input.deposit,
-    total: input.total,
-    paidToDate: input.paidToDate,
-    balanceDue: input.balanceDue,
+    deposit: summary.depositRequired,
+    insuranceTotal: summary.insuranceTotal,
+    promoCode: summary.promoCode,
+    promoDiscount: summary.promoDiscount,
+    total: summary.subtotal,
+    paidToDate: summary.paidToDate,
+    balanceDue: summary.balanceDue,
     payments: [],
   });
 
