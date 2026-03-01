@@ -8,6 +8,7 @@ import {
   markInvoiceProviderInfo,
 } from "@/lib/invoices/ledger";
 import { logError, redactText } from "@/lib/log";
+import { calcDaysInclusive } from "@/lib/payments/dateMath";
 
 const PDFMONKEY_BASE_URL = "https://api.pdfmonkey.io/api/v1";
 const DEFAULT_GOTENBERG_URL = "http://localhost:3001";
@@ -24,6 +25,7 @@ export type InvoicePaymentLine = {
 
 export type InvoicePayloadInput = {
   bookingId: string;
+  bookingPublicId?: string;
   invoiceNumber?: string;
   bookingStatus: string;
   startDate: string;
@@ -38,6 +40,7 @@ export type InvoicePayloadInput = {
   vehicleYear: number;
   dailyRate: number;
   deposit: number;
+  baseTotal?: number;
   insuranceTotal?: number;
   promoDiscount?: number;
   promoCode?: string | null;
@@ -183,12 +186,8 @@ function formatDateLabel(value: unknown) {
 }
 
 function computeRentalDays(start: string, end: string) {
-  const startDate = new Date(start);
-  const endDate = new Date(end);
-  if (!Number.isFinite(startDate.getTime()) || !Number.isFinite(endDate.getTime())) return 1;
-  const diffMs = endDate.getTime() - startDate.getTime();
-  const dayMs = 24 * 60 * 60 * 1000;
-  return Math.max(1, Math.ceil(diffMs / dayMs));
+  const days = calcDaysInclusive(start, end);
+  return Math.max(1, days);
 }
 
 function detectImageContentType(filePath: string) {
@@ -287,7 +286,10 @@ function renderGotenbergInvoiceHtml(
   const issuedAtRaw = asString(payload.issued_at) || new Date().toISOString();
   const issuedAt = formatDateLabel(issuedAtRaw);
   const bookingIdRaw = asString(booking.id);
-  const bookingRefRaw = asString(booking.reference) || bookingIdRaw.slice(0, 8);
+  const bookingPublicIdRaw =
+    asString(booking.public_id) || asString(booking.reference) || bookingIdRaw.slice(0, 8);
+  const invoiceNumberRaw =
+    asString(booking.invoice_number) || asString(booking.reference) || bookingPublicIdRaw;
   const startDateRaw = asString(booking.start_date);
   const endDateRaw = asString(booking.end_date);
   const dueDate = formatDateLabel(startDateRaw);
@@ -305,8 +307,8 @@ function renderGotenbergInvoiceHtml(
         .join("")
     : '<tr><td colspan="4" class="muted">No payments recorded yet.</td></tr>';
 
-  const bookingId = escapeHtml(bookingIdRaw);
-  const bookingRef = escapeHtml(bookingRefRaw);
+  const bookingPublicId = escapeHtml(bookingPublicIdRaw);
+  const invoiceNumber = escapeHtml(invoiceNumberRaw);
   const bookingStatus = escapeHtml(asString(booking.status));
   const pickupLocation = escapeHtml(asString(booking.pickup_location));
   const startDate = escapeHtml(formatDateLabel(startDateRaw));
@@ -323,16 +325,18 @@ function renderGotenbergInvoiceHtml(
   const vehicleLabel = escapeHtml(
     `${asString(vehicle.year)} ${asString(vehicle.make)} ${asString(vehicle.model)}`.trim(),
   );
-  const dailyRate = formatJmd(asNumber(vehicle.daily_rate));
+  const dailyRateValue = asNumber(vehicle.daily_rate);
+  const dailyRate = formatJmd(dailyRateValue);
   const rentalDaysLabel = escapeHtml(`${rentalDays}`);
-  const totalValue = asNumber(charges.total);
+  const baseTotalRaw = asNumber(charges.base_total);
+  const baseTotalValue = baseTotalRaw > 0 ? baseTotalRaw : Math.max(0, dailyRateValue * rentalDays);
   const depositValue = asNumber(charges.deposit);
   const insuranceTotalValue = Math.max(0, asNumber(charges.insurance_total));
   const promoDiscountValue = Math.max(0, asNumber(charges.promo_discount));
   const paidToDateValue = asNumber(charges.paid_to_date);
   const balanceDueValue = asNumber(charges.balance_due);
   const remainingDepositValue = Math.max(depositValue - paidToDateValue, 0);
-  const total = formatJmd(totalValue);
+  const baseTotal = formatJmd(baseTotalValue);
   const insuranceTotal = formatJmd(insuranceTotalValue);
   const promoDiscount = formatJmd(-promoDiscountValue);
   const remainingDeposit = formatJmd(remainingDepositValue);
@@ -347,7 +351,7 @@ function renderGotenbergInvoiceHtml(
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>Invoice ${bookingRef}</title>
+    <title>Invoice ${invoiceNumber}</title>
     <style>
       :root {
         --ink: #0f172a;
@@ -499,7 +503,7 @@ function renderGotenbergInvoiceHtml(
       <header class="header">
         <div>
           <h1 class="invoice-title">Invoice</h1>
-          <div class="meta">Booking #${bookingRef} · Issued ${issued}</div>
+          <div class="meta">Booking #${bookingPublicId} · Issued ${issued}</div>
         </div>
         <div class="company">
           ${logoSrc ? `<img src="${logoSrc}" alt="${companyName}" class="company-logo" />` : ""}
@@ -517,11 +521,11 @@ function renderGotenbergInvoiceHtml(
         </div>
         <div class="card">
           <p class="card-title">Invoice Details</p>
-          <p class="line"><strong>Invoice #:</strong> ${bookingRef}</p>
+          <p class="line"><strong>Invoice #:</strong> ${invoiceNumber}</p>
           <p class="line"><strong>Issued:</strong> ${issued}</p>
           <p class="line"><strong>Due:</strong> ${due}</p>
           <p class="line"><strong>Status:</strong> ${bookingStatus}</p>
-          <p class="line"><strong>Booking ID:</strong> ${bookingId}</p>
+          <p class="line"><strong>Booking ID:</strong> ${bookingPublicId}</p>
         </div>
       </section>
 
@@ -545,7 +549,7 @@ function renderGotenbergInvoiceHtml(
                 <td>${endDate}</td>
                 <td>${rentalDaysLabel} day(s)</td>
                 <td class="money">${dailyRate}</td>
-                <td class="money">${total}</td>
+                <td class="money">${baseTotal}</td>
               </tr>
             </tbody>
           </table>
@@ -562,7 +566,7 @@ function renderGotenbergInvoiceHtml(
           </table>
         </div>
         <div class="totals">
-          <div class="totals-row"><span>Subtotal</span><span>${total}</span></div>
+          <div class="totals-row"><span>Subtotal</span><span>${baseTotal}</span></div>
           ${insuranceTotalValue > 0 ? `<div class="totals-row"><span>Insurance Total</span><span>${insuranceTotal}</span></div>` : ""}
           ${promoDiscountValue > 0 ? `<div class="totals-row"><span>Promo Discount</span><span>${promoDiscount}</span></div>` : ""}
           <div class="totals-row"><span>Deposit</span><span>${remainingDeposit}</span></div>
@@ -910,11 +914,18 @@ async function createDocumentWithGotenberg(
 }
 
 export function buildInvoicePayload(input: InvoicePayloadInput) {
-  const invoiceReference = (input.invoiceNumber ?? "").trim() || input.bookingId.slice(0, 8);
+  const bookingPublicId = (input.bookingPublicId ?? "").trim() || input.bookingId.slice(0, 8);
+  const invoiceReference = (input.invoiceNumber ?? "").trim() || bookingPublicId;
+  const insuranceTotal = Math.max(0, Number(input.insuranceTotal ?? 0));
+  const baseTotal = Number.isFinite(Number(input.baseTotal))
+    ? Math.max(0, Number(input.baseTotal))
+    : Math.max(0, Number(input.total) - insuranceTotal);
   return {
     booking: {
       id: input.bookingId,
-      reference: invoiceReference,
+      public_id: bookingPublicId,
+      reference: bookingPublicId,
+      invoice_number: invoiceReference,
       status: input.bookingStatus,
       pickup_location: input.pickupLocation,
       start_date: input.startDate,
@@ -935,7 +946,8 @@ export function buildInvoicePayload(input: InvoicePayloadInput) {
     charges: {
       total: input.total,
       deposit: input.deposit,
-      insurance_total: input.insuranceTotal ?? 0,
+      base_total: baseTotal,
+      insurance_total: insuranceTotal,
       promo_discount: input.promoDiscount ?? 0,
       promo_code: input.promoCode ?? null,
       paid_to_date: input.paidToDate,

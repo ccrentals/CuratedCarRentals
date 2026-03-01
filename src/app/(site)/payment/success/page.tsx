@@ -244,7 +244,7 @@ export default async function PaymentSuccessPage({
     try {
       const payload = buildInvoicePayload({
         bookingId: booking.id,
-        invoiceNumber: bookingRef || undefined,
+        bookingPublicId: bookingRef || booking.id.slice(0, 8),
         bookingStatus: booking.status,
         startDate: booking.start_date,
         endDate: booking.end_date,
@@ -257,7 +257,8 @@ export default async function PaymentSuccessPage({
         vehicleYear: booking.vehicle_year,
         dailyRate,
         deposit: summary.deposit,
-        total: summary.total,
+        baseTotal: summary.baseTotal,
+        total: summary.subtotal,
         paidToDate: summary.netPaidToDate,
         balanceDue: summary.balanceDue,
         insuranceTotal: summary.insuranceTotal,

@@ -356,12 +356,15 @@ async function buildInvoiceAttachment(input: {
       : (context.paidToDateAmount ?? 0);
     const totalAfterDiscount = Math.max(0, subtotalAmount - promoDiscount);
     const balanceDue = Math.max(0, totalAfterDiscount - paidToDate);
+    const baseTotalAmount = Math.max(0, subtotalAmount - insuranceTotal);
 
     const payload = buildInvoicePayload({
       ...input,
-      bookingId: displayBookingId,
+      bookingId: input.bookingId,
+      bookingPublicId: displayBookingId,
       invoiceNumber,
       customerAddress: address,
+      baseTotal: baseTotalAmount,
       total: subtotalAmount,
       deposit: depositAmount,
       paidToDate,

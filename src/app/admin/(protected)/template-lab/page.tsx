@@ -282,7 +282,8 @@ async function buildInvoicePreviewFromLatestBooking(): Promise<TemplatePreview> 
   }
 
   const payload = buildInvoicePayload({
-    bookingId: context.booking.public_id || context.booking.id,
+    bookingId: context.booking.id,
+    bookingPublicId: context.booking.public_id || context.booking.id,
     bookingStatus: context.booking.status,
     startDate: context.pickupDate,
     endDate: context.dropoffDate,
@@ -296,10 +297,11 @@ async function buildInvoicePreviewFromLatestBooking(): Promise<TemplatePreview> 
     vehicleYear: context.booking.vehicle_year,
     dailyRate: context.dailyRate,
     deposit: context.depositPolicy,
+    baseTotal: context.summary.baseTotal,
     insuranceTotal: context.summary.insuranceTotal,
     promoDiscount: context.summary.discountTotal,
     promoCode: context.promoCode,
-    total: context.summary.total,
+    total: context.summary.subtotal,
     paidToDate: context.summary.netPaidToDate,
     balanceDue: context.summary.balanceDue,
     payments: context.reducingPayments.map((payment) => ({

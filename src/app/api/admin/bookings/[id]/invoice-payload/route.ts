@@ -22,6 +22,7 @@ export async function GET(
   const { id } = await params;
   const bookingResult = await dbQuery<{
     id: string;
+    public_id: string | null;
     start_date: string;
     end_date: string;
     pickup_location: string;
@@ -36,7 +37,7 @@ export async function GET(
     daily_rate_cents: number;
     deposit_cents: number;
   }>(
-    "select b.id, b.start_date, b.end_date, b.pickup_location, b.status, b.pricing_json, c.full_name as customer_name, c.email as customer_email, c.phone as customer_phone, v.make as vehicle_make, v.model as vehicle_model, v.year as vehicle_year, v.daily_rate_cents, v.deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.id = $1",
+    "select b.id, b.public_id, b.start_date, b.end_date, b.pickup_location, b.status, b.pricing_json, c.full_name as customer_name, c.email as customer_email, c.phone as customer_phone, v.make as vehicle_make, v.model as vehicle_model, v.year as vehicle_year, v.daily_rate_cents, v.deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.id = $1",
     [id],
   );
 
@@ -107,6 +108,7 @@ export async function GET(
 
   const payload = buildInvoicePayload({
     bookingId: booking.id,
+    bookingPublicId: (booking.public_id ?? "").trim() || booking.id.slice(0, 8),
     bookingStatus: booking.status,
     startDate: booking.start_date instanceof Date ? booking.start_date.toISOString() : String(booking.start_date),
     endDate: booking.end_date instanceof Date ? booking.end_date.toISOString() : String(booking.end_date),
@@ -119,9 +121,13 @@ export async function GET(
     vehicleYear: booking.vehicle_year,
     dailyRate,
     deposit: summary.deposit,
-    total: summary.total,
+    baseTotal: summary.baseTotal,
+    total: summary.subtotal,
     paidToDate: summary.netPaidToDate,
     balanceDue: summary.balanceDue,
+    insuranceTotal: summary.insuranceTotal,
+    promoDiscount: summary.promoDiscount,
+    promoCode: summary.promoCode,
     payments,
   });
 
