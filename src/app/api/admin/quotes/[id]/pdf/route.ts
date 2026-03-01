@@ -67,7 +67,8 @@ export async function handleAdminQuotePdfGet(
       },
     });
 
-    const filename = `Quote-${quote.id.slice(0, 8)}.pdf`;
+    const displayQuoteId = quote.publicId || quote.id.slice(0, 8);
+    const filename = `Quote-${displayQuoteId}.pdf`;
 
     return new NextResponse(new Uint8Array(pdf), {
       status: 200,

@@ -20,6 +20,7 @@ type Queryable = {
 
 type QuoteRow = {
   id: string;
+  public_id: string | null;
   created_at: string | Date;
   updated_at: string | Date;
   status: string;
@@ -60,6 +61,7 @@ type QuoteRow = {
 
 export type QuoteOpsQuote = {
   id: string;
+  publicId: string | null;
   createdAt: string;
   updatedAt: string;
   status: string;
@@ -198,6 +200,7 @@ function mapQuoteRow(row: QuoteRow): QuoteOpsQuote {
   const status = resolveEffectiveQuoteStatus(row.status, row.expires_at);
   return {
     id: row.id,
+    publicId: normalizeNullableText(row.public_id),
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at),
     status,
@@ -248,7 +251,7 @@ export async function fetchQuoteByIdForOps(
   };
 
   const result = await db.query(
-    "select id, created_at, updated_at, status, expires_at, customer_full_name, customer_email, customer_phone, start_at, end_at, pickup_location_id, dropoff_location_id, pickup_location_text, dropoff_location_text, vehicle_id, vehicle_label, vehicle_class, pricing_json, base_total_cents, insurance_total_cents, discount_total_cents, subtotal_cents, total_cents, deposit_required_cents, amount_due_cents, promo_code, insurance_plan_id, insurance_enabled, tags, comments, commission_partner_name, client_pays_at_partner, rack_price_cents, created_by_admin_user_id, last_emailed_at, last_emailed_to, converted_booking_id from quotes where id = $1::uuid limit 1",
+    "select id, public_id, created_at, updated_at, status, expires_at, customer_full_name, customer_email, customer_phone, start_at, end_at, pickup_location_id, dropoff_location_id, pickup_location_text, dropoff_location_text, vehicle_id, vehicle_label, vehicle_class, pricing_json, base_total_cents, insurance_total_cents, discount_total_cents, subtotal_cents, total_cents, deposit_required_cents, amount_due_cents, promo_code, insurance_plan_id, insurance_enabled, tags, comments, commission_partner_name, client_pays_at_partner, rack_price_cents, created_by_admin_user_id, last_emailed_at, last_emailed_to, converted_booking_id from quotes where id = $1::uuid limit 1",
     [quoteId],
   );
 
@@ -321,8 +324,8 @@ export function buildQuoteEmailContent(input: {
   toEmail: string;
   message?: string | null;
 }) {
-  const shortId = input.quote.id.slice(0, 8);
-  const subject = `Your Quote from ${siteContent.brand} — ${shortId}`;
+  const displayQuoteId = input.quote.publicId || input.quote.id.slice(0, 8);
+  const subject = `Your Quote from ${siteContent.brand} — ${displayQuoteId}`;
   const note = normalizeNullableText(input.message);
 
   const html = `
@@ -330,7 +333,7 @@ export function buildQuoteEmailContent(input: {
       <h2>Your rental quote</h2>
       <p>Hello ${escapeHtml(input.quote.customerFullName || "Customer")},</p>
       <p>Thanks for choosing ${escapeHtml(siteContent.brand)}. Your quote summary is below.</p>
-      <p><strong>Quote ID:</strong> ${escapeHtml(shortId)}</p>
+      <p><strong>Quote ID:</strong> ${escapeHtml(displayQuoteId)}</p>
       <p><strong>Vehicle:</strong> ${escapeHtml(input.quote.vehicleLabel || "—")}</p>
       <p><strong>Pickup:</strong> ${escapeHtml(formatDateTime(input.quote.startAt))} (${escapeHtml(input.quote.pickupLocationText || "—")})</p>
       <p><strong>Dropoff:</strong> ${escapeHtml(formatDateTime(input.quote.endAt))} (${escapeHtml(input.quote.dropoffLocationText || "—")})</p>
@@ -517,12 +520,12 @@ function buildPdfFromLines(lines: string[]) {
 }
 
 export function buildQuotePdfBuffer(quote: QuoteOpsQuote) {
-  const shortId = quote.id.slice(0, 8);
+  const displayQuoteId = quote.publicId || quote.id.slice(0, 8);
   const rackPrice = quote.rackPriceCents ?? quote.baseTotalCents;
 
   const lines = [
     `${siteContent.brand} — QUOTE`,
-    `Quote ID: ${shortId}`,
+    `Quote ID: ${displayQuoteId}`,
     `Created: ${formatDateTime(quote.createdAt)}`,
     `Expires: ${quote.expiresAt ? formatDateTime(quote.expiresAt) : "Not set"}`,
     "",
@@ -577,7 +580,7 @@ export async function convertQuoteToBooking(input: {
     await client.query("begin");
 
     const quoteResult = await client.query(
-      "select id, created_at, updated_at, status, expires_at, customer_full_name, customer_email, customer_phone, start_at, end_at, pickup_location_id, dropoff_location_id, pickup_location_text, dropoff_location_text, vehicle_id, vehicle_label, vehicle_class, pricing_json, base_total_cents, insurance_total_cents, discount_total_cents, subtotal_cents, total_cents, deposit_required_cents, amount_due_cents, promo_code, insurance_plan_id, insurance_enabled, tags, comments, commission_partner_name, client_pays_at_partner, rack_price_cents, created_by_admin_user_id, last_emailed_at, last_emailed_to, converted_booking_id from quotes where id = $1::uuid for update",
+      "select id, public_id, created_at, updated_at, status, expires_at, customer_full_name, customer_email, customer_phone, start_at, end_at, pickup_location_id, dropoff_location_id, pickup_location_text, dropoff_location_text, vehicle_id, vehicle_label, vehicle_class, pricing_json, base_total_cents, insurance_total_cents, discount_total_cents, subtotal_cents, total_cents, deposit_required_cents, amount_due_cents, promo_code, insurance_plan_id, insurance_enabled, tags, comments, commission_partner_name, client_pays_at_partner, rack_price_cents, created_by_admin_user_id, last_emailed_at, last_emailed_to, converted_booking_id from quotes where id = $1::uuid for update",
       [input.quoteId],
     );
 

@@ -345,7 +345,7 @@ export function QuoteCreateModal({ onCreated }: QuoteCreateModalProps) {
       isCancelled = true;
       window.clearTimeout(timer);
     };
-  }, [customerEmail, endAtLocal, insuranceEnabled, open, promoCode, startAtLocal, vehicleId]);
+  }, [customerEmail, endAtLocal, insuranceEnabled, insurancePlanId, open, promoCode, startAtLocal, vehicleId]);
 
   const applyPickupLocation = useCallback(
     (nextId: string) => {

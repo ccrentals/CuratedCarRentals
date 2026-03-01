@@ -161,7 +161,7 @@ export async function handleAdminQuoteEmailPost(
       toEmail,
       subject: emailContent.subject,
       html: emailContent.html,
-      attachmentFilename: `quote-${quote.id.slice(0, 8)}.pdf`,
+      attachmentFilename: `quote-${quote.publicId || quote.id.slice(0, 8)}.pdf`,
       attachmentBase64: Buffer.from(pdf).toString("base64"),
     });
 
