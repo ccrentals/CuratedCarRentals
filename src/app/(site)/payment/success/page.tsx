@@ -6,6 +6,7 @@ import { dbQuery } from "@/lib/db";
 import { fmtDateOnly } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
 import { formatPaymentStatus } from "@/lib/payments/formatPaymentStatus";
+import { buildInvoicePayload, generateInvoicePdf } from "@/lib/pdfmonkey";
 import {
   computeBookingPricing,
   fetchNetPaidToDate,
@@ -38,6 +39,10 @@ type PaymentRow = {
   deposit_amount_cents: number;
   created_at: string;
   metadata_json: Record<string, unknown> | null;
+};
+
+type InvoiceDocumentRow = {
+  download_url: string | null;
 };
 
 type InvoiceSnapshotCardProps = {
@@ -153,6 +158,23 @@ export default async function PaymentSuccessPage({
   const booking = bookingResult?.rowCount ? bookingResult.rows[0] : null;
   const bookingRef = (booking?.public_id ?? "").trim();
 
+  let invoicePdfUrl: string | null = null;
+  if (bookingId) {
+    try {
+      const invoiceDocResult = await dbQuery<InvoiceDocumentRow>(
+        "select download_url from booking_invoice_documents where booking_id = $1 and download_url is not null order by generated_at desc limit 1",
+        [bookingId],
+      );
+      invoicePdfUrl = invoiceDocResult.rows[0]?.download_url ?? null;
+    } catch (error) {
+      const code = (error as { code?: string } | null)?.code;
+      // Graceful fallback if the invoice ledger table does not exist yet.
+      if (code !== "42P01") {
+        throw error;
+      }
+    }
+  }
+
   let payments: PaymentRow[] = [];
   if (bookingId) {
     try {
@@ -204,6 +226,53 @@ export default async function PaymentSuccessPage({
   const paidToDate = summary?.netPaidToDate ?? 0;
   const balanceDue = summary?.balanceDue ?? 0;
 
+  if (!invoicePdfUrl && booking && summary) {
+    const invoicePayments = payments
+      .filter((payment) => payment.status === "DEPOSIT_PAID" || payment.status === "REFUNDED")
+      .map((payment) => ({
+        provider: payment.provider,
+        status: formatPaymentStatus(payment.status, {
+          paymentType:
+            typeof payment.metadata_json?.payment_type === "string"
+              ? String(payment.metadata_json.payment_type)
+              : null,
+        }),
+        amount: Number(payment.deposit_amount_cents || 0),
+        date: payment.created_at,
+      }));
+
+    try {
+      const payload = buildInvoicePayload({
+        bookingId: booking.id,
+        invoiceNumber: bookingRef || undefined,
+        bookingStatus: booking.status,
+        startDate: booking.start_date,
+        endDate: booking.end_date,
+        pickupLocation: booking.pickup_location,
+        customerName: booking.customer_name,
+        customerEmail: booking.customer_email,
+        customerPhone: booking.customer_phone,
+        vehicleMake: booking.vehicle_make,
+        vehicleModel: booking.vehicle_model,
+        vehicleYear: booking.vehicle_year,
+        dailyRate,
+        deposit: summary.deposit,
+        total: summary.total,
+        paidToDate: summary.netPaidToDate,
+        balanceDue: summary.balanceDue,
+        insuranceTotal: summary.insuranceTotal,
+        promoDiscount: summary.promoDiscount,
+        promoCode: summary.promoCode,
+        payments: invoicePayments,
+      });
+
+      const generated = await generateInvoicePdf(payload, booking.id, { source: "PAYMENT_SUCCESS_VIEW" });
+      invoicePdfUrl = generated?.previewUrl ?? generated?.downloadUrl ?? null;
+    } catch {
+      // If generation fails, keep rendering the HTML fallback snapshot.
+    }
+  }
+
   const depositPaid = payments.reduce((sum: number, payment: PaymentRow) => {
     if (payment.status !== "DEPOSIT_PAID") return sum;
     const metadata = payment.metadata_json ?? {};
@@ -245,22 +314,32 @@ export default async function PaymentSuccessPage({
                   <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Invoice preview</h2>
                   <span className="text-xs text-[var(--ccr-muted)]">Booking #{bookingRef || "—"}</span>
                 </div>
-                <div className="overflow-x-auto rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3">
-                  <div className="mx-auto min-w-[720px] max-w-[760px]">
-                    <InvoiceSnapshotCard
-                      booking={booking}
-                      bookingRef={bookingRef}
-                      days={days}
-                      total={total}
-                      depositPaid={depositPaid}
-                      paidToDate={paidToDate}
-                      balanceDue={balanceDue}
-                      promoCode={summary.promoCode}
-                      promoDiscount={summary.promoDiscount}
-                      payments={payments}
+                {invoicePdfUrl ? (
+                  <div className="overflow-hidden rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)]">
+                    <iframe
+                      title={`Invoice ${bookingRef || booking.id.slice(0, 8)}`}
+                      src={invoicePdfUrl}
+                      className="h-[640px] w-full bg-white"
                     />
                   </div>
-                </div>
+                ) : (
+                  <div className="overflow-x-auto rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3">
+                    <div className="mx-auto min-w-[720px] max-w-[760px]">
+                      <InvoiceSnapshotCard
+                        booking={booking}
+                        bookingRef={bookingRef}
+                        days={days}
+                        total={total}
+                        depositPaid={depositPaid}
+                        paidToDate={paidToDate}
+                        balanceDue={balanceDue}
+                        promoCode={summary.promoCode}
+                        promoDiscount={summary.promoDiscount}
+                        payments={payments}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -293,9 +372,9 @@ export default async function PaymentSuccessPage({
           <PrintInvoiceButton className="shrink-0 whitespace-nowrap rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] transition hover:border-[var(--ccr-accent)] hover:bg-[var(--ccr-accent)] hover:text-[var(--ccr-primary)]" />
           {booking ? (
             <Link
-              href={`/bookings/${booking.id}/invoice?autoprint=1`}
-              target="_blank"
-              rel="noreferrer"
+              href={invoicePdfUrl ?? `/bookings/${booking.id}/invoice?autoprint=1`}
+              target={invoicePdfUrl ? "_blank" : undefined}
+              rel={invoicePdfUrl ? "noreferrer" : undefined}
               className="shrink-0 whitespace-nowrap rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] transition hover:border-[var(--ccr-accent)] hover:bg-[var(--ccr-accent)] hover:text-[var(--ccr-primary)]"
             >
               Download PDF

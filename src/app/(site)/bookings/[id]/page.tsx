@@ -23,6 +23,7 @@ export default async function BookingSummaryPage({
 
   const bookingResult = await dbQuery<{
     id: string;
+    public_id: string | null;
     status: string;
     start_date: string;
     end_date: string;
@@ -32,7 +33,7 @@ export default async function BookingSummaryPage({
     daily_rate_cents: number;
     deposit_cents: number;
   }>(
-    "select b.id, b.status, b.start_date, b.end_date, b.pricing_json, v.make as vehicle_make, v.model as vehicle_model, v.daily_rate_cents, v.deposit_cents from bookings b join vehicles v on v.id = b.vehicle_id where b.id = $1",
+    "select b.id, b.public_id, b.status, b.start_date, b.end_date, b.pricing_json, v.make as vehicle_make, v.model as vehicle_model, v.daily_rate_cents, v.deposit_cents from bookings b join vehicles v on v.id = b.vehicle_id where b.id = $1",
     [id],
   );
 
@@ -40,6 +41,7 @@ export default async function BookingSummaryPage({
   if (!booking) {
     notFound();
   }
+  const bookingRef = String(booking.public_id ?? "").trim() || booking.id;
 
   const pricing = booking.pricing_json ?? {};
   const dailyRate = Number(pricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
@@ -75,7 +77,7 @@ export default async function BookingSummaryPage({
     <div className="mx-auto w-full max-w-3xl px-6 py-12">
       <div className="rounded-3xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-8 shadow-sm">
         <h1 className="text-3xl font-bold text-[var(--ccr-text)]">Booking Summary</h1>
-        <p className="mt-2 text-sm text-[var(--ccr-muted)]">Booking ID: {booking.id}</p>
+        <p className="mt-2 text-sm text-[var(--ccr-muted)]">Booking ID: {bookingRef}</p>
         {isOverridden ? (
           <div className="mt-4 rounded-xl border border-red-300/40 bg-red-500/15 p-4 text-sm text-red-100">
             <p className="font-semibold">Overridden</p>

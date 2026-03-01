@@ -242,7 +242,7 @@ export function BookingPayPanel({
             </div>
             <div className="mt-3">
               {summary.netPaidToDate > 0 ? (
-                <span className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)]">
+                <span className="inline-flex items-center whitespace-nowrap rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)]">
                   Payment already started
                 </span>
               ) : summary.paymentOption === "NONE" && summary.paymentStatus === "DUE_ON_PICKUP" ? (
