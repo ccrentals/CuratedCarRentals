@@ -21,14 +21,21 @@ function adminSession() {
 test("quote transition map: allows expected transitions", () => {
   const allowed: Array<[QuoteStatus, QuoteStatus]> = [
     ["DRAFT", "SENT"],
+    ["DRAFT", "EXPIRED"],
     ["DRAFT", "CANCELLED"],
     ["SENT", "ACCEPTED"],
     ["SENT", "EXPIRED"],
     ["SENT", "CANCELLED"],
+    ["ACCEPTED", "SENT"],
     ["ACCEPTED", "CONVERTED"],
     ["ACCEPTED", "EXPIRED"],
     ["ACCEPTED", "CANCELLED"],
+    ["EXPIRED", "SENT"],
+    ["EXPIRED", "ACCEPTED"],
+    ["EXPIRED", "CANCELLED"],
     ["CANCELLED", "SENT"],
+    ["CANCELLED", "ACCEPTED"],
+    ["CANCELLED", "EXPIRED"],
   ];
 
   for (const [fromStatus, toStatus] of allowed) {
@@ -45,8 +52,8 @@ test("quote transition map: disallows invalid transitions", () => {
   const disallowed: Array<[QuoteStatus, QuoteStatus]> = [
     ["SENT", "DRAFT"],
     ["CONVERTED", "DRAFT"],
-    ["EXPIRED", "SENT"],
-    ["CANCELLED", "ACCEPTED"],
+    ["CONVERTED", "SENT"],
+    ["CONVERTED", "EXPIRED"],
   ];
 
   for (const [fromStatus, toStatus] of disallowed) {

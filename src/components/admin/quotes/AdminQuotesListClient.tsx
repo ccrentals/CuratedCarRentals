@@ -111,13 +111,6 @@ function normalizeRows(value: string | null) {
   return parsed;
 }
 
-function truncateText(value: string | null | undefined, max = 48) {
-  const compact = String(value ?? "").replace(/\s+/g, " ").trim();
-  if (!compact) return "—";
-  if (compact.length <= max) return compact;
-  return `${compact.slice(0, max - 3)}...`;
-}
-
 function normalizeDateParam(value: string | null) {
   if (!value) return "";
   const trimmed = value.trim();
@@ -530,7 +523,12 @@ export function AdminQuotesListClient() {
                     <div>
                       <dt>Quote</dt>
                       <dd className="font-mono text-[var(--ccr-text)]">
-                        {shortQuoteId(row.id, row.publicId)}
+                        <Link
+                          href={`/admin/bookings/quotes/${row.id}`}
+                          className="inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 font-bold text-[var(--ccr-accent)]"
+                        >
+                          {shortQuoteId(row.id, row.publicId)}
+                        </Link>
                       </dd>
                     </div>
                     <div>
@@ -626,12 +624,13 @@ export function AdminQuotesListClient() {
                       className="border-b border-[var(--ccr-border)] last:border-b-0"
                     >
                       <td className="px-4 py-3 font-mono text-xs text-[var(--ccr-text)]">
-                        <span
+                        <Link
+                          href={`/admin/bookings/quotes/${row.id}`}
                           data-testid="quote-row-public-id"
-                          className="inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 font-bold text-[var(--ccr-accent)]"
+                          className="inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 font-bold text-[var(--ccr-accent)] hover:opacity-90"
                         >
                           {shortQuoteId(row.id, row.publicId)}
-                        </span>
+                        </Link>
                       </td>
                       <td className="px-4 py-3 text-[var(--ccr-text)]">Reservations</td>
                       <td className="px-4 py-3 text-[var(--ccr-text)]">

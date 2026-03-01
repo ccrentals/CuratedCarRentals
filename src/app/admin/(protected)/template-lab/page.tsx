@@ -14,12 +14,13 @@ import {
   generateInvoicePdf,
   generateRentalAgreementPdf,
 } from "@/lib/pdfmonkey";
+import { QuoteTemplatePreviewFrame } from "@/components/admin/QuoteTemplatePreviewFrame";
 
 type TemplateKey = "invoice" | "quote" | "agreement" | "receipt";
 
 const TEMPLATE_ITEMS: ReadonlyArray<{ key: TemplateKey; label: string; note: string }> = [
   { key: "invoice", label: "Invoice", note: "Preview generated from the newest booking." },
-  { key: "quote", label: "Quote", note: "Coming next." },
+  { key: "quote", label: "Quote", note: "Preview generated from the newest quote." },
   { key: "agreement", label: "Rental Agreement", note: "Preview generated from the newest booking." },
   { key: "receipt", label: "Receipt", note: "Uses the same template output as Invoice." },
 ];
@@ -61,7 +62,9 @@ type PaymentRow = {
 };
 
 type TemplatePreview = {
-  booking: BookingRow | null;
+  sourceId: string | null;
+  sourcePublicId: string | null;
+  sourceLabel: "booking" | "quote";
   pdfUrl: string | null;
   error: string | null;
   total: number;
@@ -80,6 +83,13 @@ type LatestTemplateContext = {
   depositPolicy: number;
   promoCode: string | null;
   summary: ReturnType<typeof computeBookingPricing>;
+};
+
+type QuoteRow = {
+  id: string;
+  public_id: string | null;
+  total_cents: number;
+  amount_due_cents: number;
 };
 
 const PAYMENT_STATUS_REDUCES_BALANCE = new Set([
@@ -265,7 +275,9 @@ async function getLatestTemplateContext(): Promise<LatestTemplateContext | null>
 
 function emptyPreview(error: string): TemplatePreview {
   return {
-    booking: null,
+    sourceId: null,
+    sourcePublicId: null,
+    sourceLabel: "booking",
     pdfUrl: null,
     error,
     total: 0,
@@ -323,7 +335,9 @@ async function buildInvoicePreviewFromLatestBooking(): Promise<TemplatePreview> 
     });
     if (!pdf?.previewUrl) {
       return {
-        booking: context.booking,
+        sourceId: context.booking.id,
+        sourcePublicId: context.booking.public_id || context.booking.id,
+        sourceLabel: "booking",
         pdfUrl: null,
         error: "Invoice PDF preview was not returned by the current provider.",
         total: context.summary.total,
@@ -333,7 +347,9 @@ async function buildInvoicePreviewFromLatestBooking(): Promise<TemplatePreview> 
       };
     }
     return {
-      booking: context.booking,
+      sourceId: context.booking.id,
+      sourcePublicId: context.booking.public_id || context.booking.id,
+      sourceLabel: "booking",
       pdfUrl: pdf.previewUrl,
       error: null,
       total: context.summary.total,
@@ -343,7 +359,9 @@ async function buildInvoicePreviewFromLatestBooking(): Promise<TemplatePreview> 
     };
   } catch (error) {
     return {
-      booking: context.booking,
+      sourceId: context.booking.id,
+      sourcePublicId: context.booking.public_id || context.booking.id,
+      sourceLabel: "booking",
       pdfUrl: null,
       error:
         error instanceof Error
@@ -394,7 +412,9 @@ async function buildRentalAgreementPreviewFromLatestBooking(): Promise<TemplateP
     const pdf = await generateRentalAgreementPdf(payload);
     if (!pdf?.previewUrl) {
       return {
-        booking: context.booking,
+        sourceId: context.booking.id,
+        sourcePublicId: context.booking.public_id || context.booking.id,
+        sourceLabel: "booking",
         pdfUrl: null,
         error: "Rental agreement PDF preview was not returned by the current provider.",
         total: context.summary.total,
@@ -404,7 +424,9 @@ async function buildRentalAgreementPreviewFromLatestBooking(): Promise<TemplateP
       };
     }
     return {
-      booking: context.booking,
+      sourceId: context.booking.id,
+      sourcePublicId: context.booking.public_id || context.booking.id,
+      sourceLabel: "booking",
       pdfUrl: pdf.previewUrl,
       error: null,
       total: context.summary.total,
@@ -414,7 +436,9 @@ async function buildRentalAgreementPreviewFromLatestBooking(): Promise<TemplateP
     };
   } catch (error) {
     return {
-      booking: context.booking,
+      sourceId: context.booking.id,
+      sourcePublicId: context.booking.public_id || context.booking.id,
+      sourceLabel: "booking",
       pdfUrl: null,
       error:
         error instanceof Error
@@ -426,6 +450,35 @@ async function buildRentalAgreementPreviewFromLatestBooking(): Promise<TemplateP
       paymentCount: context.reducingPayments.length,
     };
   }
+}
+
+async function fetchLatestQuote(): Promise<QuoteRow | null> {
+  const result = await dbQuery<QuoteRow>(
+    "select id, public_id, total_cents, amount_due_cents from quotes order by created_at desc limit 1",
+  );
+  return result.rowCount > 0 ? result.rows[0] : null;
+}
+
+async function buildQuotePreviewFromLatestQuote(): Promise<TemplatePreview> {
+  const latestQuote = await fetchLatestQuote();
+  if (!latestQuote) {
+    return {
+      ...emptyPreview("No quotes found yet. Create a quote first, then refresh this page."),
+      sourceLabel: "quote",
+    };
+  }
+
+  return {
+    sourceId: latestQuote.id,
+    sourcePublicId: latestQuote.public_id || latestQuote.id,
+    sourceLabel: "quote",
+    pdfUrl: `/api/admin/quotes/${latestQuote.id}/pdf`,
+    error: null,
+    total: Number(latestQuote.total_cents || 0),
+    paidToDate: 0,
+    balanceDue: Number(latestQuote.amount_due_cents || latestQuote.total_cents || 0),
+    paymentCount: 0,
+  };
 }
 
 export default async function AdminTemplateLabPage({
@@ -440,12 +493,19 @@ export default async function AdminTemplateLabPage({
     activeTemplate === "invoice" || activeTemplate === "receipt"
       ? await buildInvoicePreviewFromLatestBooking()
       : null;
+  const quotePreview = activeTemplate === "quote" ? await buildQuotePreviewFromLatestQuote() : null;
   const agreementPreview =
     activeTemplate === "agreement" ? await buildRentalAgreementPreviewFromLatestBooking() : null;
-  const activePreview = activeTemplate === "agreement" ? agreementPreview : invoicePreview;
+  const activePreview =
+    activeTemplate === "agreement"
+      ? agreementPreview
+      : activeTemplate === "quote"
+        ? quotePreview
+        : invoicePreview;
   const activeLabel =
     TEMPLATE_ITEMS.find((item) => item.key === activeTemplate)?.label ??
     (activeTemplate === "agreement" ? "Rental Agreement" : "Invoice");
+  const activeProviderLabel = activeTemplate === "quote" ? "native" : provider;
 
   return (
     <div className="mx-auto w-full max-w-7xl px-6 py-10">
@@ -461,34 +521,23 @@ export default async function AdminTemplateLabPage({
 
       <div className="mt-6">
         <section className="rounded-3xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
-          {activeTemplate !== "invoice" &&
-          activeTemplate !== "agreement" &&
-          activeTemplate !== "receipt" ? (
-            <div className="rounded-2xl border border-dashed border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-6">
-              <h2 className="text-lg font-semibold text-[var(--ccr-text)]">
-                {TEMPLATE_ITEMS.find((item) => item.key === activeTemplate)?.label}
-              </h2>
-              <p className="mt-2 text-sm text-[var(--ccr-muted)]">
-                This template pane is reserved for next iteration.
-              </p>
-            </div>
-          ) : (
-            <>
+          <>
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-4 py-3">
                 <div>
                   <p className="text-sm font-semibold text-[var(--ccr-text)]">
                     {activeLabel} Template Preview
                   </p>
                   <p className="text-xs text-[var(--ccr-muted)]">
-                    Source booking:{" "}
-                    {activePreview?.booking
-                      ? `${activePreview.booking.public_id || activePreview.booking.id.slice(0, 8)} (${activePreview.booking.id.slice(0, 8)})`
+                    Source {activePreview?.sourceLabel ?? "booking"}:{" "}
+                    {activePreview?.sourceId
+                      ? `${activePreview.sourcePublicId || activePreview.sourceId.slice(0, 8)} (${activePreview.sourceId.slice(0, 8)})`
                       : "none"}
                   </p>
                 </div>
                 <div className="text-right text-xs text-[var(--ccr-muted)]">
                   <p>
-                    Provider: <span className="font-semibold text-[var(--ccr-text)]">{provider}</span>
+                    Provider:{" "}
+                    <span className="font-semibold text-[var(--ccr-text)]">{activeProviderLabel}</span>
                   </p>
                   <p>
                     Total:{" "}
@@ -511,7 +560,7 @@ export default async function AdminTemplateLabPage({
                 </div>
               </div>
 
-              {provider !== "gotenberg" ? (
+              {activeTemplate !== "quote" && provider !== "gotenberg" ? (
                 <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                   Current PDF provider is <strong>{provider}</strong>. For this template workflow,
                   set <code>PDF_PROVIDER=gotenberg</code>.
@@ -524,7 +573,12 @@ export default async function AdminTemplateLabPage({
                 </div>
               ) : null}
 
-              {activePreview?.pdfUrl ? (
+              {activeTemplate === "quote" && activePreview?.sourceId ? (
+                <QuoteTemplatePreviewFrame
+                  quoteId={activePreview.sourceId}
+                  title={`${activeLabel} Template Preview`}
+                />
+              ) : activePreview?.pdfUrl ? (
                 <iframe
                   title={`${activeLabel} Template Preview`}
                   src={activePreview.pdfUrl}
@@ -535,8 +589,7 @@ export default async function AdminTemplateLabPage({
                   No {activeLabel.toLowerCase()} preview available yet.
                 </div>
               )}
-            </>
-          )}
+          </>
         </section>
       </div>
     </div>

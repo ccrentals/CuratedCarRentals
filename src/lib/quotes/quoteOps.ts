@@ -447,57 +447,72 @@ function wrapPdfLine(line: string, maxChars = 96) {
   return wrapped;
 }
 
-function buildPdfFromLines(lines: string[]) {
+function formatRgb(color: [number, number, number]) {
+  return color.map((value) => value.toFixed(3)).join(" ");
+}
+
+function pushPdfRect(input: {
+  commands: string[];
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  fill: [number, number, number];
+  stroke?: [number, number, number];
+  lineWidth?: number;
+}) {
+  input.commands.push(`${formatRgb(input.fill)} rg`);
+  if (input.stroke) {
+    input.commands.push(`${formatRgb(input.stroke)} RG`);
+    input.commands.push(`${Math.max(0.1, Number(input.lineWidth ?? 1)).toFixed(2)} w`);
+  }
+  input.commands.push(
+    `${input.x.toFixed(2)} ${input.y.toFixed(2)} ${input.width.toFixed(2)} ${input.height.toFixed(2)} re`,
+  );
+  input.commands.push(input.stroke ? "B" : "f");
+}
+
+function pushPdfText(input: {
+  commands: string[];
+  x: number;
+  y: number;
+  lines: string[];
+  font: "F1" | "F2";
+  fontSize: number;
+  color: [number, number, number];
+  lineHeight?: number;
+}) {
+  const printable = input.lines.filter((line) => line.length > 0);
+  if (printable.length === 0) return;
+  input.commands.push("BT");
+  input.commands.push(`/${input.font} ${input.fontSize.toFixed(2)} Tf`);
+  input.commands.push(`${formatRgb(input.color)} rg`);
+  input.commands.push(`${input.x.toFixed(2)} ${input.y.toFixed(2)} Td`);
+  input.commands.push(`${(input.lineHeight ?? input.fontSize * 1.35).toFixed(2)} TL`);
+  printable.forEach((line, index) => {
+    input.commands.push(`(${sanitizePdfText(line)}) Tj`);
+    if (index < printable.length - 1) {
+      input.commands.push("T*");
+    }
+  });
+  input.commands.push("ET");
+}
+
+function buildSinglePagePdf(commands: string[]) {
   const pageWidth = 595;
   const pageHeight = 842;
-  const marginLeft = 40;
-  const top = 800;
-  const lineHeight = 14;
-  const linesPerPage = 52;
-  const pages: string[][] = [];
-
-  for (let index = 0; index < lines.length; index += linesPerPage) {
-    pages.push(lines.slice(index, index + linesPerPage));
-  }
-  if (pages.length === 0) pages.push(["Quote"]);
+  const stream = commands.join("\n");
+  const contentLength = Buffer.byteLength(stream, "ascii");
 
   const objects: string[] = [];
   objects[1] = "<< /Type /Catalog /Pages 2 0 R >>";
+  objects[2] = "<< /Type /Pages /Kids [5 0 R] /Count 1 >>";
   objects[3] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>";
-
-  const pageRefs: string[] = [];
-  let nextObjectId = 4;
-
-  for (const pageLines of pages) {
-    const pageId = nextObjectId++;
-    const contentId = nextObjectId++;
-    pageRefs.push(`${pageId} 0 R`);
-
-    const contentCommands: string[] = [
-      "BT",
-      "/F1 10 Tf",
-      `${marginLeft} ${top} Td`,
-      `${lineHeight} TL`,
-    ];
-
-    pageLines.forEach((line, index) => {
-      contentCommands.push(`(${sanitizePdfText(line)}) Tj`);
-      if (index < pageLines.length - 1) {
-        contentCommands.push("T*");
-      }
-    });
-
-    contentCommands.push("ET");
-
-    const stream = contentCommands.join("\n");
-    const length = Buffer.byteLength(stream, "ascii");
-    objects[contentId] = `<< /Length ${length} >>\nstream\n${stream}\nendstream`;
-    objects[pageId] =
-      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] ` +
-      `/Resources << /Font << /F1 3 0 R >> >> /Contents ${contentId} 0 R >>`;
-  }
-
-  objects[2] = `<< /Type /Pages /Kids [${pageRefs.join(" ")}] /Count ${pageRefs.length} >>`;
+  objects[4] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>";
+  objects[5] =
+    `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] ` +
+    `/Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 6 0 R >>`;
+  objects[6] = `<< /Length ${contentLength} >>\nstream\n${stream}\nendstream`;
 
   let pdf = "%PDF-1.4\n";
   const offsets: number[] = [0];
@@ -521,46 +536,241 @@ function buildPdfFromLines(lines: string[]) {
 
 export function buildQuotePdfBuffer(quote: QuoteOpsQuote) {
   const displayQuoteId = quote.publicId || quote.id.slice(0, 8);
-  const rackPrice = quote.rackPriceCents ?? quote.baseTotalCents;
+  const created = formatDateTime(quote.createdAt);
+  const expires = quote.expiresAt ? formatDateTime(quote.expiresAt) : "Not set";
+  const status = quote.status || "DRAFT";
+  const promoCode = quote.promoCode || "—";
 
-  const lines = [
-    `${siteContent.brand} — QUOTE`,
-    `Quote ID: ${displayQuoteId}`,
-    `Created: ${formatDateTime(quote.createdAt)}`,
-    `Expires: ${quote.expiresAt ? formatDateTime(quote.expiresAt) : "Not set"}`,
+  const headerPurple: [number, number, number] = [0.365, 0.208, 0.651];
+  const bodyText: [number, number, number] = [0.082, 0.094, 0.122];
+  const mutedText: [number, number, number] = [0.329, 0.361, 0.420];
+  const whiteText: [number, number, number] = [1, 1, 1];
+  const cardFill: [number, number, number] = [0.972, 0.968, 0.992];
+  const cardStroke: [number, number, number] = [0.870, 0.836, 0.949];
+  const highlightFill: [number, number, number] = [0.925, 0.890, 0.980];
+
+  const commands: string[] = [];
+
+  // Header
+  pushPdfRect({
+    commands,
+    x: 0,
+    y: 742,
+    width: 595,
+    height: 100,
+    fill: headerPurple,
+  });
+
+  pushPdfText({
+    commands,
+    x: 40,
+    y: 805,
+    lines: ["Quote"],
+    font: "F2",
+    fontSize: 27,
+    color: whiteText,
+  });
+
+  pushPdfText({
+    commands,
+    x: 40,
+    y: 782,
+    lines: [`Quote ID: ${displayQuoteId}`],
+    font: "F1",
+    fontSize: 11,
+    color: whiteText,
+  });
+
+  pushPdfText({
+    commands,
+    x: 325,
+    y: 805,
+    lines: [siteContent.brand],
+    font: "F2",
+    fontSize: 14,
+    color: whiteText,
+  });
+
+  pushPdfText({
+    commands,
+    x: 325,
+    y: 786,
+    lines: [`${siteContent.email} | ${siteContent.phone}`],
+    font: "F1",
+    fontSize: 10,
+    color: whiteText,
+  });
+
+  // Left card: Customer + reservation
+  pushPdfRect({
+    commands,
+    x: 40,
+    y: 515,
+    width: 250,
+    height: 205,
+    fill: cardFill,
+    stroke: cardStroke,
+  });
+
+  const leftLines = [
+    ...wrapPdfLine(`Name: ${quote.customerFullName || "—"}`, 34),
+    ...wrapPdfLine(`Email: ${quote.customerEmail || "—"}`, 34),
+    ...wrapPdfLine(`Phone: ${quote.customerPhone || "—"}`, 34),
     "",
-    "Customer",
-    `Name: ${quote.customerFullName || "—"}`,
-    `Email: ${quote.customerEmail || "—"}`,
-    `Phone: ${quote.customerPhone || "—"}`,
+    ...wrapPdfLine(`Pickup: ${formatDateTime(quote.startAt)}`, 34),
+    ...wrapPdfLine(`${quote.pickupLocationText || "—"}`, 34),
     "",
-    "Reservation",
-    `Pickup: ${formatDateTime(quote.startAt)} (${quote.pickupLocationText || "—"})`,
-    `Dropoff: ${formatDateTime(quote.endAt)} (${quote.dropoffLocationText || "—"})`,
-    "",
-    "Vehicle",
-    `Label: ${quote.vehicleLabel || "—"}`,
-    `Class: ${quote.vehicleClass || "—"}`,
-    "",
-    "Pricing (JMD)",
-    `Rack price: ${formatAmount(rackPrice)}`,
-    `Base: ${formatAmount(quote.baseTotalCents)}`,
-    `Insurance: ${formatAmount(quote.insuranceTotalCents)}`,
-    `Discount: -${formatAmount(quote.discountTotalCents)}`,
-    `Subtotal: ${formatAmount(quote.subtotalCents)}`,
-    `Total: ${formatAmount(quote.totalCents)}`,
-    `Deposit required: ${formatAmount(quote.depositRequiredCents)}`,
-    `Amount due now: ${formatAmount(quote.amountDueCents)}`,
-    `Promo code: ${quote.promoCode || "—"}`,
-    "",
-    "Terms",
-    "This is a quote. Vehicle is not reserved until deposit/payment is received.",
-    "",
-    `Contact: ${siteContent.email} · ${siteContent.phone}`,
+    ...wrapPdfLine(`Dropoff: ${formatDateTime(quote.endAt)}`, 34),
+    ...wrapPdfLine(`${quote.dropoffLocationText || "—"}`, 34),
   ];
 
-  const wrapped = lines.flatMap((line) => wrapPdfLine(line, 96));
-  return buildPdfFromLines(wrapped);
+  pushPdfText({
+    commands,
+    x: 54,
+    y: 698,
+    lines: ["Customer & Reservation"],
+    font: "F2",
+    fontSize: 12,
+    color: headerPurple,
+  });
+
+  pushPdfText({
+    commands,
+    x: 54,
+    y: 678,
+    lines: leftLines,
+    font: "F1",
+    fontSize: 10,
+    color: bodyText,
+    lineHeight: 13,
+  });
+
+  // Right card: quote details
+  pushPdfRect({
+    commands,
+    x: 305,
+    y: 515,
+    width: 250,
+    height: 205,
+    fill: cardFill,
+    stroke: cardStroke,
+  });
+
+  pushPdfText({
+    commands,
+    x: 319,
+    y: 698,
+    lines: ["Quote Details"],
+    font: "F2",
+    fontSize: 12,
+    color: headerPurple,
+  });
+
+  pushPdfText({
+    commands,
+    x: 319,
+    y: 678,
+    lines: [
+      ...wrapPdfLine(`Status: ${status}`, 34),
+      ...wrapPdfLine(`Created: ${created}`, 34),
+      ...wrapPdfLine(`Expires: ${expires}`, 34),
+      "",
+      ...wrapPdfLine(`Vehicle: ${quote.vehicleLabel || "—"}`, 34),
+      ...wrapPdfLine(`Class: ${quote.vehicleClass || "—"}`, 34),
+      ...wrapPdfLine(`Promo code: ${promoCode}`, 34),
+    ],
+    font: "F1",
+    fontSize: 10,
+    color: bodyText,
+    lineHeight: 13,
+  });
+
+  // Pricing summary block
+  pushPdfRect({
+    commands,
+    x: 40,
+    y: 285,
+    width: 515,
+    height: 205,
+    fill: [0.988, 0.988, 0.996],
+    stroke: cardStroke,
+  });
+
+  pushPdfText({
+    commands,
+    x: 54,
+    y: 467,
+    lines: ["Pricing Summary (JMD)"],
+    font: "F2",
+    fontSize: 12,
+    color: headerPurple,
+  });
+
+  const pricingRows = [
+    { label: "Rental subtotal", value: formatAmount(quote.baseTotalCents) },
+    { label: "Insurance total", value: formatAmount(quote.insuranceTotalCents) },
+    { label: "Promo discount", value: `-${formatAmount(quote.discountTotalCents)}` },
+    { label: "Total of booking", value: formatAmount(quote.totalCents) },
+    { label: "Deposit required", value: formatAmount(quote.depositRequiredCents) },
+    { label: "Amount due now", value: formatAmount(quote.amountDueCents), highlight: true },
+  ];
+
+  let rowY = 440;
+  for (const row of pricingRows) {
+    if (row.highlight) {
+      pushPdfRect({
+        commands,
+        x: 50,
+        y: rowY - 6,
+        width: 495,
+        height: 22,
+        fill: highlightFill,
+      });
+    }
+
+    pushPdfText({
+      commands,
+      x: 56,
+      y: rowY + 6,
+      lines: [row.label],
+      font: row.highlight ? "F2" : "F1",
+      fontSize: 11,
+      color: bodyText,
+    });
+
+    pushPdfText({
+      commands,
+      x: 430,
+      y: rowY + 6,
+      lines: [row.value],
+      font: row.highlight ? "F2" : "F1",
+      fontSize: 11,
+      color: bodyText,
+    });
+
+    rowY -= 28;
+  }
+
+  const notes = [
+    ...wrapPdfLine(
+      "This is a quote. Vehicle is not reserved until deposit/payment is received.",
+      96,
+    ),
+    ...wrapPdfLine(`Contact: ${siteContent.email} | ${siteContent.phone}`, 96),
+  ];
+
+  pushPdfText({
+    commands,
+    x: 40,
+    y: 248,
+    lines: notes,
+    font: "F1",
+    fontSize: 10,
+    color: mutedText,
+    lineHeight: 13,
+  });
+
+  return buildSinglePagePdf(commands);
 }
 
 function readInsurancePricePerDay(pricingJson: Record<string, unknown>) {

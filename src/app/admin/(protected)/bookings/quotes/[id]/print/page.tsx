@@ -1,6 +1,6 @@
-import { QuotePrintClient } from "@/components/admin/quotes/QuotePrintClient";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { isStaffRole } from "@/lib/auth/roles";
+import { redirect } from "next/navigation";
 
 export default async function AdminQuotePrintPage({
   params,
@@ -19,5 +19,5 @@ export default async function AdminQuotePrintPage({
     );
   }
 
-  return <QuotePrintClient quoteId={id} />;
+  redirect(`/api/admin/quotes/${id}/pdf`);
 }

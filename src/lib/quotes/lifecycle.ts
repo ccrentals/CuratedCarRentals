@@ -13,12 +13,12 @@ const TERMINAL_STATUSES = new Set<QuoteStatus>(["EXPIRED", "CONVERTED", "CANCELL
 const AUTO_EXPIRE_STATUSES = new Set<QuoteStatus>(["DRAFT", "SENT", "ACCEPTED"]);
 
 const QUOTE_STATUS_TRANSITIONS: Record<QuoteStatus, ReadonlySet<QuoteStatus>> = {
-  DRAFT: new Set<QuoteStatus>(["SENT", "CANCELLED"]),
+  DRAFT: new Set<QuoteStatus>(["SENT", "EXPIRED", "CANCELLED"]),
   SENT: new Set<QuoteStatus>(["ACCEPTED", "EXPIRED", "CANCELLED"]),
-  ACCEPTED: new Set<QuoteStatus>(["CONVERTED", "EXPIRED", "CANCELLED"]),
-  EXPIRED: new Set<QuoteStatus>([]),
+  ACCEPTED: new Set<QuoteStatus>(["SENT", "CONVERTED", "EXPIRED", "CANCELLED"]),
+  EXPIRED: new Set<QuoteStatus>(["SENT", "ACCEPTED", "CANCELLED"]),
   CONVERTED: new Set<QuoteStatus>([]),
-  CANCELLED: new Set<QuoteStatus>(["SENT"]),
+  CANCELLED: new Set<QuoteStatus>(["SENT", "ACCEPTED", "EXPIRED"]),
 };
 
 export function normalizeQuoteStatus(value: unknown): QuoteStatus | null {

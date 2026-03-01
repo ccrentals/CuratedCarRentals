@@ -49,6 +49,18 @@ type PricingPreview = {
   amountDue: number;
 };
 
+type PromoOption = {
+  id: string;
+  code: string;
+  is_active: boolean;
+  discount_type: "PERCENT" | "FIXED";
+  discount_value: number;
+  apply_scope: "OVERALL_TOTAL" | "DAYS_TOTAL";
+  start_at: string | null;
+  end_at: string | null;
+  remaining_redemptions: number | null;
+};
+
 type QuoteCreateModalProps = {
   onCreated: (id: string) => void;
 };
@@ -92,6 +104,33 @@ function isInsurancePlanOption(value: unknown): value is InsurancePlanOption {
   );
 }
 
+function isPromoOption(value: unknown): value is PromoOption {
+  if (!value || typeof value !== "object") return false;
+  const row = value as Record<string, unknown>;
+  return typeof row.id === "string" && typeof row.code === "string" && typeof row.is_active === "boolean";
+}
+
+function isPromoCurrentlyActive(promo: PromoOption, now = Date.now()) {
+  if (!promo.is_active) return false;
+  const startsAt = promo.start_at ? new Date(promo.start_at).getTime() : null;
+  if (startsAt !== null && Number.isFinite(startsAt) && now < startsAt) return false;
+  const endsAt = promo.end_at ? new Date(promo.end_at).getTime() : null;
+  if (endsAt !== null && Number.isFinite(endsAt) && now > endsAt) return false;
+  if (promo.remaining_redemptions !== null && promo.remaining_redemptions <= 0) return false;
+  return true;
+}
+
+function formatPromoOptionLabel(promo: PromoOption) {
+  const discount =
+    promo.discount_type === "PERCENT"
+      ? `${Math.round(Number(promo.discount_value || 0))}%`
+      : formatJmd(Math.round(Number(promo.discount_value || 0)));
+  const scope = promo.apply_scope === "DAYS_TOTAL" ? "Days total" : "Overall total";
+  const remaining =
+    promo.remaining_redemptions === null ? "" : `, ${Math.max(0, promo.remaining_redemptions)} left`;
+  return `${promo.code} (${discount}, ${scope}${remaining})`;
+}
+
 export function QuoteCreateModal({ onCreated }: QuoteCreateModalProps) {
   const [open, setOpen] = useState(false);
   const [loadingBootstrap, setLoadingBootstrap] = useState(false);
@@ -101,6 +140,7 @@ export function QuoteCreateModal({ onCreated }: QuoteCreateModalProps) {
   const [locations, setLocations] = useState<LocationOption[]>([]);
   const [vehicles, setVehicles] = useState<AvailableVehicle[]>([]);
   const [insurancePlans, setInsurancePlans] = useState<InsurancePlanOption[]>([]);
+  const [promoOptions, setPromoOptions] = useState<PromoOption[]>([]);
 
   const [customerFullName, setCustomerFullName] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
@@ -131,6 +171,7 @@ export function QuoteCreateModal({ onCreated }: QuoteCreateModalProps) {
   const [previewError, setPreviewError] = useState<string | null>(null);
   const dialogRef = useRef<HTMLElement | null>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
+  const handleClose = useCallback(() => setOpen(false), []);
 
   const pickupLocations = useMemo(
     () => locations.filter((location) => location.is_active && location.allow_pickup),
@@ -150,7 +191,7 @@ export function QuoteCreateModal({ onCreated }: QuoteCreateModalProps) {
 
   useDialogA11y({
     open,
-    onClose: () => setOpen(false),
+    onClose: handleClose,
     dialogRef,
     restoreFocusRef: triggerRef,
   });
@@ -160,9 +201,10 @@ export function QuoteCreateModal({ onCreated }: QuoteCreateModalProps) {
     setError(null);
 
     try {
-      const [locationsResponse, insuranceResponse] = await Promise.all([
+      const [locationsResponse, insuranceResponse, promoResponse] = await Promise.all([
         fetch("/api/admin/booking-locations", { cache: "no-store" }),
         fetch("/api/admin/insurance-plans", { cache: "no-store" }),
+        fetch("/api/admin/promo-codes", { cache: "no-store" }),
       ]);
 
       const locationsData = (await locationsResponse.json().catch(() => ({}))) as {
@@ -172,6 +214,9 @@ export function QuoteCreateModal({ onCreated }: QuoteCreateModalProps) {
       const insuranceData = (await insuranceResponse.json().catch(() => ({}))) as {
         plans?: unknown[];
         error?: string;
+      };
+      const promoData = (await promoResponse.json().catch(() => ({}))) as {
+        promos?: unknown[];
       };
 
       if (!locationsResponse.ok) {
@@ -187,13 +232,18 @@ export function QuoteCreateModal({ onCreated }: QuoteCreateModalProps) {
       const nextPlans = Array.isArray(insuranceData.plans)
         ? insuranceData.plans.filter(isInsurancePlanOption)
         : [];
+      const nextPromos = Array.isArray(promoData.promos)
+        ? promoData.promos.filter(isPromoOption).filter((promo) => isPromoCurrentlyActive(promo))
+        : [];
 
       setLocations(nextLocations);
       setInsurancePlans(nextPlans);
+      setPromoOptions(nextPromos);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Unable to load quote options.");
       setLocations([]);
       setInsurancePlans([]);
+      setPromoOptions([]);
     } finally {
       setLoadingBootstrap(false);
     }
@@ -351,9 +401,7 @@ export function QuoteCreateModal({ onCreated }: QuoteCreateModalProps) {
     (nextId: string) => {
       setPickupLocationId(nextId);
       const selected = pickupLocations.find((location) => location.id === nextId);
-      if (selected) {
-        setPickupLocationText(selected.label);
-      }
+      setPickupLocationText(selected?.label ?? "");
     },
     [pickupLocations],
   );
@@ -362,9 +410,7 @@ export function QuoteCreateModal({ onCreated }: QuoteCreateModalProps) {
     (nextId: string) => {
       setDropoffLocationId(nextId);
       const selected = dropoffLocations.find((location) => location.id === nextId);
-      if (selected) {
-        setDropoffLocationText(selected.label);
-      }
+      setDropoffLocationText(selected?.label ?? "");
     },
     [dropoffLocations],
   );
@@ -457,7 +503,7 @@ export function QuoteCreateModal({ onCreated }: QuoteCreateModalProps) {
       <div className={`fixed inset-0 z-50 ${open ? "" : "pointer-events-none"}`}>
         <div
           className={`absolute inset-0 bg-black/50 transition-opacity ${open ? "opacity-100" : "opacity-0"}`}
-          onClick={() => setOpen(false)}
+          onClick={handleClose}
         />
         <section
           ref={dialogRef}
@@ -477,7 +523,7 @@ export function QuoteCreateModal({ onCreated }: QuoteCreateModalProps) {
               </div>
               <button
                 type="button"
-                onClick={() => setOpen(false)}
+                onClick={handleClose}
                 className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
               >
                 Close
@@ -541,6 +587,7 @@ export function QuoteCreateModal({ onCreated }: QuoteCreateModalProps) {
                   <label className="text-xs text-[var(--ccr-muted)]">
                     Pickup location
                     <select
+                      required
                       value={pickupLocationId}
                       onChange={(event) => applyPickupLocation(event.target.value)}
                       className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-sm text-[var(--ccr-text)]"
@@ -556,6 +603,7 @@ export function QuoteCreateModal({ onCreated }: QuoteCreateModalProps) {
                   <label className="text-xs text-[var(--ccr-muted)]">
                     Dropoff location
                     <select
+                      required
                       value={dropoffLocationId}
                       onChange={(event) => applyDropoffLocation(event.target.value)}
                       className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-sm text-[var(--ccr-text)]"
@@ -569,24 +617,6 @@ export function QuoteCreateModal({ onCreated }: QuoteCreateModalProps) {
                     </select>
                   </label>
 
-                  <label className="text-xs text-[var(--ccr-muted)]">
-                    Pickup location text snapshot
-                    <input
-                      required
-                      value={pickupLocationText}
-                      onChange={(event) => setPickupLocationText(event.target.value)}
-                      className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-sm text-[var(--ccr-text)]"
-                    />
-                  </label>
-                  <label className="text-xs text-[var(--ccr-muted)]">
-                    Dropoff location text snapshot
-                    <input
-                      required
-                      value={dropoffLocationText}
-                      onChange={(event) => setDropoffLocationText(event.target.value)}
-                      className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-sm text-[var(--ccr-text)]"
-                    />
-                  </label>
                 </section>
 
                 <section className="grid gap-3 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3 sm:grid-cols-2">
@@ -637,12 +667,18 @@ export function QuoteCreateModal({ onCreated }: QuoteCreateModalProps) {
 
                   <label className="text-xs text-[var(--ccr-muted)]">
                     Promo code
-                    <input
+                    <select
                       value={promoCode}
                       onChange={(event) => setPromoCode(event.target.value)}
                       className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-sm text-[var(--ccr-text)]"
-                      placeholder="Optional"
-                    />
+                    >
+                      <option value="">No promo</option>
+                      {promoOptions.map((promo) => (
+                        <option key={promo.id} value={promo.code}>
+                          {formatPromoOptionLabel(promo)}
+                        </option>
+                      ))}
+                    </select>
                   </label>
 
                   <label className="text-xs text-[var(--ccr-muted)]">
