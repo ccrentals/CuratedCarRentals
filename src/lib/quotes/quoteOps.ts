@@ -694,6 +694,7 @@ export async function convertQuoteToBooking(input: {
         startDate,
         endDate,
         subtotalCents: pricingSnapshot.summary.subtotalCents,
+        baseTotalCents: pricingSnapshot.summary.baseTotalCents,
         customerId: customerUpsert.customerId,
         customerEmail: quote.customerEmail,
         client,

@@ -68,6 +68,7 @@ export async function POST(request: Request) {
     promoDiscount: 0,
   });
   const subtotalCents = pricingPreview.subtotal;
+  const baseTotalCents = pricingPreview.baseTotal;
   const normalizedCode = normalizePromoInputCode(codeRaw);
   if (!normalizedCode) {
     return NextResponse.json({ error: "Promo code is required" }, { status: 400 });
@@ -79,6 +80,7 @@ export async function POST(request: Request) {
     startDate,
     endDate,
     subtotalCents,
+    baseTotalCents,
     customerEmail: customerEmail || undefined,
   });
 

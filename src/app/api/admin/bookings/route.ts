@@ -204,6 +204,7 @@ export async function POST(request: Request) {
         startDate: String(startDate),
         endDate: String(endDate),
         subtotalCents: subtotalAmount,
+        baseTotalCents: subtotalAmount,
         customerId: customerUpsert.customerId,
         customerEmail: normalizedEmail,
         client,

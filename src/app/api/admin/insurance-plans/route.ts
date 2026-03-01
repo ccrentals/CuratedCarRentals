@@ -107,7 +107,7 @@ export async function PATCH(request: Request) {
     }
 
     await dbQuery(
-      "insert into insurance_plans (vehicle_id, is_enabled, price_per_day_cents, is_global_default, created_by) values ($1, $2, $3, false, $4) on conflict (vehicle_id) do update set is_enabled = excluded.is_enabled, price_per_day_cents = excluded.price_per_day_cents, updated_at = now()",
+      "insert into insurance_plans (vehicle_id, is_enabled, price_per_day_cents, is_global_default, created_by) values ($1, $2, $3, false, $4) on conflict (vehicle_id) where vehicle_id is not null do update set is_enabled = excluded.is_enabled, price_per_day_cents = excluded.price_per_day_cents, updated_at = now()",
       [vehicleId, isEnabled, pricePerDayCents, actor.userId],
     );
 

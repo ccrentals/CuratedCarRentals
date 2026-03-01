@@ -553,6 +553,7 @@ create table if not exists promo_codes (
   code text not null,
   is_active boolean not null default true,
   discount_type text not null,
+  apply_scope text not null default 'OVERALL_TOTAL',
   discount_value numeric(10, 2) not null,
   min_subtotal_cents int,
   max_redemptions int,
@@ -565,11 +566,39 @@ create table if not exists promo_codes (
   created_by uuid references users(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint promo_codes_discount_type_check check (discount_type in ('PERCENT', 'FIXED'))
+  constraint promo_codes_discount_type_check check (discount_type in ('PERCENT', 'FIXED')),
+  constraint promo_codes_apply_scope_check check (apply_scope in ('OVERALL_TOTAL', 'DAYS_TOTAL'))
 );
 
 alter table promo_codes
   add column if not exists public_id text;
+
+alter table promo_codes
+  add column if not exists apply_scope text default 'OVERALL_TOTAL';
+
+update promo_codes
+set apply_scope = 'OVERALL_TOTAL'
+where apply_scope is null;
+
+alter table promo_codes
+  alter column apply_scope set default 'OVERALL_TOTAL';
+
+alter table promo_codes
+  alter column apply_scope set not null;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'promo_codes_apply_scope_check'
+      and conrelid = 'promo_codes'::regclass
+  ) then
+    alter table promo_codes
+      add constraint promo_codes_apply_scope_check
+      check (apply_scope in ('OVERALL_TOTAL', 'DAYS_TOTAL'));
+  end if;
+end $$;
 
 do $$
 begin

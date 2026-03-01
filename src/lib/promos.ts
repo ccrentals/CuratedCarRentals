@@ -15,6 +15,7 @@ type PromoCodeRow = {
   code: string;
   is_active: boolean;
   discount_type: "PERCENT" | "FIXED";
+  apply_scope: string | null;
   discount_value: string | number;
   min_subtotal_cents: number | null;
   max_redemptions: number | null;
@@ -78,19 +79,24 @@ export type PromoValidationInput = {
   startDate: string;
   endDate: string;
   subtotalCents: number;
+  baseTotalCents: number;
   customerId?: string | null;
   customerEmail?: string | null;
   now?: Date;
   client?: Queryable;
 };
 
+export type PromoApplyScope = "OVERALL_TOTAL" | "DAYS_TOTAL";
+
 export type PromoValidationSuccess = {
   ok: true;
   promoId: string;
   code: string;
   discountType: "PERCENT" | "FIXED";
+  applyScope: PromoApplyScope;
   discountValue: number;
   discountAmountCents: number;
+  discountBaseCents: number;
   subtotalCents: number;
   totalAfterDiscountCents: number;
 };
@@ -113,6 +119,14 @@ export type PromoValidationFailure = {
 
 export type PromoValidationResult = PromoValidationSuccess | PromoValidationFailure;
 
+function normalizeApplyScope(value: unknown): PromoApplyScope {
+  const normalized = String(value ?? "")
+    .trim()
+    .toUpperCase();
+  if (normalized === "DAYS_TOTAL") return "DAYS_TOTAL";
+  return "OVERALL_TOTAL";
+}
+
 export async function validatePromoForBooking(
   input: PromoValidationInput,
 ): Promise<PromoValidationResult> {
@@ -127,10 +141,20 @@ export async function validatePromoForBooking(
     return { ok: false, reason: "invalid_dates", message: "Invalid booking dates for promo." };
   }
 
-  const promoResult = await db.query(
-    "select id, code, is_active, discount_type, discount_value, min_subtotal_cents, max_redemptions, max_redemptions_per_customer, start_at, end_at, allowed_vehicle_ids_json, excluded_vehicle_ids_json, blackout_dates_json from promo_codes where lower(code) = lower($1) limit 1",
-    [normalizedCode],
-  );
+  let promoResult: { rows: unknown[]; rowCount: number };
+  try {
+    promoResult = await db.query(
+      "select id, code, is_active, discount_type, apply_scope, discount_value, min_subtotal_cents, max_redemptions, max_redemptions_per_customer, start_at, end_at, allowed_vehicle_ids_json, excluded_vehicle_ids_json, blackout_dates_json from promo_codes where lower(code) = lower($1) limit 1",
+      [normalizedCode],
+    );
+  } catch (error) {
+    const code = (error as { code?: string } | null)?.code;
+    if (code !== "42703") throw error;
+    promoResult = await db.query(
+      "select id, code, is_active, discount_type, 'OVERALL_TOTAL'::text as apply_scope, discount_value, min_subtotal_cents, max_redemptions, max_redemptions_per_customer, start_at, end_at, allowed_vehicle_ids_json, excluded_vehicle_ids_json, blackout_dates_json from promo_codes where lower(code) = lower($1) limit 1",
+      [normalizedCode],
+    );
+  }
   if (promoResult.rowCount === 0) {
     return { ok: false, reason: "invalid_code", message: "Promo code not found." };
   }
@@ -150,7 +174,11 @@ export async function validatePromoForBooking(
   }
 
   const subtotal = Math.max(0, Math.round(Number(input.subtotalCents || 0)));
-  if (promo.min_subtotal_cents && subtotal < promo.min_subtotal_cents) {
+  const baseTotal = Math.max(0, Math.round(Number(input.baseTotalCents || 0)));
+  const applyScope = normalizeApplyScope(promo.apply_scope);
+  const discountBase = applyScope === "DAYS_TOTAL" ? baseTotal : subtotal;
+
+  if (promo.min_subtotal_cents && discountBase < promo.min_subtotal_cents) {
     return {
       ok: false,
       reason: "min_subtotal",
@@ -228,19 +256,21 @@ export async function validatePromoForBooking(
   const discountValue = toNumber(promo.discount_value, 0);
   let discountAmount = 0;
   if (promo.discount_type === "PERCENT") {
-    discountAmount = Math.round(subtotal * (discountValue / 100));
+    discountAmount = Math.round(discountBase * (discountValue / 100));
   } else {
     discountAmount = Math.round(discountValue);
   }
-  discountAmount = Math.min(subtotal, Math.max(0, discountAmount));
+  discountAmount = Math.min(discountBase, Math.max(0, discountAmount));
 
   return {
     ok: true,
     promoId: promo.id,
     code: normalizePromoCode(promo.code),
     discountType: promo.discount_type,
+    applyScope,
     discountValue,
     discountAmountCents: discountAmount,
+    discountBaseCents: discountBase,
     subtotalCents: subtotal,
     totalAfterDiscountCents: Math.max(0, subtotal - discountAmount),
   };

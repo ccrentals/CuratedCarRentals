@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 
+import { formatJmd } from "@/lib/money";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
 const actionLabels = {
@@ -25,6 +26,26 @@ type BookingActionsProps = {
   isPaidInFull?: boolean;
   isDepositPaid?: boolean;
   canAdmin?: boolean;
+  vehicleId: string;
+  vehicleLabel?: string;
+  promoOptions: Array<{
+    id: string;
+    code: string;
+    discountType: "PERCENT" | "FIXED";
+    discountValue: number;
+    startAt: string | null;
+    endAt: string | null;
+    maxRedemptions: number | null;
+    redemptionCount: number;
+    remainingRedemptions: number | null;
+  }>;
+  insuranceOption: {
+    enabled: boolean;
+    planId: string | null;
+    pricePerDayCents: number;
+  };
+  initialPromoCode?: string | null;
+  initialInsuranceSelected?: boolean;
   bookingChangesContent?: ReactNode;
 };
 
@@ -35,6 +56,12 @@ export function BookingActions({
   isPaidInFull,
   isDepositPaid,
   canAdmin,
+  vehicleId,
+  vehicleLabel,
+  promoOptions,
+  insuranceOption,
+  initialPromoCode,
+  initialInsuranceSelected,
   bookingChangesContent,
 }: BookingActionsProps) {
   const router = useRouter();
@@ -44,7 +71,11 @@ export function BookingActions({
   const [emailLoading, setEmailLoading] = useState<"booking_created" | "deposit_receipt" | null>(
     null,
   );
-  const [activePanel, setActivePanel] = useState<"booking" | "email" | "changes">("booking");
+  const [pricingLoading, setPricingLoading] = useState<"promo" | "insurance" | null>(null);
+  const [activePanel, setActivePanel] = useState<"booking" | "email" | "pricing" | "changes">("booking");
+  const [selectedPromoCode, setSelectedPromoCode] = useState<string>(initialPromoCode ?? "");
+  const [appliedPromoCode, setAppliedPromoCode] = useState<string>(initialPromoCode ?? "");
+  const [insuranceSelected, setInsuranceSelected] = useState<boolean>(initialInsuranceSelected === true);
   const normalizedStatus = bookingStatus?.trim().toUpperCase();
   const canConfirm = !normalizedStatus || ["PENDING_PAYMENT", "PENDING"].includes(normalizedStatus);
   const canPickup =
@@ -186,6 +217,122 @@ export function BookingActions({
     setMessage("Email sent successfully.");
   }
 
+  async function applyPromoCode() {
+    if (!selectedPromoCode.trim()) {
+      setError("Select a promo code first.");
+      return;
+    }
+
+    setMessage(null);
+    setError(null);
+    setPricingLoading("promo");
+
+    const csrfToken = await ensureCsrfToken();
+    const response = await fetch(`/api/public/bookings/${bookingId}/promo`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-csrf-token": csrfToken ?? "",
+      },
+      body: JSON.stringify({ code: selectedPromoCode.trim() }),
+    });
+
+    const data = (await response.json().catch(() => ({}))) as {
+      ok?: boolean;
+      error?: string;
+      promo?: { code?: string };
+    };
+    setPricingLoading(null);
+
+    if (!response.ok || !data.ok) {
+      setError(data.error ?? "Unable to apply promo code.");
+      return;
+    }
+
+    const normalizedCode = String(data.promo?.code ?? selectedPromoCode).trim().toUpperCase();
+    setAppliedPromoCode(normalizedCode);
+    setSelectedPromoCode(normalizedCode);
+    setMessage(`Promo ${normalizedCode} applied.`);
+    router.refresh();
+  }
+
+  async function removePromoCode() {
+    setMessage(null);
+    setError(null);
+    setPricingLoading("promo");
+
+    const csrfToken = await ensureCsrfToken();
+    const response = await fetch(`/api/public/bookings/${bookingId}/promo`, {
+      method: "DELETE",
+      headers: {
+        "x-csrf-token": csrfToken ?? "",
+      },
+    });
+
+    const data = (await response.json().catch(() => ({}))) as {
+      ok?: boolean;
+      error?: string;
+    };
+    setPricingLoading(null);
+
+    if (!response.ok || !data.ok) {
+      setError(data.error ?? "Unable to remove promo code.");
+      return;
+    }
+
+    setAppliedPromoCode("");
+    setMessage("Promo removed.");
+    router.refresh();
+  }
+
+  async function updateInsuranceSelection(enabled: boolean) {
+    setMessage(null);
+    setError(null);
+    setPricingLoading("insurance");
+
+    const csrfToken = await ensureCsrfToken();
+    const response = await fetch(`/api/admin/bookings/${bookingId}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "x-csrf-token": csrfToken ?? "",
+      },
+      body: JSON.stringify({
+        action: "set_insurance",
+        enabled,
+      }),
+    });
+
+    const data = (await response.json().catch(() => ({}))) as {
+      ok?: boolean;
+      error?: string;
+      message?: string;
+      summary?: { insuranceSelected?: boolean };
+    };
+    setPricingLoading(null);
+
+    if (!response.ok || !data.ok) {
+      setError(data.error ?? "Unable to update insurance.");
+      return;
+    }
+
+    setInsuranceSelected(data.summary?.insuranceSelected === true);
+    setMessage(data.message ?? (enabled ? "Insurance applied." : "Insurance removed."));
+    router.refresh();
+  }
+
+  function formatPromoOptionLabel(option: BookingActionsProps["promoOptions"][number]) {
+    const discountLabel =
+      option.discountType === "PERCENT"
+        ? `${option.discountValue}%`
+        : formatJmd(Math.max(0, Number(option.discountValue ?? 0)));
+    const redemptionsLabel =
+      option.remainingRedemptions === null
+        ? "unlimited"
+        : `${option.remainingRedemptions} left`;
+    return `${option.code} (${discountLabel}, ${redemptionsLabel})`;
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -204,6 +351,14 @@ export function BookingActions({
           aria-pressed={activePanel === "email"}
         >
           Email Actions
+        </button>
+        <button
+          type="button"
+          onClick={() => setActivePanel("pricing")}
+          className={activePanel === "pricing" ? activeTabClass : inactiveTabClass}
+          aria-pressed={activePanel === "pricing"}
+        >
+          Pricing Actions
         </button>
         {bookingChangesContent ? (
           <button
@@ -302,7 +457,7 @@ export function BookingActions({
                 </button>
               ) : null}
             </div>
-          ) : (
+          ) : activePanel === "email" ? (
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3 lg:flex lg:flex-wrap lg:items-center">
               <button
                 type="button"
@@ -323,6 +478,99 @@ export function BookingActions({
               <Link href={`/api/admin/bookings/${bookingId}/invoice-payload`} className={emailButtonClass}>
                 Invoice payload
               </Link>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Apply Promo</p>
+                <p className="mt-1 text-xs text-[var(--ccr-muted)]">
+                  Select an existing promo code and apply it to this booking.
+                </p>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <select
+                    value={selectedPromoCode}
+                    onChange={(event) => setSelectedPromoCode(event.target.value)}
+                    className="min-w-[260px] rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+                  >
+                    <option value="">Select promo code…</option>
+                    {promoOptions.map((promo) => (
+                      <option key={promo.id} value={promo.code}>
+                        {formatPromoOptionLabel(promo)}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={applyPromoCode}
+                    disabled={pricingLoading === "promo" || promoOptions.length === 0}
+                    className={emailButtonClass}
+                  >
+                    {pricingLoading === "promo" ? "Applying..." : "Apply Promo"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={removePromoCode}
+                    disabled={pricingLoading === "promo" || !appliedPromoCode}
+                    className={emailButtonClass}
+                  >
+                    {pricingLoading === "promo" ? "Removing..." : "Remove Promo"}
+                  </button>
+                </div>
+                {promoOptions.length === 0 ? (
+                  <p className="mt-2 text-xs text-[var(--ccr-muted)]">No promo codes configured yet.</p>
+                ) : null}
+                <p className="mt-2 text-xs text-[var(--ccr-muted)]">
+                  Active on booking:{" "}
+                  <span className="font-semibold text-[var(--ccr-text)]">
+                    {appliedPromoCode || "None"}
+                  </span>
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Apply Insurance</p>
+                <p className="mt-1 text-xs text-[var(--ccr-muted)]">
+                  Vehicle:{" "}
+                  <span className="font-semibold text-[var(--ccr-text)]">
+                    {vehicleLabel || vehicleId}
+                  </span>
+                </p>
+                <p className="mt-1 text-xs text-[var(--ccr-muted)]">
+                  System insurance rate/day:{" "}
+                  <span className="font-semibold text-[var(--ccr-text)]">
+                    {insuranceOption.enabled ? formatJmd(insuranceOption.pricePerDayCents) : "Not configured"}
+                  </span>
+                </p>
+                <p className="mt-1 text-xs text-[var(--ccr-muted)]">
+                  Current booking insurance:{" "}
+                  <span className="font-semibold text-[var(--ccr-text)]">
+                    {insuranceSelected ? "Applied" : "Not applied"}
+                  </span>
+                </p>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => updateInsuranceSelection(true)}
+                    disabled={pricingLoading === "insurance" || !insuranceOption.enabled || insuranceSelected}
+                    className={emailButtonClass}
+                  >
+                    {pricingLoading === "insurance" ? "Applying..." : "Apply Insurance"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => updateInsuranceSelection(false)}
+                    disabled={pricingLoading === "insurance" || !insuranceSelected}
+                    className={emailButtonClass}
+                  >
+                    {pricingLoading === "insurance" ? "Removing..." : "Remove Insurance"}
+                  </button>
+                </div>
+                {!insuranceOption.enabled ? (
+                  <p className="mt-2 text-xs text-[var(--ccr-muted)]">
+                    No enabled insurance plan exists for this vehicle/global configuration.
+                  </p>
+                ) : null}
+              </div>
             </div>
           )}
         </div>

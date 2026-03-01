@@ -336,6 +336,7 @@ export async function POST(request: Request) {
       promoDiscount: 0,
     });
     const subtotalCents = pricingBeforePromo.subtotal;
+    const baseTotalCents = pricingBeforePromo.baseTotal;
     let promoId: string | null = null;
     let promoDiscountCents = 0;
     let promoAppliedCode: string | null = null;
@@ -347,6 +348,7 @@ export async function POST(request: Request) {
         startDate,
         endDate,
         subtotalCents,
+        baseTotalCents,
         customerId: customerUpsert.customerId,
         customerEmail: normalizedEmail,
         client,

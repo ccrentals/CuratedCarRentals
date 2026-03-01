@@ -146,6 +146,7 @@ export async function POST(
       startDate: booking.start_date,
       endDate: booking.end_date,
       subtotalCents: currentSummary.subtotal,
+      baseTotalCents: currentSummary.baseTotal,
       customerId: booking.customer_id,
       customerEmail: booking.customer_email,
       client,

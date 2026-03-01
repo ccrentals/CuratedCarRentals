@@ -11,6 +11,7 @@ type StubPromoRow = {
   code: string;
   is_active: boolean;
   discount_type: "PERCENT" | "FIXED";
+  apply_scope: "OVERALL_TOTAL" | "DAYS_TOTAL";
   discount_value: number;
   min_subtotal_cents: number | null;
   max_redemptions: number | null;
@@ -41,7 +42,7 @@ class PromoDbStub {
   async query(text: string, params: unknown[] = []): Promise<QueryResult> {
     const sql = text.toLowerCase().replace(/\s+/g, " ").trim();
 
-    if (sql.startsWith("select id, code, is_active, discount_type, discount_value")) {
+    if (sql.includes("from promo_codes where lower(code) = lower($1) limit 1")) {
       if (!this.promo) return { rows: [], rowCount: 0 };
       return { rows: [this.promo], rowCount: 1 };
     }
@@ -125,6 +126,7 @@ function buildBasePromo(overrides: Partial<StubPromoRow> = {}): StubPromoRow {
     code: "SAVE10",
     is_active: true,
     discount_type: "PERCENT",
+    apply_scope: "OVERALL_TOTAL",
     discount_value: 10,
     min_subtotal_cents: null,
     max_redemptions: null,
@@ -147,6 +149,7 @@ test("validatePromoForBooking applies percent discount for valid promo", async (
     startDate: "2026-06-10",
     endDate: "2026-06-12",
     subtotalCents: 20000,
+    baseTotalCents: 20000,
     customerEmail: "customer@example.com",
     now: new Date("2026-06-01T12:00:00.000Z"),
     client: db,
@@ -174,6 +177,7 @@ test("validatePromoForBooking rejects outside date window and blackout/vehicle m
     startDate: "2026-06-10",
     endDate: "2026-06-12",
     subtotalCents: 20000,
+    baseTotalCents: 20000,
     now: new Date("2026-06-01T12:00:00.000Z"),
     client: outsideWindowDb,
   });
@@ -195,6 +199,7 @@ test("validatePromoForBooking rejects outside date window and blackout/vehicle m
     startDate: "2026-06-10",
     endDate: "2026-06-12",
     subtotalCents: 20000,
+    baseTotalCents: 20000,
     now: new Date("2026-06-01T12:00:00.000Z"),
     client: constrainedDb,
   });
@@ -209,6 +214,7 @@ test("validatePromoForBooking rejects outside date window and blackout/vehicle m
     startDate: "2026-06-10",
     endDate: "2026-06-12",
     subtotalCents: 20000,
+    baseTotalCents: 20000,
     now: new Date("2026-06-01T12:00:00.000Z"),
     client: constrainedDb,
   });
@@ -232,6 +238,7 @@ test("validatePromoForBooking rejects promo after end-of-life date", async () =>
     startDate: "2026-06-10",
     endDate: "2026-06-12",
     subtotalCents: 20000,
+    baseTotalCents: 20000,
     now: new Date("2026-06-10T09:00:00.000Z"),
     client: db,
   });
@@ -258,6 +265,7 @@ test("promo booking flow integration: redemption upsert is idempotent and per-cu
     startDate: "2026-06-10",
     endDate: "2026-06-12",
     subtotalCents: 12000,
+    baseTotalCents: 12000,
     customerId: "customer-1",
     now: new Date("2026-06-01T12:00:00.000Z"),
     client: db,
@@ -293,6 +301,7 @@ test("promo booking flow integration: redemption upsert is idempotent and per-cu
     startDate: "2026-06-20",
     endDate: "2026-06-22",
     subtotalCents: 12000,
+    baseTotalCents: 12000,
     customerId: "customer-1",
     now: new Date("2026-06-01T12:00:00.000Z"),
     client: db,
@@ -309,11 +318,40 @@ test("promo booking flow integration: redemption upsert is idempotent and per-cu
     startDate: "2026-06-20",
     endDate: "2026-06-22",
     subtotalCents: 12000,
+    baseTotalCents: 12000,
     customerId: "customer-2",
     now: new Date("2026-06-01T12:00:00.000Z"),
     client: db,
   });
   assert.equal(secondValidationDifferentCustomer.ok, true);
+});
+
+test("validatePromoForBooking applies DAYS_TOTAL scope to base rental only", async () => {
+  const db = new PromoDbStub(
+    buildBasePromo({
+      apply_scope: "DAYS_TOTAL",
+      discount_type: "PERCENT",
+      discount_value: 50,
+    }),
+  );
+
+  const result = await validatePromoForBooking({
+    code: "SAVE10",
+    vehicleId: "vehicle-1",
+    startDate: "2026-06-10",
+    endDate: "2026-06-12",
+    subtotalCents: 30000, // includes non-day charges
+    baseTotalCents: 20000, // rental days only
+    now: new Date("2026-06-01T12:00:00.000Z"),
+    client: db,
+  });
+
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.applyScope, "DAYS_TOTAL");
+  assert.equal(result.discountBaseCents, 20000);
+  assert.equal(result.discountAmountCents, 10000);
+  assert.equal(result.totalAfterDiscountCents, 20000);
 });
 
 test("applying a promo updates payable total used by final payment step", async () => {

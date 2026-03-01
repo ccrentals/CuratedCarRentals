@@ -12,6 +12,11 @@ import {
 } from "@/lib/bookings/holds";
 import { isVehicleUnavailableEntitlementBased } from "@/lib/availability/entitlement";
 import {
+  clearPromoRedemptionForBooking,
+  upsertPromoRedemption,
+  validatePromoForBooking,
+} from "@/lib/promos";
+import {
   computeBookingPricing,
   fetchNetPaidToDate,
   readPaymentOption,
@@ -50,6 +55,55 @@ function asObject(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
+function mapSummaryForResponse(summary: ReturnType<typeof computeBookingPricing>) {
+  return {
+    days: summary.days,
+    subtotal: summary.subtotal,
+    total: summary.total,
+    deposit: summary.deposit,
+    netPaidToDate: summary.netPaidToDate,
+    balanceDue: summary.balanceDue,
+    promoCode: summary.promoCode,
+    promoDiscount: summary.promoDiscount,
+    insuranceSelected: summary.insuranceSelected,
+    insurancePricePerDay: summary.insurancePricePerDay,
+    insuranceTotal: summary.insuranceTotal,
+    paymentStatus: summary.paymentStatus,
+    paymentOption: summary.paymentOption,
+  };
+}
+
+function buildPricingSnapshot(
+  existingPricing: Record<string, unknown> | null,
+  summary: ReturnType<typeof computeBookingPricing>,
+  promoCodeId: string | null,
+) {
+  return {
+    ...(existingPricing ?? {}),
+    daily_rate_cents: summary.dailyRate,
+    deposit_cents: summary.deposit,
+    days: summary.days,
+    subtotal_cents: summary.subtotal,
+    base_total_cents: summary.baseTotal,
+    insurance_selected: summary.insuranceSelected,
+    insurance_price_per_day_cents: summary.insurancePricePerDay,
+    insurance_total_cents: summary.insuranceTotal,
+    promo_code: summary.promoCode,
+    promo_code_id: promoCodeId,
+    promo_discount_cents: summary.promoDiscount,
+    discount_total_cents: summary.discountTotal,
+    total_cents: summary.total,
+    total_amount: summary.total,
+    amount_due_cents: summary.amountDue,
+    amount_paid: summary.netPaidToDate,
+    balance_due: summary.balanceDue,
+    payment_status: summary.paymentStatus,
+    payment_option_selected: summary.paymentOption,
+    refund_required: summary.refundRequired,
+    currency: "JMD",
+  };
+}
+
 function buildWindowFromDates(startDate: string, endDate: string) {
   const startAt = new Date(`${startDate}T00:00:00.000Z`);
   const endAt = new Date(`${endDate}T00:00:00.000Z`);
@@ -80,7 +134,6 @@ export async function handleAdminBookingByIdGet(
 ) {
   const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
   if (!auth.ok) return auth.response;
-  const session = auth.session;
 
   const { id } = await params;
 
@@ -581,6 +634,213 @@ export async function PATCH(
     } catch {
       await client.query("rollback");
       return NextResponse.json({ error: "Failed to update booking details" }, { status: 500 });
+    } finally {
+      client.release();
+    }
+  }
+
+  if (action === "set_insurance") {
+    const enableInsurance = body?.enabled === true;
+    const pool = getDbPool();
+    const client = await pool.connect();
+
+    try {
+      await client.query("begin");
+
+      const bookingResult = await client.query<{
+        id: string;
+        status: string;
+        vehicle_id: string;
+        customer_id: string;
+        customer_email: string;
+        start_date: string;
+        end_date: string;
+        pricing_json: Record<string, unknown> | null;
+        daily_rate_cents: number;
+        deposit_cents: number;
+      }>(
+        "select b.id, b.status, b.vehicle_id, b.customer_id, c.email as customer_email, b.start_date, b.end_date, b.pricing_json, v.daily_rate_cents, v.deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.id = $1 for update",
+        [id],
+      );
+
+      if (bookingResult.rowCount === 0) {
+        await client.query("rollback");
+        return NextResponse.json({ error: "Booking not found" }, { status: 404 });
+      }
+
+      const booking = bookingResult.rows[0];
+      if (["CANCELLED", "RETURNED"].includes(String(booking.status).toUpperCase())) {
+        await client.query("rollback");
+        return NextResponse.json(
+          { error: "Insurance cannot be changed for this booking." },
+          { status: 400 },
+        );
+      }
+
+      let insurancePlanId: string | null = null;
+      let insurancePricePerDay = 0;
+
+      if (enableInsurance) {
+        const vehiclePlanResult = await client.query<{
+          id: string;
+          is_enabled: boolean;
+          price_per_day_cents: number;
+        }>(
+          "select id, is_enabled, price_per_day_cents from insurance_plans where vehicle_id = $1 and is_enabled = true order by updated_at desc limit 1",
+          [booking.vehicle_id],
+        );
+        const vehiclePlan = vehiclePlanResult.rows[0] ?? null;
+
+        let resolvedPlan = vehiclePlan;
+        if (!resolvedPlan) {
+          const globalPlanResult = await client.query<{
+            id: string;
+            is_enabled: boolean;
+            price_per_day_cents: number;
+          }>(
+            "select id, is_enabled, price_per_day_cents from insurance_plans where is_global_default = true and is_enabled = true order by updated_at desc limit 1",
+          );
+          resolvedPlan = globalPlanResult.rows[0] ?? null;
+        }
+
+        if (!resolvedPlan || !resolvedPlan.is_enabled) {
+          await client.query("rollback");
+          return NextResponse.json(
+            { error: "No active insurance plan is configured for this vehicle." },
+            { status: 400 },
+          );
+        }
+
+        insurancePlanId = resolvedPlan.id;
+        insurancePricePerDay = Math.max(0, Number(resolvedPlan.price_per_day_cents ?? 0));
+      }
+
+      const currentPricing = booking.pricing_json ?? {};
+      const dailyRate = Number(currentPricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
+      const deposit = Number(currentPricing.deposit_cents ?? booking.deposit_cents ?? 0);
+      const paymentOption = readPaymentOption(currentPricing);
+      const { promoCode: existingPromoCode } = readPromoPricingFields(currentPricing);
+      const netPaidToDate = await fetchNetPaidToDate(booking.id, { client });
+
+      const provisionalSummary = computeBookingPricing({
+        bookingId: booking.id,
+        bookingStatus: booking.status,
+        startDate: booking.start_date,
+        endDate: booking.end_date,
+        dailyRate,
+        deposit,
+        paymentOption,
+        netPaidToDate,
+        promoCode: null,
+        promoDiscount: 0,
+        insuranceSelected: enableInsurance,
+        insurancePricePerDay,
+      });
+
+      let nextPromoCode: string | null = null;
+      let nextPromoDiscount = 0;
+      let nextPromoId: string | null = null;
+
+      if (existingPromoCode) {
+        const promoValidation = await validatePromoForBooking({
+          code: existingPromoCode,
+          vehicleId: booking.vehicle_id,
+          startDate: booking.start_date,
+          endDate: booking.end_date,
+          subtotalCents: provisionalSummary.subtotal,
+          baseTotalCents: provisionalSummary.baseTotal,
+          customerId: booking.customer_id,
+          customerEmail: booking.customer_email,
+          client,
+        });
+
+        if (promoValidation.ok) {
+          nextPromoCode = promoValidation.code;
+          nextPromoDiscount = promoValidation.discountAmountCents;
+          nextPromoId = promoValidation.promoId;
+        }
+      }
+
+      const nextSummary = computeBookingPricing({
+        bookingId: booking.id,
+        bookingStatus: booking.status,
+        startDate: booking.start_date,
+        endDate: booking.end_date,
+        dailyRate,
+        deposit,
+        paymentOption,
+        netPaidToDate,
+        promoCode: nextPromoCode,
+        promoDiscount: nextPromoDiscount,
+        insuranceSelected: enableInsurance,
+        insurancePricePerDay,
+      });
+
+      const nextPricing = buildPricingSnapshot(currentPricing, nextSummary, nextPromoId);
+
+      await client.query(
+        "update bookings set insurance_selected = $2, insurance_plan_id = $3::uuid, insurance_price_per_day_cents = $4, insurance_total_cents = $5, pricing_json = $6, updated_at = now() where id = $1",
+        [
+          booking.id,
+          nextSummary.insuranceSelected,
+          insurancePlanId,
+          nextSummary.insurancePricePerDay,
+          nextSummary.insuranceTotal,
+          nextPricing,
+        ],
+      );
+
+      if (nextPromoId && nextPromoCode) {
+        await upsertPromoRedemption({
+          bookingId: booking.id,
+          promoId: nextPromoId,
+          customerId: booking.customer_id,
+          customerEmail: booking.customer_email,
+          discountAmountCents: nextSummary.promoDiscount,
+          client,
+        });
+      } else {
+        await clearPromoRedemptionForBooking(booking.id, { client });
+      }
+
+      await client.query("commit");
+
+      await writeAuditLog({
+        userId: session.userId,
+        action: "BOOKING_INSURANCE_UPDATED",
+        entityType: "booking",
+        entityId: id,
+        details: {
+          insurance_selected: nextSummary.insuranceSelected,
+          insurance_plan_id: insurancePlanId,
+          insurance_price_per_day_cents: nextSummary.insurancePricePerDay,
+          insurance_total_cents: nextSummary.insuranceTotal,
+          promo_code: nextSummary.promoCode,
+          promo_discount_cents: nextSummary.promoDiscount,
+          total_cents: nextSummary.total,
+          balance_due_cents: nextSummary.balanceDue,
+        },
+      });
+
+      return NextResponse.json({
+        ok: true,
+        message: nextSummary.insuranceSelected ? "Insurance applied." : "Insurance removed.",
+        summary: mapSummaryForResponse(nextSummary),
+      });
+    } catch (error) {
+      await client.query("rollback");
+      const code = (error as { code?: string } | null)?.code;
+      if (
+        code === "42P01" ||
+        isUndefinedColumn(error, "insurance_selected") ||
+        isUndefinedColumn(error, "insurance_plans")
+      ) {
+        return NextResponse.json(
+          { error: "Insurance configuration is not available yet in this environment." },
+          { status: 500 },
+        );
+      }
+      return NextResponse.json({ error: "Failed to update insurance for this booking." }, { status: 500 });
     } finally {
       client.release();
     }

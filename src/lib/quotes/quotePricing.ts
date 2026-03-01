@@ -228,6 +228,7 @@ export async function buildQuotePricingSnapshot(
       startDate: toDateKey(startAt),
       endDate: toDateKey(endAt),
       subtotalCents: baseComputed.subtotalCents,
+      baseTotalCents: baseComputed.baseTotalCents,
       customerEmail: normalizeOptionalText(input.customerEmail)?.toLowerCase() ?? null,
       client: db,
     });

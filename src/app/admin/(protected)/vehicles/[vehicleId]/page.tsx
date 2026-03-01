@@ -11,6 +11,8 @@ import { VehicleReservationsPanel } from "@/components/admin/VehicleReservations
 import { VehiclePerformancePanel } from "@/components/admin/VehiclePerformancePanel";
 import { VehicleAvailabilityRulesPanel } from "@/components/admin/VehicleAvailabilityRulesPanel";
 import { VehiclePricingRulesPanel } from "@/components/admin/VehiclePricingRulesPanel";
+import { VehiclePromoPanel } from "@/components/admin/VehiclePromoPanel";
+import { VehicleInsurancePanel } from "@/components/admin/VehicleInsurancePanel";
 import { AdminPillTabs } from "@/components/admin/AdminPillTabs";
 import { DEFAULT_ADMIN_SETTINGS, loadAdminSettings } from "@/lib/adminSettings";
 import { dbQuery } from "@/lib/db";
@@ -66,6 +68,8 @@ const VEHICLE_DETAIL_TABS = [
   { key: "checklist", label: "Checklist" },
   { key: "maintenance", label: "Maintenance" },
   { key: "depreciation", label: "Depreciation" },
+  { key: "promo", label: "Promo" },
+  { key: "insurance", label: "Insurance" },
 ] as const;
 
 type VehicleDetailTab = (typeof VEHICLE_DETAIL_TABS)[number]["key"];
@@ -206,6 +210,20 @@ export default async function AdminVehicleDetailPage({
 
         {activeTab === "depreciation" ? (
           <VehicleDepreciationPanel vehicleId={vehicle.id} />
+        ) : null}
+
+        {activeTab === "promo" ? (
+          <VehiclePromoPanel
+            vehicleId={vehicle.id}
+            vehicleLabel={`${vehicle.year} ${vehicle.make} ${vehicle.model}`}
+          />
+        ) : null}
+
+        {activeTab === "insurance" ? (
+          <VehicleInsurancePanel
+            vehicleId={vehicle.id}
+            vehicleLabel={`${vehicle.year} ${vehicle.make} ${vehicle.model}`}
+          />
         ) : null}
       </div>
     </div>

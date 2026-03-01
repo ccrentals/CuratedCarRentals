@@ -14,6 +14,7 @@ type PromoDetails = {
   code: string;
   is_active: boolean;
   discount_type: "PERCENT" | "FIXED";
+  apply_scope: "OVERALL_TOTAL" | "DAYS_TOTAL";
   discount_value: number;
   min_subtotal_cents: number | null;
   max_redemptions: number | null;
@@ -111,6 +112,7 @@ export default function AdminPromoCodeDetailPage() {
   const [code, setCode] = useState("");
   const [isActive, setIsActive] = useState(true);
   const [discountType, setDiscountType] = useState<"PERCENT" | "FIXED">("PERCENT");
+  const [applyScope, setApplyScope] = useState<"OVERALL_TOTAL" | "DAYS_TOTAL">("OVERALL_TOTAL");
   const [discountValue, setDiscountValue] = useState("");
   const [minSubtotal, setMinSubtotal] = useState("");
   const [maxRedemptions, setMaxRedemptions] = useState("");
@@ -145,6 +147,7 @@ export default function AdminPromoCodeDetailPage() {
     setCode(promoData.code);
     setIsActive(promoData.is_active);
     setDiscountType(promoData.discount_type);
+    setApplyScope(promoData.apply_scope === "DAYS_TOTAL" ? "DAYS_TOTAL" : "OVERALL_TOTAL");
     setDiscountValue(String(promoData.discount_value));
     setMinSubtotal(promoData.min_subtotal_cents === null ? "" : String(promoData.min_subtotal_cents));
     setMaxRedemptions(promoData.max_redemptions === null ? "" : String(promoData.max_redemptions));
@@ -187,6 +190,7 @@ export default function AdminPromoCodeDetailPage() {
         setCode(nextPromo.code);
         setIsActive(nextPromo.is_active);
         setDiscountType(nextPromo.discount_type);
+        setApplyScope(nextPromo.apply_scope === "DAYS_TOTAL" ? "DAYS_TOTAL" : "OVERALL_TOTAL");
         setDiscountValue(String(nextPromo.discount_value));
         setMinSubtotal(nextPromo.min_subtotal_cents === null ? "" : String(nextPromo.min_subtotal_cents));
         setMaxRedemptions(nextPromo.max_redemptions === null ? "" : String(nextPromo.max_redemptions));
@@ -241,6 +245,7 @@ export default function AdminPromoCodeDetailPage() {
         code,
         isActive,
         discountType,
+        applyScope,
         discountValue: Number(discountValue),
         minSubtotalCents: minSubtotal.trim() ? Number(minSubtotal) : null,
         maxRedemptions: maxRedemptions.trim() ? Number(maxRedemptions) : null,
@@ -326,6 +331,19 @@ export default function AdminPromoCodeDetailPage() {
                 >
                   <option value="PERCENT">Percent</option>
                   <option value="FIXED">Fixed (JMD)</option>
+                </select>
+              </label>
+              <label className="text-xs text-[var(--ccr-muted)]">
+                Apply To
+                <select
+                  value={applyScope}
+                  onChange={(event) =>
+                    setApplyScope(event.target.value as "OVERALL_TOTAL" | "DAYS_TOTAL")
+                  }
+                  className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+                >
+                  <option value="OVERALL_TOTAL">Overall total</option>
+                  <option value="DAYS_TOTAL">Rental days total only</option>
                 </select>
               </label>
               <label className="text-xs text-[var(--ccr-muted)]">

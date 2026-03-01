@@ -1,6 +1,6 @@
 import { buildInvoicePayload, downloadPdfBase64, generateInvoicePdf } from "@/lib/pdfmonkey";
 import { logError, logWarn, redactText } from "@/lib/log";
-import { computeBookingPricing } from "@/lib/payments/pricing";
+import { computeBookingPricing, readInsurancePricingFields, readPromoPricingFields } from "@/lib/payments/pricing";
 import { dbQuery } from "@/lib/db";
 import { formatPaymentStatus } from "@/lib/payments/formatPaymentStatus";
 
@@ -120,6 +120,7 @@ const PAYMENT_STATUS_REDUCES_BALANCE = new Set([
 
 type InvoiceContextRow = {
   public_id: string | null;
+  pricing_json: Record<string, unknown> | null;
   customer_address: string | null;
   customer_street: string | null;
   customer_street2: string | null;
@@ -142,6 +143,21 @@ type InvoicePaymentContextRow = {
 
 function normalizeText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function readMoneyFromPricing(
+  pricing: Record<string, unknown> | null,
+  keys: string[],
+): number | null {
+  if (!pricing) return null;
+  for (const key of keys) {
+    const raw = pricing[key];
+    const value = Number(raw);
+    if (Number.isFinite(value)) {
+      return Math.max(0, value);
+    }
+  }
+  return null;
 }
 
 function buildCustomerAddress(row: InvoiceContextRow | null) {
@@ -205,14 +221,14 @@ async function loadInvoiceContext(bookingId: string) {
   const contextResult = await (async () => {
     try {
       return await dbQuery<InvoiceContextRow>(
-        "select b.public_id, c.address as customer_address, c.street as customer_street, c.street2 as customer_street2, c.city as customer_city, c.state as customer_state, c.country as customer_country from bookings b join customers c on c.id = b.customer_id where b.id = $1",
+        "select b.public_id, b.pricing_json, c.address as customer_address, c.street as customer_street, c.street2 as customer_street2, c.city as customer_city, c.state as customer_state, c.country as customer_country from bookings b join customers c on c.id = b.customer_id where b.id = $1",
         [bookingId],
       );
     } catch (error) {
       const code = (error as { code?: string } | null)?.code;
       if (code === "42703") {
         return await dbQuery<InvoiceContextRow>(
-          "select b.public_id, c.address as customer_address, null::text as customer_street, null::text as customer_street2, null::text as customer_city, null::text as customer_state, null::text as customer_country from bookings b join customers c on c.id = b.customer_id where b.id = $1",
+          "select b.public_id, b.pricing_json, c.address as customer_address, null::text as customer_street, null::text as customer_street2, null::text as customer_city, null::text as customer_state, null::text as customer_country from bookings b join customers c on c.id = b.customer_id where b.id = $1",
           [bookingId],
         );
       }
@@ -221,6 +237,17 @@ async function loadInvoiceContext(bookingId: string) {
   })();
 
   const bookingRow = contextResult.rows[0] ?? null;
+  const pricing =
+    bookingRow?.pricing_json && typeof bookingRow.pricing_json === "object"
+      ? (bookingRow.pricing_json as Record<string, unknown>)
+      : null;
+  const { promoCode, promoDiscount } = readPromoPricingFields(pricing);
+  const { insuranceTotal } = readInsurancePricingFields(pricing);
+  const subtotalAmount = readMoneyFromPricing(pricing, ["subtotal_cents"]);
+  const totalAmount = readMoneyFromPricing(pricing, ["total_cents", "total_amount", "amount_due_cents"]);
+  const depositAmount = readMoneyFromPricing(pricing, ["deposit_cents"]);
+  const paidToDateAmount = readMoneyFromPricing(pricing, ["paid_to_date", "amount_paid"]);
+  const balanceDueAmount = readMoneyFromPricing(pricing, ["balance_due"]);
   const customerAddress = buildCustomerAddress(bookingRow);
   const bookingPublicId = normalizeText(bookingRow?.public_id);
 
@@ -260,6 +287,14 @@ async function loadInvoiceContext(bookingId: string) {
   return {
     bookingPublicId,
     customerAddress,
+    promoCode: promoCode || null,
+    promoDiscount: Math.max(0, Number(promoDiscount || 0)),
+    insuranceTotal: Math.max(0, Number(insuranceTotal || 0)),
+    subtotalAmount,
+    totalAmount,
+    depositAmount,
+    paidToDateAmount,
+    balanceDueAmount,
     payments,
   };
 }
@@ -281,6 +316,9 @@ async function buildInvoiceAttachment(input: {
   vehicleYear: number;
   dailyRate: number;
   deposit: number;
+  insuranceTotal?: number;
+  promoCode?: string | null;
+  promoDiscount?: number;
   total: number;
   paidToDate: number;
   balanceDue: number;
@@ -293,12 +331,44 @@ async function buildInvoiceAttachment(input: {
       normalizeText(input.bookingPublicId) || context.bookingPublicId || input.bookingId.slice(0, 8);
     const address = normalizeText(input.customerAddress) || context.customerAddress;
     const payments = input.payments.length ? input.payments : context.payments;
+    const promoCode = normalizeText(input.promoCode) || context.promoCode || null;
+    const promoDiscountInput = Number(input.promoDiscount);
+    const promoDiscount = Number.isFinite(promoDiscountInput)
+      ? Math.max(0, promoDiscountInput)
+      : context.promoDiscount;
+    const insuranceTotalInput = Number(input.insuranceTotal);
+    const insuranceTotal = Number.isFinite(insuranceTotalInput)
+      ? Math.max(0, insuranceTotalInput)
+      : context.insuranceTotal;
+    const inputTotalAfterDiscount = Number.isFinite(Number(input.total))
+      ? Math.max(0, Number(input.total))
+      : 0;
+    const subtotalAmount =
+      context.subtotalAmount ??
+      (context.totalAmount !== null ? Math.max(0, context.totalAmount + promoDiscount) : inputTotalAfterDiscount + promoDiscount);
+    const depositInput = Number(input.deposit);
+    const depositAmount = Number.isFinite(depositInput)
+      ? Math.max(0, depositInput)
+      : (context.depositAmount ?? 0);
+    const paidToDateInput = Number(input.paidToDate);
+    const paidToDate = Number.isFinite(paidToDateInput)
+      ? Math.max(0, paidToDateInput)
+      : (context.paidToDateAmount ?? 0);
+    const totalAfterDiscount = Math.max(0, subtotalAmount - promoDiscount);
+    const balanceDue = Math.max(0, totalAfterDiscount - paidToDate);
 
     const payload = buildInvoicePayload({
       ...input,
       bookingId: displayBookingId,
       invoiceNumber,
       customerAddress: address,
+      total: subtotalAmount,
+      deposit: depositAmount,
+      paidToDate,
+      balanceDue,
+      insuranceTotal,
+      promoCode,
+      promoDiscount,
       payments,
     });
     const pdf = await generateInvoicePdf(payload, input.bookingId);

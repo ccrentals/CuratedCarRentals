@@ -13,6 +13,7 @@ type PromoRow = {
   code: string;
   is_active: boolean;
   discount_type: "PERCENT" | "FIXED";
+  apply_scope: "OVERALL_TOTAL" | "DAYS_TOTAL";
   discount_value: string | number;
   min_subtotal_cents: number | null;
   max_redemptions: number | null;
@@ -61,9 +62,17 @@ function parseBlackoutDates(value: unknown) {
   return parseStringArray(value).filter((item) => /^\d{4}-\d{2}-\d{2}$/.test(item));
 }
 
+function parseApplyScope(value: unknown): "OVERALL_TOTAL" | "DAYS_TOTAL" {
+  const normalized = String(value ?? "")
+    .trim()
+    .toUpperCase();
+  return normalized === "DAYS_TOTAL" ? "DAYS_TOTAL" : "OVERALL_TOTAL";
+}
+
 function normalizePromoPayload(row: PromoRow) {
   return {
     ...row,
+    apply_scope: row.apply_scope === "DAYS_TOTAL" ? "DAYS_TOTAL" : "OVERALL_TOTAL",
     discount_value: Number(row.discount_value ?? 0),
     allowed_vehicle_ids_json: parseStringArray(row.allowed_vehicle_ids_json),
     excluded_vehicle_ids_json: parseStringArray(row.excluded_vehicle_ids_json),
@@ -73,7 +82,7 @@ function normalizePromoPayload(row: PromoRow) {
 
 export async function fetchAdminPromoCodeById(id: string) {
   const promo = await dbQuery<PromoRow>(
-    "select id, public_id, code, is_active, discount_type, discount_value, min_subtotal_cents, max_redemptions, max_redemptions_per_customer, start_at, end_at, allowed_vehicle_ids_json, excluded_vehicle_ids_json, blackout_dates_json, created_at, updated_at from promo_codes where id = $1 limit 1",
+    "select id, public_id, code, is_active, discount_type, apply_scope, discount_value, min_subtotal_cents, max_redemptions, max_redemptions_per_customer, start_at, end_at, allowed_vehicle_ids_json, excluded_vehicle_ids_json, blackout_dates_json, created_at, updated_at from promo_codes where id = $1 limit 1",
     [id],
   );
   if (promo.rowCount === 0) {
@@ -149,6 +158,7 @@ export async function PATCH(
       ? "PERCENT"
       : "FIXED";
   const discountValue = Number(body?.discountValue ?? 0);
+  const applyScope = parseApplyScope(body?.applyScope);
   const isActive = body?.isActive !== false;
   const minSubtotalCents = asInteger(body?.minSubtotalCents);
   const maxRedemptions = asInteger(body?.maxRedemptions);
@@ -174,12 +184,13 @@ export async function PATCH(
 
   try {
     const updated = await dbQuery<{ id: string }>(
-      "update promo_codes set code = $2, is_active = $3, discount_type = $4, discount_value = $5, min_subtotal_cents = $6, max_redemptions = $7, max_redemptions_per_customer = $8, start_at = $9, end_at = $10, allowed_vehicle_ids_json = $11::jsonb, excluded_vehicle_ids_json = $12::jsonb, blackout_dates_json = $13::jsonb, updated_at = now() where id = $1 returning id",
+      "update promo_codes set code = $2, is_active = $3, discount_type = $4, apply_scope = $5, discount_value = $6, min_subtotal_cents = $7, max_redemptions = $8, max_redemptions_per_customer = $9, start_at = $10, end_at = $11, allowed_vehicle_ids_json = $12::jsonb, excluded_vehicle_ids_json = $13::jsonb, blackout_dates_json = $14::jsonb, updated_at = now() where id = $1 returning id",
       [
         id,
         code,
         isActive,
         discountType,
+        applyScope,
         discountValue,
         minSubtotalCents,
         maxRedemptions,
@@ -200,7 +211,7 @@ export async function PATCH(
       action: "PROMO_CODE_UPDATED",
       entityType: "promo_code",
       entityId: id,
-      details: { code, discountType, discountValue, isActive },
+      details: { code, discountType, applyScope, discountValue, isActive },
     });
 
     return NextResponse.json({ ok: true });

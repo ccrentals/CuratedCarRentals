@@ -24,7 +24,7 @@ export async function GET(request: Request) {
     let plan: InsurancePlanRow | null = null;
     if (vehicleId) {
       const vehiclePlan = await dbQuery<InsurancePlanRow>(
-        "select id, vehicle_id, is_enabled, price_per_day_cents, is_global_default from insurance_plans where vehicle_id = $1 limit 1",
+        "select id, vehicle_id, is_enabled, price_per_day_cents, is_global_default from insurance_plans where vehicle_id = $1 and is_enabled = true order by updated_at desc limit 1",
         [vehicleId],
       );
       plan = vehiclePlan.rows[0] ?? null;
@@ -32,7 +32,7 @@ export async function GET(request: Request) {
 
     if (!plan) {
       const globalPlan = await dbQuery<InsurancePlanRow>(
-        "select id, vehicle_id, is_enabled, price_per_day_cents, is_global_default from insurance_plans where is_global_default = true limit 1",
+        "select id, vehicle_id, is_enabled, price_per_day_cents, is_global_default from insurance_plans where is_global_default = true and is_enabled = true order by updated_at desc limit 1",
       );
       plan = globalPlan.rows[0] ?? null;
     }

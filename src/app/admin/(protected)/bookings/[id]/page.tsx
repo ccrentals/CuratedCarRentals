@@ -100,6 +100,42 @@ type BookingPrivateDocRow = {
   document_type: string;
 };
 
+type PromoOptionRow = {
+  id: string;
+  code: string;
+  is_active: boolean;
+  discount_type: "PERCENT" | "FIXED";
+  discount_value: string | number;
+  start_at: string | null;
+  end_at: string | null;
+  max_redemptions: number | null;
+  redemption_count: number;
+};
+
+type BookingActionPromoOption = {
+  id: string;
+  code: string;
+  discountType: "PERCENT" | "FIXED";
+  discountValue: number;
+  startAt: string | null;
+  endAt: string | null;
+  maxRedemptions: number | null;
+  redemptionCount: number;
+  remainingRedemptions: number | null;
+};
+
+type InsurancePlanOptionRow = {
+  id: string;
+  is_enabled: boolean;
+  price_per_day_cents: number;
+};
+
+type BookingActionInsuranceOption = {
+  enabled: boolean;
+  planId: string | null;
+  pricePerDayCents: number;
+};
+
 function isUndefinedColumn(error: unknown, column: string) {
   const code = (error as { code?: string } | null)?.code;
   const message = String((error as { message?: unknown } | null)?.message ?? "").toLowerCase();
@@ -343,6 +379,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
   });
   const days = summary.days;
   const total = summary.total;
+  const totalBeforePromo = summary.subtotal;
   const paidToDate = summary.netPaidToDate;
   const balanceDue = summary.balanceDue;
   const depositDue = Math.max(0, Math.max(0, deposit) - Math.max(0, paidToDate));
@@ -376,6 +413,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
   const insuranceTotalDisplay = Number(
     pricing.insurance_total_cents ?? booking.insurance_total_cents ?? insuranceTotal ?? 0,
   );
+  const promoTotalDisplay = Math.max(0, summary.promoDiscount);
   const isNonBlocking =
     isNonBlockingBookingHold({
       paymentStatus: summary.paymentStatus,
@@ -436,6 +474,74 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
   );
   const overriddenByThisRows = overriddenByThis.rows as OverriddenByThisBooking[];
   const bookingPublicId = String(booking.public_id ?? "").trim() || booking.id;
+  let promoOptions: BookingActionPromoOption[] = [];
+  try {
+    promoOptions = (
+      await dbQuery<PromoOptionRow>(
+        "select p.id, p.code, p.is_active, p.discount_type, p.discount_value, p.start_at, p.end_at, p.max_redemptions, count(r.id)::int as redemption_count from promo_codes p left join promo_redemptions r on r.promo_code_id = p.id where p.is_active = true group by p.id, p.code, p.is_active, p.discount_type, p.discount_value, p.start_at, p.end_at, p.max_redemptions order by p.created_at desc",
+      )
+    ).rows.map((row: PromoOptionRow) => ({
+      id: row.id,
+      code: row.code,
+      discountType: row.discount_type,
+      discountValue: Number(row.discount_value ?? 0),
+      startAt: row.start_at,
+      endAt: row.end_at,
+      maxRedemptions: row.max_redemptions,
+      redemptionCount: Number(row.redemption_count ?? 0),
+      remainingRedemptions:
+        row.max_redemptions === null
+          ? null
+          : Math.max(0, Number(row.max_redemptions) - Number(row.redemption_count ?? 0)),
+    })) as BookingActionPromoOption[];
+  } catch (error) {
+    const code = (error as { code?: string } | null)?.code;
+    if (
+      !(
+        code === "42P01" ||
+        isUndefinedColumn(error, "promo_codes") ||
+        isUndefinedColumn(error, "promo_redemptions") ||
+        isUndefinedColumn(error, "public_id")
+      )
+    ) {
+      throw error;
+    }
+  }
+  let insuranceOption: BookingActionInsuranceOption = {
+    enabled: false,
+    planId: null,
+    pricePerDayCents: 0,
+  };
+  try {
+    let planResult = await dbQuery<InsurancePlanOptionRow>(
+      "select id, is_enabled, price_per_day_cents from insurance_plans where vehicle_id = $1 and is_enabled = true order by updated_at desc limit 1",
+      [booking.vehicle_id],
+    );
+    if (planResult.rowCount === 0) {
+      planResult = await dbQuery<InsurancePlanOptionRow>(
+        "select id, is_enabled, price_per_day_cents from insurance_plans where is_global_default = true and is_enabled = true order by updated_at desc limit 1",
+      );
+    }
+    const plan = planResult.rows[0];
+    if (plan?.is_enabled) {
+      insuranceOption = {
+        enabled: true,
+        planId: plan.id,
+        pricePerDayCents: Math.max(0, Number(plan.price_per_day_cents ?? 0)),
+      };
+    }
+  } catch (error) {
+    const code = (error as { code?: string } | null)?.code;
+    if (
+      !(
+        code === "42P01" ||
+        isUndefinedColumn(error, "insurance_plans") ||
+        isUndefinedColumn(error, "is_global_default")
+      )
+    ) {
+      throw error;
+    }
+  }
   const overriddenByBookingPublicId = overriddenByBookingId
     ? (
         await dbQuery<{ public_id: string }>(
@@ -484,6 +590,12 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
             isPaidInFull={isPaidInFull}
             isDepositPaid={isDepositPaid}
             canAdmin={canAdmin}
+            vehicleId={booking.vehicle_id}
+            vehicleLabel={`${booking.vehicle_year} ${booking.vehicle_make} ${booking.vehicle_model}`.trim()}
+            promoOptions={promoOptions}
+            insuranceOption={insuranceOption}
+            initialPromoCode={summary.promoCode}
+            initialInsuranceSelected={summary.insuranceSelected}
             bookingChangesContent={
               <BookingUpdateForm
                 bookingId={booking.id}
@@ -641,14 +753,8 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
             </div>
             <div className="flex items-center justify-between">
               <span>Total of Booking</span>
-              <span className="font-semibold text-[var(--ccr-text)]">{formatJmd(total)}</span>
+              <span className="font-semibold text-[var(--ccr-text)]">{formatJmd(totalBeforePromo)}</span>
             </div>
-            {summary.promoDiscount > 0 ? (
-              <div className="flex items-center justify-between">
-                <span>Promo{summary.promoCode ? ` (${summary.promoCode})` : ""}</span>
-                <span className="font-semibold text-[var(--ccr-text)]">-{formatJmd(summary.promoDiscount)}</span>
-              </div>
-            ) : null}
             <div className="flex items-center justify-between">
               <span>Insurance selected</span>
               <span className="font-semibold text-[var(--ccr-text)]">
@@ -679,6 +785,12 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
               <span>Insurance total</span>
               <span className="font-semibold text-[var(--ccr-text)]">
                 {formatJmd(insuranceTotalDisplay)}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span>Promo total{summary.promoCode ? ` (${summary.promoCode})` : ""}</span>
+              <span className="font-semibold text-[var(--ccr-text)]">
+                {promoTotalDisplay > 0 ? `-${formatJmd(promoTotalDisplay)}` : formatJmd(0)}
               </span>
             </div>
             <div className="flex items-center justify-between">

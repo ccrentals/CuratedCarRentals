@@ -16,6 +16,7 @@ type PromoRow = {
   code: string;
   is_active: boolean;
   discount_type: "PERCENT" | "FIXED";
+  apply_scope: "OVERALL_TOTAL" | "DAYS_TOTAL";
   discount_value: number;
   min_subtotal_cents: number | null;
   max_redemptions: number | null;
@@ -100,6 +101,7 @@ export default function AdminPromoCodesPage() {
 
   const [code, setCode] = useState("");
   const [discountType, setDiscountType] = useState<"PERCENT" | "FIXED">("PERCENT");
+  const [applyScope, setApplyScope] = useState<"OVERALL_TOTAL" | "DAYS_TOTAL">("OVERALL_TOTAL");
   const [discountValue, setDiscountValue] = useState("");
   const [minSubtotal, setMinSubtotal] = useState("");
   const [maxRedemptions, setMaxRedemptions] = useState("");
@@ -207,6 +209,7 @@ export default function AdminPromoCodesPage() {
       body: JSON.stringify({
         code,
         discountType,
+        applyScope,
         discountValue: Number(discountValue),
         minSubtotalCents: minSubtotal.trim() ? Number(minSubtotal) : null,
         maxRedemptions: maxRedemptions.trim() ? Number(maxRedemptions) : null,
@@ -228,6 +231,7 @@ export default function AdminPromoCodesPage() {
 
     setCode("");
     setDiscountType("PERCENT");
+    setApplyScope("OVERALL_TOTAL");
     setDiscountValue("");
     setMinSubtotal("");
     setMaxRedemptions("");
@@ -310,6 +314,19 @@ export default function AdminPromoCodesPage() {
                 >
                   <option value="PERCENT">Percent</option>
                   <option value="FIXED">Fixed (JMD)</option>
+                </select>
+              </label>
+              <label className="text-xs text-[var(--ccr-muted)]">
+                Apply To
+                <select
+                  value={applyScope}
+                  onChange={(event) =>
+                    setApplyScope(event.target.value as "OVERALL_TOTAL" | "DAYS_TOTAL")
+                  }
+                  className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+                >
+                  <option value="OVERALL_TOTAL">Overall total</option>
+                  <option value="DAYS_TOTAL">Rental days total only</option>
                 </select>
               </label>
               <label className="text-xs text-[var(--ccr-muted)]">
@@ -517,6 +534,7 @@ export default function AdminPromoCodesPage() {
               <tr>
                 <th className="px-4 py-3">Code</th>
                 <th className="px-4 py-3">Discount</th>
+                <th className="px-4 py-3">Applies To</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Valid Window</th>
                 <th className="px-4 py-3">Redeemed</th>
@@ -536,6 +554,9 @@ export default function AdminPromoCodesPage() {
                     {promo.discount_type === "PERCENT"
                       ? `${promo.discount_value}%`
                       : formatJmd(promo.discount_value)}
+                  </td>
+                  <td className="px-4 py-3 text-[var(--ccr-muted)]">
+                    {promo.apply_scope === "DAYS_TOTAL" ? "Days total only" : "Overall total"}
                   </td>
                   <td className="px-4 py-3 text-[var(--ccr-text)]">
                     {promoStatusLabel(status)}
