@@ -266,8 +266,10 @@ export async function upsertCustomerForBooking(
   const legalIdType = normalizeLegalIdType(input.legalIdType);
   const legalIdNumber =
     typeof input.legalIdNumber === "string" ? input.legalIdNumber.trim() : null;
-  const legalIdTypeProvided = Object.prototype.hasOwnProperty.call(input, "legalIdType");
-  const legalIdNumberProvided = Object.prototype.hasOwnProperty.call(input, "legalIdNumber");
+  const legalIdTypeProvided =
+    Object.prototype.hasOwnProperty.call(input, "legalIdType") && input.legalIdType !== undefined;
+  const legalIdNumberProvided =
+    Object.prototype.hasOwnProperty.call(input, "legalIdNumber") && input.legalIdNumber !== undefined;
 
   if (!fullName || !email || !phone) {
     throw new Error("fullName, email, and phone are required");

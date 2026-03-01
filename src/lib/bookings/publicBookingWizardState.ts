@@ -32,7 +32,7 @@ export type PricingLifecycleState<T> = {
 };
 
 export const DRAFT_RESTORE_SECURITY_NOTICE =
-  "Draft restored. For security, please re-upload your driver's license image and signature.";
+  "Draft restored. For security, please re-sign your signature before continuing.";
 
 function normalizeText(value: unknown) {
   if (typeof value !== "string") return "";
@@ -70,7 +70,7 @@ export function restoreSelectionFieldsFromDraft(
 
 export function draftRestoreSecurityState(): DraftRestoreSecurityState {
   return {
-    requiresDriversLicenseUpload: true,
+    requiresDriversLicenseUpload: false,
     requiresSignatureUpload: true,
     driversLicenseImageUrl: "",
     signatureDataUrl: "",

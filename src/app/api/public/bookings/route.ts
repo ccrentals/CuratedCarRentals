@@ -100,6 +100,7 @@ export async function POST(request: Request) {
   const paymentOption = paymentOptionInput ?? "DEPOSIT";
   const customPaymentAmountCents = parseAmount(body?.customPaymentAmountCents);
   const driversLicenseNumber = normalizeText(body?.driversLicenseNumber) || normalizeText(body?.legalIdNumber);
+  const hasDriversLicenseNumber = isNonEmptyString(driversLicenseNumber, 4);
   const driversLicenseExpirationDate = parseOptionalDate(body?.driversLicenseExpirationDate);
   const signatureDataUrl = normalizeText(body?.signatureDataUrl);
   const customerProfile =
@@ -107,7 +108,9 @@ export async function POST(request: Request) {
       ? (body.customerProfile as Record<string, unknown>)
       : null;
   const legalIdType = normalizeLegalIdType(body?.legalIdType);
-  const legalIdNumber = normalizeText(body?.legalIdNumber) || driversLicenseNumber;
+  const legalIdNumber = hasDriversLicenseNumber
+    ? normalizeText(body?.legalIdNumber) || driversLicenseNumber
+    : null;
   const legalIdImageReference =
     normalizeText(body?.legalIdImageUploadToken) || normalizeText(body?.legalIdImageUrl);
   const driversLicenseDataUrl = normalizeText(body?.driversLicenseDataUrl);
@@ -140,14 +143,11 @@ export async function POST(request: Request) {
   if (!isNonEmptyString(dropoffLocation, 3)) {
     return NextResponse.json({ error: "Invalid dropoffLocation" }, { status: 400 });
   }
-  if (!legalIdType) {
+  if (hasDriversLicenseNumber && !legalIdType) {
     return NextResponse.json({ error: "Valid legalIdType is required" }, { status: 400 });
   }
-  if (!isNonEmptyString(legalIdNumber, 4) || !isNonEmptyString(driversLicenseNumber, 4)) {
+  if (hasDriversLicenseNumber && !isNonEmptyString(legalIdNumber, 4)) {
     return NextResponse.json({ error: "Valid legalIdNumber is required" }, { status: 400 });
-  }
-  if (!driversLicenseFileId && !hasDriversLicenseDataUrl) {
-    return NextResponse.json({ error: "Driver's license image upload is required" }, { status: 400 });
   }
   if (!signatureDataUrl || !signatureMimeType) {
     return NextResponse.json({ error: "Signature is required" }, { status: 400 });
@@ -241,13 +241,14 @@ export async function POST(request: Request) {
 
       const linkedLicense = normalizeText(linkedCustomerResult.rows[0]?.drivers_license_number);
       if (
+        hasDriversLicenseNumber &&
         linkedLicense &&
         linkedLicense.toLowerCase() !== driversLicenseNumber.toLowerCase()
       ) {
         await client.query("rollback");
         return NextResponse.json({ error: "We couldn't verify your details." }, { status: 400 });
       }
-    } else {
+    } else if (hasDriversLicenseNumber) {
       const existingCustomerByLicense = (await client.query(
         "select id from customers where lower(coalesce(drivers_license_number, '')) = lower($1) limit 1",
         [driversLicenseNumber],
@@ -269,8 +270,8 @@ export async function POST(request: Request) {
       fullName,
       email: normalizedEmail,
       phone: normalizedPhone,
-      legalIdType,
-      legalIdNumber,
+      legalIdType: hasDriversLicenseNumber ? legalIdType : undefined,
+      legalIdNumber: hasDriversLicenseNumber ? legalIdNumber : undefined,
       legalIdImageUrl: null,
       bookedAt: new Date().toISOString(),
     } as const;
@@ -392,6 +393,9 @@ export async function POST(request: Request) {
 
     const bookingAccessToken = createBookingAccessToken();
     const bookingAccessTokenHash = hashBookingAccessToken(bookingAccessToken);
+    const driversLicenseUploadedAt = driversLicenseFileId || hasDriversLicenseDataUrl
+      ? new Date().toISOString()
+      : null;
 
     const pricing = {
       daily_rate_cents: dailyRate,
@@ -441,9 +445,9 @@ export async function POST(request: Request) {
         insuranceTotalCents,
         paymentOption,
         customAmount,
-        driversLicenseNumber,
+        hasDriversLicenseNumber ? driversLicenseNumber : null,
         driversLicenseExpirationDate,
-        new Date().toISOString(),
+        driversLicenseUploadedAt,
         signatureDataUrl ? new Date().toISOString() : null,
         pricing,
       ],
@@ -470,11 +474,11 @@ export async function POST(request: Request) {
           JSON.stringify({
             source: "public_booking_wizard",
             fallback: "inline_data_url",
-            driversLicenseNumberTail: driversLicenseNumber.slice(-4),
+            driversLicenseNumberTail: hasDriversLicenseNumber ? driversLicenseNumber.slice(-4) : null,
           }),
         ],
       );
-    } else {
+    } else if (driversLicenseFileId) {
       await client.query(
         "insert into booking_private_files (booking_id, document_type, storage_provider, storage_key, mime_type, metadata_json) values ($1, 'DRIVERS_LICENSE', 'UPLOADCARE_FILE_ID', $2, 'image/*', $3::jsonb)",
         [
@@ -482,7 +486,7 @@ export async function POST(request: Request) {
           driversLicenseFileId,
           JSON.stringify({
             source: "public_booking_wizard",
-            driversLicenseNumberTail: driversLicenseNumber.slice(-4),
+            driversLicenseNumberTail: hasDriversLicenseNumber ? driversLicenseNumber.slice(-4) : null,
           }),
         ],
       );

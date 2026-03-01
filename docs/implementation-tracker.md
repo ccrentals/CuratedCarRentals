@@ -23,7 +23,7 @@ Last updated: 2026-02-19
   - payment row action framework (restore/refund/void hooks)
 - `DONE` User management foundation:
   - username + email login
-  - username generation format `firstname.lastname`
+  - username generation format `first initial + last name` (e.g., `mmalcolm`)
   - lock/unlock/reset/deactivate/reactivate actions
 - `DONE` Settings persistence foundation via `admin_documents` (`settings` key).
 

@@ -162,6 +162,7 @@ create sequence if not exists users_public_id_seq start 1;
 create sequence if not exists vehicles_public_id_seq start 1;
 create sequence if not exists bookings_public_id_seq start 1;
 create sequence if not exists quotes_public_id_seq start 1;
+create sequence if not exists invoice_number_seq start 1;
 create sequence if not exists payments_public_id_seq start 1;
 create sequence if not exists promo_codes_public_id_seq start 1;
 create sequence if not exists vehicle_maintenance_records_public_id_seq start 1;

@@ -9,26 +9,16 @@ import { isEmail, isNonEmptyString } from "@/lib/validators";
 import { hashPassword } from "@/lib/auth/password";
 import { writeAuditLog } from "@/lib/audit";
 import { requireCsrf } from "@/lib/security/csrf";
-import { buildClerkUsernameCandidates, isClerkUsernameError } from "@/lib/security/clerkUsernames";
+import { isClerkUsernameError } from "@/lib/security/clerkUsernames";
 import { logError, logWarn } from "@/lib/log";
 import { isClerkEnabled } from "@/lib/security/clerk";
+import {
+  generateStandardUsernameBase,
+  resolveUsernameCollision,
+} from "@/lib/auth/username";
 
-function normalizeUsername(value: string) {
-  const lower = value.trim().toLowerCase();
-  // Allow dots for the requested `firstname.lastname` format.
-  const replaced = lower.replace(/[^a-z0-9._-]+/g, "-");
-  const collapsed = replaced
-    .replace(/-+/g, "-")
-    .replace(/\.+/g, ".")
-    .replace(/^[-_.]+|[-_.]+$/g, "");
-  return collapsed.slice(0, 32);
-}
-
-function normalizeNamePart(value: string) {
-  // Keep it predictable for usernames: lowercase, alnum, dash/underscore only.
-  // We intentionally do not allow dots in name parts; we add exactly one dot between first/last.
-  return normalizeUsername(value).replace(/\./g, "-");
-}
+const ADMIN_CREATED_FORCE_PASSWORD_CHANGE_KEY = "forcePasswordChange";
+const ADMIN_CREATED_TEMP_PASSWORD_EXPIRES_AT_KEY = "tempPasswordExpiresAt";
 
 function generateTempPassword() {
   // Short, copy-friendly, URL-safe, and strong enough as a temporary secret.
@@ -103,9 +93,75 @@ type ClerkSyncResult =
       message: string;
     };
 
+export function buildAdminUserCreateSuccessPayload(input: {
+  userId: string;
+  userPublicId: string | null;
+  username: string;
+  tempPassword: string;
+  tempPasswordExpiresAt: string;
+  clerkSync: ClerkSyncResult;
+}) {
+  return {
+    ok: true as const,
+    userId: input.userId,
+    userPublicId: input.userPublicId,
+    username: input.username,
+    tempPassword: input.tempPassword,
+    tempPasswordExpiresAt: input.tempPasswordExpiresAt,
+    clerkSync: input.clerkSync,
+  };
+}
+
 type QueryClient = {
   query: (sql: string, values?: unknown[]) => Promise<{ rowCount: number }>;
 };
+
+type ClerkUsersApi = Awaited<ReturnType<typeof clerkClient>>["users"];
+type ClerkEmailAddressesApi = Awaited<ReturnType<typeof clerkClient>>["emailAddresses"];
+
+export function shouldSkipEmailChallengeForAdminCreatedUsers(input?: {
+  nodeEnv?: string;
+  envFlag?: string;
+}) {
+  const nodeEnv = input?.nodeEnv ?? process.env.NODE_ENV ?? "";
+  const envFlag = input?.envFlag ?? process.env.CLERK_ADMIN_CREATED_SKIP_EMAIL_CHALLENGE ?? "";
+  return nodeEnv !== "production" || envFlag === "1";
+}
+
+export function buildAdminCreatedUserPublicMetadata(input: { tempPasswordExpiresAt: string }) {
+  return {
+    [ADMIN_CREATED_FORCE_PASSWORD_CHANGE_KEY]: true,
+    [ADMIN_CREATED_TEMP_PASSWORD_EXPIRES_AT_KEY]: input.tempPasswordExpiresAt,
+  } as const;
+}
+
+type EmailAddressShape = { id?: string | null; verification?: { status?: string } | null };
+
+export async function ensureAdminCreatedUserEmailVerification(input: {
+  clerkEmailAddressesApi: Pick<ClerkEmailAddressesApi, "updateEmailAddress">;
+  shouldVerify: boolean;
+  primaryEmailAddressId?: string | null;
+  emailAddresses?: EmailAddressShape[] | null;
+}) {
+  if (!input.shouldVerify) {
+    return { attempted: false, verified: false };
+  }
+
+  const primaryId = input.primaryEmailAddressId?.trim();
+  if (!primaryId) {
+    return { attempted: true, verified: false };
+  }
+
+  const currentPrimary = (input.emailAddresses ?? []).find(
+    (item) => item?.id && item.id === primaryId,
+  );
+  if (currentPrimary?.verification?.status === "verified") {
+    return { attempted: true, verified: true };
+  }
+
+  await input.clerkEmailAddressesApi.updateEmailAddress(primaryId, { verified: true });
+  return { attempted: true, verified: true };
+}
 
 async function linkLocalUserToClerkId({
   client,
@@ -141,21 +197,66 @@ async function linkLocalUserToClerkId({
   }
 }
 
+async function resolveLocalUsernameForCreate({
+  client,
+  baseUsername,
+}: {
+  client: QueryClient;
+  baseUsername: string;
+}) {
+  return resolveUsernameCollision(baseUsername, async (candidate) => {
+    try {
+      const usernameDup = await client.query(
+        "select id from users where username is not null and lower(username) = lower($1) limit 1",
+        [candidate],
+      );
+      return usernameDup.rowCount > 0;
+    } catch (error) {
+      const code = (error as { code?: string } | null)?.code;
+      const message = String((error as { message?: unknown } | null)?.message ?? "");
+      if (code === "42703" && message.includes("\"username\"") && message.includes("does not exist")) {
+        throw new Error("USERNAMES_NOT_CONFIGURED");
+      }
+      throw error;
+    }
+  });
+}
+
+async function resolveClerkUsernameForCreate({
+  clerkUsers,
+  baseUsername,
+  excludeUserId,
+}: {
+  clerkUsers: ClerkUsersApi;
+  baseUsername: string;
+  excludeUserId?: string | null;
+}) {
+  return resolveUsernameCollision(baseUsername, async (candidate) => {
+    const lookup = await clerkUsers.getUserList({
+      username: [candidate],
+      limit: 1,
+    });
+    return lookup.data.some((user) => user.id !== excludeUserId);
+  });
+}
+
 async function provisionClerkUserForAdminInvite({
   email,
-  localUsername,
+  preferredUsername,
   firstName,
   lastName,
   tempPassword,
+  tempPasswordExpiresAt,
   role,
   localUserId,
   client,
 }: {
   email: string;
-  localUsername: string;
+  preferredUsername: string;
   firstName: string;
   lastName: string;
   tempPassword: string;
+  tempPasswordExpiresAt: string;
   role: string;
   localUserId: string;
   client: QueryClient;
@@ -170,11 +271,8 @@ async function provisionClerkUserForAdminInvite({
 
   try {
     const clerk = await clerkClient();
-    const usernameCandidates = buildClerkUsernameCandidates({
-      localUsername,
-      email,
-      localUserId,
-    });
+    const clerkUsers = clerk.users;
+    const shouldVerifyEmailForAdminCreate = shouldSkipEmailChallengeForAdminCreatedUsers();
     const existing = await clerk.users.getUserList({
       emailAddress: [email],
       limit: 1,
@@ -182,36 +280,60 @@ async function provisionClerkUserForAdminInvite({
     const existingUser = existing.data[0] ?? null;
     let clerkUserId = "";
     let status: "created" | "linked_existing" = "created";
+    let finalClerkUsername = preferredUsername;
 
     if (!existingUser) {
+      finalClerkUsername = await resolveClerkUsernameForCreate({
+        clerkUsers,
+        baseUsername: preferredUsername,
+      });
+
       let created:
         | Awaited<ReturnType<Awaited<ReturnType<typeof clerkClient>>["users"]["createUser"]>>
         | null = null;
       let createError: unknown = null;
 
-      const createAttempts = [...usernameCandidates, ""];
-      for (const candidate of createAttempts) {
-        try {
+      try {
+        created = await clerk.users.createUser({
+          emailAddress: [email],
+          firstName,
+          lastName,
+          password: tempPassword,
+          skipLegalChecks: true,
+          username: finalClerkUsername,
+          publicMetadata: buildAdminCreatedUserPublicMetadata({
+            tempPasswordExpiresAt,
+          }),
+          privateMetadata: {
+            localUserId,
+            localRole: role,
+            authProvisionedBy: "admin-user-create",
+          },
+        });
+      } catch (error) {
+        createError = error;
+        if (isClerkUsernameError(error)) {
+          finalClerkUsername = await resolveClerkUsernameForCreate({
+            clerkUsers,
+            baseUsername: preferredUsername,
+          });
           created = await clerk.users.createUser({
             emailAddress: [email],
             firstName,
             lastName,
             password: tempPassword,
-            // Admin creates the account; user accepts terms when they first sign in.
             skipLegalChecks: true,
-            ...(candidate ? { username: candidate } : {}),
+            username: finalClerkUsername,
+            publicMetadata: buildAdminCreatedUserPublicMetadata({
+              tempPasswordExpiresAt,
+            }),
             privateMetadata: {
               localUserId,
               localRole: role,
               authProvisionedBy: "admin-user-create",
             },
           });
-          break;
-        } catch (error) {
-          createError = error;
-          if (candidate && isClerkUsernameError(error)) {
-            continue;
-          }
+        } else {
           throw error;
         }
       }
@@ -220,10 +342,11 @@ async function provisionClerkUserForAdminInvite({
         throw createError ?? new Error("Unable to create Clerk user");
       }
       clerkUserId = created.id;
-
-      // Force password update on first Clerk sign-in, matching the local temp-password model.
-      await clerk.users.setPasswordCompromised(clerkUserId, {
-        revokeAllSessions: true,
+      await ensureAdminCreatedUserEmailVerification({
+        clerkEmailAddressesApi: clerk.emailAddresses,
+        shouldVerify: shouldVerifyEmailForAdminCreate,
+        primaryEmailAddressId: created.primaryEmailAddressId,
+        emailAddresses: created.emailAddresses as unknown as EmailAddressShape[],
       });
     } else {
       status = "linked_existing";
@@ -238,31 +361,15 @@ async function provisionClerkUserForAdminInvite({
           authProvisionedBy: "admin-user-link",
         },
       };
-
-      if (existingUser.username) {
-        await clerk.users.updateUser(clerkUserId, updateBase);
-      } else {
-        let updated = false;
-        for (const candidate of usernameCandidates) {
-          try {
-            await clerk.users.updateUser(clerkUserId, {
-              ...updateBase,
-              username: candidate,
-            });
-            updated = true;
-            break;
-          } catch (error) {
-            if (isClerkUsernameError(error)) {
-              continue;
-            }
-            throw error;
-          }
-        }
-
-        if (!updated) {
-          await clerk.users.updateUser(clerkUserId, updateBase);
-        }
-      }
+      finalClerkUsername = await resolveClerkUsernameForCreate({
+        clerkUsers,
+        baseUsername: preferredUsername,
+        excludeUserId: existingUser.id,
+      });
+      await clerk.users.updateUser(clerkUserId, {
+        ...updateBase,
+        username: finalClerkUsername,
+      });
     }
 
     const linkResult = await linkLocalUserToClerkId({
@@ -352,12 +459,15 @@ export async function POST(request: Request) {
 
   const emailLower = email.toLowerCase();
   const fullNameFinal = `${firstName} ${lastName}`.trim();
-  const baseUsername = normalizeUsername(
-    `${normalizeNamePart(firstName)}.${normalizeNamePart(lastName)}`,
-  );
+  const baseUsername = generateStandardUsernameBase({
+    firstName,
+    lastName,
+    fullName: fullNameFinal,
+    email: emailLower,
+  });
   if (!isNonEmptyString(baseUsername, 3)) {
     return NextResponse.json(
-      { error: "Invalid username. Use 3+ characters: letters, numbers, dot, underscore, or dash." },
+      { error: "Invalid username. Use 3+ characters: letters, numbers, or underscore." },
       { status: 400 },
     );
   }
@@ -382,38 +492,29 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Email already exists" }, { status: 409 });
     }
 
-    let usernameFinal = baseUsername;
-    try {
-      // Auto-generate a unique username from the requested `firstname.lastname` format.
-      for (let attempt = 0; attempt < 25; attempt += 1) {
-        const usernameDup = await client.query(
-          "select id from users where username is not null and lower(username) = lower($1) limit 1",
-          [usernameFinal],
-        );
-        if (usernameDup.rowCount === 0) break;
-
-        const suffix = String(attempt + 2);
-        const maxBaseLength = Math.max(0, 32 - (suffix.length + 1));
-        usernameFinal = `${baseUsername.slice(0, maxBaseLength)}-${suffix}`;
-      }
-
-      const usernameDupFinal = await client.query(
-        "select id from users where username is not null and lower(username) = lower($1) limit 1",
-        [usernameFinal],
-      );
-      if (usernameDupFinal.rowCount > 0) {
-        await client.query("rollback");
-        return NextResponse.json(
-          { error: "Unable to generate a unique username. Try a different one." },
-          { status: 409 },
-        );
-      }
-    } catch (error) {
-      const code = (error as { code?: string } | null)?.code;
-      const message = String((error as { message?: unknown } | null)?.message ?? "");
-      if (!(code === "42703" && message.includes("\"username\"") && message.includes("does not exist"))) {
+    const usernameFinal = await (async () => {
+      try {
+        return await resolveLocalUsernameForCreate({
+          client,
+          baseUsername,
+        });
+      } catch (error) {
+        if ((error as Error).message === "USERNAMES_NOT_CONFIGURED") {
+          await client.query("rollback");
+          return null;
+        }
         throw error;
       }
+    })();
+
+    if (!usernameFinal) {
+      return NextResponse.json(
+        {
+          error: "USERNAMES_NOT_CONFIGURED",
+          message: "users.username column is missing. Apply schema.sql changes and redeploy.",
+        },
+        { status: 500 },
+      );
     }
 
     const insert = await (async () => {
@@ -448,10 +549,11 @@ export async function POST(request: Request) {
 
     const clerkSync = await provisionClerkUserForAdminInvite({
       email: emailLower,
-      localUsername: usernameFinal,
+      preferredUsername: usernameFinal,
       firstName,
       lastName,
       tempPassword,
+      tempPasswordExpiresAt: expiresAt.toISOString(),
       role,
       localUserId: newUserId,
       client,
@@ -471,15 +573,16 @@ export async function POST(request: Request) {
       },
     });
 
-    return NextResponse.json({
-      ok: true,
-      userId: newUserId,
-      userPublicId: newUserPublicId,
-      username: usernameFinal,
-      tempPassword,
-      tempPasswordExpiresAt: expiresAt.toISOString(),
-      clerkSync,
-    });
+    return NextResponse.json(
+      buildAdminUserCreateSuccessPayload({
+        userId: newUserId,
+        userPublicId: newUserPublicId,
+        username: usernameFinal,
+        tempPassword,
+        tempPasswordExpiresAt: expiresAt.toISOString(),
+        clerkSync,
+      }),
+    );
   } catch (error) {
     await client.query("rollback").catch(() => {});
     logError("api.admin.users.POST", error, { actorUserId: actor.userId, email: emailLower, role });

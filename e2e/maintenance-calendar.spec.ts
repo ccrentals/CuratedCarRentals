@@ -106,6 +106,8 @@ test("maintenance lifecycle syncs blockouts and persists across reload", async (
   const scheduledDateUpdated = new Date();
   scheduledDateUpdated.setDate(scheduledDateUpdated.getDate() + 2);
 
+  await page.locator('[data-testid="maintenance-add"]').click();
+  await expect(page.locator('[data-testid="maintenance-form-drawer"]')).toBeVisible();
   await page.locator('[data-testid="maintenance-form-title"]').fill(recordTitle);
   await page.locator('[data-testid="maintenance-form-scheduled-date"]').fill(formatDate(scheduledDate));
 

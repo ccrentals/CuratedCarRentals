@@ -223,6 +223,11 @@ export async function reconcileWiPayPayment(
         payment.id,
       ],
     );
+    await client.query(
+      "update payments set status = 'FAILED', metadata_json = jsonb_set(coalesce(metadata_json, '{}'::jsonb), '{superseded_by_payment_id}', to_jsonb($1::text), true), updated_at = now() " +
+        "where booking_id = $2 and provider = 'WIPAY' and status = 'INITIATED' and provider_transaction_id is null and id <> $1 and coalesce(metadata_json->>'payment_type', 'deposit') = $3",
+      [payment.id, payment.booking_id, paymentType],
+    );
 
     const entitlementResolution = await deps.maybeEntitleBookingAfterPayment(payment.booking_id, {
       client,
@@ -433,37 +438,44 @@ export async function reconcileWiPayPayment(
           );
           const { promoCode, promoDiscount } = deps.readPromoPricingFields(bookingPricing);
 
-          if (paymentType !== "deposit") {
-            await deps.sendPaymentCompleteEmail({
-              bookingId: booking.id,
-              customerEmail: booking.customer_email,
-              customerName: booking.customer_name,
-              vehicleLabel: `${booking.vehicle_year} ${booking.vehicle_make} ${booking.vehicle_model}`.trim(),
-              startDate: booking.start_date,
-              endDate: booking.end_date,
-              pickupLocation: booking.pickup_location,
-              dailyRate: Number(booking.daily_rate_cents || 0),
-              deposit: Number(booking.deposit_cents || 0),
-              total: recalculated.totalAmount,
-              paidToDate: recalculated.netPaidToDate,
-              balanceDue: recalculated.balanceDue,
-            });
-          } else {
-            const depositValue = Number(booking.deposit_cents || 0);
-            await deps.sendDepositReceiptEmail({
-              bookingId: booking.id,
-              customerEmail: booking.customer_email,
-              customerName: booking.customer_name,
-              vehicleLabel: `${booking.vehicle_year} ${booking.vehicle_make} ${booking.vehicle_model}`.trim(),
-              startDate: booking.start_date,
-              endDate: booking.end_date,
-              pickupLocation: booking.pickup_location,
-              dailyRate: Number(booking.daily_rate_cents || 0),
-              deposit: depositValue,
-              paidToDate: recalculated.netPaidToDate,
-              promoCode,
-              promoDiscount,
-            });
+          const emailResult =
+            paymentType !== "deposit"
+              ? await deps.sendPaymentCompleteEmail({
+                  bookingId: booking.id,
+                  customerEmail: booking.customer_email,
+                  customerName: booking.customer_name,
+                  vehicleLabel: `${booking.vehicle_year} ${booking.vehicle_make} ${booking.vehicle_model}`.trim(),
+                  startDate: booking.start_date,
+                  endDate: booking.end_date,
+                  pickupLocation: booking.pickup_location,
+                  dailyRate: Number(booking.daily_rate_cents || 0),
+                  deposit: Number(booking.deposit_cents || 0),
+                  total: recalculated.totalAmount,
+                  paidToDate: recalculated.netPaidToDate,
+                  balanceDue: recalculated.balanceDue,
+                })
+              : await deps.sendDepositReceiptEmail({
+                  bookingId: booking.id,
+                  customerEmail: booking.customer_email,
+                  customerName: booking.customer_name,
+                  vehicleLabel: `${booking.vehicle_year} ${booking.vehicle_make} ${booking.vehicle_model}`.trim(),
+                  startDate: booking.start_date,
+                  endDate: booking.end_date,
+                  pickupLocation: booking.pickup_location,
+                  dailyRate: Number(booking.daily_rate_cents || 0),
+                  deposit: Number(booking.deposit_cents || 0),
+                  paidToDate: recalculated.netPaidToDate,
+                  promoCode,
+                  promoDiscount,
+                });
+
+          if (!emailResult.ok) {
+            throw new Error(
+              emailResult.error ??
+                (paymentType !== "deposit"
+                  ? "Payment complete email failed"
+                  : "Deposit receipt email failed"),
+            );
           }
 
           await deps.markDedupeResult(

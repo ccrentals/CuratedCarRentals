@@ -1,5 +1,5 @@
 import { dbQuery } from "@/lib/db";
-import { validateEnv, type EnvValidation } from "@/lib/env";
+import { getInvoiceProvider, validateEnv, type EnvValidation } from "@/lib/env";
 import { redactText } from "@/lib/log";
 
 type CheckResult = {
@@ -131,11 +131,57 @@ export async function getHealthSnapshot(): Promise<HealthSnapshot> {
     }
   })();
 
-  const pdfMonkeyCheck = (async () => {
+  const invoiceProviderCheck = (async () => {
+    const started = Date.now();
+    const provider = getInvoiceProvider();
+
+    if (provider === "gotenberg") {
+      const gotenbergUrl = (process.env.GOTENBERG_URL ?? "").trim();
+      const endpoint = `${(gotenbergUrl || "http://localhost:3001").replace(/\/+$/, "")}/health`;
+      const configured = process.env.NODE_ENV === "production" ? Boolean(gotenbergUrl) : true;
+      try {
+        const response = await fetchWithTimeout(endpoint, 4000, { method: "GET" });
+        const text = await response.text().catch(() => "");
+        if (!response.ok) {
+          return {
+            ok: false,
+            configured,
+            status: response.status,
+            latencyMs: Date.now() - started,
+            error: safeSnippet(text || `HTTP ${response.status}`),
+          };
+        }
+        let statusUp = true;
+        try {
+          const payload = JSON.parse(text) as { status?: string };
+          if (payload.status) {
+            statusUp = payload.status.toLowerCase() === "up";
+          }
+        } catch {
+          statusUp = true;
+        }
+        return {
+          ok: statusUp,
+          configured,
+          status: response.status,
+          latencyMs: Date.now() - started,
+          error: statusUp ? undefined : "Gotenberg health endpoint did not report status=up",
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Gotenberg fetch failed";
+        return {
+          ok: false,
+          configured,
+          status: 0,
+          latencyMs: Date.now() - started,
+          error: safeSnippet(message),
+        };
+      }
+    }
+
     const apiKey = process.env.PDFMONKEY_API_KEY?.trim();
     const templateId = process.env.PDFMONKEY_TEMPLATE_ID?.trim();
     if (!apiKey || !templateId) return { ok: false, configured: false };
-    const started = Date.now();
     try {
       // Validate API key (does not consume quota).
       const listRes = await fetchWithTimeout("https://api.pdfmonkey.io/api/v1/documents", 4000, {
@@ -225,7 +271,7 @@ export async function getHealthSnapshot(): Promise<HealthSnapshot> {
     dbCheck,
     wipayCheck,
     resendCheck,
-    pdfMonkeyCheck,
+    invoiceProviderCheck,
     uploadcareCheck,
     netlifyCheck,
   ]);

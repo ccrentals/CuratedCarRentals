@@ -164,7 +164,7 @@ async function advanceToPaymentsStep(page: Page) {
 
   await page.getByLabel("First Name *").fill("Draft");
   await page.getByLabel("Last Name *").fill("Restore");
-  await page.getByLabel("DL Number *").fill("D1234567");
+  await page.getByLabel("DL Number").fill("D1234567");
   const fileInputs = page.locator('input[type="file"]');
   await fileInputs.first().setInputFiles({
     name: "dl.jpg",
@@ -194,7 +194,7 @@ test("booking requires vehicle selection before continue", async ({ page }) => {
   await expect(page.getByText("Select a vehicle to continue.")).toBeVisible();
 });
 
-test("driver's license number and image are required before leaving customer step", async ({ page }) => {
+test("driver's license number, expiration date, and image are optional on customer step", async ({ page }) => {
   await page.goto("/book", { waitUntil: "networkidle" });
 
   await page.getByRole("button", { name: "Next Step" }).click();
@@ -207,20 +207,8 @@ test("driver's license number and image are required before leaving customer ste
   await page.getByLabel("First Name *").fill("Test");
   await page.getByLabel("Last Name *").fill("Driver");
   await page.getByRole("button", { name: "Next Step" }).click();
-  await expect(page.getByText("Driver's license number is required.")).toBeVisible();
-
-  await page.getByLabel("DL Number *").fill("D1234567");
-  await page.getByRole("button", { name: "Next Step" }).click();
-  await expect(page.getByText("Driver's license image upload is required.")).toBeVisible();
-
-  const fileInputs = page.locator('input[type="file"]');
-  await fileInputs.first().setInputFiles({
-    name: "dl.jpg",
-    mimeType: "image/jpeg",
-    buffer: Buffer.from("fake-dl-image"),
-  });
-
-  await expect(page.getByText("Driver's license image uploaded.")).toBeVisible();
+  await expect(page.getByText("Driver's license number is required.")).toHaveCount(0);
+  await expect(page.getByText("Driver's license image upload is required.")).toHaveCount(0);
   await page.getByRole("button", { name: "Next Step" }).click();
   await expect(page.getByRole("heading", { name: "Confirm Reservation" })).toBeVisible();
 });
@@ -484,7 +472,7 @@ test("step tabs unlock by completion and preserve entered Step 3 values", async 
   await page.getByRole("button", { name: "Next Step" }).click();
   await page.getByLabel("First Name *").fill("Step");
   await page.getByLabel("Last Name *").fill("Tabs");
-  await page.getByLabel("DL Number *").fill("D1234567");
+  await page.getByLabel("DL Number").fill("D1234567");
   const fileInputs = page.locator('input[type="file"]');
   await fileInputs.first().setInputFiles({
     name: "dl.jpg",
@@ -576,7 +564,7 @@ test("booking draft can be restored then cleared with start over", async ({ page
   await page.reload({ waitUntil: "networkidle" });
   await expect(page.locator('[data-testid="booking-draft-loading"]')).toHaveCount(0);
   await expect(
-    page.getByText("Draft restored. For security, please re-upload your driver's license image and signature."),
+    page.getByText("Draft restored. For security, please re-sign your signature before continuing."),
   ).toBeVisible();
   const summaryPanel = page.locator("aside").filter({ hasText: "Pricing (JMD)" }).first();
   await expect(summaryPanel).not.toContainText("Vehicle: Not selected");

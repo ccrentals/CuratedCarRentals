@@ -18,7 +18,7 @@ import { SlideDownPanel } from "@/components/admin/SlideDownPanel";
 type CreateUserResult = {
   ok: true;
   userId: string;
-  username?: string;
+  username: string;
   tempPassword: string;
   tempPasswordExpiresAt: string;
   clerkSync?:
@@ -77,6 +77,7 @@ export function CreateUserForm({
   const [copyToast, setCopyToast] = useState<{ message: string; tone: "success" | "error" } | null>(
     null,
   );
+  const [showTempPassword, setShowTempPassword] = useState(true);
   const [panelOpen, setPanelOpen] = useState(false);
   const [successNotice, setSuccessNotice] = useState<{
     tempPassword: string;
@@ -152,10 +153,17 @@ export function CreateUserForm({
       return;
     }
 
+    if (!data.username) {
+      setError("User created, but the username was not returned.");
+      router.refresh();
+      return;
+    }
+
+    setShowTempPassword(true);
     setSuccessNotice({
       tempPassword: data.tempPassword,
       tempPasswordExpiresAt: data.tempPasswordExpiresAt ?? null,
-      createdUsername: data.username ? String(data.username) : null,
+      createdUsername: String(data.username),
       clerkMessage:
         data.clerkSync && "message" in data.clerkSync ? data.clerkSync.message : null,
       clerkWarning:
@@ -180,7 +188,7 @@ export function CreateUserForm({
   }
 
   return (
-    <div className="mt-6">
+    <div className="mt-6" data-testid="create-user-section">
       <SlideDownPanel
         title="Create user"
         description="Creates an account with a temporary password (expires in 3 days). The user will be prompted to set a permanent password after first login."
@@ -195,6 +203,7 @@ export function CreateUserForm({
               value={firstName}
               onChange={(e) => setFirstName(e.target.value)}
               disabled={disabled || loading}
+              data-testid="create-user-first-name"
               className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)] disabled:opacity-60"
             />
           </label>
@@ -204,6 +213,7 @@ export function CreateUserForm({
               value={lastName}
               onChange={(e) => setLastName(e.target.value)}
               disabled={disabled || loading}
+              data-testid="create-user-last-name"
               className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)] disabled:opacity-60"
             />
           </label>
@@ -213,6 +223,7 @@ export function CreateUserForm({
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               disabled={disabled || loading}
+              data-testid="create-user-email"
               className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)] disabled:opacity-60"
             />
           </label>
@@ -222,6 +233,7 @@ export function CreateUserForm({
               value={role}
               onChange={(e) => setRole(mapSelectedRole(e.target.value, canAssignDeveloperRole))}
               disabled={disabled || loading}
+              data-testid="create-user-role"
               className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)] disabled:opacity-60"
             >
               <option value="USER">USER</option>
@@ -238,6 +250,7 @@ export function CreateUserForm({
             type="button"
             onClick={submit}
             disabled={disabled || loading}
+            data-testid="create-user-submit"
             className="rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
           >
             {loading ? "Creating..." : "Create user"}
@@ -246,14 +259,46 @@ export function CreateUserForm({
       </SlideDownPanel>
 
       {successNotice ? (
-        <div className="mt-3 rounded-xl border border-[var(--ccr-border)] border-l-4 border-l-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] p-3 text-xs text-[var(--ccr-text)]">
+        <div
+          className="mt-3 rounded-xl border border-[var(--ccr-border)] border-l-4 border-l-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] p-3 text-xs text-[var(--ccr-text)]"
+          data-testid="create-user-success-panel"
+        >
           <p className="font-semibold text-[var(--ccr-text)]">User created successfully.</p>
+          <p className="mt-1 text-[11px] text-[var(--ccr-muted)]">
+            Save this now - it won&apos;t be shown again.
+          </p>
           {successNotice.createdUsername ? (
-            <p className="mt-1 text-[11px] text-[var(--ccr-muted)]">
+            <p className="mt-2 text-[11px] text-[var(--ccr-muted)]">
               Username:{" "}
-              <span className="font-mono text-[var(--ccr-text)]">{successNotice.createdUsername}</span>
+              <span
+                className="font-mono text-[var(--ccr-text)]"
+                data-testid="create-user-success-username"
+              >
+                {successNotice.createdUsername}
+              </span>
             </p>
           ) : null}
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <label className="sr-only" htmlFor="create-user-temp-password">
+              Temporary password
+            </label>
+            <input
+              id="create-user-temp-password"
+              type={showTempPassword ? "text" : "password"}
+              value={successNotice.tempPassword}
+              readOnly
+              data-testid="create-user-success-temp-password"
+              className="min-w-[16rem] flex-1 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 font-mono text-xs text-[var(--ccr-text)]"
+            />
+            <button
+              type="button"
+              onClick={() => setShowTempPassword((current) => !current)}
+              className={`${ADMIN_OUTLINE_BUTTON_CLASS} px-3 py-1.5 text-xs font-semibold`}
+              data-testid="create-user-toggle-password-visibility"
+            >
+              {showTempPassword ? "Hide" : "Show"}
+            </button>
+          </div>
           {successNotice.tempPasswordExpiresAt ? (
             <p className="mt-1 text-[11px] text-[var(--ccr-muted)]">
               Password expires:{" "}
@@ -289,6 +334,7 @@ export function CreateUserForm({
                 }
               }}
               className={`${ADMIN_OUTLINE_BUTTON_CLASS} px-3 py-1.5 text-xs font-semibold`}
+              data-testid="create-user-copy-temp-password"
             >
               Copy temp password
             </button>
@@ -296,6 +342,7 @@ export function CreateUserForm({
               type="button"
               onClick={() => {
                 setSuccessNotice(null);
+                setShowTempPassword(true);
                 setCopyToast(null);
                 setPanelOpen(true);
               }}
@@ -308,6 +355,7 @@ export function CreateUserForm({
               aria-label="Dismiss user created notice"
               onClick={() => {
                 setSuccessNotice(null);
+                setShowTempPassword(true);
                 setCopyToast(null);
               }}
               className={`${ADMIN_OUTLINE_BUTTON_CLASS} px-2.5 py-1.5 text-xs font-semibold`}

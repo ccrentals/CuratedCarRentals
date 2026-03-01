@@ -2,7 +2,7 @@
 
 import { CalendarCheck, FileText, type LucideIcon } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { ADMIN_ACCENT_RING_CLASS } from "@/components/admin/adminUiClasses";
@@ -36,6 +36,7 @@ type NavGroup = {
 
 type AdminNavLinksProps = {
   pathname: string;
+  currentTemplate: string | null;
   currentRole: string | undefined;
   unreadMessagesCount: number;
   collapsedState?: boolean;
@@ -69,6 +70,33 @@ const BOOKINGS_CHILDREN: NavChild[] = [
     href: "/admin/bookings/quotes",
     icon: FileText,
     testId: "admin-subnav-quotes",
+  },
+];
+
+const TEMPLATE_CHILDREN: NavChild[] = [
+  {
+    label: "Invoice",
+    href: "/admin/template-lab?template=invoice",
+    icon: FileText,
+    testId: "admin-subnav-template-invoice",
+  },
+  {
+    label: "Quote",
+    href: "/admin/template-lab?template=quote",
+    icon: FileText,
+    testId: "admin-subnav-template-quote",
+  },
+  {
+    label: "Rental Agreement",
+    href: "/admin/template-lab?template=agreement",
+    icon: FileText,
+    testId: "admin-subnav-template-agreement",
+  },
+  {
+    label: "Receipt",
+    href: "/admin/template-lab?template=receipt",
+    icon: FileText,
+    testId: "admin-subnav-template-receipt",
   },
 ];
 
@@ -355,6 +383,27 @@ const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    label: "Templates",
+    href: "/admin/template-lab",
+    children: TEMPLATE_CHILDREN,
+    icon: (className: string) => (
+      <svg
+        viewBox="0 0 24 24"
+        className={className}
+        aria-hidden="true"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M6 3h9l3 3v15H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" />
+        <path d="M15 3v4h4" />
+        <path d="M8 11h8M8 15h8M8 19h6" />
+      </svg>
+    ),
+  },
+  {
     label: "Developer",
     href: "/admin/developer",
     icon: (className: string) => (
@@ -463,7 +512,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     id: "administration",
     label: "Administration",
-    itemHrefs: ["/admin/documentation", "/admin/developer", "/admin/health"],
+    itemHrefs: ["/admin/documentation", "/admin/template-lab", "/admin/developer", "/admin/health"],
     defaultExpanded: true,
   },
 ];
@@ -476,17 +525,13 @@ function normalizeRole(role: string | undefined) {
     .toUpperCase();
 }
 
-function isDeveloperRole(role: string | undefined) {
-  return normalizeRole(role) === "DEVELOPER";
-}
-
 function isAdminRole(role: string | undefined) {
   const normalized = normalizeRole(role);
   return normalized === "ADMIN" || normalized === "DEVELOPER";
 }
 
 function getVisibleNavGroups(role: string | undefined) {
-  if (isDeveloperRole(role)) {
+  if (isAdminRole(role)) {
     return NAV_GROUPS;
   }
   return NAV_GROUPS.filter((group) => group.id !== "administration");
@@ -499,8 +544,15 @@ function isActivePath(pathname: string, href: string) {
   return pathname.startsWith(href);
 }
 
+function parseHrefPathAndTemplate(href: string) {
+  const [path, query = ""] = href.split("?");
+  const template = query ? new URLSearchParams(query).get("template") : null;
+  return { path, template };
+}
+
 function AdminNavLinks({
   pathname,
+  currentTemplate,
   currentRole,
   unreadMessagesCount,
   collapsedState,
@@ -601,7 +653,10 @@ function AdminNavLinks({
         {showChildren ? (
           <div className="mt-1 flex flex-col gap-1 pl-12">
             {item.children?.map((child) => {
-              const childActive = pathname.startsWith(child.href);
+              const parsedChild = parseHrefPathAndTemplate(child.href);
+              const childActive =
+                pathname.startsWith(parsedChild.path) &&
+                (!parsedChild.template || parsedChild.template === currentTemplate);
               const ChildIcon = child.icon;
               return (
                 <Link
@@ -701,6 +756,8 @@ export function AdminShell({
   unreadMessagesCount: number;
 }) {
   const pathname = usePathname() ?? "/admin";
+  const searchParams = useSearchParams();
+  const currentTemplate = searchParams.get("template");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [logoGlowOn, setLogoGlowOn] = useState(false);
   const [mobileCompactHeader, setMobileCompactHeader] = useState(false);
@@ -987,6 +1044,7 @@ export function AdminShell({
         </div>
         <AdminNavLinks
           pathname={pathname}
+          currentTemplate={currentTemplate}
           currentRole={user.role}
           unreadMessagesCount={liveUnreadMessagesCount}
           collapsedState={collapsed}
@@ -1039,6 +1097,7 @@ export function AdminShell({
           <div className="flex min-h-full flex-col">
             <AdminNavLinks
               pathname={pathname}
+              currentTemplate={currentTemplate}
               currentRole={user.role}
               unreadMessagesCount={liveUnreadMessagesCount}
               expandedItems={expandedItems}

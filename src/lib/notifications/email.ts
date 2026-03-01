@@ -1,6 +1,8 @@
 import { buildInvoicePayload, downloadPdfBase64, generateInvoicePdf } from "@/lib/pdfmonkey";
 import { logError, logWarn, redactText } from "@/lib/log";
 import { computeBookingPricing } from "@/lib/payments/pricing";
+import { dbQuery } from "@/lib/db";
+import { formatPaymentStatus } from "@/lib/payments/formatPaymentStatus";
 
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
 
@@ -104,8 +106,168 @@ function policyHtml() {
   `;
 }
 
+const PAYMENT_STATUS_REDUCES_BALANCE = new Set([
+  "SUCCESS",
+  "SUCCEEDED",
+  "COMPLETED",
+  "DEPOSIT_PAID",
+  "PAID",
+  "CAPTURED",
+  "SETTLED",
+  "AUTHORIZED",
+  "AUTHORISED",
+]);
+
+type InvoiceContextRow = {
+  public_id: string | null;
+  customer_address: string | null;
+  customer_street: string | null;
+  customer_street2: string | null;
+  customer_city: string | null;
+  customer_state: string | null;
+  customer_country: string | null;
+};
+
+type InvoiceNumberRow = {
+  invoice_number: string;
+};
+
+type InvoicePaymentContextRow = {
+  provider: string;
+  status: string;
+  deposit_amount_cents: number;
+  created_at: string | Date;
+  metadata_json: Record<string, unknown> | null;
+};
+
+function normalizeText(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function buildCustomerAddress(row: InvoiceContextRow | null) {
+  if (!row) return "";
+  const direct = normalizeText(row.customer_address);
+  if (direct) return direct;
+  const parts = [
+    normalizeText(row.customer_street),
+    normalizeText(row.customer_street2),
+    normalizeText(row.customer_city),
+    normalizeText(row.customer_state),
+    normalizeText(row.customer_country),
+  ].filter(Boolean);
+  return parts.join(", ");
+}
+
+function resolveProviderLabel(row: InvoicePaymentContextRow) {
+  if (row.provider !== "MANUAL") return row.provider;
+  const methodLabel =
+    typeof row.metadata_json?.method_label === "string" ? row.metadata_json.method_label : null;
+  if (methodLabel && methodLabel.trim()) return methodLabel.trim();
+  const method = typeof row.metadata_json?.method === "string" ? row.metadata_json.method : null;
+  if (method && method.trim()) return method.trim();
+  return "MANUAL";
+}
+
+function toIsoDateOnly(value: string | Date | null | undefined) {
+  if (value instanceof Date && Number.isFinite(value.getTime())) {
+    return value.toISOString().slice(0, 10);
+  }
+  const text = String(value ?? "").trim();
+  if (!text) return "";
+  const dateMatch = text.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (dateMatch?.[1]) return dateMatch[1];
+  const parsed = new Date(text);
+  if (!Number.isFinite(parsed.getTime())) return "";
+  return parsed.toISOString().slice(0, 10);
+}
+
+function isBalanceReducingPayment(row: InvoicePaymentContextRow) {
+  const amount = Number(row.deposit_amount_cents || 0);
+  if (!Number.isFinite(amount) || amount <= 0) return false;
+  const normalized = String(row.status ?? "")
+    .trim()
+    .toUpperCase();
+  return PAYMENT_STATUS_REDUCES_BALANCE.has(normalized);
+}
+
+async function allocateInvoiceNumber() {
+  const result = await dbQuery<InvoiceNumberRow>(
+    "select ('IV' || lpad(nextval('invoice_number_seq')::text, 6, '0')) as invoice_number",
+  );
+  const value = normalizeText(result.rows[0]?.invoice_number);
+  if (!value) {
+    throw new Error("Failed to allocate invoice number");
+  }
+  return value;
+}
+
+async function loadInvoiceContext(bookingId: string) {
+  const contextResult = await (async () => {
+    try {
+      return await dbQuery<InvoiceContextRow>(
+        "select b.public_id, c.address as customer_address, c.street as customer_street, c.street2 as customer_street2, c.city as customer_city, c.state as customer_state, c.country as customer_country from bookings b join customers c on c.id = b.customer_id where b.id = $1",
+        [bookingId],
+      );
+    } catch (error) {
+      const code = (error as { code?: string } | null)?.code;
+      if (code === "42703") {
+        return await dbQuery<InvoiceContextRow>(
+          "select b.public_id, c.address as customer_address, null::text as customer_street, null::text as customer_street2, null::text as customer_city, null::text as customer_state, null::text as customer_country from bookings b join customers c on c.id = b.customer_id where b.id = $1",
+          [bookingId],
+        );
+      }
+      throw error;
+    }
+  })();
+
+  const bookingRow = contextResult.rows[0] ?? null;
+  const customerAddress = buildCustomerAddress(bookingRow);
+  const bookingPublicId = normalizeText(bookingRow?.public_id);
+
+  const paymentsResult = await (async () => {
+    try {
+      return await dbQuery<InvoicePaymentContextRow>(
+        "select provider, status, deposit_amount_cents, created_at, metadata_json from payments where booking_id = $1 and deleted_at is null order by created_at asc",
+        [bookingId],
+      );
+    } catch (error) {
+      const code = (error as { code?: string } | null)?.code;
+      const message = String((error as { message?: unknown } | null)?.message ?? "");
+      if (code === "42703" && message.includes("\"deleted_at\"") && message.includes("does not exist")) {
+        return await dbQuery<InvoicePaymentContextRow>(
+          "select provider, status, deposit_amount_cents, created_at, metadata_json from payments where booking_id = $1 order by created_at asc",
+          [bookingId],
+        );
+      }
+      throw error;
+    }
+  })();
+
+  const payments = paymentsResult.rows
+    .filter(isBalanceReducingPayment)
+    .map((row) => ({
+      provider: resolveProviderLabel(row),
+      status: formatPaymentStatus(row.status, {
+        paymentType:
+          typeof row.metadata_json?.payment_type === "string"
+            ? String(row.metadata_json.payment_type)
+            : null,
+      }),
+      amount: Number(row.deposit_amount_cents || 0),
+      date: toIsoDateOnly(row.created_at),
+    }));
+
+  return {
+    bookingPublicId,
+    customerAddress,
+    payments,
+  };
+}
+
 async function buildInvoiceAttachment(input: {
   bookingId: string;
+  bookingPublicId?: string | null;
+  invoiceNumber?: string;
   bookingStatus: string;
   startDate: string;
   endDate: string;
@@ -113,6 +275,7 @@ async function buildInvoiceAttachment(input: {
   customerName: string;
   customerEmail: string;
   customerPhone: string;
+  customerAddress?: string;
   vehicleMake: string;
   vehicleModel: string;
   vehicleYear: number;
@@ -124,15 +287,44 @@ async function buildInvoiceAttachment(input: {
   payments: { provider: string; status: string; amount: number; date: string }[];
 }) {
   try {
-    const payload = buildInvoicePayload(input);
+    const context = await loadInvoiceContext(input.bookingId);
+    const invoiceNumber = normalizeText(input.invoiceNumber) || (await allocateInvoiceNumber());
+    const displayBookingId =
+      normalizeText(input.bookingPublicId) || context.bookingPublicId || input.bookingId.slice(0, 8);
+    const address = normalizeText(input.customerAddress) || context.customerAddress;
+    const payments = input.payments.length ? input.payments : context.payments;
+
+    const payload = buildInvoicePayload({
+      ...input,
+      bookingId: displayBookingId,
+      invoiceNumber,
+      customerAddress: address,
+      payments,
+    });
     const pdf = await generateInvoicePdf(payload, input.bookingId);
     if (!pdf?.downloadUrl) return undefined;
     const base64 = await downloadPdfBase64(pdf.downloadUrl);
-    return [{ filename: `invoice-${input.bookingId.slice(0, 8)}.pdf`, content: base64 }];
+    return [{ filename: `invoice-${invoiceNumber}.pdf`, content: base64 }];
   } catch (error) {
     logError("invoice_pdf_generation_failed", error, { bookingId: input.bookingId });
     return undefined;
   }
+}
+
+type InvoiceAttachmentInput = Parameters<typeof buildInvoiceAttachment>[0];
+
+async function buildRequiredInvoiceAttachment(input: InvoiceAttachmentInput) {
+  const attachments = await buildInvoiceAttachment(input);
+  if (!attachments || attachments.length === 0) {
+    return {
+      ok: false as const,
+      error: "Invoice PDF is currently unavailable. Please retry shortly.",
+    };
+  }
+  return {
+    ok: true as const,
+    attachments,
+  };
 }
 
 export async function sendBookingCreatedEmail(input: {
@@ -279,7 +471,7 @@ export async function sendDepositReceiptEmail(input: {
     </div>
   `;
 
-  const attachments = await buildInvoiceAttachment({
+  const invoiceAttachment = await buildRequiredInvoiceAttachment({
     bookingId: input.bookingId,
     bookingStatus: "CONFIRMED",
     startDate: input.startDate,
@@ -296,21 +488,18 @@ export async function sendDepositReceiptEmail(input: {
     total,
     paidToDate: input.paidToDate,
     balanceDue: balance,
-    payments: [
-      {
-        provider: "WIPAY",
-        status: "DEPOSIT_PAID",
-        amount: input.paidToDate,
-        date: new Date().toISOString(),
-      },
-    ],
+    payments: [],
   });
+
+  if (!invoiceAttachment.ok) {
+    return invoiceAttachment;
+  }
 
   return sendResendEmail({
     to: input.customerEmail,
     subject: "Deposit received — booking confirmed",
     html,
-    attachments,
+    attachments: invoiceAttachment.attachments,
   });
 }
 
@@ -372,7 +561,7 @@ export async function sendPaymentUpdateEmail(input: {
     </div>
   `;
 
-  const attachments = await buildInvoiceAttachment({
+  const invoiceAttachment = await buildRequiredInvoiceAttachment({
     bookingId: input.bookingId,
     bookingStatus: "CONFIRMED",
     startDate: input.startDate,
@@ -392,11 +581,15 @@ export async function sendPaymentUpdateEmail(input: {
     payments: [],
   });
 
+  if (!invoiceAttachment.ok) {
+    return invoiceAttachment;
+  }
+
   return sendResendEmail({
     to: input.customerEmail,
     subject: "Payment update — balance outstanding",
     html,
-    attachments,
+    attachments: invoiceAttachment.attachments,
   });
 }
 
@@ -456,7 +649,7 @@ export async function sendPaymentCompleteEmail(input: {
     </div>
   `;
 
-  const attachments = await buildInvoiceAttachment({
+  const invoiceAttachment = await buildRequiredInvoiceAttachment({
     bookingId: input.bookingId,
     bookingStatus: "CONFIRMED",
     startDate: input.startDate,
@@ -476,11 +669,15 @@ export async function sendPaymentCompleteEmail(input: {
     payments: [],
   });
 
+  if (!invoiceAttachment.ok) {
+    return invoiceAttachment;
+  }
+
   return sendResendEmail({
     to: input.customerEmail,
     subject: "Payment complete — booking paid in full",
     html,
-    attachments,
+    attachments: invoiceAttachment.attachments,
   });
 }
 

@@ -1,8 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { CalendarIcon, X } from "lucide-react";
 
 import { SortableTh } from "@/components/admin/SortableTh";
+import {
+  Drawer,
+  DrawerClose,
+  DrawerContent,
+  DrawerDescription,
+  DrawerHeader,
+  DrawerTitle,
+  DrawerTrigger,
+} from "@/components/ui/drawer";
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
@@ -383,11 +393,15 @@ export function VehicleMaintenancePanel({ vehicleId, initialRecordId }: VehicleM
   const [total, setTotal] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(initialRecordId ?? null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [isFormDrawerOpen, setIsFormDrawerOpen] = useState(false);
   const [documentType, setDocumentType] = useState("SERVICE_INVOICE");
   const [documentLabel, setDocumentLabel] = useState("");
   const [pendingDocumentUpload, setPendingDocumentUpload] = useState<PendingDocumentUpload | null>(null);
   const [form, setForm] = useState(defaultFormState);
   const detailSectionRef = useRef<HTMLElement | null>(null);
+  const scheduledDateInputRef = useRef<HTMLInputElement | null>(null);
+  const serviceDateInputRef = useRef<HTMLInputElement | null>(null);
+  const nextDueDateInputRef = useRef<HTMLInputElement | null>(null);
   const shouldScrollToDetailRef = useRef(false);
   const tableSortState = useMemo(() => ({ sortBy, sortDir: sortDirection }), [sortBy, sortDirection]);
 
@@ -662,6 +676,29 @@ export function VehicleMaintenancePanel({ vehicleId, initialRecordId }: VehicleM
     setEditingId(null);
   }
 
+  function openCreateDrawer() {
+    resetForm();
+    setIsFormDrawerOpen(true);
+  }
+
+  function openNativeDatePicker(ref: RefObject<HTMLInputElement | null>) {
+    const input = ref.current;
+    if (!input) return;
+
+    const pickerInput = input as HTMLInputElement & { showPicker?: () => void };
+    if (typeof pickerInput.showPicker === "function") {
+      try {
+        pickerInput.showPicker();
+        return;
+      } catch {
+        // Fall through for browsers that block showPicker.
+      }
+    }
+
+    input.focus();
+    input.click();
+  }
+
 function startEdit(item: MaintenanceRecord) {
   setEditingId(item.id);
   setForm({
@@ -695,6 +732,7 @@ function startEdit(item: MaintenanceRecord) {
       blockoutNotes: "",
       priority: item.priority || "NORMAL",
     });
+    setIsFormDrawerOpen(true);
   }
 
   async function saveRecord() {
@@ -774,6 +812,7 @@ function startEdit(item: MaintenanceRecord) {
       setMessage(editingId ? "Maintenance record updated." : "Maintenance record created.");
       const nextId = result.item?.id ?? null;
       resetForm();
+      setIsFormDrawerOpen(false);
       await loadData();
       if (nextId) setSelectedId(nextId);
     } catch (requestError) {
@@ -1049,10 +1088,11 @@ function startEdit(item: MaintenanceRecord) {
   );
 
   return (
-    <section
-      data-testid="vehicle-maintenance-panel"
-      className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4 shadow-sm sm:p-6"
-    >
+    <Drawer open={isFormDrawerOpen} onOpenChange={setIsFormDrawerOpen} direction="right">
+      <section
+        data-testid="vehicle-maintenance-panel"
+        className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4 shadow-sm sm:p-6"
+      >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-lg font-bold text-[var(--ccr-text)]">Maintenance</h2>
@@ -1196,14 +1236,16 @@ function startEdit(item: MaintenanceRecord) {
               >
                 Export CSV
               </a>
-              <button
-                type="button"
-                onClick={resetForm}
-                data-testid="maintenance-add"
-                className="min-h-10 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
-              >
-                Add Maintenance
-              </button>
+              <DrawerTrigger asChild>
+                <button
+                  type="button"
+                  onClick={openCreateDrawer}
+                  data-testid="maintenance-add"
+                  className="min-h-10 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+                >
+                  Add Maintenance
+                </button>
+              </DrawerTrigger>
             </div>
           </div>
 
@@ -1410,356 +1452,11 @@ function startEdit(item: MaintenanceRecord) {
           </div>
         </section>
 
-        <section className="flex flex-col gap-4">
-          <section className="order-2 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
-            <h3 className="text-sm font-semibold uppercase tracking-wide text-[var(--ccr-text)]">
-              {editingId ? "Edit Maintenance" : "Add Maintenance"}
-            </h3>
-
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-                Status
-                <select
-                  value={form.status}
-                  onChange={(event) => setForm((current) => ({ ...current, status: event.target.value as RecordStatus }))}
-                  className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
-                >
-                  {STATUS_OPTIONS.map((option) => (
-                    <option key={option} value={option}>
-                      {formatStatus(option)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-                Category
-                <select
-                  value={form.category}
-                  onChange={(event) => setForm((current) => ({ ...current, category: event.target.value }))}
-                  className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
-                >
-                  {options.categories.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)] sm:col-span-2">
-                Title
-                <input
-                  type="text"
-                  value={form.title}
-                  onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
-                  data-testid="maintenance-form-title"
-                  className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
-                />
-              </label>
-
-              <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-                Scheduled Date
-                <input
-                  type="date"
-                  value={form.scheduledDate}
-                  onChange={(event) => setForm((current) => ({ ...current, scheduledDate: event.target.value }))}
-                  data-testid="maintenance-form-scheduled-date"
-                  className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
-                />
-              </label>
-
-              <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-                Service Date
-                <input
-                  type="date"
-                  value={form.serviceDate}
-                  onChange={(event) => setForm((current) => ({ ...current, serviceDate: event.target.value }))}
-                  data-testid="maintenance-form-service-date"
-                  className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
-                />
-              </label>
-
-              <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-                Odometer (km)
-                <input
-                  type="number"
-                  min={0}
-                  value={form.odometerKm}
-                  onChange={(event) => setForm((current) => ({ ...current, odometerKm: event.target.value }))}
-                  className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
-                />
-              </label>
-
-              <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-                Priority
-                <select
-                  value={form.priority}
-                  onChange={(event) => setForm((current) => ({ ...current, priority: event.target.value }))}
-                  className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
-                >
-                  {options.priorities.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-                Next Due Date
-                <input
-                  type="date"
-                  value={form.nextDueDate}
-                  onChange={(event) => setForm((current) => ({ ...current, nextDueDate: event.target.value }))}
-                  className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
-                />
-              </label>
-
-              <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-                Next Due Odometer (km)
-                <input
-                  type="number"
-                  min={0}
-                  value={form.nextDueOdometerKm}
-                  onChange={(event) => setForm((current) => ({ ...current, nextDueOdometerKm: event.target.value }))}
-                  className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
-                />
-              </label>
-
-              <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-                Labor (cents)
-                <input
-                  type="number"
-                  min={0}
-                  value={form.laborCostCents}
-                  onChange={(event) => setForm((current) => ({ ...current, laborCostCents: event.target.value }))}
-                  className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
-                />
-              </label>
-
-              <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-                Parts (cents)
-                <input
-                  type="number"
-                  min={0}
-                  value={form.partsCostCents}
-                  onChange={(event) => setForm((current) => ({ ...current, partsCostCents: event.target.value }))}
-                  className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
-                />
-              </label>
-
-              <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-                Tax (cents)
-                <input
-                  type="number"
-                  min={0}
-                  value={form.taxCostCents}
-                  onChange={(event) => setForm((current) => ({ ...current, taxCostCents: event.target.value }))}
-                  className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
-                />
-              </label>
-
-              <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-                Estimated Cost (cents)
-                <input
-                  type="number"
-                  min={0}
-                  value={form.estimatedCostCents}
-                  onChange={(event) => setForm((current) => ({ ...current, estimatedCostCents: event.target.value }))}
-                  className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
-                />
-              </label>
-
-              <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-                Actual Cost (cents)
-                <input
-                  type="number"
-                  min={0}
-                  value={form.actualCostCents}
-                  onChange={(event) => setForm((current) => ({ ...current, actualCostCents: event.target.value }))}
-                  className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
-                />
-              </label>
-
-              <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-                Reminder Lead Days
-                <input
-                  type="number"
-                  min={0}
-                  value={form.reminderLeadDays}
-                  onChange={(event) => setForm((current) => ({ ...current, reminderLeadDays: event.target.value }))}
-                  className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
-                />
-              </label>
-
-              <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-                Vendor
-                <input
-                  type="text"
-                  value={form.vendorName}
-                  onChange={(event) => setForm((current) => ({ ...current, vendorName: event.target.value }))}
-                  className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
-                />
-              </label>
-
-              <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-                Vendor Contact
-                <input
-                  type="text"
-                  value={form.vendorContact}
-                  onChange={(event) => setForm((current) => ({ ...current, vendorContact: event.target.value }))}
-                  className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
-                />
-              </label>
-
-              <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)] sm:col-span-2">
-                Reference Number
-                <input
-                  type="text"
-                  value={form.referenceNumber}
-                  onChange={(event) => setForm((current) => ({ ...current, referenceNumber: event.target.value }))}
-                  className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
-                />
-              </label>
-
-              <div className="sm:col-span-2 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-                  Reference Links
-                </p>
-                <p className="mt-1 text-[11px] text-[var(--ccr-muted)]">
-                  Optional internal reference for reconciliation/reporting.
-                </p>
-                <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                  <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-                    Linked Expense ID
-                    <input
-                      type="text"
-                      value={form.linkedExpenseId}
-                      onChange={(event) =>
-                        setForm((current) => ({ ...current, linkedExpenseId: event.target.value }))
-                      }
-                      data-testid="maintenance-form-linked-expense"
-                      placeholder="UUID"
-                      className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
-                    />
-                  </label>
-
-                  <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-                    Linked Repair Order ID
-                    <input
-                      type="text"
-                      value={form.linkedRepairOrderId}
-                      onChange={(event) =>
-                        setForm((current) => ({ ...current, linkedRepairOrderId: event.target.value }))
-                      }
-                      data-testid="maintenance-form-linked-repair-order"
-                      placeholder="UUID"
-                      className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
-                    />
-                  </label>
-                </div>
-              </div>
-
-              <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)] sm:col-span-2">
-                Description
-                <textarea
-                  rows={3}
-                  value={form.description}
-                  onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
-                  className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
-                />
-              </label>
-
-              <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)] sm:col-span-2">
-                <input
-                  type="checkbox"
-                  checked={form.createBlockout}
-                  onChange={(event) => setForm((current) => ({ ...current, createBlockout: event.target.checked }))}
-                  data-testid="maintenance-form-create-blockout"
-                  className="h-4 w-4 rounded border border-[var(--ccr-border)] bg-transparent"
-                />
-                Create / update linked blockout for this maintenance
-              </label>
-
-              {form.createBlockout ? (
-                <>
-                  <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-                    Blockout Start
-                    <input
-                      type="datetime-local"
-                      value={form.blockoutStartAt}
-                      onChange={(event) => setForm((current) => ({ ...current, blockoutStartAt: event.target.value }))}
-                      className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
-                    />
-                  </label>
-
-                  <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-                    Blockout End
-                    <input
-                      type="datetime-local"
-                      value={form.blockoutEndAt}
-                      onChange={(event) => setForm((current) => ({ ...current, blockoutEndAt: event.target.value }))}
-                      className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
-                    />
-                  </label>
-
-                  <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)] sm:col-span-2">
-                    Blockout Reason
-                    <input
-                      type="text"
-                      value={form.blockoutReason}
-                      onChange={(event) => setForm((current) => ({ ...current, blockoutReason: event.target.value }))}
-                      data-testid="maintenance-form-blockout-reason"
-                      placeholder="Maintenance window"
-                      className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
-                    />
-                  </label>
-
-                  <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)] sm:col-span-2">
-                    Blockout Notes
-                    <textarea
-                      rows={2}
-                      value={form.blockoutNotes}
-                      onChange={(event) => setForm((current) => ({ ...current, blockoutNotes: event.target.value }))}
-                      className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
-                    />
-                  </label>
-                </>
-              ) : null}
-            </div>
-
-            <p className="mt-3 text-xs font-semibold text-[var(--ccr-muted)]">
-              Total preview: <span className="text-[var(--ccr-text)]">{formatCurrency(totalPreview)}</span>
-            </p>
-
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => void saveRecord()}
-                disabled={saving}
-                data-testid="maintenance-save"
-                className="min-h-11 rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
-              >
-                {saving ? "Saving..." : editingId ? "Save changes" : "Add maintenance"}
-              </button>
-              {editingId ? (
-                <button
-                  type="button"
-                  onClick={resetForm}
-                  className="min-h-11 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-xs font-semibold text-[var(--ccr-text)]"
-                >
-                  Cancel edit
-                </button>
-              ) : null}
-            </div>
-          </section>
-
-          {selectedRecord ? (
+        {selectedRecord ? (
             <section
               ref={detailSectionRef}
               data-testid="maintenance-detail"
-              className="order-1 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4"
+              className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4"
             >
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div>
@@ -2078,8 +1775,407 @@ function startEdit(item: MaintenanceRecord) {
               </div>
             </section>
           ) : null}
-        </section>
       </div>
-    </section>
+      </section>
+      <DrawerContent
+        data-testid="maintenance-form-drawer"
+        className="h-[100dvh] w-full p-0 sm:max-w-2xl"
+      >
+        <DrawerHeader className="border-b border-[var(--ccr-border)] px-4 py-3 sm:px-5 sm:py-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <DrawerTitle>{editingId ? "Edit Maintenance" : "Add Maintenance"}</DrawerTitle>
+              <DrawerDescription>
+                Create or update maintenance records for this vehicle.
+              </DrawerDescription>
+            </div>
+            <DrawerClose asChild>
+              <button
+                type="button"
+                aria-label="Close add maintenance drawer"
+                className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] text-[var(--ccr-text)]"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </DrawerClose>
+          </div>
+        </DrawerHeader>
+        <div className="flex-1 overflow-y-auto p-4 sm:p-5">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+              Status
+              <select
+                value={form.status}
+                onChange={(event) => setForm((current) => ({ ...current, status: event.target.value as RecordStatus }))}
+                className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+              >
+                {STATUS_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {formatStatus(option)}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+              Category
+              <select
+                value={form.category}
+                onChange={(event) => setForm((current) => ({ ...current, category: event.target.value }))}
+                className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+              >
+                {options.categories.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)] sm:col-span-2">
+              Title
+              <input
+                type="text"
+                value={form.title}
+                onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
+                data-testid="maintenance-form-title"
+                className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+              />
+            </label>
+
+            <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+              Scheduled Date
+              <div className="relative mt-1">
+                <input
+                  ref={scheduledDateInputRef}
+                  type="date"
+                  value={form.scheduledDate}
+                  onChange={(event) => setForm((current) => ({ ...current, scheduledDate: event.target.value }))}
+                  data-testid="maintenance-form-scheduled-date"
+                  className="promo-date-time-input min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 pr-10 text-sm text-[var(--ccr-text)]"
+                />
+                <button
+                  type="button"
+                  onClick={() => openNativeDatePicker(scheduledDateInputRef)}
+                  className="absolute right-2 top-1/2 inline-flex -translate-y-1/2 items-center justify-center rounded-md p-1 text-[var(--ccr-muted)] opacity-80 transition hover:opacity-100"
+                  aria-label="Open scheduled date calendar"
+                  title="Open calendar"
+                >
+                  <CalendarIcon className="h-4 w-4" />
+                </button>
+              </div>
+            </label>
+
+            <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+              Service Date
+              <div className="relative mt-1">
+                <input
+                  ref={serviceDateInputRef}
+                  type="date"
+                  value={form.serviceDate}
+                  onChange={(event) => setForm((current) => ({ ...current, serviceDate: event.target.value }))}
+                  data-testid="maintenance-form-service-date"
+                  className="promo-date-time-input min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 pr-10 text-sm text-[var(--ccr-text)]"
+                />
+                <button
+                  type="button"
+                  onClick={() => openNativeDatePicker(serviceDateInputRef)}
+                  className="absolute right-2 top-1/2 inline-flex -translate-y-1/2 items-center justify-center rounded-md p-1 text-[var(--ccr-muted)] opacity-80 transition hover:opacity-100"
+                  aria-label="Open service date calendar"
+                  title="Open calendar"
+                >
+                  <CalendarIcon className="h-4 w-4" />
+                </button>
+              </div>
+            </label>
+
+            <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+              Odometer (km)
+              <input
+                type="number"
+                min={0}
+                value={form.odometerKm}
+                onChange={(event) => setForm((current) => ({ ...current, odometerKm: event.target.value }))}
+                className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+              />
+            </label>
+
+            <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+              Priority
+              <select
+                value={form.priority}
+                onChange={(event) => setForm((current) => ({ ...current, priority: event.target.value }))}
+                className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+              >
+                {options.priorities.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+              Next Due Date
+              <div className="relative mt-1">
+                <input
+                  ref={nextDueDateInputRef}
+                  type="date"
+                  value={form.nextDueDate}
+                  onChange={(event) => setForm((current) => ({ ...current, nextDueDate: event.target.value }))}
+                  className="promo-date-time-input min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 pr-10 text-sm text-[var(--ccr-text)]"
+                />
+                <button
+                  type="button"
+                  onClick={() => openNativeDatePicker(nextDueDateInputRef)}
+                  className="absolute right-2 top-1/2 inline-flex -translate-y-1/2 items-center justify-center rounded-md p-1 text-[var(--ccr-muted)] opacity-80 transition hover:opacity-100"
+                  aria-label="Open next due date calendar"
+                  title="Open calendar"
+                >
+                  <CalendarIcon className="h-4 w-4" />
+                </button>
+              </div>
+            </label>
+
+            <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+              Next Due Odometer (km)
+              <input
+                type="number"
+                min={0}
+                value={form.nextDueOdometerKm}
+                onChange={(event) => setForm((current) => ({ ...current, nextDueOdometerKm: event.target.value }))}
+                className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+              />
+            </label>
+
+            <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+              Labor (cents)
+              <input
+                type="number"
+                min={0}
+                value={form.laborCostCents}
+                onChange={(event) => setForm((current) => ({ ...current, laborCostCents: event.target.value }))}
+                className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+              />
+            </label>
+
+            <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+              Parts (cents)
+              <input
+                type="number"
+                min={0}
+                value={form.partsCostCents}
+                onChange={(event) => setForm((current) => ({ ...current, partsCostCents: event.target.value }))}
+                className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+              />
+            </label>
+
+            <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+              Tax (cents)
+              <input
+                type="number"
+                min={0}
+                value={form.taxCostCents}
+                onChange={(event) => setForm((current) => ({ ...current, taxCostCents: event.target.value }))}
+                className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+              />
+            </label>
+
+            <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+              Estimated Cost (cents)
+              <input
+                type="number"
+                min={0}
+                value={form.estimatedCostCents}
+                onChange={(event) => setForm((current) => ({ ...current, estimatedCostCents: event.target.value }))}
+                className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+              />
+            </label>
+
+            <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+              Actual Cost (cents)
+              <input
+                type="number"
+                min={0}
+                value={form.actualCostCents}
+                onChange={(event) => setForm((current) => ({ ...current, actualCostCents: event.target.value }))}
+                className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+              />
+            </label>
+
+            <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+              Reminder Lead Days
+              <input
+                type="number"
+                min={0}
+                value={form.reminderLeadDays}
+                onChange={(event) => setForm((current) => ({ ...current, reminderLeadDays: event.target.value }))}
+                className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+              />
+            </label>
+
+            <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+              Vendor
+              <input
+                type="text"
+                value={form.vendorName}
+                onChange={(event) => setForm((current) => ({ ...current, vendorName: event.target.value }))}
+                className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+              />
+            </label>
+
+            <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+              Vendor Contact
+              <input
+                type="text"
+                value={form.vendorContact}
+                onChange={(event) => setForm((current) => ({ ...current, vendorContact: event.target.value }))}
+                className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+              />
+            </label>
+
+            <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)] sm:col-span-2">
+              Reference Number
+              <input
+                type="text"
+                value={form.referenceNumber}
+                onChange={(event) => setForm((current) => ({ ...current, referenceNumber: event.target.value }))}
+                className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+              />
+            </label>
+
+            <div className="sm:col-span-2 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                Reference Links
+              </p>
+              <p className="mt-1 text-[11px] text-[var(--ccr-muted)]">
+                Optional internal reference for reconciliation/reporting.
+              </p>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                  Linked Expense ID
+                  <input
+                    type="text"
+                    value={form.linkedExpenseId}
+                    onChange={(event) =>
+                      setForm((current) => ({ ...current, linkedExpenseId: event.target.value }))
+                    }
+                    data-testid="maintenance-form-linked-expense"
+                    placeholder="UUID"
+                    className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+                  />
+                </label>
+
+                <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                  Linked Repair Order ID
+                  <input
+                    type="text"
+                    value={form.linkedRepairOrderId}
+                    onChange={(event) =>
+                      setForm((current) => ({ ...current, linkedRepairOrderId: event.target.value }))
+                    }
+                    data-testid="maintenance-form-linked-repair-order"
+                    placeholder="UUID"
+                    className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+                  />
+                </label>
+              </div>
+            </div>
+
+            <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)] sm:col-span-2">
+              Description
+              <textarea
+                rows={3}
+                value={form.description}
+                onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
+                className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+              />
+            </label>
+
+            <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)] sm:col-span-2">
+              <input
+                type="checkbox"
+                checked={form.createBlockout}
+                onChange={(event) => setForm((current) => ({ ...current, createBlockout: event.target.checked }))}
+                data-testid="maintenance-form-create-blockout"
+                className="h-4 w-4 rounded border border-[var(--ccr-border)] bg-transparent"
+              />
+              Create / update linked blockout for this maintenance
+            </label>
+
+            {form.createBlockout ? (
+              <>
+                <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                  Blockout Start
+                  <input
+                    type="datetime-local"
+                    value={form.blockoutStartAt}
+                    onChange={(event) => setForm((current) => ({ ...current, blockoutStartAt: event.target.value }))}
+                    className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+                  />
+                </label>
+
+                <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                  Blockout End
+                  <input
+                    type="datetime-local"
+                    value={form.blockoutEndAt}
+                    onChange={(event) => setForm((current) => ({ ...current, blockoutEndAt: event.target.value }))}
+                    className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+                  />
+                </label>
+
+                <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)] sm:col-span-2">
+                  Blockout Reason
+                  <input
+                    type="text"
+                    value={form.blockoutReason}
+                    onChange={(event) => setForm((current) => ({ ...current, blockoutReason: event.target.value }))}
+                    data-testid="maintenance-form-blockout-reason"
+                    placeholder="Maintenance window"
+                    className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+                  />
+                </label>
+
+                <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)] sm:col-span-2">
+                  Blockout Notes
+                  <textarea
+                    rows={2}
+                    value={form.blockoutNotes}
+                    onChange={(event) => setForm((current) => ({ ...current, blockoutNotes: event.target.value }))}
+                    className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+                  />
+                </label>
+              </>
+            ) : null}
+          </div>
+
+          <p className="mt-3 text-xs font-semibold text-[var(--ccr-muted)]">
+            Total preview: <span className="text-[var(--ccr-text)]">{formatCurrency(totalPreview)}</span>
+          </p>
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void saveRecord()}
+              disabled={saving}
+              data-testid="maintenance-save"
+              className="min-h-11 rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
+            >
+              {saving ? "Saving..." : editingId ? "Save changes" : "Add maintenance"}
+            </button>
+            {editingId ? (
+              <button
+                type="button"
+                onClick={resetForm}
+                className="min-h-11 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+              >
+                Cancel edit
+              </button>
+            ) : null}
+          </div>
+        </div>
+      </DrawerContent>
+    </Drawer>
   );
 }

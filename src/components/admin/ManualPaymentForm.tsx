@@ -8,6 +8,7 @@ import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
 type ManualPaymentFormProps = {
   bookingId: string;
+  bookingPublicId: string;
   total: number;
   paidToDate: number;
   balanceDue: number;
@@ -35,6 +36,7 @@ function toDateTimeLocalValue(date: Date) {
 
 export function ManualPaymentForm({
   bookingId,
+  bookingPublicId,
   total,
   paidToDate,
   balanceDue,
@@ -97,6 +99,16 @@ export function ManualPaymentForm({
     const numericAmount = Number(amount);
     if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
       setError("Enter a valid payment amount.");
+      setLoading(false);
+      return;
+    }
+
+    const methodLabel =
+      METHODS.find((option) => option.value === method)?.label ?? method;
+    const confirmed = window.confirm(
+      `Record ${formatJmd(numericAmount)} via ${methodLabel} for booking ${bookingPublicId}?`,
+    );
+    if (!confirmed) {
       setLoading(false);
       return;
     }

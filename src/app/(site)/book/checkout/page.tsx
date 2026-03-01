@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
 import { clearBookingDraft } from "@/lib/bookings/draft";
@@ -39,6 +39,7 @@ export default function BookingCheckoutPage() {
   const searchParams = useSearchParams();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [starting, setStarting] = useState(true);
+  const checkoutStartedKeyRef = useRef<string | null>(null);
 
   const bookingId = normalizeText(searchParams.get("bookingId"));
   const option = useMemo(
@@ -55,6 +56,14 @@ export default function BookingCheckoutPage() {
 
   useEffect(() => {
     let cancelled = false;
+    const checkoutKey = [bookingId, option ?? "", customAmountCents ?? ""].join(":");
+
+    if (checkoutStartedKeyRef.current === checkoutKey) {
+      return () => {
+        cancelled = true;
+      };
+    }
+    checkoutStartedKeyRef.current = checkoutKey;
 
     async function startCheckout() {
       if (!bookingId) {

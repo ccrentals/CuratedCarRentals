@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { CalendarIcon } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { ADMIN_ACCENT_RING_CLASS } from "@/components/admin/adminUiClasses";
@@ -27,6 +28,8 @@ export default function BookingFilters({ canAdmin }: { canAdmin?: boolean }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const dateFromInputRef = useRef<HTMLInputElement | null>(null);
+  const dateToInputRef = useRef<HTMLInputElement | null>(null);
 
   const scopeParam = searchParams.get("scope")?.toLowerCase() === "upcoming" ? "upcoming" : "all";
   const statusParam = normalizeStatus(searchParams.get("status"));
@@ -53,7 +56,11 @@ export default function BookingFilters({ canAdmin }: { canAdmin?: boolean }) {
 
   const updateParams = useCallback(
     (updates: Record<string, string | null | undefined>) => {
-      const params = new URLSearchParams(searchParams.toString());
+      const baseParams =
+        typeof window === "undefined"
+          ? new URLSearchParams(searchParams.toString())
+          : new URLSearchParams(window.location.search);
+      const params = new URLSearchParams(baseParams.toString());
       Object.entries(updates).forEach(([key, value]) => {
         if (!value) {
           params.delete(key);
@@ -63,7 +70,7 @@ export default function BookingFilters({ canAdmin }: { canAdmin?: boolean }) {
       });
       const next = params.toString();
       const nextUrl = next ? `${pathname}?${next}` : pathname;
-      const current = searchParams.toString();
+      const current = baseParams.toString();
       const currentUrl = current ? `${pathname}?${current}` : pathname;
       if (nextUrl !== currentUrl) {
         router.replace(nextUrl, { scroll: false });
@@ -93,6 +100,24 @@ export default function BookingFilters({ canAdmin }: { canAdmin?: boolean }) {
     () => status !== "all" || query.trim() || dateFrom || dateTo || showArchived,
     [status, query, dateFrom, dateTo, showArchived],
   );
+
+  const openNativePicker = useCallback((ref: RefObject<HTMLInputElement | null>) => {
+    const input = ref.current;
+    if (!input) return;
+
+    const pickerInput = input as HTMLInputElement & { showPicker?: () => void };
+    if (typeof pickerInput.showPicker === "function") {
+      try {
+        pickerInput.showPicker();
+        return;
+      } catch {
+        // Fall through for browsers that block showPicker.
+      }
+    }
+
+    input.focus();
+    input.click();
+  }, []);
 
   return (
     <div className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
@@ -166,31 +191,63 @@ export default function BookingFilters({ canAdmin }: { canAdmin?: boolean }) {
           <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
             Date from
           </label>
-          <input
-            type="date"
-            value={dateFrom}
-            onChange={(event) => {
-              const value = event.target.value;
-              setDateFrom(value);
-              updateParams({ dateFrom: value && DATE_RE.test(value) ? value : null });
-            }}
-            className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
-          />
+          <div className="relative mt-1">
+            <input
+              ref={dateFromInputRef}
+              type="date"
+              value={dateFrom}
+              onChange={(event) => {
+                const value = event.target.value;
+                setDateFrom(value);
+                updateParams({
+                  dateFrom: value && DATE_RE.test(value) ? value : null,
+                  dateTo: dateTo && DATE_RE.test(dateTo) ? dateTo : null,
+                });
+              }}
+              data-testid="bookings-filter-date-from"
+              className="promo-date-time-input w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 pr-10 text-sm text-[var(--ccr-text)]"
+            />
+            <button
+              type="button"
+              onClick={() => openNativePicker(dateFromInputRef)}
+              className="absolute right-2 top-1/2 inline-flex -translate-y-1/2 items-center justify-center rounded-md p-1 text-[var(--ccr-muted)] opacity-80 transition hover:opacity-100"
+              aria-label="Open date from calendar"
+              title="Open calendar"
+            >
+              <CalendarIcon className="h-4 w-4" />
+            </button>
+          </div>
         </div>
         <div>
           <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
             Date to
           </label>
-          <input
-            type="date"
-            value={dateTo}
-            onChange={(event) => {
-              const value = event.target.value;
-              setDateTo(value);
-              updateParams({ dateTo: value && DATE_RE.test(value) ? value : null });
-            }}
-            className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
-          />
+          <div className="relative mt-1">
+            <input
+              ref={dateToInputRef}
+              type="date"
+              value={dateTo}
+              onChange={(event) => {
+                const value = event.target.value;
+                setDateTo(value);
+                updateParams({
+                  dateFrom: dateFrom && DATE_RE.test(dateFrom) ? dateFrom : null,
+                  dateTo: value && DATE_RE.test(value) ? value : null,
+                });
+              }}
+              data-testid="bookings-filter-date-to"
+              className="promo-date-time-input w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 pr-10 text-sm text-[var(--ccr-text)]"
+            />
+            <button
+              type="button"
+              onClick={() => openNativePicker(dateToInputRef)}
+              className="absolute right-2 top-1/2 inline-flex -translate-y-1/2 items-center justify-center rounded-md p-1 text-[var(--ccr-muted)] opacity-80 transition hover:opacity-100"
+              aria-label="Open date to calendar"
+              title="Open calendar"
+            >
+              <CalendarIcon className="h-4 w-4" />
+            </button>
+          </div>
         </div>
       </div>
 

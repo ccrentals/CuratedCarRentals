@@ -87,6 +87,37 @@ export async function POST(
       }
     }
 
+    // Idempotency guard for rapid duplicate manual submissions (same actor/method/amount/time window).
+    // This prevents accidental double-adds from retries/clicks without blocking legitimate later payments.
+    const duplicateWindowSeconds = 90;
+    const duplicateParams = [booking.id, amount, method, paidAtIso, actor.userId, duplicateWindowSeconds];
+    let duplicateRecent;
+    try {
+      duplicateRecent = await client.query(
+        "select id from payments where booking_id = $1 and provider = 'MANUAL' and status = 'DEPOSIT_PAID' and deleted_at is null and deposit_amount_cents = $2 and coalesce(metadata_json->>'method', '') = $3 and coalesce(metadata_json->>'entered_by', '') = $5 and abs(extract(epoch from (coalesce(nullif(metadata_json->>'paid_at', '')::timestamptz, created_at) - $4::timestamptz))) <= $6 order by created_at desc limit 1",
+        duplicateParams,
+      );
+    } catch (error) {
+      const code = (error as { code?: string } | null)?.code;
+      const message = String((error as { message?: unknown } | null)?.message ?? "");
+      if (code === "42703" && message.includes("\"deleted_at\"") && message.includes("does not exist")) {
+        duplicateRecent = await client.query(
+          "select id from payments where booking_id = $1 and provider = 'MANUAL' and status = 'DEPOSIT_PAID' and deposit_amount_cents = $2 and coalesce(metadata_json->>'method', '') = $3 and coalesce(metadata_json->>'entered_by', '') = $5 and abs(extract(epoch from (coalesce(nullif(metadata_json->>'paid_at', '')::timestamptz, created_at) - $4::timestamptz))) <= $6 order by created_at desc limit 1",
+          duplicateParams,
+        );
+      } else {
+        throw error;
+      }
+    }
+    if ((duplicateRecent?.rowCount ?? 0) > 0) {
+      await client.query("rollback");
+      return NextResponse.json({
+        ok: true,
+        duplicate: true,
+        paymentId: duplicateRecent?.rows?.[0]?.id ?? null,
+      });
+    }
+
     await client.query(
       "insert into payments (booking_id, provider, deposit_amount_cents, currency, status, provider_ref, metadata_json) values ($1, 'MANUAL', $2, 'JMD', 'DEPOSIT_PAID', $3, $4)",
       [

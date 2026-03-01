@@ -20,6 +20,7 @@ type ActionKey = keyof typeof actionLabels;
 
 type BookingActionsProps = {
   bookingId: string;
+  bookingPublicId?: string;
   bookingStatus?: string;
   isPaidInFull?: boolean;
   isDepositPaid?: boolean;
@@ -29,6 +30,7 @@ type BookingActionsProps = {
 
 export function BookingActions({
   bookingId,
+  bookingPublicId,
   bookingStatus,
   isPaidInFull,
   isDepositPaid,
@@ -85,6 +87,17 @@ export function BookingActions({
 
     if (actionKey === "cancel") {
       const confirmed = window.confirm("Cancel this booking?");
+      if (!confirmed) {
+        setLoadingKey(null);
+        return;
+      }
+    }
+
+    if (actionKey === "full") {
+      const target = bookingPublicId?.trim() || bookingId.slice(0, 8);
+      const confirmed = window.confirm(
+        `Record manual balance payment for booking ${target}? This action updates paid totals immediately.`,
+      );
       if (!confirmed) {
         setLoadingKey(null);
         return;

@@ -319,6 +319,7 @@ export function VehiclePerformancePanel({ vehicleId }: VehiclePerformancePanelPr
                 onChange={(event) =>
                   setCustomRange((current) => ({ ...current, start: event.target.value }))
                 }
+                data-testid="performance-custom-start"
                 className="min-h-11 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 text-sm text-[var(--ccr-text)]"
               />
             </label>
@@ -330,6 +331,7 @@ export function VehiclePerformancePanel({ vehicleId }: VehiclePerformancePanelPr
                 onChange={(event) =>
                   setCustomRange((current) => ({ ...current, end: event.target.value }))
                 }
+                data-testid="performance-custom-end"
                 className="min-h-11 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 text-sm text-[var(--ccr-text)]"
               />
             </label>

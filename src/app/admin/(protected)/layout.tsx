@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { clerkClient } from "@clerk/nextjs/server";
 
 import { resolveAdminActor } from "@/lib/auth/adminGuards";
 import { dbQuery } from "@/lib/db";
@@ -6,7 +7,9 @@ import {
   getUnreadContactMessagesCount,
   isContactMessagesMissingTableError,
 } from "@/lib/messages/adminMessages";
+import { isClerkEnabled } from "@/lib/security/clerk";
 import { AdminShell } from "@/components/admin/AdminShell";
+import { ForcePasswordChangeGate } from "@/components/security/ForcePasswordChangeGate";
 
 function isUndefinedColumn(error: unknown, column: string) {
   const code = (error as { code?: string } | null)?.code;
@@ -68,12 +71,36 @@ export default async function AdminLayout({
     redirect("/admin/set-password");
   }
 
+  let forcePasswordChangeRequired = false;
+  let tempPasswordExpiresAt: string | null = null;
+  if (session.source === "clerk" && session.clerkUserId && isClerkEnabled()) {
+    try {
+      const clerk = await clerkClient();
+      const clerkUser = await clerk.users.getUser(session.clerkUserId);
+      const metadata =
+        clerkUser.publicMetadata && typeof clerkUser.publicMetadata === "object"
+          ? (clerkUser.publicMetadata as Record<string, unknown>)
+          : {};
+      forcePasswordChangeRequired = metadata.forcePasswordChange === true;
+      tempPasswordExpiresAt =
+        typeof metadata.tempPasswordExpiresAt === "string" ? metadata.tempPasswordExpiresAt : null;
+    } catch {
+      forcePasswordChangeRequired = false;
+      tempPasswordExpiresAt = null;
+    }
+  }
+
   return (
     <AdminShell
       user={{ email: user.email, role: user.role ?? "Admin" }}
       unreadMessagesCount={unreadMessagesCount}
     >
-      {children}
+      <ForcePasswordChangeGate
+        required={forcePasswordChangeRequired}
+        expiresAt={tempPasswordExpiresAt}
+      >
+        {children}
+      </ForcePasswordChangeGate>
     </AdminShell>
   );
 }

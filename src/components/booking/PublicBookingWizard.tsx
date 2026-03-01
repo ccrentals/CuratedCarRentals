@@ -1319,9 +1319,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
   const step4Complete =
     step3Complete &&
     Boolean(normalizeText(firstName)) &&
-    Boolean(normalizeText(lastName)) &&
-    Boolean(normalizeText(driversLicenseNumber)) &&
-    Boolean(driversLicenseImageUrl);
+    Boolean(normalizeText(lastName));
   const step5Complete = step4Complete && Boolean(signatureDataUrl) && acceptTerms;
 
   function getEarliestMissingStep(targetStep: WizardStep): WizardStep | null {
@@ -1399,14 +1397,6 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
         setErrorMessage("First name and last name are required.");
         return false;
       }
-      if (!normalizeText(driversLicenseNumber)) {
-        setErrorMessage("Driver's license number is required.");
-        return false;
-      }
-      if (!driversLicenseImageUrl) {
-        setErrorMessage("Driver's license image upload is required.");
-        return false;
-      }
     }
 
     if (stepToValidate === 5) {
@@ -1431,10 +1421,6 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
       }
       if (!pricingQuote) {
         setErrorMessage("Live pricing is still refreshing. Please wait before continuing.");
-        return false;
-      }
-      if (!driversLicenseImageUrl || !normalizeText(driversLicenseNumber)) {
-        setErrorMessage("Driver's license number and image are required.");
         return false;
       }
       if (paymentOption === "CUSTOM" && !customPaymentIsValid) {
@@ -2554,13 +2540,11 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                       Driver&apos;s License
                     </p>
                     <p className="mt-1 text-sm text-[var(--ccr-muted)]">
-                      Driver&apos;s license number and image are mandatory.
+                      Driver&apos;s license details are optional.
                     </p>
                     <div className="mt-4 grid gap-4 md:grid-cols-2">
                       <label className="block">
-                        <span className="text-sm font-semibold text-[var(--ccr-muted)]">
-                          DL Number *
-                        </span>
+                        <span className="text-sm font-semibold text-[var(--ccr-muted)]">DL Number</span>
                         <input
                           value={driversLicenseNumber}
                           onChange={(event) => setDriversLicenseNumber(event.target.value)}
@@ -2617,8 +2601,8 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                         Driver&apos;s license image uploaded.
                       </p>
                     ) : (
-                      <p className="mt-2 text-sm text-rose-600">
-                        Driver&apos;s license image is required.
+                      <p className="mt-2 text-sm text-[var(--ccr-muted)]">
+                        Optional: upload a driver&apos;s license image.
                       </p>
                     )}
                   </div>

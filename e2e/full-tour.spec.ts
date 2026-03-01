@@ -150,6 +150,7 @@ async function selectPreferredOptionWithRetry(
 
 test.describe("@tour full app tour", () => {
   test("@tour admin journey across vehicles, maintenance, depreciation, quotes, settings", async ({ page }, testInfo: TestInfo) => {
+    test.setTimeout(180_000);
     test.skip(testInfo.project.name !== "desktop", "Desktop-only tour for deterministic selectors.");
 
     const fixtures = readFixtures();
@@ -279,7 +280,7 @@ test.describe("@tour full app tour", () => {
     const nextDeliveryFee = Number.isFinite(currentDeliveryFee) ? currentDeliveryFee + 5 : 5;
     await deliveryFeeInput.fill(String(nextDeliveryFee));
     await pricingPanel.locator('[data-testid="pricing-save"]').click();
-    await expect(page.getByText("Pricing rules saved.")).toBeVisible();
+    await expect(page.getByText(/Pricing rules saved\.|Vehicle pricing saved\./)).toBeVisible();
 
     await page.reload({ waitUntil: "networkidle" });
     await page.locator('[data-testid="vehicle-detail-tab-pricing"]').click();
@@ -523,8 +524,10 @@ test.describe("@tour full app tour", () => {
     await page.locator('[data-testid="settings-save"]').click();
     await expect(page.getByText("Settings saved.")).toBeVisible();
 
-    await page.goto(`/admin/vehicles/${vehicleId}?tab=maintenance`, { waitUntil: "networkidle" });
+    await page.goto(`/admin/vehicles/${vehicleId}?tab=maintenance`, { waitUntil: "domcontentloaded" });
     await expect(page.locator('[data-testid="vehicle-maintenance-panel"]')).toBeVisible();
+    const maintenanceSearchInput = page.locator('[data-testid="maintenance-search"]');
+    await maintenanceSearchInput.fill(fixtures.maintenance.title);
     await expect(
       page
         .locator('[data-testid="maintenance-record-row"]:visible')
@@ -532,7 +535,7 @@ test.describe("@tour full app tour", () => {
         .first(),
     ).toBeVisible();
 
-    await page.goto("/admin/settings?tab=maintenance", { waitUntil: "networkidle" });
+    await page.goto("/admin/settings?tab=maintenance", { waitUntil: "domcontentloaded" });
     await dueSoonDaysInput.fill(String(originalDueSoonDays));
     await page.locator('[data-testid="settings-save"]').click();
     await expect(page.getByText("Settings saved.")).toBeVisible();

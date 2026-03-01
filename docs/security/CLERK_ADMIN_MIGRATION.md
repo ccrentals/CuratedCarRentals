@@ -73,14 +73,18 @@ Configure these in Clerk Dashboard so `/sign-in` works for both SSO and credenti
    Set values:
    - `Email address`: **Enabled** for sign in + sign up
    - `Phone number`: **Disabled** for sign in + sign up
-   - `Username`: **Optional** (or Disabled if not needed yet)
+   - `Username`: **Enabled** for sign in
 3. **Sign-up fields path**: `Dashboard -> User & Authentication -> Sign-up`  
    Set values:
    - `Phone number`: **Not required**
    - `First name/Last name`: optional based on your policy
-4. **Credential identifier policy**: prefer **email** for Clerk password sign-in  
-   Reason: many legacy local usernames include `.` which Clerk usernames do not allow (`letters/numbers/-/_` only).  
-   The app auto-normalizes generated Clerk usernames to supported characters.
+4. **Credential identifier policy**: support **email + username** for Clerk password sign-in  
+   Username standard in this app:
+   - format: first initial + full last name
+   - lowercase
+   - punctuation/spaces removed
+   - example: `Melody Malcolm` => `mmalcolm`
+   Collisions are resolved automatically with numeric suffixes (`mmalcolm2`, `mmalcolm3`, ...).
 5. **Redirect URLs**:
    - Sign in URL: `/sign-in`
    - Sign up URL: `/sign-up`

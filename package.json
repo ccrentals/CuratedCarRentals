@@ -22,6 +22,7 @@
     "e2e:watch:headed": "npm run e2e:headed",
     "test": "tsx --test",
     "lint": "eslint",
+    "clerk:sync-usernames": "tsx scripts/clerk_sync_usernames.ts",
     "check:vehicle-finance": "tsx scripts/check-no-vehicle-finance-refs.ts",
     "test:e2e": "playwright test",
     "pw:list": "mkdir -p .artifacts && npx playwright test --list > .artifacts/playwright-test-list.txt",
@@ -32,14 +33,19 @@
   "dependencies": {
     "@clerk/nextjs": "^6.38.2",
     "@prisma/client": "^7.3.0",
+    "@radix-ui/react-dialog": "^1.1.15",
+    "@radix-ui/react-popover": "^1.1.15",
     "bcryptjs": "^2.4.3",
+    "date-fns": "^4.1.0",
     "dotenv": "^17.2.3",
     "lucide-react": "^0.575.0",
     "next": "16.1.6",
     "pg": "^8.18.0",
     "prisma": "^6.19.2",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-day-picker": "^9.14.0",
+    "react-dom": "19.2.3",
+    "vaul": "^1.1.2"
   },
   "devDependencies": {
     "@playwright/test": "^1.50.1",

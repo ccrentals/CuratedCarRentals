@@ -2,6 +2,7 @@ import { SignIn } from "@clerk/nextjs";
 import Link from "next/link";
 
 import { AuthPageShell } from "@/components/security/AuthPageShell";
+import { SignInIdentifierHint } from "@/components/security/SignInIdentifierHint";
 import { isClerkPublishableKeyConfigured } from "@/lib/security/clerk";
 import styles from "./sign-in.module.css";
 
@@ -39,6 +40,7 @@ export default function SignInPage() {
             appearance={signInAppearance}
           />
         </div>
+        <SignInIdentifierHint />
         <div className={`mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 ${styles.authActions}`}>
           <Link href="/" className={styles.authActionButton}>
             Back to Home

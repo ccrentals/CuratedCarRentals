@@ -479,6 +479,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
         <div className="w-full pt-1">
           <BookingActions
             bookingId={booking.id}
+            bookingPublicId={bookingPublicId}
             bookingStatus={booking.status}
             isPaidInFull={isPaidInFull}
             isDepositPaid={isDepositPaid}
@@ -704,6 +705,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
         </div>
         <ManualPaymentForm
           bookingId={booking.id}
+          bookingPublicId={bookingPublicId}
           total={total}
           paidToDate={paidToDate}
           balanceDue={balanceDue}
@@ -716,7 +718,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
               <thead className="border-b border-[var(--ccr-border)] text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
                 <tr>
                   <th className="px-3 py-2">Payment ID</th>
-                  <th className="px-3 py-2">Provider</th>
+                  <th className="px-3 py-2">Payment Method</th>
                   <th className="px-3 py-2">Status</th>
                   <th className="px-3 py-2">Amount</th>
                   <th className="px-3 py-2">Created</th>

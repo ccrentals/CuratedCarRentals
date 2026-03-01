@@ -151,6 +151,28 @@ Invoice PDFs are generated via PDFMonkey (and attached to emails when available)
 
 If PDFMonkey hits quota or is misconfigured, the UI and emails should degrade gracefully (health page will show status).
 
+### Local Gotenberg install (alternative PDF engine)
+
+Gotenberg is installed locally via Docker and exposed on `http://localhost:3001`.
+
+Start:
+
+```bash
+docker-compose -f docker-compose.gotenberg.yml up -d
+```
+
+Stop:
+
+```bash
+docker-compose -f docker-compose.gotenberg.yml down
+```
+
+Health check:
+
+```bash
+curl http://localhost:3001/health
+```
+
 ## Cron reminders
 
 Reminders are exposed as routes and can be run from the admin UI:

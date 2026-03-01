@@ -50,10 +50,10 @@ test("draft restore keeps vehicle, dates, locations, insurance, and payment opti
   assert.equal(restored.paymentOption, "FULL");
 });
 
-test("draft restore security state requires re-upload for license and signature", () => {
+test("draft restore security state keeps license upload optional and re-requires signature", () => {
   const security = draftRestoreSecurityState();
 
-  assert.equal(security.requiresDriversLicenseUpload, true);
+  assert.equal(security.requiresDriversLicenseUpload, false);
   assert.equal(security.requiresSignatureUpload, true);
   assert.equal(security.driversLicenseImageUrl, "");
   assert.equal(security.signatureDataUrl, "");
