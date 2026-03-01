@@ -247,6 +247,8 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
   }
 
   const rackPrice = item.rackPriceCents ?? item.baseTotalCents;
+  const isCancelled = item.status === "CANCELLED";
+  const canToggleInvoiceCancellation = ["DRAFT", "SENT", "ACCEPTED", "CANCELLED"].includes(item.status);
 
   return (
     <div data-testid="quote-detail" className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
@@ -293,6 +295,14 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
             className="inline-flex min-h-9 items-center justify-center rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
           >
             {item.convertedBookingId ? "Converted" : converting ? "Converting..." : "Convert to Booking"}
+          </button>
+          <button
+            type="button"
+            onClick={() => void patchQuote({ status: isCancelled ? "SENT" : "CANCELLED" })}
+            disabled={saving || !canToggleInvoiceCancellation || Boolean(item.convertedBookingId)}
+            className="inline-flex min-h-9 items-center justify-center rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
+          >
+            {isCancelled ? "Revert Cancellation" : "Cancel Invoice"}
           </button>
         </div>
       </div>

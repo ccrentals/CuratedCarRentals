@@ -28,6 +28,7 @@ test("quote transition map: allows expected transitions", () => {
     ["ACCEPTED", "CONVERTED"],
     ["ACCEPTED", "EXPIRED"],
     ["ACCEPTED", "CANCELLED"],
+    ["CANCELLED", "SENT"],
   ];
 
   for (const [fromStatus, toStatus] of allowed) {
@@ -95,4 +96,3 @@ test("admin quote PATCH surfaces clear transition error message", async () => {
   assert.equal(body.code, "INVALID_STATUS_TRANSITION");
   assert.equal(body.error, expectedError);
 });
-

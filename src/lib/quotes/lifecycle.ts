@@ -18,7 +18,7 @@ const QUOTE_STATUS_TRANSITIONS: Record<QuoteStatus, ReadonlySet<QuoteStatus>> = 
   ACCEPTED: new Set<QuoteStatus>(["CONVERTED", "EXPIRED", "CANCELLED"]),
   EXPIRED: new Set<QuoteStatus>([]),
   CONVERTED: new Set<QuoteStatus>([]),
-  CANCELLED: new Set<QuoteStatus>([]),
+  CANCELLED: new Set<QuoteStatus>(["SENT"]),
 };
 
 export function normalizeQuoteStatus(value: unknown): QuoteStatus | null {
@@ -65,4 +65,3 @@ export function getQuoteStatusTransitionError(
   }
   return `Invalid quote status transition: ${fromStatus} -> ${toStatus}`;
 }
-
