@@ -931,6 +931,9 @@ export async function convertQuoteToBooking(input: {
 
     const bookingPricingJson = {
       ...pricingSnapshot.pricingJson,
+      customer_name_snapshot: quote.customerFullName,
+      customer_email_snapshot: quote.customerEmail,
+      customer_phone_snapshot: quote.customerPhone,
       promo_code_id: promoId,
       promo_discount_cents: promoDiscount,
       discount_total_cents: pricingSnapshot.summary.discountTotalCents,

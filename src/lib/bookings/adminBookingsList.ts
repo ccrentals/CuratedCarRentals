@@ -313,6 +313,9 @@ function buildBookingsQuery(input: {
   const whereClauses: string[] = [];
   const values: Array<string | string[] | number> = [];
   let index = 1;
+  const customerNameExpr = "coalesce(nullif(b.pricing_json->>'customer_name_snapshot', ''), c.full_name)";
+  const customerEmailExpr = "coalesce(nullif(b.pricing_json->>'customer_email_snapshot', ''), c.email)";
+  const customerPhoneExpr = "coalesce(nullif(b.pricing_json->>'customer_phone_snapshot', ''), c.phone)";
 
   const forceExcludeArchived = input.scope === UPCOMING_SCOPE;
   if (input.includeArchiveFilter && (!input.includeArchived || forceExcludeArchived)) {
@@ -351,7 +354,7 @@ function buildBookingsQuery(input: {
 
   if (input.q) {
     whereClauses.push(
-      `(c.full_name ilike $${index} or c.email ilike $${index} or c.phone ilike $${index} or b.id::text ilike $${index} or b.public_id ilike $${index})`,
+      `(${customerNameExpr} ilike $${index} or ${customerEmailExpr} ilike $${index} or ${customerPhoneExpr} ilike $${index} or b.id::text ilike $${index} or b.public_id ilike $${index})`,
     );
     values.push(`${input.q}%`);
     index += 1;
@@ -385,7 +388,7 @@ function buildBookingsQuery(input: {
     input.sortBy === "booking"
       ? `order by b.public_id ${directionSql}, b.id::text ${directionSql}`
       : input.sortBy === "customer"
-        ? `order by lower(c.full_name) ${directionSql}, lower(c.email) ${directionSql}, b.id::text ${directionSql}`
+        ? `order by lower(${customerNameExpr}) ${directionSql}, lower(${customerEmailExpr}) ${directionSql}, b.id::text ${directionSql}`
         : input.sortBy === "vehicle"
           ? `order by lower(v.make) ${directionSql}, lower(v.model) ${directionSql}, b.id::text ${directionSql}`
           : input.sortBy === "dates"
@@ -399,7 +402,7 @@ function buildBookingsQuery(input: {
   values.push(Math.max(0, input.offset));
   const offsetIndex = values.length;
   const text =
-    "select b.id, b.public_id, b.archived_at, b.start_at, b.end_at, b.start_date, b.end_date, b.created_at, b.status, b.pricing_json, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model, v.deposit_cents as vehicle_deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id " +
+    `select b.id, b.public_id, b.archived_at, b.start_at, b.end_at, b.start_date, b.end_date, b.created_at, b.status, b.pricing_json, ${customerNameExpr} as customer_name, ${customerEmailExpr} as customer_email, v.make as vehicle_make, v.model as vehicle_model, v.deposit_cents as vehicle_deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id ` +
     whereSql +
     ` ${orderBySql} limit $${limitIndex} offset $${offsetIndex}`;
 
@@ -502,7 +505,7 @@ export async function fetchAdminBookingsPage(input: AdminBookingListQueryInput):
   const overriddenByPublicIdByBookingId = new Map<string, string>();
   if (overriddenByBookingIds.length > 0) {
     const overriddenBookings = await dbQuery<{ id: string; public_id: string; customer_name: string }>(
-      "select b.id::text as id, b.public_id, c.full_name as customer_name from bookings b join customers c on c.id = b.customer_id where b.id::text = any($1::text[])",
+      "select b.id::text as id, b.public_id, coalesce(nullif(b.pricing_json->>'customer_name_snapshot', ''), c.full_name) as customer_name from bookings b join customers c on c.id = b.customer_id where b.id::text = any($1::text[])",
       [overriddenByBookingIds],
     );
     for (const row of overriddenBookings.rows) {

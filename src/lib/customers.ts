@@ -13,6 +13,7 @@ type CustomerLookupRow = {
   id: string;
   is_blocked: boolean | null;
   blocked_reason: string | null;
+  full_name?: string | null;
 };
 
 export class CustomerBlockedError extends Error {
@@ -75,7 +76,7 @@ function ensureNotBlocked(customer: { id: string; is_blocked: unknown; blocked_r
 async function findCustomerById(db: Queryable, customerId: string) {
   try {
     const result = await db.query(
-      "select id, coalesce(is_blocked, false) as is_blocked, blocked_reason from customers where id = $1 limit 1",
+      "select id, coalesce(is_blocked, false) as is_blocked, blocked_reason, full_name from customers where id = $1 limit 1",
       [customerId],
     );
     return (result.rows[0] as CustomerLookupRow | undefined) ?? null;
@@ -84,7 +85,7 @@ async function findCustomerById(db: Queryable, customerId: string) {
       throw error;
     }
     const fallback = await db.query(
-      "select id, false as is_blocked, null::text as blocked_reason from customers where id = $1 limit 1",
+      "select id, false as is_blocked, null::text as blocked_reason, full_name from customers where id = $1 limit 1",
       [customerId],
     );
     return (fallback.rows[0] as CustomerLookupRow | undefined) ?? null;
@@ -94,7 +95,7 @@ async function findCustomerById(db: Queryable, customerId: string) {
 async function findMatchingCustomer(db: Queryable, email: string, phone: string) {
   try {
     const result = await db.query(
-      "select id, coalesce(is_blocked, false) as is_blocked, blocked_reason from customers where lower(email) = lower($1) or phone = $2 order by case when lower(email) = lower($1) then 0 else 1 end, case when phone = $2 then 0 else 1 end, created_at asc limit 1",
+      "select id, coalesce(is_blocked, false) as is_blocked, blocked_reason, full_name from customers where lower(email) = lower($1) or phone = $2 order by case when lower(email) = lower($1) then 0 else 1 end, case when phone = $2 then 0 else 1 end, created_at asc limit 1",
       [email, phone],
     );
     return (result.rows[0] as CustomerLookupRow | undefined) ?? null;
@@ -103,7 +104,7 @@ async function findMatchingCustomer(db: Queryable, email: string, phone: string)
       throw error;
     }
     const fallback = await db.query(
-      "select id, false as is_blocked, null::text as blocked_reason from customers where lower(email) = lower($1) or phone = $2 order by case when lower(email) = lower($1) then 0 else 1 end, case when phone = $2 then 0 else 1 end, created_at asc limit 1",
+      "select id, false as is_blocked, null::text as blocked_reason, full_name from customers where lower(email) = lower($1) or phone = $2 order by case when lower(email) = lower($1) then 0 else 1 end, case when phone = $2 then 0 else 1 end, created_at asc limit 1",
       [email, phone],
     );
     return (fallback.rows[0] as CustomerLookupRow | undefined) ?? null;
@@ -311,8 +312,12 @@ export async function upsertCustomerForBooking(
       is_blocked: matched?.is_blocked ?? false,
       blocked_reason: matched?.blocked_reason ?? null,
     });
+    const matchedFullName =
+      typeof matched?.full_name === "string" ? matched.full_name.trim() : "";
     await updateExistingCustomer(db, existingId, {
-      fullName,
+      // Preserve an existing profile name when matching by email/phone so new bookings
+      // cannot unexpectedly rename all historical bookings tied to this customer.
+      fullName: matchedFullName || fullName,
       email,
       phone,
       address: input.address,

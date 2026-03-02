@@ -575,6 +575,9 @@ export async function PATCH(
 
       const nextPricing = {
         ...currentPricing,
+        customer_name_snapshot: customerName,
+        customer_email_snapshot: customerEmail,
+        customer_phone_snapshot: customerPhone,
         days: pricingSummary.days,
         daily_rate_cents: pricingSummary.dailyRate,
         deposit_cents: pricingSummary.deposit,
@@ -592,7 +595,7 @@ export async function PATCH(
       };
 
       await client.query(
-        "update customers set full_name = $2, email = $3, phone = $4 where id = $1",
+        "update customers set full_name = case when nullif(trim(coalesce(full_name, '')), '') is null then $2 else full_name end, email = $3, phone = $4 where id = $1",
         [booking.customer_id, customerName, customerEmail, customerPhone],
       );
 

@@ -351,6 +351,18 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
   );
 
   const pricing = booking.pricing_json ?? {};
+  const customerNameSnapshot =
+    typeof pricing.customer_name_snapshot === "string" && pricing.customer_name_snapshot.trim()
+      ? pricing.customer_name_snapshot.trim()
+      : booking.customer_name;
+  const customerEmailSnapshot =
+    typeof pricing.customer_email_snapshot === "string" && pricing.customer_email_snapshot.trim()
+      ? pricing.customer_email_snapshot.trim()
+      : booking.customer_email;
+  const customerPhoneSnapshot =
+    typeof pricing.customer_phone_snapshot === "string" && pricing.customer_phone_snapshot.trim()
+      ? pricing.customer_phone_snapshot.trim()
+      : booking.customer_phone;
   const dailyRate = Number(pricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
   const deposit = Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0);
   const paymentOption = readPaymentOption(pricing);
@@ -602,9 +614,9 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
                 startDate={booking.start_date}
                 endDate={booking.end_date}
                 pickupLocation={booking.pickup_location}
-                customerName={booking.customer_name}
-                customerEmail={booking.customer_email}
-                customerPhone={booking.customer_phone}
+                customerName={customerNameSnapshot}
+                customerEmail={customerEmailSnapshot}
+                customerPhone={customerPhoneSnapshot}
                 disabled={["RETURNED", "CANCELLED"].includes(booking.status.toUpperCase())}
               />
             }
@@ -681,9 +693,9 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
           <div className="mt-4 space-y-3 text-sm">
             <div>
               <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Customer</p>
-              <p className="font-semibold text-[var(--ccr-text)]">{booking.customer_name}</p>
-              <p className="text-[var(--ccr-muted)]">{booking.customer_email}</p>
-              <p className="text-[var(--ccr-muted)]">{booking.customer_phone}</p>
+              <p className="font-semibold text-[var(--ccr-text)]">{customerNameSnapshot}</p>
+              <p className="text-[var(--ccr-muted)]">{customerEmailSnapshot}</p>
+              <p className="text-[var(--ccr-muted)]">{customerPhoneSnapshot}</p>
               <p className="mt-2 text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
                 Driver&apos;s License Number
               </p>
