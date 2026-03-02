@@ -6,13 +6,15 @@ import { dbQuery } from "@/lib/db";
 import { fmtDateOnly } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
 import { formatPaymentStatus } from "@/lib/payments/formatPaymentStatus";
-import { buildInvoicePayload, generateInvoicePdf } from "@/lib/pdfmonkey";
 import {
   computeBookingPricing,
   fetchNetPaidToDate,
   readInsurancePricingFields,
   readPromoPricingFields,
 } from "@/lib/payments/pricing";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 type BookingRow = {
   id: string;
@@ -226,54 +228,6 @@ export default async function PaymentSuccessPage({
   const paidToDate = summary?.netPaidToDate ?? 0;
   const balanceDue = summary?.balanceDue ?? 0;
 
-  if (!invoicePdfUrl && booking && summary) {
-    const invoicePayments = payments
-      .filter((payment) => payment.status === "DEPOSIT_PAID" || payment.status === "REFUNDED")
-      .map((payment) => ({
-        provider: payment.provider,
-        status: formatPaymentStatus(payment.status, {
-          paymentType:
-            typeof payment.metadata_json?.payment_type === "string"
-              ? String(payment.metadata_json.payment_type)
-              : null,
-        }),
-        amount: Number(payment.deposit_amount_cents || 0),
-        date: payment.created_at,
-      }));
-
-    try {
-      const payload = buildInvoicePayload({
-        bookingId: booking.id,
-        bookingPublicId: bookingRef || booking.id.slice(0, 8),
-        bookingStatus: booking.status,
-        startDate: booking.start_date,
-        endDate: booking.end_date,
-        pickupLocation: booking.pickup_location,
-        customerName: booking.customer_name,
-        customerEmail: booking.customer_email,
-        customerPhone: booking.customer_phone,
-        vehicleMake: booking.vehicle_make,
-        vehicleModel: booking.vehicle_model,
-        vehicleYear: booking.vehicle_year,
-        dailyRate,
-        deposit: summary.deposit,
-        baseTotal: summary.baseTotal,
-        total: summary.subtotal,
-        paidToDate: summary.netPaidToDate,
-        balanceDue: summary.balanceDue,
-        insuranceTotal: summary.insuranceTotal,
-        promoDiscount: summary.promoDiscount,
-        promoCode: summary.promoCode,
-        payments: invoicePayments,
-      });
-
-      const generated = await generateInvoicePdf(payload, booking.id, { source: "PAYMENT_SUCCESS_VIEW" });
-      invoicePdfUrl = generated?.previewUrl ?? generated?.downloadUrl ?? null;
-    } catch {
-      // If generation fails, keep rendering the HTML fallback snapshot.
-    }
-  }
-
   const depositPaid = payments.reduce((sum: number, payment: PaymentRow) => {
     if (payment.status !== "DEPOSIT_PAID") return sum;
     const metadata = payment.metadata_json ?? {};
@@ -293,6 +247,9 @@ export default async function PaymentSuccessPage({
     balanceDue === 0
       ? "Your booking is now paid in full."
       : "Your booking is confirmed. We will follow up with pickup details shortly.";
+  const invoicePdfEmbedUrl = invoicePdfUrl
+    ? `${invoicePdfUrl}${invoicePdfUrl.includes("#") ? "&" : "#"}toolbar=0&navpanes=0&scrollbar=0&view=FitH`
+    : null;
 
   return (
     <div className="invoice-page mx-auto w-full max-w-3xl px-6 py-12">
@@ -319,7 +276,7 @@ export default async function PaymentSuccessPage({
                   <div className="overflow-hidden rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)]">
                     <iframe
                       title={`Invoice ${bookingRef || booking.id.slice(0, 8)}`}
-                      src={invoicePdfUrl}
+                      src={invoicePdfEmbedUrl ?? invoicePdfUrl}
                       className="h-[640px] w-full bg-white"
                     />
                   </div>

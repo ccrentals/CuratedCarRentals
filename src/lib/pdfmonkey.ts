@@ -70,6 +70,8 @@ export type RentalAgreementPayloadInput = {
   paidToDate: number;
   balanceDue: number;
   paymentMethod?: string;
+  signatureDataUrl?: string | null;
+  signedAt?: string;
 };
 
 type GenerateInvoicePdfOptions = {
@@ -591,6 +593,7 @@ function renderGotenbergRentalAgreementHtml(
   const customer = asRecord(payload.customer);
   const vehicle = asRecord(payload.vehicle);
   const charges = asRecord(payload.charges);
+  const signature = asRecord(payload.signature);
   const issuedAtRaw = asString(payload.issued_at) || new Date().toISOString();
   const issuedAt = formatDateLabel(issuedAtRaw);
   const bookingIdRaw = asString(booking.id);
@@ -633,6 +636,11 @@ function renderGotenbergRentalAgreementHtml(
   const companyName = "Curated Car Rentals";
   const issued = escapeHtml(issuedAt);
   const dayCount = escapeHtml(String(days));
+  const signatureDataUrlRaw = asString(signature.image_data_url);
+  const hasInlineSignature = /^data:image\/[^;]+;base64,[a-z0-9+/=\s]+$/i.test(signatureDataUrlRaw);
+  const signatureImageSrc = hasInlineSignature ? escapeHtml(signatureDataUrlRaw) : "";
+  const signedAtRaw = asString(signature.signed_at) || issuedAtRaw;
+  const signedAtLabel = escapeHtml(formatDateLabel(signedAtRaw));
 
   return `<!doctype html>
 <html lang="en">
@@ -757,6 +765,14 @@ function renderGotenbergRentalAgreementHtml(
         height: 1px;
         background: #94a3b8;
       }
+      .signature-image {
+        margin-top: 8px;
+        max-width: 300px;
+        max-height: 90px;
+        object-fit: contain;
+        display: block;
+        filter: brightness(0) saturate(100%);
+      }
       .signature-label {
         margin-top: 6px;
         font-size: 12px;
@@ -849,8 +865,12 @@ function renderGotenbergRentalAgreementHtml(
           </ol>
           <div class="signature">
             <p class="line"><strong>Signature</strong></p>
-            <div class="signature-line"></div>
-            <p class="signature-label">Signed at ${issued}</p>
+            ${
+              signatureImageSrc
+                ? `<img src="${signatureImageSrc}" alt="Signature" class="signature-image" />`
+                : '<div class="signature-line"></div>'
+            }
+            <p class="signature-label">Signed at ${signedAtLabel}</p>
           </div>
         </div>
       </section>
@@ -879,12 +899,16 @@ async function createDocumentWithGotenberg(
         });
   form.append("files", new Blob([html], { type: "text/html" }), "index.html");
   if (logoAsset) {
-    form.append("files", new Blob([logoAsset.bytes], { type: logoAsset.contentType }), logoAsset.fileName);
+    form.append(
+      "files",
+      new Blob([new Uint8Array(logoAsset.bytes)], { type: logoAsset.contentType }),
+      logoAsset.fileName,
+    );
   }
   if (conditionAsset) {
     form.append(
       "files",
-      new Blob([conditionAsset.bytes], { type: conditionAsset.contentType }),
+      new Blob([new Uint8Array(conditionAsset.bytes)], { type: conditionAsset.contentType }),
       conditionAsset.fileName,
     );
   }
@@ -987,6 +1011,10 @@ export function buildRentalAgreementPayload(input: RentalAgreementPayloadInput) 
       paid_to_date: input.paidToDate,
       balance_due: input.balanceDue,
       payment_method: input.paymentMethod ?? "",
+    },
+    signature: {
+      image_data_url: input.signatureDataUrl ?? "",
+      signed_at: input.signedAt ?? "",
     },
     issued_at: new Date().toISOString(),
   };

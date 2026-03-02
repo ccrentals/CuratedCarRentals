@@ -1,9 +1,16 @@
-import { buildInvoicePayload, downloadPdfBase64, generateInvoicePdf } from "@/lib/pdfmonkey";
+import {
+  buildInvoicePayload,
+  buildRentalAgreementPayload,
+  downloadPdfBase64,
+  generateInvoicePdf,
+  generateRentalAgreementPdf,
+} from "@/lib/pdfmonkey";
 import { logError, logWarn, redactText } from "@/lib/log";
 import { readInsurancePricingFields, readPromoPricingFields } from "@/lib/payments/pricing";
 import { dbQuery } from "@/lib/db";
 import { formatPaymentStatus } from "@/lib/payments/formatPaymentStatus";
 import { calcDaysInclusive } from "@/lib/payments/dateMath";
+import { buildUploadcareCdnUrl, extractUploadcareFileId } from "@/lib/uploads/uploadcare";
 
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
 
@@ -43,6 +50,10 @@ type Attachment = {
 };
 
 type SendEmailResult = { ok: boolean; skipped?: boolean; error?: string };
+
+function emailFailure(error: string): SendEmailResult {
+  return { ok: false, skipped: false, error };
+}
 
 async function sendResendEmail({
   to,
@@ -142,6 +153,16 @@ type InvoicePaymentContextRow = {
   metadata_json: Record<string, unknown> | null;
 };
 
+type BookingSignatureFileRow = {
+  storage_provider: string | null;
+  storage_key: string | null;
+  mime_type: string | null;
+};
+
+type BookingSignatureTimeRow = {
+  signature_signed_at: string | Date | null;
+};
+
 function normalizeText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -173,6 +194,103 @@ function buildCustomerAddress(row: InvoiceContextRow | null) {
     normalizeText(row.customer_country),
   ].filter(Boolean);
   return parts.join(", ");
+}
+
+function toSignatureDataUrl(
+  storageKey: string,
+): { mimeType: string; dataUrl: string } | null {
+  const match = storageKey.match(/^data:([^;,]+)?(;base64)?,(.*)$/i);
+  if (!match) return null;
+  const mimeType = normalizeText(match[1]) || "image/png";
+  const isBase64 = Boolean(match[2]);
+  const payload = match[3] ?? "";
+  try {
+    const bytes = isBase64
+      ? Buffer.from(payload, "base64")
+      : Buffer.from(decodeURIComponent(payload), "utf-8");
+    if (bytes.length < 1) return null;
+    return {
+      mimeType,
+      dataUrl: `data:${mimeType};base64,${bytes.toString("base64")}`,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function loadBookingSignatureData(bookingId: string) {
+  const signedAtResult = await (async () => {
+    try {
+      return await dbQuery<BookingSignatureTimeRow>(
+        "select signature_signed_at from bookings where id = $1 limit 1",
+        [bookingId],
+      );
+    } catch (error) {
+      const code = (error as { code?: string } | null)?.code;
+      const message = String((error as { message?: unknown } | null)?.message ?? "");
+      if (code === "42703" && message.includes("\"signature_signed_at\"")) {
+        return { rows: [{ signature_signed_at: null }], rowCount: 1 } as {
+          rows: BookingSignatureTimeRow[];
+          rowCount: number;
+        };
+      }
+      throw error;
+    }
+  })();
+  const signedAtRaw = signedAtResult.rows[0]?.signature_signed_at ?? null;
+  const signedAt =
+    signedAtRaw instanceof Date
+      ? signedAtRaw.toISOString()
+      : normalizeText(signedAtRaw);
+
+  const signatureResult = await dbQuery<BookingSignatureFileRow>(
+    "select storage_provider, storage_key, mime_type from booking_private_files where booking_id = $1 and document_type = 'SIGNATURE' order by created_at desc limit 1",
+    [bookingId],
+  );
+  const signature = signatureResult.rows[0] ?? null;
+  if (!signature) {
+    return { signatureDataUrl: null as string | null, signedAt };
+  }
+
+  const storageProvider = normalizeText(signature.storage_provider).toUpperCase();
+  const storageKey = normalizeText(signature.storage_key);
+  if (!storageKey) {
+    return { signatureDataUrl: null as string | null, signedAt };
+  }
+
+  if (storageProvider === "DATA_URL") {
+    const parsed = toSignatureDataUrl(storageKey);
+    return {
+      signatureDataUrl: parsed?.dataUrl ?? null,
+      signedAt,
+    };
+  }
+
+  const uploadcareFileId = extractUploadcareFileId(storageKey);
+  if (!uploadcareFileId) {
+    return { signatureDataUrl: null as string | null, signedAt };
+  }
+
+  try {
+    const upstream = await fetch(buildUploadcareCdnUrl(uploadcareFileId));
+    if (!upstream.ok) {
+      return { signatureDataUrl: null as string | null, signedAt };
+    }
+    const bytes = Buffer.from(await upstream.arrayBuffer());
+    if (bytes.length < 1) {
+      return { signatureDataUrl: null as string | null, signedAt };
+    }
+    const mimeType =
+      normalizeText(signature.mime_type) ||
+      normalizeText(upstream.headers.get("content-type")) ||
+      "image/png";
+    return {
+      signatureDataUrl: `data:${mimeType};base64,${bytes.toString("base64")}`,
+      signedAt,
+    };
+  } catch {
+    return { signatureDataUrl: null as string | null, signedAt };
+  }
 }
 
 function resolveProviderLabel(row: InvoicePaymentContextRow) {
@@ -273,7 +391,7 @@ async function loadInvoiceContext(bookingId: string) {
 
   const payments = paymentsResult.rows
     .filter(isBalanceReducingPayment)
-    .map((row) => ({
+    .map((row: InvoicePaymentContextRow) => ({
       provider: resolveProviderLabel(row),
       status: formatPaymentStatus(row.status, {
         paymentType:
@@ -401,6 +519,93 @@ async function buildRequiredInvoiceAttachment(input: InvoiceAttachmentInput) {
   };
 }
 
+async function buildRentalAgreementAttachment(input: {
+  bookingId: string;
+  bookingPublicId?: string | null;
+  bookingStatus: string;
+  startDate: string;
+  endDate: string;
+  pickupLocation: string;
+  returnLocation?: string;
+  customerName: string;
+  customerEmail: string;
+  customerPhone: string;
+  customerAddress?: string;
+  vehicleMake: string;
+  vehicleModel: string;
+  vehicleYear: number;
+  dailyRate: number;
+  total: number;
+  deposit: number;
+  paidToDate: number;
+  balanceDue: number;
+  paymentMethod?: string;
+}) {
+  try {
+    const context = await loadInvoiceContext(input.bookingId);
+    const displayBookingId =
+      normalizeText(input.bookingPublicId) || context.bookingPublicId || input.bookingId.slice(0, 8);
+    const address = normalizeText(input.customerAddress) || context.customerAddress;
+    const paymentMethod =
+      normalizeText(input.paymentMethod) ||
+      [...context.payments]
+        .reverse()
+        .find((row: { provider: string; amount: number }) => Number(row.amount || 0) > 0)?.provider ||
+      "Not specified";
+    const signature = await loadBookingSignatureData(input.bookingId);
+
+    const payload = buildRentalAgreementPayload({
+      bookingId: displayBookingId,
+      bookingStatus: input.bookingStatus,
+      startDate: input.startDate,
+      endDate: input.endDate,
+      pickupLocation: input.pickupLocation,
+      returnLocation: input.returnLocation ?? input.pickupLocation,
+      customerName: input.customerName,
+      customerEmail: input.customerEmail,
+      customerPhone: input.customerPhone,
+      customerAddress: address,
+      vehicleMake: input.vehicleMake,
+      vehicleModel: input.vehicleModel,
+      vehicleYear: input.vehicleYear,
+      dailyRate: input.dailyRate,
+      total: input.total,
+      deposit: input.deposit,
+      paidToDate: input.paidToDate,
+      balanceDue: input.balanceDue,
+      paymentMethod,
+      signatureDataUrl: signature.signatureDataUrl,
+      signedAt: signature.signedAt || undefined,
+    });
+
+    const pdf = await generateRentalAgreementPdf(payload);
+    if (!pdf?.downloadUrl) return undefined;
+    const base64 = await downloadPdfBase64(pdf.downloadUrl);
+    return [{ filename: `rental-agreement-${displayBookingId}.pdf`, content: base64 }];
+  } catch (error) {
+    logError("rental_agreement_pdf_generation_failed", error, { bookingId: input.bookingId });
+    return undefined;
+  }
+}
+
+type RentalAgreementAttachmentInput = Parameters<typeof buildRentalAgreementAttachment>[0];
+
+async function buildRequiredRentalAgreementAttachment(
+  input: RentalAgreementAttachmentInput,
+) {
+  const attachments = await buildRentalAgreementAttachment(input);
+  if (!attachments || attachments.length === 0) {
+    return {
+      ok: false as const,
+      error: "Rental agreement PDF is currently unavailable. Please retry shortly.",
+    };
+  }
+  return {
+    ok: true as const,
+    attachments,
+  };
+}
+
 type EmailFinancialSummary = {
   bookingReference: string;
   promoCode: string | null;
@@ -510,7 +715,7 @@ export async function sendBookingCreatedEmail(input: {
   deposit: number;
   promoCode?: string | null;
   promoDiscount?: number;
-}) {
+}): Promise<SendEmailResult> {
   const days = Math.max(1, calcDaysInclusive(input.startDate, input.endDate));
   const summary = await resolveEmailFinancialSummary({
     bookingId: input.bookingId,
@@ -520,7 +725,6 @@ export async function sendBookingCreatedEmail(input: {
     paidToDate: 0,
   });
   const bookingLink = `${baseUrl()}/bookings/${input.bookingId}`;
-  const invoiceLink = `${baseUrl()}/bookings/${input.bookingId}/invoice`;
   const paymentStatusLabel = summary.balanceDue > 0 ? "Payment incomplete" : "Paid in full";
 
   const html = `
@@ -537,21 +741,21 @@ export async function sendBookingCreatedEmail(input: {
       <p><strong>Payment status:</strong> ${paymentStatusLabel}</p>
       <p style="margin-top: 16px;">
         <a href="${bookingLink}" style="background:#1f2d4d; color:#fff; padding:10px 16px; border-radius:8px; text-decoration:none;">Pay Deposit</a>
-        <a href="${invoiceLink}" style="margin-left:12px; color:#1f2d4d; text-decoration:underline;">View Invoice</a>
       </p>
-      <p style="font-size:12px; color:#64748b;">The attached invoice includes your live payment ledger.</p>
+      <p style="font-size:12px; color:#64748b;">The attached rental agreement includes your booking terms.</p>
       ${policyHtml()}
       <p style="font-size:12px; color:#64748b;">Need help? Reply to this email.</p>
     </div>
   `;
 
-  const attachments = await buildInvoiceAttachment({
+  const agreementAttachment = await buildRequiredRentalAgreementAttachment({
     bookingId: input.bookingId,
     bookingPublicId: summary.bookingReference,
     bookingStatus: "PENDING_PAYMENT",
     startDate: input.startDate,
     endDate: input.endDate,
     pickupLocation: input.pickupLocation,
+    returnLocation: input.pickupLocation,
     customerName: input.customerName,
     customerEmail: input.customerEmail,
     customerPhone: "",
@@ -559,21 +763,22 @@ export async function sendBookingCreatedEmail(input: {
     vehicleModel: "",
     vehicleYear: 0,
     dailyRate: input.dailyRate,
+    total: summary.totalAfterDiscount,
     deposit: summary.depositRequired,
-    insuranceTotal: summary.insuranceTotal,
-    promoCode: summary.promoCode,
-    promoDiscount: summary.promoDiscount,
-    total: summary.subtotal,
     paidToDate: summary.paidToDate,
     balanceDue: summary.balanceDue,
-    payments: [],
+    paymentMethod: "Not specified",
   });
+
+  if (!agreementAttachment.ok) {
+    return emailFailure(agreementAttachment.error);
+  }
 
   return sendResendEmail({
     to: input.customerEmail,
     subject: "Your booking is ready — deposit required",
     html,
-    attachments,
+    attachments: agreementAttachment.attachments,
   });
 }
 
@@ -590,7 +795,7 @@ export async function sendDepositReceiptEmail(input: {
   paidToDate: number;
   promoCode?: string | null;
   promoDiscount?: number;
-}) {
+}): Promise<SendEmailResult> {
   const days = Math.max(1, calcDaysInclusive(input.startDate, input.endDate));
   const summary = await resolveEmailFinancialSummary({
     bookingId: input.bookingId,
@@ -650,7 +855,7 @@ export async function sendDepositReceiptEmail(input: {
   });
 
   if (!invoiceAttachment.ok) {
-    return invoiceAttachment;
+    return emailFailure(invoiceAttachment.error);
   }
 
   return sendResendEmail({
@@ -678,7 +883,7 @@ export async function sendPaymentUpdateEmail(input: {
   paymentMethod?: string;
   paymentDateTime?: string;
   paymentReference?: string;
-}) {
+}): Promise<SendEmailResult> {
   const bookingLink = `${baseUrl()}/bookings/${input.bookingId}`;
   const invoiceLink = `${baseUrl()}/bookings/${input.bookingId}/invoice`;
   const balanceLink = `${baseUrl()}/bookings/${input.bookingId}/balance`;
@@ -752,7 +957,7 @@ export async function sendPaymentUpdateEmail(input: {
   });
 
   if (!invoiceAttachment.ok) {
-    return invoiceAttachment;
+    return emailFailure(invoiceAttachment.error);
   }
 
   return sendResendEmail({
@@ -780,7 +985,7 @@ export async function sendPaymentCompleteEmail(input: {
   paymentMethod?: string;
   paymentDateTime?: string;
   paymentReference?: string;
-}) {
+}): Promise<SendEmailResult> {
   const bookingLink = `${baseUrl()}/bookings/${input.bookingId}`;
   const invoiceLink = `${baseUrl()}/bookings/${input.bookingId}/invoice`;
   const summary = await resolveEmailFinancialSummary({
@@ -852,7 +1057,7 @@ export async function sendPaymentCompleteEmail(input: {
   });
 
   if (!invoiceAttachment.ok) {
-    return invoiceAttachment;
+    return emailFailure(invoiceAttachment.error);
   }
 
   return sendResendEmail({

@@ -14,7 +14,11 @@ import {
   generateInvoicePdf,
   generateRentalAgreementPdf,
 } from "@/lib/pdfmonkey";
+import { buildUploadcareCdnUrl, extractUploadcareFileId } from "@/lib/uploads/uploadcare";
 import { QuoteTemplatePreviewFrame } from "@/components/admin/QuoteTemplatePreviewFrame";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 type TemplateKey = "invoice" | "quote" | "agreement" | "receipt";
 
@@ -92,6 +96,16 @@ type QuoteRow = {
   amount_due_cents: number;
 };
 
+type BookingSignatureFileRow = {
+  storage_provider: string | null;
+  storage_key: string | null;
+  mime_type: string | null;
+};
+
+type BookingSignatureTimeRow = {
+  signature_signed_at: string | Date | null;
+};
+
 const PAYMENT_STATUS_REDUCES_BALANCE = new Set([
   "SUCCESS",
   "SUCCEEDED",
@@ -146,6 +160,104 @@ function buildCustomerAddress(booking: BookingRow) {
 function toMoneyCents(value: unknown) {
   const amount = Number(value);
   return Number.isFinite(amount) ? amount : 0;
+}
+
+function toSignatureDataUrl(
+  storageKey: string,
+): { mimeType: string; dataUrl: string } | null {
+  const match = storageKey.match(/^data:([^;,]+)?(;base64)?,(.*)$/i);
+  if (!match) return null;
+  const mimeType = normalizeText(match[1]) || "image/png";
+  const isBase64 = Boolean(match[2]);
+  const payload = match[3] ?? "";
+  try {
+    const bytes = isBase64
+      ? Buffer.from(payload, "base64")
+      : Buffer.from(decodeURIComponent(payload), "utf-8");
+    if (bytes.length < 1) return null;
+    return {
+      mimeType,
+      dataUrl: `data:${mimeType};base64,${bytes.toString("base64")}`,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function loadBookingSignatureData(bookingId: string) {
+  const signedAtResult = await (async () => {
+    try {
+      return await dbQuery<BookingSignatureTimeRow>(
+        "select signature_signed_at from bookings where id = $1 limit 1",
+        [bookingId],
+      );
+    } catch (error) {
+      const code = (error as { code?: string } | null)?.code;
+      const message = String((error as { message?: unknown } | null)?.message ?? "");
+      if (code === "42703" && message.includes("\"signature_signed_at\"")) {
+        return { rows: [{ signature_signed_at: null }], rowCount: 1 } as {
+          rows: BookingSignatureTimeRow[];
+          rowCount: number;
+        };
+      }
+      throw error;
+    }
+  })();
+
+  const signedAtRaw = signedAtResult.rows[0]?.signature_signed_at ?? null;
+  const signedAt =
+    signedAtRaw instanceof Date
+      ? signedAtRaw.toISOString()
+      : normalizeText(signedAtRaw);
+
+  const signatureResult = await dbQuery<BookingSignatureFileRow>(
+    "select storage_provider, storage_key, mime_type from booking_private_files where booking_id = $1 and document_type = 'SIGNATURE' order by created_at desc limit 1",
+    [bookingId],
+  );
+  const signature = signatureResult.rows[0] ?? null;
+  if (!signature) {
+    return { signatureDataUrl: null as string | null, signedAt };
+  }
+
+  const storageProvider = normalizeText(signature.storage_provider).toUpperCase();
+  const storageKey = normalizeText(signature.storage_key);
+  if (!storageKey) {
+    return { signatureDataUrl: null as string | null, signedAt };
+  }
+
+  if (storageProvider === "DATA_URL") {
+    const parsed = toSignatureDataUrl(storageKey);
+    return {
+      signatureDataUrl: parsed?.dataUrl ?? null,
+      signedAt,
+    };
+  }
+
+  const uploadcareFileId = extractUploadcareFileId(storageKey);
+  if (!uploadcareFileId) {
+    return { signatureDataUrl: null as string | null, signedAt };
+  }
+
+  try {
+    const upstream = await fetch(buildUploadcareCdnUrl(uploadcareFileId));
+    if (!upstream.ok) {
+      return { signatureDataUrl: null as string | null, signedAt };
+    }
+    const bytes = Buffer.from(await upstream.arrayBuffer());
+    if (bytes.length < 1) {
+      return { signatureDataUrl: null as string | null, signedAt };
+    }
+    const mimeType =
+      normalizeText(signature.mime_type) ||
+      normalizeText(upstream.headers.get("content-type")) ||
+      "image/png";
+    return {
+      signatureDataUrl: `data:${mimeType};base64,${bytes.toString("base64")}`,
+      signedAt,
+    };
+  } catch {
+    return { signatureDataUrl: null as string | null, signedAt };
+  }
 }
 
 function resolveProviderLabel(payment: PaymentRow) {
@@ -385,6 +497,7 @@ async function buildRentalAgreementPreviewFromLatestBooking(): Promise<TemplateP
   const paymentMethod = latestReducingPayment
     ? resolveProviderLabel(latestReducingPayment)
     : "Not specified";
+  const signature = await loadBookingSignatureData(context.booking.id);
 
   const payload = buildRentalAgreementPayload({
     bookingId: context.booking.public_id || context.booking.id,
@@ -406,6 +519,8 @@ async function buildRentalAgreementPreviewFromLatestBooking(): Promise<TemplateP
     paidToDate: context.summary.netPaidToDate,
     balanceDue: context.summary.balanceDue,
     paymentMethod,
+    signatureDataUrl: signature.signatureDataUrl,
+    signedAt: signature.signedAt || undefined,
   });
 
   try {
