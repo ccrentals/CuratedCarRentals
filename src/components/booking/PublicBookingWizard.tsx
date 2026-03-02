@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } f
 import { useRouter } from "next/navigation";
 
 import { TurnstileWidget } from "@/components/security/TurnstileWidget";
+import { PublicVehicleOptionCard } from "@/components/booking/PublicVehicleOptionCard";
 import { clearBookingDraft } from "@/lib/bookings/draft";
 import {
   createPricingLifecycleState,
@@ -34,12 +35,21 @@ type PublicVehicle = {
   name: string;
   make: string;
   model: string;
+  year: number;
   daily_rate_cents: number;
   deposit_cents: number;
   images?: string[];
   category?: string;
   seats?: number;
+  doors?: number;
   transmission?: string;
+  bags?: number;
+  fuelPolicy?: string;
+  mileagePolicy?: string;
+  airConditioning?: boolean;
+  hybrid?: boolean;
+  drivetrain?: string;
+  description?: string;
 };
 
 type ReturningStartResponse = {
@@ -197,6 +207,13 @@ function dateInputForOffset(days: number) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
+function addDaysToDateInput(value: string, days: number) {
+  const base = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(base.getTime())) return value;
+  base.setDate(base.getDate() + days);
+  return `${base.getFullYear()}-${pad(base.getMonth() + 1)}-${pad(base.getDate())}`;
+}
+
 function combineDateTime(date: string, time: string) {
   if (!date || !time) return null;
   const value = new Date(`${date}T${time}:00`);
@@ -211,6 +228,15 @@ function displayVehicleName(vehicle: PublicVehicle) {
   const explicit = normalizeText(vehicle.name ?? "");
   if (explicit) return explicit;
   return `${vehicle.make} ${vehicle.model}`.trim();
+}
+
+function getVehicleGalleryImages(vehicle: PublicVehicle | null | undefined) {
+  if (!vehicle || !Array.isArray(vehicle.images)) return ["/window.svg"];
+  const images = vehicle.images
+    .filter((value): value is string => typeof value === "string")
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+  return images.length > 0 ? images : ["/window.svg"];
 }
 
 function setIfPresent(current: string, next: string | null | undefined) {
@@ -262,13 +288,18 @@ type PublicBookingWizardProps = {
   turnstileDevBypassEnabled?: boolean;
 };
 
+type GlightboxInstance = {
+  openAt: (index?: number) => void;
+  destroy: () => void;
+};
+
 export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: PublicBookingWizardProps) {
   const router = useRouter();
   const [requestedVehicleFromQuery, setRequestedVehicleFromQuery] = useState("");
   const draftHydratedRef = useRef(false);
   const preselectedVehicleIdRef = useRef("");
   const initialPickupDateRef = useRef(dateInputForOffset(0));
-  const initialDropoffDateRef = useRef(dateInputForOffset(3));
+  const initialDropoffDateRef = useRef(dateInputForOffset(2));
 
   const [step, setStep] = useState<WizardStep>(1);
   const [maxStepCompleted, setMaxStepCompleted] = useState<WizardStep>(1);
@@ -315,6 +346,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
   const inFlightVehiclesRef = useRef<{ key: string; controller: AbortController } | null>(null);
   const vehiclesRequestCountRef = useRef(0);
   const vehicleOptionsRef = useRef<PublicVehicle[]>([]);
+  const vehicleLightboxRef = useRef<GlightboxInstance | null>(null);
   const latestQuoteKeyRef = useRef("");
   const lastQuoteSuccessKeyRef = useRef("");
   const inFlightQuoteRef = useRef<{ key: string; controller: AbortController } | null>(null);
@@ -356,6 +388,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
   const signatureCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const signatureDrawingRef = useRef(false);
   const signatureDirtyRef = useRef(false);
+  const signaturePixelRatioRef = useRef(1);
   const [signatureDataUrl, setSignatureDataUrl] = useState("");
   const [acceptTerms, setAcceptTerms] = useState(false);
 
@@ -654,6 +687,61 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     vehicleOptionsRef.current = vehicleOptions;
   }, [vehicleOptions]);
 
+  const destroyVehicleLightbox = useCallback(() => {
+    if (!vehicleLightboxRef.current) return;
+    vehicleLightboxRef.current.destroy();
+    vehicleLightboxRef.current = null;
+  }, []);
+
+  const openVehicleLightbox = useCallback(
+    async (vehicleId: string, startIndex = 0) => {
+      const vehicle = vehicleOptionsRef.current.find((option) => option.id === vehicleId) ?? null;
+      if (!vehicle) return;
+
+      const images = getVehicleGalleryImages(vehicle);
+      const boundedIndex = Math.max(0, Math.min(images.length - 1, Math.trunc(startIndex)));
+      const vehicleName = displayVehicleName(vehicle) || "Vehicle";
+      const elements = images.map((href, index) => ({
+        href,
+        type: "image" as const,
+        title: vehicleName,
+        description: `${index + 1} of ${images.length}`,
+      }));
+
+      try {
+        const glightboxModule = await import("glightbox");
+        const createGlightbox = ((glightboxModule as unknown as { default?: unknown }).default ??
+          glightboxModule) as unknown as (options: Record<string, unknown>) => GlightboxInstance;
+
+        destroyVehicleLightbox();
+        const instance = createGlightbox({
+          elements,
+          loop: images.length > 1,
+          touchNavigation: true,
+          keyboardNavigation: true,
+          closeOnOutsideClick: true,
+          closeButton: true,
+          openEffect: "slide",
+          closeEffect: "fade",
+          slideEffect: "slide",
+          moreLength: 0,
+          draggable: true,
+          zoomable: true,
+          skin: "clean",
+        });
+        vehicleLightboxRef.current = instance;
+        instance.openAt(boundedIndex);
+      } catch {
+        setErrorMessage("Unable to open image gallery. Please try again.");
+      }
+    },
+    [destroyVehicleLightbox],
+  );
+
+  useEffect(() => () => {
+    destroyVehicleLightbox();
+  }, [destroyVehicleLightbox]);
+
   const rentalDays = pricingQuote?.days ?? calcDaysInclusive(pickupDate, dropoffDate);
   const baseTotal = pricingQuote?.baseTotal ?? (selectedVehicle ? selectedVehicle.daily_rate_cents * rentalDays : 0);
   const insuranceTotal = pricingQuote?.insuranceTotal ?? (insuranceSelected ? rentalDays * insurancePricePerDay : 0);
@@ -777,6 +865,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
             name: typeof vehicle.name === "string" ? vehicle.name : "",
             make: String(vehicle.make),
             model: String(vehicle.model),
+            year: typeof vehicle.year === "number" ? vehicle.year : 0,
             daily_rate_cents:
               typeof vehicle.daily_rate_cents === "number" ? vehicle.daily_rate_cents : 0,
             deposit_cents: typeof vehicle.deposit_cents === "number" ? vehicle.deposit_cents : 0,
@@ -785,8 +874,47 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
               : [],
             category: typeof vehicle.category === "string" ? vehicle.category : "",
             seats: typeof vehicle.seats === "number" ? vehicle.seats : 0,
+            doors:
+              typeof vehicle.doors === "number"
+                ? vehicle.doors
+                : typeof vehicle.door_count === "number"
+                  ? vehicle.door_count
+                  : 0,
             transmission:
               typeof vehicle.transmission === "string" ? vehicle.transmission : "",
+            bags: typeof vehicle.bags === "number" ? vehicle.bags : 0,
+            fuelPolicy:
+              typeof vehicle.fuelPolicy === "string"
+                ? vehicle.fuelPolicy
+                : typeof vehicle.fuel_policy === "string"
+                  ? vehicle.fuel_policy
+                  : "",
+            mileagePolicy:
+              typeof vehicle.mileagePolicy === "string"
+                ? vehicle.mileagePolicy
+                : typeof vehicle.mileage_policy === "string"
+                  ? vehicle.mileage_policy
+                  : "",
+            airConditioning:
+              typeof vehicle.airConditioning === "boolean"
+                ? vehicle.airConditioning
+                : typeof vehicle.air_conditioning === "boolean"
+                  ? vehicle.air_conditioning
+                  : undefined,
+            hybrid:
+              typeof vehicle.hybrid === "boolean"
+                ? vehicle.hybrid
+                : typeof vehicle.is_hybrid === "boolean"
+                  ? vehicle.is_hybrid
+                  : undefined,
+            drivetrain:
+              typeof vehicle.drivetrain === "string"
+                ? vehicle.drivetrain
+                : typeof vehicle.drive === "string"
+                  ? vehicle.drive
+                  : "",
+            description:
+              typeof vehicle.description === "string" ? vehicle.description : "",
           }));
 
         let nextSelectedVehicleId = selectedVehicleIdRef.current;
@@ -879,7 +1007,6 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
       pickupDate,
       pickupLocationId,
       pickupTime,
-      selectedVehicleId,
     ],
   );
 
@@ -1252,26 +1379,91 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     };
   }, [datesValid, dropoffDate, hydrated, loadAvailableVehicles, pickupDate]);
 
-  useEffect(() => {
+  const setupSignatureCanvas = useCallback(
+    (preserveDrawing: boolean) => {
+      const canvas = signatureCanvasRef.current;
+      if (!canvas) return;
+      const context = canvas.getContext("2d");
+      if (!context) return;
+
+      const ratio = Math.max(1, window.devicePixelRatio || 1);
+      const cssWidth = Math.max(1, Math.floor(canvas.clientWidth));
+      const cssHeight = Math.max(1, Math.floor(canvas.clientHeight));
+      const pixelWidth = Math.max(1, Math.floor(cssWidth * ratio));
+      const pixelHeight = Math.max(1, Math.floor(cssHeight * ratio));
+      signaturePixelRatioRef.current = ratio;
+
+      let previousImage: string | null = null;
+      if (preserveDrawing && signatureDirtyRef.current && canvas.width > 0 && canvas.height > 0) {
+        try {
+          previousImage = canvas.toDataURL("image/png");
+        } catch {
+          previousImage = null;
+        }
+      }
+
+      if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+        canvas.width = pixelWidth;
+        canvas.height = pixelHeight;
+      }
+
+      context.setTransform(ratio, 0, 0, ratio, 0, 0);
+      context.lineCap = "round";
+      context.lineJoin = "round";
+      context.lineWidth = 2.5;
+      const textColor =
+        getComputedStyle(canvas).getPropertyValue("--ccr-text").trim() ||
+        getComputedStyle(canvas).color ||
+        "#0f172a";
+      context.strokeStyle = textColor;
+
+      if (previousImage) {
+        const image = new Image();
+        image.onload = () => {
+          const redrawContext = canvas.getContext("2d");
+          if (!redrawContext) return;
+          redrawContext.setTransform(ratio, 0, 0, ratio, 0, 0);
+          redrawContext.drawImage(image, 0, 0, cssWidth, cssHeight);
+          redrawContext.lineCap = "round";
+          redrawContext.lineJoin = "round";
+          redrawContext.lineWidth = 2.5;
+          redrawContext.strokeStyle = textColor;
+        };
+        image.src = previousImage;
+      }
+    },
+    [],
+  );
+
+  const getSignaturePoint = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
     const canvas = signatureCanvasRef.current;
-    if (!canvas) return;
-
-    const context = canvas.getContext("2d");
-    if (!context) return;
-
-    const ratio = window.devicePixelRatio || 1;
-    const width = canvas.clientWidth;
-    const height = canvas.clientHeight;
-    canvas.width = Math.floor(width * ratio);
-    canvas.height = Math.floor(height * ratio);
-    context.scale(ratio, ratio);
-    context.lineCap = "round";
-    context.lineJoin = "round";
-    const textColor =
-      getComputedStyle(document.documentElement).getPropertyValue("--ccr-text").trim() || "#0f172a";
-    context.strokeStyle = textColor;
-    context.lineWidth = 2;
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    const drawWidth = canvas.width / Math.max(signaturePixelRatioRef.current, 1);
+    const drawHeight = canvas.height / Math.max(signaturePixelRatioRef.current, 1);
+    const x = ((event.clientX - rect.left) * drawWidth) / rect.width;
+    const y = ((event.clientY - rect.top) * drawHeight) / rect.height;
+    return { x, y };
   }, []);
+
+  useEffect(() => {
+    setupSignatureCanvas(false);
+
+    const handleResize = () => setupSignatureCanvas(true);
+    window.addEventListener("resize", handleResize);
+
+    const themeTarget = document.documentElement;
+    const observer = new MutationObserver(() => {
+      setupSignatureCanvas(true);
+    });
+    observer.observe(themeTarget, { attributes: true, attributeFilter: ["data-theme"] });
+
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      observer.disconnect();
+    };
+  }, [setupSignatureCanvas]);
 
   function resetMessages() {
     setErrorMessage(null);
@@ -1287,6 +1479,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
   ) {
     const shouldClearVehicleOptions = options?.clearVehicleOptions === true;
     const shouldClearCouponCode = options?.clearCouponCode === true;
+    destroyVehicleLightbox();
     setSelectedVehicleId("");
     setVehicleSelectionUnavailable(false);
     if (shouldClearVehicleOptions) setVehicleOptions([]);
@@ -1532,7 +1725,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     setDraftWasRestored(false);
 
     const defaultPickupDate = dateInputForOffset(0);
-    const defaultDropoffDate = dateInputForOffset(3);
+    const defaultDropoffDate = dateInputForOffset(2);
     initialPickupDateRef.current = defaultPickupDate;
     initialDropoffDateRef.current = defaultDropoffDate;
     const defaultPickupLocation = locationOptions.find((location) => location.allowPickup)?.id ?? "";
@@ -1704,41 +1897,62 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     setErrorMessage(null);
   }
 
+  function buildAgreementSignatureDataUrl(canvas: HTMLCanvasElement): string {
+    const fallback = canvas.toDataURL("image/png");
+    const normalizedCanvas = document.createElement("canvas");
+    normalizedCanvas.width = canvas.width;
+    normalizedCanvas.height = canvas.height;
+    const context = normalizedCanvas.getContext("2d");
+    if (!context) return fallback;
+    context.drawImage(canvas, 0, 0, normalizedCanvas.width, normalizedCanvas.height);
+    context.globalCompositeOperation = "source-in";
+    context.fillStyle = "#0f172a";
+    context.fillRect(0, 0, normalizedCanvas.width, normalizedCanvas.height);
+    return normalizedCanvas.toDataURL("image/png");
+  }
+
   function beginSignature(event: React.PointerEvent<HTMLCanvasElement>) {
+    event.preventDefault();
     const canvas = signatureCanvasRef.current;
     if (!canvas) return;
     const context = canvas.getContext("2d");
     if (!context) return;
-
-    const rect = canvas.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
+    setupSignatureCanvas(true);
+    const point = getSignaturePoint(event);
+    if (!point) return;
+    canvas.setPointerCapture(event.pointerId);
     signatureDrawingRef.current = true;
     signatureDirtyRef.current = true;
     context.beginPath();
-    context.moveTo(x, y);
+    context.moveTo(point.x, point.y);
+    context.lineTo(point.x + 0.01, point.y + 0.01);
+    context.stroke();
   }
 
   function drawSignature(event: React.PointerEvent<HTMLCanvasElement>) {
+    event.preventDefault();
     if (!signatureDrawingRef.current) return;
     const canvas = signatureCanvasRef.current;
     if (!canvas) return;
     const context = canvas.getContext("2d");
     if (!context) return;
-
-    const rect = canvas.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
-    context.lineTo(x, y);
+    const point = getSignaturePoint(event);
+    if (!point) return;
+    context.lineTo(point.x, point.y);
     context.stroke();
   }
 
-  function endSignature() {
+  function endSignature(event?: React.PointerEvent<HTMLCanvasElement>) {
+    const canvas = signatureCanvasRef.current;
+    if (canvas && event && canvas.hasPointerCapture(event.pointerId)) {
+      canvas.releasePointerCapture(event.pointerId);
+    }
     if (!signatureDrawingRef.current) return;
     signatureDrawingRef.current = false;
-    const canvas = signatureCanvasRef.current;
+    const context = canvas?.getContext("2d");
+    context?.closePath();
     if (!canvas || !signatureDirtyRef.current) return;
-    setSignatureDataUrl(canvas.toDataURL("image/png"));
+    setSignatureDataUrl(buildAgreementSignatureDataUrl(canvas));
   }
 
   function clearSignature() {
@@ -2134,7 +2348,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
             </ol>
           </div>
 
-          <div className="grid gap-0 lg:grid-cols-[1.25fr_0.75fr]">
+          <div className="grid gap-0 lg:grid-cols-[1.35fr_0.65fr] xl:grid-cols-[1.4fr_0.6fr]">
             <div className="px-4 py-6 md:px-8 md:py-8">
               {step === 1 ? (
                 <section data-testid="booking-step-dates">
@@ -2153,7 +2367,11 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                         type="date"
                         value={pickupDate}
                         min={dateInputForOffset(0)}
-                        onChange={(event) => setPickupDate(event.target.value)}
+                        onChange={(event) => {
+                          const nextPickupDate = event.target.value;
+                          setPickupDate(nextPickupDate);
+                          setDropoffDate(addDaysToDateInput(nextPickupDate, 2));
+                        }}
                         className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-sm"
                       />
                     </label>
@@ -2247,9 +2465,9 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
 
               {step === 2 ? (
                 <section data-testid="booking-step-vehicles">
-                  <h2 className="text-xl font-bold text-[var(--ccr-text)]">Available Vehicle Classes</h2>
+                  <h2 className="text-xl font-bold text-[var(--ccr-text)]">Available Vehicles</h2>
                   <p className="mt-1 text-sm text-[var(--ccr-muted)]">
-                    Choose one vehicle to continue. Selection is revalidated before confirmation.
+                    Choose a vehicle for your dates. Details are pulled from your admin fleet setup.
                   </p>
                   {unavailableVehicleWarning ? (
                     <div className="mt-4 rounded-xl border border-[var(--ccr-clerk-danger-border)] bg-[var(--ccr-clerk-danger-bg)] px-4 py-3 text-sm text-[var(--ccr-clerk-danger-text)]">
@@ -2271,64 +2489,25 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
 
                   {vehicleLoading ? <p className="mt-4 text-sm text-[var(--ccr-muted)]">Checking availability…</p> : null}
 
-                  <div className="mt-5 space-y-4">
+                  <div className="mt-5 grid gap-3 md:grid-cols-2">
                     {vehicleOptions.map((vehicle) => {
                       const selected = vehicle.id === selectedVehicleId;
                       return (
-                        <article
+                        <PublicVehicleOptionCard
                           key={vehicle.id}
-                          className={cn(
-                            "rounded-2xl border p-4 transition",
-                            selected ? "border-[var(--ccr-accent)] bg-[var(--ccr-accent)]/10" : "border-[var(--ccr-border)] bg-[var(--ccr-surface)]",
-                          )}
-                        >
-                          <div className="flex flex-wrap items-start justify-between gap-3">
-                            <div>
-                              <h3 className="text-lg font-bold text-[var(--ccr-text)]">
-                                {displayVehicleName(vehicle)}
-                              </h3>
-                              <p className="mt-1 text-sm text-[var(--ccr-muted)]">
-                                {vehicle.transmission || "Automatic"} · {vehicle.seats || 5} seats
-                              </p>
-                            </div>
-                            <div className="text-right">
-                              <p className="text-sm text-[var(--ccr-muted)]">Per day</p>
-                              <p className="text-lg font-bold text-[var(--ccr-text)]">
-                                {formatJmd(vehicle.daily_rate_cents)}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="mt-4">
-                            <div className="flex flex-wrap gap-2">
-                              <button
-                                type="button"
-                                onClick={() => void handleVehicleSelect(vehicle.id)}
-                                disabled={vehicleLoading}
-                                className={cn(
-                                  "rounded-xl px-4 py-2 text-sm font-semibold",
-                                  selected
-                                    ? "bg-[var(--ccr-primary)] text-[var(--ccr-on-primary)]"
-                                    : "border border-[var(--ccr-border)] bg-[var(--ccr-surface)] text-[var(--ccr-text)]",
-                                )}
-                              >
-                                {selected ? "Selected" : "Select Vehicle"}
-                              </button>
-                              {selected ? (
-                                <button
-                                  type="button"
-                                  onClick={handleDeselectVehicle}
-                                  className="rounded-xl border border-[var(--ccr-clerk-danger-border)] bg-[var(--ccr-surface-soft)] px-4 py-2 text-sm font-semibold text-[var(--ccr-clerk-danger-text)]"
-                                >
-                                  Deselect
-                                </button>
-                              ) : null}
-                            </div>
-                          </div>
-                        </article>
+                          vehicle={vehicle}
+                          selected={selected}
+                          loading={vehicleLoading}
+                          rentalDays={rentalDays}
+                          onSelect={() => void handleVehicleSelect(vehicle.id)}
+                          onDeselect={handleDeselectVehicle}
+                          onImageClick={() => openVehicleLightbox(vehicle.id)}
+                          formatMoney={formatJmd}
+                        />
                       );
                     })}
                     {!vehicleLoading && vehicleOptions.length === 0 ? (
-                      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 md:col-span-2">
                         No vehicles are available for the selected pickup/dropoff range.
                       </div>
                     ) : null}
@@ -2637,13 +2816,17 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
 
                   <div className="mt-5 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
                     <p className="text-sm font-semibold text-[var(--ccr-text)]">Signature *</p>
+                    <p className="mt-1 text-xs text-[var(--ccr-muted)]">
+                      Sign clearly inside the box using your finger or mouse.
+                    </p>
                     <canvas
                       ref={signatureCanvasRef}
-                      className="mt-2 h-40 w-full touch-none rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)]"
+                      className="mt-2 h-40 w-full touch-none rounded-xl border-2 border-[var(--ccr-accent)]/45 bg-[var(--ccr-surface-soft)] shadow-inner"
                       onPointerDown={beginSignature}
                       onPointerMove={drawSignature}
                       onPointerUp={endSignature}
                       onPointerLeave={endSignature}
+                      onPointerCancel={endSignature}
                     />
                     <div className="mt-3 flex items-center gap-2">
                       <button
@@ -2863,11 +3046,11 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
 
             <aside className="border-t border-[var(--ccr-border)] bg-[var(--ccr-primary)] px-4 py-6 text-[var(--ccr-on-primary)] md:px-8 lg:border-l lg:border-t-0">
               <h3 className="text-xl font-bold">Summary</h3>
-              <div className="mt-3 flex flex-wrap gap-2">
+              <div className="mt-3 flex flex-nowrap items-center gap-1.5 overflow-x-auto pb-1 pr-1">
                 <button
                   type="button"
                   onClick={handleChangeDates}
-                  className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-primary-soft)]/60 px-3 py-1 text-xs font-semibold text-[var(--ccr-on-primary)]"
+                  className="shrink-0 whitespace-nowrap rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-primary-soft)]/60 px-2.5 py-1 text-[11px] font-semibold leading-5 text-[var(--ccr-on-primary)] sm:px-3 sm:text-xs"
                   data-testid="booking-summary-change-dates"
                 >
                   Change dates
@@ -2875,7 +3058,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                 <button
                   type="button"
                   onClick={handleChangeVehicle}
-                  className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-primary-soft)]/60 px-3 py-1 text-xs font-semibold text-[var(--ccr-on-primary)]"
+                  className="shrink-0 whitespace-nowrap rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-primary-soft)]/60 px-2.5 py-1 text-[11px] font-semibold leading-5 text-[var(--ccr-on-primary)] sm:px-3 sm:text-xs"
                   data-testid="booking-summary-change-vehicle"
                 >
                   Change vehicle
@@ -2884,7 +3067,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                   <button
                     type="button"
                     onClick={handleDeselectVehicle}
-                    className="rounded-lg border border-[var(--ccr-clerk-danger-border)] bg-[var(--ccr-primary-soft)]/40 px-3 py-1 text-xs font-semibold text-[var(--ccr-clerk-danger-text)]"
+                    className="shrink-0 whitespace-nowrap rounded-lg border border-[var(--ccr-clerk-danger-border)] bg-[var(--ccr-primary-soft)]/40 px-2.5 py-1 text-[11px] font-semibold leading-5 text-[var(--ccr-clerk-danger-text)] sm:px-3 sm:text-xs"
                     data-testid="booking-summary-deselect-vehicle"
                   >
                     Deselect vehicle
@@ -2894,7 +3077,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                   <button
                     type="button"
                     onClick={() => setShowStartOverConfirm(true)}
-                    className="rounded-lg border border-[var(--ccr-clerk-danger-border)] bg-[var(--ccr-primary-soft)]/40 px-3 py-1 text-xs font-semibold text-[var(--ccr-clerk-danger-text)]"
+                    className="shrink-0 whitespace-nowrap rounded-lg border border-[var(--ccr-clerk-danger-border)] bg-[var(--ccr-primary-soft)]/40 px-2.5 py-1 text-[11px] font-semibold leading-5 text-[var(--ccr-clerk-danger-text)] sm:px-3 sm:text-xs"
                     data-testid="booking-summary-start-over"
                   >
                     Clear draft

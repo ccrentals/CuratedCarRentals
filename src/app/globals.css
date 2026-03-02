@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "glightbox/dist/css/glightbox.min.css";
 
 :root {
   --ccr-bg: #f5f7fc;
@@ -308,6 +309,77 @@ input.booking-edit-date-input::-webkit-calendar-picker-indicator {
 .ccr-icon-glow-pulse {
   animation: ccrIconGlowPulse 0.8s ease-in-out 2;
   will-change: background-color, filter;
+}
+
+/* GLightbox customization: clean, borderless theater view */
+.glightbox-container .goverlay {
+  background: rgba(0, 0, 0, 0.94) !important;
+}
+
+.glightbox-container .ginner-container,
+.glightbox-container .gslide-media,
+.glightbox-clean .gslide-media {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.glightbox-container .gslide-image img {
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  max-height: 92vh !important;
+  object-fit: contain !important;
+}
+
+.glightbox-clean .gclose,
+.glightbox-clean .gnext,
+.glightbox-clean .gprev {
+  background-color: color-mix(in srgb, var(--ccr-primary) 78%, transparent) !important;
+  border-radius: 9999px !important;
+  width: 44px !important;
+  height: 44px !important;
+}
+
+.glightbox-clean .gclose:hover,
+.glightbox-clean .gnext:hover,
+.glightbox-clean .gprev:hover {
+  background-color: color-mix(in srgb, var(--ccr-primary-soft) 86%, transparent) !important;
+}
+
+.glightbox-clean .gclose path,
+.glightbox-clean .gnext path,
+.glightbox-clean .gprev path {
+  fill: var(--ccr-on-primary) !important;
+}
+
+.glightbox-clean .gclose {
+  top: 18px !important;
+  right: 18px !important;
+}
+
+.glightbox-clean .gslide-title,
+.glightbox-clean .gslide-desc {
+  color: var(--ccr-on-primary) !important;
+}
+
+.glightbox-clean .gslide-description {
+  background: transparent !important;
+}
+
+.glightbox-clean .gdesc-inner {
+  padding: 10px 0 0 !important;
+}
+
+.gfadeIn,
+.gfadeOut,
+.gslideInLeft,
+.gslideOutLeft,
+.gslideInRight,
+.gslideOutRight,
+.gzoomIn,
+.gzoomOut {
+  animation-duration: 0.95s !important;
 }
 
 @media (prefers-reduced-motion: reduce) {

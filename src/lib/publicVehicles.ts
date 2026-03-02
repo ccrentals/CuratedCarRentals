@@ -14,6 +14,12 @@ export type PublicVehicle = Vehicle & {
   status: string;
   slug: string;
   legacyId: string | null;
+  doors: number;
+  fuelPolicy: string;
+  mileagePolicy: string;
+  airConditioning: boolean;
+  hybrid: boolean;
+  drivetrain: string;
 };
 
 type VehicleRow = {
@@ -79,6 +85,25 @@ function toBooleanValue(value: unknown, fallback = false): boolean {
   return fallback;
 }
 
+function pickMetaValue(meta: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    if (meta[key] !== undefined && meta[key] !== null) return meta[key];
+  }
+  return undefined;
+}
+
+function readMetaText(meta: Record<string, unknown>, keys: string[], fallback = "") {
+  return toStringValue(pickMetaValue(meta, keys), fallback);
+}
+
+function readMetaNumber(meta: Record<string, unknown>, keys: string[], fallback: number) {
+  return toNumberValue(pickMetaValue(meta, keys), fallback);
+}
+
+function readMetaBoolean(meta: Record<string, unknown>, keys: string[], fallback = false) {
+  return toBooleanValue(pickMetaValue(meta, keys), fallback);
+}
+
 function toImageArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
@@ -138,6 +163,18 @@ function mapRowToPublicVehicle(row: VehicleRow): PublicVehicle | null {
     transmissionRaw.toLowerCase() === "manual" ? "Manual" : "Automatic";
   const seats = row.seat_count && row.seat_count >= 1 ? row.seat_count : Math.max(1, toNumberValue(meta.seats, 5));
   const bags = Math.max(0, toNumberValue(meta.bags, 2));
+  const doors = Math.max(2, readMetaNumber(meta, ["doors", "door_count", "doorCount"], 4));
+  const fuelPolicy = readMetaText(meta, ["fuel_policy", "fuelPolicy"], "Fuel: Full to Full");
+  const mileagePolicy = readMetaText(meta, ["mileage_policy", "mileagePolicy"], "Unl. Miles");
+  const airConditioning = readMetaBoolean(
+    meta,
+    ["air_conditioning", "airConditioning", "ac", "a_c"],
+    true,
+  );
+  const drivetrain = readMetaText(meta, ["drivetrain", "drive"], "");
+  const hybrid =
+    readMetaBoolean(meta, ["hybrid", "is_hybrid", "isHybrid"], false) ||
+    /hybrid/i.test(`${name} ${category} ${drivetrain}`);
   const description = toStringValue(
     meta.description,
     "Reliable rental option for Jamaica travel.",
@@ -165,6 +202,12 @@ function mapRowToPublicVehicle(row: VehicleRow): PublicVehicle | null {
     status: row.status,
     slug,
     legacyId: legacyId || null,
+    doors,
+    fuelPolicy,
+    mileagePolicy,
+    airConditioning,
+    hybrid,
+    drivetrain,
   };
 }
 
