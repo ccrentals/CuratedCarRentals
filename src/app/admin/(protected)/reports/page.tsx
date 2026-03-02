@@ -567,6 +567,13 @@ export default async function AdminReportsPage({
     IMPACT_PAGE_SIZE_OPTIONS,
     5,
   ) as ImpactPageSize;
+  const rawDateFrom = readQueryValue(params, "dateFrom");
+  const rawDateTo = readQueryValue(params, "dateTo");
+  const hasExplicitDateRange =
+    typeof rawDateFrom === "string" &&
+    /^\d{4}-\d{2}-\d{2}$/.test(rawDateFrom) &&
+    typeof rawDateTo === "string" &&
+    /^\d{4}-\d{2}-\d{2}$/.test(rawDateTo);
 
   const report = await getAdminReportsPayload({
     dateFrom: readQueryValue(params, "dateFrom"),
@@ -1185,6 +1192,20 @@ export default async function AdminReportsPage({
           View Bookings
         </Link>
       </div>
+
+      <section className="mt-4 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-3">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+          Active scope
+        </p>
+        <p className="mt-1 text-sm font-semibold text-[var(--ccr-text)]">
+          Date range: {filters.dateFrom} to {filters.dateTo}
+        </p>
+        <p className="mt-1 text-xs text-[var(--ccr-muted)]">
+          {hasExplicitDateRange
+            ? "Using your selected date range filters."
+            : "No date range was passed, so reports defaulted to all-time activity (earliest record to today)."}
+        </p>
+      </section>
 
       <form className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
         <div className="grid grid-cols-2 gap-3 max-[359px]:grid-cols-1 md:grid-cols-[1fr_1fr_1.5fr_140px_auto_auto] md:gap-4">
@@ -2011,10 +2032,10 @@ export default async function AdminReportsPage({
                                     >
                                       <td className="px-3 py-2">
                                         <Link
-                                          href={`/admin/bookings/${row.bookingId}`}
+                                          href={`/admin/bookings/${row.bookingDbId}`}
                                           className="font-semibold text-[var(--ccr-text)] hover:underline"
                                         >
-                                          {row.bookingId.slice(0, 8)}
+                                          {row.bookingId}
                                         </Link>
                                       </td>
                                       <td className="px-3 py-2 text-[var(--ccr-text)]">{row.customerName}</td>
@@ -2242,10 +2263,10 @@ export default async function AdminReportsPage({
                                 >
                                   <td className="px-3 py-2">
                                     <Link
-                                      href={`/admin/bookings/${row.bookingId}`}
+                                      href={`/admin/bookings/${row.bookingDbId}`}
                                       className="font-semibold text-[var(--ccr-text)] hover:underline"
                                     >
-                                      {row.bookingId.slice(0, 8)}
+                                      {row.bookingId}
                                     </Link>
                                   </td>
                                   <td className="px-3 py-2 text-[var(--ccr-text)]">{row.customerName}</td>
@@ -2817,10 +2838,10 @@ export default async function AdminReportsPage({
                                     >
                                       <td className="px-3 py-2">
                                         <Link
-                                          href={`/admin/bookings/${row.bookingId}`}
+                                          href={`/admin/bookings/${row.bookingDbId}`}
                                           className="font-semibold text-[var(--ccr-text)] hover:underline"
                                         >
-                                          {row.bookingId.slice(0, 8)}
+                                          {row.bookingId}
                                         </Link>
                                       </td>
                                       <td className="px-3 py-2 text-[var(--ccr-text)]">{row.customerName}</td>
@@ -2941,10 +2962,10 @@ export default async function AdminReportsPage({
                                     >
                                       <td className="px-3 py-2">
                                         <Link
-                                          href={`/admin/bookings/${row.bookingId}`}
+                                          href={`/admin/bookings/${row.bookingDbId}`}
                                           className="font-semibold text-[var(--ccr-text)] hover:underline"
                                         >
-                                          {row.bookingId.slice(0, 8)}
+                                          {row.bookingId}
                                         </Link>
                                       </td>
                                       <td className="px-3 py-2 text-[var(--ccr-text)]">{row.customerName}</td>
@@ -3223,7 +3244,7 @@ export default async function AdminReportsPage({
                               >
                                 <div className="flex flex-wrap items-center justify-between gap-2">
                                   <p className="text-sm font-semibold text-[var(--ccr-text)]">
-                                    {row.bookingId.slice(0, 8)} · {row.vehicleLabel}
+                                    {row.bookingId} · {row.vehicleLabel}
                                   </p>
                                   <span className="text-xs text-[var(--ccr-muted)]">
                                     <DateTimeInline value={row.cancelledAt} />
@@ -3276,7 +3297,7 @@ export default async function AdminReportsPage({
                               >
                                 <div className="flex flex-wrap items-center justify-between gap-2">
                                   <p className="text-sm font-semibold text-[var(--ccr-text)]">
-                                    {row.bookingId.slice(0, 8)} · {row.vehicleLabel}
+                                    {row.bookingId} · {row.vehicleLabel}
                                   </p>
                                   <span className="text-sm font-semibold text-[var(--ccr-text)]">
                                     {formatJmd(row.amount)}

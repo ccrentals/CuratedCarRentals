@@ -17,6 +17,7 @@ function formatDashboardStatus(status: string) {
 
 export default async function AdminDashboardPage() {
   const now = new Date();
+  const todayLabel = now.toLocaleDateString();
   const hoverTextClass = "hover:text-[var(--ccr-muted)]";
   // Shared gold-ring quick action treatment for visual consistency.
   const quickActionClass =
@@ -82,7 +83,33 @@ export default async function AdminDashboardPage() {
     vehicle_model: string;
     balance_due: string;
   }>(
-    "select b.id, b.public_id, b.status, b.start_date, b.end_date, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model, coalesce((b.pricing_json->>'balance_due')::numeric, 0) as balance_due from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.status not in ('CANCELLED','RETURNED') and coalesce((b.pricing_json->>'balance_due')::numeric, 0) > 0 order by balance_due desc, b.created_at desc limit 5",
+    "with booking_financials as (" +
+      "  select b.id, b.public_id, b.status, b.start_date, b.end_date, b.created_at, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model, " +
+      "    greatest(0, " +
+      "      coalesce(" +
+      "        case when coalesce(b.pricing_json->>'total_cents', '') ~ '^-?[0-9]+(\\\\.[0-9]+)?$' then (b.pricing_json->>'total_cents')::numeric else null end, " +
+      "        coalesce(" +
+      "          case when coalesce(b.pricing_json->>'subtotal_cents', '') ~ '^-?[0-9]+(\\\\.[0-9]+)?$' then (b.pricing_json->>'subtotal_cents')::numeric else null end, " +
+      "          (v.daily_rate_cents::numeric * greatest((b.end_date - b.start_date + 1), 1))" +
+      "        ) - coalesce(" +
+      "          case when coalesce(b.pricing_json->>'promo_discount_cents', '') ~ '^-?[0-9]+(\\\\.[0-9]+)?$' then (b.pricing_json->>'promo_discount_cents')::numeric else 0 end, " +
+      "          0" +
+      "        )" +
+      "      ) - coalesce((" +
+      "        select sum(p.deposit_amount_cents)::numeric from payments p " +
+      "        where p.booking_id = b.id and p.deleted_at is null and p.status = any(array['DEPOSIT_PAID','SUCCESS','REFUNDED']::text[])" +
+      "      ), 0)" +
+      "    ) as balance_due " +
+      "  from bookings b " +
+      "  join customers c on c.id = b.customer_id " +
+      "  join vehicles v on v.id = b.vehicle_id " +
+      "  where b.status not in ('CANCELLED','OVERRIDDEN') " +
+      "    and coalesce(b.pricing_json->>'overridden_by_booking_id', '') = ''" +
+      ") " +
+      "select id, public_id, status, start_date, end_date, customer_name, customer_email, vehicle_make, vehicle_model, balance_due::text as balance_due " +
+      "from booking_financials " +
+      "where balance_due > 0 " +
+      "order by balance_due desc, created_at desc limit 5",
   );
 
   const maintenanceVehicles = await dbQuery<{
@@ -183,6 +210,24 @@ export default async function AdminDashboardPage() {
           </Link>
         ))}
       </div>
+
+      <section className="mt-4 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-3">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Scope legend</p>
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[var(--ccr-muted)]">
+          <span className="rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-2.5 py-1">
+            Cards: all-time snapshot
+          </span>
+          <span className="rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-2.5 py-1">
+            Upcoming pickups today: {todayLabel}
+          </span>
+          <span className="rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-2.5 py-1">
+            Upcoming pickups (7d): next 7 days
+          </span>
+          <span className="rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-2.5 py-1">
+            Outstanding balances: open bookings only
+          </span>
+        </div>
+      </section>
 
       <div className="mt-8 grid gap-6 lg:grid-cols-2">
         <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm">

@@ -65,6 +65,7 @@ export type UtilizationReport = {
 
 export type OutstandingBalanceRow = {
   bookingId: string;
+  bookingDbId: string;
   customerName: string;
   vehicleLabel: string;
   pickupDate: string;
@@ -105,6 +106,7 @@ export type FunnelReport = {
 
 export type UpcomingRow = {
   bookingId: string;
+  bookingDbId: string;
   customerName: string;
   vehicleLabel: string;
   status: string;
@@ -126,6 +128,7 @@ export type UpcomingPickupsReturnsReport = {
 
 export type CancellationRow = {
   bookingId: string;
+  bookingDbId: string;
   customerName: string;
   vehicleLabel: string;
   status: string;
@@ -137,6 +140,7 @@ export type CancellationRow = {
 export type RefundRow = {
   paymentId: string;
   bookingId: string;
+  bookingDbId: string;
   customerName: string;
   vehicleLabel: string;
   refundedAt: string;
@@ -190,6 +194,7 @@ export type AgingReceivableBucketLabel = "Current" | "1-15 days" | "16-30 days" 
 
 export type AgingReceivablesRow = {
   bookingId: string;
+  bookingDbId: string;
   customerName: string;
   vehicleLabel: string;
   pickupDate: string;
@@ -270,6 +275,7 @@ export type AdminReportsPayload = {
 type CsvExportReportKey = "outstanding_balances" | "pickups" | "returns" | "cancellations_refunds";
 
 const NUMERIC_PATTERN = "^-?[0-9]+(\\.[0-9]+)?$";
+const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const PAYMENT_SUCCESS_STATUSES = ["DEPOSIT_PAID", "SUCCESS"] as const;
 const PAYMENT_NET_STATUSES = ["DEPOSIT_PAID", "SUCCESS", "REFUNDED"] as const;
 
@@ -319,6 +325,10 @@ function normalizeGranularity(value: unknown): ReportGranularity {
   if (normalized === "week") return "week";
   if (normalized === "month") return "month";
   return "day";
+}
+
+function isDateOnlyText(value: unknown): value is string {
+  return typeof value === "string" && DATE_ONLY_PATTERN.test(value);
 }
 
 function dateFromKey(value: unknown) {
@@ -522,6 +532,20 @@ export function normalizeReportsFilters(input: ReportsFilterInput): ReportsFilte
     vehicleId: maybeText(input.vehicleId),
     revenueGranularity: normalizeGranularity(input.revenueGranularity),
   };
+}
+
+async function resolveDefaultReportsDateRange(db: Queryable): Promise<{ dateFrom: string; dateTo: string }> {
+  const todayDate = dateOnlyUtc(new Date()) ?? new Date();
+  const dateTo = dateFromKey(todayDate);
+  const minRangeRow = await db.query(
+    "select coalesce(least(" +
+      "coalesce((select min(created_at::date) from bookings), current_date), " +
+      "coalesce((select min(created_at::date) from payments where deleted_at is null), current_date)" +
+      "), current_date)::text as earliest_date",
+  );
+  const earliest = maybeText((minRangeRow.rows[0] as { earliest_date?: string } | undefined)?.earliest_date);
+  const dateFrom = isDateOnlyText(earliest) ? earliest : dateTo;
+  return { dateFrom, dateTo };
 }
 
 function buildVehicleFilterClause(vehicleId: string, values: unknown[], prefix = "b.vehicle_id") {
@@ -829,6 +853,7 @@ function buildAgingReceivablesReport(
       const bucket = agingBucketForDaysPastDue(daysPastDue);
       return {
         bookingId: row.bookingId,
+        bookingDbId: row.bookingDbId,
         customerName: row.customerName,
         vehicleLabel: row.vehicleLabel,
         pickupDate: row.pickupDate,
@@ -1158,7 +1183,7 @@ async function buildOutstandingBalancesReport(
 
   const rows = await db.query(
     "with booking_financials as (" +
-      "  select b.id, b.status, b.start_date, b.end_date, b.created_at, b.pricing_json, " +
+      "  select b.id, b.public_id, b.status, b.start_date, b.end_date, b.created_at, b.pricing_json, " +
       "    c.full_name as customer_name, v.make as vehicle_make, v.model as vehicle_model, " +
       `    ${TOTAL_SQL} as total_amount, ` +
       "    coalesce(( " +
@@ -1174,7 +1199,7 @@ async function buildOutstandingBalancesReport(
       "    and coalesce(b.pricing_json->>'overridden_by_booking_id', '') = '' " +
       vehicleClause +
       ") " +
-      "select id, status, start_date, end_date, pricing_json, customer_name, vehicle_make, vehicle_model, " +
+      "select id, public_id, status, start_date, end_date, pricing_json, customer_name, vehicle_make, vehicle_model, " +
       "  total_amount::numeric as total_amount, amount_paid::numeric as amount_paid, " +
       "  greatest(total_amount - amount_paid, 0)::numeric as balance_due, " +
       "  (start_date - current_date)::int as days_from_pickup " +
@@ -1186,6 +1211,7 @@ async function buildOutstandingBalancesReport(
 
   const mappedRows = (rows.rows as Array<{
     id: string;
+    public_id: string | null;
     status: string;
     start_date: string | Date;
     end_date: string | Date;
@@ -1203,6 +1229,7 @@ async function buildOutstandingBalancesReport(
     const paymentOption = maybeText(pricing.payment_option_selected || "DEPOSIT").toUpperCase() || "DEPOSIT";
     const amountPaid = asNumber(row.amount_paid);
     const holdMinimumAmount = readHoldMinimumAmount(pricing);
+    const bookingId = maybeText(row.public_id) || row.id;
     const isNonBlocking = isNonBlockingBookingHold({
       paymentStatus,
       amountPaid,
@@ -1210,7 +1237,8 @@ async function buildOutstandingBalancesReport(
     });
 
     return {
-      bookingId: row.id,
+      bookingId,
+      bookingDbId: row.id,
       customerName: row.customer_name,
       vehicleLabel: `${row.vehicle_make} ${row.vehicle_model}`.trim(),
       pickupDate: toDateOnlyText(row.start_date),
@@ -1293,7 +1321,7 @@ async function buildUpcomingPickupsReturnsReport(
   const vehicleClause = buildVehicleFilterClause(filters.vehicleId, values, "b.vehicle_id");
 
   const baseSelect =
-    "select b.id, b.status, b.start_date, b.end_date, b.pricing_json, c.full_name as customer_name, v.make as vehicle_make, v.model as vehicle_model, " +
+    "select b.id, b.public_id, b.status, b.start_date, b.end_date, b.pricing_json, c.full_name as customer_name, v.make as vehicle_make, v.model as vehicle_model, " +
     `  ${TOTAL_SQL} as total_amount, ` +
     "  coalesce((select sum(p.deposit_amount_cents)::numeric from payments p where p.booking_id = b.id and p.deleted_at is null and p.status = any($3::text[])), 0) as amount_paid " +
     "from bookings b " +
@@ -1315,6 +1343,7 @@ async function buildUpcomingPickupsReturnsReport(
   const mapRows = (
     rows: Array<{
       id: string;
+      public_id: string | null;
       status: string;
       start_date: string | Date;
       end_date: string | Date;
@@ -1333,6 +1362,7 @@ async function buildUpcomingPickupsReturnsReport(
       const paymentStatus = normalizePaymentStatus(pricing.payment_status);
       const paymentOption = maybeText(pricing.payment_option_selected || "DEPOSIT").toUpperCase() || "DEPOSIT";
       const holdMinimumAmount = readHoldMinimumAmount(pricing);
+      const bookingId = maybeText(row.public_id) || row.id;
       const isNonBlocking = isNonBlockingBookingHold({
         paymentStatus,
         amountPaid,
@@ -1342,7 +1372,8 @@ async function buildUpcomingPickupsReturnsReport(
       const balanceDue = Math.max(0, total - amountPaid);
 
       return {
-        bookingId: row.id,
+        bookingId,
+        bookingDbId: row.id,
         customerName: row.customer_name,
         vehicleLabel: `${row.vehicle_make} ${row.vehicle_model}`.trim(),
         status: row.status,
@@ -1362,6 +1393,7 @@ async function buildUpcomingPickupsReturnsReport(
     pickups: mapRows(
       pickups.rows as Array<{
         id: string;
+        public_id: string | null;
         status: string;
         start_date: string | Date;
         end_date: string | Date;
@@ -1377,6 +1409,7 @@ async function buildUpcomingPickupsReturnsReport(
     returns: mapRows(
       returns.rows as Array<{
         id: string;
+        public_id: string | null;
         status: string;
         start_date: string | Date;
         end_date: string | Date;
@@ -1400,7 +1433,7 @@ async function buildCancellationRefundImpactReport(
   const cancellationVehicleClause = buildVehicleFilterClause(filters.vehicleId, cancellationValues, "b.vehicle_id");
 
   const cancellationRows = await db.query(
-    "select b.id, b.status, c.full_name as customer_name, v.make as vehicle_make, v.model as vehicle_model, " +
+    "select b.id, b.public_id, b.status, c.full_name as customer_name, v.make as vehicle_make, v.model as vehicle_model, " +
       "coalesce( " +
       "  case when coalesce(b.pricing_json->>'cancelled_at', '') ~ '^\\d{4}-\\d{2}-\\d{2}T' then (b.pricing_json->>'cancelled_at')::timestamptz end, " +
       "  case when coalesce(b.pricing_json->>'overridden_at', '') ~ '^\\d{4}-\\d{2}-\\d{2}T' then (b.pricing_json->>'overridden_at')::timestamptz end, " +
@@ -1427,7 +1460,7 @@ async function buildCancellationRefundImpactReport(
     "b.vehicle_id",
   );
   const refunds = await db.query(
-    "select p.id, p.booking_id, p.provider, p.status, p.created_at, p.deposit_amount_cents, c.full_name as customer_name, v.make as vehicle_make, v.model as vehicle_model " +
+    "select p.id, p.booking_id, b.public_id as booking_public_id, p.provider, p.status, p.created_at, p.deposit_amount_cents, c.full_name as customer_name, v.make as vehicle_make, v.model as vehicle_model " +
       "from payments p join bookings b on b.id = p.booking_id join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id " +
       "where p.deleted_at is null and (p.status = 'REFUNDED' or p.deposit_amount_cents < 0) and p.created_at::date between $1 and $2 " +
       refundListVehicleClause +
@@ -1532,6 +1565,7 @@ async function buildCancellationRefundImpactReport(
 
   const mappedCancellations: CancellationRow[] = (cancellationRows.rows as Array<{
     id: string;
+    public_id: string | null;
     status: string;
     customer_name: string;
     vehicle_make: string;
@@ -1540,7 +1574,8 @@ async function buildCancellationRefundImpactReport(
     cancellation_reason: string;
     is_overridden: boolean;
   }>).map((row) => ({
-    bookingId: row.id,
+    bookingId: maybeText(row.public_id) || row.id,
+    bookingDbId: row.id,
     customerName: row.customer_name,
     vehicleLabel: `${row.vehicle_make} ${row.vehicle_model}`.trim(),
     status: row.status,
@@ -1552,6 +1587,7 @@ async function buildCancellationRefundImpactReport(
   const mappedRefunds: RefundRow[] = (refunds.rows as Array<{
     id: string;
     booking_id: string;
+    booking_public_id: string | null;
     provider: string;
     status: string;
     created_at: string | Date;
@@ -1561,7 +1597,8 @@ async function buildCancellationRefundImpactReport(
     vehicle_model: string;
   }>).map((row) => ({
     paymentId: row.id,
-    bookingId: row.booking_id,
+    bookingId: maybeText(row.booking_public_id) || row.booking_id,
+    bookingDbId: row.booking_id,
     customerName: row.customer_name,
     vehicleLabel: `${row.vehicle_make} ${row.vehicle_model}`.trim(),
     refundedAt: toDateTimeText(row.created_at),
@@ -1592,8 +1629,21 @@ export async function getAdminReportsPayload(
   filtersInput: ReportsFilterInput,
   options: { db?: Queryable } = {},
 ): Promise<AdminReportsPayload> {
-  const filters = normalizeReportsFilters(filtersInput);
   const db = getQueryable(options.db);
+  const hasDateFrom = isDateOnlyText(filtersInput.dateFrom);
+  const hasDateTo = isDateOnlyText(filtersInput.dateTo);
+  let resolvedFiltersInput = filtersInput;
+
+  if (!hasDateFrom || !hasDateTo) {
+    const defaults = await resolveDefaultReportsDateRange(db);
+    resolvedFiltersInput = {
+      ...filtersInput,
+      dateFrom: hasDateFrom ? filtersInput.dateFrom : defaults.dateFrom,
+      dateTo: hasDateTo ? filtersInput.dateTo : defaults.dateTo,
+    };
+  }
+
+  const filters = normalizeReportsFilters(resolvedFiltersInput);
 
   const [
     revenue,

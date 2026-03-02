@@ -5,7 +5,6 @@ import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import {
   buildReportsFilterQueryString,
   getAdminReportsPayload,
-  normalizeReportsFilters,
   type AdminReportsPayload,
   type ReportsFilterInput,
 } from "@/lib/reports/adminReports";
@@ -546,7 +545,7 @@ export async function handleReportsGet(request: Request, deps: ReportsRouteDeps 
     });
   }
 
-  const normalizedFilters = normalizeReportsFilters(filters);
+  const normalizedFilters = payload.filters;
   return NextResponse.json({
     ok: true,
     filters: normalizedFilters,
