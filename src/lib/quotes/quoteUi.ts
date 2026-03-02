@@ -53,7 +53,7 @@ export function quoteStatusPillToneClass(status: string | null | undefined) {
     return "border-emerald-300/40 bg-emerald-500/15 text-emerald-100";
   }
   if (normalized === "EXPIRED") {
-    return "border-amber-300/45 bg-amber-500/15 text-amber-100";
+    return "border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] text-[var(--ccr-accent)]";
   }
   if (normalized === "CONVERTED") {
     return "border-cyan-300/40 bg-cyan-500/15 text-cyan-100";

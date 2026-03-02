@@ -94,6 +94,7 @@ type QuoteDetailClientProps = {
 };
 
 export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, initialEvents }: QuoteDetailClientProps) {
+  const ACTIVITY_ROWS_PER_PAGE = 10;
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -110,8 +111,21 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
   const [commissionPartnerName, setCommissionPartnerName] = useState("");
   const [clientPaysAtPartner, setClientPaysAtPartner] = useState(false);
   const [rackPriceInput, setRackPriceInput] = useState("");
+  const [activityPage, setActivityPage] = useState(1);
 
   const eventRows = useMemo(() => initialEvents, [initialEvents]);
+  const activityTotalPages = Math.max(1, Math.ceil(eventRows.length / ACTIVITY_ROWS_PER_PAGE));
+  const activityStartIndex = (activityPage - 1) * ACTIVITY_ROWS_PER_PAGE;
+  const pagedEventRows = useMemo(
+    () => eventRows.slice(activityStartIndex, activityStartIndex + ACTIVITY_ROWS_PER_PAGE),
+    [activityStartIndex, eventRows, ACTIVITY_ROWS_PER_PAGE],
+  );
+  const activityFrom = eventRows.length === 0 ? 0 : activityStartIndex + 1;
+  const activityTo = eventRows.length === 0 ? 0 : Math.min(eventRows.length, activityStartIndex + ACTIVITY_ROWS_PER_PAGE);
+
+  useEffect(() => {
+    setActivityPage((current) => Math.min(Math.max(1, current), activityTotalPages));
+  }, [activityTotalPages]);
 
   const syncEditor = useCallback((nextItem: QuoteDetailItem) => {
     setExpiresAtLocal(toDateTimeLocalValue(nextItem.expiresAt));
@@ -255,9 +269,14 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Quote</p>
-          <h1 data-testid="quote-public-id" className="text-3xl font-bold text-[var(--ccr-text)]">
-            Quote {shortQuoteId(item.id, item.publicId)}
-          </h1>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <h1 data-testid="quote-public-id" className="text-3xl font-bold text-[var(--ccr-text)]">
+              Quote {shortQuoteId(item.id, item.publicId)}
+            </h1>
+            <span className={`${QUOTE_STATUS_PILL_BASE_CLASS} ${quoteStatusPillToneClass(item.status)}`}>
+              {quoteStatusLabel(item.status)}
+            </span>
+          </div>
           <p className="mt-1 text-sm text-[var(--ccr-muted)]">Manage quote status, metadata, pricing snapshot, and actions.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -322,10 +341,43 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
       {error ? <p className="mt-2 text-xs font-semibold text-red-300">{error}</p> : null}
 
       <section className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className={`${QUOTE_STATUS_PILL_BASE_CLASS} ${quoteStatusPillToneClass(item.status)}`}>
-            {quoteStatusLabel(item.status)}
-          </span>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void patchQuote({ status: "SENT" })}
+              disabled={saving || item.status === "SENT"}
+              data-testid="quote-mark-sent"
+              className="inline-flex min-h-9 items-center justify-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-50"
+            >
+              Mark Sent
+            </button>
+            <button
+              type="button"
+              onClick={() => void patchQuote({ status: "ACCEPTED" })}
+              disabled={saving || item.status === "ACCEPTED"}
+              className="inline-flex min-h-9 items-center justify-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-50"
+            >
+              Mark Accepted
+            </button>
+            <button
+              type="button"
+              onClick={() => void patchQuote({ status: "EXPIRED" })}
+              disabled={saving || item.status === "EXPIRED"}
+              className="inline-flex min-h-9 items-center justify-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-50"
+            >
+              Mark Expired
+            </button>
+            <button
+              type="button"
+              onClick={() => void patchQuote({ status: "CANCELLED" })}
+              disabled={saving || item.status === "CANCELLED"}
+              className="inline-flex min-h-9 items-center justify-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-50"
+            >
+              Mark Cancelled
+            </button>
+          </div>
+
           <dl className="grid gap-1 text-xs text-[var(--ccr-muted)] sm:grid-cols-3 sm:gap-4">
             <div>
               <dt className="uppercase tracking-wide">Created</dt>
@@ -342,42 +394,6 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
               </dd>
             </div>
           </dl>
-        </div>
-
-        <div className="mt-4 flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => void patchQuote({ status: "SENT" })}
-            disabled={saving || item.status === "SENT"}
-            data-testid="quote-mark-sent"
-            className="inline-flex min-h-9 items-center justify-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-50"
-          >
-            Mark Sent
-          </button>
-          <button
-            type="button"
-            onClick={() => void patchQuote({ status: "ACCEPTED" })}
-            disabled={saving || item.status === "ACCEPTED"}
-            className="inline-flex min-h-9 items-center justify-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-50"
-          >
-            Mark Accepted
-          </button>
-          <button
-            type="button"
-            onClick={() => void patchQuote({ status: "EXPIRED" })}
-            disabled={saving || item.status === "EXPIRED"}
-            className="inline-flex min-h-9 items-center justify-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-50"
-          >
-            Mark Expired
-          </button>
-          <button
-            type="button"
-            onClick={() => void patchQuote({ status: "CANCELLED" })}
-            disabled={saving || item.status === "CANCELLED"}
-            className="inline-flex min-h-9 items-center justify-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-50"
-          >
-            Mark Cancelled
-          </button>
         </div>
       </section>
 
@@ -533,12 +549,19 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
       </section>
 
       <section className="mt-4 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-5">
-        <h2 className="text-sm font-bold uppercase tracking-wide text-[var(--ccr-muted)]">Activity Log</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-bold uppercase tracking-wide text-[var(--ccr-muted)]">Activity Log</h2>
+          {eventRows.length > 0 ? (
+            <p className="text-xs text-[var(--ccr-muted)]">
+              Showing {activityFrom}-{activityTo} of {eventRows.length}
+            </p>
+          ) : null}
+        </div>
         {eventRows.length === 0 ? (
           <p className="mt-3 text-sm text-[var(--ccr-muted)]">No events recorded yet.</p>
         ) : (
           <ul className="mt-3 space-y-2">
-            {eventRows.map((event) => {
+            {pagedEventRows.map((event) => {
               const metaText = formatQuoteActivityMeta(event.meta);
               const actorLabel = formatQuoteActivityActorLabel(event.eventType);
               return (
@@ -560,6 +583,29 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
             })}
           </ul>
         )}
+        {eventRows.length > ACTIVITY_ROWS_PER_PAGE ? (
+          <div className="mt-3 flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setActivityPage((current) => Math.max(1, current - 1))}
+              disabled={activityPage <= 1}
+              className="inline-flex min-h-8 items-center justify-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-1.5 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-50"
+            >
+              Prev
+            </button>
+            <p className="text-xs text-[var(--ccr-muted)]">
+              Page {activityPage} of {activityTotalPages}
+            </p>
+            <button
+              type="button"
+              onClick={() => setActivityPage((current) => Math.min(activityTotalPages, current + 1))}
+              disabled={activityPage >= activityTotalPages}
+              className="inline-flex min-h-8 items-center justify-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-1.5 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
+        ) : null}
       </section>
 
       <QuoteEmailModal
