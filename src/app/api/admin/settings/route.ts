@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { requireAdminRole, requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
+import { requireAdminRole } from "@/lib/auth/adminGuards";
 import { canUpdatePrimaryAdminLoginMethod } from "@/lib/auth/adminLoginMethod";
 import {
   DEFAULT_ADMIN_SETTINGS,
@@ -49,7 +49,7 @@ function handleMissingTable(error: unknown) {
 }
 
 export async function GET() {
-  const auth = await requireStaffOrAdminRole();
+  const auth = await requireAdminRole();
   if (!auth.ok) {
     return auth.response;
   }

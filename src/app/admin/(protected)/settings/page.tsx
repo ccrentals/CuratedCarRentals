@@ -81,6 +81,34 @@ export default async function AdminSettingsPage({
   const isAdmin = isAdminRole(session?.role);
   const isDeveloper = isDeveloperRole(session?.role);
 
+  if (!isAdmin) {
+    return (
+      <div className="mx-auto w-full max-w-5xl px-6 py-10">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Admin</p>
+            <h1 className="text-3xl font-bold text-[var(--ccr-text)]">Settings</h1>
+            <p className="mt-2 text-sm text-[var(--ccr-muted)]">
+              Configure platform-wide toggles for booking, payment, and operational workflows.
+            </p>
+          </div>
+          <Link
+            href="/admin"
+            className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+          >
+            Back to dashboard
+          </Link>
+        </div>
+        <section className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
+          <p className="text-sm font-semibold text-[var(--ccr-text)]">Admin access required.</p>
+          <p className="mt-2 text-sm text-[var(--ccr-muted)]">
+            Only ADMIN users can modify platform settings.
+          </p>
+        </section>
+      </div>
+    );
+  }
+
   let settings = { ...DEFAULT_ADMIN_SETTINGS };
   let updatedAt: string | null = null;
   let updatedByEmail: string | null = null;
@@ -125,51 +153,40 @@ export default async function AdminSettingsPage({
       </div>
 
       <div className="mt-6 space-y-6">
-        {!isAdmin ? (
-          <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
-            <p className="text-sm font-semibold text-[var(--ccr-text)]">Admin access required.</p>
-            <p className="mt-2 text-sm text-[var(--ccr-muted)]">
-            Only ADMIN users can modify platform settings.
-          </p>
-          </section>
-        ) : (
-          <>
-            <AdminPillTabs
-              tabs={SETTINGS_TABS.map((tab) => ({
-                key: tab.key,
-                label: tab.label,
-                href: buildSettingsTabHref(tab.key, query),
-              }))}
-              activeKey={activeTab}
-              ariaLabel="Admin settings tabs"
-              navTestId="settings-tabs"
-              tabTestIdPrefix="settings-tab"
-            />
+        <AdminPillTabs
+          tabs={SETTINGS_TABS.map((tab) => ({
+            key: tab.key,
+            label: tab.label,
+            href: buildSettingsTabHref(tab.key, query),
+          }))}
+          activeKey={activeTab}
+          ariaLabel="Admin settings tabs"
+          navTestId="settings-tabs"
+          tabTestIdPrefix="settings-tab"
+        />
 
-            {activeTab === "booking-flow" ? (
-              <BookingFlowConfigPanel />
-            ) : activeTab === "vehicles" ? (
-              <SettingsVehiclesPanel />
-            ) : tableMissing ? (
-              <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
-                <p className="text-sm font-semibold text-[var(--ccr-text)]">Settings storage not configured.</p>
-                <p className="mt-2 text-sm text-[var(--ccr-muted)]">
-                  The <code>admin_documents</code> table is missing. Apply the current schema in Neon and
-                  refresh this page.
-                </p>
-              </section>
-            ) : isSettingsFormTab(activeTab) ? (
-              <AdminSettingsForm
-                initialSettings={settings}
-                updatedAt={updatedAt}
-                updatedByEmail={updatedByEmail}
-                activeTab={activeTab}
-                disabled={!isAdmin}
-                showDeveloperControls={isDeveloper}
-              />
-            ) : null}
-          </>
-        )}
+        {activeTab === "booking-flow" ? (
+          <BookingFlowConfigPanel />
+        ) : activeTab === "vehicles" ? (
+          <SettingsVehiclesPanel />
+        ) : tableMissing ? (
+          <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
+            <p className="text-sm font-semibold text-[var(--ccr-text)]">Settings storage not configured.</p>
+            <p className="mt-2 text-sm text-[var(--ccr-muted)]">
+              The <code>admin_documents</code> table is missing. Apply the current schema in Neon and
+              refresh this page.
+            </p>
+          </section>
+        ) : isSettingsFormTab(activeTab) ? (
+          <AdminSettingsForm
+            initialSettings={settings}
+            updatedAt={updatedAt}
+            updatedByEmail={updatedByEmail}
+            activeTab={activeTab}
+            disabled={false}
+            showDeveloperControls={isDeveloper}
+          />
+        ) : null}
       </div>
     </div>
   );

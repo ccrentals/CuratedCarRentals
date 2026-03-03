@@ -30,6 +30,17 @@ type ManagedUserRow = {
   locked_at?: string | null;
 };
 
+function isPrivilegedRole(role: string | null | undefined) {
+  const normalized = String(role ?? "")
+    .trim()
+    .toUpperCase();
+  return normalized === "ADMIN" || normalized === "DEVELOPER";
+}
+
+function isLifecycleActiveUser(user: Pick<ManagedUserRow, "is_active" | "deactivated_at">) {
+  return user.is_active !== false && !user.deactivated_at;
+}
+
 type ClerkPasswordResetSyncResult = {
   status: "synced" | "skipped";
   clerkUserId: string | null;
@@ -108,6 +119,43 @@ async function loadUserForUpdate(client: QueryClient, userId: string): Promise<M
     deactivated_at: typeof row.deactivated_at === "string" ? row.deactivated_at : null,
     locked_at: typeof row.locked_at === "string" ? row.locked_at : null,
   };
+}
+
+async function countActivePrivilegedUsers(
+  client: QueryClient,
+  options: { excludeUserId?: string } = {},
+) {
+  const values: unknown[] = [];
+  const excludeSql = options.excludeUserId
+    ? (() => {
+        values.push(options.excludeUserId);
+        return ` and id <> $${values.length}`;
+      })()
+    : "";
+
+  try {
+    const result = await client.query(
+      `select count(*)::int as total
+       from users
+       where role in ('ADMIN', 'DEVELOPER')
+         and coalesce(is_active, true) = true
+         and deactivated_at is null${excludeSql}`,
+      values,
+    );
+    return Number((result.rows[0]?.total as number | string | undefined) ?? 0);
+  } catch (error) {
+    if (!isUndefinedColumn(error, "is_active") && !isUndefinedColumn(error, "deactivated_at")) {
+      throw error;
+    }
+
+    const fallback = await client.query(
+      `select count(*)::int as total
+       from users
+       where role in ('ADMIN', 'DEVELOPER')${excludeSql}`,
+      values,
+    );
+    return Number((fallback.rows[0]?.total as number | string | undefined) ?? 0);
+  }
 }
 
 async function linkLocalUserToClerkId({
@@ -330,6 +378,8 @@ export async function PATCH(
         { status: 403 },
       );
     }
+    const existingIsPrivileged = isPrivilegedRole(existing.role);
+    const existingIsActive = isLifecycleActiveUser(existing);
 
     if (action === "update_profile") {
       const fullName = typeof body?.fullName === "string" ? body.fullName.trim() : "";
@@ -444,6 +494,29 @@ export async function PATCH(
       if (nextRole === "DEVELOPER" && !actorIsDeveloper) {
         await client.query("rollback");
         return NextResponse.json({ error: "Only developers can assign DEVELOPER role." }, { status: 403 });
+      }
+      const nextRoleIsPrivileged = isPrivilegedRole(nextRole);
+      if (userId === session.userId && existingIsPrivileged && !nextRoleIsPrivileged) {
+        await client.query("rollback");
+        return NextResponse.json(
+          { error: "You cannot remove your own admin access." },
+          { status: 400 },
+        );
+      }
+      if (existingIsPrivileged && existingIsActive && !nextRoleIsPrivileged) {
+        const remainingPrivileged = await countActivePrivilegedUsers(client, {
+          excludeUserId: userId,
+        });
+        if (remainingPrivileged < 1) {
+          await client.query("rollback");
+          return NextResponse.json(
+            {
+              error:
+                "Cannot remove role from the last active privileged account (ADMIN/DEVELOPER).",
+            },
+            { status: 409 },
+          );
+        }
       }
 
       await client.query("update users set role = $2 where id = $1", [userId, nextRole]);
@@ -606,6 +679,21 @@ export async function PATCH(
       if (!reason) {
         await client.query("rollback");
         return NextResponse.json({ error: "Reason is required" }, { status: 400 });
+      }
+      if (existingIsPrivileged && existingIsActive) {
+        const remainingPrivileged = await countActivePrivilegedUsers(client, {
+          excludeUserId: userId,
+        });
+        if (remainingPrivileged < 1) {
+          await client.query("rollback");
+          return NextResponse.json(
+            {
+              error:
+                "Cannot deactivate the last active privileged account (ADMIN/DEVELOPER).",
+            },
+            { status: 409 },
+          );
+        }
       }
 
       try {

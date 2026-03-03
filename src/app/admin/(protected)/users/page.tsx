@@ -59,66 +59,132 @@ export default async function AdminUsersPage({
   const q = typeof params.q === "string" ? params.q.trim() : "";
   const rowsPerPage = normalizePageSize(typeof params.rows === "string" ? params.rows : undefined);
   const requestedVisible = parsePositiveIntParam(params.visible);
+  const visibleCount = Math.max(rowsPerPage, requestedVisible ?? rowsPerPage);
 
   if (!canAdmin) {
     redirect("/admin");
   }
 
-  const values: string[] = [];
-  let whereSql = "";
-  if (q) {
-    values.push(`${q}%`);
-    whereSql = "where (email ilike $1 or username ilike $1 or full_name ilike $1 or public_id ilike $1)";
-  }
-
-  const queryWithLifecycle =
-    "select id, public_id, email, username, full_name, role, is_active, deactivated_at, locked_at, created_at, last_login_at from users " +
-    whereSql +
-    " order by created_at desc";
-  const queryBasic =
-    "select id, null::text as public_id, email, role, locked_at, created_at from users " +
-    (q ? "where email ilike $1" : "") +
-    " order by created_at desc";
+  const searchValues: string[] = q ? [`%${q}%`] : [];
+  const withLimit = (sql: string, valueCount: number) => `${sql} limit $${valueCount + 1}`;
+  const countFromUsers = async (whereSql: string, values: string[]) => {
+    const count = await dbQuery<{ total: number }>(
+      `select count(*)::int as total from users ${whereSql}`.trim(),
+      values,
+    );
+    return Number(count.rows[0]?.total ?? 0);
+  };
 
   const usersQuery = await (async (): Promise<{
     result: Awaited<ReturnType<typeof dbQuery<UserRow>>>;
+    totalCount: number;
     lifecycleNotConfigured: boolean;
     usernamesNotConfigured: boolean;
   }> => {
+    const lifecycleWhereSql = q
+      ? "where (email ilike $1 or username ilike $1 or full_name ilike $1 or public_id ilike $1)"
+      : "";
     try {
+      const lifecycleValues = [...searchValues, visibleCount];
       return {
-        result: await dbQuery<UserRow>(queryWithLifecycle, values),
+        result: await dbQuery<UserRow>(
+          withLimit(
+            `select id, public_id, email, username, full_name, role, is_active, deactivated_at, locked_at, created_at, last_login_at
+             from users
+             ${lifecycleWhereSql}
+             order by created_at desc`,
+            searchValues.length,
+          ),
+          lifecycleValues,
+        ),
+        totalCount: await countFromUsers(lifecycleWhereSql, searchValues),
         lifecycleNotConfigured: false,
         usernamesNotConfigured: false,
       };
     } catch (error) {
       if (isUndefinedColumn(error, "username")) {
+        const whereWithoutUsername = q ? "where (email ilike $1 or full_name ilike $1)" : "";
+        const valuesWithoutUsername = [...searchValues, visibleCount];
         return {
           result: await dbQuery<UserRow>(
-            "select id, null::text as public_id, email, full_name, role, is_active, deactivated_at, locked_at, created_at, last_login_at from users " +
-              whereSql.replace("username ilike $1 or ", "").replace(" or public_id ilike $1", "") +
-              " order by created_at desc",
-            values,
+            withLimit(
+              `select id, null::text as public_id, email, null::text as username, full_name, role, is_active, deactivated_at, locked_at, created_at, last_login_at
+               from users
+               ${whereWithoutUsername}
+               order by created_at desc`,
+              searchValues.length,
+            ),
+            valuesWithoutUsername,
           ),
+          totalCount: await countFromUsers(whereWithoutUsername, searchValues),
           lifecycleNotConfigured: false,
           usernamesNotConfigured: true,
         };
       }
       if (isUndefinedColumn(error, "public_id")) {
+        const whereWithoutPublicId = q
+          ? "where (email ilike $1 or username ilike $1 or full_name ilike $1)"
+          : "";
+        const valuesWithoutPublicId = [...searchValues, visibleCount];
         return {
           result: await dbQuery<UserRow>(
-            "select id, null::text as public_id, email, username, full_name, role, is_active, deactivated_at, locked_at, created_at, last_login_at from users " +
-              whereSql.replace(" or public_id ilike $1", "") +
-              " order by created_at desc",
-            values,
+            withLimit(
+              `select id, null::text as public_id, email, username, full_name, role, is_active, deactivated_at, locked_at, created_at, last_login_at
+               from users
+               ${whereWithoutPublicId}
+               order by created_at desc`,
+              searchValues.length,
+            ),
+            valuesWithoutPublicId,
           ),
+          totalCount: await countFromUsers(whereWithoutPublicId, searchValues),
           lifecycleNotConfigured: false,
           usernamesNotConfigured: false,
         };
       }
       if (isUndefinedColumn(error, "is_active") || isUndefinedColumn(error, "full_name")) {
+        const fallbackWhereSql = q ? "where (email ilike $1 or username ilike $1)" : "";
         return {
-          result: await dbQuery<UserRow>(queryBasic, q ? values : []),
+          result: await (async () => {
+            try {
+              return await dbQuery<UserRow>(
+                withLimit(
+                  `select id, null::text as public_id, email, username, null::text as full_name, role, null::boolean as is_active, null::text as deactivated_at, locked_at, created_at, null::text as last_login_at
+                   from users
+                   ${fallbackWhereSql}
+                   order by created_at desc`,
+                  searchValues.length,
+                ),
+                [...searchValues, visibleCount],
+              );
+            } catch (usernameError) {
+              if (!isUndefinedColumn(usernameError, "username")) {
+                throw usernameError;
+              }
+              const emailOnlyWhereSql = q ? "where email ilike $1" : "";
+              return dbQuery<UserRow>(
+                withLimit(
+                  `select id, null::text as public_id, email, null::text as username, null::text as full_name, role, null::boolean as is_active, null::text as deactivated_at, locked_at, created_at, null::text as last_login_at
+                   from users
+                   ${emailOnlyWhereSql}
+                   order by created_at desc`,
+                  searchValues.length,
+                ),
+                [...searchValues, visibleCount],
+              );
+            }
+          })(),
+          totalCount: await (async () => {
+            try {
+              return await countFromUsers(fallbackWhereSql, searchValues);
+            } catch (usernameError) {
+              if (!isUndefinedColumn(usernameError, "username")) {
+                throw usernameError;
+              }
+              const emailOnlyWhereSql = q ? "where email ilike $1" : "";
+              return countFromUsers(emailOnlyWhereSql, searchValues);
+            }
+          })(),
           lifecycleNotConfigured: true,
           usernamesNotConfigured: false,
         };
@@ -127,10 +193,10 @@ export default async function AdminUsersPage({
     }
   })();
   const users = usersQuery.result;
+  const totalUsers = usersQuery.totalCount;
   const lifecycleNotConfigured = usersQuery.lifecycleNotConfigured;
   const usernamesNotConfigured = usersQuery.usernamesNotConfigured;
-  const visibleCount = Math.max(rowsPerPage, requestedVisible ?? rowsPerPage);
-  const visibleUsers = users.rows.slice(0, visibleCount);
+  const visibleUsers = users.rows;
 
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-10">
@@ -177,7 +243,7 @@ export default async function AdminUsersPage({
       <CreateUserForm disabled={lifecycleNotConfigured} actorRole={effectiveSessionRole ?? "USER"} />
 
       <div className="mt-6 overflow-x-auto rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)]">
-        {users.rows.length === 0 ? (
+        {totalUsers === 0 ? (
           <div className="px-6 py-10 text-center text-sm text-[var(--ccr-muted)]">
             No users found.
           </div>
@@ -236,11 +302,11 @@ export default async function AdminUsersPage({
             </tbody>
           </table>
         )}
-        {users.rows.length > 0 ? (
+        {totalUsers > 0 ? (
           <LoadMorePaginationControls
             pageSize={rowsPerPage}
             loadedCount={visibleUsers.length}
-            totalCount={users.rows.length}
+            totalCount={totalUsers}
             noMoreLabel="No more users"
           />
         ) : null}
