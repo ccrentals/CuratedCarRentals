@@ -188,12 +188,17 @@ function SvgArrow({
 const SITE_MAP = `Public
 - /
 - /fleet
+- /fleet/[id]
 - /book
+- /book/checkout
 - /services
 - /tourist-destinations
 - /about
 - /contact
 - /bookings/[id]
+  - /bookings/[id]/pay
+  - /bookings/[id]/balance
+  - /bookings/[id]/invoice
 - /payment/success
 - /payment/failed
 
@@ -204,18 +209,30 @@ Admin (requires login)
 - /admin/bookings
   - /admin/bookings/[id]
   - /admin/bookings/archive
+  - /admin/bookings/quotes
+  - /admin/bookings/quotes/[id]
+- /admin/customers
+  - /admin/customers/[id]
+- /admin/messages
 - /admin/vehicles
   - /admin/vehicles/[vehicleId]
 - /admin/payments
 - /admin/calendar
+- /admin/promo-codes
+- /admin/maintenance
+- /admin/depreciation
 - /admin/reports
 - /admin/cron
+- /admin/settings
 - /admin/health
 - /admin/users
 - /admin/profile
+- /admin/template-lab
+- /admin/developer
 - /admin/documentation
   - /admin/documentation/prd
   - /admin/documentation/design
+  - /admin/documentation/integrations
   - /admin/documentation/technical
   - /admin/documentation/operations
   - /admin/documentation/legal
@@ -278,10 +295,10 @@ const SYSTEM_ARCH_DIAGRAM = `System architecture (simplified)
           +-----------+    |    +--------------------+
           |                |                         |
           v                v                         v
- +----------------+  +--------------+        +-------------------+
- | Neon Postgres  |  | WiPay        |        | Resend / PDFMonkey|
- | (DATABASE_URL) |  | (hosted pay) |        | (email/invoices)  |
- +----------------+  +--------------+        +-------------------+
+ +----------------+  +--------------+        +----------------------+
+ | Neon Postgres  |  | WiPay        |        | Resend + PDF Engine  |
+ | (DATABASE_URL) |  | (hosted pay) |        | (Gotenberg/PDFMonkey)|
+ +----------------+  +--------------+        +----------------------+
                       ^      |
                       |      v
                   (return) (webhook)
@@ -341,7 +358,8 @@ const DATA_PROCESSING_DIAGRAM = `Data processing map (high level)
 Customer submits booking details -> Next.js API -> Neon Postgres
 Deposit checkout -> WiPay (hosted) -> return/webhook -> reconcile in Neon
 Emails -> Resend
-Invoices -> PDFMonkey
+Invoices -> configured provider (Gotenberg or PDFMonkey)
+Quotes -> native PDF generation endpoint
 Uploads (if enabled) -> Uploadcare
 Scheduled reminders -> Netlify cron -> /api/cron/* -> Resend`;
 
@@ -424,8 +442,7 @@ const DOCS: Record<string, DocSection> = {
               </li>
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">Fleet browsing:</span> Display available vehicles
-                (DB-backed via <code>/api/public/vehicles</code> where configured; template data may be used for marketing
-                cards).
+                (DB-backed via <code>/api/public/vehicles</code>) with current pricing/deposit metadata.
               </li>
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">Booking creation:</span> Booking form captures
@@ -436,24 +453,24 @@ const DOCS: Record<string, DocSection> = {
                 the deposit amount due now; redirect back to success/failure pages and reconcile by webhook/return.
               </li>
               <li>
-                <span className="font-semibold text-[var(--ccr-text)]">Balance on pickup:</span> Shown as “due on pickup”
-                in the customer flow; recorded and managed by admin.
+                <span className="font-semibold text-[var(--ccr-text)]">Balance options:</span> Remaining balance can be paid
+                on pickup or online (when the customer selects pay balance/full flow).
               </li>
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">Admin portal:</span> Login, dashboard, bookings
-                list + detail, vehicles list + detail, payments, calendar + blockouts, reports, cron runner, health,
-                documentation, users, profile.
+                list + detail, quotes, customers, vehicles list + detail, payments, promo codes, calendar + blockouts,
+                maintenance, depreciation, reports, cron runner, health, documentation, users, settings, profile, and template
+                previews.
               </li>
               <li>
-                <span className="font-semibold text-[var(--ccr-text)]">Notifications:</span> Booking created emails,
-                reminders (pickup/balance), and invoices (where configured).
+                <span className="font-semibold text-[var(--ccr-text)]">Notifications:</span> Booking received emails,
+                rental-agreement emails, reminders (pickup/balance/notes), and invoice/quote emails.
               </li>
             </ul>
             <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
               <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-text)]">Out of scope (for now)</p>
               <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-[var(--ccr-muted)]">
                 <li>Automated refunds/chargebacks.</li>
-                <li>Capturing the balance online (balance is handled on pickup).</li>
                 <li>Customer accounts and self-serve booking changes.</li>
               </ul>
             </div>
@@ -985,8 +1002,8 @@ const DOCS: Record<string, DocSection> = {
                   y={165}
                   width={210}
                   height={92}
-                  title="Resend / PDFMonkey"
-                  lines={["Email + invoices", "Provider APIs"]}
+                  title="Resend + PDF Engine"
+                  lines={["Email + docs", "Gotenberg/PDFMonkey"]}
                   fill="var(--ccr-surface)"
                 />
                 <SvgBox
@@ -1044,8 +1061,9 @@ const DOCS: Record<string, DocSection> = {
                 payments; return + webhook reconciliation.
               </li>
               <li>
-                <span className="font-semibold text-[var(--ccr-text)]">Email:</span> Resend for notifications; PDFMonkey
-                for invoice PDFs (optional).
+                <span className="font-semibold text-[var(--ccr-text)]">Email & documents:</span> Resend for notifications;
+                invoice provider is configurable via <code>PDF_PROVIDER</code> (<code>gotenberg</code> or{" "}
+                <code>pdfmonkey</code>), and quote PDFs are generated natively.
               </li>
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">Uploads:</span> Uploadcare public key (where used).
@@ -1074,6 +1092,16 @@ const DOCS: Record<string, DocSection> = {
                 <DateRangeArrow />
                 creates a booking in <code>PENDING_PAYMENT</code> state.
               </li>
+              <li>
+                <code>POST /api/public/pricing/quote</code>
+                <DateRangeArrow />
+                returns computed totals (base, insurance, discount, due now, due on pickup).
+              </li>
+              <li>
+                <code>POST /api/public/promos/validate</code>
+                <DateRangeArrow />
+                validates promo code applicability for the selected booking window.
+              </li>
             </ul>
 
             <p className="mt-4 text-[var(--ccr-text)] font-semibold">Payments (WiPay)</p>
@@ -1082,6 +1110,16 @@ const DOCS: Record<string, DocSection> = {
                 <code>POST /api/payments/wipay/start</code>
                 <DateRangeArrow />
                 returns hosted checkout URL.
+              </li>
+              <li>
+                <code>POST /api/payments/wipay/balance/start</code>
+                <DateRangeArrow />
+                starts hosted checkout for remaining balance.
+              </li>
+              <li>
+                <code>POST /api/payments/wipay/full/start</code>
+                <DateRangeArrow />
+                starts hosted checkout for full amount.
               </li>
               <li>
                 <code>GET /api/payments/wipay/return</code>
@@ -1118,6 +1156,11 @@ const DOCS: Record<string, DocSection> = {
                 <code>GET/PATCH /api/admin/docs</code>
                 <DateRangeArrow />
                 documentation notes storage (DB table <code>admin_documents</code>).
+              </li>
+              <li>
+                <code>/api/admin/quotes/*</code>
+                <DateRangeArrow />
+                quote CRUD, status transitions, PDF generation, and email send.
               </li>
               <li><code>/api/admin/*</code> resource routes for vehicles, bookings, payments, users, and blockouts.</li>
             </ul>
@@ -1157,6 +1200,16 @@ const DOCS: Record<string, DocSection> = {
                 <code>POST /api/cron/note-emails</code>
                 <DateRangeArrow />
                 sends scheduled note emails due at/earlier than current time.
+              </li>
+              <li>
+                <code>POST /api/cron/maintenance-reminders</code>
+                <DateRangeArrow />
+                creates in-app maintenance reminders based on due date/odometer configuration.
+              </li>
+              <li>
+                <code>POST /api/cron/archive-file-cleanup</code>
+                <DateRangeArrow />
+                hard-deletes archived vehicle documents older than 30 days.
               </li>
               <li>
                 <code>POST /api/admin/cron/simulate-reminders</code>
@@ -1335,7 +1388,8 @@ x-csrf-token: <token>
               </li>
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">Cron:</span> Scheduled functions exist for pickup
-                and balance reminders; routes are also callable manually via <code>/admin/cron</code>.
+                and balance reminders, note emails, maintenance reminders, and archived-file cleanup; routes are also callable
+                manually via <code>/admin/cron</code>.
               </li>
             </ul>
             <details className="mt-3 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-4 py-3">
@@ -1359,9 +1413,11 @@ Email (Resend)
 - RESEND_API_KEY
 - RESEND_FROM
 
-Invoices (PDFMonkey)
-- PDFMONKEY_API_KEY
-- PDFMONKEY_TEMPLATE_ID
+	Invoices
+	- PDF_PROVIDER (gotenberg|pdfmonkey)
+	- GOTENBERG_URL (required in production when PDF_PROVIDER=gotenberg)
+	- PDFMONKEY_API_KEY (required when PDF_PROVIDER=pdfmonkey)
+	- PDFMONKEY_TEMPLATE_ID (required when PDF_PROVIDER=pdfmonkey)
 
 Uploads (Uploadcare)
 - NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY
@@ -1407,9 +1463,10 @@ Cron
                 and <code>RESEND_FROM</code> on the production domain, then verify booking/contact/admin emails deliver.
               </li>
               <li>
-                <span className="font-semibold text-[var(--ccr-text)]">Invoices (PDFMonkey):</span> Set{" "}
-                <code>PDFMONKEY_API_KEY</code> and <code>PDFMONKEY_TEMPLATE_ID</code>, then generate and open a real invoice
-                from an actual booking.
+                <span className="font-semibold text-[var(--ccr-text)]">Invoices:</span> If using Gotenberg, set{" "}
+                <code>PDF_PROVIDER=gotenberg</code> and <code>GOTENBERG_URL</code>; if using PDFMonkey, set{" "}
+                <code>PDF_PROVIDER=pdfmonkey</code>, <code>PDFMONKEY_API_KEY</code>, and{" "}
+                <code>PDFMONKEY_TEMPLATE_ID</code>. Then generate and open a real invoice from an actual booking.
               </li>
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">Uploads (optional):</span> If enabled, verify{" "}
@@ -1422,7 +1479,8 @@ Cron
               </li>
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">Scheduled jobs:</span> Confirm Netlify scheduled
-                functions run and validate pickup/balance reminder jobs in <code>/admin/cron</code> and logs.
+                functions run and validate pickup/balance/note/maintenance/archive cleanup jobs in <code>/admin/cron</code>{" "}
+                and logs.
               </li>
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">Operational smoke test:</span> Run end-to-end flow
@@ -1490,6 +1548,106 @@ Cron
               Version control: keep changes small, prefer PRs with a clear description, and rely on Git history for a
               canonical change log alongside the “Notes & Change Log” panel on <code>/admin/documentation</code>.
             </p>
+          </>
+        ),
+      },
+    ],
+  },
+  integrations: {
+    title: "Integrations & Documents",
+    description:
+      "Operational reference for payment modes, PDF provider setup, template previews, and email attachment behavior.",
+    blocks: [
+      {
+        title: "Payment Integration Matrix (WiPay + Admin)",
+        content: (
+          <>
+            <ul className="list-disc space-y-2 pl-5">
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">Deposit payment:</span>{" "}
+                <code>POST /api/payments/wipay/start</code>
+              </li>
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">Balance payment:</span>{" "}
+                <code>POST /api/payments/wipay/balance/start</code>
+              </li>
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">Full payment:</span>{" "}
+                <code>POST /api/payments/wipay/full/start</code>
+              </li>
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">Manual/custom payment:</span>{" "}
+                <code>POST /api/payments/wipay/custom/start</code> (admin/internal flows).
+              </li>
+              <li>
+                Return reconciliation is handled by <code>GET /api/payments/wipay/return</code>; async provider callbacks
+                are processed by <code>POST /api/payments/wipay/webhook</code>.
+              </li>
+            </ul>
+          </>
+        ),
+      },
+      {
+        title: "Invoice / Quote / Agreement Pipeline",
+        content: (
+          <>
+            <ul className="list-disc space-y-2 pl-5">
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">Invoice PDFs:</span> provider-backed via{" "}
+                <code>PDF_PROVIDER</code> with runtime support for <code>gotenberg</code> and <code>pdfmonkey</code>.
+              </li>
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">Quote PDFs:</span> generated natively via{" "}
+                <code>/api/admin/quotes/[id]/pdf</code>.
+              </li>
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">Rental agreement:</span> generated from booking data
+                and includes booking signature when available.
+              </li>
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">Template preview lab:</span>{" "}
+                <code>/admin/template-lab</code> supports invoice, quote, agreement, and receipt preview routes.
+              </li>
+            </ul>
+          </>
+        ),
+      },
+      {
+        title: "Email Attachment Behavior",
+        content: (
+          <>
+            <ul className="list-disc space-y-2 pl-5">
+              <li>
+                Booking lifecycle emails can include invoice and rental agreement documents depending on the trigger.
+              </li>
+              <li>
+                Quote emails include quote PDF attachments generated at send time.
+              </li>
+              <li>
+                If signature media is missing/unreadable, rental agreement rendering falls back gracefully (signature block
+                remains with timestamp text where available).
+              </li>
+            </ul>
+          </>
+        ),
+      },
+      {
+        title: "Scheduled Data Retention Jobs",
+        content: (
+          <>
+            <ul className="list-disc space-y-2 pl-5">
+              <li>
+                <code>POST /api/cron/archive-file-cleanup</code> permanently deletes archived vehicle documents older than 30
+                days.
+              </li>
+              <li>
+                Triggered by Netlify scheduled function <code>cron-archive-file-cleanup</code> (daily schedule in{" "}
+                <code>netlify.toml</code>).
+              </li>
+              <li>
+                Existing reminder jobs remain active: pickup, balance, note emails, and maintenance reminders.
+              </li>
+            </ul>
           </>
         ),
       },
@@ -1661,8 +1819,9 @@ Cron
                 sender settings; check logs for provider failures.
               </li>
               <li>
-                <span className="font-semibold text-[var(--ccr-text)]">Invoices failing:</span> PDFMonkey quota or config
-                may be missing; the system should degrade gracefully.
+                <span className="font-semibold text-[var(--ccr-text)]">Invoices failing:</span> Verify the configured{" "}
+                <code>PDF_PROVIDER</code> path (<code>GOTENBERG_URL</code> for gotenberg or PDFMonkey credentials/template),
+                and check provider/network health.
               </li>
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">Cron reminders:</span> Validate <code>CRON_SECRET</code>{" "}
@@ -1697,7 +1856,7 @@ Cron
               >
                 <title id="data-map-title">Data processing map</title>
                 <desc id="data-map-desc">
-                  Customer data and bookings stored in Postgres; payments handled by WiPay; emails via Resend; invoices via PDFMonkey; uploads via Uploadcare when enabled; cron reminders via Netlify.
+                  Customer data and bookings stored in Postgres; payments handled by WiPay; emails via Resend; invoice PDFs via configurable provider; uploads via Uploadcare when enabled; cron jobs via Netlify.
                 </desc>
                 <defs>
                   <marker
@@ -1729,7 +1888,7 @@ Cron
                   stroke="var(--ccr-accent-strong)"
                 />
                 <SvgBox x={650} y={290} width={250} height={84} title="Resend" lines={["Email notifications"]} />
-                <SvgBox x={60} y={290} width={250} height={84} title="PDFMonkey" lines={["Invoice PDFs", "(optional)"]} />
+                <SvgBox x={60} y={290} width={250} height={84} title="PDF Provider" lines={["Gotenberg/PDFMonkey", "Invoice PDFs"]} />
                 <SvgBox x={60} y={190} width={250} height={84} title="Uploadcare" lines={["Uploads (optional)"]} />
                 <SvgBox x={355} y={290} width={250} height={84} title="Netlify Cron" lines={["Scheduled reminders", "/api/cron/*"]} />
 
@@ -1757,7 +1916,7 @@ Cron
             <ul className="list-disc space-y-2 pl-5">
               <li>Data collected: name, email, phone, booking dates, pickup location, vehicle selection.</li>
               <li>Payment data: store transaction references and reconciliation metadata; do not store raw card data.</li>
-              <li>Processors: WiPay (payments), Resend (email), PDFMonkey (PDF generation), Uploadcare (uploads).</li>
+              <li>Processors: WiPay (payments), Resend (email), configurable PDF provider (Gotenberg/PDFMonkey), Uploadcare (uploads).</li>
               <li>Retention: define retention windows for bookings, payments, and logs.</li>
               <li>User rights: provide contact method for access/deletion requests where applicable.</li>
             </ul>

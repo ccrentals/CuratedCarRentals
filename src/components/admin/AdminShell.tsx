@@ -52,6 +52,7 @@ const ADMIN_HOVER_TEXT_CLASS = "hover:text-[var(--ccr-muted)]";
 const DOCUMENTATION_CHILDREN: NavChild[] = [
   { label: "PRD / Specification", href: "/admin/documentation/prd" },
   { label: "Design", href: "/admin/documentation/design" },
+  { label: "Integrations", href: "/admin/documentation/integrations" },
   { label: "Technical", href: "/admin/documentation/technical" },
   { label: "Operations", href: "/admin/documentation/operations" },
   { label: "Legal & Compliance", href: "/admin/documentation/legal" },

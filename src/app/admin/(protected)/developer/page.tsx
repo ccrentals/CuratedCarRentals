@@ -12,6 +12,7 @@ const DOCUMENTATION_LINKS = [
   { href: "/admin/documentation", label: "Documentation Home" },
   { href: "/admin/documentation/prd", label: "PRD / Specification" },
   { href: "/admin/documentation/design", label: "Design Documentation" },
+  { href: "/admin/documentation/integrations", label: "Integrations & Documents" },
   { href: "/admin/documentation/technical", label: "Technical Documentation" },
   { href: "/admin/documentation/operations", label: "Operational Documentation" },
   { href: "/admin/developer/access", label: "Role Capability Matrix" },

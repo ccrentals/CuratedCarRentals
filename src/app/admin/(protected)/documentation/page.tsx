@@ -25,6 +25,12 @@ const DOCUMENTATION_SECTIONS = [
     topics: ["Brand guidelines", "Wireframes & mockups", "UI style guide", "WCAG accessibility"],
   },
   {
+    href: "/admin/documentation/integrations",
+    label: "Integrations & Documents",
+    description: "Payment, email, PDF, and scheduled processing behavior across the booking lifecycle.",
+    topics: ["WiPay payment flows", "Resend email flows", "Invoice/Quote providers", "Retention jobs"],
+  },
+  {
     href: "/admin/documentation/technical",
     label: "Technical Documentation",
     description: "System architecture, APIs, database schema, and deployment environment.",
