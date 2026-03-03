@@ -28,7 +28,8 @@
     "pw:list": "mkdir -p .artifacts && npx playwright test --list > .artifacts/playwright-test-list.txt",
     "test:e2e:update": "playwright test --update-snapshots",
     "test:e2e:visual": "E2E_VISUAL=1 playwright test e2e/responsive-screenshots.spec.ts",
-    "test:e2e:visual:update": "E2E_VISUAL=1 playwright test e2e/responsive-screenshots.spec.ts --update-snapshots"
+    "test:e2e:visual:update": "E2E_VISUAL=1 playwright test e2e/responsive-screenshots.spec.ts --update-snapshots",
+    "check:dashboard-reports-parity": "tsx scripts/check-dashboard-reports-parity.ts"
   },
   "dependencies": {
     "@clerk/nextjs": "^6.38.2",

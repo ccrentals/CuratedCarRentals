@@ -17,5 +17,8 @@
 [functions."cron-maintenance-reminders"]
   schedule = "0 14 * * *"
 
+[functions."cron-archive-file-cleanup"]
+  schedule = "0 5 * * *"
+
 [[plugins]]
   package = "@netlify/plugin-nextjs"
