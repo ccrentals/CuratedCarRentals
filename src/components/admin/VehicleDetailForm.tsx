@@ -51,6 +51,7 @@ type VehicleDetailFormProps = {
   vehicle: VehicleDetail;
   profile: VehicleProfile | null;
   initialNotes: VehicleNote[];
+  initialDerivedStatus: "AVAILABLE" | "UPCOMING" | "ON_RENT" | "DIRTY" | "UNAVAILABLE";
 };
 
 type OverviewFormState = {
@@ -76,15 +77,23 @@ type OverviewFormState = {
 };
 
 function statusBadge(status: string) {
-  const normalized = status.toUpperCase();
+  const normalized = status.toUpperCase().trim();
   const styles: Record<string, string> = {
     AVAILABLE: "bg-emerald-100 text-emerald-800",
-    INACTIVE: "bg-slate-200 text-slate-800",
-    MAINTENANCE: "bg-amber-100 text-amber-800",
-    RESERVED: "bg-blue-100 text-blue-800",
-    RENTED: "bg-purple-100 text-purple-800",
+    UPCOMING: "bg-sky-100 text-sky-800",
+    ON_RENT: "bg-cyan-100 text-cyan-800",
+    DIRTY: "bg-amber-100 text-amber-800",
+    UNAVAILABLE: "bg-slate-200 text-slate-800",
   };
   return styles[normalized] ?? "bg-slate-100 text-slate-700";
+}
+
+function derivedStatusLabel(status: VehicleDetailFormProps["initialDerivedStatus"]) {
+  if (status === "ON_RENT") return "On Rent";
+  if (status === "UPCOMING") return "Upcoming";
+  if (status === "DIRTY") return "Dirty";
+  if (status === "UNAVAILABLE") return "Unavailable";
+  return "Available";
 }
 
 function buildFormState(vehicle: VehicleDetail, profile: VehicleProfile | null): OverviewFormState {
@@ -129,7 +138,12 @@ function buildFormState(vehicle: VehicleDetail, profile: VehicleProfile | null):
   };
 }
 
-export function VehicleDetailForm({ vehicle, profile, initialNotes }: VehicleDetailFormProps) {
+export function VehicleDetailForm({
+  vehicle,
+  profile,
+  initialNotes,
+  initialDerivedStatus,
+}: VehicleDetailFormProps) {
   const router = useRouter();
   const initialForm = buildFormState(vehicle, profile);
 
@@ -158,8 +172,7 @@ export function VehicleDetailForm({ vehicle, profile, initialNotes }: VehicleDet
     return () => window.clearTimeout(timeoutId);
   }, [toastMessage]);
 
-  const displayStatus =
-    form.status === "maintenance" ? "MAINTENANCE" : form.status === "unavailable" ? "INACTIVE" : "AVAILABLE";
+  const displayStatus = initialDerivedStatus;
 
   function resetToViewMode() {
     setForm(baseline);
@@ -186,48 +199,30 @@ export function VehicleDetailForm({ vehicle, profile, initialNotes }: VehicleDet
           deposit: form.deposit,
           image_urls_json: form.images,
           status: form.status,
-          csrfToken,
-        }),
-      });
-
-      const profileResponse = await fetch(`/api/admin/vehicles/${vehicle.id}/profile`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          "x-csrf-token": csrfToken ?? "",
-        },
-        body: JSON.stringify({
-          vin: form.vin,
-          license_plate: form.licensePlate,
-          vehicle_type: form.vehicleType,
-          vehicle_class: form.vehicleClass,
-          year: form.profileYear.trim() ? Number(form.profileYear) : null,
-          color: form.color,
           seat_count: form.seatCount.trim() ? Number(form.seatCount) : null,
-          current_location_label: form.currentLocationLabel,
-          odometer_value: form.odometerValue.trim() ? Number(form.odometerValue) : null,
-          odometer_unit: form.odometerUnit,
-          fuel_level_value: form.fuelLevelValue.trim() ? Number(form.fuelLevelValue) : null,
-          available_from: form.availableFrom || null,
-          available_until: form.availableUntil || null,
-          entry_date: form.entryDate || null,
-          exit_date: form.exitDate || null,
+          profile: {
+            vin: form.vin,
+            license_plate: form.licensePlate,
+            vehicle_type: form.vehicleType,
+            vehicle_class: form.vehicleClass,
+            year: form.profileYear.trim() ? Number(form.profileYear) : null,
+            color: form.color,
+            seat_count: form.seatCount.trim() ? Number(form.seatCount) : null,
+            current_location_label: form.currentLocationLabel,
+            odometer_value: form.odometerValue.trim() ? Number(form.odometerValue) : null,
+            odometer_unit: form.odometerUnit,
+            fuel_level_value: form.fuelLevelValue.trim() ? Number(form.fuelLevelValue) : null,
+            available_from: form.availableFrom || null,
+            available_until: form.availableUntil || null,
+            entry_date: form.entryDate || null,
+            exit_date: form.exitDate || null,
+          },
           csrfToken,
         }),
       });
-
-      const errors: string[] = [];
       if (!vehicleResponse.ok) {
         const data = (await vehicleResponse.json().catch(() => ({}))) as { error?: string };
-        errors.push(data.error ?? "Failed to update vehicle.");
-      }
-      if (!profileResponse.ok) {
-        const data = (await profileResponse.json().catch(() => ({}))) as { error?: string };
-        errors.push(data.error ?? "Failed to update profile.");
-      }
-
-      if (errors.length > 0) {
-        setError(errors.join(" "));
+        setError(data.error ?? "Failed to update vehicle profile.");
         return;
       }
 
@@ -374,7 +369,7 @@ export function VehicleDetailForm({ vehicle, profile, initialNotes }: VehicleDet
                 displayStatus,
               )}`}
             >
-              {displayStatus}
+              {derivedStatusLabel(displayStatus)}
             </span>
           </div>
         </div>

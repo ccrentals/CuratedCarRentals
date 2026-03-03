@@ -21,6 +21,7 @@ import {
   normalizeVehicleSort,
   vehicleDerivedStatusLabel,
   vehicleFilterWhereSql,
+  vehicleListOrderBySql,
   vehicleStatusSortRank,
   type VehicleSortBy,
 } from "@/lib/vehicles/adminVehicles";
@@ -121,6 +122,7 @@ export default async function AdminVehiclesPage({
   const requestedVisible = parsePositiveIntParam(params.visible);
   const visibleCount = Math.max(rowsPerPage, requestedVisible ?? rowsPerPage);
   const now = new Date();
+  const canUseSqlPagination = fleetFilter === "all" && sort.sortBy !== "status";
 
   const { whereSql, values } = vehicleFilterWhereSql(fleetFilter, q);
   const deletedFilterSql = includeDeleted ? "v.deleted_at is not null" : "v.deleted_at is null";
@@ -129,6 +131,7 @@ export default async function AdminVehiclesPage({
     : `where ${deletedFilterSql}`;
 
   let vehicleRows: VehicleRow[] = [];
+  let totalVehicles = 0;
   try {
     const vehicles = await dbQuery<VehicleRow>(
       `select
@@ -146,10 +149,20 @@ export default async function AdminVehiclesPage({
        from vehicles v
        left join vehicle_profiles p on p.vehicle_id = v.id
        ${combinedWhereSql}
-       order by v.created_at desc, v.id::text desc`,
-      values,
+       ${canUseSqlPagination ? `${vehicleListOrderBySql(sort)} limit $${values.length + 1}` : "order by v.created_at desc, v.id::text desc"}`,
+      canUseSqlPagination ? [...values, visibleCount] : values,
     );
     vehicleRows = vehicles.rows;
+    if (canUseSqlPagination) {
+      const countResult = await dbQuery<{ total: number }>(
+        `select count(*)::int as total
+         from vehicles v
+         left join vehicle_profiles p on p.vehicle_id = v.id
+         ${combinedWhereSql}`,
+        values,
+      );
+      totalVehicles = Number(countResult.rows[0]?.total ?? 0);
+    }
   } catch (error) {
     if (!isVehicleExtensionsMissingTableError(error)) {
       throw error;
@@ -174,10 +187,19 @@ export default async function AdminVehiclesPage({
           v.deleted_at
        from vehicles v
        ${fallbackCombinedWhereSql}
-       order by v.created_at desc, v.id::text desc`,
-      fallback.values,
+       ${canUseSqlPagination ? `${vehicleListOrderBySql(sort)} limit $${fallback.values.length + 1}` : "order by v.created_at desc, v.id::text desc"}`,
+      canUseSqlPagination ? [...fallback.values, visibleCount] : fallback.values,
     );
     vehicleRows = vehicles.rows;
+    if (canUseSqlPagination) {
+      const countResult = await dbQuery<{ total: number }>(
+        `select count(*)::int as total
+         from vehicles v
+         ${fallbackCombinedWhereSql}`,
+        fallback.values,
+      );
+      totalVehicles = Number(countResult.rows[0]?.total ?? 0);
+    }
   }
 
   const vehicleIds = vehicleRows.map((row) => row.id);
@@ -248,11 +270,17 @@ export default async function AdminVehiclesPage({
     }),
   }));
 
-  const filteredRows = derivedRows.filter((vehicle) =>
-    matchesVehicleFilter(fleetFilter, vehicle.derived_status),
-  );
-  const sortedRows = sortVehicles(filteredRows, sort);
-  const visibleVehicles = sortedRows.slice(0, visibleCount);
+  let visibleVehicles: VehicleWithDerivedStatus[] = [];
+  if (canUseSqlPagination) {
+    visibleVehicles = derivedRows;
+  } else {
+    const filteredRows = derivedRows.filter((vehicle) =>
+      matchesVehicleFilter(fleetFilter, vehicle.derived_status),
+    );
+    const sortedRows = sortVehicles(filteredRows, sort);
+    visibleVehicles = sortedRows.slice(0, visibleCount);
+    totalVehicles = sortedRows.length;
+  }
 
   const sortHref = (columnKey: VehicleSortBy, defaultDirection: SortDir) => {
     const next = nextSort(sort, columnKey, defaultDirection);
@@ -344,7 +372,7 @@ export default async function AdminVehiclesPage({
         data-testid="vehicles-list"
         className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)]"
       >
-        {sortedRows.length === 0 ? (
+        {totalVehicles === 0 ? (
           <div className="px-6 py-10 text-center text-sm text-[var(--ccr-muted)]">
             {includeDeleted ? "No archived vehicles found." : "No vehicles found."}
           </div>
@@ -359,12 +387,14 @@ export default async function AdminVehiclesPage({
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p
+                      <Link
+                        href={`/admin/vehicles/${vehicle.id}`}
                         data-testid="vehicle-public-id"
-                        className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]"
+                        className="inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-[11px] font-bold text-[var(--ccr-accent)] transition hover:bg-[var(--ccr-accent)] hover:text-[var(--ccr-primary)]"
+                        title="Open vehicle"
                       >
                         {vehicle.public_id}
-                      </p>
+                      </Link>
                       <p className="font-semibold text-[var(--ccr-text)]">
                         {vehicle.year} {vehicle.make} {vehicle.model}
                       </p>
@@ -421,6 +451,7 @@ export default async function AdminVehiclesPage({
               <table className="min-w-full text-left text-sm">
                 <thead className="border-b border-[var(--ccr-border)] text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
                   <tr>
+                    <th className="px-4 py-3">Vehicle ID</th>
                     <SortableTh
                       label="Vehicle"
                       columnKey="vehicle"
@@ -462,10 +493,19 @@ export default async function AdminVehiclesPage({
                       className="border-b border-[var(--ccr-border)] last:border-b-0"
                     >
                       <td className="px-4 py-3 text-[var(--ccr-text)]">
+                        <Link
+                          href={`/admin/vehicles/${vehicle.id}`}
+                          data-testid="vehicle-public-id"
+                          className="inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-[11px] font-bold text-[var(--ccr-accent)] transition hover:bg-[var(--ccr-accent)] hover:text-[var(--ccr-primary)]"
+                          title="Open vehicle"
+                        >
+                          {vehicle.public_id}
+                        </Link>
+                      </td>
+                      <td className="px-4 py-3 text-[var(--ccr-text)]">
                         <Link href={`/admin/vehicles/${vehicle.id}`} className="font-semibold text-[var(--ccr-text)]">
                           <span
-                            data-testid="vehicle-public-id"
-                            className="mr-2 inline-flex rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]"
+                            className="sr-only"
                           >
                             {vehicle.public_id}
                           </span>
@@ -507,11 +547,11 @@ export default async function AdminVehiclesPage({
             </div>
           </>
         )}
-        {sortedRows.length > 0 ? (
+        {totalVehicles > 0 ? (
           <LoadMorePaginationControls
             pageSize={rowsPerPage}
             loadedCount={visibleVehicles.length}
-            totalCount={sortedRows.length}
+            totalCount={totalVehicles}
             noMoreLabel="No more vehicles"
           />
         ) : null}

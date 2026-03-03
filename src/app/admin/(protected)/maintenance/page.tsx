@@ -414,6 +414,13 @@ export default async function AdminMaintenancePage({
                 <article key={item.id} className="space-y-3 px-4 py-4" data-testid="maintenance-mobile-card">
                   <div className="flex items-start justify-between gap-3">
                     <div>
+                      <Link
+                        href={`/admin/vehicles/${item.vehicleId}?tab=maintenance&recordId=${item.id}`}
+                        className="inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-[11px] font-bold text-[var(--ccr-accent)] transition hover:bg-[var(--ccr-accent)] hover:text-[var(--ccr-primary)]"
+                        title="Open vehicle"
+                      >
+                        {item.vehiclePublicId}
+                      </Link>
                       <p className="font-semibold text-[var(--ccr-text)]">{item.vehicleLabel}</p>
                       <p className="text-xs text-[var(--ccr-muted)]">{item.title} · {item.category}</p>
                     </div>
@@ -455,6 +462,7 @@ export default async function AdminMaintenancePage({
               <table className="min-w-full text-left text-sm">
                 <thead className="border-b border-[var(--ccr-border)] text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
                   <tr>
+                    <th className="px-4 py-3">Vehicle ID</th>
                     <SortableTh label="Vehicle" columnKey="vehicle" sort={sort} href={sortHref("vehicle", "asc")} />
                     <SortableTh label="Maintenance Item" columnKey="item" sort={sort} href={sortHref("item", "asc")} />
                     <SortableTh label="Status / Due" columnKey="status" sort={sort} href={sortHref("status", "asc")} />
@@ -466,7 +474,19 @@ export default async function AdminMaintenancePage({
                   {visibleRows.map((item) => (
                     <tr key={item.id} className="border-b border-[var(--ccr-border)] last:border-b-0">
                       <td className="px-4 py-3 text-[var(--ccr-text)]">
-                        <Link href={`/admin/vehicles/${item.vehicleId}?tab=maintenance&recordId=${item.id}`} className="font-semibold underline-offset-2 hover:underline">
+                        <Link
+                          href={`/admin/vehicles/${item.vehicleId}?tab=maintenance&recordId=${item.id}`}
+                          className="inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-[11px] font-bold text-[var(--ccr-accent)] transition hover:bg-[var(--ccr-accent)] hover:text-[var(--ccr-primary)]"
+                          title="Open vehicle"
+                        >
+                          {item.vehiclePublicId}
+                        </Link>
+                      </td>
+                      <td className="px-4 py-3 text-[var(--ccr-text)]">
+                        <Link
+                          href={`/admin/vehicles/${item.vehicleId}?tab=maintenance&recordId=${item.id}`}
+                          className="font-semibold text-[var(--ccr-text)]"
+                        >
                           {item.vehicleLabel}
                         </Link>
                       </td>

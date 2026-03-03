@@ -67,6 +67,7 @@ export type VehicleMaintenanceSummary = {
 export type UpcomingMaintenanceItem = {
   id: string;
   vehicleId: string;
+  vehiclePublicId: string;
   vehicleLabel: string;
   status: MaintenanceRecordStatus;
   category: MaintenanceRecordCategory;
@@ -356,6 +357,7 @@ export async function summarizeVehicleMaintenance(
 type UpcomingMaintenanceRow = {
   id: string;
   vehicle_id: string;
+  vehicle_public_id: string;
   vehicle_make: string;
   vehicle_model: string;
   vehicle_year: number;
@@ -433,6 +435,7 @@ export async function listUpcomingMaintenance(
     `select
       r.id,
       r.vehicle_id,
+      v.public_id as vehicle_public_id,
       v.make as vehicle_make,
       v.model as vehicle_model,
       v.year as vehicle_year,
@@ -469,6 +472,7 @@ export async function listUpcomingMaintenance(
     return {
       id: row.id,
       vehicleId: row.vehicle_id,
+      vehiclePublicId: row.vehicle_public_id,
       vehicleLabel: `${row.vehicle_year} ${row.vehicle_make} ${row.vehicle_model}`,
       status: normalizeStatus(row.status),
       category: normalizeCategory(row.category),
