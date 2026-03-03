@@ -22,6 +22,7 @@ import { normalizePageSize, parsePositiveIntParam } from "@/lib/pagination/share
 
 type CustomerListRow = {
   id: string;
+  public_id: string | null;
   full_name: string;
   email: string;
   phone: string;
@@ -31,6 +32,11 @@ type CustomerListRow = {
   total_bookings: number;
   total_spend: number;
 };
+
+function formatCustomerProfileId(publicId: string | null, customerId: string) {
+  if (publicId && /^CU[0-9]+$/.test(publicId)) return publicId;
+  return `CU-${customerId.slice(0, 8).toUpperCase()}`;
+}
 
 const CUSTOMER_SORT_COLUMNS = ["customer", "bookings", "totalSpend", "lastBooked", "created"] as const;
 type CustomerSortBy = (typeof CUSTOMER_SORT_COLUMNS)[number];
@@ -90,17 +96,23 @@ async function fetchCustomers({
             : `order by coalesce(c.last_booked_at, max(b.created_at), c.created_at) ${direction}, c.id::text ${direction}`;
 
   const queryWithDeletedColumn =
-    "select c.id, c.full_name, c.email, c.phone, coalesce(c.is_blocked, false) as is_blocked, c.created_at, c.last_booked_at, count(distinct b.id)::int as total_bookings, coalesce(sum(case when p.status in ('DEPOSIT_PAID', 'SUCCESS', 'REFUNDED') and p.deleted_at is null then p.deposit_amount_cents else 0 end), 0)::int as total_spend from customers c left join bookings b on b.customer_id = c.id left join payments p on p.booking_id = b.id " +
+    "select c.id, c.public_id, c.full_name, c.email, c.phone, coalesce(c.is_blocked, false) as is_blocked, c.created_at, c.last_booked_at, count(distinct b.id)::int as total_bookings, coalesce(sum(case when p.status in ('DEPOSIT_PAID', 'SUCCESS', 'REFUNDED') and p.deleted_at is null then p.deposit_amount_cents else 0 end), 0)::int as total_spend from customers c left join bookings b on b.customer_id = c.id left join payments p on p.booking_id = b.id " +
     whereSql +
-    " group by c.id, c.full_name, c.email, c.phone, c.is_blocked, c.created_at, c.last_booked_at " +
+    " group by c.id, c.public_id, c.full_name, c.email, c.phone, c.is_blocked, c.created_at, c.last_booked_at " +
     orderBy;
 
   try {
     return await dbQuery<CustomerListRow>(queryWithDeletedColumn, values);
   } catch (error) {
-    if (!isMissingColumn(error, "deleted_at") && !isMissingColumn(error, "is_blocked")) throw error;
+    if (
+      !isMissingColumn(error, "deleted_at") &&
+      !isMissingColumn(error, "is_blocked") &&
+      !isMissingColumn(error, "public_id")
+    ) {
+      throw error;
+    }
     const fallback =
-      "select c.id, c.full_name, c.email, c.phone, false as is_blocked, c.created_at, c.last_booked_at, count(distinct b.id)::int as total_bookings, coalesce(sum(case when p.status in ('DEPOSIT_PAID', 'SUCCESS', 'REFUNDED') then p.deposit_amount_cents else 0 end), 0)::int as total_spend from customers c left join bookings b on b.customer_id = c.id left join payments p on p.booking_id = b.id " +
+      "select c.id, null::text as public_id, c.full_name, c.email, c.phone, false as is_blocked, c.created_at, c.last_booked_at, count(distinct b.id)::int as total_bookings, coalesce(sum(case when p.status in ('DEPOSIT_PAID', 'SUCCESS', 'REFUNDED') then p.deposit_amount_cents else 0 end), 0)::int as total_spend from customers c left join bookings b on b.customer_id = c.id left join payments p on p.booking_id = b.id " +
       whereSql +
       " group by c.id, c.full_name, c.email, c.phone, c.created_at, c.last_booked_at " +
       orderBy;
@@ -109,7 +121,7 @@ async function fetchCustomers({
     } catch (secondError) {
       if (!isMissingColumn(secondError, "last_booked_at")) throw secondError;
       const fallbackWithoutLastBooked =
-        "select c.id, c.full_name, c.email, c.phone, c.created_at, null::timestamptz as last_booked_at, count(distinct b.id)::int as total_bookings, coalesce(sum(case when p.status in ('DEPOSIT_PAID', 'SUCCESS', 'REFUNDED') then p.deposit_amount_cents else 0 end), 0)::int as total_spend from customers c left join bookings b on b.customer_id = c.id left join payments p on p.booking_id = b.id " +
+        "select c.id, null::text as public_id, c.full_name, c.email, c.phone, c.created_at, null::timestamptz as last_booked_at, count(distinct b.id)::int as total_bookings, coalesce(sum(case when p.status in ('DEPOSIT_PAID', 'SUCCESS', 'REFUNDED') then p.deposit_amount_cents else 0 end), 0)::int as total_spend from customers c left join bookings b on b.customer_id = c.id left join payments p on p.booking_id = b.id " +
         whereSql +
         " group by c.id, c.full_name, c.email, c.phone, c.created_at " +
         orderBy.replace(/c\.last_booked_at, /g, "");
@@ -192,13 +204,17 @@ export default async function AdminCustomersPage({
             <div className="divide-y divide-[var(--ccr-border)] md:hidden">
               {visibleCustomers.map((customer: CustomerListRow) => (
                 <article key={`mobile-${customer.id}`} className="space-y-3 px-4 py-4">
-                  <Link
-                    href={`/admin/customers/${customer.id}`}
-                    className="block rounded-lg border border-transparent p-1 -m-1 transition hover:border-[var(--ccr-border)]"
-                  >
+                  <div className="space-y-2">
+                    <Link
+                      href={`/admin/customers/${customer.id}`}
+                      title={customer.id}
+                      className="inline-flex items-center rounded-full border border-[var(--ccr-accent)] px-3 py-1 text-xs font-semibold tracking-wide text-[var(--ccr-accent)] transition hover:bg-[var(--ccr-accent)]/10"
+                    >
+                      {formatCustomerProfileId(customer.public_id, customer.id)}
+                    </Link>
                     <p className="font-semibold text-[var(--ccr-text)]">{customer.full_name}</p>
                     <p className="text-xs text-[var(--ccr-muted)]">{customer.email}</p>
-                  </Link>
+                  </div>
                   <dl className="grid grid-cols-2 gap-2 text-xs">
                     <div>
                       <dt className="uppercase tracking-wide text-[var(--ccr-muted)]">Phone</dt>
@@ -236,12 +252,6 @@ export default async function AdminCustomersPage({
                     >
                       New Booking
                     </Link>
-                    <Link
-                      href={`/admin/customers/${customer.id}`}
-                      className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
-                    >
-                      View
-                    </Link>
                     {isAdmin ? (
                       <CustomerBlockToggleButton customerId={customer.id} isBlocked={customer.is_blocked} />
                     ) : null}
@@ -254,6 +264,7 @@ export default async function AdminCustomersPage({
               <table className="min-w-full text-left text-sm">
                 <thead className="border-b border-[var(--ccr-border)] text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
                   <tr>
+                    <th className="px-4 py-3">Customer ID</th>
                     <SortableTh
                       label="Customer"
                       columnKey="customer"
@@ -288,11 +299,15 @@ export default async function AdminCustomersPage({
                       <td className="px-4 py-3">
                         <Link
                           href={`/admin/customers/${customer.id}`}
-                          className="block rounded-lg border border-transparent p-1 -m-1 transition hover:border-[var(--ccr-border)]"
+                          title={customer.id}
+                          className="inline-flex items-center rounded-full border border-[var(--ccr-accent)] px-3 py-1 text-xs font-semibold tracking-wide text-[var(--ccr-accent)] transition hover:bg-[var(--ccr-accent)]/10"
                         >
-                          <p className="font-semibold text-[var(--ccr-text)]">{customer.full_name}</p>
-                          <p className="text-xs text-[var(--ccr-muted)]">{customer.email}</p>
+                          {formatCustomerProfileId(customer.public_id, customer.id)}
                         </Link>
+                      </td>
+                      <td className="px-4 py-3">
+                        <p className="font-semibold text-[var(--ccr-text)]">{customer.full_name}</p>
+                        <p className="text-xs text-[var(--ccr-muted)]">{customer.email}</p>
                       </td>
                       <td className="px-4 py-3 text-[var(--ccr-text)]">{customer.phone}</td>
                       <td className="px-4 py-3 text-[var(--ccr-text)]">{customer.total_bookings}</td>
@@ -314,12 +329,6 @@ export default async function AdminCustomersPage({
                             className={`whitespace-nowrap rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] ${customer.is_blocked ? "pointer-events-none opacity-50" : ""}`}
                           >
                             New Booking
-                          </Link>
-                          <Link
-                            href={`/admin/customers/${customer.id}`}
-                            className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
-                          >
-                            View
                           </Link>
                           {isAdmin ? (
                             <CustomerBlockToggleButton customerId={customer.id} isBlocked={customer.is_blocked} />

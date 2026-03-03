@@ -158,7 +158,11 @@ alter table customers
 alter table customers
   add column if not exists blocked_reason text;
 
+alter table customers
+  add column if not exists public_id text;
+
 create sequence if not exists users_public_id_seq start 1;
+create sequence if not exists customers_public_id_seq start 1;
 create sequence if not exists vehicles_public_id_seq start 1;
 create sequence if not exists bookings_public_id_seq start 1;
 create sequence if not exists quotes_public_id_seq start 1;
@@ -182,6 +186,18 @@ as $$
 begin
   if new.public_id is null or btrim(new.public_id) = '' then
     new.public_id := format_public_id('UR', nextval('users_public_id_seq'));
+  end if;
+  return new;
+end;
+$$;
+
+create or replace function assign_customers_public_id()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.public_id is null or btrim(new.public_id) = '' then
+    new.public_id := format_public_id('CU', nextval('customers_public_id_seq'));
   end if;
   return new;
 end;
@@ -308,6 +324,57 @@ begin
 end $$;
 
 alter table users
+  alter column public_id set not null;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_trigger
+    where tgname = 'customers_assign_public_id'
+      and tgrelid = 'customers'::regclass
+      and not tgisinternal
+  ) then
+    create trigger customers_assign_public_id
+      before insert on customers
+      for each row
+      execute function assign_customers_public_id();
+  end if;
+end $$;
+
+with ordered as (
+  select c.id,
+         row_number() over (order by c.created_at asc, c.id asc) as rn
+  from customers c
+  where c.public_id is null
+),
+base as (
+  select coalesce(max((substring(c.public_id from '^CU([0-9]+)$'))::bigint), 0) as max_n
+  from customers c
+  where c.public_id ~ '^CU[0-9]+$'
+)
+update customers c
+set public_id = format_public_id('CU', base.max_n + ordered.rn)
+from ordered, base
+where c.id = ordered.id;
+
+do $$
+declare
+  customers_max bigint;
+begin
+  select max((substring(public_id from '^CU([0-9]+)$'))::bigint)
+    into customers_max
+  from customers
+  where public_id ~ '^CU[0-9]+$';
+
+  if customers_max is null then
+    perform setval('customers_public_id_seq', 1, false);
+  else
+    perform setval('customers_public_id_seq', customers_max, true);
+  end if;
+end $$;
+
+alter table customers
   alter column public_id set not null;
 
 do $$
@@ -756,6 +823,7 @@ create index if not exists customers_email_lower_idx on customers (lower(email))
 create index if not exists customers_phone_idx on customers(phone);
 create index if not exists customers_last_booked_at_idx on customers(last_booked_at);
 create index if not exists customers_legal_id_number_idx on customers(legal_id_number);
+create unique index if not exists customers_public_id_unique_idx on customers(public_id);
 create index if not exists payments_booking_id_idx on payments(booking_id);
 create index if not exists payments_status_idx on payments(status);
 create index if not exists payments_deleted_at_idx on payments(deleted_at);
