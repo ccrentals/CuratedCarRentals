@@ -45,6 +45,8 @@ type AdminSettingsFormProps = {
   activeTab: AdminSettingsFormTab;
   disabled?: boolean;
   showDeveloperControls?: boolean;
+  effectiveAuthLoginMethod: "clerk" | "legacy";
+  authLoginMethodSource: "env-override" | "db" | "default";
 };
 
 export type AdminSettingsFormTab =
@@ -118,6 +120,8 @@ export function AdminSettingsForm({
   activeTab,
   disabled,
   showDeveloperControls = false,
+  effectiveAuthLoginMethod,
+  authLoginMethodSource,
 }: AdminSettingsFormProps) {
   const [settings, setSettings] = useState<AdminSettings>(initialSettings);
   const [saving, setSaving] = useState(false);
@@ -329,6 +333,7 @@ export function AdminSettingsForm({
   const visibleToggleFields = TOGGLE_FIELDS.filter(
     (field) => TOGGLE_FIELD_TAB_MAP[field.key] === activeTab,
   );
+  const isAuthLoginMethodOverridden = authLoginMethodSource === "env-override";
 
   return (
     <section
@@ -384,11 +389,27 @@ export function AdminSettingsForm({
               </select>
             </div>
             <p className="mt-2 text-xs text-[var(--ccr-muted)]">
-              Active mode:{" "}
+              Saved preference:{" "}
               <span className="font-semibold text-[var(--ccr-text)]">
                 {settings.authLoginMethod === "legacy" ? "Legacy" : "Clerk"}
               </span>
             </p>
+            <p className="mt-1 text-xs text-[var(--ccr-muted)]">
+              Effective mode:{" "}
+              <span className="font-semibold text-[var(--ccr-text)]">
+                {effectiveAuthLoginMethod === "legacy" ? "Legacy" : "Clerk"}
+              </span>
+            </p>
+            {isAuthLoginMethodOverridden ? (
+              <p className="mt-2 text-xs font-semibold text-amber-300">
+                This switch is locked by <code>AUTH_LOGIN_METHOD_OVERRIDE</code> in environment config.
+                Update/remove the override to switch modes from Admin Settings.
+              </p>
+            ) : (
+              <p className="mt-2 text-xs text-[var(--ccr-muted)]">
+                Changes apply after clicking <span className="font-semibold">Save settings</span>.
+              </p>
+            )}
           </div>
         ) : null}
 

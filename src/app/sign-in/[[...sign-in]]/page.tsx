@@ -15,7 +15,38 @@ const signInAppearance = {
   },
 } as const;
 
-export default function SignInPage() {
+function shouldHideSiteActions(params: {
+  [key: string]: string | string[] | undefined;
+}) {
+  const redirect = params.redirect;
+  if (typeof redirect === "string" && redirect.startsWith("/admin")) {
+    return true;
+  }
+
+  const redirectUrl = params.redirect_url;
+  if (typeof redirectUrl === "string") {
+    try {
+      if (redirectUrl.startsWith("http://") || redirectUrl.startsWith("https://")) {
+        return new URL(redirectUrl).pathname.startsWith("/admin");
+      }
+      return redirectUrl.startsWith("/admin");
+    } catch {
+      return redirectUrl.includes("/admin");
+    }
+  }
+
+  return false;
+}
+
+export default async function SignInPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
+  const params = await searchParams;
+  const hideSiteActions = shouldHideSiteActions(params);
+  const showAuxiliaryAuthUi = !hideSiteActions;
+
   if (!isClerkPublishableKeyConfigured()) {
     return (
       <AuthPageShell>
@@ -40,15 +71,17 @@ export default function SignInPage() {
             appearance={signInAppearance}
           />
         </div>
-        <SignInIdentifierHint />
-        <div className={`mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 ${styles.authActions}`}>
-          <Link href="/" className={styles.authActionButton}>
-            Back to Home
-          </Link>
-          <Link href="/book" className={styles.authActionButton}>
-            Book Now
-          </Link>
-        </div>
+        {showAuxiliaryAuthUi ? <SignInIdentifierHint /> : null}
+        {showAuxiliaryAuthUi ? (
+          <div className={`mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 ${styles.authActions}`}>
+            <Link href="/" className={styles.authActionButton}>
+              Back to Home
+            </Link>
+            <Link href="/book" className={styles.authActionButton}>
+              Book Now
+            </Link>
+          </div>
+        ) : null}
       </div>
     </AuthPageShell>
   );

@@ -6,6 +6,7 @@ import type { AdminSettingsFormTab } from "@/components/admin/AdminSettingsForm"
 import { AdminPillTabs } from "@/components/admin/AdminPillTabs";
 import { BookingFlowConfigPanel } from "@/components/admin/BookingFlowConfigPanel";
 import { SettingsVehiclesPanel } from "@/components/admin/SettingsVehiclesPanel";
+import { loadPrimaryAdminLoginMethodResolution } from "@/lib/auth/adminLoginMethod";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { DEFAULT_ADMIN_SETTINGS, normalizeAdminSettingsValue } from "@/lib/adminSettings";
 import { dbQuery } from "@/lib/db";
@@ -80,6 +81,7 @@ export default async function AdminSettingsPage({
   const session = await getSessionFromRequest();
   const isAdmin = isAdminRole(session?.role);
   const isDeveloper = isDeveloperRole(session?.role);
+  const loginMethodResolution = await loadPrimaryAdminLoginMethodResolution();
 
   if (!isAdmin) {
     return (
@@ -185,6 +187,8 @@ export default async function AdminSettingsPage({
             activeTab={activeTab}
             disabled={false}
             showDeveloperControls={isDeveloper}
+            effectiveAuthLoginMethod={loginMethodResolution.method}
+            authLoginMethodSource={loginMethodResolution.source}
           />
         ) : null}
       </div>

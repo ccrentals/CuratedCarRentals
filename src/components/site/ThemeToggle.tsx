@@ -1,6 +1,6 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
+import { useId, useSyncExternalStore } from "react";
 
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 import { cn } from "@/lib/utils";
@@ -81,6 +81,7 @@ export function ThemeToggle({
   persistence = "local",
   showLabel = true,
 }: ThemeToggleProps) {
+  const selectId = useId();
   const theme = useSyncExternalStore(subscribeToTheme, getCurrentTheme, getThemeServerSnapshot);
 
   function selectTheme(nextTheme: AppTheme) {
@@ -106,6 +107,8 @@ export function ThemeToggle({
         </span>
       ) : null}
       <select
+        id={selectId}
+        name="theme"
         value={theme}
         onChange={(event) => {
           const value = event.target.value;
