@@ -64,7 +64,7 @@ function toPromoRows(input: unknown): PromoRow[] {
   if (!Array.isArray(input)) return [];
   return input
     .filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object")
-    .map((entry) => ({
+    .map((entry): PromoRow => ({
       id: String(entry.id ?? ""),
       public_id: String(entry.public_id ?? ""),
       code: String(entry.code ?? ""),

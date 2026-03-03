@@ -650,21 +650,24 @@ export async function PATCH(
     try {
       await client.query("begin");
 
-      const bookingResult = await client.query<{
-        id: string;
-        status: string;
-        vehicle_id: string;
-        customer_id: string;
-        customer_email: string;
-        start_date: string;
-        end_date: string;
-        pricing_json: Record<string, unknown> | null;
-        daily_rate_cents: number;
-        deposit_cents: number;
-      }>(
+      const bookingResult = (await client.query(
         "select b.id, b.status, b.vehicle_id, b.customer_id, c.email as customer_email, b.start_date, b.end_date, b.pricing_json, v.daily_rate_cents, v.deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.id = $1 for update",
         [id],
-      );
+      )) as {
+        rowCount: number;
+        rows: Array<{
+          id: string;
+          status: string;
+          vehicle_id: string;
+          customer_id: string;
+          customer_email: string;
+          start_date: string;
+          end_date: string;
+          pricing_json: Record<string, unknown> | null;
+          daily_rate_cents: number;
+          deposit_cents: number;
+        }>;
+      };
 
       if (bookingResult.rowCount === 0) {
         await client.query("rollback");
@@ -684,25 +687,29 @@ export async function PATCH(
       let insurancePricePerDay = 0;
 
       if (enableInsurance) {
-        const vehiclePlanResult = await client.query<{
-          id: string;
-          is_enabled: boolean;
-          price_per_day_cents: number;
-        }>(
+        const vehiclePlanResult = (await client.query(
           "select id, is_enabled, price_per_day_cents from insurance_plans where vehicle_id = $1 and is_enabled = true order by updated_at desc limit 1",
           [booking.vehicle_id],
-        );
+        )) as {
+          rows: Array<{
+            id: string;
+            is_enabled: boolean;
+            price_per_day_cents: number;
+          }>;
+        };
         const vehiclePlan = vehiclePlanResult.rows[0] ?? null;
 
         let resolvedPlan = vehiclePlan;
         if (!resolvedPlan) {
-          const globalPlanResult = await client.query<{
-            id: string;
-            is_enabled: boolean;
-            price_per_day_cents: number;
-          }>(
+          const globalPlanResult = (await client.query(
             "select id, is_enabled, price_per_day_cents from insurance_plans where is_global_default = true and is_enabled = true order by updated_at desc limit 1",
-          );
+          )) as {
+            rows: Array<{
+              id: string;
+              is_enabled: boolean;
+              price_per_day_cents: number;
+            }>;
+          };
           resolvedPlan = globalPlanResult.rows[0] ?? null;
         }
 

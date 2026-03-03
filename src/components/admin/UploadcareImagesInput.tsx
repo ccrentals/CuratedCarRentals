@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type UploadcareImagesInputProps = {
   label?: string;
@@ -11,6 +11,11 @@ type UploadcareImagesInputProps = {
   displayMode?: "grid" | "carousel";
   disabled?: boolean;
   actionSlot?: ReactNode;
+};
+
+type GlightboxInstance = {
+  destroy: () => void;
+  openAt: (index: number) => void;
 };
 
 declare global {
@@ -133,15 +138,69 @@ export function UploadcareImagesInput({
 }: UploadcareImagesInputProps) {
   const [internal, setInternal] = useState<string[]>(() => value ?? []);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const lightboxRef = useRef<GlightboxInstance | null>(null);
 
   const urls = value ?? internal;
   const setUrls = onChange ?? ((nextUrls: string[]) => setInternal(nextUrls));
   const publicKey = process.env.NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY ?? "";
 
   const canUpload = useMemo(() => Boolean(publicKey), [publicKey]);
+
+  const destroyLightbox = useCallback(() => {
+    if (!lightboxRef.current) return;
+    lightboxRef.current.destroy();
+    lightboxRef.current = null;
+  }, []);
+
+  useEffect(
+    () => () => {
+      destroyLightbox();
+    },
+    [destroyLightbox],
+  );
+
+  const openLightbox = useCallback(
+    async (startIndex: number) => {
+      if (urls.length < 1) return;
+      const boundedIndex = Math.max(0, Math.min(urls.length - 1, Math.trunc(startIndex)));
+      const elements = urls.map((href, index) => ({
+        href,
+        type: "image" as const,
+        title: label,
+        description: `${index + 1} of ${urls.length}`,
+      }));
+
+      try {
+        const glightboxModule = await import("glightbox");
+        const createGlightbox = ((glightboxModule as unknown as { default?: unknown }).default ??
+          glightboxModule) as unknown as (options: Record<string, unknown>) => GlightboxInstance;
+
+        destroyLightbox();
+        const instance = createGlightbox({
+          elements,
+          loop: urls.length > 1,
+          touchNavigation: true,
+          keyboardNavigation: true,
+          closeOnOutsideClick: true,
+          closeButton: true,
+          openEffect: "slide",
+          closeEffect: "fade",
+          slideEffect: "slide",
+          moreLength: 0,
+          draggable: true,
+          zoomable: true,
+          skin: "clean",
+        });
+        lightboxRef.current = instance;
+        instance.openAt(boundedIndex);
+      } catch {
+        setError("Unable to open image gallery. Please try again.");
+      }
+    },
+    [destroyLightbox, label, urls],
+  );
 
   const handleUpload = async () => {
     if (disabled) return;
@@ -168,7 +227,7 @@ export function UploadcareImagesInput({
         const nextUrls = await resolveUploadcareUrls(file);
         setUrls(nextUrls);
         setCurrentIndex(0);
-        setIsLightboxOpen(false);
+        destroyLightbox();
         setLoading(false);
       });
       dialog.fail((err) => {
@@ -186,29 +245,13 @@ export function UploadcareImagesInput({
     setUrls(nextUrls);
     if (nextUrls.length === 0) {
       setCurrentIndex(0);
-      setIsLightboxOpen(false);
+      destroyLightbox();
       return;
     }
     setCurrentIndex((index) => Math.min(index, nextUrls.length - 1));
   };
 
   const activeIndex = urls.length === 0 ? 0 : Math.min(currentIndex, urls.length - 1);
-  const activeUrl = urls[activeIndex];
-  const canNavigate = urls.length > 1;
-
-  const goPrev = () => {
-    setCurrentIndex((index) => {
-      const safe = Math.min(index, urls.length - 1);
-      return safe === 0 ? urls.length - 1 : safe - 1;
-    });
-  };
-
-  const goNext = () => {
-    setCurrentIndex((index) => {
-      const safe = Math.min(index, urls.length - 1);
-      return safe === urls.length - 1 ? 0 : safe + 1;
-    });
-  };
 
   return (
     <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
@@ -247,7 +290,7 @@ export function UploadcareImagesInput({
                     type="button"
                     onClick={() => {
                       setCurrentIndex(index);
-                      setIsLightboxOpen(true);
+                      void openLightbox(index);
                     }}
                     aria-label={`Open image ${index + 1}`}
                     className={`shrink-0 overflow-hidden rounded-md border ${
@@ -274,70 +317,6 @@ export function UploadcareImagesInput({
                 {actionSlot}
               </div>
             </div>
-
-            {isLightboxOpen ? (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
-                <button
-                  type="button"
-                  aria-label="Close image viewer"
-                  onClick={() => setIsLightboxOpen(false)}
-                  className="absolute inset-0"
-                />
-                <div className="relative z-10 w-full max-w-5xl rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3 shadow-2xl">
-                  <div className="mb-2 flex items-center justify-between gap-2">
-                    <p className="text-xs font-semibold text-[var(--ccr-muted)]">
-                      Image {activeIndex + 1} of {urls.length}
-                    </p>
-                    <div className="flex items-center gap-2">
-                      {!disabled ? (
-                        <button
-                          type="button"
-                          onClick={() => removeUrlAtIndex(activeIndex)}
-                          className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-1.5 text-xs font-semibold text-[var(--ccr-text)] hover:bg-[var(--ccr-surface)]"
-                        >
-                          Remove
-                        </button>
-                      ) : null}
-                      <button
-                        type="button"
-                        onClick={() => setIsLightboxOpen(false)}
-                        className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-1.5 text-xs font-semibold text-[var(--ccr-text)] hover:bg-[var(--ccr-surface)]"
-                      >
-                        Close
-                      </button>
-                    </div>
-                  </div>
-                  <div className="relative overflow-hidden rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)]">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={activeUrl}
-                      alt={`Vehicle upload ${activeIndex + 1}`}
-                      className="h-[60vh] w-full object-contain"
-                    />
-                    {canNavigate ? (
-                      <>
-                        <button
-                          type="button"
-                          onClick={goPrev}
-                          aria-label="Previous image"
-                          className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full border border-[var(--ccr-border)] bg-black/45 px-3 py-1 text-sm font-bold text-white hover:bg-black/65"
-                        >
-                          ‹
-                        </button>
-                        <button
-                          type="button"
-                          onClick={goNext}
-                          aria-label="Next image"
-                          className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full border border-[var(--ccr-border)] bg-black/45 px-3 py-1 text-sm font-bold text-white hover:bg-black/65"
-                        >
-                          ›
-                        </button>
-                      </>
-                    ) : null}
-                  </div>
-                </div>
-              </div>
-            ) : null}
           </div>
         ) : (
           <div className="mt-3 grid gap-2 sm:grid-cols-3">

@@ -19,6 +19,15 @@ const ALLOWED_TYPES = ["booking_created", "deposit_receipt"] as const;
 
 type EmailType = (typeof ALLOWED_TYPES)[number];
 
+function wasEmailSkipped(result: unknown): boolean {
+  return (
+    !!result &&
+    typeof result === "object" &&
+    "skipped" in result &&
+    (result as { skipped?: unknown }).skipped === true
+  );
+}
+
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -105,10 +114,11 @@ export async function POST(
     });
 
     if (!result.ok) {
+      const skipped = wasEmailSkipped(result);
       await markDedupeResult(
         {
           dedupeKey,
-          status: result.skipped ? "SKIPPED" : "FAILED",
+          status: skipped ? "SKIPPED" : "FAILED",
           provider: "resend",
           error: result.error ?? "Email failed",
         },
@@ -116,7 +126,7 @@ export async function POST(
       );
       return NextResponse.json(
         { error: result.error ?? "Email failed" },
-        { status: result.skipped ? 400 : 500 },
+        { status: skipped ? 400 : 500 },
       );
     }
 
@@ -154,10 +164,11 @@ export async function POST(
   });
 
   if (!receiptResult.ok) {
+    const skipped = wasEmailSkipped(receiptResult);
     await markDedupeResult(
       {
         dedupeKey,
-        status: receiptResult.skipped ? "SKIPPED" : "FAILED",
+        status: skipped ? "SKIPPED" : "FAILED",
         provider: "resend",
         error: receiptResult.error ?? "Email failed",
       },
@@ -165,7 +176,7 @@ export async function POST(
     );
     return NextResponse.json(
       { error: receiptResult.error ?? "Email failed" },
-      { status: receiptResult.skipped ? 400 : 500 },
+      { status: skipped ? 400 : 500 },
     );
   }
 
