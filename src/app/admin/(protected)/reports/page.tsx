@@ -336,7 +336,7 @@ function normalizeTableSort<Column extends string>(
 }
 
 function statusChipClass() {
-  return "border-sky-300/30 bg-sky-500/15 text-sky-100";
+  return "border-[var(--ccr-report-status-border)] bg-[var(--ccr-report-status-bg)] text-[var(--ccr-report-status-text)]";
 }
 
 const STATUS_PILL_BASE_CLASS =

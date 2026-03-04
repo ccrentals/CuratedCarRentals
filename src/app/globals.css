@@ -27,6 +27,24 @@
   --ccr-clerk-danger-text: #b42318;
   --ccr-logo-accent: #c08212;
   --ccr-logo-accent-strong: #9a6500;
+  --ccr-report-status-bg: #e6f0ff;
+  --ccr-report-status-border: #8fb5ea;
+  --ccr-report-status-text: #143d6b;
+  --ccr-report-indicator-info-bg: #edf2fb;
+  --ccr-report-indicator-info-border: #b6c6e4;
+  --ccr-report-indicator-info-text: #4a6289;
+  --ccr-report-indicator-unpaid-bg: #fff3de;
+  --ccr-report-indicator-unpaid-border: #f2c27a;
+  --ccr-report-indicator-unpaid-text: #7a4b00;
+  --ccr-report-indicator-due-bg: #e5f7ff;
+  --ccr-report-indicator-due-border: #8dcde8;
+  --ccr-report-indicator-due-text: #0e536f;
+  --ccr-report-indicator-overridden-bg: #f3ebff;
+  --ccr-report-indicator-overridden-border: #c4a4ef;
+  --ccr-report-indicator-overridden-text: #60358a;
+  --ccr-report-indicator-refunded-bg: #e6f8ef;
+  --ccr-report-indicator-refunded-border: #8ed2ac;
+  --ccr-report-indicator-refunded-text: #1f6a43;
   --background: var(--ccr-bg);
   --foreground: var(--ccr-text);
 }
@@ -56,6 +74,24 @@
   --ccr-clerk-danger-text: #ffc2cb;
   --ccr-logo-accent: #f8c648;
   --ccr-logo-accent-strong: #e4a611;
+  --ccr-report-status-bg: #1d3556;
+  --ccr-report-status-border: #4a78b8;
+  --ccr-report-status-text: #d9e9ff;
+  --ccr-report-indicator-info-bg: #1a2b46;
+  --ccr-report-indicator-info-border: #446089;
+  --ccr-report-indicator-info-text: #b8ccea;
+  --ccr-report-indicator-unpaid-bg: #4f3a12;
+  --ccr-report-indicator-unpaid-border: #c78c2d;
+  --ccr-report-indicator-unpaid-text: #ffe0a3;
+  --ccr-report-indicator-due-bg: #163748;
+  --ccr-report-indicator-due-border: #3c8db1;
+  --ccr-report-indicator-due-text: #bfe8ff;
+  --ccr-report-indicator-overridden-bg: #352553;
+  --ccr-report-indicator-overridden-border: #7d63b6;
+  --ccr-report-indicator-overridden-text: #dccfff;
+  --ccr-report-indicator-refunded-bg: #1a3f33;
+  --ccr-report-indicator-refunded-border: #4fa27d;
+  --ccr-report-indicator-refunded-text: #c9f3df;
   --background: var(--ccr-bg);
   --foreground: var(--ccr-text);
 }
@@ -85,6 +121,24 @@
   --ccr-clerk-danger-text: #ffe0e6;
   --ccr-logo-accent: #5bc3ff;
   --ccr-logo-accent-strong: #36b4f7;
+  --ccr-report-status-bg: #16324f;
+  --ccr-report-status-border: #4574a9;
+  --ccr-report-status-text: #d7ecff;
+  --ccr-report-indicator-info-bg: #15253c;
+  --ccr-report-indicator-info-border: #3f5f88;
+  --ccr-report-indicator-info-text: #b8cdea;
+  --ccr-report-indicator-unpaid-bg: #4b360f;
+  --ccr-report-indicator-unpaid-border: #c18827;
+  --ccr-report-indicator-unpaid-text: #ffe0a0;
+  --ccr-report-indicator-due-bg: #13394a;
+  --ccr-report-indicator-due-border: #3e8cae;
+  --ccr-report-indicator-due-text: #c4ecff;
+  --ccr-report-indicator-overridden-bg: #322250;
+  --ccr-report-indicator-overridden-border: #775db1;
+  --ccr-report-indicator-overridden-text: #dfd4ff;
+  --ccr-report-indicator-refunded-bg: #173d31;
+  --ccr-report-indicator-refunded-border: #4f9e7b;
+  --ccr-report-indicator-refunded-text: #cbf5e1;
   --background: var(--ccr-bg);
   --foreground: var(--ccr-text);
 }
@@ -114,6 +168,24 @@
   --ccr-clerk-danger-text: #ffd7df;
   --ccr-logo-accent: #35bdb6;
   --ccr-logo-accent-strong: #229f99;
+  --ccr-report-status-bg: #173a56;
+  --ccr-report-status-border: #4b85ad;
+  --ccr-report-status-text: #d8f0ff;
+  --ccr-report-indicator-info-bg: #16344e;
+  --ccr-report-indicator-info-border: #4c7292;
+  --ccr-report-indicator-info-text: #c0d9ee;
+  --ccr-report-indicator-unpaid-bg: #5a4216;
+  --ccr-report-indicator-unpaid-border: #d39a39;
+  --ccr-report-indicator-unpaid-text: #ffe6b8;
+  --ccr-report-indicator-due-bg: #13495a;
+  --ccr-report-indicator-due-border: #42a2b6;
+  --ccr-report-indicator-due-text: #d1f6ff;
+  --ccr-report-indicator-overridden-bg: #3b2b58;
+  --ccr-report-indicator-overridden-border: #8d72c1;
+  --ccr-report-indicator-overridden-text: #e6ddff;
+  --ccr-report-indicator-refunded-bg: #184638;
+  --ccr-report-indicator-refunded-border: #4ea783;
+  --ccr-report-indicator-refunded-text: #d2f6e5;
   --background: var(--ccr-bg);
   --foreground: var(--ccr-text);
 }
@@ -143,6 +215,24 @@
   --ccr-clerk-danger-text: #b93821;
   --ccr-logo-accent: #b17508;
   --ccr-logo-accent-strong: #8f5d04;
+  --ccr-report-status-bg: #f3ead8;
+  --ccr-report-status-border: #c5aa79;
+  --ccr-report-status-text: #5b4218;
+  --ccr-report-indicator-info-bg: #efe8db;
+  --ccr-report-indicator-info-border: #c6b59c;
+  --ccr-report-indicator-info-text: #5f5240;
+  --ccr-report-indicator-unpaid-bg: #fbead1;
+  --ccr-report-indicator-unpaid-border: #e1b06a;
+  --ccr-report-indicator-unpaid-text: #7a4a00;
+  --ccr-report-indicator-due-bg: #e2f3f8;
+  --ccr-report-indicator-due-border: #7fb8c8;
+  --ccr-report-indicator-due-text: #155267;
+  --ccr-report-indicator-overridden-bg: #ede3f7;
+  --ccr-report-indicator-overridden-border: #b79ed8;
+  --ccr-report-indicator-overridden-text: #5b3b82;
+  --ccr-report-indicator-refunded-bg: #e4f2e6;
+  --ccr-report-indicator-refunded-border: #8eb697;
+  --ccr-report-indicator-refunded-text: #2c5a38;
   --background: var(--ccr-bg);
   --foreground: var(--ccr-text);
 }
@@ -172,6 +262,24 @@
   --ccr-clerk-danger-text: #ffd8df;
   --ccr-logo-accent: #d2a54a;
   --ccr-logo-accent-strong: #b98b2f;
+  --ccr-report-status-bg: #1f392e;
+  --ccr-report-status-border: #4f7f67;
+  --ccr-report-status-text: #d8efe4;
+  --ccr-report-indicator-info-bg: #1d3228;
+  --ccr-report-indicator-info-border: #4c6f5e;
+  --ccr-report-indicator-info-text: #bfd9cc;
+  --ccr-report-indicator-unpaid-bg: #4c3812;
+  --ccr-report-indicator-unpaid-border: #c79033;
+  --ccr-report-indicator-unpaid-text: #ffe4ad;
+  --ccr-report-indicator-due-bg: #174350;
+  --ccr-report-indicator-due-border: #4aa5bb;
+  --ccr-report-indicator-due-text: #cdf4ff;
+  --ccr-report-indicator-overridden-bg: #3a2a54;
+  --ccr-report-indicator-overridden-border: #866dbc;
+  --ccr-report-indicator-overridden-text: #e4daff;
+  --ccr-report-indicator-refunded-bg: #1f4335;
+  --ccr-report-indicator-refunded-border: #54a380;
+  --ccr-report-indicator-refunded-text: #d2f6e6;
   --background: var(--ccr-bg);
   --foreground: var(--ccr-text);
 }
@@ -210,6 +318,39 @@ button:disabled,
 [role="button"][aria-disabled="true"],
 a[aria-disabled="true"] {
   cursor: not-allowed;
+}
+
+/* Theme-centered dropdown styling. */
+select {
+  color-scheme: light;
+  accent-color: var(--ccr-accent);
+}
+
+[data-theme="dark"] select,
+[data-theme="midnight"] select,
+[data-theme="ocean"] select,
+[data-theme="forest"] select {
+  color-scheme: dark;
+}
+
+select option {
+  background-color: var(--ccr-surface);
+  color: var(--ccr-text);
+}
+
+select option:hover,
+select option:focus,
+select option:checked {
+  background: linear-gradient(var(--ccr-surface-soft), var(--ccr-surface-soft)) !important;
+  color: var(--ccr-text) !important;
+  box-shadow: 0 0 0 999px var(--ccr-surface-soft) inset;
+}
+
+[data-theme="light"] select option:hover,
+[data-theme="light"] select option:focus,
+[data-theme="light"] select option:checked {
+  background: linear-gradient(var(--ccr-accent-soft), var(--ccr-accent-soft)) !important;
+  box-shadow: 0 0 0 999px var(--ccr-accent-soft) inset;
 }
 
 input.promo-date-time-input {

@@ -99,11 +99,19 @@ function iconForVariant(variant: NonNullable<InfoTooltipIconProps["variant"]>) {
 }
 
 function toneClass(variant: NonNullable<InfoTooltipIconProps["variant"]>) {
-  if (variant === "unpaid") return "text-amber-300";
-  if (variant === "due_on_pickup") return "text-cyan-300";
-  if (variant === "overridden") return "text-rose-300";
-  if (variant === "refunded") return "text-emerald-300";
-  return "text-[var(--ccr-muted)]";
+  if (variant === "unpaid") {
+    return "border-[var(--ccr-report-indicator-unpaid-border)] bg-[var(--ccr-report-indicator-unpaid-bg)] text-[var(--ccr-report-indicator-unpaid-text)]";
+  }
+  if (variant === "due_on_pickup") {
+    return "border-[var(--ccr-report-indicator-due-border)] bg-[var(--ccr-report-indicator-due-bg)] text-[var(--ccr-report-indicator-due-text)]";
+  }
+  if (variant === "overridden") {
+    return "border-[var(--ccr-report-indicator-overridden-border)] bg-[var(--ccr-report-indicator-overridden-bg)] text-[var(--ccr-report-indicator-overridden-text)]";
+  }
+  if (variant === "refunded") {
+    return "border-[var(--ccr-report-indicator-refunded-border)] bg-[var(--ccr-report-indicator-refunded-bg)] text-[var(--ccr-report-indicator-refunded-text)]";
+  }
+  return "border-[var(--ccr-report-indicator-info-border)] bg-[var(--ccr-report-indicator-info-bg)] text-[var(--ccr-report-indicator-info-text)]";
 }
 
 export function InfoTooltipIcon({ message, className, variant = "info" }: InfoTooltipIconProps) {
@@ -115,7 +123,7 @@ export function InfoTooltipIcon({ message, className, variant = "info" }: InfoTo
         type="button"
         aria-label={message}
         title={message}
-        className={`inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] ${tone} transition hover:text-[var(--ccr-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ccr-accent)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--ccr-surface)]`}
+        className={`inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-full border ${tone} transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ccr-accent)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--ccr-surface)]`}
       >
         {iconForVariant(variant)}
       </button>
