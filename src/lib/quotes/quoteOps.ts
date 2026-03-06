@@ -187,6 +187,14 @@ function formatDateTime(value: string) {
   });
 }
 
+function formatDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("en-JM", {
+    dateStyle: "medium",
+  });
+}
+
 function escapeHtml(value: string) {
   return String(value)
     .replace(/&/g, "&amp;")
@@ -537,68 +545,79 @@ function buildSinglePagePdf(commands: string[]) {
 export function buildQuotePdfBuffer(quote: QuoteOpsQuote) {
   const displayQuoteId = quote.publicId || quote.id.slice(0, 8);
   const created = formatDateTime(quote.createdAt);
+  const issuedDate = formatDate(quote.createdAt);
   const expires = quote.expiresAt ? formatDateTime(quote.expiresAt) : "Not set";
   const status = quote.status || "DRAFT";
   const promoCode = quote.promoCode || "—";
 
-  const headerPurple: [number, number, number] = [0.365, 0.208, 0.651];
+  const brandAccent: [number, number, number] = [0.090, 0.545, 0.510];
+  const headingText: [number, number, number] = [0.078, 0.118, 0.216];
   const bodyText: [number, number, number] = [0.082, 0.094, 0.122];
-  const mutedText: [number, number, number] = [0.329, 0.361, 0.420];
-  const whiteText: [number, number, number] = [1, 1, 1];
-  const cardFill: [number, number, number] = [0.972, 0.968, 0.992];
-  const cardStroke: [number, number, number] = [0.870, 0.836, 0.949];
-  const highlightFill: [number, number, number] = [0.925, 0.890, 0.980];
+  const mutedText: [number, number, number] = [0.329, 0.423, 0.553];
+  const cardFill: [number, number, number] = [0.972, 0.976, 0.984];
+  const cardStroke: [number, number, number] = [0.820, 0.855, 0.910];
+  const highlightFill: [number, number, number] = [0.905, 0.949, 0.929];
 
   const commands: string[] = [];
 
-  // Header
+  // Invoice-style top accent + neutral header.
   pushPdfRect({
     commands,
-    x: 0,
-    y: 742,
-    width: 595,
-    height: 100,
-    fill: headerPurple,
+    x: 40,
+    y: 794,
+    width: 515,
+    height: 8,
+    fill: brandAccent,
   });
 
   pushPdfText({
     commands,
-    x: 40,
-    y: 805,
+    x: 54,
+    y: 754,
     lines: ["Quote"],
     font: "F2",
-    fontSize: 27,
-    color: whiteText,
+    fontSize: 28,
+    color: headingText,
   });
 
   pushPdfText({
     commands,
-    x: 40,
-    y: 782,
-    lines: [`Quote ID: ${displayQuoteId}`],
+    x: 54,
+    y: 730,
+    lines: [`Quote #${displayQuoteId} · Issued ${issuedDate}`],
     font: "F1",
     fontSize: 11,
-    color: whiteText,
+    color: mutedText,
   });
 
   pushPdfText({
     commands,
-    x: 325,
-    y: 805,
+    x: 340,
+    y: 748,
     lines: [siteContent.brand],
     font: "F2",
     fontSize: 14,
-    color: whiteText,
+    color: headingText,
   });
 
   pushPdfText({
     commands,
-    x: 325,
-    y: 786,
-    lines: [`${siteContent.email} | ${siteContent.phone}`],
+    x: 340,
+    y: 729,
+    lines: [...wrapPdfLine(`${siteContent.email} | ${siteContent.phone}`, 37)],
     font: "F1",
     fontSize: 10,
-    color: whiteText,
+    color: mutedText,
+  });
+
+  pushPdfText({
+    commands,
+    x: 340,
+    y: 713,
+    lines: [...wrapPdfLine(`Pickup: ${quote.pickupLocationText || "—"}`, 37)],
+    font: "F1",
+    fontSize: 10,
+    color: mutedText,
   });
 
   // Left card: Customer + reservation
@@ -631,7 +650,7 @@ export function buildQuotePdfBuffer(quote: QuoteOpsQuote) {
     lines: ["Customer & Reservation"],
     font: "F2",
     fontSize: 12,
-    color: headerPurple,
+    color: headingText,
   });
 
   pushPdfText({
@@ -663,7 +682,7 @@ export function buildQuotePdfBuffer(quote: QuoteOpsQuote) {
     lines: ["Quote Details"],
     font: "F2",
     fontSize: 12,
-    color: headerPurple,
+    color: headingText,
   });
 
   pushPdfText({
@@ -703,7 +722,7 @@ export function buildQuotePdfBuffer(quote: QuoteOpsQuote) {
     lines: ["Pricing Summary (JMD)"],
     font: "F2",
     fontSize: 12,
-    color: headerPurple,
+    color: headingText,
   });
 
   const pricingRows = [

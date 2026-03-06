@@ -913,10 +913,36 @@ async function createDocumentWithGotenberg(
     );
   }
 
-  const response = await fetch(`${getGotenbergUrl()}/forms/chromium/convert/html`, {
-    method: "POST",
-    body: form,
-  });
+  const endpoint = `${getGotenbergUrl()}/forms/chromium/convert/html`;
+  const retryDelaysMs = [0, 200, 600];
+  let response: Response | null = null;
+  let lastFetchError: unknown = null;
+
+  for (let attempt = 0; attempt < retryDelaysMs.length; attempt += 1) {
+    const delay = retryDelaysMs[attempt];
+    if (delay > 0) {
+      await sleep(delay);
+    }
+
+    try {
+      response = await fetch(endpoint, {
+        method: "POST",
+        body: form,
+      });
+      lastFetchError = null;
+      break;
+    } catch (error) {
+      lastFetchError = error;
+    }
+  }
+
+  if (!response) {
+    const causeText =
+      lastFetchError instanceof Error
+        ? `${lastFetchError.message}${lastFetchError.cause ? ` (${String(lastFetchError.cause)})` : ""}`
+        : String(lastFetchError ?? "unknown error");
+    throw new Error(`Gotenberg connection failed (${endpoint}): ${causeText}`);
+  }
 
   if (!response.ok) {
     const text = await response.text().catch(() => "");

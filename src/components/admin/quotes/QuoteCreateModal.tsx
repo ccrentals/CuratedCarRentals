@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 import { useDialogA11y } from "@/components/admin/useDialogA11y";
+import { buttonStyles } from "@/components/ui/Button";
 import {
   formatTagsInput,
   parseTagsInput,
@@ -495,7 +496,12 @@ export function QuoteCreateModal({ onCreated }: QuoteCreateModalProps) {
           setOpen(true);
         }}
         data-testid="quote-create"
-        className="rounded-xl border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] ring-1 ring-[var(--ccr-accent)] transition hover:border-[var(--ccr-accent-strong)] hover:bg-[var(--ccr-surface-soft)]"
+        className={buttonStyles({
+          variant: "secondary",
+          size: "sm",
+          className:
+            "border-[var(--ccr-accent)] ring-1 ring-[var(--ccr-accent)] hover:border-[var(--ccr-accent-strong)]",
+        })}
       >
         Create quote
       </button>
@@ -524,7 +530,7 @@ export function QuoteCreateModal({ onCreated }: QuoteCreateModalProps) {
               <button
                 type="button"
                 onClick={handleClose}
-                className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+                className={buttonStyles({ variant: "secondary", size: "sm", className: "rounded-lg" })}
               >
                 Close
               </button>
@@ -797,7 +803,11 @@ export function QuoteCreateModal({ onCreated }: QuoteCreateModalProps) {
                 form="quote-create-form"
                 disabled={submitting}
                 data-testid="quote-save"
-                className="rounded-lg border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-4 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
+                className={buttonStyles({
+                  variant: "primary",
+                  size: "sm",
+                  className: "rounded-lg",
+                })}
               >
                 {submitting ? "Saving..." : "Save quote"}
               </button>

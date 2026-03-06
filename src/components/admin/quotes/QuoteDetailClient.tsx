@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { QuoteEmailModal } from "@/components/admin/quotes/QuoteEmailModal";
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { InlineDateTimeRange } from "@/components/shared/InlineDateTimeRange";
+import { buttonStyles } from "@/components/ui/Button";
 import { formatJmd } from "@/lib/money";
 import {
   formatQuoteActivityActorLabel,
@@ -251,7 +252,11 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
           <p className="text-sm text-[var(--ccr-text)]">{error ?? "Quote not found."}</p>
           <Link
             href="/admin/bookings/quotes"
-            className="mt-4 inline-flex rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+            className={buttonStyles({
+              variant: "secondary",
+              size: "sm",
+              className: "mt-4 rounded-lg",
+            })}
           >
             Back to quotes
           </Link>
@@ -282,7 +287,7 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
         <div className="flex flex-wrap items-center gap-2">
           <Link
             href="/admin/bookings/quotes"
-            className="inline-flex min-h-9 items-center justify-center rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+            className={buttonStyles({ variant: "secondary", size: "sm" })}
           >
             Back to quotes
           </Link>
@@ -290,7 +295,7 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
             href={`/api/admin/quotes/${item.id}/pdf`}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex min-h-9 items-center justify-center rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+            className={buttonStyles({ variant: "secondary", size: "sm" })}
           >
             Print
           </Link>
@@ -298,14 +303,14 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
             href={`/api/admin/quotes/${item.id}/pdf`}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex min-h-9 items-center justify-center rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+            className={buttonStyles({ variant: "secondary", size: "sm" })}
           >
             PDF
           </Link>
           <button
             type="button"
             onClick={() => setEmailOpen(true)}
-            className="inline-flex min-h-9 items-center justify-center rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+            className={buttonStyles({ variant: "secondary", size: "sm" })}
           >
             Email
           </button>
@@ -313,7 +318,7 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
             type="button"
             disabled={converting || Boolean(item.convertedBookingId)}
             onClick={() => void convertQuote()}
-            className="inline-flex min-h-9 items-center justify-center rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
+            className={buttonStyles({ variant: "secondary", size: "sm" })}
           >
             {item.convertedBookingId ? "Converted" : converting ? "Converting..." : "Convert to Booking"}
           </button>
@@ -321,7 +326,7 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
             type="button"
             onClick={() => void patchQuote({ status: isCancelled ? "SENT" : "CANCELLED" })}
             disabled={saving || !canToggleInvoiceCancellation || Boolean(item.convertedBookingId)}
-            className="inline-flex min-h-9 items-center justify-center rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
+            className={buttonStyles({ variant: "secondary", size: "sm" })}
           >
             {isCancelled ? "Revert Cancellation" : "Cancel Invoice"}
           </button>
@@ -348,7 +353,7 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
               onClick={() => void patchQuote({ status: "SENT" })}
               disabled={saving || item.status === "SENT"}
               data-testid="quote-mark-sent"
-              className="inline-flex min-h-9 items-center justify-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-50"
+              className={buttonStyles({ variant: "secondary", size: "sm", className: "rounded-lg" })}
             >
               Mark Sent
             </button>
@@ -356,7 +361,7 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
               type="button"
               onClick={() => void patchQuote({ status: "ACCEPTED" })}
               disabled={saving || item.status === "ACCEPTED"}
-              className="inline-flex min-h-9 items-center justify-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-50"
+              className={buttonStyles({ variant: "secondary", size: "sm", className: "rounded-lg" })}
             >
               Mark Accepted
             </button>
@@ -364,7 +369,7 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
               type="button"
               onClick={() => void patchQuote({ status: "EXPIRED" })}
               disabled={saving || item.status === "EXPIRED"}
-              className="inline-flex min-h-9 items-center justify-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-50"
+              className={buttonStyles({ variant: "secondary", size: "sm", className: "rounded-lg" })}
             >
               Mark Expired
             </button>
@@ -372,7 +377,7 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
               type="button"
               onClick={() => void patchQuote({ status: "CANCELLED" })}
               disabled={saving || item.status === "CANCELLED"}
-              className="inline-flex min-h-9 items-center justify-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-50"
+              className={buttonStyles({ variant: "secondary", size: "sm", className: "rounded-lg" })}
             >
               Mark Cancelled
             </button>
@@ -541,7 +546,11 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
                 rack_price_cents: rackPriceInput.trim() ? Number(rackPriceInput) : null,
               })
             }
-            className="inline-flex min-h-9 items-center justify-center rounded-lg border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-4 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
+            className={buttonStyles({
+              variant: "primary",
+              size: "sm",
+              className: "rounded-lg",
+            })}
           >
             {saving ? "Saving..." : "Save changes"}
           </button>
@@ -589,7 +598,7 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
               type="button"
               onClick={() => setActivityPage((current) => Math.max(1, current - 1))}
               disabled={activityPage <= 1}
-              className="inline-flex min-h-8 items-center justify-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-1.5 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-50"
+              className={buttonStyles({ variant: "secondary", size: "xs", className: "rounded-lg" })}
             >
               Prev
             </button>
@@ -600,7 +609,7 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
               type="button"
               onClick={() => setActivityPage((current) => Math.min(activityTotalPages, current + 1))}
               disabled={activityPage >= activityTotalPages}
-              className="inline-flex min-h-8 items-center justify-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-1.5 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-50"
+              className={buttonStyles({ variant: "secondary", size: "xs", className: "rounded-lg" })}
             >
               Next
             </button>

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { InlineDateTimeRange } from "@/components/shared/InlineDateTimeRange";
+import { buttonStyles } from "@/components/ui/Button";
 import { siteContent } from "@/data/content";
 import { formatJmd } from "@/lib/money";
 import { quoteStatusLabel, shortQuoteId } from "@/lib/quotes/quoteUi";
@@ -77,14 +78,14 @@ export function QuotePrintClient({ quoteId }: { quoteId: string }) {
       <div className="mb-4 flex items-center justify-between gap-2 print:hidden">
         <Link
           href={`/admin/bookings/quotes/${quoteId}`}
-          className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+          className={buttonStyles({ variant: "secondary", size: "sm" })}
         >
           Back to quote
         </Link>
         <button
           type="button"
           onClick={() => window.print()}
-          className="rounded-lg border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+          className={buttonStyles({ variant: "secondary", size: "sm" })}
         >
           Print
         </button>
