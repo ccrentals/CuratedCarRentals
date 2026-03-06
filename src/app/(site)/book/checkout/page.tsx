@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
 import { clearBookingDraft } from "@/lib/bookings/draft";
@@ -14,6 +14,8 @@ type PaymentStartResponse = {
   error?: string;
   redirectUrl?: string;
 };
+
+export const dynamic = "force-dynamic";
 
 const WIZARD_DRAFT_STORAGE_KEY = "ccr_booking_wizard_draft_v1";
 
@@ -35,7 +37,7 @@ function endpointForOption(option: CheckoutOption) {
   return "/api/payments/wipay/start";
 }
 
-export default function BookingCheckoutPage() {
+function BookingCheckoutContent() {
   const searchParams = useSearchParams();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [starting, setStarting] = useState(true);
@@ -162,5 +164,13 @@ export default function BookingCheckoutPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function BookingCheckoutPage() {
+  return (
+    <Suspense fallback={null}>
+      <BookingCheckoutContent />
+    </Suspense>
   );
 }

@@ -1,14 +1,12 @@
 import type { Metadata } from "next";
-import { cookies } from "next/headers";
 import { Geist, Geist_Mono } from "next/font/google";
 
 import { BreakpointOverlay } from "@/components/dev/BreakpointOverlay";
 import { OptionalClerkProvider } from "@/components/security/OptionalClerkProvider";
-import { CsrfBootstrap } from "@/components/site/CsrfBootstrap";
 import { Footer } from "@/components/site/Footer";
 import { Header } from "@/components/site/Header";
 import { assertProductionEnv } from "@/lib/env";
-import { APP_THEMES, isAppTheme, THEME_COOKIE_NAME, THEME_STORAGE_KEY } from "@/lib/theme";
+import { APP_THEMES, THEME_COOKIE_NAME, THEME_STORAGE_KEY } from "@/lib/theme";
 
 import "./globals.css";
 
@@ -27,22 +25,19 @@ export const metadata: Metadata = {
   description: "Car rentals in Jamaica with clean vehicles and simple booking.",
 };
 
-export default async function RootLayout({
+export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
   assertProductionEnv();
-  const cookieStore = await cookies();
-  const cookieTheme = cookieStore.get(THEME_COOKIE_NAME)?.value;
-  const initialTheme = isAppTheme(cookieTheme) ? cookieTheme : "light";
   const showBreakpointOverlay =
     process.env.NODE_ENV !== "production" &&
     process.env.NEXT_PUBLIC_DISABLE_BREAKPOINT_OVERLAY !== "1";
   const allowedThemesJson = JSON.stringify(APP_THEMES);
 
   return (
-    <html lang="en" data-theme={initialTheme} suppressHydrationWarning>
+    <html lang="en" data-theme="light" suppressHydrationWarning>
       <head>
         <style
           id="ccr-theme-critical"
@@ -111,7 +106,6 @@ html[data-theme="forest"], html[data-theme="forest"] body {
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-[var(--ccr-bg)] text-[var(--ccr-text)]`}
       >
         <OptionalClerkProvider>
-          <CsrfBootstrap />
           <div className="flex min-h-screen flex-col">
             <div data-site-header>
               <Header />
