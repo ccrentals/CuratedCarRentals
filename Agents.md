@@ -11,6 +11,7 @@ We are creating a professional car rental site skeleton similar to curatedcarren
 ## Workflow rules (very important)
 - Work in **small steps**.
 - Make changes in **batches** (max 2–4 files per batch).
+- All deploys must go through GitHub: commit the changes, push to GitHub, and only then deploy. Do not deploy directly from an unpushed local workspace unless I explicitly request that.
 - After each batch:
   1) Summarize what changed
   2) Tell me exactly how to verify in the browser
