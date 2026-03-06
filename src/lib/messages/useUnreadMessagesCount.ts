@@ -280,14 +280,28 @@ export function createUnreadMessagesCountStore(
 
 const unreadMessagesCountStore = createUnreadMessagesCountStore(buildDefaultStoreDeps());
 
-export function useUnreadMessagesCount(initialCount: number) {
+type UseUnreadMessagesCountOptions = {
+  enabled?: boolean;
+};
+
+export function useUnreadMessagesCount(
+  initialCount: number,
+  options: UseUnreadMessagesCountOptions = {},
+) {
+  const enabled = options.enabled ?? true;
+
   useEffect(() => {
     unreadMessagesCountStore.hydrate(initialCount);
   }, [initialCount]);
 
   const subscribe = useCallback(
-    (listener: () => void) => unreadMessagesCountStore.subscribe(listener),
-    [],
+    (listener: () => void) => {
+      if (!enabled) {
+        return () => {};
+      }
+      return unreadMessagesCountStore.subscribe(listener);
+    },
+    [enabled],
   );
   const getSnapshot = useCallback(() => unreadMessagesCountStore.getSnapshot(), []);
 
@@ -296,9 +310,9 @@ export function useUnreadMessagesCount(initialCount: number) {
   const refresh = useCallback(() => unreadMessagesCountStore.refresh(), []);
 
   return {
-    count: snapshot.count,
-    isLoading: snapshot.isLoading,
-    lastSyncedAt: snapshot.lastSyncedAt,
+    count: enabled ? snapshot.count : toSafeCount(initialCount),
+    isLoading: enabled ? snapshot.isLoading : false,
+    lastSyncedAt: enabled ? snapshot.lastSyncedAt : 0,
     refresh,
   };
 }

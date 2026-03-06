@@ -769,10 +769,11 @@ export function AdminShell({
   const drawerTriggerRef = useRef<HTMLElement | null>(null);
   const previousFocusedElementRef = useRef<HTMLElement | null>(null);
   const mobileCompactThresholdRef = useRef(72);
+  const shouldPollUnreadMessages = pathname.startsWith("/admin/messages");
   const {
     count: liveUnreadMessagesCount,
     refresh: refreshUnreadMessagesCount,
-  } = useUnreadMessagesCount(unreadMessagesCount);
+  } = useUnreadMessagesCount(unreadMessagesCount, { enabled: shouldPollUnreadMessages });
   const [collapsed, setCollapsed] = useState(() => {
     if (typeof window === "undefined") return false;
     return localStorage.getItem(SIDEBAR_STORAGE_KEY) === "true";
