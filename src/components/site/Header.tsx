@@ -211,8 +211,10 @@ export function Header() {
       <header className="site-header sticky top-0 z-30 shadow-sm">
         <div
           className={cn(
-            "overflow-hidden transition-all duration-500 ease-in-out",
-            isCompact ? "pointer-events-none max-h-0 -translate-y-6 opacity-0" : "max-h-60 translate-y-0 opacity-100",
+            "transition-all duration-500 ease-in-out",
+            isCompact
+              ? "pointer-events-none max-h-0 -translate-y-6 overflow-hidden opacity-0"
+              : "max-h-60 translate-y-0 overflow-visible opacity-100",
           )}
         >
           <div className="border-b border-[var(--ccr-border)] bg-[var(--ccr-surface)]">
