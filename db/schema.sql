@@ -20,7 +20,8 @@ create table if not exists users (
   last_login_at timestamptz,
   last_login_ip text,
   locked_at timestamptz,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
 
 alter table users
@@ -64,6 +65,19 @@ alter table users
 
 alter table users
   add column if not exists password_updated_at timestamptz;
+
+alter table users
+  add column if not exists updated_at timestamptz;
+
+update users
+set updated_at = coalesce(updated_at, created_at, now())
+where updated_at is null;
+
+alter table users
+  alter column updated_at set default now();
+
+alter table users
+  alter column updated_at set not null;
 
 create table if not exists admin_login_attempts (
   id uuid primary key default gen_random_uuid(),

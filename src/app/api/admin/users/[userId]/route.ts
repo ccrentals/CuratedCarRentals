@@ -14,8 +14,9 @@ import { buildClerkUsernameCandidates, isClerkUsernameError } from "@/lib/securi
 import { isClerkEnabled } from "@/lib/security/clerk";
 
 type QueryResultRow = Record<string, unknown>;
+type QueryResult = { rowCount: number; rows: QueryResultRow[] };
 type QueryClient = {
-  query: (sql: string, values?: unknown[]) => Promise<{ rowCount: number; rows: QueryResultRow[] }>;
+  query: (sql: string, values?: unknown[]) => Promise<QueryResult>;
 };
 
 type ManagedUserRow = {
@@ -67,6 +68,33 @@ function isUndefinedColumn(error: unknown, column: string) {
   const code = (error as { code?: string } | null)?.code;
   const message = String((error as { message?: unknown } | null)?.message ?? "");
   return code === "42703" && message.includes(`"${column}"`) && message.includes("does not exist");
+}
+
+async function queryUserUpdate(
+  client: QueryClient,
+  sqlWithUpdatedAt: string,
+  values: unknown[],
+): Promise<QueryResult> {
+  const fallbackSql = sqlWithUpdatedAt.replace(", updated_at = now()", "");
+  const savepointName = "users_updated_at_fallback";
+
+  await client.query(`savepoint ${savepointName}`);
+  try {
+    const result = await client.query(sqlWithUpdatedAt, values);
+    await client.query(`release savepoint ${savepointName}`);
+    return result;
+  } catch (error) {
+    if (!isUndefinedColumn(error, "updated_at")) {
+      await client.query(`rollback to savepoint ${savepointName}`);
+      await client.query(`release savepoint ${savepointName}`);
+      throw error;
+    }
+
+    await client.query(`rollback to savepoint ${savepointName}`);
+    const result = await client.query(fallbackSql, values);
+    await client.query(`release savepoint ${savepointName}`);
+    return result;
+  }
 }
 
 async function loadUserForUpdate(client: QueryClient, userId: string): Promise<ManagedUserRow | null> {
@@ -168,8 +196,9 @@ async function linkLocalUserToClerkId({
   clerkUserId: string;
 }) {
   try {
-    const result = await client.query(
-      "update users set clerk_user_id = $2 where id = $1 and (clerk_user_id is null or clerk_user_id = $2)",
+    const result = await queryUserUpdate(
+      client,
+      "update users set clerk_user_id = $2, updated_at = now() where id = $1 and (clerk_user_id is null or clerk_user_id = $2)",
       [localUserId, clerkUserId],
     );
     if (result.rowCount > 0) {
@@ -441,8 +470,9 @@ export async function PATCH(
       }
 
       try {
-        await client.query(
-          "update users set full_name = $2, email = $3, username = $4 where id = $1",
+        await queryUserUpdate(
+          client,
+          "update users set full_name = $2, email = $3, username = $4, updated_at = now() where id = $1",
           [userId, fullName, email, username],
         );
       } catch (error) {
@@ -519,7 +549,10 @@ export async function PATCH(
         }
       }
 
-      await client.query("update users set role = $2 where id = $1", [userId, nextRole]);
+      await queryUserUpdate(client, "update users set role = $2, updated_at = now() where id = $1", [
+        userId,
+        nextRole,
+      ]);
       await client.query("commit");
 
       await writeAuditLog({
@@ -536,7 +569,9 @@ export async function PATCH(
     if (action === "unlock") {
       const note = typeof body?.reason === "string" ? body.reason.trim() : "";
 
-      await client.query("update users set locked_at = null where id = $1", [userId]);
+      await queryUserUpdate(client, "update users set locked_at = null, updated_at = now() where id = $1", [
+        userId,
+      ]);
       await client.query("delete from admin_login_attempts where email = $1", [
         String(existing.email ?? "").toLowerCase(),
       ]);
@@ -565,9 +600,11 @@ export async function PATCH(
         return NextResponse.json({ error: "You cannot lock your own account." }, { status: 400 });
       }
 
-      await client.query("update users set locked_at = now() where id = $1 and locked_at is null", [
-        userId,
-      ]);
+      await queryUserUpdate(
+        client,
+        "update users set locked_at = now(), updated_at = now() where id = $1 and locked_at is null",
+        [userId],
+      );
       await client.query("commit");
 
       await writeAuditLog({
@@ -594,8 +631,9 @@ export async function PATCH(
       const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000); // 72h
 
       try {
-        await client.query(
-          "update users set password_hash = $2, must_change_password = true, temp_password_expires_at = $3, password_updated_at = now(), locked_at = null where id = $1",
+        await queryUserUpdate(
+          client,
+          "update users set password_hash = $2, must_change_password = true, temp_password_expires_at = $3, password_updated_at = now(), locked_at = null, updated_at = now() where id = $1",
           [userId, passwordHash, expiresAt.toISOString()],
         );
       } catch (error) {
@@ -697,8 +735,9 @@ export async function PATCH(
       }
 
       try {
-        await client.query(
-          "update users set is_active = false, deactivated_at = now(), deactivated_by_user_id = $2, deactivated_reason = $3 where id = $1",
+        await queryUserUpdate(
+          client,
+          "update users set is_active = false, deactivated_at = now(), deactivated_by_user_id = $2, deactivated_reason = $3, updated_at = now() where id = $1",
           [userId, session.userId, reason],
         );
       } catch (error) {
@@ -736,8 +775,9 @@ export async function PATCH(
       }
 
       try {
-        await client.query(
-          "update users set is_active = true, deactivated_at = null, deactivated_by_user_id = null, deactivated_reason = null where id = $1",
+        await queryUserUpdate(
+          client,
+          "update users set is_active = true, deactivated_at = null, deactivated_by_user_id = null, deactivated_reason = null, updated_at = now() where id = $1",
           [userId],
         );
       } catch (error) {
