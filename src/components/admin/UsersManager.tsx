@@ -413,6 +413,7 @@ type Mode =
   | "reactivate"
   | "unlock"
   | "lock"
+  | "delete_user"
   | "reset_password"
   | null;
 
@@ -475,6 +476,7 @@ export function UserRowActions({
   const [editFullName, setEditFullName] = useState((fullName ?? "").trim() || email);
   const [editEmail, setEditEmail] = useState(email);
   const [editUsername, setEditUsername] = useState((username ?? "").trim());
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [copyToast, setCopyToast] = useState<null | "Copied" | "Copy failed">(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -485,6 +487,7 @@ export function UserRowActions({
   const self = currentUserId === userId;
   const isLocked = Boolean(lockedAt);
   const canEditRole = canAssignDeveloperRole || currentRole !== "DEVELOPER";
+  const canDeleteUser = !self && canEditRole;
 
   const title = useMemo(() => {
     if (mode === "edit_profile") return "Edit user";
@@ -493,6 +496,7 @@ export function UserRowActions({
     if (mode === "reactivate") return "Reactivate user";
     if (mode === "unlock") return "Unlock account";
     if (mode === "lock") return "Lock account";
+    if (mode === "delete_user") return "Delete user";
     if (mode === "reset_password") return "Reset password";
     return "";
   }, [mode]);
@@ -518,6 +522,7 @@ export function UserRowActions({
     if (loading) return;
     setMode(null);
     setError(null);
+    setDeleteConfirmation("");
   }, [loading]);
 
   useEffect(() => {
@@ -625,10 +630,17 @@ export function UserRowActions({
       (mode === "deactivate" ||
         mode === "reactivate" ||
         mode === "reset_password" ||
-        mode === "lock") &&
+        mode === "lock" ||
+        mode === "delete_user") &&
       !reason.trim()
     ) {
       setError("Reason is required.");
+      setLoading(false);
+      return;
+    }
+
+    if (mode === "delete_user" && deleteConfirmation.trim().toLowerCase() !== email.trim().toLowerCase()) {
+      setError("Type the user's email to confirm deletion.");
       setLoading(false);
       return;
     }
@@ -651,7 +663,9 @@ export function UserRowActions({
               ? { action: "unlock", reason: reason.trim() || undefined }
               : mode === "lock"
                 ? { action: "lock", reason: reason.trim() }
-              : { action: "reset_password", reason: reason.trim() };
+                : mode === "delete_user"
+                  ? { action: "delete_user", reason: reason.trim() }
+                  : { action: "reset_password", reason: reason.trim() };
 
     const response = await patch(payload);
     const data = (await response.json().catch(() => ({}))) as {
@@ -693,6 +707,7 @@ export function UserRowActions({
 
     setMode(null);
     setReason("");
+    setDeleteConfirmation("");
     setResetResult(null);
     router.refresh();
   }
@@ -891,6 +906,45 @@ export function UserRowActions({
         </ActionIconButton>
       )}
 
+      <ActionIconButton
+        label="Delete user"
+        title={
+          self
+            ? "You cannot delete your own account."
+            : canDeleteUser
+              ? "Delete user"
+              : "Only developers can delete developer accounts."
+        }
+        onClick={() => {
+          if (!canDeleteUser) return;
+          setError(null);
+          setReason("");
+          setDeleteConfirmation("");
+          setResetResult(null);
+          setCopyToast(null);
+          openMode("delete_user");
+        }}
+        disabled={!canDeleteUser}
+        className="border-[var(--ccr-clerk-danger-border)] bg-[var(--ccr-clerk-danger-bg)] text-[var(--ccr-clerk-danger-text)] hover:opacity-90"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          className="h-4 w-4"
+          aria-hidden="true"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M3 6h18" />
+          <path d="M8 6V4h8v2" />
+          <path d="M19 6l-1 14H6L5 6" />
+          <path d="M10 11v6" />
+          <path d="M14 11v6" />
+        </svg>
+      </ActionIconButton>
+
       {mode ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">
           <button
@@ -973,6 +1027,33 @@ export function UserRowActions({
                     className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
                   />
                 </label>
+              ) : mode === "delete_user" ? (
+                <div className="space-y-3">
+                  <div className="rounded-xl border border-[var(--ccr-clerk-danger-border)] bg-[var(--ccr-clerk-danger-bg)] px-3 py-3 text-sm text-[var(--ccr-clerk-danger-text)]">
+                    This permanently removes the user account. Audit details are retained, but the user record itself is deleted and cannot be restored from this screen.
+                  </div>
+                  <label className="block text-xs text-[var(--ccr-muted)]">
+                    Reason (required)
+                    <textarea
+                      value={reason}
+                      onChange={(e) => setReason(e.target.value)}
+                      rows={3}
+                      className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+                    />
+                  </label>
+                  <label className="block text-xs text-[var(--ccr-muted)]">
+                    Type the user&apos;s email to confirm
+                    <input
+                      value={deleteConfirmation}
+                      onChange={(e) => setDeleteConfirmation(e.target.value)}
+                      placeholder={email}
+                      spellCheck={false}
+                      autoCapitalize="off"
+                      autoCorrect="off"
+                      className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+                    />
+                  </label>
+                </div>
               ) : mode === "reset_password" && resetResult ? (
                 <div className="space-y-3">
                   {resetResult.kind === "temp" ? (
@@ -1056,9 +1137,12 @@ export function UserRowActions({
                   type="button"
                   onClick={submit}
                   disabled={loading}
-                  className={buttonStyles({ variant: "primary", size: "sm" })}
+                  className={buttonStyles({
+                    variant: mode === "delete_user" ? "danger" : "primary",
+                    size: "sm",
+                  })}
                 >
-                  {loading ? "Saving..." : "Confirm"}
+                  {loading ? (mode === "delete_user" ? "Deleting..." : "Saving...") : mode === "delete_user" ? "Delete user" : "Confirm"}
                 </button>
               )}
             </div>
