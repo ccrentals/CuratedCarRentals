@@ -2,6 +2,8 @@
 
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { buttonStyles } from "@/components/ui/Button";
+
 type UploadcareImagesInputProps = {
   label?: string;
   helperText?: string;
@@ -264,7 +266,7 @@ export function UploadcareImagesInput({
           type="button"
           onClick={handleUpload}
           disabled={loading || disabled}
-          className="min-h-10 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1.5 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
+          className={buttonStyles({ variant: "secondary", size: "sm" })}
         >
           {loading ? "Opening..." : disabled ? "View mode" : "Upload Images"}
         </button>
@@ -309,7 +311,7 @@ export function UploadcareImagesInput({
                   <button
                     type="button"
                     onClick={() => removeUrlAtIndex(activeIndex)}
-                    className="min-h-10 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1.5 text-xs font-semibold text-[var(--ccr-text)] hover:bg-[var(--ccr-surface-soft)]"
+                    className={buttonStyles({ variant: "secondary", size: "sm" })}
                   >
                     Remove
                   </button>
@@ -328,7 +330,11 @@ export function UploadcareImagesInput({
                   type="button"
                   onClick={() => removeUrlAtIndex(index)}
                   disabled={disabled}
-                  className="w-full border-t border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-2 py-1 text-xs font-semibold text-[var(--ccr-text)] hover:bg-[var(--ccr-surface-soft)] disabled:opacity-50"
+                  className={buttonStyles({
+                    variant: "secondary",
+                    size: "xs",
+                    className: "w-full rounded-none border-x-0 border-b-0 border-t",
+                  })}
                 >
                   Remove
                 </button>

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { refreshUnreadMessagesCount } from "@/lib/messages/useUnreadMessagesCount";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
+import { buttonStyles } from "@/components/ui/Button";
 
 type MessageStatusActionsProps = {
   messageId: string;
@@ -75,7 +76,7 @@ export function MessageStatusActions({
             type="button"
             disabled={isPending}
             onClick={() => runAction("MARK_READ")}
-            className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-50"
+            className={buttonStyles({ variant: "secondary", size: "sm" })}
           >
             {pendingAction === "MARK_READ" ? "Saving..." : "Mark as Read"}
           </button>
@@ -84,7 +85,7 @@ export function MessageStatusActions({
             type="button"
             disabled={isPending}
             onClick={() => runAction("MARK_NEW")}
-            className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-50"
+            className={buttonStyles({ variant: "secondary", size: "sm" })}
           >
             {pendingAction === "MARK_NEW" ? "Saving..." : "Mark as New"}
           </button>
@@ -95,7 +96,7 @@ export function MessageStatusActions({
             type="button"
             disabled={isPending}
             onClick={() => runAction("UNARCHIVE")}
-            className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-50"
+            className={buttonStyles({ variant: "secondary", size: "sm" })}
           >
             {pendingAction === "UNARCHIVE" ? "Saving..." : "Unarchive"}
           </button>
@@ -104,7 +105,7 @@ export function MessageStatusActions({
             type="button"
             disabled={isPending}
             onClick={() => runAction("ARCHIVE")}
-            className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-50"
+            className={buttonStyles({ variant: "secondary", size: "sm" })}
           >
             {pendingAction === "ARCHIVE" ? "Saving..." : "Archive"}
           </button>

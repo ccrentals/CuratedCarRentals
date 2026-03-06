@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } fro
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { ADMIN_ACCENT_RING_CLASS } from "@/components/admin/adminUiClasses";
+import { buttonStyles } from "@/components/ui/Button";
 
 const STATUS_OPTIONS = [
   { label: "All", value: "all" },
@@ -168,7 +169,11 @@ export default function BookingFilters({ canAdmin }: { canAdmin?: boolean }) {
               setShowArchived(false);
               router.push(pathname);
             }}
-            className="w-full rounded-full border border-[var(--ccr-border)] px-4 py-1.5 text-xs font-semibold text-[var(--ccr-text)] hover:border-[var(--ccr-primary)] sm:ml-auto sm:w-auto"
+            className={buttonStyles({
+              variant: "secondary",
+              size: "xs",
+              className: "w-full rounded-full sm:ml-auto sm:w-auto",
+            })}
           >
             Clear filters
           </button>

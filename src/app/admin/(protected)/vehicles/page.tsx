@@ -304,18 +304,18 @@ export default async function AdminVehiclesPage({
 
   const statusPillTone = (status: DerivedVehicleStatus) => {
     if (status === "AVAILABLE") {
-      return "border-emerald-300/40 bg-emerald-500/15 text-emerald-100";
+      return "border-[var(--ccr-status-success-border)] bg-[var(--ccr-status-success-bg)] text-[var(--ccr-status-success-text)]";
     }
     if (status === "UPCOMING") {
-      return "border-sky-300/35 bg-sky-500/15 text-sky-100";
+      return "border-[var(--ccr-status-info-border)] bg-[var(--ccr-status-info-bg)] text-[var(--ccr-status-info-text)]";
     }
     if (status === "ON_RENT") {
-      return "border-cyan-300/35 bg-cyan-500/15 text-cyan-100";
+      return "border-[var(--ccr-status-info-border)] bg-[var(--ccr-status-info-bg)] text-[var(--ccr-status-info-text)]";
     }
     if (status === "DIRTY") {
-      return "border-amber-300/40 bg-amber-500/15 text-amber-100";
+      return "border-[var(--ccr-status-warning-border)] bg-[var(--ccr-status-warning-bg)] text-[var(--ccr-status-warning-text)]";
     }
-    return "border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] text-[var(--ccr-text)]";
+    return "border-[var(--ccr-status-neutral-border)] bg-[var(--ccr-status-neutral-bg)] text-[var(--ccr-status-neutral-text)]";
   };
 
   return (
@@ -346,7 +346,7 @@ export default async function AdminVehiclesPage({
         </Link>
       </div>
       {deletedNotice ? (
-        <p className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+        <p className="mt-3 rounded-xl border border-[var(--ccr-status-success-border)] bg-[var(--ccr-status-success-bg)] px-4 py-3 text-sm text-[var(--ccr-status-success-text)]">
           Vehicle archived successfully.
         </p>
       ) : null}
@@ -405,7 +405,7 @@ export default async function AdminVehiclesPage({
                     <span
                       className={`inline-flex min-h-7 items-center rounded-full border px-3 py-1 text-xs font-semibold leading-none ${
                         includeDeleted
-                          ? "border-slate-300/40 bg-slate-500/15 text-slate-100"
+                          ? "border-[var(--ccr-status-neutral-border)] bg-[var(--ccr-status-neutral-bg)] text-[var(--ccr-status-neutral-text)]"
                           : statusPillTone(vehicle.derived_status)
                       }`}
                     >
@@ -527,7 +527,7 @@ export default async function AdminVehiclesPage({
                           <span
                             className={`inline-flex min-h-7 items-center rounded-full border px-3 py-1 text-xs font-semibold leading-none ${
                               includeDeleted
-                                ? "border-slate-300/40 bg-slate-500/15 text-slate-100"
+                                ? "border-[var(--ccr-status-neutral-border)] bg-[var(--ccr-status-neutral-bg)] text-[var(--ccr-status-neutral-text)]"
                                 : statusPillTone(vehicle.derived_status)
                             }`}
                           >

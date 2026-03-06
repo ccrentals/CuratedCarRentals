@@ -52,10 +52,10 @@ const BOOKING_SORT_COLUMNS = ["booking", "customer", "vehicle", "dates", "status
 
 function statusPillToneClass(status: string, phase: AdminBookingListItem["derivedPhase"]) {
   if (phase === "UPCOMING") {
-    return "border-emerald-300/40 bg-emerald-500/15 text-emerald-100";
+    return "border-[var(--ccr-status-info-border)] bg-[var(--ccr-status-info-bg)] text-[var(--ccr-status-info-text)]";
   }
   if (phase === "ON_RENT") {
-    return "border-cyan-300/35 bg-cyan-500/15 text-cyan-100";
+    return "border-[var(--ccr-status-info-border)] bg-[var(--ccr-status-info-bg)] text-[var(--ccr-status-info-text)]";
   }
 
   const normalized = String(status ?? "")
@@ -63,24 +63,24 @@ function statusPillToneClass(status: string, phase: AdminBookingListItem["derive
     .toUpperCase();
 
   if (normalized === "CONFIRMED") {
-    return "border-sky-300/30 bg-sky-500/15 text-sky-100";
+    return "border-[var(--ccr-status-info-border)] bg-[var(--ccr-status-info-bg)] text-[var(--ccr-status-info-text)]";
   }
   if (normalized === "PENDING_PAYMENT" || normalized === "PENDING") {
-    return "border-[var(--ccr-accent)]/45 bg-[var(--ccr-accent)]/15 text-[var(--ccr-text)]";
+    return "border-[var(--ccr-status-accent-border)] bg-[var(--ccr-status-accent-bg)] text-[var(--ccr-status-accent-text)]";
   }
   if (normalized === "CANCELLED") {
-    return "border-rose-300/45 bg-rose-500/15 text-rose-100";
+    return "border-[var(--ccr-status-danger-border)] bg-[var(--ccr-status-danger-bg)] text-[var(--ccr-status-danger-text)]";
   }
   if (normalized === "OVERRIDDEN") {
-    return "border-red-300/40 bg-red-500/15 text-red-100";
+    return "border-[var(--ccr-status-danger-border)] bg-[var(--ccr-status-danger-bg)] text-[var(--ccr-status-danger-text)]";
   }
   if (normalized === "RETURNED" || normalized === "COMPLETED") {
-    return "border-emerald-300/40 bg-emerald-500/15 text-emerald-100";
+    return "border-[var(--ccr-status-success-border)] bg-[var(--ccr-status-success-bg)] text-[var(--ccr-status-success-text)]";
   }
   if (normalized === "PICKED_UP" || normalized === "ACTIVE") {
-    return "border-cyan-300/35 bg-cyan-500/15 text-cyan-100";
+    return "border-[var(--ccr-status-info-border)] bg-[var(--ccr-status-info-bg)] text-[var(--ccr-status-info-text)]";
   }
-  return "border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] text-[var(--ccr-text)]";
+  return "border-[var(--ccr-status-neutral-border)] bg-[var(--ccr-status-neutral-bg)] text-[var(--ccr-status-neutral-text)]";
 }
 
 function bookingPhaseLabel(booking: AdminBookingListItem) {
@@ -334,7 +334,7 @@ export function AdminBookingsTable({
                     ) : null}
                   </div>
                   {booking.lostToFirstDeposit ? (
-                    <span className="mt-1 inline-flex rounded-full border border-amber-300/40 bg-amber-500/20 px-2 py-0.5 text-[11px] font-semibold text-amber-100">
+                    <span className="mt-1 inline-flex rounded-full border border-[var(--ccr-status-warning-border)] bg-[var(--ccr-status-warning-bg)] px-2 py-0.5 text-[11px] font-semibold text-[var(--ccr-status-warning-text)]">
                       Lost to first deposit
                     </span>
                   ) : null}
@@ -342,7 +342,7 @@ export function AdminBookingsTable({
                 <td className="px-4 py-3 text-[var(--ccr-muted)]">
                   <TableDateTime value={booking.createdAtLabel} className="hidden md:inline-flex" />
                   {booking.cancelledAtLabel ? (
-                    <div className="mt-1 hidden text-[11px] text-rose-200 md:block">
+                    <div className="mt-1 hidden text-[11px] text-[var(--ccr-status-danger-text)] md:block">
                       <span className="font-semibold uppercase tracking-wide">Cancelled</span>
                       <TableDateTime value={booking.cancelledAtLabel} className="mt-1 inline-flex" />
                     </div>
@@ -368,7 +368,7 @@ export function AdminBookingsTable({
                     <div className="mt-2 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-2 text-xs text-[var(--ccr-muted)]">
                       <TableDateTime value={booking.createdAtLabel} />
                       {booking.cancelledAtLabel ? (
-                        <div className="mt-2 text-rose-200">
+                        <div className="mt-2 text-[var(--ccr-status-danger-text)]">
                           <p className="font-semibold uppercase tracking-wide">Cancelled</p>
                           <TableDateTime value={booking.cancelledAtLabel} className="mt-1 inline-flex" />
                         </div>
@@ -414,7 +414,7 @@ export function AdminBookingsTable({
             className="mt-0 shrink-0 flex-nowrap justify-end gap-3 whitespace-nowrap"
           />
           <div className="flex shrink-0 items-center gap-3">
-            {loadMoreError ? <span className="text-xs text-rose-300">{loadMoreError}</span> : null}
+            {loadMoreError ? <span className="text-xs text-[var(--ccr-status-danger-text)]">{loadMoreError}</span> : null}
             <button
               type="button"
               onClick={handleLoadMore}

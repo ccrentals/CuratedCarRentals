@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
+import { buttonStyles } from "@/components/ui/Button";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
 type VehicleOption = {
@@ -183,7 +184,7 @@ export function AdminCreateBookingModal({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="rounded-xl border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] ring-1 ring-[var(--ccr-accent)] transition hover:border-[var(--ccr-accent-strong)] hover:bg-[var(--ccr-surface-soft)]"
+        className={buttonStyles({ variant: "secondary", size: "sm" })}
       >
         Create booking
       </button>
@@ -219,7 +220,7 @@ export function AdminCreateBookingModal({
               <button
                 type="button"
                 onClick={closeModal}
-                className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+                className={buttonStyles({ variant: "secondary", size: "sm" })}
               >
                 Close
               </button>
@@ -395,14 +396,14 @@ export function AdminCreateBookingModal({
                 <button
                   type="submit"
                   disabled={loading}
-                  className="rounded-lg bg-[var(--ccr-primary)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                  className={buttonStyles({ variant: "primary", size: "md" })}
                 >
                   {loading ? "Creating..." : "Create booking"}
                 </button>
                 <button
                   type="button"
                   onClick={closeModal}
-                  className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)]"
+                  className={buttonStyles({ variant: "secondary", size: "md" })}
                 >
                   Cancel
                 </button>

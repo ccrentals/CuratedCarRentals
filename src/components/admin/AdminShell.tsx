@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { ADMIN_ACCENT_RING_CLASS } from "@/components/admin/adminUiClasses";
 import { UserMenu } from "@/components/admin/UserMenu";
+import { buttonStyles } from "@/components/ui/Button";
 import { useUnreadMessagesCount } from "@/lib/messages/useUnreadMessagesCount";
 
 const SIDEBAR_STORAGE_KEY = "adminSidebarCollapsed";
@@ -1022,7 +1023,11 @@ export function AdminShell({
               handleMenuToggle(event.currentTarget as HTMLElement)
             }
             aria-label="Toggle admin sidebar"
-            className="rounded-lg border border-[var(--ccr-border)] px-2 py-1 text-sm font-semibold text-[var(--ccr-text)]"
+            className={buttonStyles({
+              variant: "secondary",
+              size: "xs",
+              className: "px-2",
+            })}
           >
             <svg
               viewBox="0 0 24 24"
@@ -1084,7 +1089,10 @@ export function AdminShell({
             type="button"
             onClick={() => setDrawerOpen(false)}
             aria-label="Close admin menu"
-            className="rounded-lg border border-[var(--ccr-border)] px-2 py-1 text-xs font-semibold text-[var(--ccr-text)]"
+            className={buttonStyles({
+              variant: "secondary",
+              size: "xs",
+            })}
           >
             Close
           </button>
@@ -1139,7 +1147,11 @@ export function AdminShell({
                   handleMenuToggle(event.currentTarget as HTMLElement)
                 }
                 aria-label="Open admin menu"
-                className="rounded-lg border border-[var(--ccr-border)] px-2 py-1 text-sm font-semibold text-[var(--ccr-text)] lg:hidden"
+                className={buttonStyles({
+                  variant: "secondary",
+                  size: "xs",
+                  className: "px-2 lg:hidden",
+                })}
               >
                 <svg
                   viewBox="0 0 24 24"
@@ -1212,7 +1224,10 @@ export function AdminShell({
                   handleMenuToggle(event.currentTarget as HTMLElement)
                 }
                 aria-label="Open admin menu"
-                className="rounded-lg border border-[var(--ccr-border)] px-2 py-1 text-sm font-semibold text-[var(--ccr-text)]"
+                className={buttonStyles({
+                  variant: "secondary",
+                  size: "xs",
+                })}
               >
                 Menu
               </button>

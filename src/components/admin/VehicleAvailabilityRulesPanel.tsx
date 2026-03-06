@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
+import { buttonStyles } from "@/components/ui/Button";
 
 type RulesPayload = {
   id: string | null;
@@ -424,7 +425,7 @@ export function VehicleAvailabilityRulesPanel({ vehicleId }: VehicleAvailability
                 setMessage(null);
                 void loadRules();
               }}
-              className="min-h-11 rounded-xl border border-[var(--ccr-border)] px-4 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+              className={buttonStyles({ variant: "secondary", size: "sm" })}
             >
               Reset
             </button>
@@ -432,7 +433,7 @@ export function VehicleAvailabilityRulesPanel({ vehicleId }: VehicleAvailability
               data-testid="availability-rules-save"
               type="submit"
               disabled={saving}
-              className="min-h-11 rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-xs font-semibold text-white disabled:opacity-70"
+              className={buttonStyles({ variant: "primary", size: "sm" })}
             >
               {saving ? "Saving..." : "Save Rules"}
             </button>

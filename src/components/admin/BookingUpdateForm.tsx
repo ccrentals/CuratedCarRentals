@@ -3,6 +3,7 @@
 import { useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
+import { buttonStyles } from "@/components/ui/Button";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
 type BookingUpdateFormProps = {
@@ -141,7 +142,11 @@ export function BookingUpdateForm({
           type="button"
           onClick={() => (open ? setOpen(false) : openPanel())}
           disabled={disabled || loading}
-          className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
+          className={buttonStyles({
+            variant: "secondary",
+            size: "sm",
+            className: "rounded-lg",
+          })}
         >
           {open ? "Close" : "Edit booking"}
         </button>
@@ -272,7 +277,11 @@ export function BookingUpdateForm({
             <button
               type="submit"
               disabled={loading}
-              className="rounded-lg bg-[var(--ccr-primary)] px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
+              className={buttonStyles({
+                variant: "primary",
+                size: "sm",
+                className: "rounded-lg",
+              })}
             >
               {loading ? "Saving..." : "Save changes"}
             </button>
@@ -280,7 +289,11 @@ export function BookingUpdateForm({
               type="button"
               disabled={loading}
               onClick={() => setOpen(false)}
-              className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
+              className={buttonStyles({
+                variant: "secondary",
+                size: "sm",
+                className: "rounded-lg",
+              })}
             >
               Cancel
             </button>

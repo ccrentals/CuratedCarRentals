@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
+import { buttonStyles } from "@/components/ui/Button";
 
 type InsurancePlanRow = {
   id: string;
@@ -140,7 +141,7 @@ export function VehicleInsurancePanel({ vehicleId, vehicleLabel }: VehicleInsura
               type="button"
               onClick={saveVehicleInsurance}
               disabled={saving}
-              className="rounded-lg bg-[var(--ccr-primary)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+              className={buttonStyles({ variant: "primary", size: "sm" })}
             >
               {saving ? "Saving..." : "Save"}
             </button>

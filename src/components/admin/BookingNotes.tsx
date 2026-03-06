@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
+import { buttonStyles } from "@/components/ui/Button";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
 type AdminNote = {
@@ -293,7 +294,11 @@ export function BookingNotes({ bookingId, notes }: BookingNotesProps) {
             type="button"
             onClick={saveNote}
             disabled={saving}
-            className="cursor-pointer rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
+            className={buttonStyles({
+              variant: "primary",
+              size: "sm",
+              className: "text-sm",
+            })}
           >
             {saving ? "Saving..." : "Save Note"}
           </button>

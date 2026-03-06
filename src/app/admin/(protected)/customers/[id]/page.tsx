@@ -11,6 +11,7 @@ import { formatJmd } from "@/lib/money";
 import { CustomerProfileForm } from "@/components/admin/CustomerProfileForm";
 import { formatLegalIdTypeLabel } from "@/lib/customers/legalId";
 import { CustomerBlockToggleButton } from "@/components/admin/CustomerBlockToggleButton";
+import { buttonStyles } from "@/components/ui/Button";
 
 type CustomerRow = {
   id: string;
@@ -345,12 +346,23 @@ export default async function AdminCustomerDetailPage({
               />
             </label>
             <input type="hidden" name="pageSize" value={String(snapshotBookingsPage.limit)} />
-            <button type="submit" className="mt-6 rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-xs font-semibold text-white">
+            <button
+              type="submit"
+              className={buttonStyles({
+                variant: "primary",
+                size: "sm",
+                className: "mt-6",
+              })}
+            >
               Apply
             </button>
             <Link
               href={`/admin/customers/${customerRow.id}`}
-              className="mt-6 rounded-xl border border-[var(--ccr-border)] px-4 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+              className={buttonStyles({
+                variant: "secondary",
+                size: "sm",
+                className: "mt-6",
+              })}
             >
               Reset
             </Link>

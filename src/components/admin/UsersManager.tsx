@@ -12,8 +12,8 @@ import {
 
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
-import { ADMIN_OUTLINE_BUTTON_CLASS } from "@/components/admin/adminUiClasses";
 import { SlideDownPanel } from "@/components/admin/SlideDownPanel";
+import { buttonStyles } from "@/components/ui/Button";
 
 type CreateUserResult = {
   ok: true;
@@ -251,7 +251,7 @@ export function CreateUserForm({
             onClick={submit}
             disabled={disabled || loading}
             data-testid="create-user-submit"
-            className="rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+            className={buttonStyles({ variant: "primary", size: "md" })}
           >
             {loading ? "Creating..." : "Create user"}
           </button>
@@ -293,7 +293,7 @@ export function CreateUserForm({
             <button
               type="button"
               onClick={() => setShowTempPassword((current) => !current)}
-              className={`${ADMIN_OUTLINE_BUTTON_CLASS} px-3 py-1.5 text-xs font-semibold`}
+              className={buttonStyles({ variant: "secondary", size: "xs" })}
               data-testid="create-user-toggle-password-visibility"
             >
               {showTempPassword ? "Hide" : "Show"}
@@ -333,7 +333,7 @@ export function CreateUserForm({
                   showCopyToast("Copy failed", "error");
                 }
               }}
-              className={`${ADMIN_OUTLINE_BUTTON_CLASS} px-3 py-1.5 text-xs font-semibold`}
+              className={buttonStyles({ variant: "secondary", size: "xs" })}
               data-testid="create-user-copy-temp-password"
             >
               Copy temp password
@@ -346,7 +346,7 @@ export function CreateUserForm({
                 setCopyToast(null);
                 setPanelOpen(true);
               }}
-              className={`${ADMIN_OUTLINE_BUTTON_CLASS} px-3 py-1.5 text-xs font-semibold`}
+              className={buttonStyles({ variant: "secondary", size: "xs" })}
             >
               Create another
             </button>
@@ -358,7 +358,7 @@ export function CreateUserForm({
                 setShowTempPassword(true);
                 setCopyToast(null);
               }}
-              className={`${ADMIN_OUTLINE_BUTTON_CLASS} px-2.5 py-1.5 text-xs font-semibold`}
+              className={buttonStyles({ variant: "secondary", size: "xs" })}
             >
               Dismiss
             </button>
@@ -441,7 +441,11 @@ function ActionIconButton({
       disabled={disabled}
       title={title ?? label}
       aria-label={label}
-      className={`rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-2 text-[var(--ccr-text)] hover:border-[var(--ccr-accent)] hover:bg-[var(--ccr-bg)] disabled:opacity-60 ${className}`}
+      className={buttonStyles({
+        variant: "secondary",
+        size: "xs",
+        className: `rounded-lg p-2 ${className}`,
+      })}
     >
       <span className="sr-only">{label}</span>
       {children}
@@ -1043,7 +1047,7 @@ export function UserRowActions({
               <button
                 type="button"
                 onClick={closeModal}
-                className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+                className={buttonStyles({ variant: "secondary", size: "sm" })}
               >
                 {mode === "reset_password" && resetResult ? "Done" : "Cancel"}
               </button>
@@ -1052,7 +1056,7 @@ export function UserRowActions({
                   type="button"
                   onClick={submit}
                   disabled={loading}
-                  className="rounded-lg bg-[var(--ccr-primary)] px-3 py-2 text-xs font-semibold text-white disabled:opacity-60"
+                  className={buttonStyles({ variant: "primary", size: "sm" })}
                 >
                   {loading ? "Saving..." : "Confirm"}
                 </button>

@@ -139,15 +139,15 @@ function statusTone(value: string) {
     .trim()
     .toUpperCase();
   if (["CONFIRMED", "PICKED_UP", "ACTIVE", "IN_PROGRESS"].includes(normalized)) {
-    return "border-cyan-300/35 bg-cyan-500/15 text-cyan-100";
+    return "border-[var(--ccr-status-info-border)] bg-[var(--ccr-status-info-bg)] text-[var(--ccr-status-info-text)]";
   }
   if (["RETURNED", "COMPLETED"].includes(normalized)) {
-    return "border-emerald-300/35 bg-emerald-500/15 text-emerald-100";
+    return "border-[var(--ccr-status-success-border)] bg-[var(--ccr-status-success-bg)] text-[var(--ccr-status-success-text)]";
   }
   if (["CANCELLED", "NO_SHOW", "OVERRIDDEN"].includes(normalized)) {
-    return "border-rose-300/35 bg-rose-500/15 text-rose-100";
+    return "border-[var(--ccr-status-danger-border)] bg-[var(--ccr-status-danger-bg)] text-[var(--ccr-status-danger-text)]";
   }
-  return "border-amber-300/35 bg-amber-500/15 text-amber-100";
+  return "border-[var(--ccr-status-warning-border)] bg-[var(--ccr-status-warning-bg)] text-[var(--ccr-status-warning-text)]";
 }
 
 function fallbackData(): PerformanceData {
@@ -347,7 +347,7 @@ export function VehiclePerformancePanel({ vehicleId }: VehiclePerformancePanelPr
       </div>
 
       {loading ? <p className="mt-4 text-sm text-[var(--ccr-muted)]">Loading performance data...</p> : null}
-      {error ? <p className="mt-4 text-sm text-red-600">{error}</p> : null}
+      {error ? <p className="mt-4 text-sm text-[var(--ccr-status-danger-text)]">{error}</p> : null}
 
       {!loading ? (
         <>

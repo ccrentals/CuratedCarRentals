@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
+import { buttonStyles } from "@/components/ui/Button";
 
 type RunState = "idle" | "running" | "success" | "error";
 
@@ -82,7 +83,7 @@ export function CronRunButtons() {
           )
         }
         disabled={pickupState === "running"}
-        className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
+        className={buttonStyles({ variant: "secondary", size: "sm" })}
       >
         {pickupState === "running" ? "Running..." : "Run Pickup Reminder Now"}
       </button>
@@ -96,7 +97,7 @@ export function CronRunButtons() {
           )
         }
         disabled={balanceState === "running"}
-        className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
+        className={buttonStyles({ variant: "secondary", size: "sm" })}
       >
         {balanceState === "running" ? "Running..." : "Run Balance Reminder Now"}
       </button>
@@ -110,7 +111,7 @@ export function CronRunButtons() {
           )
         }
         disabled={notesState === "running"}
-        className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
+        className={buttonStyles({ variant: "secondary", size: "sm" })}
       >
         {notesState === "running" ? "Running..." : "Run Scheduled Note Emails Now"}
       </button>
@@ -124,7 +125,7 @@ export function CronRunButtons() {
           )
         }
         disabled={maintenanceState === "running"}
-        className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
+        className={buttonStyles({ variant: "secondary", size: "sm" })}
       >
         {maintenanceState === "running" ? "Running..." : "Run Maintenance Reminders Now"}
       </button>
@@ -138,7 +139,7 @@ export function CronRunButtons() {
           )
         }
         disabled={simulateState === "running"}
-        className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
+        className={buttonStyles({ variant: "secondary", size: "sm" })}
       >
         {simulateState === "running" ? "Running..." : "Simulate Reminder Logs"}
       </button>

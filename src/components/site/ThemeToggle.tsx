@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useSyncExternalStore } from "react";
+import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 import { cn } from "@/lib/utils";
@@ -18,6 +18,7 @@ type ThemeToggleProps = {
   variant?: "default" | "inverse";
   persistence?: "local" | "user";
   showLabel?: boolean;
+  controlId?: string;
 };
 
 function applyTheme(theme: AppTheme) {
@@ -80,8 +81,12 @@ export function ThemeToggle({
   variant = "default",
   persistence = "local",
   showLabel = true,
+  controlId,
 }: ThemeToggleProps) {
-  const selectId = useId();
+  const generatedId = useId();
+  const selectId = controlId ?? generatedId;
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const [open, setOpen] = useState(false);
   const theme = useSyncExternalStore(subscribeToTheme, getCurrentTheme, getThemeServerSnapshot);
 
   function selectTheme(nextTheme: AppTheme) {
@@ -93,10 +98,34 @@ export function ThemeToggle({
     }
   }
 
+  useEffect(() => {
+    function handlePointerDown(event: MouseEvent) {
+      if (!rootRef.current) return;
+      if (rootRef.current.contains(event.target as Node)) return;
+      setOpen(false);
+    }
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, []);
+
+  const selectedLabel = THEME_LABELS[theme];
+
   return (
-    <label className="inline-flex items-center gap-2">
+    <div ref={rootRef} className="relative inline-flex items-center gap-2">
       {showLabel ? (
-        <span
+        <label
+          htmlFor={selectId}
           className={cn(
             "text-xs font-semibold uppercase tracking-wide",
             variant === "default" && "text-[var(--ccr-muted)]",
@@ -104,21 +133,17 @@ export function ThemeToggle({
           )}
         >
           Theme
-        </span>
+        </label>
       ) : null}
-      <select
+      <button
         id={selectId}
-        name="theme"
-        value={theme}
-        onChange={(event) => {
-          const value = event.target.value;
-          if (!isAppTheme(value)) return;
-          selectTheme(value);
-        }}
-        suppressHydrationWarning
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
         aria-label="Theme"
         className={cn(
-          "rounded-xl px-3 py-2 text-xs font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ccr-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--ccr-surface)]",
+          "inline-flex min-h-10 items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ccr-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--ccr-surface)]",
           variant === "default" &&
             "border border-[var(--ccr-border)] bg-[var(--ccr-surface)] text-[var(--ccr-text)] hover:bg-[var(--ccr-surface-soft)]",
           variant === "inverse" &&
@@ -126,12 +151,63 @@ export function ThemeToggle({
           className,
         )}
       >
-        {APP_THEMES.map((item) => (
-          <option key={item} value={item}>
-            {THEME_LABELS[item]}
-          </option>
-        ))}
-      </select>
-    </label>
+        <span className="min-w-[4.5rem] text-left">{selectedLabel}</span>
+        <svg
+          className={cn("h-4 w-4 transition-transform", open ? "rotate-180" : "")}
+          viewBox="0 0 20 20"
+          fill="none"
+          aria-hidden="true"
+        >
+          <path
+            d="M5 7.5L10 12.5L15 7.5"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </button>
+      {open ? (
+        <div
+          className={cn(
+            "absolute right-0 top-[calc(100%+0.35rem)] z-40 min-w-[10rem] overflow-hidden rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] shadow-2xl",
+            variant === "inverse" && "bg-[var(--ccr-primary)]",
+          )}
+          role="listbox"
+          aria-label="Theme options"
+        >
+          {APP_THEMES.map((item) => {
+            const selected = item === theme;
+            return (
+              <button
+                key={item}
+                type="button"
+                role="option"
+                aria-selected={selected}
+                onClick={() => {
+                  if (isAppTheme(item)) {
+                    selectTheme(item);
+                  }
+                  setOpen(false);
+                }}
+                className={cn(
+                  "flex w-full items-center justify-between px-3 py-2 text-left text-sm font-semibold transition-colors",
+                  selected
+                    ? "bg-[var(--ccr-accent)] text-white"
+                    : "text-[var(--ccr-text)] hover:bg-[var(--ccr-surface-soft)]",
+                  variant === "inverse" &&
+                    (selected
+                      ? "bg-white text-[var(--ccr-primary)]"
+                      : "text-white hover:bg-white/10"),
+                )}
+              >
+                <span>{THEME_LABELS[item]}</span>
+                {selected ? <span aria-hidden="true">✓</span> : null}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
   );
 }

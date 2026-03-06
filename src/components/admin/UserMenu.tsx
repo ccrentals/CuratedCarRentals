@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { ThemeToggle } from "@/components/site/ThemeToggle";
+import { buttonStyles } from "@/components/ui/Button";
 
 type UserMenuProps = {
   email: string;
@@ -44,7 +45,11 @@ function UserMenuInner({
 }: UserMenuProps & {
 }) {
   const [loading, setLoading] = useState(false);
-  const hoverTextClass = "transition hover:text-[var(--ccr-muted)]";
+  const themeToggleId = compactSidebarLayout
+    ? "admin-sidebar-theme-toggle"
+    : showSignOut
+      ? "admin-desktop-theme-toggle"
+      : "admin-mobile-theme-toggle";
 
   function handleSignOut() {
     if (loading) return;
@@ -64,12 +69,17 @@ function UserMenuInner({
         <div className="flex min-w-0 flex-nowrap items-center gap-1.5">
           <Link
             href="/admin/profile"
-            className={`shrink-0 whitespace-nowrap rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-2 py-1 text-[11px] font-semibold text-[var(--ccr-text)] ${hoverTextClass}`}
+            className={buttonStyles({
+              variant: "secondary",
+              size: "xs",
+              className: "shrink-0 whitespace-nowrap",
+            })}
           >
             Profile
           </Link>
           <ThemeToggle
             className="min-w-0 flex-1 px-2 py-1 text-[11px]"
+            controlId={themeToggleId}
             persistence="user"
             showLabel={showThemeLabel}
           />
@@ -78,7 +88,11 @@ function UserMenuInner({
               type="button"
               onClick={handleSignOut}
               disabled={loading}
-              className={`shrink-0 whitespace-nowrap rounded-lg bg-[var(--ccr-primary)] px-2 py-1 text-[11px] font-semibold text-white disabled:opacity-70 ${hoverTextClass}`}
+              className={buttonStyles({
+                variant: "primary",
+                size: "xs",
+                className: "shrink-0 whitespace-nowrap",
+              })}
             >
               {loading ? "Signing out..." : "Sign out"}
             </button>
@@ -97,12 +111,16 @@ function UserMenuInner({
       ) : null}
       <Link
         href="/admin/profile"
-        className={`rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-2 py-1.5 text-[11px] font-semibold text-[var(--ccr-text)] sm:px-3 sm:text-xs ${hoverTextClass}`}
+        className={buttonStyles({
+          variant: "secondary",
+          size: "xs",
+        })}
       >
         Profile
       </Link>
       <ThemeToggle
         className="px-2 py-1.5 text-[11px] sm:px-3 sm:text-xs"
+        controlId={themeToggleId}
         persistence="user"
         showLabel={showThemeLabel}
       />
@@ -111,7 +129,10 @@ function UserMenuInner({
           type="button"
           onClick={handleSignOut}
           disabled={loading}
-          className={`rounded-lg bg-[var(--ccr-primary)] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-70 ${hoverTextClass}`}
+          className={buttonStyles({
+            variant: "primary",
+            size: "xs",
+          })}
         >
           {loading ? "Signing out..." : "Sign out"}
         </button>

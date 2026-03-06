@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
+import { buttonStyles } from "@/components/ui/Button";
 
 type LocationRow = {
   id: string;
@@ -417,7 +418,7 @@ export function BookingFlowConfigPanel() {
               type="button"
               onClick={addLocation}
               disabled={savingLocation}
-              className="rounded-lg bg-[var(--ccr-primary)] px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
+              className={buttonStyles({ variant: "primary", size: "sm" })}
             >
               {savingLocation ? "Saving..." : "Add / Update Location"}
             </button>
@@ -441,7 +442,11 @@ export function BookingFlowConfigPanel() {
                 <button
                   type="button"
                   onClick={() => void deleteLocation(location.id)}
-                  className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-2 py-1 text-xs font-semibold text-[var(--ccr-text)]"
+                  className={buttonStyles({
+                    variant: "secondary",
+                    size: "xs",
+                    className: "rounded-lg",
+                  })}
                 >
                   Delete
                 </button>
@@ -460,7 +465,11 @@ export function BookingFlowConfigPanel() {
                     type="button"
                     onClick={() => setLocationPage((current) => Math.max(1, current - 1))}
                     disabled={effectiveLocationPage <= 1}
-                    className="rounded-md border border-[var(--ccr-border)] px-2 py-1 font-semibold text-[var(--ccr-text)] disabled:opacity-50"
+                    className={buttonStyles({
+                      variant: "secondary",
+                      size: "xs",
+                      className: "rounded-md px-2",
+                    })}
                   >
                     Prev
                   </button>
@@ -473,7 +482,11 @@ export function BookingFlowConfigPanel() {
                       setLocationPage((current) => Math.min(locationPageCount, current + 1))
                     }
                     disabled={effectiveLocationPage >= locationPageCount}
-                    className="rounded-md border border-[var(--ccr-border)] px-2 py-1 font-semibold text-[var(--ccr-text)] disabled:opacity-50"
+                    className={buttonStyles({
+                      variant: "secondary",
+                      size: "xs",
+                      className: "rounded-md px-2",
+                    })}
                   >
                     Next
                   </button>
@@ -520,7 +533,7 @@ export function BookingFlowConfigPanel() {
                 type="button"
                 onClick={saveGlobalInsurancePlan}
                 disabled={savingGlobalPlan}
-                className="rounded-lg bg-[var(--ccr-primary)] px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                className={buttonStyles({ variant: "primary", size: "sm" })}
               >
                 {savingGlobalPlan ? "Saving..." : "Save"}
               </button>
@@ -582,7 +595,7 @@ export function BookingFlowConfigPanel() {
                       type="button"
                       onClick={() => void saveVehicleInsurancePlan(vehicle.id)}
                       disabled={savingVehicleId === vehicle.id}
-                      className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
+                      className={buttonStyles({ variant: "secondary", size: "xs" })}
                     >
                       {savingVehicleId === vehicle.id ? "Saving..." : "Save"}
                     </button>
@@ -603,7 +616,11 @@ export function BookingFlowConfigPanel() {
                     type="button"
                     onClick={() => setInsurancePage((current) => Math.max(1, current - 1))}
                     disabled={effectiveInsurancePage <= 1}
-                    className="rounded-md border border-[var(--ccr-border)] px-2 py-1 font-semibold text-[var(--ccr-text)] disabled:opacity-50"
+                    className={buttonStyles({
+                      variant: "secondary",
+                      size: "xs",
+                      className: "rounded-md px-2",
+                    })}
                   >
                     Prev
                   </button>
@@ -616,7 +633,11 @@ export function BookingFlowConfigPanel() {
                       setInsurancePage((current) => Math.min(insurancePageCount, current + 1))
                     }
                     disabled={effectiveInsurancePage >= insurancePageCount}
-                    className="rounded-md border border-[var(--ccr-border)] px-2 py-1 font-semibold text-[var(--ccr-text)] disabled:opacity-50"
+                    className={buttonStyles({
+                      variant: "secondary",
+                      size: "xs",
+                      className: "rounded-md px-2",
+                    })}
                   >
                     Next
                   </button>

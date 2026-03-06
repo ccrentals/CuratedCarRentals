@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 import { useDialogA11y } from "@/components/admin/useDialogA11y";
+import { buttonStyles } from "@/components/ui/Button";
 
 type VehicleOption = {
   id: string;
@@ -169,7 +170,7 @@ export function BlockoutModal({
             type="button"
             onClick={onClose}
             aria-label="Close blockout modal"
-            className="min-h-10 rounded-lg border border-[var(--ccr-border)] px-2 py-1 text-xs font-semibold text-[var(--ccr-text)]"
+            className={buttonStyles({ variant: "secondary", size: "sm", className: "rounded-lg" })}
           >
             Close
           </button>
@@ -258,7 +259,7 @@ export function BlockoutModal({
             type="button"
             onClick={handleSave}
             disabled={saving}
-            className="min-h-11 rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
+            className={buttonStyles({ variant: "primary", size: "sm" })}
           >
             {saving ? "Saving..." : "Save"}
           </button>
@@ -267,7 +268,7 @@ export function BlockoutModal({
               type="button"
               onClick={handleDelete}
               disabled={saving}
-              className="min-h-11 rounded-xl border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-4 py-2 text-xs font-semibold text-[var(--ccr-accent-strong)] disabled:opacity-60"
+              className={buttonStyles({ variant: "danger", size: "sm" })}
             >
               Delete
             </button>

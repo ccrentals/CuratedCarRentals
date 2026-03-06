@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
-import { ADMIN_OUTLINE_BUTTON_CLASS } from "@/components/admin/adminUiClasses";
+import { buttonStyles } from "@/components/ui/Button";
 
 export default function AdminLoginPage() {
   const router = useRouter();
@@ -163,7 +163,7 @@ export default function AdminLoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--ccr-primary-soft)] disabled:cursor-not-allowed disabled:opacity-70"
+            className={buttonStyles({ variant: "primary", size: "md", className: "w-full" })}
           >
             {loading ? "Signing in..." : "Sign In"}
           </button>
@@ -171,7 +171,11 @@ export default function AdminLoginPage() {
 
         <Link
           href="/"
-          className={`mt-4 block w-full px-4 py-2 text-center text-sm font-semibold ${ADMIN_OUTLINE_BUTTON_CLASS}`}
+          className={buttonStyles({
+            variant: "secondary",
+            size: "md",
+            className: "mt-4 inline-flex w-full items-center justify-center text-center",
+          })}
         >
           Back to Home
         </Link>

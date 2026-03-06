@@ -99,15 +99,15 @@ function statusTone(status: string) {
     .toUpperCase();
 
   if (["CANCELLED", "OVERRIDDEN", "NO_SHOW"].includes(normalized)) {
-    return "border-rose-300/40 bg-rose-500/15 text-rose-100";
+    return "border-[var(--ccr-status-danger-border)] bg-[var(--ccr-status-danger-bg)] text-[var(--ccr-status-danger-text)]";
   }
   if (["PICKED_UP", "ACTIVE", "IN_PROGRESS", "CONFIRMED"].includes(normalized)) {
-    return "border-cyan-300/35 bg-cyan-500/15 text-cyan-100";
+    return "border-[var(--ccr-status-info-border)] bg-[var(--ccr-status-info-bg)] text-[var(--ccr-status-info-text)]";
   }
   if (["RETURNED", "COMPLETED"].includes(normalized)) {
-    return "border-emerald-300/40 bg-emerald-500/15 text-emerald-100";
+    return "border-[var(--ccr-status-success-border)] bg-[var(--ccr-status-success-bg)] text-[var(--ccr-status-success-text)]";
   }
-  return "border-amber-300/45 bg-amber-500/15 text-amber-100";
+  return "border-[var(--ccr-status-warning-border)] bg-[var(--ccr-status-warning-bg)] text-[var(--ccr-status-warning-text)]";
 }
 
 export function VehicleReservationsPanel({ vehicleId }: VehicleReservationsPanelProps) {
@@ -370,7 +370,7 @@ export function VehicleReservationsPanel({ vehicleId }: VehicleReservationsPanel
       </div>
 
       {loading ? <p className="mt-4 text-sm text-[var(--ccr-muted)]">Loading reservations…</p> : null}
-      {error ? <p className="mt-4 text-sm text-red-500">{error}</p> : null}
+      {error ? <p className="mt-4 text-sm text-[var(--ccr-status-danger-text)]">{error}</p> : null}
 
       <div className="mt-4" data-testid="vehicle-reservations-table">
         {!loading && !error && rows.length === 0 ? (

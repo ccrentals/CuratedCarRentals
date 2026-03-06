@@ -13,6 +13,7 @@ import {
   DrawerTitle,
   DrawerTrigger,
 } from "@/components/ui/drawer";
+import { buttonStyles } from "@/components/ui/Button";
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
@@ -206,18 +207,32 @@ function formatStatus(value: string) {
 
 function statusTone(status: string) {
   const normalized = status.trim().toUpperCase();
-  if (normalized === "COMPLETED") return "border-emerald-300/45 bg-emerald-500/15 text-emerald-100";
-  if (normalized === "IN_PROGRESS") return "border-cyan-300/45 bg-cyan-500/15 text-cyan-100";
-  if (normalized === "CANCELLED") return "border-rose-300/45 bg-rose-500/15 text-rose-100";
-  return "border-amber-300/45 bg-amber-500/15 text-amber-100";
+  if (normalized === "COMPLETED") {
+    return "border-[var(--ccr-status-success-border)] bg-[var(--ccr-status-success-bg)] text-[var(--ccr-status-success-text)]";
+  }
+  if (normalized === "IN_PROGRESS") {
+    return "border-[var(--ccr-status-info-border)] bg-[var(--ccr-status-info-bg)] text-[var(--ccr-status-info-text)]";
+  }
+  if (normalized === "CANCELLED") {
+    return "border-[var(--ccr-status-danger-border)] bg-[var(--ccr-status-danger-bg)] text-[var(--ccr-status-danger-text)]";
+  }
+  return "border-[var(--ccr-status-warning-border)] bg-[var(--ccr-status-warning-bg)] text-[var(--ccr-status-warning-text)]";
 }
 
 function dueTone(state: DueState) {
-  if (state === "OVERDUE") return "border-rose-300/45 bg-rose-500/15 text-rose-100";
-  if (state === "DUE_SOON") return "border-amber-300/45 bg-amber-500/15 text-amber-100";
-  if (state === "UPCOMING") return "border-sky-300/45 bg-sky-500/15 text-sky-100";
-  if (state === "COMPLETED") return "border-emerald-300/45 bg-emerald-500/15 text-emerald-100";
-  return "border-slate-300/45 bg-slate-500/15 text-slate-100";
+  if (state === "OVERDUE") {
+    return "border-[var(--ccr-status-danger-border)] bg-[var(--ccr-status-danger-bg)] text-[var(--ccr-status-danger-text)]";
+  }
+  if (state === "DUE_SOON") {
+    return "border-[var(--ccr-status-warning-border)] bg-[var(--ccr-status-warning-bg)] text-[var(--ccr-status-warning-text)]";
+  }
+  if (state === "UPCOMING") {
+    return "border-[var(--ccr-status-info-border)] bg-[var(--ccr-status-info-bg)] text-[var(--ccr-status-info-text)]";
+  }
+  if (state === "COMPLETED") {
+    return "border-[var(--ccr-status-success-border)] bg-[var(--ccr-status-success-bg)] text-[var(--ccr-status-success-text)]";
+  }
+  return "border-[var(--ccr-status-neutral-border)] bg-[var(--ccr-status-neutral-bg)] text-[var(--ccr-status-neutral-text)]";
 }
 
 function dueLabel(state: DueState) {
@@ -1102,8 +1117,8 @@ function startEdit(item: MaintenanceRecord) {
         </div>
       </div>
 
-      {error ? <p className="mt-3 text-xs font-semibold text-red-300">{error}</p> : null}
-      {message ? <p className="mt-3 text-xs font-semibold text-emerald-200">{message}</p> : null}
+      {error ? <p className="mt-3 text-xs font-semibold text-[var(--ccr-status-danger-text)]">{error}</p> : null}
+      {message ? <p className="mt-3 text-xs font-semibold text-[var(--ccr-status-success-text)]">{message}</p> : null}
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <article className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-3">
@@ -1215,7 +1230,7 @@ function startEdit(item: MaintenanceRecord) {
               setSortDirection("asc");
               setOffset(0);
             }}
-            className="min-h-11 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 text-sm font-semibold text-[var(--ccr-text)]"
+            className={buttonStyles({ variant: "secondary", size: "md", className: "rounded-lg" })}
           >
             Reset
           </button>
@@ -1232,7 +1247,7 @@ function startEdit(item: MaintenanceRecord) {
             <div className="flex flex-wrap items-center gap-2">
               <a
                 href={maintenanceExportHref}
-                className="inline-flex min-h-10 items-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+                className={buttonStyles({ variant: "secondary", size: "sm", className: "rounded-lg" })}
               >
                 Export CSV
               </a>
@@ -1241,7 +1256,7 @@ function startEdit(item: MaintenanceRecord) {
                   type="button"
                   onClick={openCreateDrawer}
                   data-testid="maintenance-add"
-                  className="min-h-10 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+                  className={buttonStyles({ variant: "secondary", size: "sm", className: "rounded-lg" })}
                 >
                   Add Maintenance
                 </button>
@@ -1626,7 +1641,11 @@ function startEdit(item: MaintenanceRecord) {
                     <button
                       type="button"
                       onClick={() => void removeLinkedBlockout(selectedRecord.id)}
-                      className="min-h-10 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+                      className={buttonStyles({
+                        variant: "secondary",
+                        size: "sm",
+                        className: "rounded-lg bg-[var(--ccr-surface-soft)]",
+                      })}
                     >
                       Remove linked blockout
                     </button>
@@ -1639,7 +1658,7 @@ function startEdit(item: MaintenanceRecord) {
                   type="button"
                   onClick={() => startEdit(selectedRecord)}
                   data-testid="maintenance-edit"
-                  className="min-h-10 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+                  className={buttonStyles({ variant: "secondary", size: "sm", className: "rounded-lg" })}
                 >
                   Edit
                 </button>
@@ -1648,7 +1667,7 @@ function startEdit(item: MaintenanceRecord) {
                     type="button"
                     onClick={() => void updateRecordStatus(selectedRecord.id, "COMPLETED")}
                     data-testid="maintenance-mark-complete"
-                    className="min-h-10 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+                    className={buttonStyles({ variant: "secondary", size: "sm", className: "rounded-lg" })}
                   >
                     Mark Completed
                   </button>
@@ -1663,7 +1682,7 @@ function startEdit(item: MaintenanceRecord) {
                       })
                     }
                     data-testid="maintenance-reopen"
-                    className="min-h-10 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+                    className={buttonStyles({ variant: "secondary", size: "sm", className: "rounded-lg" })}
                   >
                     Reopen
                   </button>
@@ -1672,7 +1691,7 @@ function startEdit(item: MaintenanceRecord) {
                   <button
                     type="button"
                     onClick={() => void updateRecordStatus(selectedRecord.id, "CANCELLED")}
-                    className="min-h-10 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+                    className={buttonStyles({ variant: "secondary", size: "sm", className: "rounded-lg" })}
                   >
                     Cancel
                   </button>
@@ -1680,7 +1699,11 @@ function startEdit(item: MaintenanceRecord) {
                 <button
                   type="button"
                   onClick={() => void archiveRecord(selectedRecord.id)}
-                  className="min-h-10 rounded-lg border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-accent-strong)]"
+                  className={buttonStyles({
+                    variant: "secondary",
+                    size: "sm",
+                    className: "rounded-lg border-[var(--ccr-accent)] text-[var(--ccr-accent-strong)]",
+                  })}
                 >
                   Archive
                 </button>
@@ -1718,7 +1741,10 @@ function startEdit(item: MaintenanceRecord) {
                     type="button"
                     onClick={() => void uploadDocument(selectedRecord)}
                     disabled={saving}
-                    className="min-h-10 rounded-lg bg-[var(--ccr-primary)] px-3 py-2 text-xs font-semibold text-white disabled:opacity-60"
+                    className={buttonStyles({
+                      variant: "primary",
+                      size: "sm",
+                    })}
                   >
                     {saving ? "Saving..." : hasPendingDocumentForSelection ? "Save now" : "Upload Document"}
                   </button>
@@ -1750,7 +1776,7 @@ function startEdit(item: MaintenanceRecord) {
                             {doc.canDownload ? (
                               <a
                                 href={`/api/admin/vehicles/${vehicleId}/documents/${doc.id}/download`}
-                                className="min-h-9 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+                                className={buttonStyles({ variant: "secondary", size: "xs", className: "rounded-lg" })}
                               >
                                 View
                               </a>
@@ -1762,7 +1788,11 @@ function startEdit(item: MaintenanceRecord) {
                             <button
                               type="button"
                               onClick={() => void archiveDocument(doc.id)}
-                              className="min-h-9 rounded-lg border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-accent-strong)]"
+                              className={buttonStyles({
+                                variant: "secondary",
+                                size: "xs",
+                                className: "rounded-lg border-[var(--ccr-accent)] text-[var(--ccr-accent-strong)]",
+                              })}
                             >
                               Archive
                             </button>
@@ -1793,7 +1823,11 @@ function startEdit(item: MaintenanceRecord) {
               <button
                 type="button"
                 aria-label="Close add maintenance drawer"
-                className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] text-[var(--ccr-text)]"
+                className={buttonStyles({
+                  variant: "secondary",
+                  size: "sm",
+                  className: "min-w-10 rounded-lg px-0",
+                })}
               >
                 <X className="h-4 w-4" />
               </button>
@@ -2160,7 +2194,7 @@ function startEdit(item: MaintenanceRecord) {
               onClick={() => void saveRecord()}
               disabled={saving}
               data-testid="maintenance-save"
-              className="min-h-11 rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
+              className={buttonStyles({ variant: "primary", size: "md" })}
             >
               {saving ? "Saving..." : editingId ? "Save changes" : "Add maintenance"}
             </button>
@@ -2168,7 +2202,7 @@ function startEdit(item: MaintenanceRecord) {
               <button
                 type="button"
                 onClick={resetForm}
-                className="min-h-11 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+                className={buttonStyles({ variant: "secondary", size: "md" })}
               >
                 Cancel edit
               </button>

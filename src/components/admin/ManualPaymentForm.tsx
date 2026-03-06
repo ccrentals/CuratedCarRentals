@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 
+import { buttonStyles } from "@/components/ui/Button";
 import { formatJmd } from "@/lib/money";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
@@ -224,7 +225,7 @@ export function ManualPaymentForm({
               <button
                 type="button"
                 onClick={closeDrawer}
-                className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+                className={buttonStyles({ variant: "secondary", size: "sm" })}
               >
                 Close
               </button>
@@ -298,14 +299,14 @@ export function ManualPaymentForm({
                 <button
                   type="submit"
                   disabled={loading}
-                  className="rounded-lg bg-[var(--ccr-primary)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                  className={buttonStyles({ variant: "primary", size: "md" })}
                 >
                   {loading ? "Saving..." : "Save Payment"}
                 </button>
                 <button
                   type="button"
                   onClick={closeDrawer}
-                  className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)]"
+                  className={buttonStyles({ variant: "secondary", size: "md" })}
                 >
                   Cancel
                 </button>

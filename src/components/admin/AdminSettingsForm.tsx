@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
+import { buttonStyles } from "@/components/ui/Button";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
 type AdminSettings = {
@@ -883,7 +884,7 @@ export function AdminSettingsForm({
               type="button"
               onClick={() => void createServiceType()}
               disabled={disabled}
-              className="min-h-11 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
+              className={buttonStyles({ variant: "secondary", size: "md" })}
             >
               Add service type
             </button>
@@ -980,14 +981,22 @@ export function AdminSettingsForm({
                           <button
                             type="button"
                             onClick={() => void saveEditedServiceType()}
-                            className="min-h-10 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+                            className={buttonStyles({
+                              variant: "secondary",
+                              size: "sm",
+                              className: "rounded-lg",
+                            })}
                           >
                             Save
                           </button>
                           <button
                             type="button"
                             onClick={() => setEditingServiceTypeId(null)}
-                            className="min-h-10 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+                            className={buttonStyles({
+                              variant: "secondary",
+                              size: "sm",
+                              className: "rounded-lg",
+                            })}
                           >
                             Cancel
                           </button>
@@ -1018,7 +1027,11 @@ export function AdminSettingsForm({
                           <button
                             type="button"
                             onClick={() => beginEditServiceType(item)}
-                            className="min-h-10 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+                            className={buttonStyles({
+                              variant: "secondary",
+                              size: "sm",
+                              className: "rounded-lg",
+                            })}
                           >
                             Edit
                           </button>
@@ -1074,7 +1087,10 @@ export function AdminSettingsForm({
           onClick={save}
           disabled={disabled || saving}
           data-testid="settings-save"
-          className="rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+          className={buttonStyles({
+            variant: "primary",
+            size: "md",
+          })}
         >
           {saving ? "Saving..." : "Save settings"}
         </button>

@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { BlockoutModal } from "@/components/admin/BlockoutModal";
 import { TableDateTime } from "@/components/shared/TableDateTime";
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
+import { buttonStyles } from "@/components/ui/Button";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
 type VehicleOption = {
@@ -130,7 +131,7 @@ export function VehicleBlockouts({ vehicle }: VehicleBlockoutsProps) {
             setModalOpen(true);
           }}
           disabled={tableMissing}
-          className="min-h-11 rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
+          className={buttonStyles({ variant: "primary", size: "sm" })}
         >
           + Add Blockout
         </button>
@@ -199,14 +200,14 @@ export function VehicleBlockouts({ vehicle }: VehicleBlockoutsProps) {
                       setActiveBlockout(blockout);
                       setModalOpen(true);
                     }}
-                    className="min-h-10 rounded-lg border border-[var(--ccr-border)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+                    className={buttonStyles({ variant: "secondary", size: "sm" })}
                   >
                     Edit
                   </button>
                   <button
                     type="button"
                     onClick={() => handleDelete(blockout)}
-                    className="min-h-10 rounded-lg border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-accent-strong)]"
+                    className={buttonStyles({ variant: "danger", size: "sm" })}
                   >
                     Delete
                   </button>
@@ -253,14 +254,14 @@ export function VehicleBlockouts({ vehicle }: VehicleBlockoutsProps) {
                             setActiveBlockout(blockout);
                             setModalOpen(true);
                           }}
-                          className="rounded-lg border border-[var(--ccr-border)] px-3 py-1 text-xs font-semibold text-[var(--ccr-text)]"
+                          className={buttonStyles({ variant: "secondary", size: "xs" })}
                         >
                           Edit
                         </button>
                         <button
                           type="button"
                           onClick={() => handleDelete(blockout)}
-                          className="rounded-lg border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-3 py-1 text-xs font-semibold text-[var(--ccr-accent-strong)]"
+                          className={buttonStyles({ variant: "danger", size: "xs" })}
                         >
                           Delete
                         </button>

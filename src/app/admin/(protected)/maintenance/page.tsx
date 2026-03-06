@@ -104,11 +104,19 @@ function scopeToDueState(scope: DueScope): MaintenanceDueState[] {
 }
 
 function dueStateTone(state: MaintenanceDueState) {
-  if (state === "OVERDUE") return "border-rose-300/50 bg-rose-500/15 text-rose-100";
-  if (state === "DUE_SOON") return "border-amber-300/45 bg-amber-500/15 text-amber-100";
-  if (state === "UPCOMING") return "border-sky-300/40 bg-sky-500/15 text-sky-100";
-  if (state === "COMPLETED") return "border-emerald-300/45 bg-emerald-500/15 text-emerald-100";
-  return "border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] text-[var(--ccr-text)]";
+  if (state === "OVERDUE") {
+    return "border-[var(--ccr-status-danger-border)] bg-[var(--ccr-status-danger-bg)] text-[var(--ccr-status-danger-text)]";
+  }
+  if (state === "DUE_SOON") {
+    return "border-[var(--ccr-status-warning-border)] bg-[var(--ccr-status-warning-bg)] text-[var(--ccr-status-warning-text)]";
+  }
+  if (state === "UPCOMING") {
+    return "border-[var(--ccr-status-info-border)] bg-[var(--ccr-status-info-bg)] text-[var(--ccr-status-info-text)]";
+  }
+  if (state === "COMPLETED") {
+    return "border-[var(--ccr-status-success-border)] bg-[var(--ccr-status-success-bg)] text-[var(--ccr-status-success-text)]";
+  }
+  return "border-[var(--ccr-status-neutral-border)] bg-[var(--ccr-status-neutral-bg)] text-[var(--ccr-status-neutral-text)]";
 }
 
 function dueStateLabel(state: MaintenanceDueState) {
@@ -396,7 +404,7 @@ export default async function AdminMaintenancePage({
 
       <section className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)]">
         {tableMissing ? (
-          <div className="px-6 py-4 text-sm text-amber-100">
+          <div className="px-6 py-4 text-sm text-[var(--ccr-status-warning-text)]">
             Maintenance tables are not installed yet. Apply the latest migration to enable this page.
           </div>
         ) : null}

@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
+import { buttonStyles } from "@/components/ui/Button";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 import { LEGAL_ID_TYPES, formatLegalIdTypeLabel } from "@/lib/customers/legalId";
 
@@ -307,7 +308,11 @@ export function CustomerProfileForm({
         <button
           type="submit"
           disabled={loading}
-          className="rounded-lg bg-[var(--ccr-primary)] px-3 py-2 text-xs font-semibold text-white disabled:opacity-60"
+          className={buttonStyles({
+            variant: "primary",
+            size: "sm",
+            className: "rounded-lg",
+          })}
         >
           {loading ? "Saving..." : "Save profile"}
         </button>

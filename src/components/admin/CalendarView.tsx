@@ -119,14 +119,14 @@ function bookingPhaseBadge(phase: DerivedBookingPhase) {
     return {
       label: "Upcoming",
       className:
-        "rounded-full border border-emerald-300/40 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-100",
+        "rounded-full border border-[var(--ccr-status-info-border)] bg-[var(--ccr-status-info-bg)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--ccr-status-info-text)]",
     };
   }
   if (phase === "ON_RENT") {
     return {
       label: "On Rent",
       className:
-        "rounded-full border border-cyan-300/40 bg-cyan-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-cyan-100",
+        "rounded-full border border-[var(--ccr-status-success-border)] bg-[var(--ccr-status-success-bg)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--ccr-status-success-text)]",
     };
   }
   return null;
@@ -585,7 +585,7 @@ export function CalendarView({
                     ) : null}
                     {blockoutEvents.length > 0 ? (
                       <span
-                        className={`${countBadgeBaseClass} border-amber-200 bg-amber-50 text-amber-700`}
+                        className={`${countBadgeBaseClass} border-[var(--ccr-status-warning-border)] bg-[var(--ccr-status-warning-bg)] text-[var(--ccr-status-warning-text)]`}
                         aria-label={`${blockoutEvents.length} blockouts`}
                         title={`${blockoutEvents.length} blockouts`}
                       >
@@ -706,7 +706,7 @@ export function CalendarView({
                     setActiveBlockout(blockout);
                     setModalOpen(true);
                   }}
-                      className="w-full rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-left text-xs font-semibold text-amber-800"
+                      className="w-full rounded-xl border border-[var(--ccr-status-warning-border)] bg-[var(--ccr-status-warning-bg)] px-3 py-2 text-left text-xs font-semibold text-[var(--ccr-status-warning-text)]"
                     >
                       {blockout.reason} • {blockout.vehicle_make} {blockout.vehicle_model}
                     </button>

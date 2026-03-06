@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 
+import { buttonStyles } from "@/components/ui/Button";
 import { formatJmd } from "@/lib/money";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
@@ -83,17 +84,37 @@ export function BookingActions({
   const canComplete = !normalizedStatus || ["CONFIRMED", "PICKED_UP"].includes(normalizedStatus);
   const canArchive = Boolean(canAdmin) && normalizedStatus === "RETURNED";
   const canCancel = !normalizedStatus || !["CANCELLED", "RETURNED"].includes(normalizedStatus);
-  const actionButtonBaseClass =
-    "inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold leading-tight text-[var(--ccr-text)] disabled:opacity-60 lg:w-auto";
-  const emailButtonClass =
-    "inline-flex min-h-10 w-full items-center justify-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60 lg:w-auto";
+  const actionButtonBaseClass = buttonStyles({
+    variant: "secondary",
+    size: "md",
+    className: "w-full text-xs leading-tight lg:w-auto",
+  });
+  const emailButtonClass = buttonStyles({
+    variant: "secondary",
+    size: "sm",
+    className: "w-full lg:w-auto",
+  });
   const cancelButtonClass = canCancel
-    ? "inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-red-600 px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60 lg:w-auto"
-    : "inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-muted)] disabled:cursor-not-allowed lg:w-auto";
-  const tabBaseClass =
-    "inline-flex items-center rounded-xl border px-3 py-2 text-xs font-semibold uppercase tracking-wide transition-colors";
-  const activeTabClass = `${tabBaseClass} border-[var(--ccr-accent)] bg-[var(--ccr-accent)]/15 text-[var(--ccr-text)]`;
-  const inactiveTabClass = `${tabBaseClass} border-[var(--ccr-border)] bg-[var(--ccr-surface)] text-[var(--ccr-muted)] hover:text-[var(--ccr-text)]`;
+    ? buttonStyles({
+        variant: "danger",
+        size: "md",
+        className: "w-full text-xs lg:w-auto",
+      })
+    : buttonStyles({
+        variant: "secondary",
+        size: "md",
+        className: "w-full text-xs text-[var(--ccr-muted)] lg:w-auto",
+      });
+  const activeTabClass = buttonStyles({
+    variant: "primary",
+    size: "sm",
+    className: "uppercase tracking-wide",
+  });
+  const inactiveTabClass = buttonStyles({
+    variant: "outline",
+    size: "sm",
+    className: "uppercase tracking-wide text-[var(--ccr-muted)] hover:text-[var(--ccr-text)]",
+  });
 
   async function runAction(actionKey: ActionKey) {
     setMessage(null);

@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { UploadcareImagesInput } from "@/components/admin/UploadcareImagesInput";
+import { buttonStyles } from "@/components/ui/Button";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
 type VehicleDetail = {
@@ -79,13 +80,21 @@ type OverviewFormState = {
 function statusBadge(status: string) {
   const normalized = status.toUpperCase().trim();
   const styles: Record<string, string> = {
-    AVAILABLE: "bg-emerald-100 text-emerald-800",
-    UPCOMING: "bg-sky-100 text-sky-800",
-    ON_RENT: "bg-cyan-100 text-cyan-800",
-    DIRTY: "bg-amber-100 text-amber-800",
-    UNAVAILABLE: "bg-slate-200 text-slate-800",
+    AVAILABLE:
+      "border border-[var(--ccr-status-success-border)] bg-[var(--ccr-status-success-bg)] text-[var(--ccr-status-success-text)]",
+    UPCOMING:
+      "border border-[var(--ccr-status-info-border)] bg-[var(--ccr-status-info-bg)] text-[var(--ccr-status-info-text)]",
+    ON_RENT:
+      "border border-[var(--ccr-status-info-border)] bg-[var(--ccr-status-info-bg)] text-[var(--ccr-status-info-text)]",
+    DIRTY:
+      "border border-[var(--ccr-status-warning-border)] bg-[var(--ccr-status-warning-bg)] text-[var(--ccr-status-warning-text)]",
+    UNAVAILABLE:
+      "border border-[var(--ccr-status-neutral-border)] bg-[var(--ccr-status-neutral-bg)] text-[var(--ccr-status-neutral-text)]",
   };
-  return styles[normalized] ?? "bg-slate-100 text-slate-700";
+  return (
+    styles[normalized] ??
+    "border border-[var(--ccr-status-neutral-border)] bg-[var(--ccr-status-neutral-bg)] text-[var(--ccr-status-neutral-text)]"
+  );
 }
 
 function derivedStatusLabel(status: VehicleDetailFormProps["initialDerivedStatus"]) {
@@ -376,7 +385,7 @@ export function VehicleDetailForm({
         <div className="grid w-full gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center">
           <Link
             href={`/admin/calendar?vehicleId=${vehicle.id}`}
-            className="inline-flex min-h-11 items-center justify-center rounded-xl border border-[var(--ccr-border)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+            className={buttonStyles({ variant: "secondary", size: "md" })}
           >
             View in Calendar
           </Link>
@@ -388,7 +397,12 @@ export function VehicleDetailForm({
               setMessage(null);
               setShowDeleteVehicleModal(true);
             }}
-            className="min-h-11 rounded-xl border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-4 py-2 text-xs font-semibold text-[var(--ccr-accent-strong)] disabled:opacity-60"
+            className={buttonStyles({
+              variant: "secondary",
+              size: "md",
+              className:
+                "border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] text-[var(--ccr-accent-strong)] hover:border-[var(--ccr-accent-strong)]",
+            })}
             data-testid="vehicle-delete-button"
           >
             Delete vehicle
@@ -401,7 +415,11 @@ export function VehicleDetailForm({
                 setMessage(null);
                 setIsEditing(true);
               }}
-              className="min-h-11 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-4 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+              className={buttonStyles({
+                variant: "secondary",
+                size: "md",
+                className: "bg-[var(--ccr-surface-soft)]",
+              })}
             >
               Edit
             </button>
@@ -410,7 +428,11 @@ export function VehicleDetailForm({
               type="button"
               onClick={resetToViewMode}
               disabled={saving}
-              className="min-h-11 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-4 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
+              className={buttonStyles({
+                variant: "secondary",
+                size: "md",
+                className: "bg-[var(--ccr-surface-soft)]",
+              })}
             >
               Cancel edit
             </button>
@@ -658,7 +680,11 @@ export function VehicleDetailForm({
                   type="button"
                   onClick={() => void handleSave()}
                   disabled={saving}
-                  className="min-h-10 rounded-lg bg-[var(--ccr-primary)] px-3 py-2 text-xs font-semibold text-white disabled:opacity-60"
+                  className={buttonStyles({
+                    variant: "primary",
+                    size: "sm",
+                    className: "rounded-lg",
+                  })}
                 >
                   {saving ? "Saving..." : "Save changes"}
                 </button>
@@ -666,7 +692,11 @@ export function VehicleDetailForm({
                   type="button"
                   onClick={resetToViewMode}
                   disabled={saving}
-                  className="min-h-10 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
+                  className={buttonStyles({
+                    variant: "secondary",
+                    size: "sm",
+                    className: "rounded-lg",
+                  })}
                 >
                   Cancel
                 </button>
@@ -708,7 +738,11 @@ export function VehicleDetailForm({
                 type="button"
                 onClick={() => void handleCreateNote()}
                 disabled={savingNote}
-                className="min-h-10 rounded-lg bg-[var(--ccr-primary)] px-3 py-2 text-xs font-semibold text-white disabled:opacity-60"
+                className={buttonStyles({
+                  variant: "primary",
+                  size: "sm",
+                  className: "rounded-lg",
+                })}
               >
                 {savingNote ? "Saving..." : "Save note"}
               </button>
@@ -719,7 +753,11 @@ export function VehicleDetailForm({
                   setNoteDraft("");
                 }}
                 disabled={savingNote}
-                className="min-h-10 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
+                className={buttonStyles({
+                  variant: "secondary",
+                  size: "sm",
+                  className: "rounded-lg",
+                })}
               >
                 Cancel
               </button>
@@ -745,7 +783,11 @@ export function VehicleDetailForm({
                   <button
                     type="button"
                     onClick={() => void handleDeleteNote(note.id)}
-                    className="min-h-9 rounded-lg border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-3 py-1 text-xs font-semibold text-[var(--ccr-accent-strong)]"
+                    className={buttonStyles({
+                      variant: "secondary",
+                      size: "xs",
+                      className: "rounded-lg border-[var(--ccr-accent)] text-[var(--ccr-accent-strong)]",
+                    })}
                   >
                     Delete
                   </button>
@@ -761,7 +803,7 @@ export function VehicleDetailForm({
           <div
             className={`w-full max-w-2xl rounded-xl border px-4 py-3 text-sm shadow-lg ${
               toastTone === "success"
-                ? "border-emerald-400/40 bg-emerald-500/15 text-emerald-100"
+                ? "border-[var(--ccr-status-success-border)] bg-[var(--ccr-status-success-bg)] text-[var(--ccr-status-success-text)]"
                 : "border-[var(--ccr-clerk-danger-border)] bg-[var(--ccr-clerk-danger-bg)] text-[var(--ccr-clerk-danger-text)]"
             }`}
             role="status"
@@ -776,7 +818,11 @@ export function VehicleDetailForm({
                   setMessage(null);
                   setError(null);
                 }}
-                className="rounded-md border border-current/40 px-2 py-1 text-xs font-semibold"
+                className={buttonStyles({
+                  variant: "outline",
+                  size: "xs",
+                  className: "rounded-md border-current/40 px-2",
+                })}
                 aria-label="Dismiss notification"
               >
                 Dismiss
@@ -807,7 +853,7 @@ export function VehicleDetailForm({
                 type="button"
                 onClick={() => setShowDeleteVehicleModal(false)}
                 disabled={deletingVehicle}
-                className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] disabled:opacity-60"
+                className={buttonStyles({ variant: "secondary", size: "md" })}
                 data-testid="vehicle-delete-cancel"
               >
                 Cancel
@@ -816,7 +862,7 @@ export function VehicleDetailForm({
                 type="button"
                 onClick={() => void handleDeleteVehicle()}
                 disabled={deletingVehicle}
-                className="rounded-xl border border-[var(--ccr-clerk-danger-border)] bg-[var(--ccr-clerk-danger-bg)] px-4 py-2 text-sm font-semibold text-[var(--ccr-clerk-danger-text)] disabled:opacity-60"
+                className={buttonStyles({ variant: "danger", size: "md" })}
                 data-testid="vehicle-delete-confirm"
               >
                 {deletingVehicle ? "Deleting..." : "Delete"}

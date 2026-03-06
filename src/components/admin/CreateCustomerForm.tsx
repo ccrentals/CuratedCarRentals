@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { LEGAL_ID_TYPES, formatLegalIdTypeLabel } from "@/lib/customers/legalId";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
+import { buttonStyles } from "@/components/ui/Button";
 
 export function CreateCustomerForm() {
   const router = useRouter();
@@ -104,7 +105,12 @@ export function CreateCustomerForm() {
           setError(null);
           setOpen(true);
         }}
-        className="inline-flex w-full items-center justify-center rounded-xl border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] ring-1 ring-[var(--ccr-accent)] sm:w-auto"
+        className={buttonStyles({
+          variant: "secondary",
+          size: "sm",
+          className:
+            "inline-flex w-full items-center justify-center border-[var(--ccr-accent)] ring-1 ring-[var(--ccr-accent)] sm:w-auto",
+        })}
       >
         New customer
       </button>
@@ -133,7 +139,7 @@ export function CreateCustomerForm() {
               <button
                 type="button"
                 onClick={() => setOpen(false)}
-                className="rounded-lg border border-[var(--ccr-border)] px-3 py-1.5 text-xs font-semibold text-[var(--ccr-text)]"
+                className={buttonStyles({ variant: "secondary", size: "xs" })}
               >
                 Close
               </button>
@@ -300,7 +306,7 @@ export function CreateCustomerForm() {
                 type="button"
                 onClick={submit}
                 disabled={loading}
-                className="rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                className={buttonStyles({ variant: "primary", size: "sm" })}
               >
                 {loading ? "Creating..." : "Create customer"}
               </button>

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { buttonStyles } from "@/components/ui/Button";
 
 import {
   VEHICLE_FILTER_OPTIONS,
@@ -168,7 +169,11 @@ export function VehiclesFilters({
               updateParams({ sortBy, sortDir: next });
             }}
             data-testid="vehicles-mobile-sort-dir"
-            className="min-h-11 self-end rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+            className={buttonStyles({
+              variant: "secondary",
+              size: "sm",
+              className: "self-end",
+            })}
             aria-label={`Sort direction ${sortDir === "asc" ? "ascending" : "descending"}`}
           >
             {sortDir === "asc" ? "Asc" : "Desc"}
@@ -193,13 +198,17 @@ export function VehiclesFilters({
         <input type="hidden" name="includeDeleted" value={includeDeleted ? "1" : ""} />
         <button
           type="submit"
-          className="min-h-11 rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-xs font-semibold text-white sm:w-auto"
+          className={buttonStyles({ variant: "primary", size: "sm", className: "sm:w-auto" })}
         >
           Apply
         </button>
         <Link
           href={includeDeleted ? "/admin/vehicles?includeDeleted=1" : "/admin/vehicles"}
-          className="inline-flex min-h-11 items-center justify-center rounded-xl border border-[var(--ccr-border)] px-4 py-2 text-xs font-semibold text-[var(--ccr-text)] sm:w-auto"
+          className={buttonStyles({
+            variant: "secondary",
+            size: "sm",
+            className: "inline-flex items-center justify-center sm:w-auto",
+          })}
         >
           Reset
         </Link>

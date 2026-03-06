@@ -40,12 +40,12 @@ function statusBadgeClass(status: string) {
     .toUpperCase();
 
   if (normalized === "ARCHIVED") {
-    return "border border-slate-400/40 bg-slate-500/15 text-slate-200";
+    return "border border-[var(--ccr-status-neutral-border)] bg-[var(--ccr-status-neutral-bg)] text-[var(--ccr-status-neutral-text)]";
   }
   if (normalized === "READ") {
-    return "border border-sky-400/40 bg-sky-500/15 text-sky-200";
+    return "border border-[var(--ccr-status-info-border)] bg-[var(--ccr-status-info-bg)] text-[var(--ccr-status-info-text)]";
   }
-  return "border border-amber-400/40 bg-amber-500/15 text-amber-100";
+  return "border border-[var(--ccr-status-warning-border)] bg-[var(--ccr-status-warning-bg)] text-[var(--ccr-status-warning-text)]";
 }
 
 function statusLabel(status: string) {
@@ -253,8 +253,8 @@ export function MessagesInboxTable({
         </div>
       ) : null}
 
-      {error ? <p className="px-4 pt-3 text-xs font-semibold text-red-300">{error}</p> : null}
-      {success ? <p className="px-4 pt-3 text-xs font-semibold text-emerald-300">{success}</p> : null}
+      {error ? <p className="px-4 pt-3 text-xs font-semibold text-[var(--ccr-status-danger-text)]">{error}</p> : null}
+      {success ? <p className="px-4 pt-3 text-xs font-semibold text-[var(--ccr-status-success-text)]">{success}</p> : null}
 
       <div className="divide-y divide-[var(--ccr-border)] md:hidden">
         {rows.map((row) => {

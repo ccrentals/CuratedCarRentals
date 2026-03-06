@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { buttonStyles } from "@/components/ui/Button";
 
 type CustomersFiltersProps = {
   initialQuery: string;
@@ -80,13 +81,17 @@ export function CustomersFilters({ initialQuery }: CustomersFiltersProps) {
         <div className="grid grid-cols-2 gap-2 md:flex md:items-end">
           <button
             type="submit"
-            className="w-full rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-xs font-semibold text-white md:w-auto"
+            className={buttonStyles({ variant: "primary", size: "sm", className: "w-full md:w-auto" })}
           >
             Apply
           </button>
           <Link
             href="/admin/customers"
-            className="inline-flex w-full items-center justify-center rounded-xl border border-[var(--ccr-border)] px-4 py-2 text-xs font-semibold text-[var(--ccr-text)] md:w-auto"
+            className={buttonStyles({
+              variant: "secondary",
+              size: "sm",
+              className: "inline-flex w-full items-center justify-center md:w-auto",
+            })}
           >
             Reset
           </Link>

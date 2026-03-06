@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { buttonStyles } from "@/components/ui/Button";
 
 type UsersFiltersProps = {
   initialQuery: string;
@@ -70,13 +71,13 @@ export function UsersFilters({ initialQuery }: UsersFiltersProps) {
         </label>
         <button
           type="submit"
-          className="rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-sm font-semibold text-white"
+          className={buttonStyles({ variant: "primary", size: "sm" })}
         >
           Apply
         </button>
         <Link
           href="/admin/users"
-          className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)]"
+          className={buttonStyles({ variant: "secondary", size: "sm" })}
         >
           Reset
         </Link>

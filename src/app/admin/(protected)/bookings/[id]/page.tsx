@@ -152,14 +152,23 @@ function isAnyUndefinedColumn(error: unknown, columns: string[]) {
 function statusBadge(status: string) {
   const normalized = status.toUpperCase();
   const styles: Record<string, string> = {
-    PENDING_PAYMENT: "bg-amber-100 text-amber-800",
-    BOOKED: "bg-amber-100 text-amber-800",
-    CONFIRMED: "bg-emerald-100 text-emerald-800",
-    PICKED_UP: "bg-blue-100 text-blue-800",
-    RETURNED: "bg-slate-200 text-slate-800",
-    CANCELLED: "bg-red-100 text-red-700",
+    PENDING_PAYMENT:
+      "border border-[var(--ccr-status-accent-border)] bg-[var(--ccr-status-accent-bg)] text-[var(--ccr-status-accent-text)]",
+    BOOKED:
+      "border border-[var(--ccr-status-accent-border)] bg-[var(--ccr-status-accent-bg)] text-[var(--ccr-status-accent-text)]",
+    CONFIRMED:
+      "border border-[var(--ccr-status-success-border)] bg-[var(--ccr-status-success-bg)] text-[var(--ccr-status-success-text)]",
+    PICKED_UP:
+      "border border-[var(--ccr-status-info-border)] bg-[var(--ccr-status-info-bg)] text-[var(--ccr-status-info-text)]",
+    RETURNED:
+      "border border-[var(--ccr-status-neutral-border)] bg-[var(--ccr-status-neutral-bg)] text-[var(--ccr-status-neutral-text)]",
+    CANCELLED:
+      "border border-[var(--ccr-status-danger-border)] bg-[var(--ccr-status-danger-bg)] text-[var(--ccr-status-danger-text)]",
   };
-  return styles[normalized] ?? "bg-slate-100 text-slate-700";
+  return (
+    styles[normalized] ??
+    "border border-[var(--ccr-status-neutral-border)] bg-[var(--ccr-status-neutral-bg)] text-[var(--ccr-status-neutral-text)]"
+  );
 }
 
 function readPaymentMetadataText(
@@ -588,7 +597,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
           </span>
           {isNonBlocking ? <InfoTooltipIcon message="UNPAID - Not holding vehicle" /> : null}
           {overrideInfo.isOverridden ? (
-            <span className="inline-flex items-center rounded-full border border-red-300/40 bg-red-500/15 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-red-100">
+            <span className="inline-flex items-center rounded-full border border-[var(--ccr-status-danger-border)] bg-[var(--ccr-status-danger-bg)] px-3 py-1 text-xs font-semibold uppercase tracking-wide text-[var(--ccr-status-danger-text)]">
               OVERRIDDEN
             </span>
           ) : null}

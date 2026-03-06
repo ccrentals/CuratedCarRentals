@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
+import { buttonStyles } from "@/components/ui/Button";
 
 import { UploadcareImagesInput } from "./UploadcareImagesInput";
 
@@ -97,7 +98,7 @@ export function AdminVehicleForm() {
         <button
           type="submit"
           disabled={!csrfReady}
-          className="rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+          className={buttonStyles({ variant: "primary", size: "sm" })}
         >
           {csrfReady ? "Save Vehicle" : "Loading..."}
         </button>

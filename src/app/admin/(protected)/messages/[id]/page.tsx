@@ -17,12 +17,12 @@ function statusBadgeClass(status: string) {
     .toUpperCase();
 
   if (normalized === "ARCHIVED") {
-    return "border border-slate-400/40 bg-slate-500/15 text-slate-200";
+    return "border border-[var(--ccr-status-neutral-border)] bg-[var(--ccr-status-neutral-bg)] text-[var(--ccr-status-neutral-text)]";
   }
   if (normalized === "READ") {
-    return "border border-sky-400/40 bg-sky-500/15 text-sky-200";
+    return "border border-[var(--ccr-status-info-border)] bg-[var(--ccr-status-info-bg)] text-[var(--ccr-status-info-text)]";
   }
-  return "border border-amber-400/40 bg-amber-500/15 text-amber-100";
+  return "border border-[var(--ccr-status-warning-border)] bg-[var(--ccr-status-warning-bg)] text-[var(--ccr-status-warning-text)]";
 }
 
 function safeBackHref(value: string | undefined) {
@@ -68,9 +68,9 @@ export default async function AdminMessageDetailPage({
     if (isContactMessagesMissingTableError(error)) {
       return (
         <div className="mx-auto w-full max-w-4xl px-4 py-10 sm:px-6 lg:px-8">
-          <div className="rounded-2xl border border-amber-400/40 bg-amber-500/10 p-4 text-sm text-amber-100">
+          <div className="rounded-2xl border border-[var(--ccr-status-warning-border)] bg-[var(--ccr-status-warning-bg)] p-4 text-sm text-[var(--ccr-status-warning-text)]">
             <p className="font-semibold">Messages table is not installed.</p>
-            <p className="mt-1 text-xs text-amber-100/80">
+            <p className="mt-1 text-xs opacity-90">
               Apply migrations to enable message details.
             </p>
           </div>

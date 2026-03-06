@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
+import { buttonStyles } from "@/components/ui/Button";
 
 type PaymentRowActionsProps = {
   paymentId: string;
@@ -152,8 +153,8 @@ export function PaymentRowActions({
           title={title}
           className={
             isDeleted
-              ? "rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
-              : "rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white"
+              ? buttonStyles({ variant: "secondary", size: "sm" })
+              : buttonStyles({ variant: "danger", size: "sm" })
           }
         >
           {isDeleted ? "Restore" : "Cancel"}
@@ -171,7 +172,7 @@ export function PaymentRowActions({
           }}
           disabled={refunded}
           title={refunded ? "Already refunded" : title}
-          className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:cursor-not-allowed disabled:opacity-60"
+          className={buttonStyles({ variant: "secondary", size: "sm" })}
         >
           Refund/Void
         </button>
@@ -253,7 +254,7 @@ export function PaymentRowActions({
                   setMode(null);
                   setError(null);
                 }}
-                className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+                className={buttonStyles({ variant: "secondary", size: "sm" })}
               >
                 Cancel
               </button>
@@ -263,8 +264,8 @@ export function PaymentRowActions({
                 disabled={loading}
                 className={
                   mode === "delete"
-                    ? "rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-60"
-                    : "rounded-lg bg-[var(--ccr-primary)] px-3 py-2 text-xs font-semibold text-white disabled:opacity-60"
+                    ? buttonStyles({ variant: "danger", size: "sm" })
+                    : buttonStyles({ variant: "primary", size: "sm" })
                 }
               >
                 {loading

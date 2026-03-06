@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
+import { buttonStyles } from "@/components/ui/Button";
 
 type CustomerBlockToggleButtonProps = {
   customerId: string;
@@ -61,11 +62,15 @@ export function CustomerBlockToggleButton({
       type="button"
       onClick={onToggle}
       disabled={loading}
-      className={`rounded-lg border px-3 py-2 text-xs font-semibold ${
+      className={
         isBlocked
-          ? "border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] text-[var(--ccr-text)]"
-          : "border-[var(--ccr-border)] bg-[var(--ccr-surface)] text-[var(--ccr-text)]"
-      } disabled:cursor-not-allowed disabled:opacity-60`}
+          ? buttonStyles({
+              variant: "secondary",
+              size: "sm",
+              className: "border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)]",
+            })
+          : buttonStyles({ variant: "secondary", size: "sm" })
+      }
       title={isBlocked ? "Unblock customer" : "Block customer"}
     >
       {loading ? "Saving..." : isBlocked ? "Unblock" : "Block"}
