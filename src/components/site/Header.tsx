@@ -208,7 +208,7 @@ export function Header() {
         </aside>
       </div>
 
-      <header className="site-header sticky top-0 z-30 shadow-sm">
+      <header className="site-header shadow-sm">
         <div
           className={cn(
             "transition-all duration-500 ease-in-out",
@@ -262,7 +262,7 @@ export function Header() {
           </div>
         </div>
 
-        <div className="border-b border-[var(--ccr-border)] bg-[var(--ccr-accent)]/95">
+        <div className="sticky top-0 z-30 border-b border-[var(--ccr-border)] bg-[var(--ccr-accent)]/95">
           <Container className="flex items-center justify-between gap-3 py-3">
             <div className="flex min-w-0 items-center gap-3">
               <Link
