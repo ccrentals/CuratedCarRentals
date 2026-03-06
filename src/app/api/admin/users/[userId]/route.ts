@@ -38,6 +38,12 @@ function isPrivilegedRole(role: string | null | undefined) {
   return normalized === "ADMIN" || normalized === "DEVELOPER";
 }
 
+function normalizeUserId(value?: string | null) {
+  if (!value) return null;
+  if (!/^[0-9a-fA-F-]{36}$/.test(value)) return null;
+  return value;
+}
+
 function isLifecycleActiveUser(user: Pick<ManagedUserRow, "is_active" | "deactivated_at">) {
   return user.is_active !== false && !user.deactivated_at;
 }
@@ -68,6 +74,39 @@ function isUndefinedColumn(error: unknown, column: string) {
   const code = (error as { code?: string } | null)?.code;
   const message = String((error as { message?: unknown } | null)?.message ?? "");
   return code === "42703" && message.includes(`"${column}"`) && message.includes("does not exist");
+}
+
+function isClerkNotFoundError(error: unknown) {
+  const status = (error as { status?: number } | null)?.status;
+  const message = String((error as { message?: unknown } | null)?.message ?? "").toLowerCase();
+  const details = (error as { errors?: Array<{ code?: string }> } | null)?.errors ?? [];
+  return (
+    status === 404 ||
+    message.includes("not found") ||
+    details.some((issue) => String(issue?.code ?? "").toLowerCase().includes("not_found"))
+  );
+}
+
+async function insertAuditLogWithClient(
+  client: QueryClient,
+  {
+    userId,
+    action,
+    entityType,
+    entityId,
+    details = {},
+  }: {
+    userId?: string | null;
+    action: string;
+    entityType: string;
+    entityId?: string;
+    details?: Record<string, unknown>;
+  },
+) {
+  await client.query(
+    "insert into audit_logs (user_id, action, entity_type, entity_id, details_json) values ($1, $2, $3, $4, $5)",
+    [normalizeUserId(userId), action, entityType, entityId ?? null, details],
+  );
 }
 
 async function queryUserUpdate(
@@ -358,6 +397,36 @@ async function syncClerkPasswordReset({
     message: "Clerk password reset is enforced. User must set a new password at next login.",
     localLinkWarning: mappingWarning ?? undefined,
   };
+}
+
+async function deleteLinkedClerkUser(localUser: ManagedUserRow) {
+  const clerkUserId = localUser.clerk_user_id?.trim() ?? "";
+  if (!clerkUserId) {
+    return {
+      status: "not_linked" as const,
+      clerkUserId: null,
+    };
+  }
+  if (!isClerkEnabled()) {
+    throw new Error("CLERK_DELETE_NOT_CONFIGURED");
+  }
+
+  const clerk = await clerkClient();
+  try {
+    await clerk.users.deleteUser(clerkUserId);
+    return {
+      status: "deleted" as const,
+      clerkUserId,
+    };
+  } catch (error) {
+    if (isClerkNotFoundError(error)) {
+      return {
+        status: "already_missing" as const,
+        clerkUserId,
+      };
+    }
+    throw error;
+  }
 }
 
 export async function PATCH(
@@ -803,6 +872,97 @@ export async function PATCH(
         entityId: userId,
         details: { reason },
       });
+
+      return NextResponse.json({ ok: true });
+    }
+
+    if (action === "delete_user") {
+      const reason = typeof body?.reason === "string" ? body.reason.trim() : "";
+      if (!reason) {
+        await client.query("rollback");
+        return NextResponse.json({ error: "Reason is required" }, { status: 400 });
+      }
+      if (userId === session.userId) {
+        await client.query("rollback");
+        return NextResponse.json({ error: "You cannot delete your own account." }, { status: 400 });
+      }
+      if (existingIsPrivileged && existingIsActive) {
+        const remainingPrivileged = await countActivePrivilegedUsers(client, {
+          excludeUserId: userId,
+        });
+        if (remainingPrivileged < 1) {
+          await client.query("rollback");
+          return NextResponse.json(
+            {
+              error:
+                "Cannot delete the last active privileged account (ADMIN/DEVELOPER).",
+            },
+            { status: 409 },
+          );
+        }
+      }
+
+      const deleteResult = await client.query("delete from users where id = $1 returning id", [userId]);
+      if (deleteResult.rowCount < 1) {
+        await client.query("rollback");
+        return NextResponse.json({ error: "User not found" }, { status: 404 });
+      }
+
+      let clerkDeleteStatus: "not_linked" | "deleted" | "already_missing" = "not_linked";
+      let clerkDeleteUserId: string | null = null;
+      try {
+        const clerkDelete = await deleteLinkedClerkUser(existing);
+        clerkDeleteStatus = clerkDelete.status;
+        clerkDeleteUserId = clerkDelete.clerkUserId;
+      } catch (error) {
+        await client.query("rollback");
+        if (error instanceof Error && error.message === "CLERK_DELETE_NOT_CONFIGURED") {
+          return NextResponse.json(
+            {
+              error: "USER_DELETE_SYNC_NOT_CONFIGURED",
+              message:
+                "Clerk is not configured in this environment, so linked users cannot be deleted safely.",
+            },
+            { status: 503 },
+          );
+        }
+        logError("api.admin.users.PATCH.clerkDelete", error, {
+          actorUserId: session.userId,
+          targetUserId: userId,
+          clerkUserId: existing.clerk_user_id,
+        });
+        return NextResponse.json(
+          {
+            error: "USER_DELETE_SYNC_FAILED",
+            message:
+              "The linked Clerk user could not be deleted, so no local deletion was applied.",
+          },
+          { status: 502 },
+        );
+      }
+
+      await insertAuditLogWithClient(client, {
+        userId: session.userId,
+        action: "USER_DELETED",
+        entityType: "user",
+        entityId: userId,
+        details: {
+          reason,
+          deletedUserId: existing.id,
+          deletedUserEmail: existing.email,
+          deletedUserFullName: existing.full_name,
+          deletedUserUsername: existing.username,
+          deletedUserRole: existing.role,
+          deletedUserClerkUserId: existing.clerk_user_id,
+          clerkDeleteStatus,
+          clerkDeleteUserId,
+          wasActive: existing.is_active ?? null,
+          deactivatedAt: existing.deactivated_at ?? null,
+          lockedAt: existing.locked_at ?? null,
+        },
+      });
+
+      await client.query("commit");
 
       return NextResponse.json({ ok: true });
     }
