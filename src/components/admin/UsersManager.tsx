@@ -95,6 +95,12 @@ export function CreateUserForm({
     }, 1600);
   }
 
+  function dismissSuccessNotice() {
+    setSuccessNotice(null);
+    setShowTempPassword(true);
+    setCopyToast(null);
+  }
+
   async function submit() {
     if (disabled) return;
     if (loading) return;
@@ -260,9 +266,24 @@ export function CreateUserForm({
 
       {successNotice ? (
         <div
-          className="mt-3 rounded-xl border border-[var(--ccr-border)] border-l-4 border-l-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] p-3 text-xs text-[var(--ccr-text)]"
+          className="relative mt-3 rounded-xl border border-[var(--ccr-border)] border-l-4 border-l-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] p-3 pr-14 text-xs text-[var(--ccr-text)]"
           data-testid="create-user-success-panel"
         >
+          <button
+            type="button"
+            aria-label="Close user created notice"
+            onClick={dismissSuccessNotice}
+            className={buttonStyles({
+              variant: "ghost",
+              size: "xs",
+              className:
+                "absolute right-3 top-3 rounded-lg px-2 text-[var(--ccr-muted)] hover:text-[var(--ccr-text)]",
+            })}
+          >
+            <span aria-hidden="true" className="text-base leading-none">
+              ×
+            </span>
+          </button>
           <p className="font-semibold text-[var(--ccr-text)]">User created successfully.</p>
           <p className="mt-1 text-[11px] text-[var(--ccr-muted)]">
             Save this now - it won&apos;t be shown again.
@@ -341,9 +362,7 @@ export function CreateUserForm({
             <button
               type="button"
               onClick={() => {
-                setSuccessNotice(null);
-                setShowTempPassword(true);
-                setCopyToast(null);
+                dismissSuccessNotice();
                 setPanelOpen(true);
               }}
               className={buttonStyles({ variant: "secondary", size: "xs" })}
@@ -353,11 +372,7 @@ export function CreateUserForm({
             <button
               type="button"
               aria-label="Dismiss user created notice"
-              onClick={() => {
-                setSuccessNotice(null);
-                setShowTempPassword(true);
-                setCopyToast(null);
-              }}
+              onClick={dismissSuccessNotice}
               className={buttonStyles({ variant: "secondary", size: "xs" })}
             >
               Dismiss
