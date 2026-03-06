@@ -639,10 +639,19 @@ export function UserRowActions({
       return;
     }
 
-    if (mode === "delete_user" && deleteConfirmation.trim().toLowerCase() !== email.trim().toLowerCase()) {
-      setError("Type the user's email to confirm deletion.");
-      setLoading(false);
-      return;
+    if (mode === "delete_user") {
+      const typedConfirmation = deleteConfirmation.trim().toLowerCase();
+      const expectedConfirmation = email.trim().toLowerCase();
+      if (!typedConfirmation) {
+        setError("Type the user's email to confirm deletion.");
+        setLoading(false);
+        return;
+      }
+      if (typedConfirmation !== expectedConfirmation) {
+        setError("Email confirmation does not match this user.");
+        setLoading(false);
+        return;
+      }
     }
 
     const payload =
@@ -1036,7 +1045,10 @@ export function UserRowActions({
                     Reason (required)
                     <textarea
                       value={reason}
-                      onChange={(e) => setReason(e.target.value)}
+                      onChange={(e) => {
+                        setReason(e.target.value);
+                        setError(null);
+                      }}
                       rows={3}
                       className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
                     />
@@ -1045,7 +1057,10 @@ export function UserRowActions({
                     Type the user&apos;s email to confirm
                     <input
                       value={deleteConfirmation}
-                      onChange={(e) => setDeleteConfirmation(e.target.value)}
+                      onChange={(e) => {
+                        setDeleteConfirmation(e.target.value);
+                        setError(null);
+                      }}
                       placeholder={email}
                       spellCheck={false}
                       autoCapitalize="off"
