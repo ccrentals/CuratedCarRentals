@@ -183,7 +183,7 @@ export function Header() {
           </div>
 
           <div className="flex items-center justify-between gap-3 border-t border-[var(--ccr-border)] bg-[var(--ccr-primary-soft)]/55 px-4 py-4">
-            <ThemeToggle />
+            <ThemeToggle controlId="site-theme-toggle-mobile-drawer" />
             <Link
               href="/admin/auth"
               aria-label="Admin sign in"
@@ -234,7 +234,7 @@ export function Header() {
               </div>
 
               <div className="hidden items-center gap-2 lg:flex">
-                <ThemeToggle />
+                <ThemeToggle controlId="site-theme-toggle-desktop-topbar" />
                 <Link
                   href="/admin/auth"
                   aria-label="Admin sign in"
@@ -313,7 +313,10 @@ export function Header() {
 
             <div className="flex shrink-0 items-center gap-2">
               <div className="lg:hidden">
-                <ThemeToggle className="whitespace-nowrap px-2.5 py-1.5 text-[11px] sm:px-3 sm:py-2 sm:text-xs" />
+                <ThemeToggle
+                  controlId="site-theme-toggle-mobile-toolbar"
+                  className="whitespace-nowrap px-2.5 py-1.5 text-[11px] sm:px-3 sm:py-2 sm:text-xs"
+                />
               </div>
               <Button
                 href="/book"
