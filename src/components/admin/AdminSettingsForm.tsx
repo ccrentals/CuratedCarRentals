@@ -376,7 +376,7 @@ export function AdminSettingsForm({
             <div className="mt-3 max-w-sm">
               <select
                 value={settings.authLoginMethod}
-                disabled={disabled || saving}
+                disabled={disabled || saving || isAuthLoginMethodOverridden}
                 onChange={(event) =>
                   setSettings((current) => ({
                     ...current,
@@ -403,8 +403,8 @@ export function AdminSettingsForm({
             </p>
             {isAuthLoginMethodOverridden ? (
               <p className="mt-2 text-xs font-semibold text-amber-300">
-                This switch is locked by <code>AUTH_LOGIN_METHOD_OVERRIDE</code> in environment config.
-                Update/remove the override to switch modes from Admin Settings.
+                This switch is unavailable because <code>AUTH_LOGIN_METHOD_OVERRIDE</code> is forcing
+                the live mode. Remove the override to switch between Clerk and Legacy here.
               </p>
             ) : (
               <p className="mt-2 text-xs text-[var(--ccr-muted)]">

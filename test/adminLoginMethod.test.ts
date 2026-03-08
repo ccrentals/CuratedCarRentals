@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  ADMIN_AUTH_ENTRY_PATH,
   canUpdatePrimaryAdminLoginMethod,
+  evaluatePrimaryAdminLoginMethodPersistence,
+  resolvePostClerkAdminAuthPath,
   parseAdminLoginMethodOverride,
   resolvePrimaryAdminLoginMethodResolution,
   resolvePrimaryAdminLoginMethod,
@@ -33,6 +36,11 @@ test("primary admin login path resolves from normalized setting", () => {
   assert.equal(resolvePrimaryAdminLoginPath("legacy"), "/admin/login");
   assert.equal(resolvePrimaryAdminLoginPath("clerk"), "/sign-in");
   assert.equal(resolvePrimaryAdminLoginPath("bad-value"), "/sign-in");
+
+  assert.equal(resolvePostClerkAdminAuthPath("legacy"), "/admin/login");
+  assert.equal(resolvePostClerkAdminAuthPath("clerk"), "/admin");
+  assert.equal(resolvePostClerkAdminAuthPath("bad-value"), "/admin");
+  assert.equal(ADMIN_AUTH_ENTRY_PATH, "/admin/auth");
 });
 
 test("env override parser accepts only clerk/legacy and ignores blank/invalid values", () => {
@@ -135,5 +143,43 @@ test("primary login method updates require DEVELOPER role when value changes", (
       nextMethod: "legacy",
     }),
     true,
+  );
+});
+
+test("primary login method persistence blocks changes while env override is active", () => {
+  assert.deepEqual(
+    evaluatePrimaryAdminLoginMethodPersistence({
+      envOverrideValue: "legacy",
+      previousMethod: "clerk",
+      nextMethod: "legacy",
+    }),
+    { ok: false, reason: "env-override", effectiveMethod: "legacy" },
+  );
+
+  assert.deepEqual(
+    evaluatePrimaryAdminLoginMethodPersistence({
+      envOverrideValue: "clerk",
+      previousMethod: "legacy",
+      nextMethod: "clerk",
+    }),
+    { ok: false, reason: "env-override", effectiveMethod: "clerk" },
+  );
+
+  assert.deepEqual(
+    evaluatePrimaryAdminLoginMethodPersistence({
+      envOverrideValue: "legacy",
+      previousMethod: "legacy",
+      nextMethod: "legacy",
+    }),
+    { ok: true },
+  );
+
+  assert.deepEqual(
+    evaluatePrimaryAdminLoginMethodPersistence({
+      envOverrideValue: "",
+      previousMethod: "legacy",
+      nextMethod: "clerk",
+    }),
+    { ok: true },
   );
 });

@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 
 import { requireAdminRole } from "@/lib/auth/adminGuards";
-import { canUpdatePrimaryAdminLoginMethod } from "@/lib/auth/adminLoginMethod";
+import {
+  canUpdatePrimaryAdminLoginMethod,
+  evaluatePrimaryAdminLoginMethodPersistence,
+} from "@/lib/auth/adminLoginMethod";
 import {
   DEFAULT_ADMIN_SETTINGS,
   normalizeAdminSettingsValue,
@@ -95,6 +98,23 @@ export async function PATCH(request: Request) {
       [SETTINGS_KEY],
     );
     const existingSettings = parseStoredContent(existingResult.rows[0]?.content);
+    const loginMethodPersistence = evaluatePrimaryAdminLoginMethodPersistence({
+      envOverrideValue: process.env.AUTH_LOGIN_METHOD_OVERRIDE,
+      previousMethod: existingSettings.authLoginMethod,
+      nextMethod: settings.authLoginMethod,
+    });
+
+    if (!loginMethodPersistence.ok) {
+      return NextResponse.json(
+        {
+          error: "AUTH_LOGIN_METHOD_OVERRIDE_ACTIVE",
+          message:
+            "Primary admin login method is locked by AUTH_LOGIN_METHOD_OVERRIDE. Remove the override to switch modes from Admin Settings.",
+          effectiveMethod: loginMethodPersistence.effectiveMethod,
+        },
+        { status: 409 },
+      );
+    }
 
     if (
       !canUpdatePrimaryAdminLoginMethod({

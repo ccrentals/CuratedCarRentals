@@ -12,8 +12,17 @@ const PRIMARY_ADMIN_LOGIN_PATH_BY_METHOD = {
   legacy: "/admin/login",
 } as const;
 
+const POST_CLERK_ADMIN_AUTH_PATH_BY_METHOD = {
+  clerk: "/admin",
+  legacy: "/admin/login",
+} as const;
+
+export const ADMIN_AUTH_ENTRY_PATH = "/admin/auth";
+
 export type PrimaryAdminLoginPath =
   (typeof PRIMARY_ADMIN_LOGIN_PATH_BY_METHOD)[AdminLoginMethod];
+export type PostClerkAdminAuthPath =
+  (typeof POST_CLERK_ADMIN_AUTH_PATH_BY_METHOD)[AdminLoginMethod];
 
 export type PrimaryAdminLoginMethodSource = "env-override" | "db" | "default";
 
@@ -21,6 +30,14 @@ export type PrimaryAdminLoginMethodResolution = {
   method: AdminLoginMethod;
   source: PrimaryAdminLoginMethodSource;
 };
+
+export type PrimaryAdminLoginMethodPersistenceResult =
+  | { ok: true }
+  | {
+      ok: false;
+      reason: "env-override";
+      effectiveMethod: AdminLoginMethod;
+    };
 
 const LOGIN_METHOD_VALUES = new Set<string>(ADMIN_LOGIN_METHODS);
 
@@ -35,6 +52,13 @@ export function resolvePrimaryAdminLoginPath(
 ): PrimaryAdminLoginPath {
   const method = resolvePrimaryAdminLoginMethod(value);
   return PRIMARY_ADMIN_LOGIN_PATH_BY_METHOD[method];
+}
+
+export function resolvePostClerkAdminAuthPath(
+  value: unknown,
+): PostClerkAdminAuthPath {
+  const method = resolvePrimaryAdminLoginMethod(value);
+  return POST_CLERK_ADMIN_AUTH_PATH_BY_METHOD[method];
 }
 
 export function parseAdminLoginMethodOverride(
@@ -83,6 +107,26 @@ export function canUpdatePrimaryAdminLoginMethod(input: {
   return isDeveloperRole(input.actorRole);
 }
 
+export function evaluatePrimaryAdminLoginMethodPersistence(input: {
+  envOverrideValue: unknown;
+  previousMethod: unknown;
+  nextMethod: unknown;
+}): PrimaryAdminLoginMethodPersistenceResult {
+  const envOverride = parseAdminLoginMethodOverride(input.envOverrideValue);
+  const previousMethod = resolvePrimaryAdminLoginMethod(input.previousMethod);
+  const nextMethod = resolvePrimaryAdminLoginMethod(input.nextMethod);
+
+  if (envOverride && previousMethod !== nextMethod) {
+    return {
+      ok: false,
+      reason: "env-override",
+      effectiveMethod: envOverride,
+    };
+  }
+
+  return { ok: true };
+}
+
 export async function loadPrimaryAdminLoginMethod(): Promise<AdminLoginMethod> {
   const envOverrideValue = process.env.AUTH_LOGIN_METHOD_OVERRIDE;
   try {
@@ -104,6 +148,11 @@ export async function loadPrimaryAdminLoginMethod(): Promise<AdminLoginMethod> {
 export async function loadPrimaryAdminLoginPath(): Promise<PrimaryAdminLoginPath> {
   const method = await loadPrimaryAdminLoginMethod();
   return PRIMARY_ADMIN_LOGIN_PATH_BY_METHOD[method];
+}
+
+export async function loadPostClerkAdminAuthPath(): Promise<PostClerkAdminAuthPath> {
+  const method = await loadPrimaryAdminLoginMethod();
+  return POST_CLERK_ADMIN_AUTH_PATH_BY_METHOD[method];
 }
 
 export async function loadPrimaryAdminLoginMethodResolution(): Promise<PrimaryAdminLoginMethodResolution> {
