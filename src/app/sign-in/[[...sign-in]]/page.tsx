@@ -1,8 +1,13 @@
 import { SignIn } from "@clerk/nextjs";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 import { AuthPageShell } from "@/components/security/AuthPageShell";
 import { SignInIdentifierHint } from "@/components/security/SignInIdentifierHint";
+import {
+  loadPostClerkAdminAuthPath,
+  loadPrimaryAdminLoginMethod,
+} from "@/lib/auth/adminLoginMethod";
 import { isClerkPublishableKeyConfigured } from "@/lib/security/clerk";
 import styles from "./sign-in.module.css";
 
@@ -38,12 +43,49 @@ function shouldHideSiteActions(params: {
   return false;
 }
 
+function buildAdminAuthEntryHref(params: {
+  [key: string]: string | string[] | undefined;
+}) {
+  const query = new URLSearchParams();
+
+  const redirectValue = params.redirect;
+  if (typeof redirectValue === "string" && redirectValue.startsWith("/")) {
+    query.set("redirect", redirectValue);
+  }
+
+  const redirectUrlValue = params.redirect_url;
+  if (!query.has("redirect") && typeof redirectUrlValue === "string") {
+    try {
+      const pathname =
+        redirectUrlValue.startsWith("http://") || redirectUrlValue.startsWith("https://")
+          ? new URL(redirectUrlValue).pathname
+          : redirectUrlValue;
+      if (pathname.startsWith("/")) {
+        query.set("redirect", pathname);
+      }
+    } catch {
+      if (redirectUrlValue.startsWith("/")) {
+        query.set("redirect", redirectUrlValue);
+      }
+    }
+  }
+
+  const queryString = query.toString();
+  return queryString ? `/admin/auth?${queryString}` : "/admin/auth";
+}
+
 export default async function SignInPage({
   searchParams,
 }: {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const params = await searchParams;
+  const primaryAdminLoginMethod = await loadPrimaryAdminLoginMethod();
+  if (primaryAdminLoginMethod !== "clerk") {
+    redirect(buildAdminAuthEntryHref(params));
+  }
+
+  const postClerkAdminAuthPath = await loadPostClerkAdminAuthPath();
   const hideSiteActions = shouldHideSiteActions(params);
   const showAuxiliaryAuthUi = !hideSiteActions;
 
@@ -67,7 +109,7 @@ export default async function SignInPage({
             routing="path"
             withSignUp={false}
             transferable={false}
-            fallbackRedirectUrl="/admin"
+            fallbackRedirectUrl={postClerkAdminAuthPath}
             appearance={signInAppearance}
           />
         </div>

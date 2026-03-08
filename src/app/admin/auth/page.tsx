@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-import { loadPrimaryAdminLoginMethodResolution } from "@/lib/auth/adminLoginMethod";
+import { loadPrimaryAdminLoginPath } from "@/lib/auth/adminLoginMethod";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -30,9 +30,7 @@ export default async function AdminAuthEntryPage({
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const params = await searchParams;
-  const resolution = await loadPrimaryAdminLoginMethodResolution();
-  const primaryLoginPath =
-    resolution.method === "legacy" ? "/admin/login" : "/sign-in";
+  const primaryLoginPath = await loadPrimaryAdminLoginPath();
   const query = buildRedirectQuery(params);
   redirect(`${primaryLoginPath}${query}`);
 }

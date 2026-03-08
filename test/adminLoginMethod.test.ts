@@ -5,6 +5,7 @@ import {
   ADMIN_AUTH_ENTRY_PATH,
   canUpdatePrimaryAdminLoginMethod,
   evaluatePrimaryAdminLoginMethodPersistence,
+  resolveEffectivePrimaryAdminLoginMethod,
   resolvePostClerkAdminAuthPath,
   parseAdminLoginMethodOverride,
   resolvePrimaryAdminLoginMethodResolution,
@@ -41,6 +42,44 @@ test("primary admin login path resolves from normalized setting", () => {
   assert.equal(resolvePostClerkAdminAuthPath("clerk"), "/admin");
   assert.equal(resolvePostClerkAdminAuthPath("bad-value"), "/admin");
   assert.equal(ADMIN_AUTH_ENTRY_PATH, "/admin/auth");
+});
+
+test("effective primary login method falls back to legacy when Clerk admin bridge is unavailable", () => {
+  assert.equal(
+    resolveEffectivePrimaryAdminLoginMethod({
+      preferredMethod: "clerk",
+      clerkEnabled: true,
+      clerkAdminRoutesEnabled: true,
+    }),
+    "clerk",
+  );
+
+  assert.equal(
+    resolveEffectivePrimaryAdminLoginMethod({
+      preferredMethod: "clerk",
+      clerkEnabled: true,
+      clerkAdminRoutesEnabled: false,
+    }),
+    "legacy",
+  );
+
+  assert.equal(
+    resolveEffectivePrimaryAdminLoginMethod({
+      preferredMethod: "clerk",
+      clerkEnabled: false,
+      clerkAdminRoutesEnabled: true,
+    }),
+    "legacy",
+  );
+
+  assert.equal(
+    resolveEffectivePrimaryAdminLoginMethod({
+      preferredMethod: "legacy",
+      clerkEnabled: true,
+      clerkAdminRoutesEnabled: true,
+    }),
+    "legacy",
+  );
 });
 
 test("env override parser accepts only clerk/legacy and ignores blank/invalid values", () => {

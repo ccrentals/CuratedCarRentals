@@ -6,6 +6,7 @@ import {
   normalizeAdminLoginMethod,
 } from "@/lib/adminSettings";
 import { isDeveloperRole } from "@/lib/auth/roles";
+import { isClerkEnabled, shouldEnforceClerkOnAdminRoutes } from "@/lib/security/clerk";
 
 const PRIMARY_ADMIN_LOGIN_PATH_BY_METHOD = {
   clerk: "/sign-in",
@@ -45,6 +46,23 @@ export function resolvePrimaryAdminLoginMethod(
   value: unknown,
 ): AdminLoginMethod {
   return normalizeAdminLoginMethod(value);
+}
+
+export function resolveEffectivePrimaryAdminLoginMethod(input: {
+  preferredMethod: unknown;
+  clerkEnabled: boolean;
+  clerkAdminRoutesEnabled: boolean;
+}): AdminLoginMethod {
+  const preferredMethod = resolvePrimaryAdminLoginMethod(input.preferredMethod);
+  if (preferredMethod !== "clerk") {
+    return preferredMethod;
+  }
+
+  if (input.clerkEnabled && input.clerkAdminRoutesEnabled) {
+    return "clerk";
+  }
+
+  return "legacy";
 }
 
 export function resolvePrimaryAdminLoginPath(
@@ -129,19 +147,31 @@ export function evaluatePrimaryAdminLoginMethodPersistence(input: {
 
 export async function loadPrimaryAdminLoginMethod(): Promise<AdminLoginMethod> {
   const envOverrideValue = process.env.AUTH_LOGIN_METHOD_OVERRIDE;
+  const clerkEnabled = isClerkEnabled();
+  const clerkAdminRoutesEnabled = shouldEnforceClerkOnAdminRoutes();
   try {
     const { settings, source } = await loadAdminSettings();
-    return resolvePrimaryAdminLoginMethodResolution({
+    const preferredMethod = resolvePrimaryAdminLoginMethodResolution({
       envOverrideValue,
       dbLoginMethodValue: settings.authLoginMethod,
       dbSource: source,
     }).method;
+    return resolveEffectivePrimaryAdminLoginMethod({
+      preferredMethod,
+      clerkEnabled,
+      clerkAdminRoutesEnabled,
+    });
   } catch {
-    return resolvePrimaryAdminLoginMethodResolution({
+    const preferredMethod = resolvePrimaryAdminLoginMethodResolution({
       envOverrideValue,
       dbLoginMethodValue: DEFAULT_ADMIN_LOGIN_METHOD,
       dbSource: "default",
     }).method;
+    return resolveEffectivePrimaryAdminLoginMethod({
+      preferredMethod,
+      clerkEnabled,
+      clerkAdminRoutesEnabled,
+    });
   }
 }
 
