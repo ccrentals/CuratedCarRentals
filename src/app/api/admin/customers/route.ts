@@ -404,7 +404,6 @@ export async function POST(request: Request) {
         city?: unknown;
         parish?: unknown;
         state?: unknown;
-        zip?: unknown;
         country?: unknown;
         birthday?: unknown;
         driversLicenseNumber?: unknown;

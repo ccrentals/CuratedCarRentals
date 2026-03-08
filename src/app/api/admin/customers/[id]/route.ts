@@ -20,7 +20,6 @@ type CustomerRow = {
   street2: string | null;
   city: string | null;
   state: string | null;
-  zip: string | null;
   country: string | null;
   birthday: string | null;
   drivers_license_number: string | null;
@@ -88,7 +87,7 @@ export async function GET(
   let result;
   try {
     result = await dbQuery<CustomerRow>(
-      "select id, full_name, email, phone, first_name, last_name, street, street2, city, state, zip, country, birthday::text as birthday, drivers_license_number, coalesce(is_blocked, false) as is_blocked, blocked_at, blocked_by_user_id, blocked_reason, legal_id_type, legal_id_number, address, notes, created_at, last_booked_at from customers where id = $1 limit 1",
+      "select id, full_name, email, phone, first_name, last_name, street, street2, city, state, country, birthday::text as birthday, drivers_license_number, coalesce(is_blocked, false) as is_blocked, blocked_at, blocked_by_user_id, blocked_reason, legal_id_type, legal_id_number, address, notes, created_at, last_booked_at from customers where id = $1 limit 1",
       [id],
     );
   } catch (error) {
@@ -105,7 +104,6 @@ export async function GET(
         "street2",
         "city",
         "state",
-        "zip",
         "country",
         "birthday",
         "drivers_license_number",
@@ -143,7 +141,6 @@ export async function GET(
             | "street2"
             | "city"
             | "state"
-            | "zip"
             | "country"
             | "birthday"
             | "drivers_license_number"
@@ -159,7 +156,6 @@ export async function GET(
           street2: null,
           city: null,
           state: null,
-          zip: null,
           country: null,
           birthday: null,
           drivers_license_number: null,
