@@ -11,6 +11,7 @@ import { dbQuery } from "@/lib/db";
 import { formatPaymentStatus } from "@/lib/payments/formatPaymentStatus";
 import { calcDaysInclusive } from "@/lib/payments/dateMath";
 import { buildUploadcareCdnUrl, extractUploadcareFileId } from "@/lib/uploads/uploadcare";
+import { resolveStoredRegionCountry } from "@/lib/jamaicaParishes";
 
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
 
@@ -186,12 +187,13 @@ function buildCustomerAddress(row: InvoiceContextRow | null) {
   if (!row) return "";
   const direct = normalizeText(row.customer_address);
   if (direct) return direct;
+  const addressFields = resolveStoredRegionCountry(row.customer_state, row.customer_country);
   const parts = [
     normalizeText(row.customer_street),
     normalizeText(row.customer_street2),
     normalizeText(row.customer_city),
-    normalizeText(row.customer_state),
-    normalizeText(row.customer_country),
+    normalizeText(addressFields.region),
+    normalizeText(addressFields.country),
   ].filter(Boolean);
   return parts.join(", ");
 }

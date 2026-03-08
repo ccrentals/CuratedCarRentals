@@ -243,7 +243,6 @@ export default async function AdminCustomerDetailPage({
             street2={customerRow.street2}
             city={customerRow.city}
             state={customerRow.state}
-            zip={customerRow.zip}
             country={customerRow.country}
             birthday={customerRow.birthday}
             driversLicenseNumber={customerRow.drivers_license_number}

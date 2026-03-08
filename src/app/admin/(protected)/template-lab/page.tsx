@@ -16,6 +16,7 @@ import {
 } from "@/lib/pdfmonkey";
 import { buildUploadcareCdnUrl, extractUploadcareFileId } from "@/lib/uploads/uploadcare";
 import { QuoteTemplatePreviewFrame } from "@/components/admin/QuoteTemplatePreviewFrame";
+import { resolveStoredRegionCountry } from "@/lib/jamaicaParishes";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -147,12 +148,13 @@ function toIsoDateOnly(value: string | Date | null | undefined) {
 function buildCustomerAddress(booking: BookingRow) {
   const direct = normalizeText(booking.customer_address);
   if (direct) return direct;
+  const addressFields = resolveStoredRegionCountry(booking.customer_state, booking.customer_country);
   const parts = [
     normalizeText(booking.customer_street),
     normalizeText(booking.customer_street2),
     normalizeText(booking.customer_city),
-    normalizeText(booking.customer_state),
-    normalizeText(booking.customer_country),
+    normalizeText(addressFields.region),
+    normalizeText(addressFields.country),
   ].filter(Boolean);
   return parts.join(", ");
 }
