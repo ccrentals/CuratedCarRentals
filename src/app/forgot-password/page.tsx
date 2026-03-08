@@ -1,8 +1,12 @@
 import { AuthPageShell } from "@/components/security/AuthPageShell";
 import { ForgotPasswordForm } from "@/components/security/ForgotPasswordForm";
+import {
+  ADMIN_AUTH_ENTRY_PATH,
+  loadPostClerkAdminAuthPath,
+} from "@/lib/auth/adminLoginMethod";
 import { isClerkPublishableKeyConfigured } from "@/lib/security/clerk";
 
-export default function ForgotPasswordPage() {
+export default async function ForgotPasswordPage() {
   if (!isClerkPublishableKeyConfigured()) {
     return (
       <AuthPageShell>
@@ -14,10 +18,15 @@ export default function ForgotPasswordPage() {
     );
   }
 
+  const redirectUrlComplete = await loadPostClerkAdminAuthPath();
+
   return (
     <AuthPageShell>
       <div className="mx-auto flex max-w-md justify-center">
-        <ForgotPasswordForm />
+        <ForgotPasswordForm
+          redirectUrlComplete={redirectUrlComplete}
+          returnToSignInHref={ADMIN_AUTH_ENTRY_PATH}
+        />
       </div>
     </AuthPageShell>
   );

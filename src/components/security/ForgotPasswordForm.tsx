@@ -10,7 +10,15 @@ import { syncLegacyPasswordWithClerkSession } from "@/lib/security/clerkPassword
 
 type Step = "request" | "verify" | "success";
 
-export function ForgotPasswordForm() {
+type ForgotPasswordFormProps = {
+  redirectUrlComplete: string;
+  returnToSignInHref: string;
+};
+
+export function ForgotPasswordForm({
+  redirectUrlComplete,
+  returnToSignInHref,
+}: ForgotPasswordFormProps) {
   const { isLoaded, signIn, setActive } = useSignIn();
   const router = useRouter();
 
@@ -92,8 +100,8 @@ export function ForgotPasswordForm() {
       }
 
       setStep("success");
-      setMessage({ tone: "success", text: "Password updated. Redirecting to your dashboard..." });
-      router.replace("/admin");
+      setMessage({ tone: "success", text: "Password updated. Redirecting..." });
+      router.replace(redirectUrlComplete);
     } catch (error) {
       setMessage({ tone: "error", text: mapClerkPasswordResetError(error) });
     } finally {
@@ -214,8 +222,11 @@ export function ForgotPasswordForm() {
       {step === "success" ? (
         <p className="mt-5 text-sm text-[var(--ccr-muted)]">
           Password reset complete. If redirect does not happen, open{" "}
-          <Link className="font-semibold text-[var(--ccr-accent-strong)] hover:underline" href="/admin">
-            the dashboard
+          <Link
+            className="font-semibold text-[var(--ccr-accent-strong)] hover:underline"
+            href={redirectUrlComplete}
+          >
+            the next step
           </Link>
           .
         </p>
@@ -223,7 +234,10 @@ export function ForgotPasswordForm() {
 
       <div className="mt-5 text-sm text-[var(--ccr-muted)]">
         Remembered your password?{" "}
-        <Link className="font-semibold text-[var(--ccr-accent-strong)] hover:underline" href="/sign-in">
+        <Link
+          className="font-semibold text-[var(--ccr-accent-strong)] hover:underline"
+          href={returnToSignInHref}
+        >
           Return to sign in
         </Link>
       </div>

@@ -1,9 +1,10 @@
 import { TaskResetPassword } from "@clerk/nextjs";
 
 import { AuthPageShell } from "@/components/security/AuthPageShell";
+import { loadPostClerkAdminAuthPath } from "@/lib/auth/adminLoginMethod";
 import { isClerkPublishableKeyConfigured } from "@/lib/security/clerk";
 
-export default function ResetPasswordTaskPage() {
+export default async function ResetPasswordTaskPage() {
   if (!isClerkPublishableKeyConfigured()) {
     return (
       <AuthPageShell>
@@ -15,10 +16,12 @@ export default function ResetPasswordTaskPage() {
     );
   }
 
+  const redirectUrlComplete = await loadPostClerkAdminAuthPath();
+
   return (
     <AuthPageShell>
       <div className="mx-auto flex max-w-md justify-center">
-        <TaskResetPassword redirectUrlComplete="/admin" />
+        <TaskResetPassword redirectUrlComplete={redirectUrlComplete} />
       </div>
     </AuthPageShell>
   );
