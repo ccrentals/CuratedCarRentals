@@ -23,6 +23,7 @@
     "test": "tsx --test",
     "lint": "eslint",
     "clerk:sync-usernames": "tsx scripts/clerk_sync_usernames.ts",
+    "cleanup:customer-addresses": "tsx scripts/normalize-customer-addresses.ts --apply",
     "check:vehicle-finance": "tsx scripts/check-no-vehicle-finance-refs.ts",
     "test:e2e": "playwright test",
     "pw:list": "mkdir -p .artifacts && npx playwright test --list > .artifacts/playwright-test-list.txt",
