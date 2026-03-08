@@ -113,6 +113,14 @@ export default async function SignInPage({
             appearance={signInAppearance}
           />
         </div>
+        <div className="mt-4 text-center text-sm">
+          <Link
+            href="/forgot-password"
+            className="font-semibold text-[var(--ccr-accent-strong)] hover:underline"
+          >
+            Forgot password
+          </Link>
+        </div>
         {showAuxiliaryAuthUi ? <SignInIdentifierHint /> : null}
         {showAuxiliaryAuthUi ? (
           <div className={`mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 ${styles.authActions}`}>

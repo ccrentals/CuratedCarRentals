@@ -169,6 +169,15 @@ export default function AdminLoginPage() {
           </button>
         </form>
 
+        <div className="mt-4 text-center text-sm">
+          <Link
+            href="/forgot-password"
+            className="font-semibold text-[var(--ccr-accent-strong)] hover:underline"
+          >
+            Forgot password
+          </Link>
+        </div>
+
         <Link
           href="/"
           className={buttonStyles({
