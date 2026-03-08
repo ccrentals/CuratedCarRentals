@@ -2244,6 +2244,11 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
           ? "Live pricing could not be loaded. Return to Step 2 and reselect your vehicle."
           : null
       : null;
+  const step6SecurityHint = driversLicenseUploading
+    ? "Driver's license image is still processing. Wait for it to finish before continuing."
+    : !turnstileToken
+      ? "Complete the security check to enable checkout."
+      : null;
   const continueToPaymentDisabled =
     submitting ||
     driversLicenseUploading ||
@@ -2985,6 +2990,14 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                       devBypassEnabled={turnstileDevBypassEnabled}
                       className="mt-2"
                     />
+                    {step6SecurityHint ? (
+                      <p
+                        className="mt-2 text-xs text-[var(--ccr-muted)]"
+                        data-testid="booking-step6-security-hint"
+                      >
+                        {step6SecurityHint}
+                      </p>
+                    ) : null}
                   </div>
 
                   <div className="mt-5">

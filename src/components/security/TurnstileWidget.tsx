@@ -166,6 +166,10 @@ export function TurnstileWidget({
           },
           "expired-callback": () => {
             onTokenChange(null);
+            setRenderError("Security check expired. Please complete it again.");
+            if (widgetIdRef.current && window.turnstile) {
+              window.turnstile.reset(widgetIdRef.current);
+            }
           },
           "error-callback": () => {
             onTokenChange(null);
