@@ -14,6 +14,11 @@ type CustomerRow = {
   country: string | null;
 };
 
+type ScriptDbClient = {
+  query: (text: string, values?: unknown[]) => Promise<{ rows: Array<Record<string, unknown>> }>;
+  release: () => void;
+};
+
 function loadEnv() {
   dotenv.config({ path: path.join(process.cwd(), ".env.local") });
   dotenv.config({ path: path.join(process.cwd(), ".env") });
@@ -46,7 +51,7 @@ function normalizeDatabaseUrl(connectionString: string) {
 }
 
 async function columnExists(
-  client: { query: (text: string, values?: unknown[]) => Promise<{ rows: Array<Record<string, unknown>> }> },
+  client: ScriptDbClient,
   tableName: string,
   columnName: string,
 ) {
@@ -73,13 +78,13 @@ async function main() {
 
   const apply = process.argv.includes("--apply");
   const pool = new Pool({ connectionString: normalizeDatabaseUrl(rawUrl), max: 1 });
-  const client = await pool.connect();
+  const client = (await pool.connect()) as ScriptDbClient;
 
   try {
     const hasZipColumn = await columnExists(client, "customers", "zip");
-    const result = await client.query<CustomerRow>(
+    const result = (await client.query(
       "select id, full_name, state, country from customers where coalesce(state, '') = '' and coalesce(country, '') <> '' order by full_name asc nulls last, id asc",
-    );
+    )) as { rows: CustomerRow[] };
 
     const updates = result.rows
       .map((row) => {
