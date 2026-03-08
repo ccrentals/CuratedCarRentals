@@ -1,6 +1,14 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type CSSProperties,
+} from "react";
+import { createPortal } from "react-dom";
 
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 import { cn } from "@/lib/utils";
@@ -86,7 +94,9 @@ export function ThemeToggle({
   const generatedId = useId();
   const selectId = controlId ?? generatedId;
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
   const [open, setOpen] = useState(false);
+  const [menuStyle, setMenuStyle] = useState<CSSProperties | null>(null);
   const theme = useSyncExternalStore(subscribeToTheme, getCurrentTheme, getThemeServerSnapshot);
 
   function selectTheme(nextTheme: AppTheme) {
@@ -119,6 +129,40 @@ export function ThemeToggle({
     };
   }, []);
 
+  useEffect(() => {
+    if (!open) return;
+
+    function updateMenuPosition() {
+      if (!buttonRef.current || typeof window === "undefined") {
+        return;
+      }
+
+      const rect = buttonRef.current.getBoundingClientRect();
+      const viewportPadding = 12;
+      const menuWidth = Math.max(rect.width, 160);
+      const maxLeft = window.innerWidth - menuWidth - viewportPadding;
+      const nextLeft = Math.min(maxLeft, rect.right - menuWidth);
+      const nextTop = rect.bottom + 6;
+
+      setMenuStyle({
+        position: "fixed",
+        top: nextTop,
+        left: Math.max(viewportPadding, nextLeft),
+        width: menuWidth,
+        zIndex: 80,
+      });
+    }
+
+    updateMenuPosition();
+    window.addEventListener("resize", updateMenuPosition);
+    window.addEventListener("scroll", updateMenuPosition, true);
+
+    return () => {
+      window.removeEventListener("resize", updateMenuPosition);
+      window.removeEventListener("scroll", updateMenuPosition, true);
+    };
+  }, [open]);
+
   const selectedLabel = THEME_LABELS[theme];
 
   return (
@@ -137,6 +181,7 @@ export function ThemeToggle({
       ) : null}
       <button
         id={selectId}
+        ref={buttonRef}
         type="button"
         onClick={() => setOpen((prev) => !prev)}
         aria-haspopup="listbox"
@@ -167,47 +212,51 @@ export function ThemeToggle({
           />
         </svg>
       </button>
-      {open ? (
-        <div
-          className={cn(
-            "absolute right-0 top-[calc(100%+0.35rem)] z-40 min-w-[10rem] overflow-hidden rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] shadow-2xl",
-            variant === "inverse" && "bg-[var(--ccr-primary)]",
-          )}
-          role="listbox"
-          aria-label="Theme options"
-        >
-          {APP_THEMES.map((item) => {
-            const selected = item === theme;
-            return (
-              <button
-                key={item}
-                type="button"
-                role="option"
-                aria-selected={selected}
-                onClick={() => {
-                  if (isAppTheme(item)) {
-                    selectTheme(item);
-                  }
-                  setOpen(false);
-                }}
-                className={cn(
-                  "flex w-full items-center justify-between px-3 py-2 text-left text-sm font-semibold transition-colors",
-                  selected
-                    ? "bg-[var(--ccr-accent)] text-white"
-                    : "text-[var(--ccr-text)] hover:bg-[var(--ccr-surface-soft)]",
-                  variant === "inverse" &&
-                    (selected
-                      ? "bg-white text-[var(--ccr-primary)]"
-                      : "text-white hover:bg-white/10"),
-                )}
-              >
-                <span>{THEME_LABELS[item]}</span>
-                {selected ? <span aria-hidden="true">✓</span> : null}
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
+      {open && menuStyle && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              style={menuStyle}
+              className={cn(
+                "overflow-hidden rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] shadow-2xl",
+                variant === "inverse" && "bg-[var(--ccr-primary)]",
+              )}
+              role="listbox"
+              aria-label="Theme options"
+            >
+              {APP_THEMES.map((item) => {
+                const selected = item === theme;
+                return (
+                  <button
+                    key={item}
+                    type="button"
+                    role="option"
+                    aria-selected={selected}
+                    onClick={() => {
+                      if (isAppTheme(item)) {
+                        selectTheme(item);
+                      }
+                      setOpen(false);
+                    }}
+                    className={cn(
+                      "flex w-full items-center justify-between px-3 py-2 text-left text-sm font-semibold transition-colors",
+                      selected
+                        ? "bg-[var(--ccr-accent)] text-white"
+                        : "text-[var(--ccr-text)] hover:bg-[var(--ccr-surface-soft)]",
+                      variant === "inverse" &&
+                        (selected
+                          ? "bg-white text-[var(--ccr-primary)]"
+                          : "text-white hover:bg-white/10"),
+                    )}
+                  >
+                    <span>{THEME_LABELS[item]}</span>
+                    {selected ? <span aria-hidden="true">✓</span> : null}
+                  </button>
+                );
+              })}
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }
