@@ -8,6 +8,7 @@ import { writeAuditLog } from "@/lib/audit";
 import { logError } from "@/lib/log";
 import { normalizeLegalIdType } from "@/lib/customers/legalId";
 import { readSortFromSearchParams, type SortDir } from "@/components/admin/tableSort";
+import { normalizeCountryName, normalizeRegionForCountry } from "@/lib/jamaicaParishes";
 
 type CustomerListRow = {
   id: string;
@@ -345,7 +346,6 @@ async function fetchCustomers({
 export async function GET(request: Request) {
   const auth = await requireStaffOrAdminRole();
   if (!auth.ok) return auth.response;
-  const session = auth.session;
 
   const url = new URL(request.url);
   const q = (url.searchParams.get("q") ?? "").trim();
@@ -402,6 +402,7 @@ export async function POST(request: Request) {
         street?: unknown;
         street2?: unknown;
         city?: unknown;
+        parish?: unknown;
         state?: unknown;
         zip?: unknown;
         country?: unknown;
@@ -427,9 +428,14 @@ export async function POST(request: Request) {
   const street = typeof body?.street === "string" ? body.street.trim() : "";
   const street2 = typeof body?.street2 === "string" ? body.street2.trim() : "";
   const city = typeof body?.city === "string" ? body.city.trim() : "";
-  const state = typeof body?.state === "string" ? body.state.trim() : "";
-  const zip = typeof body?.zip === "string" ? body.zip.trim() : "";
-  const country = typeof body?.country === "string" ? body.country.trim() : "";
+  const regionInput =
+    typeof body?.parish === "string"
+      ? body.parish.trim()
+      : typeof body?.state === "string"
+        ? body.state.trim()
+        : "";
+  const country = normalizeCountryName(body?.country) ?? "Jamaica";
+  const state = normalizeRegionForCountry(regionInput, country);
   const birthdayInput = typeof body?.birthday === "string" ? body.birthday.trim() : "";
   const birthday = /^\d{4}-\d{2}-\d{2}$/.test(birthdayInput) ? birthdayInput : null;
   const driversLicenseNumber =
@@ -472,7 +478,7 @@ export async function POST(request: Request) {
           street2 || null,
           city || null,
           state || null,
-          zip || null,
+          null,
           country || null,
           birthday,
           driversLicenseNumber || null,

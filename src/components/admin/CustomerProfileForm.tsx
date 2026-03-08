@@ -6,6 +6,11 @@ import { useRouter } from "next/navigation";
 import { buttonStyles } from "@/components/ui/Button";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 import { LEGAL_ID_TYPES, formatLegalIdTypeLabel } from "@/lib/customers/legalId";
+import {
+  JAMAICA_PARISHES,
+  isJamaicaCountry,
+  resolveStoredRegionCountry,
+} from "@/lib/jamaicaParishes";
 
 type CustomerProfileFormProps = {
   customerId: string;
@@ -20,7 +25,6 @@ type CustomerProfileFormProps = {
   street2: string | null;
   city: string | null;
   state: string | null;
-  zip: string | null;
   country: string | null;
   birthday: string | null;
   driversLicenseNumber: string | null;
@@ -46,7 +50,6 @@ export function CustomerProfileForm({
   street2,
   city,
   state,
-  zip,
   country,
   birthday,
   driversLicenseNumber,
@@ -64,9 +67,9 @@ export function CustomerProfileForm({
   const [nextStreet, setNextStreet] = useState(street ?? "");
   const [nextStreet2, setNextStreet2] = useState(street2 ?? "");
   const [nextCity, setNextCity] = useState(city ?? "");
-  const [nextState, setNextState] = useState(state ?? "");
-  const [nextZip, setNextZip] = useState(zip ?? "");
-  const [nextCountry, setNextCountry] = useState(country ?? "");
+  const normalizedAddressFields = resolveStoredRegionCountry(state, country);
+  const [nextParish, setNextParish] = useState(normalizedAddressFields.region ?? "");
+  const [nextCountry, setNextCountry] = useState(normalizedAddressFields.country ?? "Jamaica");
   const [nextBirthday, setNextBirthday] = useState(normalizeDateInput(birthday));
   const [nextDriversLicenseNumber, setNextDriversLicenseNumber] = useState(
     driversLicenseNumber ?? "",
@@ -113,8 +116,7 @@ export function CustomerProfileForm({
         street: nextStreet,
         street2: nextStreet2,
         city: nextCity,
-        state: nextState,
-        zip: nextZip,
+        parish: nextParish,
         country: nextCountry,
         birthday: nextBirthday || null,
         driversLicenseNumber: nextDriversLicenseNumber,
@@ -197,15 +199,6 @@ export function CustomerProfileForm({
         />
       </label>
       <label className="block text-xs text-[var(--ccr-muted)]">
-        Birthday
-        <input
-          type="date"
-          value={nextBirthday}
-          onChange={(event) => setNextBirthday(event.target.value)}
-          className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
-        />
-      </label>
-      <label className="block text-xs text-[var(--ccr-muted)]">
         Legal ID Type
         <select
           value={nextLegalIdType}
@@ -268,22 +261,20 @@ export function CustomerProfileForm({
           />
         </label>
         <label className="block text-xs text-[var(--ccr-muted)]">
-          State
+          Parish / Region
           <input
             type="text"
-            value={nextState}
-            onChange={(event) => setNextState(event.target.value)}
+            value={nextParish}
+            onChange={(event) => setNextParish(event.target.value)}
+            list="admin-customer-profile-parish-suggestions"
+            placeholder={isJamaicaCountry(nextCountry) ? "e.g. St. Andrew" : "e.g. Ontario"}
             className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
           />
-        </label>
-        <label className="block text-xs text-[var(--ccr-muted)]">
-          ZIP
-          <input
-            type="text"
-            value={nextZip}
-            onChange={(event) => setNextZip(event.target.value)}
-            className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
-          />
+          <datalist id="admin-customer-profile-parish-suggestions">
+            {JAMAICA_PARISHES.map((option) => (
+              <option key={option} value={option} />
+            ))}
+          </datalist>
         </label>
         <label className="block text-xs text-[var(--ccr-muted)]">
           Country
@@ -291,6 +282,16 @@ export function CustomerProfileForm({
             type="text"
             value={nextCountry}
             onChange={(event) => setNextCountry(event.target.value)}
+            placeholder="Jamaica"
+            className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+          />
+        </label>
+        <label className="block text-xs text-[var(--ccr-muted)]">
+          Birthday
+          <input
+            type="date"
+            value={nextBirthday}
+            onChange={(event) => setNextBirthday(event.target.value)}
             className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
           />
         </label>

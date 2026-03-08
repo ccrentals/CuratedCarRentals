@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { LEGAL_ID_TYPES, formatLegalIdTypeLabel } from "@/lib/customers/legalId";
+import { JAMAICA_PARISHES, isJamaicaCountry } from "@/lib/jamaicaParishes";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 import { buttonStyles } from "@/components/ui/Button";
 
@@ -17,9 +18,8 @@ export function CreateCustomerForm() {
   const [street, setStreet] = useState("");
   const [street2, setStreet2] = useState("");
   const [city, setCity] = useState("");
-  const [state, setState] = useState("");
-  const [zip, setZip] = useState("");
-  const [country, setCountry] = useState("");
+  const [parish, setParish] = useState("");
+  const [country, setCountry] = useState("Jamaica");
   const [birthday, setBirthday] = useState("");
   const [driversLicenseNumber, setDriversLicenseNumber] = useState("");
   const [legalIdType, setLegalIdType] = useState<(typeof LEGAL_ID_TYPES)[number]>("TRN");
@@ -51,8 +51,7 @@ export function CreateCustomerForm() {
         street,
         street2,
         city,
-        state,
-        zip,
+        parish,
         country,
         birthday: birthday || null,
         driversLicenseNumber,
@@ -82,9 +81,8 @@ export function CreateCustomerForm() {
     setStreet("");
     setStreet2("");
     setCity("");
-    setState("");
-    setZip("");
-    setCountry("");
+    setParish("");
+    setCountry("Jamaica");
     setBirthday("");
     setDriversLicenseNumber("");
     setLegalIdType("TRN");
@@ -212,22 +210,20 @@ export function CreateCustomerForm() {
                 />
               </label>
               <label className="text-xs text-[var(--ccr-muted)]">
-                State
+                Parish / Region
                 <input
                   type="text"
-                  value={state}
-                  onChange={(event) => setState(event.target.value)}
+                  value={parish}
+                  onChange={(event) => setParish(event.target.value)}
+                  list="admin-create-customer-parish-suggestions"
+                  placeholder={isJamaicaCountry(country) ? "e.g. St. Andrew" : "e.g. Ontario"}
                   className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
                 />
-              </label>
-              <label className="text-xs text-[var(--ccr-muted)]">
-                ZIP
-                <input
-                  type="text"
-                  value={zip}
-                  onChange={(event) => setZip(event.target.value)}
-                  className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
-                />
+                <datalist id="admin-create-customer-parish-suggestions">
+                  {JAMAICA_PARISHES.map((option) => (
+                    <option key={option} value={option} />
+                  ))}
+                </datalist>
               </label>
               <label className="text-xs text-[var(--ccr-muted)]">
                 Country
@@ -235,6 +231,7 @@ export function CreateCustomerForm() {
                   type="text"
                   value={country}
                   onChange={(event) => setCountry(event.target.value)}
+                  placeholder="Jamaica"
                   className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
                 />
               </label>

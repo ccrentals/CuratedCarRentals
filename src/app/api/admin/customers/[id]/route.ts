@@ -7,6 +7,7 @@ import { writeAuditLog } from "@/lib/audit";
 import { isEmail, isNonEmptyString } from "@/lib/validators";
 import { logError } from "@/lib/log";
 import { normalizeLegalIdType } from "@/lib/customers/legalId";
+import { normalizeCountryName, normalizeRegionForCountry } from "@/lib/jamaicaParishes";
 
 type CustomerRow = {
   id: string;
@@ -253,9 +254,14 @@ export async function PATCH(
   const street = trimOptional(body?.street);
   const street2 = trimOptional(body?.street2);
   const city = trimOptional(body?.city);
-  const state = trimOptional(body?.state);
-  const zip = trimOptional(body?.zip);
-  const country = trimOptional(body?.country);
+  const regionInput =
+    typeof body?.parish === "string"
+      ? body.parish.trim()
+      : typeof body?.state === "string"
+        ? body.state.trim()
+        : null;
+  const country = normalizeCountryName(body?.country) ?? "Jamaica";
+  const state = normalizeRegionForCountry(regionInput, country);
   const birthdayRaw = trimOptional(body?.birthday);
   const birthday = birthdayRaw && /^\d{4}-\d{2}-\d{2}$/.test(birthdayRaw) ? birthdayRaw : null;
   const driversLicenseNumber = trimOptional(body?.driversLicenseNumber);
@@ -368,8 +374,8 @@ export async function PATCH(
           street2,
           city,
           state,
-          zip,
-          country,
+          null,
+          country || null,
           birthday,
           driversLicenseNumber,
         ],
