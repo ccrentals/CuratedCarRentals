@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 
 import { writeAuditLog } from "@/lib/audit";
 import { dbQuery } from "@/lib/db";
+import { resolveStoredRegionCountry } from "@/lib/jamaicaParishes";
 import { logWarn } from "@/lib/log";
 import {
   categorizeTurnstileFailure,
@@ -26,7 +27,6 @@ type CustomerRow = {
   street2: string | null;
   city: string | null;
   state: string | null;
-  zip: string | null;
   country: string | null;
   birthday: string | null;
   drivers_license_number: string | null;
@@ -149,7 +149,7 @@ export async function POST(request: Request) {
   }
 
   const customerResult = await dbQuery<CustomerRow>(
-    "select id, full_name, first_name, last_name, email, phone, street, street2, city, state, zip, country, birthday::text as birthday, drivers_license_number from customers where lower(coalesce(drivers_license_number, '')) = lower($1) limit 1",
+    "select id, full_name, first_name, last_name, email, phone, street, street2, city, state, country, birthday::text as birthday, drivers_license_number from customers where lower(coalesce(drivers_license_number, '')) = lower($1) limit 1",
     [driversLicenseNumber],
   );
   const customer = customerResult.rows[0] ?? null;
@@ -238,6 +238,8 @@ export async function POST(request: Request) {
     },
   });
 
+  const addressFields = resolveStoredRegionCountry(customer.state, customer.country);
+
   return NextResponse.json({
     ok: true,
     customer: {
@@ -249,9 +251,8 @@ export async function POST(request: Request) {
       street: normalizeText(customer.street ?? "") || null,
       street2: normalizeText(customer.street2 ?? "") || null,
       city: normalizeText(customer.city ?? "") || null,
-      state: normalizeText(customer.state ?? "") || null,
-      zip: normalizeText(customer.zip ?? "") || null,
-      country: normalizeText(customer.country ?? "") || null,
+      parish: addressFields.region,
+      country: addressFields.country,
       birthday: normalizeDateOnly(normalizeText(customer.birthday ?? "")) || null,
       driversLicenseNumber: normalizeText(customer.drivers_license_number ?? "") || null,
     },

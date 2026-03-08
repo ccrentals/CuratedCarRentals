@@ -6,6 +6,7 @@ import { logError, logWarn } from "@/lib/log";
 import { isEmail, isISODate, isNonEmptyString } from "@/lib/validators";
 import { calcDaysInclusive, dateOnlyUtc } from "@/lib/payments/dateMath";
 import { CustomerBlockedError, upsertCustomerForBooking } from "@/lib/customers";
+import { normalizeCountryName, normalizeRegionForCountry } from "@/lib/jamaicaParishes";
 import { normalizeLegalIdType } from "@/lib/customers/legalId";
 import { isPublicVehicleUnavailableForWindow } from "@/lib/publicVehicles";
 import { createBookingAccessToken, hashBookingAccessToken } from "@/lib/bookings/privateAccess";
@@ -297,12 +298,13 @@ export async function POST(request: Request) {
     const street = normalizeText(customerProfile?.street);
     const street2 = normalizeText(customerProfile?.street2);
     const city = normalizeText(customerProfile?.city);
-    const state = normalizeText(customerProfile?.state);
-    const zip = normalizeText(customerProfile?.zip);
-    const country = normalizeText(customerProfile?.country);
+    const regionInput =
+      normalizeText(customerProfile?.parish) || normalizeText(customerProfile?.state);
+    const country = normalizeCountryName(customerProfile?.country);
+    const region = normalizeRegionForCountry(regionInput, country);
 
     await client.query(
-      "update customers set first_name = case when nullif($2, '') is not null then $2 else first_name end, last_name = case when nullif($3, '') is not null then $3 else last_name end, street = case when nullif($4, '') is not null then $4 else street end, street2 = case when nullif($5, '') is not null then $5 else street2 end, city = case when nullif($6, '') is not null then $6 else city end, state = case when nullif($7, '') is not null then $7 else state end, zip = case when nullif($8, '') is not null then $8 else zip end, country = case when nullif($9, '') is not null then $9 else country end, birthday = coalesce($10::date, birthday), drivers_license_number = case when nullif($11, '') is not null then $11 else drivers_license_number end where id = $1",
+      "update customers set first_name = case when nullif($2, '') is not null then $2 else first_name end, last_name = case when nullif($3, '') is not null then $3 else last_name end, street = case when nullif($4, '') is not null then $4 else street end, street2 = case when nullif($5, '') is not null then $5 else street2 end, city = case when nullif($6, '') is not null then $6 else city end, state = case when nullif($7, '') is not null then $7 else state end, zip = null, country = case when nullif($8, '') is not null then $8 else country end, birthday = coalesce($9::date, birthday), drivers_license_number = case when nullif($10, '') is not null then $10 else drivers_license_number end where id = $1",
       [
         customerUpsert.customerId,
         firstName,
@@ -310,8 +312,7 @@ export async function POST(request: Request) {
         street,
         street2,
         city,
-        state,
-        zip,
+        region,
         country,
         profileBirthday,
         driversLicenseNumber,

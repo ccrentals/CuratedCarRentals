@@ -18,6 +18,12 @@ import {
   startPricingLifecycleRefresh,
   type WizardStep,
 } from "@/lib/bookings/publicBookingWizardState";
+import {
+  JAMAICA_PARISHES,
+  isJamaicaCountry,
+  normalizeCountryName,
+  normalizeJamaicaParish,
+} from "@/lib/jamaicaParishes";
 import { calcDaysInclusive } from "@/lib/payments/dateMath";
 import { formatJmd } from "@/lib/money";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
@@ -71,8 +77,7 @@ type ReturningVerifyResponse = {
     street?: string | null;
     street2?: string | null;
     city?: string | null;
-    state?: string | null;
-    zip?: string | null;
+    parish?: string | null;
     country?: string | null;
     birthday?: string | null;
     driversLicenseNumber?: string | null;
@@ -156,7 +161,7 @@ type BookingWizardDraft = {
   street2?: string;
   city?: string;
   state?: string;
-  zip?: string;
+  parish?: string;
   country?: string;
   birthday?: string;
   driversLicenseNumber?: string;
@@ -359,8 +364,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
   const [street, setStreet] = useState("");
   const [street2, setStreet2] = useState("");
   const [city, setCity] = useState("");
-  const [state, setState] = useState("");
-  const [zip, setZip] = useState("");
+  const [parish, setParish] = useState("");
   const [country, setCountry] = useState("Jamaica");
   const [birthday, setBirthday] = useState("");
 
@@ -505,9 +509,18 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
       if (typeof draft.street === "string") setStreet(draft.street);
       if (typeof draft.street2 === "string") setStreet2(draft.street2);
       if (typeof draft.city === "string") setCity(draft.city);
-      if (typeof draft.state === "string") setState(draft.state);
-      if (typeof draft.zip === "string") setZip(draft.zip);
-      if (typeof draft.country === "string") setCountry(draft.country);
+      const legacyCountryParish =
+        typeof draft.country === "string" ? normalizeJamaicaParish(draft.country) : null;
+      const restoredCountry = legacyCountryParish
+        ? "Jamaica"
+        : normalizeCountryName(draft.country) ?? "Jamaica";
+      setCountry(restoredCountry);
+      const restoredParish =
+        (typeof draft.parish === "string" && draft.parish.trim()) ||
+        (typeof draft.state === "string" && draft.state.trim()) ||
+        (typeof draft.country === "string" && normalizeJamaicaParish(draft.country)) ||
+        null;
+      if (restoredParish) setParish(restoredParish);
       if (typeof draft.birthday === "string") setBirthday(draft.birthday);
       if (typeof draft.driversLicenseNumber === "string") setDriversLicenseNumber(draft.driversLicenseNumber);
       if (typeof draft.driversLicenseExpirationDate === "string") {
@@ -571,8 +584,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
       street,
       street2,
       city,
-      state,
-      zip,
+      parish,
       country,
       birthday,
       driversLicenseNumber,
@@ -600,6 +612,8 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
       normalizeText(lastName).length > 0 ||
       normalizeText(emailAddress).length > 0 ||
       normalizeText(phoneNumber).length > 0 ||
+      normalizeText(parish).length > 0 ||
+      (normalizeText(country).length > 0 && country !== "Jamaica") ||
       normalizeText(driversLicenseNumber).length > 0 ||
       normalizeText(customPaymentAmount).length > 0 ||
       paymentOption !== "DEPOSIT" ||
@@ -631,19 +645,18 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     insuranceSelected,
     lastName,
     paymentOption,
+    parish,
     phoneNumber,
     pickupCustomAddress,
     pickupDate,
     pickupLocationId,
     pickupTime,
     selectedVehicleId,
-    state,
     step,
     maxStepCompleted,
     hydrated,
     street,
     street2,
-    zip,
     clearWizardDraft,
   ]);
 
@@ -1762,8 +1775,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     setStreet("");
     setStreet2("");
     setCity("");
-    setState("");
-    setZip("");
+    setParish("");
     setCountry("Jamaica");
     setBirthday("");
     setDriversLicenseNumber("");
@@ -2045,8 +2057,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
       setStreet((current) => setIfPresent(current, data.customer?.street));
       setStreet2((current) => setIfPresent(current, data.customer?.street2));
       setCity((current) => setIfPresent(current, data.customer?.city));
-      setState((current) => setIfPresent(current, data.customer?.state));
-      setZip((current) => setIfPresent(current, data.customer?.zip));
+      setParish((current) => setIfPresent(current, data.customer?.parish));
       setCountry((current) => setIfPresent(current, data.customer?.country));
       setBirthday((current) => setIfPresent(current, data.customer?.birthday));
       setDriversLicenseNumber((current) =>
@@ -2147,8 +2158,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
             street: normalizeText(street) || null,
             street2: normalizeText(street2) || null,
             city: normalizeText(city) || null,
-            state: normalizeText(state) || null,
-            zip: normalizeText(zip) || null,
+            parish: normalizeText(parish) || null,
             country: normalizeText(country) || null,
             birthday: normalizeText(birthday) || null,
           },
@@ -2680,26 +2690,26 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                       />
                     </label>
                     <label className="block">
-                      <span className="text-sm font-semibold text-[var(--ccr-muted)]">State</span>
+                      <span className="text-sm font-semibold text-[var(--ccr-muted)]">Parish / Region</span>
                       <input
-                        value={state}
-                        onChange={(event) => setState(event.target.value)}
+                        value={parish}
+                        onChange={(event) => setParish(event.target.value)}
+                        list="jamaica-parish-suggestions"
+                        placeholder={isJamaicaCountry(country) ? "e.g. St. Andrew" : "e.g. Ontario"}
                         className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] px-3 py-2 text-sm"
                       />
-                    </label>
-                    <label className="block">
-                      <span className="text-sm font-semibold text-[var(--ccr-muted)]">Zip</span>
-                      <input
-                        value={zip}
-                        onChange={(event) => setZip(event.target.value)}
-                        className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] px-3 py-2 text-sm"
-                      />
+                      <datalist id="jamaica-parish-suggestions">
+                        {JAMAICA_PARISHES.map((option) => (
+                          <option key={option} value={option} />
+                        ))}
+                      </datalist>
                     </label>
                     <label className="block">
                       <span className="text-sm font-semibold text-[var(--ccr-muted)]">Country</span>
                       <input
                         value={country}
                         onChange={(event) => setCountry(event.target.value)}
+                        placeholder="Jamaica"
                         className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] px-3 py-2 text-sm"
                       />
                     </label>
