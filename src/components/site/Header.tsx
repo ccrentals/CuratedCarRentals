@@ -214,7 +214,7 @@ export function Header() {
             "transition-all duration-500 ease-in-out",
             isCompact
               ? "pointer-events-none max-h-0 -translate-y-6 overflow-hidden opacity-0"
-              : "max-h-60 translate-y-0 overflow-visible opacity-100",
+              : "max-h-60 translate-y-0 overflow-hidden opacity-100",
           )}
         >
           <div className="border-b border-[var(--ccr-border)] bg-[var(--ccr-surface)]">

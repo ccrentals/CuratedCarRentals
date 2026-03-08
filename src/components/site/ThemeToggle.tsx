@@ -95,6 +95,7 @@ export function ThemeToggle({
   const selectId = controlId ?? generatedId;
   const rootRef = useRef<HTMLDivElement | null>(null);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
   const [menuStyle, setMenuStyle] = useState<CSSProperties | null>(null);
   const theme = useSyncExternalStore(subscribeToTheme, getCurrentTheme, getThemeServerSnapshot);
@@ -110,8 +111,10 @@ export function ThemeToggle({
 
   useEffect(() => {
     function handlePointerDown(event: MouseEvent) {
+      const target = event.target as Node;
       if (!rootRef.current) return;
-      if (rootRef.current.contains(event.target as Node)) return;
+      if (rootRef.current.contains(target)) return;
+      if (menuRef.current?.contains(target)) return;
       setOpen(false);
     }
 
@@ -215,6 +218,7 @@ export function ThemeToggle({
       {open && menuStyle && typeof document !== "undefined"
         ? createPortal(
             <div
+              ref={menuRef}
               style={menuStyle}
               className={cn(
                 "overflow-hidden rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] shadow-2xl",
