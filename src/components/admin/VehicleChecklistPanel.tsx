@@ -1364,39 +1364,40 @@ export function VehicleChecklistPanel({
               }`}
             >
               <div className="max-w-full">
-                <div className="flex flex-wrap items-start gap-2">
-                  <div>
-                    <p className="font-semibold text-[var(--ccr-text)] break-words">{item.label}</p>
-                    {isHighlighted ? (
-                      <span className="mt-1 inline-flex rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-2 py-1 text-[11px] font-semibold text-[var(--ccr-accent-strong)]">
-                        Focused from Files
-                      </span>
-                    ) : null}
-                    <p className="text-xs text-[var(--ccr-muted)]">Folder: {item.folder}</p>
-                    {item.templateId || item.templateKey ? (
-                      <p className="text-xs text-[var(--ccr-muted)]">
-                        Template linked: {linkedTemplate?.label ?? item.templateKey ?? "Unknown template"}
-                      </p>
-                    ) : null}
-                  </div>
-                </div>
-
-                {itemStatus.badges.length > 0 ? (
-                  <div className="mt-2 flex flex-wrap gap-2" data-testid={`vehicle-checklist-status-${item.id}`}>
-                    {itemStatus.badges.map((badge) => (
-                      <span
-                        key={`${item.id}-${badge.label}`}
-                        className={`rounded-full border px-2 py-1 text-[11px] font-semibold ${getStatusBadgeClass(badge.tone)}`}
-                      >
-                        {badge.label}
-                      </span>
-                    ))}
-                  </div>
-                ) : null}
-
                 {isEditing ? (
-                  <div className="mt-3 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3">
-                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  <>
+                    <div className="flex flex-wrap items-start gap-2">
+                      <div>
+                        <p className="font-semibold text-[var(--ccr-text)] break-words">{item.label}</p>
+                        {isHighlighted ? (
+                          <span className="mt-1 inline-flex rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-2 py-1 text-[11px] font-semibold text-[var(--ccr-accent-strong)]">
+                            Focused from Files
+                          </span>
+                        ) : null}
+                        <p className="text-xs text-[var(--ccr-muted)]">Folder: {item.folder}</p>
+                        {item.templateId || item.templateKey ? (
+                          <p className="text-xs text-[var(--ccr-muted)]">
+                            Template linked: {linkedTemplate?.label ?? item.templateKey ?? "Unknown template"}
+                          </p>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    {itemStatus.badges.length > 0 ? (
+                      <div className="mt-2 flex flex-wrap gap-2" data-testid={`vehicle-checklist-status-${item.id}`}>
+                        {itemStatus.badges.map((badge) => (
+                          <span
+                            key={`${item.id}-${badge.label}`}
+                            className={`rounded-full border px-2 py-1 text-[11px] font-semibold ${getStatusBadgeClass(badge.tone)}`}
+                          >
+                            {badge.label}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+
+                    <div className="mt-3 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3">
+                      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                       <label className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
                         Label
                         <input
@@ -1552,12 +1553,43 @@ export function VehicleChecklistPanel({
                           Cancel
                         </button>
                       </div>
+                      </div>
                     </div>
-                  </div>
+                  </>
                 ) : (
-                  <div className="mt-3 grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(28rem,36rem)] xl:items-start xl:gap-8">
-                    <div className="min-w-0 space-y-3 text-xs text-[var(--ccr-muted)] xl:max-w-[32rem]">
-                      <div>
+                  <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(28rem,36rem)] xl:items-start xl:gap-6">
+                    <div className="min-w-0 space-y-3 xl:max-w-[34rem]">
+                      <div className="flex flex-wrap items-start gap-2">
+                        <div>
+                          <p className="font-semibold text-[var(--ccr-text)] break-words">{item.label}</p>
+                          {isHighlighted ? (
+                            <span className="mt-1 inline-flex rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-2 py-1 text-[11px] font-semibold text-[var(--ccr-accent-strong)]">
+                              Focused from Files
+                            </span>
+                          ) : null}
+                          <p className="text-xs text-[var(--ccr-muted)]">Folder: {item.folder}</p>
+                          {item.templateId || item.templateKey ? (
+                            <p className="text-xs text-[var(--ccr-muted)]">
+                              Template linked: {linkedTemplate?.label ?? item.templateKey ?? "Unknown template"}
+                            </p>
+                          ) : null}
+                        </div>
+                      </div>
+
+                      {itemStatus.badges.length > 0 ? (
+                        <div className="flex flex-wrap gap-2" data-testid={`vehicle-checklist-status-${item.id}`}>
+                          {itemStatus.badges.map((badge) => (
+                            <span
+                              key={`${item.id}-${badge.label}`}
+                              className={`rounded-full border px-2 py-1 text-[11px] font-semibold ${getStatusBadgeClass(badge.tone)}`}
+                            >
+                              {badge.label}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
+
+                      <div className="text-xs text-[var(--ccr-muted)]">
                         <p>Created: <DateTimeInline value={item.createdAt} /></p>
                         <p>
                           Expiration: {item.expirationDate ? formatExpirationDisplay(item.expirationDate) : "Not set"}
