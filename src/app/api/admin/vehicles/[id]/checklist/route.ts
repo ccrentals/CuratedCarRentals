@@ -108,7 +108,6 @@ export async function handleAdminVehicleChecklistGet(
 ) {
   const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
   if (!auth.ok) return auth.response;
-  const session = auth.session;
 
   const { id } = await context.params;
   if (!UUID_REGEX.test(id)) {
@@ -136,7 +135,6 @@ export async function handleAdminVehicleChecklistPost(
 ) {
   const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
   if (!auth.ok) return auth.response;
-  const session = auth.session;
 
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
   if (!(await deps.requireCsrfCheck(request, (body?.csrfToken as string | null | undefined) ?? null))) {

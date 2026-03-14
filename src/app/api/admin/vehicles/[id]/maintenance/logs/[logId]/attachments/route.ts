@@ -102,7 +102,6 @@ export async function handleVehicleMaintenanceAttachmentsGet(
 ) {
   const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
   if (!auth.ok) return auth.response;
-  const session = auth.session;
 
   const { id, logId } = await context.params;
   if (!UUID_REGEX.test(id) || !UUID_REGEX.test(logId)) {
@@ -130,7 +129,6 @@ export async function handleVehicleMaintenanceAttachmentsPost(
 ) {
   const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
   if (!auth.ok) return auth.response;
-  const session = auth.session;
 
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
   if (!(await deps.requireCsrfCheck(request, (body?.csrfToken as string | null | undefined) ?? null))) {
@@ -174,4 +172,3 @@ export async function GET(request: Request, context: RouteContext) {
 export async function POST(request: Request, context: RouteContext) {
   return handleVehicleMaintenanceAttachmentsPost(request, context);
 }
-

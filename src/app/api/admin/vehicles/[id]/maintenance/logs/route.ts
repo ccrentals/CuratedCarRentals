@@ -266,7 +266,6 @@ export async function handleVehicleMaintenanceLogsGet(
 ) {
   const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
   if (!auth.ok) return auth.response;
-  const session = auth.session;
 
   const { id } = await context.params;
   if (!UUID_REGEX.test(id)) {

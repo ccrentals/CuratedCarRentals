@@ -26,7 +26,7 @@ test("reconcileWiPayPayment: payment email is deduped across replayed callbacks"
   };
 
   const createDependencies = () => ({
-    dbQuery: async <T = unknown>(text: string, _params: unknown[] = []) => {
+    dbQuery: async <T = unknown>(text: string) => {
       if (text.startsWith("select id, booking_id, status, provider_transaction_id, metadata_json from payments")) {
         return {
           rowCount: 1,
@@ -59,7 +59,7 @@ test("reconcileWiPayPayment: payment email is deduped across replayed callbacks"
     },
     getDbPool: (() => ({
       connect: async () => ({
-        query: async (text: string, _params: unknown[] = []) => {
+        query: async (text: string) => {
           if (text === "begin") return { rowCount: 0, rows: [] };
           if (text === "commit") return { rowCount: 0, rows: [] };
           if (text === "rollback") return { rowCount: 0, rows: [] };

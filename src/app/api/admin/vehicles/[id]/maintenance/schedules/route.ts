@@ -146,7 +146,6 @@ export async function handleVehicleMaintenanceSchedulesGet(
 ) {
   const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
   if (!auth.ok) return auth.response;
-  const session = auth.session;
 
   const { id } = await context.params;
   if (!UUID_REGEX.test(id)) {
@@ -174,7 +173,6 @@ export async function handleVehicleMaintenanceSchedulesPost(
 ) {
   const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
   if (!auth.ok) return auth.response;
-  const session = auth.session;
 
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
   if (!(await deps.requireCsrfCheck(request, (body?.csrfToken as string | null | undefined) ?? null))) {
@@ -222,4 +220,3 @@ export async function GET(request: Request, context: RouteContext) {
 export async function POST(request: Request, context: RouteContext) {
   return handleVehicleMaintenanceSchedulesPost(request, context);
 }
-

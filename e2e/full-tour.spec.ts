@@ -419,7 +419,7 @@ test.describe("@tour full app tour", () => {
     expect(csrfToken).toBeTruthy();
 
     const snapshotMonth = new Date().toISOString().slice(0, 7);
-    const snapshotResponse = await page.request.post(
+    await page.request.post(
       `/api/admin/vehicles/${vehicleId}/depreciation/generate`,
       {
         headers: {

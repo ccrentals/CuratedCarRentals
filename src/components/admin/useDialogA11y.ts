@@ -80,6 +80,7 @@ export function useDialogA11y({ open, onClose, dialogRef, restoreFocusRef }: Use
     });
 
     const previousOverflow = document.body.style.overflow;
+    const restoreTarget = restoreFocusRef?.current ?? previousFocusedElement;
     document.body.style.overflow = "hidden";
 
     return () => {
@@ -88,7 +89,6 @@ export function useDialogA11y({ open, onClose, dialogRef, restoreFocusRef }: Use
       document.removeEventListener("focusin", handleFocusIn);
       document.body.style.overflow = previousOverflow;
 
-      const restoreTarget = restoreFocusRef?.current ?? previousFocusedElement;
       if (restoreTarget) {
         window.requestAnimationFrame(() => restoreTarget.focus());
       }

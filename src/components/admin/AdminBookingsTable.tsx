@@ -12,7 +12,6 @@ import { StackedDateTimeRange } from "@/components/shared/StackedDateTimeRange";
 import {
   applySortToSearchParams,
   readSortFromSearchParams,
-  type SortDir,
   type SortState,
 } from "@/components/admin/tableSort";
 import {
