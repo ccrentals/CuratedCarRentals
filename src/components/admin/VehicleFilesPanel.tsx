@@ -7,6 +7,9 @@ import {
   getVehicleDocumentDisplayLabel,
   VehicleDocumentPreviewModal,
 } from "@/components/admin/VehicleDocumentPreviewModal";
+import { PaginationSummary } from "@/components/admin/PaginationSummaryNav";
+import { SortableTh } from "@/components/admin/SortableTh";
+import type { SortState } from "@/components/admin/tableSort";
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { TableDateTime } from "@/components/shared/TableDateTime";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
@@ -14,6 +17,7 @@ import { ensureCsrfToken } from "@/lib/security/csrf-client";
 const DEFAULT_FOLDERS = ["Paperwork", "Insurance", "Registration", "Other"] as const;
 const CUSTOM_DOCUMENT_TYPE_VALUE = "__custom__";
 const WIDGET_SRC = "https://ucarecdn.com/libs/widget/3.x/uploadcare.full.min.js";
+const FILES_PAGE_SIZE = 5;
 
 type VehicleFilesPanelProps = {
   vehicleId: string;
@@ -135,6 +139,10 @@ function normalizeDocumentTypes(input: string[] | undefined) {
   return ["General", "Registration", "Insurance", "Service Invoice", "Receipt", "Photo", "Other"];
 }
 
+function compareDocumentText(left: string | null | undefined, right: string | null | undefined) {
+  return (left ?? "").localeCompare(right ?? "", undefined, { sensitivity: "base" });
+}
+
 export function VehicleFilesPanel({
   vehicleId,
   folders: configuredFolders,
@@ -182,6 +190,8 @@ export function VehicleFilesPanel({
   const [highlightedDocumentId, setHighlightedDocumentId] = useState<string | null>(
     initialDocumentId?.trim() || null,
   );
+  const [sort, setSort] = useState<SortState>({ sortBy: "uploaded", sortDir: "desc" });
+  const [page, setPage] = useState(1);
   const rowRefs = useRef<Record<string, HTMLElement | null>>({});
 
   const loadDocuments = useCallback(async () => {
@@ -307,6 +317,10 @@ export function VehicleFilesPanel({
       setActiveFolder(normalizedInitialFolder);
     }
   }, [normalizedInitialFolder]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [activeFolder]);
 
   useEffect(() => {
     setInitialPreviewHandled(false);
@@ -438,6 +452,54 @@ export function VehicleFilesPanel({
     }
     setInitialScrollHandled(true);
   }, [documentsLoaded, highlightedDocumentId, initialScrollHandled]);
+
+  const sortedItems = useMemo(() => {
+    const direction = sort.sortDir === "asc" ? 1 : -1;
+    return [...items].sort((left, right) => {
+      switch (sort.sortBy) {
+        case "type":
+          return compareDocumentText(left.documentType, right.documentType) * direction;
+        case "label":
+          return (
+            compareDocumentText(
+              getVehicleDocumentDisplayLabel(left),
+              getVehicleDocumentDisplayLabel(right),
+            ) * direction
+          );
+        case "linkedTo":
+          return compareDocumentText(left.linkedTo, right.linkedTo) * direction;
+        case "checklist":
+          return compareDocumentText(left.checklistItemLabel, right.checklistItemLabel) * direction;
+        case "uploaded":
+        default:
+          return (new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime()) * direction;
+      }
+    });
+  }, [items, sort]);
+
+  const totalPages = Math.max(1, Math.ceil(sortedItems.length / FILES_PAGE_SIZE));
+
+  useEffect(() => {
+    setPage((current) => Math.min(current, totalPages));
+  }, [totalPages]);
+
+  useEffect(() => {
+    if (!highlightedDocumentId) return;
+    const index = sortedItems.findIndex((item) => item.id === highlightedDocumentId);
+    if (index < 0) return;
+    const nextPage = Math.floor(index / FILES_PAGE_SIZE) + 1;
+    setPage((current) => (current === nextPage ? current : nextPage));
+  }, [highlightedDocumentId, sortedItems]);
+
+  const visibleItems = useMemo(() => {
+    const startIndex = (page - 1) * FILES_PAGE_SIZE;
+    return sortedItems.slice(startIndex, startIndex + FILES_PAGE_SIZE);
+  }, [page, sortedItems]);
+
+  const from = sortedItems.length === 0 ? 0 : (page - 1) * FILES_PAGE_SIZE + 1;
+  const to = sortedItems.length === 0 ? 0 : from + visibleItems.length - 1;
+  const hasPrev = page > 1;
+  const hasNext = page < totalPages;
 
   const chooseFile = async () => {
     setError(null);
@@ -899,7 +961,7 @@ export function VehicleFilesPanel({
         {!loading && items.length > 0 ? (
           <>
             <div className="space-y-3 md:hidden">
-              {items.map((item) => {
+              {visibleItems.map((item) => {
                 const isHighlighted = highlightedDocumentId === item.id;
                 return (
                   <article
@@ -1020,16 +1082,66 @@ export function VehicleFilesPanel({
               <table className="min-w-full text-left text-sm">
                 <thead className="border-b border-[var(--ccr-border)] text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
                   <tr>
-                    <th className="px-3 py-2">Type</th>
-                    <th className="px-3 py-2">Label</th>
-                    <th className="px-3 py-2">Linked To</th>
-                    <th className="px-3 py-2">Checklist</th>
-                    <th className="px-3 py-2">Uploaded</th>
+                    <SortableTh
+                      label="Type"
+                      columnKey="type"
+                      sort={sort}
+                      onChange={(next) => {
+                        setSort(next);
+                        setPage(1);
+                      }}
+                      className="px-3 py-2"
+                      defaultDirection="asc"
+                    />
+                    <SortableTh
+                      label="Label"
+                      columnKey="label"
+                      sort={sort}
+                      onChange={(next) => {
+                        setSort(next);
+                        setPage(1);
+                      }}
+                      className="px-3 py-2"
+                      defaultDirection="asc"
+                    />
+                    <SortableTh
+                      label="Linked To"
+                      columnKey="linkedTo"
+                      sort={sort}
+                      onChange={(next) => {
+                        setSort(next);
+                        setPage(1);
+                      }}
+                      className="px-3 py-2"
+                      defaultDirection="asc"
+                    />
+                    <SortableTh
+                      label="Checklist"
+                      columnKey="checklist"
+                      sort={sort}
+                      onChange={(next) => {
+                        setSort(next);
+                        setPage(1);
+                      }}
+                      className="px-3 py-2"
+                      defaultDirection="asc"
+                    />
+                    <SortableTh
+                      label="Uploaded"
+                      columnKey="uploaded"
+                      sort={sort}
+                      onChange={(next) => {
+                        setSort(next);
+                        setPage(1);
+                      }}
+                      className="px-3 py-2"
+                      defaultDirection="desc"
+                    />
                     <th className="px-3 py-2">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map((item) => {
+                  {visibleItems.map((item) => {
                     const isHighlighted = highlightedDocumentId === item.id;
                     return (
                       <tr
@@ -1138,6 +1250,47 @@ export function VehicleFilesPanel({
                   })}
                 </tbody>
               </table>
+            </div>
+
+            <div className="border-t border-[var(--ccr-border)] pt-3">
+              <PaginationSummary
+                from={from}
+                to={to}
+                totalCount={sortedItems.length}
+                page={page}
+                totalPages={totalPages}
+                rightContent={
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPage((current) => Math.max(1, current - 1))}
+                      disabled={!hasPrev}
+                      className={`rounded-lg border px-2 py-1 font-semibold ${
+                        hasPrev
+                          ? "border-[var(--ccr-border)] text-[var(--ccr-text)]"
+                          : "cursor-not-allowed border-[var(--ccr-border)]/40 text-[var(--ccr-muted)]/60"
+                      }`}
+                    >
+                      Prev
+                    </button>
+                    <span className="font-semibold text-[var(--ccr-text)]">
+                      Page {page} of {totalPages}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                      disabled={!hasNext}
+                      className={`rounded-lg border px-2 py-1 font-semibold ${
+                        hasNext
+                          ? "border-[var(--ccr-border)] text-[var(--ccr-text)]"
+                          : "cursor-not-allowed border-[var(--ccr-border)]/40 text-[var(--ccr-muted)]/60"
+                      }`}
+                    >
+                      Next
+                    </button>
+                  </div>
+                }
+              />
             </div>
           </>
         ) : null}
