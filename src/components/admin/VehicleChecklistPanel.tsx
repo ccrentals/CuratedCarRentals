@@ -120,6 +120,14 @@ function resolveItemTemplate(
   return templateLabelMap.get(getTemplateKey(item.label, item.folder)) ?? null;
 }
 
+function resolveRepairableTemplate(
+  item: ChecklistItem,
+  templateLabelMap: Map<string, VehicleChecklistTemplateSetting>,
+) {
+  if (item.templateId || item.templateKey) return null;
+  return templateLabelMap.get(getTemplateKey(item.label, item.folder)) ?? null;
+}
+
 function parseDateOnly(value: string | null) {
   if (!value) return null;
   const normalized = value.trim().slice(0, 10);
@@ -383,6 +391,21 @@ export function VehicleChecklistPanel({
     }
     return next;
   }, [items, templateKeyMap, templateMap]);
+  const repairableTemplateMatches = useMemo(() => {
+    return items
+      .map((item) => ({
+        item,
+        template: resolveRepairableTemplate(item, templateMap),
+      }))
+      .filter(
+        (
+          match,
+        ): match is {
+          item: ChecklistItem;
+          template: VehicleChecklistTemplateSetting;
+        } => Boolean(match.template),
+      );
+  }, [items, templateMap]);
   const itemStatusMap = useMemo(() => {
     const next = new Map<string, ChecklistStatusSummary>();
     for (const item of items) {
@@ -553,6 +576,52 @@ export function VehicleChecklistPanel({
       await loadItems();
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Unable to apply template items.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleRepairTemplateLinks() {
+    if (repairableTemplateMatches.length < 1 || saving) return;
+
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const csrfToken = await ensureCsrfToken();
+      for (const match of repairableTemplateMatches) {
+        const response = await fetch(`/api/admin/vehicles/${vehicleId}/checklist/${match.item.id}`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            "x-csrf-token": csrfToken ?? "",
+          },
+          body: JSON.stringify({
+            templateKey: match.template.key,
+            csrfToken,
+          }),
+        });
+        const payload = (await response.json().catch(() => ({}))) as {
+          ok?: boolean;
+          error?: string;
+        };
+        if (!response.ok || !payload.ok) {
+          throw new Error(payload.error ?? "Unable to repair checklist template links.");
+        }
+      }
+      setMessage(
+        repairableTemplateMatches.length === 1
+          ? "1 template link repaired."
+          : `${repairableTemplateMatches.length} template links repaired.`,
+      );
+      await loadItems();
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Unable to repair checklist template links.",
+      );
     } finally {
       setSaving(false);
     }
@@ -880,6 +949,30 @@ export function VehicleChecklistPanel({
           className="mt-3 rounded-xl border border-[var(--ccr-accent)] bg-[color-mix(in_srgb,var(--ccr-accent)_10%,var(--ccr-surface-soft))] px-4 py-3 text-xs font-semibold text-[var(--ccr-accent-strong)]"
         >
           {message}
+        </div>
+      ) : null}
+      {repairableTemplateMatches.length > 0 ? (
+        <div
+          data-testid="vehicle-checklist-template-repair-banner"
+          className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--ccr-accent)] bg-[color-mix(in_srgb,var(--ccr-accent)_10%,var(--ccr-surface-soft))] px-4 py-3"
+        >
+          <div>
+            <p className="text-sm font-semibold text-[var(--ccr-text)]">Template links can be repaired</p>
+            <p className="text-xs text-[var(--ccr-muted)]">
+              {repairableTemplateMatches.length === 1
+                ? "1 checklist item still matches an active template and can be linked automatically."
+                : `${repairableTemplateMatches.length} checklist items still match active templates and can be linked automatically.`}
+            </p>
+          </div>
+          <button
+            type="button"
+            data-testid="vehicle-checklist-template-repair-action"
+            onClick={() => void handleRepairTemplateLinks()}
+            disabled={saving}
+            className="min-h-9 rounded-lg border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-3 py-1 text-xs font-semibold text-[var(--ccr-accent-strong)] disabled:opacity-60"
+          >
+            {saving ? "Repairing..." : "Repair template links"}
+          </button>
         </div>
       ) : null}
 
