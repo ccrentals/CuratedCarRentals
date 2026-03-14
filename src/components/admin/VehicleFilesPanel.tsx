@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
@@ -771,14 +772,25 @@ export function VehicleFilesPanel({
               {getDocumentDisplayLabel(highlightedItem)} is still highlighted in this folder.
             </p>
           </div>
-          <button
-            type="button"
-            data-testid="vehicle-file-clear-highlight"
-            onClick={clearHighlight}
-            className="min-h-9 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-xs font-semibold text-[var(--ccr-text)]"
-          >
-            Clear highlight
-          </button>
+          <div className="flex flex-wrap gap-2">
+            {highlightedItem.checklistItemId ? (
+              <Link
+                data-testid="vehicle-file-view-checklist-item"
+                href={`/admin/vehicles/${vehicleId}?tab=checklist&checklistItemId=${encodeURIComponent(highlightedItem.checklistItemId)}`}
+                className="inline-flex min-h-9 items-center rounded-lg border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-3 py-1 text-xs font-semibold text-[var(--ccr-accent-strong)]"
+              >
+                View Checklist item
+              </Link>
+            ) : null}
+            <button
+              type="button"
+              data-testid="vehicle-file-clear-highlight"
+              onClick={clearHighlight}
+              className="min-h-9 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-xs font-semibold text-[var(--ccr-text)]"
+            >
+              Clear highlight
+            </button>
+          </div>
         </div>
       ) : null}
 

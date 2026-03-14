@@ -331,6 +331,34 @@ test.describe("@tour vehicle files and checklist integration", () => {
         "data-highlighted",
         "false",
       );
+      await page.goto(`/admin/vehicles/${VEHICLE_ID}?tab=checklist`, { waitUntil: "networkidle" });
+      const secondChecklistCardAgain = page.locator("article", { hasText: secondChecklistLabel }).first();
+      await expect(secondChecklistCardAgain).toBeVisible();
+      await secondChecklistCardAgain.getByTestId("vehicle-checklist-manage-file").click();
+      await page.waitForURL(
+        `**/admin/vehicles/${VEHICLE_ID}?tab=files&folder=Paperwork&documentId=${documentId}`,
+      );
+      await expect(page.getByTestId("vehicle-file-preview-modal")).toBeVisible();
+      await page.getByRole("button", { name: "Close" }).click();
+      await expect(page.getByTestId("vehicle-file-preview-modal")).not.toBeVisible();
+      await expect(page).toHaveURL(
+        new RegExp(`/admin/vehicles/${VEHICLE_ID}\\?tab=files&folder=Paperwork$`),
+      );
+      await expect(page.getByTestId("vehicle-file-focus-banner")).toBeVisible();
+      await page.getByTestId("vehicle-file-view-checklist-item").click();
+      await page.waitForURL(
+        `**/admin/vehicles/${VEHICLE_ID}?tab=checklist&checklistItemId=${secondChecklistItemId}`,
+      );
+      await expect(page.getByTestId("vehicle-checklist-focus-banner")).toBeVisible();
+      await expect(
+        page.getByTestId(`vehicle-checklist-item-${secondChecklistItemId}`),
+      ).toHaveAttribute("data-highlighted", "true");
+      await page.getByTestId("vehicle-checklist-clear-highlight").click();
+      await expect(page.getByTestId("vehicle-checklist-focus-banner")).not.toBeVisible();
+      await expect(
+        page.getByTestId(`vehicle-checklist-item-${secondChecklistItemId}`),
+      ).toHaveAttribute("data-highlighted", "false");
+      await page.goto(`/admin/vehicles/${VEHICLE_ID}?tab=files`, { waitUntil: "networkidle" });
 
       const archiveRow = page.locator("tr", { hasText: fileLabel }).first();
       await archiveRow.locator('[data-testid="vehicle-file-link-select"]').selectOption("");

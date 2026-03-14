@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import type { VehicleChecklistTemplateSetting } from "@/lib/adminSettings";
@@ -13,6 +13,7 @@ type VehicleChecklistPanelProps = {
   vehicleId: string;
   folders?: string[];
   templates?: VehicleChecklistTemplateSetting[];
+  initialChecklistItemId?: string;
 };
 
 type ChecklistItem = {
@@ -58,6 +59,7 @@ export function VehicleChecklistPanel({
   vehicleId,
   folders: configuredFolders,
   templates: configuredTemplates,
+  initialChecklistItemId,
 }: VehicleChecklistPanelProps) {
   const folders = useMemo(() => normalizeFolders(configuredFolders), [configuredFolders]);
   const templates = useMemo(
@@ -74,6 +76,11 @@ export function VehicleChecklistPanel({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [highlightedItemId, setHighlightedItemId] = useState<string | null>(
+    initialChecklistItemId?.trim() || null,
+  );
+  const [initialScrollHandled, setInitialScrollHandled] = useState(false);
+  const itemRefs = useRef<Record<string, HTMLElement | null>>({});
 
   const [label, setLabel] = useState("");
   const [folder, setFolder] = useState(folders[0] ?? "Unsorted");
@@ -136,10 +143,33 @@ export function VehicleChecklistPanel({
   }, [loadItems]);
 
   useEffect(() => {
+    setHighlightedItemId(initialChecklistItemId?.trim() || null);
+    setInitialScrollHandled(false);
+  }, [initialChecklistItemId]);
+
+  useEffect(() => {
     if (!folders.includes(folder)) {
       setFolder(folders[0] ?? "Unsorted");
     }
   }, [folder, folders]);
+
+  const highlightedItem = useMemo(
+    () => items.find((item) => item.id === highlightedItemId) ?? null,
+    [highlightedItemId, items],
+  );
+
+  useEffect(() => {
+    if (!highlightedItemId || initialScrollHandled || loading) return;
+    const matchedItem = itemRefs.current[highlightedItemId];
+    if (matchedItem) {
+      matchedItem.scrollIntoView({ block: "center", behavior: "smooth" });
+      setInitialScrollHandled(true);
+      return;
+    }
+    if (!loading) {
+      setInitialScrollHandled(true);
+    }
+  }, [highlightedItemId, initialScrollHandled, loading, items]);
 
   async function createItem(
     inputLabel: string,
@@ -250,6 +280,10 @@ export function VehicleChecklistPanel({
 
     setMessage("Checklist item deleted.");
     await loadItems();
+  }
+
+  function clearHighlight() {
+    setHighlightedItemId(null);
   }
 
   return (
@@ -388,6 +422,27 @@ export function VehicleChecklistPanel({
 
       {error ? <p className="mt-3 text-xs font-semibold text-red-300">{error}</p> : null}
       {message ? <p className="mt-3 text-xs font-semibold text-emerald-200">{message}</p> : null}
+      {highlightedItem ? (
+        <div
+          data-testid="vehicle-checklist-focus-banner"
+          className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--ccr-accent)] bg-[color-mix(in_srgb,var(--ccr-accent)_10%,var(--ccr-surface-soft))] px-4 py-3"
+        >
+          <div>
+            <p className="text-sm font-semibold text-[var(--ccr-text)]">Focused from Files</p>
+            <p className="text-xs text-[var(--ccr-muted)]">
+              {highlightedItem.label} is highlighted in this checklist.
+            </p>
+          </div>
+          <button
+            type="button"
+            data-testid="vehicle-checklist-clear-highlight"
+            onClick={clearHighlight}
+            className="min-h-9 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-xs font-semibold text-[var(--ccr-text)]"
+          >
+            Clear highlight
+          </button>
+        </div>
+      ) : null}
 
       <div className="mt-4 space-y-3">
         {loading ? <p className="text-sm text-[var(--ccr-muted)]">Loading checklist...</p> : null}
@@ -400,66 +455,83 @@ export function VehicleChecklistPanel({
           </div>
         ) : null}
 
-        {items.map((item) => (
-          <article
-            key={item.id}
-            className="relative rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4 pr-36 sm:pr-44"
-          >
-            <div className="flex flex-wrap items-start gap-2">
-              <div>
-                <p className="font-semibold text-[var(--ccr-text)] break-words">{item.label}</p>
-                <p className="text-xs text-[var(--ccr-muted)]">Folder: {item.folder}</p>
-              </div>
-            </div>
-
-            <div className="mt-2 text-xs text-[var(--ccr-muted)]">
-              <p>Created: <DateTimeInline value={item.createdAt} /></p>
-              <p>
-                Expiration: {item.expirationDate ? item.expirationDate : "Not set"}
-                {item.uploadedDocumentId ? " · Document attached" : ""}
-              </p>
-              {item.uploadedDocumentId ? (
-                <div className="space-y-2">
-                  <p>Attached file: {item.uploadedDocumentDisplayLabel ?? "Linked vehicle file"}</p>
-                  <div className="flex flex-wrap gap-2">
-                    <a
-                      data-testid="vehicle-checklist-download-file"
-                      href={`/api/admin/vehicles/${vehicleId}/documents/${item.uploadedDocumentId}/download`}
-                      className="inline-flex min-h-9 items-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-text)]"
-                    >
-                      Download file
-                    </a>
-                    <Link
-                      data-testid="vehicle-checklist-manage-file"
-                      href={`/admin/vehicles/${vehicleId}?tab=files&folder=${encodeURIComponent(item.folder)}&documentId=${encodeURIComponent(item.uploadedDocumentId)}`}
-                      className="inline-flex min-h-9 items-center rounded-lg border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-accent-strong)]"
-                    >
-                      Manage in Files
-                    </Link>
-                  </div>
+        {items.map((item) => {
+          const isHighlighted = highlightedItemId === item.id;
+          return (
+            <article
+              key={item.id}
+              ref={(node) => {
+                itemRefs.current[item.id] = node;
+              }}
+              data-testid={`vehicle-checklist-item-${item.id}`}
+              data-highlighted={isHighlighted ? "true" : "false"}
+              className={`relative rounded-xl border p-4 pr-36 transition-colors sm:pr-44 ${
+                isHighlighted
+                  ? "border-[var(--ccr-accent)] bg-[color-mix(in_srgb,var(--ccr-accent)_10%,var(--ccr-surface-soft))] shadow-[0_0_0_1px_var(--ccr-accent)]"
+                  : "border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)]"
+              }`}
+            >
+              <div className="flex flex-wrap items-start gap-2">
+                <div>
+                  <p className="font-semibold text-[var(--ccr-text)] break-words">{item.label}</p>
+                  {isHighlighted ? (
+                    <span className="mt-1 inline-flex rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-2 py-1 text-[11px] font-semibold text-[var(--ccr-accent-strong)]">
+                      Focused from Files
+                    </span>
+                  ) : null}
+                  <p className="text-xs text-[var(--ccr-muted)]">Folder: {item.folder}</p>
                 </div>
-              ) : null}
-              {item.required && !item.allowNotRequired ? (
-                <p>This item should remain required.</p>
-              ) : null}
-            </div>
+              </div>
 
-            <div className="absolute right-4 top-1/2 flex -translate-y-1/2 items-center gap-2">
-              {item.required ? (
-                <span className="rounded-full border border-amber-300/50 bg-amber-500/15 px-2 py-1 text-[11px] font-semibold text-[var(--ccr-required-text)]">
-                  Required
-                </span>
-              ) : null}
-              <button
-                type="button"
-                onClick={() => void handleDelete(item.id)}
-                className="rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-accent-strong)]"
-              >
-                Delete
-              </button>
-            </div>
-          </article>
-        ))}
+              <div className="mt-2 text-xs text-[var(--ccr-muted)]">
+                <p>Created: <DateTimeInline value={item.createdAt} /></p>
+                <p>
+                  Expiration: {item.expirationDate ? item.expirationDate : "Not set"}
+                  {item.uploadedDocumentId ? " · Document attached" : ""}
+                </p>
+                {item.uploadedDocumentId ? (
+                  <div className="space-y-2">
+                    <p>Attached file: {item.uploadedDocumentDisplayLabel ?? "Linked vehicle file"}</p>
+                    <div className="flex flex-wrap gap-2">
+                      <a
+                        data-testid="vehicle-checklist-download-file"
+                        href={`/api/admin/vehicles/${vehicleId}/documents/${item.uploadedDocumentId}/download`}
+                        className="inline-flex min-h-9 items-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-text)]"
+                      >
+                        Download file
+                      </a>
+                      <Link
+                        data-testid="vehicle-checklist-manage-file"
+                        href={`/admin/vehicles/${vehicleId}?tab=files&folder=${encodeURIComponent(item.folder)}&documentId=${encodeURIComponent(item.uploadedDocumentId)}`}
+                        className="inline-flex min-h-9 items-center rounded-lg border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-accent-strong)]"
+                      >
+                        Manage in Files
+                      </Link>
+                    </div>
+                  </div>
+                ) : null}
+                {item.required && !item.allowNotRequired ? (
+                  <p>This item should remain required.</p>
+                ) : null}
+              </div>
+
+              <div className="absolute right-4 top-1/2 flex -translate-y-1/2 items-center gap-2">
+                {item.required ? (
+                  <span className="rounded-full border border-amber-300/50 bg-amber-500/15 px-2 py-1 text-[11px] font-semibold text-[var(--ccr-required-text)]">
+                    Required
+                  </span>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => void handleDelete(item.id)}
+                  className="rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-accent-strong)]"
+                >
+                  Delete
+                </button>
+              </div>
+            </article>
+          );
+        })}
       </div>
     </section>
   );

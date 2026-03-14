@@ -112,6 +112,10 @@ export default async function AdminVehicleDetailPage({
     typeof query.documentId === "string" && query.documentId.trim()
       ? query.documentId.trim()
       : undefined;
+  const requestedChecklistItemId =
+    typeof query.checklistItemId === "string" && query.checklistItemId.trim()
+      ? query.checklistItemId.trim()
+      : undefined;
   const maintenanceRecordId =
     typeof query.recordId === "string" && query.recordId.trim()
       ? query.recordId.trim()
@@ -287,6 +291,7 @@ export default async function AdminVehicleDetailPage({
             vehicleId={vehicle.id}
             folders={documentFolders}
             templates={checklistTemplates}
+            initialChecklistItemId={requestedChecklistItemId}
           />
         ) : null}
 
