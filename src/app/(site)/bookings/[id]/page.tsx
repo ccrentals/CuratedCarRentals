@@ -7,11 +7,8 @@ import { fmtDateOnly } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
 import { readBookingOverrideInfo } from "@/lib/bookings/holds";
 import {
-  computeBookingPricing,
+  computeBookingPricingFromStoredSnapshot,
   fetchNetPaidToDate,
-  readInsurancePricingFields,
-  readPaymentOption,
-  readPromoPricingFields,
 } from "@/lib/payments/pricing";
 
 export default async function BookingSummaryPage({
@@ -44,27 +41,17 @@ export default async function BookingSummaryPage({
   const bookingRef = String(booking.public_id ?? "").trim() || booking.id;
 
   const pricing = booking.pricing_json ?? {};
-  const dailyRate = Number(pricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
-  const deposit = Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0);
-  const paymentOption = readPaymentOption(pricing);
-  const { promoCode, promoDiscount } = readPromoPricingFields(pricing);
-  const { insuranceSelected, insurancePricePerDay, insuranceTotal } = readInsurancePricingFields(pricing);
   const overrideInfo = readBookingOverrideInfo(pricing);
   const netPaidToDate = await fetchNetPaidToDate(booking.id);
-  const summary = computeBookingPricing({
+  const summary = computeBookingPricingFromStoredSnapshot({
     bookingId: booking.id,
     bookingStatus: booking.status,
     startDate: booking.start_date,
     endDate: booking.end_date,
-    dailyRate,
-    deposit,
-    paymentOption,
+    pricing,
+    fallbackDailyRate: booking.daily_rate_cents,
+    fallbackDeposit: booking.deposit_cents,
     netPaidToDate,
-    promoCode,
-    promoDiscount,
-    insuranceSelected,
-    insurancePricePerDay,
-    insuranceTotal,
   });
   const depositDue = Math.max(0, summary.deposit - summary.netPaidToDate);
   const canPayDeposit = depositDue > 0;
@@ -124,13 +111,14 @@ export default async function BookingSummaryPage({
           <h3 className="text-sm font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Pricing Summary</h3>
           <div className="mt-3 grid gap-2 text-sm text-[var(--ccr-text)]">
             <p>Days: <span className="font-semibold">{summary.days}</span></p>
-            <p>Total rental: <span className="font-semibold">{formatJmd(summary.total)}</span></p>
+            <p>Subtotal: <span className="font-semibold">{formatJmd(summary.subtotal)}</span></p>
             {summary.promoDiscount > 0 ? (
               <p>
                 Promo{summary.promoCode ? ` (${summary.promoCode})` : ""}:{" "}
                 <span className="font-semibold">-{formatJmd(summary.promoDiscount)}</span>
               </p>
             ) : null}
+            <p>Total: <span className="font-semibold">{formatJmd(summary.total)}</span></p>
             <p>Deposit online: <span className="font-semibold">{formatJmd(summary.deposit)}</span></p>
             <p>Paid to date: <span className="font-semibold">{formatJmd(summary.netPaidToDate)}</span></p>
             <p>Balance due: <span className="font-semibold">{formatJmd(summary.balanceDue)}</span></p>

@@ -18,6 +18,7 @@ import {
 } from "@/lib/promos";
 import {
   computeBookingPricing,
+  computeBookingPricingFromStoredSnapshot,
   fetchNetPaidToDate,
   readPaymentOption,
   readPromoPricingFields,
@@ -85,6 +86,7 @@ function buildPricingSnapshot(
     days: summary.days,
     subtotal_cents: summary.subtotal,
     base_total_cents: summary.baseTotal,
+    extra_fees_cents: summary.extraFeesTotal,
     insurance_selected: summary.insuranceSelected,
     insurance_price_per_day_cents: summary.insurancePricePerDay,
     insurance_total_cents: summary.insuranceTotal,
@@ -165,22 +167,16 @@ export async function handleAdminBookingByIdGet(
 
   const booking = bookingResult.rows[0];
   const pricing = (booking.pricing_json ?? {}) as Record<string, unknown>;
-  const paymentOption = readPaymentOption(pricing);
-  const { promoCode, promoDiscount } = readPromoPricingFields(pricing);
-  const dailyRate = Number(pricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
-  const deposit = Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0);
   const netPaidToDate = await fetchNetPaidToDate(booking.id);
-  const paymentSummary = computeBookingPricing({
+  const paymentSummary = computeBookingPricingFromStoredSnapshot({
     bookingId: booking.id,
     bookingStatus: booking.status,
     startDate: booking.start_date,
     endDate: booking.end_date,
-    dailyRate,
-    deposit,
-    paymentOption,
+    pricing,
+    fallbackDailyRate: booking.daily_rate_cents,
+    fallbackDeposit: booking.deposit_cents,
     netPaidToDate,
-    promoCode,
-    promoDiscount,
   });
   const overrideInfo = readBookingOverrideInfo(pricing);
 
@@ -351,22 +347,16 @@ export async function PATCH(
     }
 
     const pricing = booking.pricing_json ?? {};
-    const paymentOption = readPaymentOption(pricing);
-    const { promoCode, promoDiscount } = readPromoPricingFields(pricing);
-    const dailyRate = Number(pricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
-    const deposit = Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0);
     const netPaidToDate = await fetchNetPaidToDate(id);
-    const paymentSummary = computeBookingPricing({
+    const paymentSummary = computeBookingPricingFromStoredSnapshot({
       bookingId: id,
       bookingStatus: booking.status,
       startDate: booking.start_date,
       endDate: booking.end_date,
-      dailyRate,
-      deposit,
-      paymentOption,
+      pricing,
+      fallbackDailyRate: booking.daily_rate_cents,
+      fallbackDeposit: booking.deposit_cents,
       netPaidToDate,
-      promoCode,
-      promoDiscount,
     });
 
     if (paymentSummary.paymentStatus !== "PAID_IN_FULL" || paymentSummary.balanceDue > 0) {
@@ -726,19 +716,18 @@ export async function PATCH(
       }
 
       const currentPricing = booking.pricing_json ?? {};
-      const dailyRate = Number(currentPricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
-      const deposit = Number(currentPricing.deposit_cents ?? booking.deposit_cents ?? 0);
       const paymentOption = readPaymentOption(currentPricing);
       const { promoCode: existingPromoCode } = readPromoPricingFields(currentPricing);
       const netPaidToDate = await fetchNetPaidToDate(booking.id, { client });
 
-      const provisionalSummary = computeBookingPricing({
+      const provisionalSummary = computeBookingPricingFromStoredSnapshot({
         bookingId: booking.id,
         bookingStatus: booking.status,
         startDate: booking.start_date,
         endDate: booking.end_date,
-        dailyRate,
-        deposit,
+        pricing: currentPricing,
+        fallbackDailyRate: booking.daily_rate_cents,
+        fallbackDeposit: booking.deposit_cents,
         paymentOption,
         netPaidToDate,
         promoCode: null,
@@ -771,13 +760,14 @@ export async function PATCH(
         }
       }
 
-      const nextSummary = computeBookingPricing({
+      const nextSummary = computeBookingPricingFromStoredSnapshot({
         bookingId: booking.id,
         bookingStatus: booking.status,
         startDate: booking.start_date,
         endDate: booking.end_date,
-        dailyRate,
-        deposit,
+        pricing: currentPricing,
+        fallbackDailyRate: booking.daily_rate_cents,
+        fallbackDeposit: booking.deposit_cents,
         paymentOption,
         netPaidToDate,
         promoCode: nextPromoCode,

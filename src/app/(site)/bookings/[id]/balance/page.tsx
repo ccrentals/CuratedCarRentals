@@ -8,11 +8,8 @@ import { dbQuery } from "@/lib/db";
 import { fmtDateOnly } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
 import {
-  computeBookingPricing,
+  computeBookingPricingFromStoredSnapshot,
   fetchNetPaidToDate,
-  readInsurancePricingFields,
-  readPaymentOption,
-  readPromoPricingFields,
 } from "@/lib/payments/pricing";
 
 export default async function BookingBalancePage({
@@ -66,27 +63,16 @@ export default async function BookingBalancePage({
     );
   }
 
-  const dailyRate = Number(pricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
-  const deposit = Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0);
-  const paymentOption = readPaymentOption(pricing);
-  const { promoCode, promoDiscount } = readPromoPricingFields(pricing);
-  const { insuranceSelected, insurancePricePerDay, insuranceTotal } = readInsurancePricingFields(pricing);
-
   const netPaidToDate = await fetchNetPaidToDate(booking.id);
-  const summary = computeBookingPricing({
+  const summary = computeBookingPricingFromStoredSnapshot({
     bookingId: booking.id,
     bookingStatus: booking.status,
     startDate: booking.start_date,
     endDate: booking.end_date,
-    dailyRate,
-    deposit,
-    paymentOption,
+    pricing,
+    fallbackDailyRate: booking.daily_rate_cents,
+    fallbackDeposit: booking.deposit_cents,
     netPaidToDate,
-    promoCode,
-    promoDiscount,
-    insuranceSelected,
-    insurancePricePerDay,
-    insuranceTotal,
   });
 
   return (
@@ -124,15 +110,14 @@ export default async function BookingBalancePage({
               <p>
                 Days: <span className="font-semibold">{summary.days}</span>
               </p>
-              <p>
-                Total rental: <span className="font-semibold">{formatJmd(summary.total)}</span>
-              </p>
+              <p>Subtotal: <span className="font-semibold">{formatJmd(summary.subtotal)}</span></p>
               {summary.promoDiscount > 0 ? (
                 <p>
                   Promo{summary.promoCode ? ` (${summary.promoCode})` : ""}:{" "}
                   <span className="font-semibold">-{formatJmd(summary.promoDiscount)}</span>
                 </p>
               ) : null}
+              <p>Total: <span className="font-semibold">{formatJmd(summary.total)}</span></p>
               <p>
                 Deposit online: <span className="font-semibold">{formatJmd(summary.deposit)}</span>
               </p>

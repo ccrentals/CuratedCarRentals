@@ -17,12 +17,9 @@ import { fmtDate, fmtDateNoSeconds, fmtDateOnly } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
 import { formatPaymentStatus } from "@/lib/payments/formatPaymentStatus";
 import {
-  computeBookingPricing,
+  computeBookingPricingFromStoredSnapshot,
   fetchNetPaidToDate,
   isNonBlockingBookingHold,
-  readInsurancePricingFields,
-  readPaymentOption,
-  readPromoPricingFields,
 } from "@/lib/payments/pricing";
 import { readBookingOverrideInfo } from "@/lib/bookings/holds";
 import { formatBookingStatusLabel } from "@/lib/bookings/formatBookingStatusLabel";
@@ -372,41 +369,27 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
     typeof pricing.customer_phone_snapshot === "string" && pricing.customer_phone_snapshot.trim()
       ? pricing.customer_phone_snapshot.trim()
       : booking.customer_phone;
-  const dailyRate = Number(pricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
-  const deposit = Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0);
-  const paymentOption = readPaymentOption(pricing);
-  const { promoCode, promoDiscount } = readPromoPricingFields(pricing);
-  const {
-    insuranceSelected,
-    insurancePricePerDay,
-    insuranceTotal,
-  } = readInsurancePricingFields(pricing);
   const overrideInfo = readBookingOverrideInfo(pricing);
   const netPaidToDate = await fetchNetPaidToDate(booking.id);
-  const summary = computeBookingPricing({
+  const summary = computeBookingPricingFromStoredSnapshot({
     bookingId: booking.id,
     bookingStatus: booking.status,
     startDate: booking.start_date,
     endDate: booking.end_date,
-    dailyRate,
-    deposit,
-    paymentOption,
+    pricing,
+    fallbackDailyRate: booking.daily_rate_cents,
+    fallbackDeposit: booking.deposit_cents,
     netPaidToDate,
-    promoCode,
-    promoDiscount,
-    insuranceSelected,
-    insurancePricePerDay,
-    insuranceTotal,
   });
   const days = summary.days;
   const total = summary.total;
   const totalBeforePromo = summary.subtotal;
   const paidToDate = summary.netPaidToDate;
   const balanceDue = summary.balanceDue;
-  const depositDue = Math.max(0, Math.max(0, deposit) - Math.max(0, paidToDate));
+  const depositDue = Math.max(0, Math.max(0, summary.deposit) - Math.max(0, paidToDate));
   const isPaidInFull = summary.paymentStatus === "PAID_IN_FULL";
   const refundRequired = summary.refundRequired;
-  const isDepositPaid = deposit > 0 ? paidToDate >= deposit : paidToDate > 0;
+  const isDepositPaid = summary.deposit > 0 ? paidToDate >= summary.deposit : paidToDate > 0;
   const displayStatus = formatBookingStatusLabel(booking.status, summary.paymentStatus).toUpperCase();
   const entitlementState = isEntitledBooking({
     status: booking.status,
@@ -429,10 +412,13 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
     pricing.custom_payment_amount_cents ?? booking.custom_payment_amount_cents ?? 0,
   );
   const insurancePricePerDayDisplay = Number(
-    pricing.insurance_price_per_day_cents ?? booking.insurance_price_per_day_cents ?? insurancePricePerDay ?? 0,
+    pricing.insurance_price_per_day_cents ??
+      booking.insurance_price_per_day_cents ??
+      summary.insurancePricePerDay ??
+      0,
   );
   const insuranceTotalDisplay = Number(
-    pricing.insurance_total_cents ?? booking.insurance_total_cents ?? insuranceTotal ?? 0,
+    pricing.insurance_total_cents ?? booking.insurance_total_cents ?? summary.insuranceTotal ?? 0,
   );
   const promoTotalDisplay = Math.max(0, summary.promoDiscount);
   const isNonBlocking =
@@ -794,7 +780,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
           <div className="space-y-3 border-t border-[var(--ccr-border)] pt-5 md:border-l md:border-t-0 md:pl-6 md:pt-0">
             <div className="flex items-center justify-between">
               <span>Daily Rate</span>
-              <span className="font-semibold text-[var(--ccr-text)]">{formatJmd(dailyRate)}</span>
+              <span className="font-semibold text-[var(--ccr-text)]">{formatJmd(summary.dailyRate)}</span>
             </div>
             <div className="flex items-center justify-between">
               <span>Insurance price/day</span>

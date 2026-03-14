@@ -4,12 +4,9 @@ import { getDbPool } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
 import { logError } from "@/lib/log";
 import {
-  computeBookingPricing,
+  computeBookingPricingFromStoredSnapshot,
   fetchNetPaidToDate,
   normalizePaymentStatus,
-  readInsurancePricingFields,
-  readPaymentOption,
-  readPromoPricingFields,
 } from "@/lib/payments/pricing";
 import { requireCsrf } from "@/lib/security/csrf";
 
@@ -25,7 +22,7 @@ type BookingRow = {
 
 function buildPricingSnapshot(
   existingPricing: Record<string, unknown> | null,
-  summary: ReturnType<typeof computeBookingPricing>,
+  summary: ReturnType<typeof computeBookingPricingFromStoredSnapshot>,
 ) {
   return {
     ...(existingPricing ?? {}),
@@ -34,6 +31,7 @@ function buildPricingSnapshot(
     days: summary.days,
     subtotal_cents: summary.subtotal,
     base_total_cents: summary.baseTotal,
+    extra_fees_cents: summary.extraFeesTotal,
     insurance_selected: summary.insuranceSelected,
     insurance_price_per_day_cents: summary.insurancePricePerDay,
     insurance_total_cents: summary.insuranceTotal,
@@ -89,11 +87,17 @@ export async function POST(
     }
 
     const pricing = booking.pricing_json ?? {};
-    const dailyRate = Number(pricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
-    const deposit = Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0);
-    const { promoCode, promoDiscount } = readPromoPricingFields(pricing);
-    const { insuranceSelected, insurancePricePerDay, insuranceTotal } = readInsurancePricingFields(pricing);
-    const currentPaymentOption = readPaymentOption(pricing);
+    const currentSummary = computeBookingPricingFromStoredSnapshot({
+      bookingId: booking.id,
+      bookingStatus: booking.status,
+      startDate: booking.start_date,
+      endDate: booking.end_date,
+      pricing,
+      fallbackDailyRate: booking.daily_rate_cents,
+      fallbackDeposit: booking.deposit_cents,
+      netPaidToDate: 0,
+    });
+    const currentPaymentOption = currentSummary.paymentOption;
     const currentPaymentStatus = normalizePaymentStatus(pricing.payment_status);
 
     const netPaidToDate = await fetchNetPaidToDate(booking.id, { client });
@@ -121,20 +125,16 @@ export async function POST(
       });
     }
 
-    const summary = computeBookingPricing({
+    const summary = computeBookingPricingFromStoredSnapshot({
       bookingId: booking.id,
       bookingStatus: booking.status,
       startDate: booking.start_date,
       endDate: booking.end_date,
-      dailyRate,
-      deposit,
+      pricing,
+      fallbackDailyRate: booking.daily_rate_cents,
+      fallbackDeposit: booking.deposit_cents,
       paymentOption: "NONE",
       netPaidToDate,
-      promoCode,
-      promoDiscount,
-      insuranceSelected,
-      insurancePricePerDay,
-      insuranceTotal,
     });
 
     const nextStatus = String(booking.status).toUpperCase() === "PENDING_PAYMENT" ? "CONFIRMED" : booking.status;

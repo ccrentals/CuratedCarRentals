@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import {
+  deleteVehiclePricingRules,
   getVehiclePricingProfile,
   upsertVehiclePricingRules,
   type VehiclePricingDateRangeOverride,
@@ -29,6 +30,7 @@ export type AdminVehiclePricingRulesRouteDeps = {
   requireCsrfCheck: (request: Request, bodyToken?: string | null) => Promise<boolean>;
   vehicleExists: (vehicleId: string) => Promise<boolean>;
   getProfile: (vehicleId: string) => Promise<VehiclePricingProfile | null>;
+  deleteRules: (vehicleId: string) => Promise<void>;
   saveRules: (vehicleId: string, patch: VehiclePricingRulesPatch) => Promise<{
     id: string | null;
     vehicleId: string;
@@ -57,6 +59,7 @@ const DEFAULT_DEPS: AdminVehiclePricingRulesRouteDeps = {
     return Boolean(result.rows[0]?.exists);
   },
   getProfile: (vehicleId) => getVehiclePricingProfile(vehicleId),
+  deleteRules: (vehicleId) => deleteVehiclePricingRules(vehicleId),
   saveRules: (vehicleId, patch) => upsertVehiclePricingRules(vehicleId, patch),
 };
 
@@ -237,20 +240,6 @@ function normalizePatchInput(
   profile: VehiclePricingProfile,
 ): { patch: VehiclePricingRulesPatch | null; error: string | null } {
   const current = profile.rules;
-  const baseDaily = normalizeOptionalMoney(
-    readBodyValue(body, ["baseDailyRateCents", "base_daily_rate_cents"]),
-    current.baseDailyRateCents,
-    "Base daily rate",
-  );
-  if (baseDaily.error) return { patch: null, error: baseDaily.error };
-
-  const baseDeposit = normalizeOptionalMoney(
-    readBodyValue(body, ["baseDepositCents", "base_deposit_cents"]),
-    current.baseDepositCents,
-    "Base deposit",
-  );
-  if (baseDeposit.error) return { patch: null, error: baseDeposit.error };
-
   const weekendDaily = normalizeOptionalMoney(
     readBodyValue(body, ["weekendDailyRateCents", "weekend_daily_rate_cents"]),
     current.weekendDailyRateCents,
@@ -279,8 +268,8 @@ function normalizePatchInput(
 
   return {
     patch: {
-      baseDailyRateCents: baseDaily.value,
-      baseDepositCents: baseDeposit.value,
+      baseDailyRateCents: null,
+      baseDepositCents: null,
       weekendDailyRateCents: weekendDaily.value,
       dateRangeOverrides: dateOverrides.value,
       deliveryEnabled: normalizeBoolean(
@@ -334,6 +323,55 @@ export async function handleAdminVehiclePricingRulesGet(
     }
     return NextResponse.json(
       { ok: false, error: "Failed to load vehicle pricing rules." },
+      { status: 500 },
+    );
+  }
+}
+
+export async function handleAdminVehiclePricingRulesDelete(
+  request: Request,
+  context: RouteContext,
+  deps: AdminVehiclePricingRulesRouteDeps = DEFAULT_DEPS,
+) {
+  const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
+  if (!auth.ok) return auth.response;
+
+  const body = (await request.json().catch(() => null)) as RawBody;
+  if (!(await deps.requireCsrfCheck(request, (body?.csrfToken as string | null | undefined) ?? null))) {
+    return NextResponse.json({ ok: false, error: "Invalid CSRF token" }, { status: 403 });
+  }
+
+  const { id } = await context.params;
+  if (!UUID_REGEX.test(id)) {
+    return NextResponse.json({ ok: false, error: "Invalid vehicle id." }, { status: 400 });
+  }
+
+  try {
+    const exists = await deps.vehicleExists(id);
+    if (!exists) {
+      return NextResponse.json({ ok: false, error: "Vehicle not found." }, { status: 404 });
+    }
+
+    await deps.deleteRules(id);
+    const profile = await deps.getProfile(id);
+    if (!profile) {
+      return NextResponse.json({ ok: false, error: "Vehicle not found." }, { status: 404 });
+    }
+
+    return NextResponse.json({
+      ok: true,
+      rules: profile.rules,
+      defaultsApplied: profile.defaultsApplied,
+    });
+  } catch (error) {
+    if (isVehicleExtensionsMissingTableError(error)) {
+      return NextResponse.json(
+        { ok: false, error: "Vehicle pricing rules tables are not installed." },
+        { status: 503 },
+      );
+    }
+    return NextResponse.json(
+      { ok: false, error: "Failed to restore default vehicle pricing rules." },
       { status: 500 },
     );
   }
@@ -402,4 +440,8 @@ export async function GET(request: Request, context: RouteContext) {
 
 export async function PATCH(request: Request, context: RouteContext) {
   return handleAdminVehiclePricingRulesPatch(request, context);
+}
+
+export async function DELETE(request: Request, context: RouteContext) {
+  return handleAdminVehiclePricingRulesDelete(request, context);
 }

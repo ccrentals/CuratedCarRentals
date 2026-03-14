@@ -9,10 +9,8 @@ import { fmtDateOnly } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
 import { formatPaymentStatus } from "@/lib/payments/formatPaymentStatus";
 import {
-  computeBookingPricing,
+  computeBookingPricingFromStoredSnapshot,
   fetchNetPaidToDate,
-  readInsurancePricingFields,
-  readPromoPricingFields,
 } from "@/lib/payments/pricing";
 
 type PaymentRow = {
@@ -85,24 +83,16 @@ export default async function BookingInvoicePage({
   }
 
   const pricing = booking.pricing_json ?? {};
-  const dailyRate = Number((pricing as Record<string, unknown>).daily_rate_cents ?? booking.daily_rate_cents ?? 0);
-  const deposit = Number((pricing as Record<string, unknown>).deposit_cents ?? booking.deposit_cents ?? 0);
-  const { promoCode, promoDiscount } = readPromoPricingFields(pricing);
-  const { insuranceSelected, insurancePricePerDay, insuranceTotal } = readInsurancePricingFields(pricing);
   const netPaidToDate = await fetchNetPaidToDate(booking.id);
-  const summary = computeBookingPricing({
+  const summary = computeBookingPricingFromStoredSnapshot({
     bookingId: booking.id,
     bookingStatus: booking.status,
     startDate: booking.start_date,
     endDate: booking.end_date,
-    dailyRate,
-    deposit,
+    pricing,
+    fallbackDailyRate: booking.daily_rate_cents,
+    fallbackDeposit: booking.deposit_cents,
     netPaidToDate,
-    promoCode,
-    promoDiscount,
-    insuranceSelected,
-    insurancePricePerDay,
-    insuranceTotal,
   });
 
   return (
@@ -142,7 +132,7 @@ export default async function BookingInvoicePage({
               <p className="font-semibold">
                 {booking.vehicle_year} {booking.vehicle_make} {booking.vehicle_model}
               </p>
-              <p className="text-[var(--ccr-muted)]">Daily rate: {formatJmd(booking.daily_rate_cents)}</p>
+              <p className="text-[var(--ccr-muted)]">Daily rate: {formatJmd(summary.dailyRate)}</p>
             </div>
             <div>
               <p className="text-xs uppercase text-[var(--ccr-muted)]">Rental</p>
@@ -158,12 +148,13 @@ export default async function BookingInvoicePage({
             </div>
             <div>
               <p className="text-xs uppercase text-[var(--ccr-muted)]">Charges</p>
-              <p>Total rental: {formatJmd(summary.total)}</p>
+              <p>Subtotal: {formatJmd(summary.subtotal)}</p>
               {summary.promoDiscount > 0 ? (
                 <p>
                   Promo{summary.promoCode ? ` (${summary.promoCode})` : ""}: -{formatJmd(summary.promoDiscount)}
                 </p>
               ) : null}
+              <p>Total: {formatJmd(summary.total)}</p>
               <p>Deposit online (required): {formatJmd(summary.deposit)}</p>
               <p>Paid to date: {formatJmd(summary.netPaidToDate)}</p>
               <p className="font-semibold">Balance due: {formatJmd(summary.balanceDue)}</p>

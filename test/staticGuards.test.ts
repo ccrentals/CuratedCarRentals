@@ -30,29 +30,41 @@ test("Idempotency: WiPay webhook uses webhook_events insert gate and short-circu
   assert.match(code, /duplicate/i);
 });
 
-test("Pricing SSoT: booking create, promo preview, and WiPay starts use computeBookingPricing", () => {
+test("Pricing SSoT: quote preview and booking create use the shared quote snapshot builder", () => {
   const files = [
-    "src/app/api/public/bookings/route.ts",
+    "src/app/api/public/pricing/quote/route.ts",
     "src/app/api/public/promos/validate/route.ts",
-    "src/app/api/payments/wipay/start/route.ts",
-    "src/app/api/payments/wipay/full/start/route.ts",
-    "src/app/api/payments/wipay/custom/start/route.ts",
-    "src/app/api/payments/wipay/balance/start/route.ts",
+    "src/app/api/public/bookings/route.ts",
   ];
 
   for (const file of files) {
     const code = read(file);
-    assert.match(code, /computeBookingPricing\(/);
+    assert.match(code, /buildQuotePricingSnapshot\(/);
   }
 });
 
-test("Pricing SSoT: insurance-aware pricing is wired into promo + WiPay routes", () => {
+test("Pricing SSoT: stored booking pricing is reused by booking follow-up and WiPay routes", () => {
   const files = [
-    "src/app/api/public/promos/validate/route.ts",
+    "src/app/api/public/bookings/route.ts",
+    "src/app/api/public/bookings/[id]/promo/route.ts",
+    "src/app/api/public/bookings/[id]/pay-on-pickup/route.ts",
     "src/app/api/payments/wipay/start/route.ts",
     "src/app/api/payments/wipay/full/start/route.ts",
     "src/app/api/payments/wipay/custom/start/route.ts",
     "src/app/api/payments/wipay/balance/start/route.ts",
+    "src/lib/payments/recalculateBooking.ts",
+  ];
+
+  for (const file of files) {
+    const code = read(file);
+    assert.match(code, /computeBookingPricingFromStoredSnapshot\(/);
+  }
+});
+
+test("Pricing SSoT: insurance-aware pricing is wired into public quote and booking routes", () => {
+  const files = [
+    "src/app/api/public/promos/validate/route.ts",
+    "src/app/api/public/bookings/route.ts",
   ];
 
   for (const file of files) {

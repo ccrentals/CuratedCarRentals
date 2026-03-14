@@ -10,8 +10,12 @@ import { normalizeCountryName, normalizeRegionForCountry } from "@/lib/jamaicaPa
 import { normalizeLegalIdType } from "@/lib/customers/legalId";
 import { isPublicVehicleUnavailableForWindow } from "@/lib/publicVehicles";
 import { createBookingAccessToken, hashBookingAccessToken } from "@/lib/bookings/privateAccess";
-import { normalizePromoInputCode, upsertPromoRedemption, validatePromoForBooking } from "@/lib/promos";
-import { computeBookingPricing, parsePaymentOptionInput } from "@/lib/payments/pricing";
+import { normalizePromoInputCode, upsertPromoRedemption } from "@/lib/promos";
+import {
+  computeBookingPricingFromStoredSnapshot,
+  parsePaymentOptionInput,
+} from "@/lib/payments/pricing";
+import { buildQuotePricingSnapshot, QuotePricingError } from "@/lib/quotes/quotePricing";
 import {
   categorizeTurnstileFailure,
   extractTurnstileToken,
@@ -97,6 +101,10 @@ export async function POST(request: Request) {
   const insurancePricePerDayCents = Math.max(0, parseAmount(body?.insurancePricePerDayCents) ?? 0);
   const insurancePlanId = normalizeText(body?.insurancePlanId);
   const couponCode = normalizePromoInputCode(normalizeText(body?.couponCode));
+  const deliverySelected = body?.deliverySelected === true;
+  const deliveryZoneLabel =
+    normalizeText(body?.deliveryZoneLabel) ||
+    [pickupLocationTextSnapshot, dropoffLocationTextSnapshot].filter(Boolean).join(" → ");
   const paymentOptionInput = parsePaymentOptionInput(body?.paymentOption);
   const paymentOption = paymentOptionInput ?? "DEPOSIT";
   const customPaymentAmountCents = parseAmount(body?.customPaymentAmountCents);
@@ -182,8 +190,7 @@ export async function POST(request: Request) {
   }
 
   // Pricing/UI treats end_date as inclusive (e.g. 3/19 -> 3/20 is 2 days).
-  const days = calcDaysInclusive(start, end);
-  if (days <= 0) {
+  if (calcDaysInclusive(start, end) <= 0) {
     return NextResponse.json({ error: "Invalid rental duration" }, { status: 400 });
   }
 
@@ -198,7 +205,6 @@ export async function POST(request: Request) {
 
   const normalizedEmail = emailInput ? emailInput.toLowerCase() : `no-email+${Date.now()}@curated.local`;
   const normalizedPhone = phoneInput || "0000000";
-  const insuranceTotalCents = insuranceSelected ? insurancePricePerDayCents * days : 0;
 
   const pool = getDbPool();
   const client = await pool.connect();
@@ -207,7 +213,7 @@ export async function POST(request: Request) {
     await client.query("begin");
 
     const vehicleResult = await client.query(
-      "select id, make, model, year, daily_rate_cents, deposit_cents from vehicles where id = $1 and status <> 'INACTIVE'",
+      "select id, make, model, year from vehicles where id = $1 and status <> 'INACTIVE'",
       [vehicleId],
     );
 
@@ -319,66 +325,35 @@ export async function POST(request: Request) {
       ],
     );
 
-    const dailyRate = vehicleResult.rows[0].daily_rate_cents as number;
-    const depositCents = vehicleResult.rows[0].deposit_cents as number;
-    const pricingBeforePromo = computeBookingPricing({
-      bookingId: "draft",
-      bookingStatus: "PENDING_PAYMENT",
-      startDate,
-      endDate,
-      dailyRate,
-      deposit: depositCents,
-      paymentOption,
-      netPaidToDate: 0,
-      insuranceSelected,
-      insurancePricePerDay: insurancePricePerDayCents,
-      insuranceTotal: insuranceTotalCents,
-      promoCode: null,
-      promoDiscount: 0,
-    });
-    const subtotalCents = pricingBeforePromo.subtotal;
-    const baseTotalCents = pricingBeforePromo.baseTotal;
-    let promoId: string | null = null;
-    let promoDiscountCents = 0;
-    let promoAppliedCode: string | null = null;
-
-    if (couponCode) {
-      const promoValidation = await validatePromoForBooking({
-        code: couponCode,
+    const quoteSnapshot = await buildQuotePricingSnapshot(
+      {
         vehicleId,
-        startDate,
-        endDate,
-        subtotalCents,
-        baseTotalCents,
-        customerId: customerUpsert.customerId,
+        startAt,
+        endAt,
+        insuranceEnabled: insuranceSelected,
+        insurancePlanId: insurancePlanId || null,
+        promoCode: couponCode,
         customerEmail: normalizedEmail,
-        client,
-      });
-
-      if (!promoValidation.ok) {
-        await client.query("rollback");
-        return NextResponse.json({ error: promoValidation.message }, { status: 400 });
-      }
-
-      promoId = promoValidation.promoId;
-      promoDiscountCents = promoValidation.discountAmountCents;
-      promoAppliedCode = promoValidation.code;
-    }
-
-    const pricingSummary = computeBookingPricing({
+        deliverySelected,
+        deliveryZoneLabel: deliveryZoneLabel || null,
+      },
+      { client },
+    );
+    const pricingSummary = computeBookingPricingFromStoredSnapshot({
       bookingId: "draft",
       bookingStatus: "PENDING_PAYMENT",
       startDate,
       endDate,
-      dailyRate,
-      deposit: depositCents,
+      pricing: quoteSnapshot.pricingJson,
       paymentOption,
       netPaidToDate: 0,
-      insuranceSelected,
-      insurancePricePerDay: insurancePricePerDayCents,
-      insuranceTotal: insuranceTotalCents,
-      promoCode: promoAppliedCode,
-      promoDiscount: promoDiscountCents,
+      promoCode: quoteSnapshot.promoCode,
+      promoDiscount: quoteSnapshot.summary.discountTotalCents,
+      insuranceSelected: quoteSnapshot.insuranceEnabled,
+      insurancePricePerDay: Number(
+        quoteSnapshot.pricingJson.insurance_price_per_day_cents ?? insurancePricePerDayCents,
+      ),
+      insuranceTotal: quoteSnapshot.summary.insuranceTotalCents,
     });
     const totalAfterDiscount = pricingSummary.total;
     const customAmount =
@@ -401,19 +376,17 @@ export async function POST(request: Request) {
       : null;
 
     const pricing = {
-      daily_rate_cents: dailyRate,
-      deposit_cents: depositCents,
+      ...quoteSnapshot.pricingJson,
       days: pricingSummary.days,
       customer_name_snapshot: fullName,
       customer_email_snapshot: normalizedEmail,
       customer_phone_snapshot: phoneInput,
+      insurance_plan_id: quoteSnapshot.insurancePlanId,
+      promo_code_id: quoteSnapshot.promoId,
       base_total_cents: pricingSummary.baseTotal,
+      extra_fees_cents: pricingSummary.extraFeesTotal,
       subtotal_cents: pricingSummary.subtotal,
-      insurance_selected: pricingSummary.insuranceSelected,
-      insurance_price_per_day_cents: pricingSummary.insurancePricePerDay,
-      insurance_total_cents: pricingSummary.insuranceTotal,
       promo_code: pricingSummary.promoCode,
-      promo_code_id: promoId,
       promo_discount_cents: pricingSummary.discountTotal,
       discount_total_cents: pricingSummary.discountTotal,
       total_cents: pricingSummary.total,
@@ -425,7 +398,7 @@ export async function POST(request: Request) {
       payment_option_selected: pricingSummary.paymentOption,
       custom_payment_amount_cents: customAmount,
       private_access_token_hash: bookingAccessTokenHash,
-      currency: "JMD",
+      currency: String(quoteSnapshot.pricingJson.currency ?? "JMD"),
     };
 
     const bookingInsert = await client.query(
@@ -445,10 +418,10 @@ export async function POST(request: Request) {
         dropoffLocationId || null,
         pickupLocationTextSnapshot,
         dropoffLocationTextSnapshot,
-        insuranceSelected,
-        insurancePlanId || null,
-        insurancePricePerDayCents,
-        insuranceTotalCents,
+        quoteSnapshot.insuranceEnabled,
+        quoteSnapshot.insurancePlanId,
+        pricingSummary.insurancePricePerDay,
+        pricingSummary.insuranceTotal,
         paymentOption,
         customAmount,
         hasDriversLicenseNumber ? driversLicenseNumber : null,
@@ -459,13 +432,13 @@ export async function POST(request: Request) {
       ],
     );
 
-    if (promoId && promoDiscountCents > 0) {
+    if (quoteSnapshot.promoId && quoteSnapshot.summary.discountTotalCents > 0) {
       await upsertPromoRedemption({
         bookingId: bookingInsert.rows[0].id as string,
-        promoId,
+        promoId: quoteSnapshot.promoId,
         customerId: customerUpsert.customerId,
         customerEmail: normalizedEmail,
-        discountAmountCents: promoDiscountCents,
+        discountAmountCents: quoteSnapshot.summary.discountTotalCents,
         client,
       });
     }
@@ -526,10 +499,10 @@ export async function POST(request: Request) {
           startDate,
           endDate,
           pickupLocation,
-          dailyRate,
-          deposit: depositCents,
-          promoCode: promoAppliedCode,
-          promoDiscount: promoDiscountCents,
+          dailyRate: pricingSummary.dailyRate,
+          deposit: pricingSummary.deposit,
+          promoCode: quoteSnapshot.promoCode,
+          promoDiscount: quoteSnapshot.summary.discountTotalCents,
         });
       }
     } catch (error) {
@@ -545,10 +518,13 @@ export async function POST(request: Request) {
       bookingId: bookingInsert.rows[0].id,
       bookingAccessToken,
       status: bookingInsert.rows[0].status,
-      promoApplied: Boolean(promoId),
+      promoApplied: Boolean(quoteSnapshot.promoId),
     });
   } catch (error) {
     await client.query("rollback");
+    if (error instanceof QuotePricingError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     logError("public_booking_create_failed", error, {
       vehicleId,
       startDate,

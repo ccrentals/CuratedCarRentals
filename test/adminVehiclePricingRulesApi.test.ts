@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  handleAdminVehiclePricingRulesDelete,
   handleAdminVehiclePricingRulesGet,
   handleAdminVehiclePricingRulesPatch,
 } from "@/app/api/admin/vehicles/[id]/pricing-rules/route";
@@ -53,6 +54,7 @@ test("vehicle pricing rules API: GET requires auth", async () => {
       requireCsrfCheck: async () => true,
       vehicleExists: async () => true,
       getProfile: async () => defaultProfile(),
+      deleteRules: async () => {},
       saveRules: async () => defaultProfile().rules,
     },
   );
@@ -69,6 +71,7 @@ test("vehicle pricing rules API: GET validates vehicle id", async () => {
       requireCsrfCheck: async () => true,
       vehicleExists: async () => true,
       getProfile: async () => defaultProfile(),
+      deleteRules: async () => {},
       saveRules: async () => defaultProfile().rules,
     },
   );
@@ -85,6 +88,7 @@ test("vehicle pricing rules API: GET returns defaults when none exists", async (
       requireCsrfCheck: async () => true,
       vehicleExists: async () => true,
       getProfile: async () => defaultProfile(),
+      deleteRules: async () => {},
       saveRules: async () => defaultProfile().rules,
     },
   );
@@ -114,6 +118,7 @@ test("vehicle pricing rules API: PATCH requires CSRF", async () => {
       requireCsrfCheck: async () => false,
       vehicleExists: async () => true,
       getProfile: async () => defaultProfile(),
+      deleteRules: async () => {},
       saveRules: async () => defaultProfile().rules,
     },
   );
@@ -143,6 +148,7 @@ test("vehicle pricing rules API: PATCH validates date ranges", async () => {
       requireCsrfCheck: async () => true,
       vehicleExists: async () => true,
       getProfile: async () => defaultProfile(),
+      deleteRules: async () => {},
       saveRules: async () => defaultProfile().rules,
     },
   );
@@ -186,6 +192,7 @@ test("vehicle pricing rules API: PATCH persists normalized values", async () => 
       requireCsrfCheck: async () => true,
       vehicleExists: async () => true,
       getProfile: async () => defaultProfile(),
+      deleteRules: async () => {},
       saveRules: async (_vehicleId, patch) => {
         capturedPatch = patch as unknown as Record<string, unknown>;
         return {
@@ -202,8 +209,8 @@ test("vehicle pricing rules API: PATCH persists normalized values", async () => 
   assert.equal(response.status, 200);
   assert.ok(capturedPatch);
   const patch = capturedPatch as Record<string, unknown>;
-  assert.equal(patch.baseDailyRateCents, 17000);
-  assert.equal(patch.baseDepositCents, 280000);
+  assert.equal(patch.baseDailyRateCents, null);
+  assert.equal(patch.baseDepositCents, null);
   assert.equal(patch.weekendDailyRateCents, 19500);
   assert.equal(patch.deliveryEnabled, true);
   assert.equal(patch.deliveryFeeCents, 5000);
@@ -226,12 +233,50 @@ test("vehicle pricing rules API: PATCH persists normalized values", async () => 
 
   assert.equal(body.ok, true);
   assert.equal(body.defaultsApplied, false);
-  assert.equal(body.rules.baseDailyRateCents, 17000);
-  assert.equal(body.rules.baseDepositCents, 280000);
+  assert.equal(body.rules.baseDailyRateCents, null);
+  assert.equal(body.rules.baseDepositCents, null);
   assert.equal(body.rules.weekendDailyRateCents, 19500);
   assert.equal(body.rules.deliveryEnabled, true);
   assert.equal(body.rules.deliveryFeeCents, 5000);
   assert.equal(body.rules.currency, "JMD");
   assert.equal(body.rules.dateRangeOverrides.length, 1);
   assert.equal(body.rules.deliveryZones.length, 2);
+});
+
+test("vehicle pricing rules API: DELETE restores defaults", async () => {
+  let deletedVehicleId: string | null = null;
+
+  const response = await handleAdminVehiclePricingRulesDelete(
+    new Request(`http://localhost/api/admin/vehicles/${VEHICLE_ID}/pricing-rules`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json", "x-csrf-token": "token" },
+      body: JSON.stringify({ csrfToken: "token" }),
+    }),
+    { params: Promise.resolve({ id: VEHICLE_ID }) },
+    {
+      getSession: async () => adminSession(),
+      requireCsrfCheck: async () => true,
+      vehicleExists: async () => true,
+      getProfile: async () => defaultProfile(),
+      deleteRules: async (vehicleId) => {
+        deletedVehicleId = vehicleId;
+      },
+      saveRules: async () => defaultProfile().rules,
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(deletedVehicleId, VEHICLE_ID);
+
+  const body = (await response.json()) as {
+    ok: boolean;
+    defaultsApplied: boolean;
+    rules: { weekendDailyRateCents: number | null; deliveryEnabled: boolean; deliveryFeeCents: number };
+  };
+
+  assert.equal(body.ok, true);
+  assert.equal(body.defaultsApplied, true);
+  assert.equal(body.rules.weekendDailyRateCents, null);
+  assert.equal(body.rules.deliveryEnabled, false);
+  assert.equal(body.rules.deliveryFeeCents, 0);
 });

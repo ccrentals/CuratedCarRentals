@@ -7,10 +7,8 @@ import { fmtDateOnly } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
 import { formatPaymentStatus } from "@/lib/payments/formatPaymentStatus";
 import {
-  computeBookingPricing,
+  computeBookingPricingFromStoredSnapshot,
   fetchNetPaidToDate,
-  readInsurancePricingFields,
-  readPromoPricingFields,
 } from "@/lib/payments/pricing";
 
 export const dynamic = "force-dynamic";
@@ -50,7 +48,9 @@ type InvoiceDocumentRow = {
 type InvoiceSnapshotCardProps = {
   booking: BookingRow;
   bookingRef: string;
+  dailyRate: number;
   days: number;
+  subtotal: number;
   total: number;
   depositPaid: number;
   paidToDate: number;
@@ -63,7 +63,9 @@ type InvoiceSnapshotCardProps = {
 function InvoiceSnapshotCard({
   booking,
   bookingRef,
+  dailyRate,
   days,
+  subtotal,
   total,
   depositPaid,
   paidToDate,
@@ -90,7 +92,7 @@ function InvoiceSnapshotCard({
           <p className="font-semibold">
             {booking.vehicle_year} {booking.vehicle_make} {booking.vehicle_model}
           </p>
-          <p className="text-[var(--ccr-muted)]">Daily rate: {formatJmd(booking.daily_rate_cents)}</p>
+          <p className="text-[var(--ccr-muted)]">Daily rate: {formatJmd(dailyRate)}</p>
         </div>
         <div>
           <p className="text-xs uppercase text-[var(--ccr-muted)]">Rental</p>
@@ -106,12 +108,13 @@ function InvoiceSnapshotCard({
         </div>
         <div>
           <p className="text-xs uppercase text-[var(--ccr-muted)]">Charges</p>
-          <p>Total rental: {formatJmd(total)}</p>
+          <p>Subtotal: {formatJmd(subtotal)}</p>
           {promoDiscount > 0 ? (
             <p>
               Promo{promoCode ? ` (${promoCode})` : ""}: -{formatJmd(promoDiscount)}
             </p>
           ) : null}
+          <p>Total: {formatJmd(total)}</p>
           <p>Deposit paid: {formatJmd(depositPaid)}</p>
           <p>Paid to date: {formatJmd(paidToDate)}</p>
           <p className="font-semibold">Balance on pickup: {formatJmd(balanceDue)}</p>
@@ -201,25 +204,17 @@ export default async function PaymentSuccessPage({
   }
 
   const pricing = booking?.pricing_json ?? {};
-  const dailyRate = booking ? Number(pricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0) : 0;
-  const depositPolicy = booking ? Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0) : 0;
-  const { promoCode, promoDiscount } = readPromoPricingFields(pricing);
-  const { insuranceSelected, insurancePricePerDay, insuranceTotal } = readInsurancePricingFields(pricing);
   const netPaidToDate = booking ? await fetchNetPaidToDate(booking.id) : 0;
   const summary = booking
-    ? computeBookingPricing({
+    ? computeBookingPricingFromStoredSnapshot({
         bookingId: booking.id,
         bookingStatus: booking.status,
         startDate: booking.start_date,
         endDate: booking.end_date,
-        dailyRate,
-        deposit: depositPolicy,
+        pricing,
+        fallbackDailyRate: booking.daily_rate_cents,
+        fallbackDeposit: booking.deposit_cents,
         netPaidToDate,
-        promoCode,
-        promoDiscount,
-        insuranceSelected,
-        insurancePricePerDay,
-        insuranceTotal,
       })
     : null;
 
@@ -286,7 +281,9 @@ export default async function PaymentSuccessPage({
                       <InvoiceSnapshotCard
                         booking={booking}
                         bookingRef={bookingRef}
+                        dailyRate={summary.dailyRate}
                         days={days}
+                        subtotal={summary.subtotal}
                         total={total}
                         depositPaid={depositPaid}
                         paidToDate={paidToDate}
@@ -305,7 +302,9 @@ export default async function PaymentSuccessPage({
               <InvoiceSnapshotCard
                 booking={booking}
                 bookingRef={bookingRef}
+                dailyRate={summary.dailyRate}
                 days={days}
+                subtotal={summary.subtotal}
                 total={total}
                 depositPaid={depositPaid}
                 paidToDate={paidToDate}

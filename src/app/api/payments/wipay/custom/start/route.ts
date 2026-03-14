@@ -4,10 +4,8 @@ import { dbQuery } from "@/lib/db";
 import { logError, logWarn } from "@/lib/log";
 import { formatJmdDecimal } from "@/lib/money";
 import {
-  computeBookingPricing,
+  computeBookingPricingFromStoredSnapshot,
   fetchNetPaidToDate,
-  readInsurancePricingFields,
-  readPromoPricingFields,
 } from "@/lib/payments/pricing";
 import { requireCsrf } from "@/lib/security/csrf";
 import { buildRequestParams, requestHostedPageUrl } from "@/lib/wipay";
@@ -126,25 +124,17 @@ export async function POST(request: Request) {
   }
 
   const pricing = booking.pricing_json ?? {};
-  const dailyRate = Number(pricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
-  const deposit = Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0);
-  const { promoCode, promoDiscount } = readPromoPricingFields(pricing);
-  const { insuranceSelected, insurancePricePerDay, insuranceTotal } = readInsurancePricingFields(pricing);
   const netPaidToDate = await fetchNetPaidToDate(booking.id);
-  const summary = computeBookingPricing({
+  const summary = computeBookingPricingFromStoredSnapshot({
     bookingId: booking.id,
     bookingStatus: booking.status,
     startDate: booking.start_date,
     endDate: booking.end_date,
-    dailyRate,
-    deposit,
+    pricing,
+    fallbackDailyRate: booking.daily_rate_cents,
+    fallbackDeposit: booking.deposit_cents,
     paymentOption: "CUSTOM",
     netPaidToDate,
-    promoCode,
-    promoDiscount,
-    insuranceSelected,
-    insurancePricePerDay,
-    insuranceTotal,
   });
 
   if (summary.balanceDue <= 0) {

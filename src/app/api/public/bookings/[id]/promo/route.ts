@@ -4,11 +4,8 @@ import { getDbPool } from "@/lib/db";
 import { logError } from "@/lib/log";
 import { clearPromoRedemptionForBooking, normalizePromoInputCode, upsertPromoRedemption, validatePromoForBooking } from "@/lib/promos";
 import {
-  computeBookingPricing,
+  computeBookingPricingFromStoredSnapshot,
   fetchNetPaidToDate,
-  readInsurancePricingFields,
-  readPaymentOption,
-  readPromoPricingFields,
 } from "@/lib/payments/pricing";
 import { requireCsrf } from "@/lib/security/csrf";
 
@@ -29,7 +26,7 @@ type Queryable = {
   query: (text: string, params?: unknown[]) => Promise<{ rows: unknown[]; rowCount: number }>;
 };
 
-function mapSummaryForResponse(summary: ReturnType<typeof computeBookingPricing>) {
+function mapSummaryForResponse(summary: ReturnType<typeof computeBookingPricingFromStoredSnapshot>) {
   return {
     days: summary.days,
     subtotal: summary.subtotal,
@@ -46,7 +43,7 @@ function mapSummaryForResponse(summary: ReturnType<typeof computeBookingPricing>
 
 function buildPricingSnapshot(
   existingPricing: Record<string, unknown> | null,
-  summary: ReturnType<typeof computeBookingPricing>,
+  summary: ReturnType<typeof computeBookingPricingFromStoredSnapshot>,
   promoCodeId: string | null,
 ) {
   return {
@@ -56,6 +53,7 @@ function buildPricingSnapshot(
     days: summary.days,
     subtotal_cents: summary.subtotal,
     base_total_cents: summary.baseTotal,
+    extra_fees_cents: summary.extraFeesTotal,
     insurance_selected: summary.insuranceSelected,
     insurance_price_per_day_cents: summary.insurancePricePerDay,
     insurance_total_cents: summary.insuranceTotal,
@@ -84,27 +82,16 @@ async function loadBookingForUpdate(db: Queryable, bookingId: string) {
 }
 
 async function computeCurrentSummary(db: Queryable, booking: BookingRow) {
-  const pricing = booking.pricing_json ?? {};
-  const dailyRate = Number(pricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
-  const deposit = Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0);
-  const paymentOption = readPaymentOption(pricing);
-  const { promoCode, promoDiscount } = readPromoPricingFields(pricing);
-  const { insuranceSelected, insurancePricePerDay, insuranceTotal } = readInsurancePricingFields(pricing);
   const netPaidToDate = await fetchNetPaidToDate(booking.id, { client: db });
-  return computeBookingPricing({
+  return computeBookingPricingFromStoredSnapshot({
     bookingId: booking.id,
     bookingStatus: booking.status,
     startDate: booking.start_date,
     endDate: booking.end_date,
-    dailyRate,
-    deposit,
-    paymentOption,
+    pricing: booking.pricing_json,
+    fallbackDailyRate: booking.daily_rate_cents,
+    fallbackDeposit: booking.deposit_cents,
     netPaidToDate,
-    promoCode,
-    promoDiscount,
-    insuranceSelected,
-    insurancePricePerDay,
-    insuranceTotal,
   });
 }
 
@@ -157,20 +144,18 @@ export async function POST(
       return NextResponse.json({ ok: false, error: validation.message, reason: validation.reason }, { status: 400 });
     }
 
-    const nextSummary = computeBookingPricing({
+    const nextSummary = computeBookingPricingFromStoredSnapshot({
       bookingId: booking.id,
       bookingStatus: booking.status,
       startDate: booking.start_date,
       endDate: booking.end_date,
-      dailyRate: currentSummary.dailyRate,
-      deposit: currentSummary.deposit,
+      pricing: booking.pricing_json,
+      fallbackDailyRate: booking.daily_rate_cents,
+      fallbackDeposit: booking.deposit_cents,
       paymentOption: currentSummary.paymentOption,
       netPaidToDate: currentSummary.netPaidToDate,
       promoCode: validation.code,
       promoDiscount: validation.discountAmountCents,
-      insuranceSelected: currentSummary.insuranceSelected,
-      insurancePricePerDay: currentSummary.insurancePricePerDay,
-      insuranceTotal: currentSummary.insuranceTotal,
     });
 
     const pricingSnapshot = buildPricingSnapshot(booking.pricing_json, nextSummary, validation.promoId);
@@ -228,20 +213,18 @@ export async function DELETE(
     }
 
     const currentSummary = await computeCurrentSummary(client, booking);
-    const nextSummary = computeBookingPricing({
+    const nextSummary = computeBookingPricingFromStoredSnapshot({
       bookingId: booking.id,
       bookingStatus: booking.status,
       startDate: booking.start_date,
       endDate: booking.end_date,
-      dailyRate: currentSummary.dailyRate,
-      deposit: currentSummary.deposit,
+      pricing: booking.pricing_json,
+      fallbackDailyRate: booking.daily_rate_cents,
+      fallbackDeposit: booking.deposit_cents,
       paymentOption: currentSummary.paymentOption,
       netPaidToDate: currentSummary.netPaidToDate,
       promoCode: null,
       promoDiscount: 0,
-      insuranceSelected: currentSummary.insuranceSelected,
-      insurancePricePerDay: currentSummary.insurancePricePerDay,
-      insuranceTotal: currentSummary.insuranceTotal,
     });
 
     const pricingSnapshot = buildPricingSnapshot(booking.pricing_json, nextSummary, null);

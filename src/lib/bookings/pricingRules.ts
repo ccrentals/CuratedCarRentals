@@ -230,8 +230,8 @@ function normalizeRulesRow(vehicleId: string, row: VehiclePricingRulesRow | null
   return {
     id: row.id,
     vehicleId,
-    baseDailyRateCents: normalizeOptionalMoney(row.base_daily_rate_cents),
-    baseDepositCents: normalizeOptionalMoney(row.base_deposit_cents),
+    baseDailyRateCents: null,
+    baseDepositCents: null,
     weekendDailyRateCents: normalizeOptionalMoney(row.weekend_daily_rate_cents),
     dateRangeOverrides: parseDateRangeOverrides(row.date_range_overrides_json),
     deliveryEnabled: Boolean(row.delivery_enabled),
@@ -408,6 +408,14 @@ export async function upsertVehiclePricingRules(
   return normalizeRulesRow(vehicleId, (result.rows[0] ?? null) as VehiclePricingRulesRow | null);
 }
 
+export async function deleteVehiclePricingRules(
+  vehicleId: string,
+  options: { client?: Queryable } = {},
+): Promise<void> {
+  const db = asQueryable(options.client);
+  await db.query("delete from vehicle_pricing_rules where vehicle_id = $1::uuid", [vehicleId]);
+}
+
 function normalizeDateAtUtcMidnight(value: Date) {
   const asDateOnly = dateOnlyUtc(value);
   return asDateOnly ? new Date(asDateOnly) : null;
@@ -419,9 +427,7 @@ function resolveDailyRateForDate(
   profile: VehiclePricingProfile,
 ): { dailyRateCents: number; source: "base" | "weekend" | "date_override" } {
   const rules = profile.rules;
-  const baseDaily = rules.isActive && rules.baseDailyRateCents !== null
-    ? rules.baseDailyRateCents
-    : profile.defaultDailyRateCents;
+  const baseDaily = profile.defaultDailyRateCents;
 
   if (rules.isActive) {
     let matchedOverride: VehiclePricingDateRangeOverride | null = null;
@@ -455,7 +461,6 @@ function resolveDeposit(profile: VehiclePricingProfile, startDateKey: string) {
   }
 
   if (overrideDeposit !== null) return overrideDeposit;
-  if (rules.baseDepositCents !== null) return rules.baseDepositCents;
   return profile.defaultDepositCents;
 }
 

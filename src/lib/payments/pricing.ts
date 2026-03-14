@@ -17,6 +17,7 @@ export type BookingPricingSummary = {
   days: number;
   dailyRate: number;
   baseTotal: number;
+  extraFeesTotal: number;
   insuranceSelected: boolean;
   insurancePricePerDay: number;
   insuranceTotal: number;
@@ -184,6 +185,8 @@ export function computeBookingPricing(input: {
   endAt?: unknown;
   dailyRate: number;
   deposit: number;
+  baseTotal?: number | null | undefined;
+  extraFeesTotal?: number | null | undefined;
   paymentOption?: PaymentOption | null | undefined;
   netPaidToDate: number;
   promoCode?: string | null;
@@ -198,7 +201,13 @@ export function computeBookingPricing(input: {
   const dailyRate = Number.isFinite(input.dailyRate) ? Number(input.dailyRate) : 0;
   const deposit = Number.isFinite(input.deposit) ? Number(input.deposit) : 0;
   const netPaidToDate = Number.isFinite(input.netPaidToDate) ? Number(input.netPaidToDate) : 0;
-  const baseTotal = dailyRate * days;
+  const explicitBaseTotal = Number.isFinite(input.baseTotal)
+    ? Math.max(0, Number(input.baseTotal))
+    : null;
+  const baseTotal = explicitBaseTotal ?? dailyRate * days;
+  const extraFeesTotal = Number.isFinite(input.extraFeesTotal)
+    ? Math.max(0, Number(input.extraFeesTotal))
+    : 0;
   const insuranceSelected = input.insuranceSelected === true;
   const insurancePricePerDay = Number.isFinite(input.insurancePricePerDay)
     ? Math.max(0, Number(input.insurancePricePerDay))
@@ -209,7 +218,7 @@ export function computeBookingPricing(input: {
     : 0;
   const insuranceTotal = insuranceTotalOverride > 0 ? insuranceTotalOverride : insuranceTotalFromDays;
   const effectiveInsuranceSelected = insuranceSelected || insuranceTotal > 0;
-  const subtotal = baseTotal + insuranceTotal;
+  const subtotal = baseTotal + insuranceTotal + extraFeesTotal;
   const promoCode =
     typeof input.promoCode === "string" && input.promoCode.trim().length > 0
       ? input.promoCode.trim().toUpperCase()
@@ -248,6 +257,7 @@ export function computeBookingPricing(input: {
     days,
     dailyRate,
     baseTotal,
+    extraFeesTotal,
     insuranceSelected: effectiveInsuranceSelected,
     insurancePricePerDay,
     insuranceTotal,
@@ -265,6 +275,64 @@ export function computeBookingPricing(input: {
     paymentStatus,
     refundRequired,
   };
+}
+
+function readExplicitMoney(value: unknown) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return null;
+  return Math.max(0, amount);
+}
+
+export function computeBookingPricingFromStoredSnapshot(input: {
+  bookingId: string;
+  bookingStatus: string;
+  startDate?: unknown;
+  endDate?: unknown;
+  startAt?: unknown;
+  endAt?: unknown;
+  pricing: Record<string, unknown> | null | undefined;
+  fallbackDailyRate?: unknown;
+  fallbackDeposit?: unknown;
+  paymentOption?: PaymentOption | undefined;
+  netPaidToDate: number;
+  promoCode?: string | null | undefined;
+  promoDiscount?: number | null | undefined;
+  insuranceSelected?: boolean | null | undefined;
+  insurancePricePerDay?: number | null | undefined;
+  insuranceTotal?: number | null | undefined;
+  baseTotal?: number | null | undefined;
+  extraFeesTotal?: number | null | undefined;
+}) {
+  const pricing = input.pricing ?? {};
+  const storedPromo = readPromoPricingFields(pricing);
+  const storedInsurance = readInsurancePricingFields(pricing);
+  const storedBaseTotal = readExplicitMoney(pricing.base_total_cents);
+  const storedExtraFeesTotal = readExplicitMoney(
+    pricing.extra_fees_cents ?? pricing.delivery_fee_cents,
+  );
+
+  return computeBookingPricing({
+    bookingId: input.bookingId,
+    bookingStatus: input.bookingStatus,
+    startDate: input.startDate,
+    endDate: input.endDate,
+    startAt: input.startAt,
+    endAt: input.endAt,
+    dailyRate: toMoneyLike(pricing.daily_rate_cents ?? input.fallbackDailyRate ?? 0),
+    deposit: toMoneyLike(
+      pricing.deposit_required_cents ?? pricing.deposit_cents ?? input.fallbackDeposit ?? 0,
+    ),
+    baseTotal: input.baseTotal ?? storedBaseTotal,
+    extraFeesTotal: input.extraFeesTotal ?? storedExtraFeesTotal ?? 0,
+    paymentOption: input.paymentOption ?? readPaymentOption(pricing),
+    netPaidToDate: input.netPaidToDate,
+    promoCode: input.promoCode ?? storedPromo.promoCode,
+    promoDiscount: input.promoDiscount ?? storedPromo.promoDiscount,
+    insuranceSelected: input.insuranceSelected ?? storedInsurance.insuranceSelected,
+    insurancePricePerDay:
+      input.insurancePricePerDay ?? storedInsurance.insurancePricePerDay,
+    insuranceTotal: input.insuranceTotal ?? storedInsurance.insuranceTotal,
+  });
 }
 
 function getQueryable(client?: Queryable) {
@@ -327,27 +395,16 @@ export async function getBookingPricingSummary(
     deposit_cents: number;
   };
 
-  const pricing = booking.pricing_json ?? {};
-  const dailyRate = Number(pricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
-  const deposit = Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0);
-  const paymentOption = readPaymentOption(pricing);
-  const { promoCode, promoDiscount } = readPromoPricingFields(pricing);
-  const { insuranceSelected, insurancePricePerDay, insuranceTotal } = readInsurancePricingFields(pricing);
   const netPaidToDate = await fetchNetPaidToDate(bookingId, options);
 
-  return computeBookingPricing({
+  return computeBookingPricingFromStoredSnapshot({
     bookingId: booking.id,
     bookingStatus: booking.status,
     startDate: booking.start_date,
     endDate: booking.end_date,
-    dailyRate,
-    deposit,
-    paymentOption,
+    pricing: booking.pricing_json,
+    fallbackDailyRate: booking.daily_rate_cents,
+    fallbackDeposit: booking.deposit_cents,
     netPaidToDate,
-    promoCode,
-    promoDiscount,
-    insuranceSelected,
-    insurancePricePerDay,
-    insuranceTotal,
   });
 }

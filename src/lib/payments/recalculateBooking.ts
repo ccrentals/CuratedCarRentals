@@ -1,10 +1,7 @@
 import { dbQuery } from "@/lib/db";
 import {
-  computeBookingPricing,
+  computeBookingPricingFromStoredSnapshot,
   fetchNetPaidToDate,
-  readInsurancePricingFields,
-  readPaymentOption,
-  readPromoPricingFields,
   type Queryable,
 } from "@/lib/payments/pricing";
 
@@ -56,37 +53,26 @@ export async function recalculateBookingPayments(
     deposit_cents: number;
   };
 
-  const pricing = booking.pricing_json ?? {};
-  const dailyRate = Number(pricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
-  const depositAmount = Number(pricing.deposit_cents ?? booking.deposit_cents ?? 0);
-  const paymentOption = readPaymentOption(pricing);
-  const { promoCode, promoDiscount } = readPromoPricingFields(pricing);
-  const { insuranceSelected, insurancePricePerDay, insuranceTotal } = readInsurancePricingFields(pricing);
-
   const netPaidToDate = await fetchNetPaidToDate(bookingId, options);
 
-  const summary = computeBookingPricing({
+  const summary = computeBookingPricingFromStoredSnapshot({
     bookingId: booking.id,
     bookingStatus: booking.status,
     startDate: booking.start_date,
     endDate: booking.end_date,
-    dailyRate,
-    deposit: depositAmount,
-    paymentOption,
+    pricing: booking.pricing_json,
+    fallbackDailyRate: booking.daily_rate_cents,
+    fallbackDeposit: booking.deposit_cents,
     netPaidToDate,
-    promoCode,
-    promoDiscount,
-    insuranceSelected,
-    insurancePricePerDay,
-    insuranceTotal,
   });
 
   const updatedPricing = {
-    ...pricing,
+    ...(booking.pricing_json ?? {}),
     days: summary.days,
     daily_rate_cents: summary.dailyRate,
     deposit_cents: summary.deposit,
     base_total_cents: summary.baseTotal,
+    extra_fees_cents: summary.extraFeesTotal,
     subtotal_cents: summary.subtotal,
     insurance_selected: summary.insuranceSelected,
     insurance_price_per_day_cents: summary.insurancePricePerDay,

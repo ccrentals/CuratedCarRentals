@@ -6,10 +6,8 @@ import { getOrCreateInvoiceLedgerRow, hashInvoicePayload } from "@/lib/invoices/
 import { logError } from "@/lib/log";
 import { buildInvoicePayload } from "@/lib/pdfmonkey";
 import {
-  computeBookingPricing,
+  computeBookingPricingFromStoredSnapshot,
   fetchNetPaidToDate,
-  readInsurancePricingFields,
-  readPromoPricingFields,
 } from "@/lib/payments/pricing";
 
 export async function GET(
@@ -47,24 +45,16 @@ export async function GET(
   }
 
   const pricing = booking.pricing_json ?? {};
-  const dailyRate = Number((pricing as Record<string, unknown>).daily_rate_cents ?? booking.daily_rate_cents ?? 0);
-  const deposit = Number((pricing as Record<string, unknown>).deposit_cents ?? booking.deposit_cents ?? 0);
-  const { promoCode, promoDiscount } = readPromoPricingFields(pricing);
-  const { insuranceSelected, insurancePricePerDay, insuranceTotal } = readInsurancePricingFields(pricing);
   const netPaidToDate = await fetchNetPaidToDate(booking.id);
-  const summary = computeBookingPricing({
+  const summary = computeBookingPricingFromStoredSnapshot({
     bookingId: booking.id,
     bookingStatus: booking.status,
     startDate: booking.start_date,
     endDate: booking.end_date,
-    dailyRate,
-    deposit,
+    pricing,
+    fallbackDailyRate: booking.daily_rate_cents,
+    fallbackDeposit: booking.deposit_cents,
     netPaidToDate,
-    promoCode,
-    promoDiscount,
-    insuranceSelected,
-    insurancePricePerDay,
-    insuranceTotal,
   });
 
   type PaymentLine = {
@@ -119,7 +109,7 @@ export async function GET(
     vehicleMake: booking.vehicle_make,
     vehicleModel: booking.vehicle_model,
     vehicleYear: booking.vehicle_year,
-    dailyRate,
+    dailyRate: summary.dailyRate,
     deposit: summary.deposit,
     baseTotal: summary.baseTotal,
     total: summary.subtotal,

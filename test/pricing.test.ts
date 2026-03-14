@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   computeBookingPricing,
+  computeBookingPricingFromStoredSnapshot,
   isBlockingBookingHold,
   isNonBlockingBookingHold,
   normalizePaymentOption,
@@ -153,6 +154,63 @@ test("computeBookingPricing: promo discount is applied against subtotal includin
   assert.equal(summary.discountTotal, 4500);
   assert.equal(summary.total, 30000);
   assert.equal(summary.amountDue, 30000);
+});
+
+test("computeBookingPricing: explicit base total and extra fees are preserved", () => {
+  const summary = computeBookingPricing({
+    bookingId: "b1",
+    bookingStatus: "PENDING_PAYMENT",
+    startDate: "2026-03-19",
+    endDate: "2026-03-21",
+    dailyRate: 10000,
+    deposit: 4000,
+    baseTotal: 42000,
+    extraFeesTotal: 5000,
+    promoCode: "SAVE",
+    promoDiscount: 7000,
+    netPaidToDate: 0,
+  });
+
+  assert.equal(summary.days, 3);
+  assert.equal(summary.baseTotal, 42000);
+  assert.equal(summary.extraFeesTotal, 5000);
+  assert.equal(summary.subtotal, 47000);
+  assert.equal(summary.discountTotal, 7000);
+  assert.equal(summary.total, 40000);
+});
+
+test("computeBookingPricingFromStoredSnapshot: stored pricing drives totals", () => {
+  const summary = computeBookingPricingFromStoredSnapshot({
+    bookingId: "b2",
+    bookingStatus: "CONFIRMED",
+    startDate: "2026-03-19",
+    endDate: "2026-03-21",
+    pricing: {
+      daily_rate_cents: 14000,
+      deposit_required_cents: 12000,
+      base_total_cents: 42000,
+      extra_fees_cents: 6000,
+      insurance_selected: true,
+      insurance_price_per_day_cents: 1500,
+      insurance_total_cents: 4500,
+      promo_code: "VIP",
+      promo_discount_cents: 5000,
+      payment_option_selected: "DEPOSIT",
+    },
+    fallbackDailyRate: 10000,
+    fallbackDeposit: 4000,
+    netPaidToDate: 12000,
+  });
+
+  assert.equal(summary.dailyRate, 14000);
+  assert.equal(summary.baseTotal, 42000);
+  assert.equal(summary.extraFeesTotal, 6000);
+  assert.equal(summary.insuranceTotal, 4500);
+  assert.equal(summary.subtotal, 52500);
+  assert.equal(summary.discountTotal, 5000);
+  assert.equal(summary.total, 47500);
+  assert.equal(summary.deposit, 12000);
+  assert.equal(summary.balanceDue, 35500);
 });
 
 test("payment options: CUSTOM/NONE are preserved and legacy pay-on-pickup maps to NONE", () => {

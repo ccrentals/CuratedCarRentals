@@ -58,6 +58,7 @@ export type QuotePricingSnapshot = {
   insuranceEnabled: boolean;
   insurancePlanId: string | null;
   promoCode: string | null;
+  promoId: string | null;
   rackPriceCents: number;
   pricingJson: Record<string, unknown>;
   summary: {
@@ -219,6 +220,7 @@ export async function buildQuotePricingSnapshot(
 
   const promoCodeInput = normalizePromoInputCode(String(input.promoCode ?? ""));
   let promoCode: string | null = null;
+  let promoId: string | null = null;
   let promoDiscountCents = 0;
 
   if (promoCodeInput) {
@@ -238,6 +240,7 @@ export async function buildQuotePricingSnapshot(
     }
 
     promoCode = promoValidation.code;
+    promoId = promoValidation.promoId;
     promoDiscountCents = promoValidation.discountAmountCents;
   }
 
@@ -280,6 +283,7 @@ export async function buildQuotePricingSnapshot(
     insuranceEnabled: insurance.insuranceEnabled,
     insurancePlanId: insurance.insurancePlanId,
     promoCode,
+    promoId,
     rackPriceCents,
     pricingJson,
     summary: {

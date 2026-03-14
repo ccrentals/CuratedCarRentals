@@ -1326,7 +1326,9 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
             endDate: dropoffDate,
             customerEmail: normalizeText(emailAddress),
             insuranceSelected: insuranceEnabled && insuranceSelected,
-            insurancePricePerDayCents: insurancePricePerDay,
+            insurancePlanId,
+            deliverySelected,
+            deliveryZoneLabel: deliveryZoneLabel || null,
           }),
         });
         const data = (await response.json().catch(() => ({}))) as PromoValidationResponse;
@@ -1353,10 +1355,13 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     dropoffDate,
     emailAddress,
     insuranceEnabled,
+    insurancePlanId,
     insurancePricePerDay,
     insuranceSelected,
     pickupDate,
     selectedVehicleId,
+    deliverySelected,
+    deliveryZoneLabel,
   ]);
 
   useEffect(() => {
@@ -1873,7 +1878,9 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
           endDate: dropoffDate,
           customerEmail: normalizeText(emailAddress),
           insuranceSelected: insuranceEnabled && insuranceSelected,
-          insurancePricePerDayCents: insurancePricePerDay,
+          insurancePlanId,
+          deliverySelected,
+          deliveryZoneLabel: deliveryZoneLabel || null,
         }),
       });
 
@@ -2138,6 +2145,8 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
           insuranceSelected: insuranceEnabled && insuranceSelected,
           insurancePlanId,
           couponCode: couponAppliedCode,
+          deliverySelected,
+          deliveryZoneLabel: deliveryZoneLabel || null,
           insurancePricePerDayCents:
             pricingQuote?.insurancePricePerDay ?? insurancePricePerDay,
           insuranceTotalCents: insuranceTotal,
