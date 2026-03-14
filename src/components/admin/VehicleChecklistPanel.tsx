@@ -1580,8 +1580,8 @@ export function VehicleChecklistPanel({
                     </div>
                   </>
                 ) : (
-                  <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(28rem,36rem)] xl:items-start xl:gap-6">
-                    <div className="min-w-0 space-y-3 xl:max-w-[34rem]">
+                  <div className="grid gap-5 xl:flex xl:items-start xl:gap-5 xl:pl-4">
+                    <div className="min-w-0 space-y-3 xl:w-[22rem] xl:flex-none">
                       <div className="flex flex-wrap items-start gap-2">
                         <div>
                           <p className="font-semibold text-[var(--ccr-text)] break-words">{item.label}</p>
@@ -1672,7 +1672,7 @@ export function VehicleChecklistPanel({
                       ) : null}
                     </div>
 
-                    <div className="min-w-0 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3 xl:justify-self-end xl:w-full xl:max-w-[36rem]">
+                    <div className="min-w-0 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3 xl:w-full xl:max-w-[34rem]">
                       <div className="space-y-2">
                         <label className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
                           Search files
