@@ -307,6 +307,16 @@ test.describe("@tour vehicle files and checklist integration", () => {
         "href",
         `/admin/vehicles/${VEHICLE_ID}?tab=files&folder=Paperwork&documentId=${documentId}`,
       );
+      await secondChecklistCard.getByTestId("vehicle-checklist-preview-file").click();
+      await expect(page.getByTestId("vehicle-checklist-preview-modal")).toBeVisible();
+      await expect(page.getByTestId("vehicle-checklist-preview-meta")).toContainText(
+        secondChecklistLabel,
+      );
+      await expect(page).toHaveURL(
+        new RegExp(`/admin/vehicles/${VEHICLE_ID}\\?tab=checklist$`),
+      );
+      await page.getByRole("button", { name: "Close" }).click();
+      await expect(page.getByTestId("vehicle-checklist-preview-modal")).not.toBeVisible();
 
       await secondChecklistCard.getByTestId("vehicle-checklist-manage-file").click();
       await page.waitForURL(
@@ -353,6 +363,16 @@ test.describe("@tour vehicle files and checklist integration", () => {
       await expect(
         page.getByTestId(`vehicle-checklist-item-${secondChecklistItemId}`),
       ).toHaveAttribute("data-highlighted", "true");
+      await page.getByTestId("vehicle-checklist-preview-highlighted-file").click();
+      await expect(page.getByTestId("vehicle-checklist-preview-modal")).toBeVisible();
+      await expect(page.getByTestId("vehicle-checklist-preview-meta")).toContainText(
+        secondChecklistLabel,
+      );
+      await expect(page).toHaveURL(
+        new RegExp(`/admin/vehicles/${VEHICLE_ID}\\?tab=checklist$`),
+      );
+      await page.getByRole("button", { name: "Close" }).click();
+      await expect(page.getByTestId("vehicle-checklist-preview-modal")).not.toBeVisible();
       await page.getByTestId("vehicle-checklist-view-file").click();
       await page.waitForURL(
         `**/admin/vehicles/${VEHICLE_ID}?tab=files&folder=Paperwork&documentId=${documentId}`,

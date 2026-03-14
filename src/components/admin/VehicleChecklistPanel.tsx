@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { VehicleDocumentPreviewModal } from "@/components/admin/VehicleDocumentPreviewModal";
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import type { VehicleChecklistTemplateSetting } from "@/lib/adminSettings";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
@@ -79,6 +80,11 @@ export function VehicleChecklistPanel({
   const [highlightedItemId, setHighlightedItemId] = useState<string | null>(
     initialChecklistItemId?.trim() || null,
   );
+  const [previewItem, setPreviewItem] = useState<{
+    id: string;
+    title: string;
+    checklistItemLabel: string;
+  } | null>(null);
   const [initialScrollHandled, setInitialScrollHandled] = useState(false);
   const [initialUrlFocusHandled, setInitialUrlFocusHandled] = useState(false);
   const itemRefs = useRef<Record<string, HTMLElement | null>>({});
@@ -457,6 +463,24 @@ export function VehicleChecklistPanel({
           </div>
           <div className="flex flex-wrap gap-2">
             {highlightedItem.uploadedDocumentId ? (
+              <button
+                type="button"
+                data-testid="vehicle-checklist-preview-highlighted-file"
+                onClick={() =>
+                  setPreviewItem({
+                    id: highlightedItem.uploadedDocumentId!,
+                    title:
+                      highlightedItem.uploadedDocumentDisplayLabel ??
+                      `${highlightedItem.label} attachment`,
+                    checklistItemLabel: highlightedItem.label,
+                  })
+                }
+                className="min-h-9 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-xs font-semibold text-[var(--ccr-text)]"
+              >
+                Preview linked file
+              </button>
+            ) : null}
+            {highlightedItem.uploadedDocumentId ? (
               <Link
                 data-testid="vehicle-checklist-view-file"
                 href={`/admin/vehicles/${vehicleId}?tab=files&folder=${encodeURIComponent(highlightedItem.folder)}&documentId=${encodeURIComponent(highlightedItem.uploadedDocumentId)}`}
@@ -526,6 +550,21 @@ export function VehicleChecklistPanel({
                   <div className="space-y-2">
                     <p>Attached file: {item.uploadedDocumentDisplayLabel ?? "Linked vehicle file"}</p>
                     <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        data-testid="vehicle-checklist-preview-file"
+                        onClick={() =>
+                          setPreviewItem({
+                            id: item.uploadedDocumentId!,
+                            title:
+                              item.uploadedDocumentDisplayLabel ?? `${item.label} attachment`,
+                            checklistItemLabel: item.label,
+                          })
+                        }
+                        className="inline-flex min-h-9 items-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-text)]"
+                      >
+                        Preview file
+                      </button>
                       <a
                         data-testid="vehicle-checklist-download-file"
                         href={`/api/admin/vehicles/${vehicleId}/documents/${item.uploadedDocumentId}/download`}
@@ -566,6 +605,16 @@ export function VehicleChecklistPanel({
           );
         })}
       </div>
+
+      {previewItem ? (
+        <VehicleDocumentPreviewModal
+          vehicleId={vehicleId}
+          document={previewItem}
+          onClose={() => setPreviewItem(null)}
+          modalTestId="vehicle-checklist-preview-modal"
+          metaTestId="vehicle-checklist-preview-meta"
+        />
+      ) : null}
     </section>
   );
 }

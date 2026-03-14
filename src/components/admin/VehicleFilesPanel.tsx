@@ -3,6 +3,10 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import {
+  getVehicleDocumentDisplayLabel,
+  VehicleDocumentPreviewModal,
+} from "@/components/admin/VehicleDocumentPreviewModal";
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { TableDateTime } from "@/components/shared/TableDateTime";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
@@ -130,11 +134,6 @@ function normalizeDocumentTypes(input: string[] | undefined) {
   return ["General", "Registration", "Insurance", "Service Invoice", "Receipt", "Photo", "Other"];
 }
 
-function getDocumentDisplayLabel(item: Pick<VehicleDocument, "label" | "title">) {
-  const label = item.label?.trim();
-  return label ? label : item.title;
-}
-
 export function VehicleFilesPanel({
   vehicleId,
   folders: configuredFolders,
@@ -171,9 +170,6 @@ export function VehicleFilesPanel({
   const [linkSavingDocId, setLinkSavingDocId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [previewItem, setPreviewItem] = useState<VehicleDocument | null>(null);
-  const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
-  const [previewError, setPreviewError] = useState<string | null>(null);
   const [initialPreviewHandled, setInitialPreviewHandled] = useState(false);
   const [initialScrollHandled, setInitialScrollHandled] = useState(false);
   const [highlightedDocumentId, setHighlightedDocumentId] = useState<string | null>(
@@ -364,58 +360,6 @@ export function VehicleFilesPanel({
     }
     setInitialScrollHandled(true);
   }, [documentsLoaded, highlightedDocumentId, initialScrollHandled]);
-
-  useEffect(() => {
-    let cancelled = false;
-    let objectUrl: string | null = null;
-
-    const loadPreview = async () => {
-      if (!previewItem) {
-        setPreviewBlobUrl(null);
-        setPreviewLoading(false);
-        setPreviewError(null);
-        return;
-      }
-
-      setPreviewLoading(true);
-      setPreviewError(null);
-      setPreviewBlobUrl(null);
-
-      try {
-        const response = await fetch(
-          `/api/admin/vehicles/${vehicleId}/documents/${previewItem.id}/file?inline=1`,
-          { cache: "no-store" },
-        );
-        if (!response.ok) {
-          const payload = (await response.json().catch(() => ({}))) as { error?: string };
-          throw new Error(payload.error ?? "Unable to preview this file.");
-        }
-
-        const blob = await response.blob();
-        objectUrl = URL.createObjectURL(blob);
-        if (!cancelled) {
-          setPreviewBlobUrl(objectUrl);
-          setPreviewLoading(false);
-        }
-      } catch (requestError) {
-        if (!cancelled) {
-          setPreviewError(
-            requestError instanceof Error ? requestError.message : "Unable to preview this file.",
-          );
-          setPreviewLoading(false);
-        }
-      }
-    };
-
-    void loadPreview();
-
-    return () => {
-      cancelled = true;
-      if (objectUrl) {
-        URL.revokeObjectURL(objectUrl);
-      }
-    };
-  }, [previewItem, vehicleId]);
 
   const chooseFile = async () => {
     setError(null);
@@ -769,7 +713,7 @@ export function VehicleFilesPanel({
           <div>
             <p className="text-sm font-semibold text-[var(--ccr-text)]">Focused from Checklist</p>
             <p className="text-xs text-[var(--ccr-muted)]">
-              {getDocumentDisplayLabel(highlightedItem)} is still highlighted in this folder.
+              {getVehicleDocumentDisplayLabel(highlightedItem)} is still highlighted in this folder.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -826,7 +770,7 @@ export function VehicleFilesPanel({
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div>
                         <p className="font-semibold text-[var(--ccr-text)] break-words">
-                          {getDocumentDisplayLabel(item)}
+                          {getVehicleDocumentDisplayLabel(item)}
                         </p>
                         {isHighlighted ? (
                           <span className="mt-1 inline-flex rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-2 py-1 text-[11px] font-semibold text-[var(--ccr-accent-strong)]">
@@ -956,7 +900,7 @@ export function VehicleFilesPanel({
                         <td className="px-3 py-2 text-[var(--ccr-text)]">{item.documentType}</td>
                         <td className="px-3 py-2 text-[var(--ccr-text)] break-words">
                           <div className="space-y-1">
-                            <p>{getDocumentDisplayLabel(item)}</p>
+                            <p>{getVehicleDocumentDisplayLabel(item)}</p>
                             {isHighlighted ? (
                               <p className="text-[11px] font-semibold text-[var(--ccr-accent-strong)]">
                                 Focused from Checklist
@@ -1052,78 +996,13 @@ export function VehicleFilesPanel({
       </div>
 
       {previewItem ? (
-        <div
-          data-testid="vehicle-file-preview-modal"
-          className="fixed inset-0 z-50 bg-black/70 p-3 sm:p-6"
-          onClick={closePreview}
-        >
-          <div
-            className="mx-auto flex h-full w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)]"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="flex items-center justify-between gap-3 border-b border-[var(--ccr-border)] px-4 py-3">
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-[var(--ccr-text)]">
-                  {getDocumentDisplayLabel(previewItem)}
-                </p>
-                <p
-                  data-testid="vehicle-file-preview-meta"
-                  className="truncate text-xs text-[var(--ccr-muted)]"
-                >
-                  {previewItem.documentType}
-                  {previewItem.label ? ` · ${previewItem.title}` : ""}
-                  {previewItem.checklistItemLabel ? ` · Checklist: ${previewItem.checklistItemLabel}` : ""}
-                </p>
-              </div>
-              <div className="flex gap-2">
-                {previewItem.canDownload ? (
-                  <a
-                    href={`/api/admin/vehicles/${vehicleId}/documents/${previewItem.id}/download`}
-                    className="inline-flex min-h-9 items-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-semibold text-[var(--ccr-text)]"
-                  >
-                    Download
-                  </a>
-                ) : null}
-                <button
-                  type="button"
-                  onClick={closePreview}
-                  className="min-h-9 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-semibold text-[var(--ccr-text)]"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-
-            <div className="h-full min-h-[420px] w-full overflow-auto bg-[var(--ccr-surface-soft)]">
-              {previewLoading ? (
-                <p className="px-4 py-4 text-sm text-[var(--ccr-muted)]">Loading preview...</p>
-              ) : null}
-
-              {!previewLoading && previewError ? (
-                <div className="px-4 py-6 text-sm text-red-300">
-                  {previewError}
-                </div>
-              ) : null}
-
-              {!previewLoading && !previewError && previewBlobUrl ? (
-                previewItem.mimeType?.startsWith("image/") ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={previewBlobUrl}
-                    alt={previewItem.title}
-                    className="max-h-[78vh] w-full object-contain"
-                  />
-                ) : (
-                  <iframe
-                    title={`Preview ${previewItem.title}`}
-                    src={previewBlobUrl}
-                    className="h-[78vh] w-full"
-                  />
-                )
-              ) : null}
-            </div>
-          </div>
-        </div>
+        <VehicleDocumentPreviewModal
+          vehicleId={vehicleId}
+          document={previewItem}
+          onClose={closePreview}
+          modalTestId="vehicle-file-preview-modal"
+          metaTestId="vehicle-file-preview-meta"
+        />
       ) : null}
     </section>
   );
