@@ -455,14 +455,25 @@ export function VehicleChecklistPanel({
               {highlightedItem.label} is highlighted in this checklist.
             </p>
           </div>
-          <button
-            type="button"
-            data-testid="vehicle-checklist-clear-highlight"
-            onClick={clearHighlight}
-            className="min-h-9 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-xs font-semibold text-[var(--ccr-text)]"
-          >
-            Clear highlight
-          </button>
+          <div className="flex flex-wrap gap-2">
+            {highlightedItem.uploadedDocumentId ? (
+              <Link
+                data-testid="vehicle-checklist-view-file"
+                href={`/admin/vehicles/${vehicleId}?tab=files&folder=${encodeURIComponent(highlightedItem.folder)}&documentId=${encodeURIComponent(highlightedItem.uploadedDocumentId)}`}
+                className="inline-flex min-h-9 items-center rounded-lg border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-3 py-1 text-xs font-semibold text-[var(--ccr-accent-strong)]"
+              >
+                View linked file
+              </Link>
+            ) : null}
+            <button
+              type="button"
+              data-testid="vehicle-checklist-clear-highlight"
+              onClick={clearHighlight}
+              className="min-h-9 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-xs font-semibold text-[var(--ccr-text)]"
+            >
+              Clear highlight
+            </button>
+          </div>
         </div>
       ) : null}
 
