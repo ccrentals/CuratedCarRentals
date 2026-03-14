@@ -14,6 +14,7 @@ type VehicleFilesPanelProps = {
   vehicleId: string;
   folders?: string[];
   documentTypes?: string[];
+  initialFolder?: string;
 };
 
 type VehicleDocument = {
@@ -136,6 +137,7 @@ export function VehicleFilesPanel({
   vehicleId,
   folders: configuredFolders,
   documentTypes: configuredDocumentTypes,
+  initialFolder,
 }: VehicleFilesPanelProps) {
   const publicKey = process.env.NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY ?? "";
   const folders = useMemo(() => normalizeFolders(configuredFolders), [configuredFolders]);
@@ -143,8 +145,12 @@ export function VehicleFilesPanel({
     () => normalizeDocumentTypes(configuredDocumentTypes),
     [configuredDocumentTypes],
   );
+  const normalizedInitialFolder = useMemo(() => {
+    const candidate = initialFolder?.trim() ?? "";
+    return folders.includes(candidate) ? candidate : folders[0];
+  }, [folders, initialFolder]);
 
-  const [activeFolder, setActiveFolder] = useState<string>(folders[0]);
+  const [activeFolder, setActiveFolder] = useState<string>(normalizedInitialFolder);
   const [items, setItems] = useState<VehicleDocument[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -280,6 +286,12 @@ export function VehicleFilesPanel({
       setDocumentType(documentTypes[0] ?? "General");
     }
   }, [documentType, documentTypes]);
+
+  useEffect(() => {
+    if (normalizedInitialFolder) {
+      setActiveFolder(normalizedInitialFolder);
+    }
+  }, [normalizedInitialFolder]);
 
   const isCustomDocumentType = !documentTypes.includes(documentType);
   const selectedDocumentTypeValue = isCustomDocumentType ? CUSTOM_DOCUMENT_TYPE_VALUE : documentType;
@@ -561,6 +573,7 @@ export function VehicleFilesPanel({
         <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
           Folder
           <select
+            data-testid="vehicle-files-folder-select"
             value={activeFolder}
             onChange={(event) => setActiveFolder(event.target.value)}
             className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"

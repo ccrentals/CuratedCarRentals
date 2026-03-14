@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
@@ -418,9 +419,25 @@ export function VehicleChecklistPanel({
                 {item.uploadedDocumentId ? " · Document attached" : ""}
               </p>
               {item.uploadedDocumentId ? (
-                <p>
-                  Attached file: {item.uploadedDocumentDisplayLabel ?? "Linked vehicle file"}
-                </p>
+                <div className="space-y-2">
+                  <p>Attached file: {item.uploadedDocumentDisplayLabel ?? "Linked vehicle file"}</p>
+                  <div className="flex flex-wrap gap-2">
+                    <a
+                      data-testid="vehicle-checklist-download-file"
+                      href={`/api/admin/vehicles/${vehicleId}/documents/${item.uploadedDocumentId}/download`}
+                      className="inline-flex min-h-9 items-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-text)]"
+                    >
+                      Download file
+                    </a>
+                    <Link
+                      data-testid="vehicle-checklist-manage-file"
+                      href={`/admin/vehicles/${vehicleId}?tab=files&folder=${encodeURIComponent(item.folder)}`}
+                      className="inline-flex min-h-9 items-center rounded-lg border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-accent-strong)]"
+                    >
+                      Manage in Files
+                    </Link>
+                  </div>
+                </div>
               ) : null}
               {item.required && !item.allowNotRequired ? (
                 <p>This item should remain required.</p>

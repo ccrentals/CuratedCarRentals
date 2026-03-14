@@ -297,8 +297,21 @@ test.describe("@tour vehicle files and checklist integration", () => {
       const secondChecklistCard = page.locator("article", { hasText: secondChecklistLabel }).first();
       await expect(secondChecklistCard).toBeVisible();
       await expect(secondChecklistCard).toContainText(`Attached file: ${fileLabel}`);
+      await expect(
+        secondChecklistCard.getByTestId("vehicle-checklist-download-file"),
+      ).toHaveAttribute(
+        "href",
+        `/api/admin/vehicles/${VEHICLE_ID}/documents/${documentId}/download`,
+      );
+      await expect(secondChecklistCard.getByTestId("vehicle-checklist-manage-file")).toHaveAttribute(
+        "href",
+        `/admin/vehicles/${VEHICLE_ID}?tab=files&folder=Paperwork`,
+      );
 
-      await page.goto(`/admin/vehicles/${VEHICLE_ID}?tab=files`, { waitUntil: "networkidle" });
+      await secondChecklistCard.getByTestId("vehicle-checklist-manage-file").click();
+      await page.waitForURL(`**/admin/vehicles/${VEHICLE_ID}?tab=files&folder=Paperwork`);
+      await expect(page.getByTestId("vehicle-files-folder-select")).toHaveValue("Paperwork");
+
       const archiveRow = page.locator("tr", { hasText: fileLabel }).first();
       await archiveRow.locator('[data-testid="vehicle-file-link-select"]').selectOption("");
       await archiveRow.getByRole("button", { name: "Save link" }).click();
