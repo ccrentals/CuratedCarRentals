@@ -585,6 +585,8 @@ export function AdminSettingsForm({
               }
               className="w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
             >
+              <option value="1">1 minute</option>
+              <option value="3">3 minutes</option>
               <option value="5">5 minutes</option>
               <option value="10">10 minutes</option>
               <option value="15">15 minutes</option>
