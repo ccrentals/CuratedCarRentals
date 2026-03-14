@@ -9,7 +9,10 @@ import {
   VehicleDocumentPreviewModal,
 } from "@/components/admin/VehicleDocumentPreviewModal";
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
-import type { VehicleChecklistTemplateSetting } from "@/lib/adminSettings";
+import {
+  type AdminSettings,
+  type VehicleChecklistTemplateSetting,
+} from "@/lib/adminSettings";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
 const DEFAULT_FOLDERS = ["Paperwork", "Insurance", "Registration", "Other"];
@@ -212,6 +215,25 @@ function getStatusBadgeClass(tone: ChecklistStatusTone) {
   }
 }
 
+function normalizeTemplateWarningDaysInput(value: string) {
+  if (!value.trim()) return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return null;
+  return Math.min(3650, Math.max(0, Math.floor(parsed)));
+}
+
+function buildChecklistTemplateKey(value: string | null | undefined, fallbackLabel: string, index: number) {
+  const candidate = String(value ?? "").trim().toLowerCase();
+  const fallback = String(fallbackLabel ?? "").trim().toLowerCase();
+  const source = candidate || fallback;
+  const slug = source
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 120);
+  if (slug) return slug;
+  return `template-${index + 1}`;
+}
+
 export function VehicleChecklistPanel({
   vehicleId,
   folders: configuredFolders,
@@ -219,13 +241,19 @@ export function VehicleChecklistPanel({
   initialChecklistItemId,
 }: VehicleChecklistPanelProps) {
   const folders = useMemo(() => normalizeFolders(configuredFolders), [configuredFolders]);
-  const templates = useMemo(
+  const normalizedTemplates = useMemo(
     () => normalizeTemplates(configuredTemplates, folders),
     [configuredTemplates, folders],
   );
+  const [templateSettings, setTemplateSettings] = useState<VehicleChecklistTemplateSetting[]>(
+    normalizedTemplates,
+  );
+  useEffect(() => {
+    setTemplateSettings(normalizedTemplates);
+  }, [normalizedTemplates]);
   const activeTemplates = useMemo(
-    () => templates.filter((template) => template.isActive),
-    [templates],
+    () => templateSettings.filter((template) => template.isActive),
+    [templateSettings],
   );
   const templateMap = useMemo(() => {
     return new Map(activeTemplates.map((template) => [getTemplateKey(template.label, template.folder), template]));
@@ -264,6 +292,14 @@ export function VehicleChecklistPanel({
   const [folder, setFolder] = useState(folders[0] ?? "Unsorted");
   const [required, setRequired] = useState(false);
   const [expirationDate, setExpirationDate] = useState("");
+  const [addToTemplate, setAddToTemplate] = useState(false);
+  const [addTemplateAllowNotRequired, setAddTemplateAllowNotRequired] = useState(true);
+  const [addTemplateExpiryRequired, setAddTemplateExpiryRequired] = useState(false);
+  const [addTemplateExpiryWarningDays, setAddTemplateExpiryWarningDays] = useState("30");
+  const [editSaveToTemplate, setEditSaveToTemplate] = useState(false);
+  const [editTemplateAllowNotRequired, setEditTemplateAllowNotRequired] = useState(true);
+  const [editTemplateExpiryRequired, setEditTemplateExpiryRequired] = useState(false);
+  const [editTemplateExpiryWarningDays, setEditTemplateExpiryWarningDays] = useState("30");
 
   const loadDocuments = useCallback(async () => {
     try {
@@ -380,6 +416,79 @@ export function VehicleChecklistPanel({
       setFolder(folders[0] ?? "Unsorted");
     }
   }, [folder, folders]);
+
+  async function upsertChecklistTemplate(
+    input: Omit<VehicleChecklistTemplateSetting, "key"> & { key?: string | null },
+  ) {
+    const csrfToken = await ensureCsrfToken();
+    const settingsResponse = await fetch("/api/admin/settings", {
+      cache: "no-store",
+      headers: {
+        Accept: "application/json",
+      },
+    });
+    const settingsPayload = (await settingsResponse.json().catch(() => ({}))) as {
+      settings?: AdminSettings;
+      error?: string;
+    };
+    if (!settingsResponse.ok) {
+      throw new Error(settingsPayload.error ?? "Unable to load settings for checklist template update.");
+    }
+    const currentSettings = settingsPayload.settings;
+    if (!currentSettings) {
+      throw new Error("Unable to load settings for checklist template update.");
+    }
+    const normalizedKey =
+      input.key?.trim() ||
+      buildChecklistTemplateKey("", input.label, currentSettings.vehicleChecklistTemplates.length);
+    const existingTemplate =
+      currentSettings.vehicleChecklistTemplates.find((template) => template.key === normalizedKey) ?? null;
+    const nextTemplate: VehicleChecklistTemplateSetting = {
+      key: normalizedKey,
+      label: input.label.trim().slice(0, 160),
+      folder: folders.includes(input.folder) ? input.folder : folders[0] ?? "Unsorted",
+      required: input.required,
+      allowNotRequired: input.allowNotRequired,
+      expiryRequired: input.expiryRequired,
+      expiryWarningDays: input.expiryRequired ? input.expiryWarningDays : null,
+      isActive: existingTemplate?.isActive ?? input.isActive,
+    };
+    const nextTemplates = existingTemplate
+      ? currentSettings.vehicleChecklistTemplates.map((template) =>
+          template.key === normalizedKey ? { ...template, ...nextTemplate } : template,
+        )
+      : [...currentSettings.vehicleChecklistTemplates, nextTemplate];
+
+    const patchResponse = await fetch("/api/admin/settings", {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "x-csrf-token": csrfToken ?? "",
+      },
+      body: JSON.stringify({
+        settings: {
+          ...currentSettings,
+          vehicleChecklistTemplates: nextTemplates,
+        },
+        csrfToken,
+      }),
+    });
+    const patchPayload = (await patchResponse.json().catch(() => ({}))) as {
+      ok?: boolean;
+      error?: string;
+      settings?: AdminSettings;
+    };
+    if (!patchResponse.ok || !patchPayload.ok) {
+      throw new Error(patchPayload.error ?? "Unable to save checklist template.");
+    }
+
+    const nextSettings = patchPayload.settings;
+    if (!nextSettings) {
+      throw new Error("Checklist template saved but updated settings were not returned.");
+    }
+    setTemplateSettings(nextSettings.vehicleChecklistTemplates);
+    return nextSettings.vehicleChecklistTemplates.find((template) => template.key === normalizedKey) ?? nextTemplate;
+  }
 
   const highlightedItem = useMemo(
     () => items.find((item) => item.id === highlightedItemId) ?? null,
@@ -530,19 +639,36 @@ export function VehicleChecklistPanel({
     setMessage(null);
 
     try {
-      const matchedTemplate = templateMap.get(getTemplateKey(normalizedLabel, folder)) ?? null;
+      let nextTemplateKey = templateMap.get(getTemplateKey(normalizedLabel, folder))?.key ?? null;
+      if (addToTemplate) {
+        const savedTemplate = await upsertChecklistTemplate({
+          key: nextTemplateKey,
+          label: normalizedLabel,
+          folder,
+          required,
+          allowNotRequired: addTemplateAllowNotRequired,
+          expiryRequired: addTemplateExpiryRequired,
+          expiryWarningDays: normalizeTemplateWarningDaysInput(addTemplateExpiryWarningDays),
+          isActive: true,
+        });
+        nextTemplateKey = savedTemplate.key;
+      }
       await createItem(
         normalizedLabel,
         folder,
         required,
         true,
         expirationDate || null,
-        matchedTemplate?.key ?? null,
+        nextTemplateKey,
       );
       setLabel("");
       setRequired(false);
       setExpirationDate("");
-      setMessage("Checklist item added.");
+      setAddToTemplate(false);
+      setAddTemplateAllowNotRequired(true);
+      setAddTemplateExpiryRequired(false);
+      setAddTemplateExpiryWarningDays("30");
+      setMessage(addToTemplate ? "Checklist item added and template saved." : "Checklist item added.");
       await loadItems();
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Unable to save checklist item.");
@@ -743,6 +869,7 @@ export function VehicleChecklistPanel({
   }
 
   function startEditing(item: ChecklistItem) {
+    const linkedTemplate = itemTemplateMap.get(item.id) ?? null;
     setEditingItemId(item.id);
     setEditLabel(item.label);
     setEditFolder(item.folder);
@@ -751,6 +878,14 @@ export function VehicleChecklistPanel({
     setEditTemplateKey(
       item.templateKey ??
         (templateMap.get(getTemplateKey(item.label, item.folder))?.key ?? ""),
+    );
+    setEditSaveToTemplate(false);
+    setEditTemplateAllowNotRequired(linkedTemplate?.allowNotRequired ?? item.allowNotRequired);
+    setEditTemplateExpiryRequired(
+      linkedTemplate?.expiryRequired ?? Boolean(item.templateExpiryRequired),
+    );
+    setEditTemplateExpiryWarningDays(
+      String(linkedTemplate?.expiryWarningDays ?? item.templateExpiryWarningDays ?? 30),
     );
     setError(null);
     setMessage(null);
@@ -763,6 +898,10 @@ export function VehicleChecklistPanel({
     setEditRequired(false);
     setEditExpirationDate("");
     setEditTemplateKey("");
+    setEditSaveToTemplate(false);
+    setEditTemplateAllowNotRequired(true);
+    setEditTemplateExpiryRequired(false);
+    setEditTemplateExpiryWarningDays("30");
   }
 
   function applySelectedTemplateDefaults() {
@@ -773,6 +912,9 @@ export function VehicleChecklistPanel({
     setEditLabel(template.label);
     setEditFolder(template.folder);
     setEditRequired(template.required);
+    setEditTemplateAllowNotRequired(template.allowNotRequired);
+    setEditTemplateExpiryRequired(template.expiryRequired);
+    setEditTemplateExpiryWarningDays(String(template.expiryWarningDays ?? 30));
   }
 
   async function saveItemEdits(item: ChecklistItem) {
@@ -789,6 +931,20 @@ export function VehicleChecklistPanel({
     setMessage(null);
 
     try {
+      let nextTemplateKey = editTemplateKey || null;
+      if (editSaveToTemplate) {
+        const savedTemplate = await upsertChecklistTemplate({
+          key: nextTemplateKey,
+          label: normalizedLabel,
+          folder: editFolder || item.folder,
+          required: item.allowNotRequired ? editRequired : true,
+          allowNotRequired: editTemplateAllowNotRequired,
+          expiryRequired: editTemplateExpiryRequired,
+          expiryWarningDays: normalizeTemplateWarningDaysInput(editTemplateExpiryWarningDays),
+          isActive: true,
+        });
+        nextTemplateKey = savedTemplate.key;
+      }
       const csrfToken = await ensureCsrfToken();
       const response = await fetch(`/api/admin/vehicles/${vehicleId}/checklist/${item.id}`, {
         method: "PATCH",
@@ -801,7 +957,7 @@ export function VehicleChecklistPanel({
           folder: editFolder || item.folder,
           required: item.allowNotRequired ? editRequired : true,
           expirationDate: editExpirationDate || null,
-          templateKey: editTemplateKey || null,
+          templateKey: nextTemplateKey,
           csrfToken,
         }),
       });
@@ -810,7 +966,7 @@ export function VehicleChecklistPanel({
         throw new Error(payload.error ?? "Unable to update checklist item.");
       }
 
-      setMessage("Checklist item updated.");
+      setMessage(editSaveToTemplate ? "Checklist item updated and template saved." : "Checklist item updated.");
       cancelEditing();
       await Promise.all([loadItems(), loadDocuments()]);
     } catch (requestError) {
@@ -841,7 +997,7 @@ export function VehicleChecklistPanel({
         ) : null}
       </div>
 
-      {templates.length > 0 ? (
+      {templateSettings.length > 0 ? (
         <div className="mt-4 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
@@ -858,7 +1014,7 @@ export function VehicleChecklistPanel({
           </div>
 
           <div className="mt-3 grid gap-3 md:grid-cols-2">
-            {templates.map((template) => (
+            {templateSettings.map((template) => (
               <article
                 key={template.key}
                 className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3"
@@ -942,6 +1098,60 @@ export function VehicleChecklistPanel({
             />
             Required item
           </label>
+        </div>
+
+        <div className="mt-3 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3">
+          <label className="inline-flex min-h-11 items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+            <input
+              type="checkbox"
+              data-testid="vehicle-checklist-add-template-toggle"
+              checked={addToTemplate}
+              onChange={(event) => setAddToTemplate(event.target.checked)}
+              className="h-4 w-4 rounded border border-[var(--ccr-border)] bg-transparent accent-[var(--ccr-accent)]"
+            />
+            Add to template
+          </label>
+          <p className="mt-1 text-xs text-[var(--ccr-muted)]">
+            When enabled, saving here also updates Admin Settings so future template applies stay in sync.
+          </p>
+          {addToTemplate ? (
+            <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              <label className="flex min-h-11 items-center gap-2 rounded-xl border border-[var(--ccr-border)] px-3 py-3 text-xs text-[var(--ccr-text)]">
+                <input
+                  type="checkbox"
+                  data-testid="vehicle-checklist-add-template-allow-optional"
+                  checked={addTemplateAllowNotRequired}
+                  onChange={(event) => setAddTemplateAllowNotRequired(event.target.checked)}
+                  className="h-4 w-4 rounded border border-[var(--ccr-border)] bg-transparent accent-[var(--ccr-accent)]"
+                />
+                Can be marked optional later
+              </label>
+              <label className="flex min-h-11 items-center gap-2 rounded-xl border border-[var(--ccr-border)] px-3 py-3 text-xs text-[var(--ccr-text)]">
+                <input
+                  type="checkbox"
+                  data-testid="vehicle-checklist-add-template-expiry-required"
+                  checked={addTemplateExpiryRequired}
+                  onChange={(event) => setAddTemplateExpiryRequired(event.target.checked)}
+                  className="h-4 w-4 rounded border border-[var(--ccr-border)] bg-transparent accent-[var(--ccr-accent)]"
+                />
+                Expiration required in template
+              </label>
+              <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                Expiry warning days
+                <input
+                  type="number"
+                  data-testid="vehicle-checklist-add-template-warning-days"
+                  min={0}
+                  max={3650}
+                  value={addTemplateExpiryWarningDays}
+                  disabled={!addTemplateExpiryRequired}
+                  onChange={(event) => setAddTemplateExpiryWarningDays(event.target.value)}
+                  className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)] disabled:opacity-60"
+                  placeholder="30"
+                />
+              </label>
+            </div>
+          ) : null}
         </div>
 
         <div className="mt-3">
@@ -1249,6 +1459,56 @@ export function VehicleChecklistPanel({
                           ))}
                         </select>
                       </label>
+                    </div>
+                    <div className="mt-3 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-3">
+                      <label className="inline-flex min-h-9 items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                        <input
+                          data-testid={`vehicle-checklist-edit-save-template-${item.id}`}
+                          type="checkbox"
+                          checked={editSaveToTemplate}
+                          onChange={(event) => setEditSaveToTemplate(event.target.checked)}
+                          className="h-4 w-4 rounded border border-[var(--ccr-border)] bg-transparent accent-[var(--ccr-accent)]"
+                        />
+                        {editTemplateKey ? "Update template from this item" : "Add this item to template"}
+                      </label>
+                      <p className="mt-1 text-[11px] text-[var(--ccr-muted)]">
+                        When enabled, saving here also updates Admin Settings so future template applies stay in sync.
+                      </p>
+                      {editSaveToTemplate ? (
+                        <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                          <label className="flex min-h-9 items-center gap-2 rounded-xl border border-[var(--ccr-border)] px-3 py-3 text-[11px] text-[var(--ccr-text)]">
+                            <input
+                              type="checkbox"
+                              checked={editTemplateAllowNotRequired}
+                              onChange={(event) => setEditTemplateAllowNotRequired(event.target.checked)}
+                              className="h-4 w-4 rounded border border-[var(--ccr-border)] bg-transparent accent-[var(--ccr-accent)]"
+                            />
+                            Can be marked optional later
+                          </label>
+                          <label className="flex min-h-9 items-center gap-2 rounded-xl border border-[var(--ccr-border)] px-3 py-3 text-[11px] text-[var(--ccr-text)]">
+                            <input
+                              type="checkbox"
+                              checked={editTemplateExpiryRequired}
+                              onChange={(event) => setEditTemplateExpiryRequired(event.target.checked)}
+                              className="h-4 w-4 rounded border border-[var(--ccr-border)] bg-transparent accent-[var(--ccr-accent)]"
+                            />
+                            Expiration required in template
+                          </label>
+                          <label className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                            Expiry warning days
+                            <input
+                              type="number"
+                              min={0}
+                              max={3650}
+                              value={editTemplateExpiryWarningDays}
+                              disabled={!editTemplateExpiryRequired}
+                              onChange={(event) => setEditTemplateExpiryWarningDays(event.target.value)}
+                              className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs text-[var(--ccr-text)] disabled:opacity-60"
+                              placeholder="30"
+                            />
+                          </label>
+                        </div>
+                      ) : null}
                     </div>
                     <div className="mt-3 flex flex-wrap items-center gap-3">
                       {editTemplateKey ? (
