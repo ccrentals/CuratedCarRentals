@@ -15,6 +15,7 @@ type VehicleFilesPanelProps = {
   folders?: string[];
   documentTypes?: string[];
   initialFolder?: string;
+  initialDocumentId?: string;
 };
 
 type VehicleDocument = {
@@ -138,6 +139,7 @@ export function VehicleFilesPanel({
   folders: configuredFolders,
   documentTypes: configuredDocumentTypes,
   initialFolder,
+  initialDocumentId,
 }: VehicleFilesPanelProps) {
   const publicKey = process.env.NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY ?? "";
   const folders = useMemo(() => normalizeFolders(configuredFolders), [configuredFolders]);
@@ -153,6 +155,7 @@ export function VehicleFilesPanel({
   const [activeFolder, setActiveFolder] = useState<string>(normalizedInitialFolder);
   const [items, setItems] = useState<VehicleDocument[]>([]);
   const [loading, setLoading] = useState(false);
+  const [documentsLoaded, setDocumentsLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [checklistItems, setChecklistItems] = useState<ChecklistItemOption[]>([]);
   const [checklistError, setChecklistError] = useState<string | null>(null);
@@ -170,9 +173,11 @@ export function VehicleFilesPanel({
   const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [initialPreviewHandled, setInitialPreviewHandled] = useState(false);
 
   const loadDocuments = useCallback(async () => {
     setLoading(true);
+    setDocumentsLoaded(false);
     setError(null);
 
     try {
@@ -230,6 +235,7 @@ export function VehicleFilesPanel({
       setItems([]);
     } finally {
       setLoading(false);
+      setDocumentsLoaded(true);
     }
   }, [activeFolder, vehicleId]);
 
@@ -293,6 +299,10 @@ export function VehicleFilesPanel({
     }
   }, [normalizedInitialFolder]);
 
+  useEffect(() => {
+    setInitialPreviewHandled(false);
+  }, [initialDocumentId]);
+
   const isCustomDocumentType = !documentTypes.includes(documentType);
   const selectedDocumentTypeValue = isCustomDocumentType ? CUSTOM_DOCUMENT_TYPE_VALUE : documentType;
   const availableChecklistItems = useMemo(
@@ -320,6 +330,17 @@ export function VehicleFilesPanel({
     }
     setRowChecklistSelections(nextSelections);
   }, [items]);
+
+  useEffect(() => {
+    if (!initialDocumentId || initialPreviewHandled || !documentsLoaded) return;
+    const matchedItem = items.find((item) => item.id === initialDocumentId);
+    if (matchedItem) {
+      setPreviewItem(matchedItem);
+      setInitialPreviewHandled(true);
+      return;
+    }
+    setInitialPreviewHandled(true);
+  }, [documentsLoaded, initialDocumentId, initialPreviewHandled, items]);
 
   useEffect(() => {
     let cancelled = false;
@@ -924,6 +945,7 @@ export function VehicleFilesPanel({
 
       {previewItem ? (
         <div
+          data-testid="vehicle-file-preview-modal"
           className="fixed inset-0 z-50 bg-black/70 p-3 sm:p-6"
           onClick={() => setPreviewItem(null)}
         >
@@ -936,7 +958,10 @@ export function VehicleFilesPanel({
                 <p className="truncate text-sm font-semibold text-[var(--ccr-text)]">
                   {getDocumentDisplayLabel(previewItem)}
                 </p>
-                <p className="truncate text-xs text-[var(--ccr-muted)]">
+                <p
+                  data-testid="vehicle-file-preview-meta"
+                  className="truncate text-xs text-[var(--ccr-muted)]"
+                >
                   {previewItem.documentType}
                   {previewItem.label ? ` · ${previewItem.title}` : ""}
                   {previewItem.checklistItemLabel ? ` · Checklist: ${previewItem.checklistItemLabel}` : ""}

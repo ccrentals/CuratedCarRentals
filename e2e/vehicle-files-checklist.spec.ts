@@ -305,12 +305,18 @@ test.describe("@tour vehicle files and checklist integration", () => {
       );
       await expect(secondChecklistCard.getByTestId("vehicle-checklist-manage-file")).toHaveAttribute(
         "href",
-        `/admin/vehicles/${VEHICLE_ID}?tab=files&folder=Paperwork`,
+        `/admin/vehicles/${VEHICLE_ID}?tab=files&folder=Paperwork&documentId=${documentId}`,
       );
 
       await secondChecklistCard.getByTestId("vehicle-checklist-manage-file").click();
-      await page.waitForURL(`**/admin/vehicles/${VEHICLE_ID}?tab=files&folder=Paperwork`);
+      await page.waitForURL(
+        `**/admin/vehicles/${VEHICLE_ID}?tab=files&folder=Paperwork&documentId=${documentId}`,
+      );
       await expect(page.getByTestId("vehicle-files-folder-select")).toHaveValue("Paperwork");
+      await expect(page.getByTestId("vehicle-file-preview-modal")).toBeVisible();
+      await expect(page.getByTestId("vehicle-file-preview-meta")).toContainText(secondChecklistLabel);
+      await page.getByRole("button", { name: "Close" }).click();
+      await expect(page.getByTestId("vehicle-file-preview-modal")).not.toBeVisible();
 
       const archiveRow = page.locator("tr", { hasText: fileLabel }).first();
       await archiveRow.locator('[data-testid="vehicle-file-link-select"]').selectOption("");

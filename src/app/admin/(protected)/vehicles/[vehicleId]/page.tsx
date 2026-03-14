@@ -108,6 +108,10 @@ export default async function AdminVehicleDetailPage({
   const requestedTab = normalizeVehicleDetailTab(query.tab);
   const requestedFolder =
     typeof query.folder === "string" && query.folder.trim() ? query.folder.trim() : undefined;
+  const requestedDocumentId =
+    typeof query.documentId === "string" && query.documentId.trim()
+      ? query.documentId.trim()
+      : undefined;
   const maintenanceRecordId =
     typeof query.recordId === "string" && query.recordId.trim()
       ? query.recordId.trim()
@@ -274,6 +278,7 @@ export default async function AdminVehicleDetailPage({
             folders={documentFolders}
             documentTypes={documentTypeOptions}
             initialFolder={requestedFolder}
+            initialDocumentId={requestedDocumentId}
           />
         ) : null}
 
