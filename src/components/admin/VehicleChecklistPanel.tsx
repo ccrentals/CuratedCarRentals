@@ -1145,7 +1145,7 @@ export function VehicleChecklistPanel({
               }}
               data-testid={`vehicle-checklist-item-${item.id}`}
               data-highlighted={isHighlighted ? "true" : "false"}
-              className={`relative rounded-xl border p-4 pr-36 transition-colors sm:pr-44 ${
+              className={`relative rounded-xl border p-4 pr-4 transition-colors md:pr-44 xl:pr-60 ${
                 isHighlighted
                   ? "border-[var(--ccr-accent)] bg-[color-mix(in_srgb,var(--ccr-accent)_10%,var(--ccr-surface-soft))] shadow-[0_0_0_1px_var(--ccr-accent)]"
                   : itemStatus.needsAttention
@@ -1153,37 +1153,38 @@ export function VehicleChecklistPanel({
                   : "border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)]"
               }`}
             >
-              <div className="flex flex-wrap items-start gap-2">
-                <div>
-                  <p className="font-semibold text-[var(--ccr-text)] break-words">{item.label}</p>
-                  {isHighlighted ? (
-                    <span className="mt-1 inline-flex rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-2 py-1 text-[11px] font-semibold text-[var(--ccr-accent-strong)]">
-                      Focused from Files
-                    </span>
-                  ) : null}
-                  <p className="text-xs text-[var(--ccr-muted)]">Folder: {item.folder}</p>
-                  {item.templateId || item.templateKey ? (
-                    <p className="text-xs text-[var(--ccr-muted)]">
-                      Template linked: {linkedTemplate?.label ?? item.templateKey ?? "Unknown template"}
-                    </p>
-                  ) : null}
+              <div className="max-w-full xl:max-w-[calc(100%-15rem)]">
+                <div className="flex flex-wrap items-start gap-2">
+                  <div>
+                    <p className="font-semibold text-[var(--ccr-text)] break-words">{item.label}</p>
+                    {isHighlighted ? (
+                      <span className="mt-1 inline-flex rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-2 py-1 text-[11px] font-semibold text-[var(--ccr-accent-strong)]">
+                        Focused from Files
+                      </span>
+                    ) : null}
+                    <p className="text-xs text-[var(--ccr-muted)]">Folder: {item.folder}</p>
+                    {item.templateId || item.templateKey ? (
+                      <p className="text-xs text-[var(--ccr-muted)]">
+                        Template linked: {linkedTemplate?.label ?? item.templateKey ?? "Unknown template"}
+                      </p>
+                    ) : null}
+                  </div>
                 </div>
-              </div>
 
-              {itemStatus.badges.length > 0 ? (
-                <div className="mt-2 flex flex-wrap gap-2" data-testid={`vehicle-checklist-status-${item.id}`}>
-                  {itemStatus.badges.map((badge) => (
-                    <span
-                      key={`${item.id}-${badge.label}`}
-                      className={`rounded-full border px-2 py-1 text-[11px] font-semibold ${getStatusBadgeClass(badge.tone)}`}
-                    >
-                      {badge.label}
-                    </span>
-                  ))}
-                </div>
-              ) : null}
+                {itemStatus.badges.length > 0 ? (
+                  <div className="mt-2 flex flex-wrap gap-2" data-testid={`vehicle-checklist-status-${item.id}`}>
+                    {itemStatus.badges.map((badge) => (
+                      <span
+                        key={`${item.id}-${badge.label}`}
+                        className={`rounded-full border px-2 py-1 text-[11px] font-semibold ${getStatusBadgeClass(badge.tone)}`}
+                      >
+                        {badge.label}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
 
-              <div className="mt-2 text-xs text-[var(--ccr-muted)]">
+                <div className="mt-2 text-xs text-[var(--ccr-muted)]">
                 <p>Created: <DateTimeInline value={item.createdAt} /></p>
                 <p>
                   Expiration: {item.expirationDate ? formatExpirationDisplay(item.expirationDate) : "Not set"}
@@ -1442,12 +1443,13 @@ export function VehicleChecklistPanel({
                       : "No saved files exist in this folder yet."}
                   </p>
                 </div>
-                {item.required && !item.allowNotRequired ? (
-                  <p>This item should remain required.</p>
-                ) : null}
+                  {item.required && !item.allowNotRequired ? (
+                    <p>This item should remain required.</p>
+                  ) : null}
+                </div>
               </div>
 
-              <div className="absolute right-4 top-1/2 flex -translate-y-1/2 items-center gap-2">
+              <div className="absolute right-4 top-4 flex max-w-[12rem] flex-wrap justify-end gap-2">
                 {item.required ? (
                   <span className="rounded-full border border-amber-300/50 bg-amber-500/15 px-2 py-1 text-[11px] font-semibold text-[var(--ccr-required-text)]">
                     Required
