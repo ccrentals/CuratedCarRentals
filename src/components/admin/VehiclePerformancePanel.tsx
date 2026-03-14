@@ -1,10 +1,24 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { PaginationSummary } from "@/components/admin/PaginationSummaryNav";
+import { SortableTh } from "@/components/admin/SortableTh";
 import { TableDateTime } from "@/components/shared/TableDateTime";
+import type { SortDir, SortState } from "@/components/admin/tableSort";
 
 type RangePreset = "30d" | "90d" | "365d" | "custom";
+type ByMonthSortBy = "month" | "booked" | "downtime" | "bookings" | "revenue";
+type ByMonthSortState = {
+  sortBy: ByMonthSortBy;
+  sortDir: SortDir;
+};
+type RecentBookingSortBy = "booking" | "dates" | "status" | "customer" | "total";
+type RecentBookingSortState = {
+  sortBy: RecentBookingSortBy;
+  sortDir: SortDir;
+};
 
 type PerformancePayload = {
   ok: boolean;
@@ -24,22 +38,43 @@ type PerformancePayload = {
     maintenanceBlockouts: number;
   };
   breakdown?: {
-    byMonth: Array<{
-      month: string;
-      bookedDays: number;
-      downtimeDays: number;
-      bookingCount: number;
-      revenueCents: number | null;
-    }>;
-    recentBookings: Array<{
-      id: string;
-      start: string;
-      end: string;
-      status: string;
-      customerName: string | null;
-      totalCents: number | null;
-      depositCents: number | null;
-    }>;
+    byMonth: {
+      rows: Array<{
+        month: string;
+        bookedDays: number;
+        downtimeDays: number;
+        bookingCount: number;
+        revenueCents: number | null;
+      }>;
+      page: number;
+      pageSize: number;
+      totalCount: number;
+      totalPages: number;
+      from: number;
+      to: number;
+      hasPrev: boolean;
+      hasNext: boolean;
+    };
+    recentBookings: {
+      rows: Array<{
+        id: string;
+        publicId: string | null;
+        start: string;
+        end: string;
+        status: string;
+        customerName: string | null;
+        totalCents: number | null;
+        depositCents: number | null;
+      }>;
+      page: number;
+      pageSize: number;
+      totalCount: number;
+      totalPages: number;
+      from: number;
+      to: number;
+      hasPrev: boolean;
+      hasNext: boolean;
+    };
   };
   error?: string;
 };
@@ -71,22 +106,43 @@ type PerformanceData = {
     maintenanceBlockouts: number;
   };
   breakdown: {
-    byMonth: Array<{
-      month: string;
-      bookedDays: number;
-      downtimeDays: number;
-      bookingCount: number;
-      revenueCents: number | null;
-    }>;
-    recentBookings: Array<{
-      id: string;
-      start: string;
-      end: string;
-      status: string;
-      customerName: string | null;
-      totalCents: number | null;
-      depositCents: number | null;
-    }>;
+    byMonth: {
+      rows: Array<{
+        month: string;
+        bookedDays: number;
+        downtimeDays: number;
+        bookingCount: number;
+        revenueCents: number | null;
+      }>;
+      page: number;
+      pageSize: number;
+      totalCount: number;
+      totalPages: number;
+      from: number;
+      to: number;
+      hasPrev: boolean;
+      hasNext: boolean;
+    };
+    recentBookings: {
+      rows: Array<{
+        id: string;
+        publicId: string | null;
+        start: string;
+        end: string;
+        status: string;
+        customerName: string | null;
+        totalCents: number | null;
+        depositCents: number | null;
+      }>;
+      page: number;
+      pageSize: number;
+      totalCount: number;
+      totalPages: number;
+      from: number;
+      to: number;
+      hasPrev: boolean;
+      hasNext: boolean;
+    };
   };
 };
 
@@ -168,22 +224,43 @@ function fallbackData(): PerformanceData {
       maintenanceBlockouts: 0,
     },
     breakdown: {
-      byMonth: [] as Array<{
-        month: string;
-        bookedDays: number;
-        downtimeDays: number;
-        bookingCount: number;
-        revenueCents: number | null;
-      }>,
-      recentBookings: [] as Array<{
-        id: string;
-        start: string;
-        end: string;
-        status: string;
-        customerName: string | null;
-        totalCents: number | null;
-        depositCents: number | null;
-      }>,
+      byMonth: {
+        rows: [] as Array<{
+          month: string;
+          bookedDays: number;
+          downtimeDays: number;
+          bookingCount: number;
+          revenueCents: number | null;
+        }>,
+        page: 1,
+        pageSize: 5,
+        totalCount: 0,
+        totalPages: 1,
+        from: 0,
+        to: 0,
+        hasPrev: false,
+        hasNext: false,
+      },
+      recentBookings: {
+        rows: [] as Array<{
+          id: string;
+          publicId: string | null;
+          start: string;
+          end: string;
+          status: string;
+          customerName: string | null;
+          totalCents: number | null;
+          depositCents: number | null;
+        }>,
+        page: 1,
+        pageSize: 5,
+        totalCount: 0,
+        totalPages: 1,
+        from: 0,
+        to: 0,
+        hasPrev: false,
+        hasNext: false,
+      },
     },
   };
 }
@@ -196,6 +273,16 @@ export function VehiclePerformancePanel({ vehicleId }: VehiclePerformancePanelPr
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<PerformanceData>(fallbackData);
+  const [byMonthSort, setByMonthSort] = useState<ByMonthSortState>({
+    sortBy: "month",
+    sortDir: "asc",
+  });
+  const [byMonthPage, setByMonthPage] = useState(1);
+  const [recentBookingsSort, setRecentBookingsSort] = useState<RecentBookingSortState>({
+    sortBy: "dates",
+    sortDir: "desc",
+  });
+  const [recentBookingsPage, setRecentBookingsPage] = useState(1);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -208,6 +295,12 @@ export function VehiclePerformancePanel({ vehicleId }: VehiclePerformancePanelPr
         if (appliedRange.start) params.set("start", appliedRange.start);
         if (appliedRange.end) params.set("end", appliedRange.end);
       }
+      params.set("monthlySortBy", byMonthSort.sortBy);
+      params.set("monthlySortDir", byMonthSort.sortDir);
+      params.set("monthlyPage", String(byMonthPage));
+      params.set("sortBy", recentBookingsSort.sortBy);
+      params.set("sortDir", recentBookingsSort.sortDir);
+      params.set("bookingsPage", String(recentBookingsPage));
 
       const response = await fetch(`/api/admin/vehicles/${vehicleId}/performance?${params.toString()}`, {
         cache: "no-store",
@@ -233,7 +326,18 @@ export function VehiclePerformancePanel({ vehicleId }: VehiclePerformancePanelPr
     } finally {
       setLoading(false);
     }
-  }, [appliedRange.end, appliedRange.preset, appliedRange.start, vehicleId]);
+  }, [
+    appliedRange.end,
+    appliedRange.preset,
+    appliedRange.start,
+    byMonthPage,
+    byMonthSort.sortBy,
+    byMonthSort.sortDir,
+    recentBookingsPage,
+    recentBookingsSort.sortBy,
+    recentBookingsSort.sortDir,
+    vehicleId,
+  ]);
 
   useEffect(() => {
     void loadData();
@@ -249,6 +353,8 @@ export function VehiclePerformancePanel({ vehicleId }: VehiclePerformancePanelPr
   function applyPreset(preset: Exclude<RangePreset, "custom">) {
     setSelectedRange(preset);
     setAppliedRange({ preset });
+    setByMonthPage(1);
+    setRecentBookingsPage(1);
   }
 
   function applyCustomRange() {
@@ -258,6 +364,46 @@ export function VehiclePerformancePanel({ vehicleId }: VehiclePerformancePanelPr
     }
     setSelectedRange("custom");
     setAppliedRange({ preset: "custom", start: customRange.start, end: customRange.end });
+    setByMonthPage(1);
+    setRecentBookingsPage(1);
+  }
+
+  function updateByMonthSort(next: SortState) {
+    const sortBy = next.sortBy;
+    const sortDir = next.sortDir;
+    if (
+      sortBy !== "month" &&
+      sortBy !== "booked" &&
+      sortBy !== "downtime" &&
+      sortBy !== "bookings" &&
+      sortBy !== "revenue"
+    ) {
+      return;
+    }
+    if (sortDir !== "asc" && sortDir !== "desc") {
+      return;
+    }
+    setByMonthSort({ sortBy, sortDir });
+    setByMonthPage(1);
+  }
+
+  function updateRecentBookingsSort(next: SortState) {
+    const sortBy = next.sortBy;
+    const sortDir = next.sortDir;
+    if (
+      sortBy !== "booking" &&
+      sortBy !== "dates" &&
+      sortBy !== "status" &&
+      sortBy !== "customer" &&
+      sortBy !== "total"
+    ) {
+      return;
+    }
+    if (sortDir !== "asc" && sortDir !== "desc") {
+      return;
+    }
+    setRecentBookingsSort({ sortBy, sortDir });
+    setRecentBookingsPage(1);
   }
 
   return (
@@ -401,22 +547,57 @@ export function VehiclePerformancePanel({ vehicleId }: VehiclePerformancePanelPr
                 <h3 className="text-sm font-semibold text-[var(--ccr-text)]">By month</h3>
               </header>
 
-              {data.breakdown.byMonth.length === 0 ? (
+              {data.breakdown.byMonth.rows.length === 0 ? (
                 <p className="px-3 py-4 text-sm text-[var(--ccr-muted)]">No monthly data for this range.</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="min-w-full text-left text-xs sm:text-sm">
                     <thead className="border-b border-[var(--ccr-border)] text-[11px] uppercase tracking-wide text-[var(--ccr-muted)]">
                       <tr>
-                        <th className="px-3 py-2">Month</th>
-                        <th className="px-3 py-2">Booked</th>
-                        <th className="px-3 py-2">Downtime</th>
-                        <th className="px-3 py-2">Bookings</th>
-                        <th className="px-3 py-2">Revenue</th>
+                        <SortableTh
+                          label="Month"
+                          columnKey="month"
+                          sort={byMonthSort}
+                          onChange={updateByMonthSort}
+                          className="px-3 py-2"
+                          defaultDirection="asc"
+                        />
+                        <SortableTh
+                          label="Booked"
+                          columnKey="booked"
+                          sort={byMonthSort}
+                          onChange={updateByMonthSort}
+                          className="px-3 py-2"
+                          defaultDirection="desc"
+                        />
+                        <SortableTh
+                          label="Downtime"
+                          columnKey="downtime"
+                          sort={byMonthSort}
+                          onChange={updateByMonthSort}
+                          className="px-3 py-2"
+                          defaultDirection="desc"
+                        />
+                        <SortableTh
+                          label="Bookings"
+                          columnKey="bookings"
+                          sort={byMonthSort}
+                          onChange={updateByMonthSort}
+                          className="px-3 py-2"
+                          defaultDirection="desc"
+                        />
+                        <SortableTh
+                          label="Revenue"
+                          columnKey="revenue"
+                          sort={byMonthSort}
+                          onChange={updateByMonthSort}
+                          className="px-3 py-2"
+                          defaultDirection="desc"
+                        />
                       </tr>
                     </thead>
                     <tbody>
-                      {data.breakdown.byMonth.map((row) => (
+                      {data.breakdown.byMonth.rows.map((row) => (
                         <tr key={row.month} className="border-b border-[var(--ccr-border)] last:border-b-0">
                           <td className="px-3 py-2 text-[var(--ccr-text)]">{row.month}</td>
                           <td className="px-3 py-2 text-[var(--ccr-text)]">{row.bookedDays}</td>
@@ -427,6 +608,46 @@ export function VehiclePerformancePanel({ vehicleId }: VehiclePerformancePanelPr
                       ))}
                     </tbody>
                   </table>
+                  <div className="border-t border-[var(--ccr-border)] px-3 py-2">
+                    <PaginationSummary
+                      from={data.breakdown.byMonth.from}
+                      to={data.breakdown.byMonth.to}
+                      totalCount={data.breakdown.byMonth.totalCount}
+                      page={data.breakdown.byMonth.page}
+                      totalPages={data.breakdown.byMonth.totalPages}
+                      rightContent={
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setByMonthPage((current) => Math.max(1, current - 1))}
+                            disabled={!data.breakdown.byMonth.hasPrev}
+                            className={`rounded-lg border px-2 py-1 font-semibold ${
+                              data.breakdown.byMonth.hasPrev
+                                ? "border-[var(--ccr-border)] text-[var(--ccr-text)]"
+                                : "cursor-not-allowed border-[var(--ccr-border)]/40 text-[var(--ccr-muted)]/60"
+                            }`}
+                          >
+                            Prev
+                          </button>
+                          <span className="font-semibold text-[var(--ccr-text)]">
+                            Page {data.breakdown.byMonth.page} of {data.breakdown.byMonth.totalPages}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setByMonthPage((current) => current + 1)}
+                            disabled={!data.breakdown.byMonth.hasNext}
+                            className={`rounded-lg border px-2 py-1 font-semibold ${
+                              data.breakdown.byMonth.hasNext
+                                ? "border-[var(--ccr-border)] text-[var(--ccr-text)]"
+                                : "cursor-not-allowed border-[var(--ccr-border)]/40 text-[var(--ccr-muted)]/60"
+                            }`}
+                          >
+                            Next
+                          </button>
+                        </div>
+                      }
+                    />
+                  </div>
                 </div>
               )}
             </section>
@@ -439,24 +660,67 @@ export function VehiclePerformancePanel({ vehicleId }: VehiclePerformancePanelPr
                 <h3 className="text-sm font-semibold text-[var(--ccr-text)]">Recent bookings</h3>
               </header>
 
-              {data.breakdown.recentBookings.length === 0 ? (
+              {data.breakdown.recentBookings.rows.length === 0 ? (
                 <p className="px-3 py-4 text-sm text-[var(--ccr-muted)]">No bookings found for this range.</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="min-w-full text-left text-xs sm:text-sm">
                     <thead className="border-b border-[var(--ccr-border)] text-[11px] uppercase tracking-wide text-[var(--ccr-muted)]">
                       <tr>
-                        <th className="px-3 py-2">Booking</th>
-                        <th className="px-3 py-2">Dates</th>
-                        <th className="px-3 py-2">Status</th>
-                        <th className="px-3 py-2">Customer</th>
-                        <th className="px-3 py-2">Total</th>
+                        <SortableTh
+                          label="Booking"
+                          columnKey="booking"
+                          sort={recentBookingsSort}
+                          onChange={updateRecentBookingsSort}
+                          className="px-3 py-2"
+                          defaultDirection="asc"
+                        />
+                        <SortableTh
+                          label="Dates"
+                          columnKey="dates"
+                          sort={recentBookingsSort}
+                          onChange={updateRecentBookingsSort}
+                          className="px-3 py-2"
+                          defaultDirection="desc"
+                        />
+                        <SortableTh
+                          label="Status"
+                          columnKey="status"
+                          sort={recentBookingsSort}
+                          onChange={updateRecentBookingsSort}
+                          className="px-3 py-2"
+                          defaultDirection="asc"
+                        />
+                        <SortableTh
+                          label="Customer"
+                          columnKey="customer"
+                          sort={recentBookingsSort}
+                          onChange={updateRecentBookingsSort}
+                          className="px-3 py-2"
+                          defaultDirection="asc"
+                        />
+                        <SortableTh
+                          label="Total"
+                          columnKey="total"
+                          sort={recentBookingsSort}
+                          onChange={updateRecentBookingsSort}
+                          className="px-3 py-2"
+                          defaultDirection="desc"
+                        />
                       </tr>
                     </thead>
                     <tbody>
-                      {data.breakdown.recentBookings.map((row) => (
+                      {data.breakdown.recentBookings.rows.map((row) => (
                         <tr key={row.id} className="border-b border-[var(--ccr-border)] last:border-b-0">
-                          <td className="px-3 py-2 font-mono text-[var(--ccr-text)]">{row.id.slice(0, 8)}</td>
+                          <td className="px-3 py-2 text-[var(--ccr-text)]">
+                            <Link
+                              href={`/admin/bookings/${row.id}`}
+                              className="inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-[11px] font-bold text-[var(--ccr-accent)] transition hover:bg-[var(--ccr-accent)] hover:text-[var(--ccr-primary)]"
+                              title="Open booking"
+                            >
+                              {row.publicId?.trim() || row.id}
+                            </Link>
+                          </td>
                           <td className="px-3 py-2 text-[var(--ccr-text)]">
                             <div className="space-y-1">
                               <p>
@@ -469,7 +733,7 @@ export function VehiclePerformancePanel({ vehicleId }: VehiclePerformancePanelPr
                           </td>
                           <td className="px-3 py-2">
                             <span
-                              className={`inline-flex rounded-full border px-2 py-1 text-[11px] font-semibold ${statusTone(
+                              className={`inline-flex whitespace-nowrap rounded-full border px-2 py-1 text-[11px] font-semibold ${statusTone(
                                 row.status,
                               )}`}
                             >
@@ -484,6 +748,50 @@ export function VehiclePerformancePanel({ vehicleId }: VehiclePerformancePanelPr
                       ))}
                     </tbody>
                   </table>
+                  <div className="border-t border-[var(--ccr-border)] px-3 py-2">
+                    <PaginationSummary
+                      from={data.breakdown.recentBookings.from}
+                      to={data.breakdown.recentBookings.to}
+                      totalCount={data.breakdown.recentBookings.totalCount}
+                      page={data.breakdown.recentBookings.page}
+                      totalPages={data.breakdown.recentBookings.totalPages}
+                      rightContent={
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setRecentBookingsPage((current) => Math.max(1, current - 1))
+                            }
+                            disabled={!data.breakdown.recentBookings.hasPrev}
+                            className={`rounded-lg border px-2 py-1 font-semibold ${
+                              data.breakdown.recentBookings.hasPrev
+                                ? "border-[var(--ccr-border)] text-[var(--ccr-text)]"
+                                : "cursor-not-allowed border-[var(--ccr-border)]/40 text-[var(--ccr-muted)]/60"
+                            }`}
+                          >
+                            Prev
+                          </button>
+                          <span className="font-semibold text-[var(--ccr-text)]">
+                            Page {data.breakdown.recentBookings.page} of {data.breakdown.recentBookings.totalPages}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setRecentBookingsPage((current) => current + 1)
+                            }
+                            disabled={!data.breakdown.recentBookings.hasNext}
+                            className={`rounded-lg border px-2 py-1 font-semibold ${
+                              data.breakdown.recentBookings.hasNext
+                                ? "border-[var(--ccr-border)] text-[var(--ccr-text)]"
+                                : "cursor-not-allowed border-[var(--ccr-border)]/40 text-[var(--ccr-muted)]/60"
+                            }`}
+                          >
+                            Next
+                          </button>
+                        </div>
+                      }
+                    />
+                  </div>
                 </div>
               )}
             </section>

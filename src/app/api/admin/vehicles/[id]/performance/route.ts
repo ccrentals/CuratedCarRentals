@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { readSortFromSearchParams, type SortDir } from "@/components/admin/tableSort";
 import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery } from "@/lib/db";
@@ -13,6 +14,10 @@ const NUMERIC_PATTERN = "^[0-9]+$";
 
 const RANGE_OPTIONS = ["30d", "90d", "365d", "custom"] as const;
 const DEFAULT_RANGE = "90d" as const;
+const BY_MONTH_SORT_COLUMNS = ["month", "booked", "downtime", "bookings", "revenue"] as const;
+const BY_MONTH_PAGE_SIZE = 5;
+const RECENT_BOOKING_SORT_COLUMNS = ["booking", "dates", "status", "customer", "total"] as const;
+const RECENT_BOOKINGS_PAGE_SIZE = 5;
 
 const EXCLUDED_OCCUPANCY_STATUSES = ["CANCELLED", "OVERRIDDEN", "NO_SHOW"] as const;
 const REVENUE_ELIGIBLE_STATUSES = ["CONFIRMED", "ACTIVE", "IN_PROGRESS", "PICKED_UP", "RETURNED", "COMPLETED"] as const;
@@ -23,6 +28,16 @@ const TOTAL_CENTS_SQL = `case when coalesce(b.pricing_json->>'total_cents', '') 
 const DEPOSIT_CENTS_SQL = `case when coalesce(b.pricing_json->>'deposit_cents', '') ~ '${NUMERIC_PATTERN}' then (b.pricing_json->>'deposit_cents')::bigint else null end`;
 
 type RangePreset = (typeof RANGE_OPTIONS)[number];
+type ByMonthSortBy = (typeof BY_MONTH_SORT_COLUMNS)[number];
+type ByMonthSortState = {
+  sortBy: ByMonthSortBy;
+  sortDir: SortDir;
+};
+type RecentBookingSortBy = (typeof RECENT_BOOKING_SORT_COLUMNS)[number];
+type RecentBookingSortState = {
+  sortBy: RecentBookingSortBy;
+  sortDir: SortDir;
+};
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -41,22 +56,43 @@ type PerformanceKpis = {
 };
 
 type VehiclePerformanceBreakdown = {
-  byMonth: Array<{
-    month: string;
-    bookedDays: number;
-    downtimeDays: number;
-    bookingCount: number;
-    revenueCents: number | null;
-  }>;
-  recentBookings: Array<{
-    id: string;
-    start: string;
-    end: string;
-    status: string;
-    customerName: string | null;
-    totalCents: number | null;
-    depositCents: number | null;
-  }>;
+  byMonth: {
+    rows: Array<{
+      month: string;
+      bookedDays: number;
+      downtimeDays: number;
+      bookingCount: number;
+      revenueCents: number | null;
+    }>;
+    page: number;
+    pageSize: number;
+    totalCount: number;
+    totalPages: number;
+    from: number;
+    to: number;
+    hasPrev: boolean;
+    hasNext: boolean;
+  };
+  recentBookings: {
+    rows: Array<{
+      id: string;
+      publicId: string | null;
+      start: string;
+      end: string;
+      status: string;
+      customerName: string | null;
+      totalCents: number | null;
+      depositCents: number | null;
+    }>;
+    page: number;
+    pageSize: number;
+    totalCount: number;
+    totalPages: number;
+    from: number;
+    to: number;
+    hasPrev: boolean;
+    hasNext: boolean;
+  };
 };
 
 type VehiclePerformancePayload = {
@@ -70,6 +106,10 @@ type VehiclePerformanceQueryInput = {
   startDate: string;
   endDate: string;
   rangePreset: RangePreset;
+  byMonthPage: number;
+  byMonthSort: ByMonthSortState;
+  recentBookingsPage: number;
+  recentBookingsSort: RecentBookingSortState;
 };
 
 type VehiclePerformanceRouteDeps = {
@@ -98,12 +138,17 @@ type MonthAggregateRow = {
 
 type RecentBookingRow = {
   id: string;
+  public_id: string | null;
   start_at: string | Date;
   end_at: string | Date;
   status: string;
   customer_name: string | null;
   total_cents: number | string | null;
   deposit_cents: number | string | null;
+};
+
+type RecentBookingCountRow = {
+  total_count: number | string | null;
 };
 
 type BlockoutColumns = {
@@ -130,6 +175,74 @@ function normalizeRangePreset(raw: string | null): RangePreset {
     return normalized as RangePreset;
   }
   return DEFAULT_RANGE;
+}
+
+function normalizeByMonthSort(searchParams: URLSearchParams): ByMonthSortState {
+  const monthlySortParams = new URLSearchParams();
+  const sortBy = searchParams.get("monthlySortBy");
+  const sortDir = searchParams.get("monthlySortDir");
+  if (sortBy) monthlySortParams.set("sortBy", sortBy);
+  if (sortDir) monthlySortParams.set("sortDir", sortDir);
+
+  const sort = readSortFromSearchParams(monthlySortParams, {
+    allowedSortBy: BY_MONTH_SORT_COLUMNS,
+    defaultSortBy: "month",
+    defaultSortDir: "asc",
+  });
+
+  return {
+    sortBy: (sort.sortBy as ByMonthSortBy | undefined) ?? "month",
+    sortDir: sort.sortDir === "desc" ? "desc" : "asc",
+  };
+}
+
+function normalizeRecentBookingsSort(searchParams: URLSearchParams): RecentBookingSortState {
+  const sort = readSortFromSearchParams(searchParams, {
+    allowedSortBy: RECENT_BOOKING_SORT_COLUMNS,
+    defaultSortBy: "dates",
+    defaultSortDir: "desc",
+  });
+
+  return {
+    sortBy: (sort.sortBy as RecentBookingSortBy | undefined) ?? "dates",
+    sortDir: sort.sortDir === "asc" ? "asc" : "desc",
+  };
+}
+
+function normalizeByMonthPage(raw: string | null) {
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 1) return 1;
+  return parsed;
+}
+
+function normalizeRecentBookingsPage(raw: string | null) {
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 1) return 1;
+  return parsed;
+}
+
+function compareNullableNumbers(a: number | null, b: number | null, direction: SortDir) {
+  if (a === null && b === null) return 0;
+  if (a === null) return 1;
+  if (b === null) return -1;
+  return direction === "asc" ? a - b : b - a;
+}
+
+function recentBookingsOrderBySql(sort: RecentBookingSortState) {
+  const direction = sort.sortDir === "asc" ? "asc" : "desc";
+  if (sort.sortBy === "booking") {
+    return `coalesce(nullif(trim(b.public_id), ''), b.id::text) ${direction}, ${BOOKING_START_SQL} desc, b.id::text ${direction}`;
+  }
+  if (sort.sortBy === "status") {
+    return `upper(trim(coalesce(b.status, ''))) ${direction}, ${BOOKING_START_SQL} desc, b.id::text desc`;
+  }
+  if (sort.sortBy === "customer") {
+    return `lower(coalesce(nullif(trim(c.full_name), ''), '')) ${direction}, ${BOOKING_START_SQL} desc, b.id::text desc`;
+  }
+  if (sort.sortBy === "total") {
+    return `${TOTAL_CENTS_SQL} ${direction} nulls last, ${BOOKING_START_SQL} desc, b.id::text desc`;
+  }
+  return `${BOOKING_START_SQL} ${direction}, b.created_at ${direction}, b.id::text ${direction}`;
 }
 
 function toDateOnlyUtc(input: Date) {
@@ -459,19 +572,92 @@ async function queryByMonth(input: VehiclePerformanceQueryInput, blockoutPredica
     ],
   );
 
-  return result.rows.map((row: MonthAggregateRow) => ({
+  const rows = result.rows.map((row: MonthAggregateRow) => ({
     month: row.month,
     bookedDays: Math.max(0, Math.round(toNumber(row.booked_days))),
     downtimeDays: Math.max(0, Math.round(toNumber(row.downtime_days))),
     bookingCount: Math.max(0, Math.round(toNumber(row.booking_count))),
     revenueCents: toNullableInteger(row.revenue_cents),
   }));
+
+  const sortedRows = [...rows].sort((left, right) => {
+    let primary = 0;
+
+    if (input.byMonthSort.sortBy === "booked") {
+      primary =
+        input.byMonthSort.sortDir === "asc"
+          ? left.bookedDays - right.bookedDays
+          : right.bookedDays - left.bookedDays;
+    } else if (input.byMonthSort.sortBy === "downtime") {
+      primary =
+        input.byMonthSort.sortDir === "asc"
+          ? left.downtimeDays - right.downtimeDays
+          : right.downtimeDays - left.downtimeDays;
+    } else if (input.byMonthSort.sortBy === "bookings") {
+      primary =
+        input.byMonthSort.sortDir === "asc"
+          ? left.bookingCount - right.bookingCount
+          : right.bookingCount - left.bookingCount;
+    } else if (input.byMonthSort.sortBy === "revenue") {
+      primary = compareNullableNumbers(
+        left.revenueCents,
+        right.revenueCents,
+        input.byMonthSort.sortDir,
+      );
+    } else {
+      primary =
+        input.byMonthSort.sortDir === "asc"
+          ? left.month.localeCompare(right.month)
+          : right.month.localeCompare(left.month);
+    }
+
+    if (primary !== 0) return primary;
+    return left.month.localeCompare(right.month);
+  });
+
+  const pageSize = BY_MONTH_PAGE_SIZE;
+  const totalCount = sortedRows.length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  const page = totalCount === 0 ? 1 : Math.min(Math.max(1, input.byMonthPage), totalPages);
+  const offset = (page - 1) * pageSize;
+
+  return {
+    rows: sortedRows.slice(offset, offset + pageSize),
+    page,
+    pageSize,
+    totalCount,
+    totalPages,
+    from: totalCount === 0 ? 0 : offset + 1,
+    to: totalCount === 0 ? 0 : Math.min(offset + pageSize, totalCount),
+    hasPrev: page > 1,
+    hasNext: page < totalPages,
+  };
 }
 
 async function queryRecentBookings(input: VehiclePerformanceQueryInput) {
+  const pageSize = RECENT_BOOKINGS_PAGE_SIZE;
+  const totalCountResult = await dbQuery<RecentBookingCountRow>(
+    `select count(*)::int as total_count
+     from bookings b
+     left join customers c on c.id = b.customer_id
+     where b.vehicle_id = $1::uuid
+       and b.archived_at is null
+       and coalesce(b.pricing_json->>'overridden_by_booking_id', '') = ''
+       and ${BOOKING_START_SQL} < ($3::date + interval '1 day')
+       and ${BOOKING_END_SQL} >= $2::date
+       and upper(trim(coalesce(b.status, ''))) <> 'OVERRIDDEN'`,
+    [input.vehicleId, input.startDate, input.endDate],
+  );
+  const totalCount = Math.max(0, Math.round(toNumber(totalCountResult.rows[0]?.total_count)));
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  const page = totalCount === 0 ? 1 : Math.min(Math.max(1, input.recentBookingsPage), totalPages);
+  const offset = (page - 1) * pageSize;
+  const orderBySql = recentBookingsOrderBySql(input.recentBookingsSort);
+
   const result = await dbQuery<RecentBookingRow>(
     `select
        b.id::text as id,
+       nullif(trim(b.public_id), '') as public_id,
        ${BOOKING_START_SQL} as start_at,
        ${BOOKING_END_SQL} as end_at,
        upper(trim(coalesce(b.status, ''))) as status,
@@ -486,20 +672,32 @@ async function queryRecentBookings(input: VehiclePerformanceQueryInput) {
        and ${BOOKING_START_SQL} < ($3::date + interval '1 day')
        and ${BOOKING_END_SQL} >= $2::date
        and upper(trim(coalesce(b.status, ''))) <> 'OVERRIDDEN'
-     order by ${BOOKING_START_SQL} desc, b.created_at desc
-     limit 10`,
-    [input.vehicleId, input.startDate, input.endDate],
+     order by ${orderBySql}
+     limit $4
+     offset $5`,
+    [input.vehicleId, input.startDate, input.endDate, pageSize, offset],
   );
 
-  return result.rows.map((row: RecentBookingRow) => ({
-    id: row.id,
-    start: toIsoString(row.start_at),
-    end: toIsoString(row.end_at),
-    status: row.status,
-    customerName: row.customer_name,
-    totalCents: toNullableInteger(row.total_cents),
-    depositCents: toNullableInteger(row.deposit_cents),
-  }));
+  return {
+    rows: result.rows.map((row: RecentBookingRow) => ({
+      id: row.id,
+      publicId: row.public_id,
+      start: toIsoString(row.start_at),
+      end: toIsoString(row.end_at),
+      status: row.status,
+      customerName: row.customer_name,
+      totalCents: toNullableInteger(row.total_cents),
+      depositCents: toNullableInteger(row.deposit_cents),
+    })),
+    page,
+    pageSize,
+    totalCount,
+    totalPages,
+    from: totalCount === 0 ? 0 : offset + 1,
+    to: totalCount === 0 ? 0 : Math.min(offset + pageSize, totalCount),
+    hasPrev: page > 1,
+    hasNext: page < totalPages,
+  };
 }
 
 async function fetchVehiclePerformance(input: VehiclePerformanceQueryInput): Promise<VehiclePerformancePayload> {
@@ -567,6 +765,10 @@ export async function handleVehiclePerformanceGet(
       startDate: dateRange.startDate,
       endDate: dateRange.endDate,
       rangePreset: dateRange.rangePreset,
+      byMonthPage: normalizeByMonthPage(searchParams.get("monthlyPage")),
+      byMonthSort: normalizeByMonthSort(searchParams),
+      recentBookingsPage: normalizeRecentBookingsPage(searchParams.get("bookingsPage")),
+      recentBookingsSort: normalizeRecentBookingsSort(searchParams),
     });
 
     return NextResponse.json({
