@@ -510,14 +510,23 @@ export function validateAdminSettingsValue(raw: unknown): AdminSettingsValidatio
     const value = raw as Record<string, unknown>;
 
     if (typeof value.contactNotificationEmails === "string") {
-      const invalidEmails = splitDelimitedEntries(value.contactNotificationEmails).filter(
+      const notificationRecipients = splitDelimitedEntries(value.contactNotificationEmails);
+      const invalidEmails = notificationRecipients.filter(
         (entry) => !isValidEmailAddress(entry),
       );
+      const notificationEmailErrors: string[] = [];
       if (invalidEmails.length > 0) {
-        fieldErrors.contactNotificationEmails =
+        notificationEmailErrors.push(
           invalidEmails.length === 1
             ? `Enter a valid email address. "${invalidEmails[0]}" is not valid.`
-            : `Enter valid email addresses. Invalid entries: ${invalidEmails.join(", ")}.`;
+            : `Enter valid email addresses. Invalid entries: ${invalidEmails.join(", ")}.`,
+        );
+      }
+      if (notificationRecipients.length > 25) {
+        notificationEmailErrors.push("Keep the notification recipient list to 25 email addresses or fewer.");
+      }
+      if (notificationEmailErrors.length > 0) {
+        fieldErrors.contactNotificationEmails = notificationEmailErrors.join(" ");
       }
     }
 

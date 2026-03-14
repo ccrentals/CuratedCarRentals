@@ -117,7 +117,7 @@ async function authenticateAdmin(page: Page) {
   await signInWithForm(page);
 }
 
-async function restoreNotificationRecipients(page: Page, value: string) {
+async function updateNotificationRecipientsViaApi(page: Page, value: string) {
   await page.evaluate(async (nextValue) => {
     function readCookieToken() {
       const match = document.cookie
@@ -190,7 +190,52 @@ async function restoreNotificationRecipients(page: Page, value: string) {
   }, value);
 }
 
+async function restoreNotificationRecipients(page: Page, value: string) {
+  await updateNotificationRecipientsViaApi(page, value);
+}
+
 test.describe("@tour admin settings save hardening", () => {
+  test.describe.configure({ mode: "serial" });
+
+  test("@tour desktop notifications settings warn before losing unsaved changes", async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(120_000);
+    test.skip(testInfo.project.name !== "desktop", "Desktop-only verification for stable selectors.");
+
+    await authenticateAdmin(page);
+    await page.goto("/admin/settings?tab=notifications", { waitUntil: "networkidle" });
+
+    const recipientsInput = page.locator('input[placeholder="owner@example.com, ops@example.com"]');
+    await expect(recipientsInput).toBeVisible();
+
+    await recipientsInput.fill("unsaved@example.com");
+    await expect(page.locator('[data-testid="settings-unsaved-indicator"]')).toBeVisible();
+
+    const dismissDialog = new Promise<void>((resolve) => {
+      page.once("dialog", async (dialog) => {
+        expect(dialog.message()).toContain("unsaved settings changes");
+        await dialog.dismiss();
+        resolve();
+      });
+    });
+    await page.getByTestId("settings-tab-general").click();
+    await dismissDialog;
+    await expect(page).toHaveURL(/tab=notifications/);
+    await expect(recipientsInput).toHaveValue("unsaved@example.com");
+
+    const acceptDialog = new Promise<void>((resolve) => {
+      page.once("dialog", async (dialog) => {
+        expect(dialog.message()).toContain("unsaved settings changes");
+        await dialog.accept();
+        resolve();
+      });
+    });
+    await page.getByTestId("settings-tab-general").click();
+    await acceptDialog;
+    await expect(page).toHaveURL(/tab=general/);
+  });
+
   test("@tour desktop notifications settings rehydrate normalized values and show validation errors", async ({
     page,
   }, testInfo) => {
@@ -217,6 +262,9 @@ test.describe("@tour admin settings save hardening", () => {
       await page.locator('[data-testid="settings-save"]').click();
       await expect(page.getByText(/Fix these settings before saving/i)).toBeVisible();
       await expect(page.locator('[data-testid="settings-validation-errors"]')).toContainText(
+        "Notifications",
+      );
+      await expect(page.locator('[data-testid="settings-validation-errors"]')).toContainText(
         "invalid-email",
       );
       await expect(page.getByText("Settings saved.")).toHaveCount(0);
@@ -225,5 +273,63 @@ test.describe("@tour admin settings save hardening", () => {
       await page.reload({ waitUntil: "networkidle" });
       await expect(recipientsInput).toHaveValue(originalValue);
     }
+  });
+
+  test("@tour desktop notifications settings show conflict guidance and reload latest server values", async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(120_000);
+    test.skip(testInfo.project.name !== "desktop", "Desktop-only verification for stable selectors.");
+
+    await authenticateAdmin(page);
+    await page.goto("/admin/settings?tab=notifications", { waitUntil: "networkidle" });
+
+    const recipientsInput = page.locator('input[placeholder="owner@example.com, ops@example.com"]');
+    await expect(recipientsInput).toBeVisible();
+    const originalValue = await recipientsInput.inputValue();
+    const conflictValue = "latest-server@example.com";
+
+    try {
+      await recipientsInput.fill("local-change@example.com");
+      await updateNotificationRecipientsViaApi(page, conflictValue);
+      await page.locator('[data-testid="settings-save"]').click();
+
+      await expect(page.locator('[data-testid="settings-conflict-message"]')).toContainText(
+        "latest server values were loaded",
+      );
+      await expect(page.getByText("Settings saved.")).toHaveCount(0);
+      await expect(recipientsInput).toHaveValue(conflictValue);
+      await expect(page.locator('[data-testid="settings-unsaved-indicator"]')).toHaveCount(0);
+    } finally {
+      await restoreNotificationRecipients(page, originalValue);
+      await page.reload({ waitUntil: "networkidle" });
+      await expect(recipientsInput).toHaveValue(originalValue);
+    }
+  });
+
+  test("@tour desktop settings only load maintenance service types when the maintenance tab opens", async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(120_000);
+    test.skip(testInfo.project.name !== "desktop", "Desktop-only verification for stable selectors.");
+
+    await authenticateAdmin(page);
+    const serviceTypeRequests: string[] = [];
+    page.on("request", (request) => {
+      if (request.url().includes("/api/admin/maintenance/service-types")) {
+        serviceTypeRequests.push(request.url());
+      }
+    });
+
+    await page.goto("/admin/settings?tab=notifications", { waitUntil: "networkidle" });
+    await page.waitForTimeout(500);
+    expect(serviceTypeRequests.length).toBe(0);
+
+    const serviceTypeRequest = page.waitForRequest((request) =>
+      request.url().includes("/api/admin/maintenance/service-types"),
+    );
+    await page.getByTestId("settings-tab-maintenance").click();
+    await serviceTypeRequest;
+    expect(serviceTypeRequests.length).toBeGreaterThan(0);
   });
 });

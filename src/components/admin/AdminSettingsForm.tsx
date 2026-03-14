@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { buttonStyles } from "@/components/ui/Button";
@@ -102,6 +102,28 @@ const TOGGLE_FIELD_TAB_MAP: Record<ToggleField["key"], AdminSettingsFormTab> = {
   maintenanceRemindersEnabled: "maintenance",
 };
 
+const SETTINGS_FIELD_TAB_LABELS: Record<
+  keyof AdminSettingsFieldErrors,
+  { key: AdminSettingsFormTab; label: string }
+> = {
+  contactNotificationEmails: { key: "notifications", label: "Notifications" },
+  dayViewBookingLimit: { key: "general", label: "General" },
+  contactNotifyCooldownMinutes: { key: "notifications", label: "Notifications" },
+  vehicleDocumentFolders: { key: "documents", label: "Vehicle Docs" },
+  vehicleDocumentTypeOptions: { key: "documents", label: "Vehicle Docs" },
+  vehicleChecklistTemplates: { key: "documents", label: "Vehicle Docs" },
+  maintenanceReminderLeadDays: { key: "maintenance", label: "Maintenance" },
+  maintenanceDueSoonDays: { key: "maintenance", label: "Maintenance" },
+  maintenanceDueSoonKm: { key: "maintenance", label: "Maintenance" },
+  maintenanceCategories: { key: "maintenance", label: "Maintenance" },
+  maintenancePriorities: { key: "maintenance", label: "Maintenance" },
+  depreciationDefaultUsefulLifeMonths: { key: "depreciation", label: "Depreciation" },
+  depreciationDefaultResidualPercent: { key: "depreciation", label: "Depreciation" },
+};
+
+const UNSAVED_SETTINGS_MESSAGE =
+  "You have unsaved settings changes. Leave this page without saving?";
+
 function buildChecklistTemplateItems(templates: VehicleChecklistTemplateSetting[]) {
   return templates
     .map((template) => template.label.trim())
@@ -117,6 +139,10 @@ function normalizeTemplateFolder(folder: string, folders: string[]) {
   return folders[0] ?? "Paperwork";
 }
 
+function serializeSettingsSnapshot(settings: AdminSettings) {
+  return JSON.stringify(settings);
+}
+
 export function AdminSettingsForm({
   initialSettings,
   updatedAt,
@@ -128,14 +154,19 @@ export function AdminSettingsForm({
   authLoginMethodSource,
 }: AdminSettingsFormProps) {
   const [settings, setSettings] = useState<AdminSettings>(initialSettings);
+  const [savedSnapshot, setSavedSnapshot] = useState(() =>
+    serializeSettingsSnapshot(initialSettings),
+  );
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(updatedAt);
   const [lastUpdatedByEmail, setLastUpdatedByEmail] = useState<string | null>(updatedByEmail);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [conflictMessage, setConflictMessage] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<AdminSettingsFieldErrors>({});
   const [serviceTypes, setServiceTypes] = useState<ServiceType[]>([]);
   const [serviceTypesLoading, setServiceTypesLoading] = useState(false);
+  const [serviceTypesLoaded, setServiceTypesLoaded] = useState(false);
   const [serviceTypesError, setServiceTypesError] = useState<string | null>(null);
   const [serviceTypesMessage, setServiceTypesMessage] = useState<string | null>(null);
   const [serviceTypeDraft, setServiceTypeDraft] = useState({
@@ -152,9 +183,21 @@ export function AdminSettingsForm({
     defaultIntervalOdometer: "",
     isActive: true,
   });
+  const dirtyRef = useRef(false);
+  const navigationApprovedRef = useRef(false);
+  const isGeneralTab = activeTab === "general";
+  const isNotificationsTab = activeTab === "notifications";
+  const isMaintenanceTab = activeTab === "maintenance";
+  const isDocumentsTab = activeTab === "documents";
+  const isDepreciationTab = activeTab === "depreciation";
 
   useEffect(() => {
     setSettings(initialSettings);
+    setSavedSnapshot(serializeSettingsSnapshot(initialSettings));
+    setFieldErrors({});
+    setError(null);
+    setSuccess(null);
+    setConflictMessage(null);
   }, [initialSettings]);
 
   useEffect(() => {
@@ -185,12 +228,78 @@ export function AdminSettingsForm({
       setServiceTypesError("Failed to load service types.");
       setServiceTypes([]);
     } finally {
+      setServiceTypesLoaded(true);
       setServiceTypesLoading(false);
     }
   }
 
   useEffect(() => {
+    if (!isMaintenanceTab || serviceTypesLoading || serviceTypesLoaded) return;
     void loadServiceTypes();
+  }, [isMaintenanceTab, serviceTypesLoaded, serviceTypesLoading]);
+
+  const currentSnapshot = serializeSettingsSnapshot(settings);
+  const isDirty = currentSnapshot !== savedSnapshot;
+
+  useEffect(() => {
+    dirtyRef.current = isDirty;
+    if (!isDirty) {
+      navigationApprovedRef.current = false;
+      return;
+    }
+    setSuccess(null);
+    setError(null);
+    setConflictMessage(null);
+  }, [currentSnapshot, isDirty]);
+
+  useEffect(() => {
+    function handleBeforeUnload(event: BeforeUnloadEvent) {
+      if (!dirtyRef.current || navigationApprovedRef.current) return;
+      event.preventDefault();
+      event.returnValue = "";
+    }
+
+    function handleDocumentClick(event: MouseEvent) {
+      if (!dirtyRef.current || navigationApprovedRef.current) return;
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const anchor = target.closest("a[href]");
+      if (!(anchor instanceof HTMLAnchorElement)) return;
+      if (anchor.target && anchor.target !== "_self") return;
+      if (anchor.hasAttribute("download")) return;
+
+      const nextUrl = new URL(anchor.href, window.location.href);
+      const currentUrl = new URL(window.location.href);
+      const nextLocation = `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`;
+      const currentLocation = `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`;
+
+      if (nextLocation === currentLocation) return;
+      if (nextUrl.origin !== currentUrl.origin) {
+        const shouldLeave = window.confirm(UNSAVED_SETTINGS_MESSAGE);
+        if (!shouldLeave) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+        navigationApprovedRef.current = true;
+        return;
+      }
+
+      const shouldNavigate = window.confirm(UNSAVED_SETTINGS_MESSAGE);
+      if (!shouldNavigate) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      navigationApprovedRef.current = true;
+    }
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    document.addEventListener("click", handleDocumentClick, true);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      document.removeEventListener("click", handleDocumentClick, true);
+    };
   }, []);
 
   async function save() {
@@ -199,6 +308,7 @@ export function AdminSettingsForm({
     setSaving(true);
     setError(null);
     setSuccess(null);
+    setConflictMessage(null);
     setFieldErrors({});
 
     try {
@@ -220,6 +330,7 @@ export function AdminSettingsForm({
         error?: string;
         message?: string;
         ok?: boolean;
+        errorCode?: string;
         settings?: AdminSettings;
         updatedAt?: string | null;
         updatedByEmail?: string | null;
@@ -229,6 +340,7 @@ export function AdminSettingsForm({
       if (!response.ok || !data.ok) {
         if (data.settings) {
           setSettings(data.settings);
+          setSavedSnapshot(serializeSettingsSnapshot(data.settings));
         }
         if ("updatedAt" in data) {
           setLastUpdatedAt(data.updatedAt ?? null);
@@ -237,12 +349,20 @@ export function AdminSettingsForm({
           setLastUpdatedByEmail(data.updatedByEmail ?? null);
         }
         setFieldErrors(data.fieldErrors ?? {});
-        setError(data.message ?? data.error ?? "Failed to save settings.");
+        if (data.error === "SETTINGS_CONFLICT") {
+          setError(null);
+          setConflictMessage(
+            "Newer settings were detected and the latest server values were loaded. Review them, re-apply any needed edits, and save again.",
+          );
+        } else {
+          setError(data.message ?? data.error ?? "Failed to save settings.");
+        }
         return;
       }
 
       if (data.settings) {
         setSettings(data.settings);
+        setSavedSnapshot(serializeSettingsSnapshot(data.settings));
       }
       setLastUpdatedAt(data.updatedAt ?? null);
       setLastUpdatedByEmail(data.updatedByEmail ?? null);
@@ -255,7 +375,22 @@ export function AdminSettingsForm({
     }
   }
 
-  const validationMessages = Object.values(fieldErrors).filter(Boolean);
+  const validationEntries = Object.entries(fieldErrors).filter((entry): entry is [keyof AdminSettingsFieldErrors, string] =>
+    Boolean(entry[1]),
+  );
+  const validationMessages = validationEntries.map(([, message]) => message);
+  const validationTabs = validationEntries.reduce<{ key: AdminSettingsFormTab; label: string }[]>(
+    (tabs, [field]) => {
+      const tab = SETTINGS_FIELD_TAB_LABELS[field];
+      if (!tab || tabs.some((entry) => entry.key === tab.key)) {
+        return tabs;
+      }
+      tabs.push(tab);
+      return tabs;
+    },
+    [],
+  );
+  const hiddenValidationTabs = validationTabs.filter((tab) => tab.key !== activeTab);
 
   async function createServiceType() {
     if (disabled) return;
@@ -399,11 +534,6 @@ export function AdminSettingsForm({
   const vehicleDocumentTypeOptionsValue = settings.vehicleDocumentTypeOptions.join("\n");
   const maintenanceCategoriesValue = settings.maintenanceCategories.join("\n");
   const maintenancePrioritiesValue = settings.maintenancePriorities.join("\n");
-  const isGeneralTab = activeTab === "general";
-  const isNotificationsTab = activeTab === "notifications";
-  const isMaintenanceTab = activeTab === "maintenance";
-  const isDocumentsTab = activeTab === "documents";
-  const isDepreciationTab = activeTab === "depreciation";
   const visibleToggleFields = TOGGLE_FIELDS.filter(
     (field) => TOGGLE_FIELD_TAB_MAP[field.key] === activeTab,
   );
@@ -439,9 +569,28 @@ export function AdminSettingsForm({
       {validationMessages.length > 0 ? (
         <div
           data-testid="settings-validation-errors"
+          role="alert"
           className="mt-4 rounded-xl border border-rose-400/40 bg-rose-500/10 p-4 text-sm text-rose-100"
         >
           <p className="font-semibold">Fix these settings before saving:</p>
+          {validationTabs.length > 0 ? (
+            <p className="mt-2 text-xs text-rose-100/90">
+              Review tab{validationTabs.length === 1 ? "" : "s"}:{" "}
+              <span className="font-semibold">
+                {validationTabs.map((tab) => tab.label).join(", ")}
+              </span>
+              .
+            </p>
+          ) : null}
+          {hiddenValidationTabs.length > 0 ? (
+            <p className="mt-1 text-xs text-rose-100/90">
+              Some issues are outside the current tab. Open{" "}
+              <span className="font-semibold">
+                {hiddenValidationTabs.map((tab) => tab.label).join(", ")}
+              </span>{" "}
+              and review those fields before saving again.
+            </p>
+          ) : null}
           <ul className="mt-2 list-disc space-y-1 pl-5">
             {validationMessages.map((message) => (
               <li key={message}>{message}</li>
@@ -1444,10 +1593,33 @@ export function AdminSettingsForm({
         ))}
       </div>
 
-      {error ? <p className="mt-4 text-sm font-semibold text-red-300">{error}</p> : null}
-      {success ? <p className="mt-4 text-sm font-semibold text-[var(--ccr-text)]">{success}</p> : null}
+      {conflictMessage ? (
+        <div
+          data-testid="settings-conflict-message"
+          role="alert"
+          className="mt-4 rounded-xl border border-amber-400/40 bg-amber-500/10 p-4 text-sm text-amber-100"
+        >
+          <p className="font-semibold">Newer settings were detected.</p>
+          <p className="mt-1 text-xs text-amber-100/90">{conflictMessage}</p>
+        </div>
+      ) : null}
+      {error ? (
+        <p data-testid="settings-save-error" className="mt-4 text-sm font-semibold text-red-300">
+          {error}
+        </p>
+      ) : null}
+      {success ? (
+        <p data-testid="settings-save-success" className="mt-4 text-sm font-semibold text-[var(--ccr-text)]">
+          {success}
+        </p>
+      ) : null}
 
-      <div className="mt-5">
+      <div className="mt-5 space-y-2">
+        {isDirty ? (
+          <p data-testid="settings-unsaved-indicator" className="text-xs font-semibold text-amber-200">
+            You have unsaved changes.
+          </p>
+        ) : null}
         <button
           type="button"
           onClick={save}

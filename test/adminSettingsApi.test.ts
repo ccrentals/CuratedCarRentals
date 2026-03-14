@@ -113,6 +113,7 @@ test("admin settings API: PATCH enforces CSRF", async () => {
 });
 
 test("admin settings API: PATCH returns validation errors for malformed input", async () => {
+  const oversizedRecipientList = Array.from({ length: 26 }, (_, index) => `ops${index}@example.com`).join(", ");
   const harness = createSettingsQueryHarness({
     content: JSON.stringify({
       contactNotificationEmails: "",
@@ -135,7 +136,8 @@ test("admin settings API: PATCH returns validation errors for malformed input", 
       },
       body: JSON.stringify({
         settings: {
-          contactNotificationEmails: "invalid-email",
+          contactNotificationEmails: `${oversizedRecipientList}, invalid-email`,
+          contactNotifyCooldownMinutes: 999,
           vehicleDocumentFolders: [],
           vehicleDocumentTypeOptions: [],
           maintenanceCategories: [],
@@ -159,6 +161,8 @@ test("admin settings API: PATCH returns validation errors for malformed input", 
   };
   assert.equal(payload.error, "SETTINGS_VALIDATION_FAILED");
   assert.match(payload.fieldErrors?.contactNotificationEmails ?? "", /valid email/i);
+  assert.match(payload.fieldErrors?.contactNotificationEmails ?? "", /25 email addresses or fewer/i);
+  assert.match(payload.fieldErrors?.contactNotifyCooldownMinutes ?? "", /between 1 and 120/i);
   assert.match(payload.fieldErrors?.vehicleDocumentFolders ?? "", /at least one/i);
   assert.equal(harness.getRow()?.updated_at, "2026-03-14T12:00:00.000Z");
 });
