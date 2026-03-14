@@ -5,6 +5,7 @@ import {
   handleAdminVehicleChecklistGet,
   handleAdminVehicleChecklistPost,
 } from "@/app/api/admin/vehicles/[id]/checklist/route";
+import { handleAdminVehicleChecklistItemPatch } from "@/app/api/admin/vehicles/[id]/checklist/[itemId]/route";
 import { handleVehicleMaintenanceGet } from "@/app/api/admin/vehicles/[id]/maintenance/route";
 
 const VEHICLE_ID = "11111111-1111-4111-8111-111111111111";
@@ -149,6 +150,91 @@ test("vehicle checklist foundation smoke: POST persists allowNotRequired metadat
   assert.equal(payload.item?.required, true);
   assert.equal(payload.item?.allowNotRequired, false);
   assert.equal(payload.item?.folder, "Insurance");
+});
+
+test("vehicle checklist foundation smoke: PATCH updates editable fields", async () => {
+  let updateArgs:
+    | {
+        vehicleId: string;
+        itemId: string;
+        input: {
+          label: string;
+          required: boolean;
+          expirationDate: string | null;
+        };
+      }
+    | null = null;
+
+  const itemId = "99999999-9999-4999-8999-999999999999";
+  const response = await handleAdminVehicleChecklistItemPatch(
+    new Request(`http://localhost/api/admin/vehicles/${VEHICLE_ID}/checklist/${itemId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        label: "Updated Insurance Certificate",
+        required: false,
+        expirationDate: "2026-11-15",
+        csrfToken: "test-token",
+      }),
+    }),
+    { params: Promise.resolve({ id: VEHICLE_ID, itemId }) },
+    {
+      getSession: async () => adminSession(),
+      requireCsrfCheck: async () => true,
+      getItem: async () => ({
+        id: itemId,
+        vehicle_id: VEHICLE_ID,
+        label: "Insurance Certificate",
+        folder: "Insurance",
+        required: true,
+        allow_not_required: true,
+        uploaded_document_id: null,
+        uploaded_document_title: null,
+        uploaded_document_label: null,
+        expiration_date: null,
+        created_at: "2026-03-13T00:00:00.000Z",
+        updated_at: "2026-03-13T00:00:00.000Z",
+      }),
+      updateItem: async (vehicleId, updatedItemId, input) => {
+        updateArgs = { vehicleId, itemId: updatedItemId, input };
+        return {
+          id: updatedItemId,
+          vehicle_id: vehicleId,
+          label: input.label,
+          folder: "Insurance",
+          required: input.required,
+          allow_not_required: true,
+          uploaded_document_id: null,
+          uploaded_document_title: null,
+          uploaded_document_label: null,
+          expiration_date: input.expirationDate,
+          created_at: "2026-03-13T00:00:00.000Z",
+          updated_at: "2026-03-14T00:00:00.000Z",
+        };
+      },
+      deleteItem: async () => false,
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(updateArgs, {
+    vehicleId: VEHICLE_ID,
+    itemId,
+    input: {
+      label: "Updated Insurance Certificate",
+      required: false,
+      expirationDate: "2026-11-15",
+    },
+  });
+
+  const payload = (await response.json()) as {
+    ok?: boolean;
+    item?: { label?: string; required?: boolean; expirationDate?: string | null };
+  };
+  assert.equal(payload.ok, true);
+  assert.equal(payload.item?.label, "Updated Insurance Certificate");
+  assert.equal(payload.item?.required, false);
+  assert.equal(payload.item?.expirationDate, "2026-11-15");
 });
 
 test("vehicle maintenance foundation smoke: GET returns ok payload", async () => {

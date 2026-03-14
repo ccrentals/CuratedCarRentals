@@ -93,6 +93,10 @@ export function VehicleChecklistPanel({
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [attachmentSavingItemId, setAttachmentSavingItemId] = useState<string | null>(null);
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [editLabel, setEditLabel] = useState("");
+  const [editRequired, setEditRequired] = useState(false);
+  const [editExpirationDate, setEditExpirationDate] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [highlightedItemId, setHighlightedItemId] = useState<string | null>(
@@ -465,6 +469,67 @@ export function VehicleChecklistPanel({
     setHighlightedItemId(null);
   }
 
+  function startEditing(item: ChecklistItem) {
+    setEditingItemId(item.id);
+    setEditLabel(item.label);
+    setEditRequired(item.required);
+    setEditExpirationDate(item.expirationDate ?? "");
+    setError(null);
+    setMessage(null);
+  }
+
+  function cancelEditing() {
+    setEditingItemId(null);
+    setEditLabel("");
+    setEditRequired(false);
+    setEditExpirationDate("");
+  }
+
+  async function saveItemEdits(item: ChecklistItem) {
+    if (!editingItemId || editingItemId !== item.id || saving) return;
+
+    const normalizedLabel = editLabel.trim();
+    if (!normalizedLabel) {
+      setError("Checklist label is required.");
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const csrfToken = await ensureCsrfToken();
+      const response = await fetch(`/api/admin/vehicles/${vehicleId}/checklist/${item.id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "x-csrf-token": csrfToken ?? "",
+        },
+        body: JSON.stringify({
+          label: normalizedLabel,
+          required: item.allowNotRequired ? editRequired : true,
+          expirationDate: editExpirationDate || null,
+          csrfToken,
+        }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error ?? "Unable to update checklist item.");
+      }
+
+      setMessage("Checklist item updated.");
+      cancelEditing();
+      await Promise.all([loadItems(), loadDocuments()]);
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error ? requestError.message : "Unable to update checklist item.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4 shadow-sm sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -666,6 +731,7 @@ export function VehicleChecklistPanel({
 
         {items.map((item) => {
           const isHighlighted = highlightedItemId === item.id;
+          const isEditing = editingItemId === item.id;
           const folderDocuments = documents.filter((document) => document.folder === item.folder);
           const selectedAttachmentId = rowAttachmentSelections[item.id] ?? "";
           return (
@@ -700,6 +766,69 @@ export function VehicleChecklistPanel({
                   Expiration: {item.expirationDate ? item.expirationDate : "Not set"}
                   {item.uploadedDocumentId ? " · Document attached" : ""}
                 </p>
+                {isEditing ? (
+                  <div className="mt-3 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3">
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <label className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                        Label
+                        <input
+                          data-testid={`vehicle-checklist-edit-label-${item.id}`}
+                          value={editLabel}
+                          onChange={(event) => setEditLabel(event.target.value)}
+                          className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-2 text-xs text-[var(--ccr-text)]"
+                        />
+                      </label>
+                      <label className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                        Expiration date
+                        <input
+                          data-testid={`vehicle-checklist-edit-expiration-${item.id}`}
+                          type="date"
+                          value={editExpirationDate}
+                          onChange={(event) => setEditExpirationDate(event.target.value)}
+                          className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-2 text-xs text-[var(--ccr-text)]"
+                        />
+                      </label>
+                    </div>
+                    <div className="mt-3 flex flex-wrap items-center gap-3">
+                      {item.allowNotRequired ? (
+                        <label className="inline-flex min-h-9 items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                          <input
+                            data-testid={`vehicle-checklist-edit-required-${item.id}`}
+                            type="checkbox"
+                            checked={editRequired}
+                            onChange={(event) => setEditRequired(event.target.checked)}
+                            className="h-4 w-4 rounded border border-[var(--ccr-border)] bg-transparent accent-[var(--ccr-accent)]"
+                          />
+                          Required item
+                        </label>
+                      ) : (
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                          This item must remain required.
+                        </p>
+                      )}
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          data-testid={`vehicle-checklist-edit-save-${item.id}`}
+                          onClick={() => void saveItemEdits(item)}
+                          disabled={saving}
+                          className="min-h-9 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-text)] disabled:opacity-60"
+                        >
+                          {saving ? "Saving..." : "Save details"}
+                        </button>
+                        <button
+                          type="button"
+                          data-testid={`vehicle-checklist-edit-cancel-${item.id}`}
+                          onClick={cancelEditing}
+                          disabled={saving}
+                          className="min-h-9 rounded-lg border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-accent-strong)] disabled:opacity-60"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
                 {item.uploadedDocumentId ? (
                   <div className="space-y-2">
                     <p>Attached file: {item.uploadedDocumentDisplayLabel ?? "Linked vehicle file"}</p>
@@ -821,6 +950,14 @@ export function VehicleChecklistPanel({
                     Required
                   </span>
                 ) : null}
+                <button
+                  type="button"
+                  data-testid={`vehicle-checklist-edit-toggle-${item.id}`}
+                  onClick={() => (isEditing ? cancelEditing() : startEditing(item))}
+                  className="rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-text)]"
+                >
+                  {isEditing ? "Cancel" : "Edit"}
+                </button>
                 <button
                   type="button"
                   onClick={() => void handleDelete(item.id)}

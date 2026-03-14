@@ -663,4 +663,66 @@ test.describe("@tour vehicle files and checklist integration", () => {
       }
     }
   });
+
+  test("@tour desktop checklist items can be edited in place", async ({ page }, testInfo: TestInfo) => {
+    test.setTimeout(90_000);
+    test.skip(testInfo.project.name !== "desktop", "Desktop-only verification for stable selectors.");
+
+    await authenticateAdmin(page);
+    await page.goto(`/admin/vehicles/${VEHICLE_ID}?tab=checklist`, { waitUntil: "networkidle" });
+
+    const stamp = Date.now();
+    const originalLabel = `Codex Editable ${stamp}`;
+    const updatedLabel = `Codex Edited ${stamp}`;
+    let checklistItemId: string | null = null;
+
+    try {
+      const checklistCreate = await browserPost<{
+        ok?: boolean;
+        item?: { id?: string | null };
+      }>(page, `/api/admin/vehicles/${VEHICLE_ID}/checklist`, {
+        label: originalLabel,
+        folder: "Paperwork",
+        required: true,
+        allowNotRequired: true,
+      });
+      expect(checklistCreate.status).toBe(200);
+      checklistItemId = checklistCreate.body.item?.id ?? null;
+      expect(checklistItemId).toBeTruthy();
+
+      await page.reload({ waitUntil: "networkidle" });
+
+      const checklistCard = page.getByTestId(`vehicle-checklist-item-${checklistItemId}`);
+      await expect(checklistCard).toBeVisible();
+      await checklistCard.getByTestId(`vehicle-checklist-edit-toggle-${checklistItemId}`).click();
+      await checklistCard
+        .getByTestId(`vehicle-checklist-edit-label-${checklistItemId}`)
+        .fill(updatedLabel);
+      await checklistCard
+        .getByTestId(`vehicle-checklist-edit-expiration-${checklistItemId}`)
+        .fill("2026-12-31");
+      await checklistCard
+        .getByTestId(`vehicle-checklist-edit-required-${checklistItemId}`)
+        .uncheck();
+      await checklistCard
+        .getByTestId(`vehicle-checklist-edit-save-${checklistItemId}`)
+        .click();
+
+      await expect(page.getByTestId("vehicle-checklist-message")).toContainText(
+        "Checklist item updated.",
+      );
+      await expect(checklistCard).toContainText(updatedLabel);
+      await expect(checklistCard).toContainText("Expiration: 2026-12-31");
+      await expect(checklistCard.getByText("Required", { exact: true })).toHaveCount(0);
+      await expect(
+        checklistCard.getByTestId(`vehicle-checklist-edit-toggle-${checklistItemId}`),
+      ).toContainText("Edit");
+    } finally {
+      if (checklistItemId) {
+        await browserDelete(page, `/api/admin/vehicles/${VEHICLE_ID}/checklist/${checklistItemId}`).catch(
+          () => undefined,
+        );
+      }
+    }
+  });
 });
