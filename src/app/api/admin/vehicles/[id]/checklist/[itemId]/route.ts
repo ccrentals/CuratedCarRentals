@@ -35,6 +35,7 @@ type ChecklistRow = {
 
 type UpdateChecklistInput = {
   label: string;
+  folder: string;
   required: boolean;
   expirationDate: string | null;
   templateId: string | null;
@@ -61,6 +62,11 @@ function normalizeText(value: unknown) {
 function normalizeLabel(value: unknown) {
   const normalized = normalizeText(value);
   return normalized ? normalized.slice(0, 160) : "";
+}
+
+function normalizeFolder(value: unknown) {
+  const normalized = normalizeText(value);
+  return normalized ? normalized.slice(0, 80) : "Unsorted";
 }
 
 function normalizeRequired(value: unknown) {
@@ -185,9 +191,10 @@ const DEFAULT_DEPS: AdminVehicleChecklistItemDeleteDeps = {
       `with updated as (
          update vehicle_checklist_items
             set label = $3,
-                required = $4,
-                expiration_date = $5::date,
-                template_id = $6::uuid,
+                folder = $4,
+                required = $5,
+                expiration_date = $6::date,
+                template_id = $7::uuid,
                 updated_at = now()
           where id = $1::uuid
             and vehicle_id = $2::uuid
@@ -213,7 +220,15 @@ const DEFAULT_DEPS: AdminVehicleChecklistItemDeleteDeps = {
        from updated i
        left join vehicle_checklist_templates t
          on t.id = i.template_id`,
-      [itemId, vehicleId, input.label, input.required, input.expirationDate, input.templateId],
+      [
+        itemId,
+        vehicleId,
+        input.label,
+        input.folder,
+        input.required,
+        input.expirationDate,
+        input.templateId,
+      ],
     );
     return result.rows[0] ?? null;
   },
@@ -304,6 +319,11 @@ export async function handleAdminVehicleChecklistItemPatch(
       );
     }
 
+    const folder =
+      body && ("folder" in body)
+        ? normalizeFolder(body.folder)
+        : existing.folder;
+
     const expirationDate =
       body && ("expirationDate" in body || "expiration_date" in body)
         ? normalizeExpirationDate(body.expirationDate ?? body.expiration_date)
@@ -329,6 +349,7 @@ export async function handleAdminVehicleChecklistItemPatch(
 
     const updated = await deps.updateItem(id, itemId, {
       label,
+      folder,
       required,
       expirationDate,
       templateId,

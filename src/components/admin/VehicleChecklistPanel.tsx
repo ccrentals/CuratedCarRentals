@@ -241,6 +241,7 @@ export function VehicleChecklistPanel({
   const [attachmentSavingItemId, setAttachmentSavingItemId] = useState<string | null>(null);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editLabel, setEditLabel] = useState("");
+  const [editFolder, setEditFolder] = useState("");
   const [editRequired, setEditRequired] = useState(false);
   const [editExpirationDate, setEditExpirationDate] = useState("");
   const [editTemplateKey, setEditTemplateKey] = useState("");
@@ -744,6 +745,7 @@ export function VehicleChecklistPanel({
   function startEditing(item: ChecklistItem) {
     setEditingItemId(item.id);
     setEditLabel(item.label);
+    setEditFolder(item.folder);
     setEditRequired(item.required);
     setEditExpirationDate(item.expirationDate ?? "");
     setEditTemplateKey(
@@ -757,9 +759,20 @@ export function VehicleChecklistPanel({
   function cancelEditing() {
     setEditingItemId(null);
     setEditLabel("");
+    setEditFolder("");
     setEditRequired(false);
     setEditExpirationDate("");
     setEditTemplateKey("");
+  }
+
+  function applySelectedTemplateDefaults() {
+    const normalizedTemplateKey = editTemplateKey.trim().toLowerCase();
+    if (!normalizedTemplateKey) return;
+    const template = templateKeyMap.get(normalizedTemplateKey);
+    if (!template) return;
+    setEditLabel(template.label);
+    setEditFolder(template.folder);
+    setEditRequired(template.required);
   }
 
   async function saveItemEdits(item: ChecklistItem) {
@@ -785,6 +798,7 @@ export function VehicleChecklistPanel({
         },
         body: JSON.stringify({
           label: normalizedLabel,
+          folder: editFolder || item.folder,
           required: item.allowNotRequired ? editRequired : true,
           expirationDate: editExpirationDate || null,
           templateKey: editTemplateKey || null,
@@ -1177,7 +1191,7 @@ export function VehicleChecklistPanel({
                 </p>
                 {isEditing ? (
                   <div className="mt-3 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3">
-                    <div className="grid gap-3 md:grid-cols-2">
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                       <label className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
                         Label
                         <input
@@ -1186,6 +1200,21 @@ export function VehicleChecklistPanel({
                           onChange={(event) => setEditLabel(event.target.value)}
                           className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-2 text-xs text-[var(--ccr-text)]"
                         />
+                      </label>
+                      <label className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                        Folder
+                        <select
+                          data-testid={`vehicle-checklist-edit-folder-${item.id}`}
+                          value={editFolder}
+                          onChange={(event) => setEditFolder(event.target.value)}
+                          className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-2 text-xs text-[var(--ccr-text)]"
+                        >
+                          {folders.map((folderOption) => (
+                            <option key={folderOption} value={folderOption}>
+                              {folderOption}
+                            </option>
+                          ))}
+                        </select>
                       </label>
                       <label className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
                         Expiration date
@@ -1221,6 +1250,17 @@ export function VehicleChecklistPanel({
                       </label>
                     </div>
                     <div className="mt-3 flex flex-wrap items-center gap-3">
+                      {editTemplateKey ? (
+                        <button
+                          type="button"
+                          data-testid={`vehicle-checklist-edit-apply-template-${item.id}`}
+                          onClick={applySelectedTemplateDefaults}
+                          disabled={saving}
+                          className="min-h-9 rounded-lg border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-accent-strong)] disabled:opacity-60"
+                        >
+                          Use template defaults
+                        </button>
+                      ) : null}
                       {item.allowNotRequired ? (
                         <label className="inline-flex min-h-9 items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
                           <input

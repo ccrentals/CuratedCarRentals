@@ -172,6 +172,7 @@ test("vehicle checklist foundation smoke: PATCH updates editable fields", async 
         itemId: string;
         input: {
           label: string;
+          folder: string;
           required: boolean;
           expirationDate: string | null;
           templateId: string | null;
@@ -186,6 +187,7 @@ test("vehicle checklist foundation smoke: PATCH updates editable fields", async 
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         label: "Updated Insurance Certificate",
+        folder: "Paperwork",
         required: false,
         expirationDate: "2026-11-15",
         csrfToken: "test-token",
@@ -220,7 +222,7 @@ test("vehicle checklist foundation smoke: PATCH updates editable fields", async 
           id: updatedItemId,
           vehicle_id: vehicleId,
           label: input.label,
-          folder: "Insurance",
+          folder: input.folder,
           required: input.required,
           allow_not_required: true,
           template_id: null,
@@ -245,6 +247,7 @@ test("vehicle checklist foundation smoke: PATCH updates editable fields", async 
     itemId,
     input: {
       label: "Updated Insurance Certificate",
+      folder: "Paperwork",
       required: false,
       expirationDate: "2026-11-15",
       templateId: null,
@@ -253,10 +256,11 @@ test("vehicle checklist foundation smoke: PATCH updates editable fields", async 
 
   const payload = (await response.json()) as {
     ok?: boolean;
-    item?: { label?: string; required?: boolean; expirationDate?: string | null };
+    item?: { label?: string; folder?: string; required?: boolean; expirationDate?: string | null };
   };
   assert.equal(payload.ok, true);
   assert.equal(payload.item?.label, "Updated Insurance Certificate");
+  assert.equal(payload.item?.folder, "Paperwork");
   assert.equal(payload.item?.required, false);
   assert.equal(payload.item?.expirationDate, "2026-11-15");
 });
@@ -268,6 +272,7 @@ test("vehicle checklist foundation smoke: PATCH updates template identity", asyn
         itemId: string;
         input: {
           label: string;
+          folder: string;
           required: boolean;
           expirationDate: string | null;
           templateId: string | null;
@@ -314,7 +319,7 @@ test("vehicle checklist foundation smoke: PATCH updates template identity", asyn
           id: updatedItemId,
           vehicle_id: vehicleId,
           label: "Legacy Insurance",
-          folder: "Insurance",
+          folder: input.folder,
           required: true,
           allow_not_required: true,
           template_id: input.templateId,
@@ -339,6 +344,7 @@ test("vehicle checklist foundation smoke: PATCH updates template identity", asyn
     itemId,
     input: {
       label: "Legacy Insurance",
+      folder: "Insurance",
       required: true,
       expirationDate: null,
       templateId: "66666666-6666-4666-8666-666666666666",
