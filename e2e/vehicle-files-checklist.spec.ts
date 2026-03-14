@@ -212,9 +212,11 @@ test.describe("@tour vehicle files and checklist integration", () => {
     await expect(page.getByText(/Active templates:/)).toBeVisible();
 
     const stamp = Date.now();
-    const checklistLabel = `Codex Checklist ${stamp}`;
+    const checklistLabel = `Codex Checklist A ${stamp}`;
+    const secondChecklistLabel = `Codex Checklist B ${stamp}`;
     const fileLabel = `Codex File ${stamp}`;
     let checklistItemId: string | null = null;
+    let secondChecklistItemId: string | null = null;
 
     try {
       const checklistCreate = await browserPost<{ ok?: boolean; item?: { id?: string | null } }>(
@@ -232,12 +234,30 @@ test.describe("@tour vehicle files and checklist integration", () => {
       checklistItemId = checklistCreate.body.item?.id ?? null;
       expect(checklistItemId).toBeTruthy();
 
+      const secondChecklistCreate = await browserPost<{ ok?: boolean; item?: { id?: string | null } }>(
+        page,
+        `/api/admin/vehicles/${VEHICLE_ID}/checklist`,
+        {
+          label: secondChecklistLabel,
+          folder: "Paperwork",
+          required: false,
+          allowNotRequired: true,
+        },
+      );
+      expect(secondChecklistCreate.status).toBe(200);
+      expect(secondChecklistCreate.body.ok).toBe(true);
+      secondChecklistItemId = secondChecklistCreate.body.item?.id ?? null;
+      expect(secondChecklistItemId).toBeTruthy();
+
       await page.goto(`/admin/vehicles/${VEHICLE_ID}?tab=files`, { waitUntil: "networkidle" });
       const checklistLinkSelect = page.locator('[data-testid="vehicle-files-checklist-link"]');
       await expect(checklistLinkSelect).toBeVisible();
       await expect(checklistLinkSelect.locator(`option[value="${checklistItemId}"]`)).toContainText(
         checklistLabel,
       );
+      await expect(
+        checklistLinkSelect.locator(`option[value="${secondChecklistItemId}"]`),
+      ).toContainText(secondChecklistLabel);
 
       const fileCreate = await browserPost<{
         ok?: boolean;
@@ -263,15 +283,36 @@ test.describe("@tour vehicle files and checklist integration", () => {
       await expect(fileRow).toBeVisible();
       await expect(fileRow).toContainText(checklistLabel);
 
+      await fileRow.locator('[data-testid="vehicle-file-link-select"]').selectOption(
+        secondChecklistItemId ?? "",
+      );
+      await fileRow.getByRole("button", { name: "Save link" }).click();
+      await expect(page.getByText("File link updated.")).toBeVisible();
+      await expect(fileRow).toContainText(secondChecklistLabel);
+
       await page.goto(`/admin/vehicles/${VEHICLE_ID}?tab=checklist`, { waitUntil: "networkidle" });
       const checklistCard = page.locator("article", { hasText: checklistLabel }).first();
       await expect(checklistCard).toBeVisible();
-      await expect(checklistCard).toContainText(`Attached file: ${fileLabel}`);
+      await expect(checklistCard).not.toContainText(`Attached file: ${fileLabel}`);
+      const secondChecklistCard = page.locator("article", { hasText: secondChecklistLabel }).first();
+      await expect(secondChecklistCard).toBeVisible();
+      await expect(secondChecklistCard).toContainText(`Attached file: ${fileLabel}`);
 
       await page.goto(`/admin/vehicles/${VEHICLE_ID}?tab=files`, { waitUntil: "networkidle" });
       const archiveRow = page.locator("tr", { hasText: fileLabel }).first();
+      await archiveRow.locator('[data-testid="vehicle-file-link-select"]').selectOption("");
+      await archiveRow.getByRole("button", { name: "Save link" }).click();
+      await expect(page.getByText("File unlinked from checklist.")).toBeVisible();
+
+      await page.goto(`/admin/vehicles/${VEHICLE_ID}?tab=checklist`, { waitUntil: "networkidle" });
+      const secondChecklistCardAfterUnlink = page.locator("article", { hasText: secondChecklistLabel }).first();
+      await expect(secondChecklistCardAfterUnlink).toBeVisible();
+      await expect(secondChecklistCardAfterUnlink).not.toContainText(`Attached file: ${fileLabel}`);
+
+      await page.goto(`/admin/vehicles/${VEHICLE_ID}?tab=files`, { waitUntil: "networkidle" });
+      const archiveRowAfterUnlink = page.locator("tr", { hasText: fileLabel }).first();
       page.once("dialog", (dialog) => void dialog.accept());
-      await archiveRow.getByRole("button", { name: "Archive" }).click();
+      await archiveRowAfterUnlink.getByRole("button", { name: "Archive" }).click();
       await expect(page.getByText("File archived.")).toBeVisible();
 
       await page.goto(`/admin/vehicles/${VEHICLE_ID}?tab=checklist`, { waitUntil: "networkidle" });
@@ -285,6 +326,9 @@ test.describe("@tour vehicle files and checklist integration", () => {
     } finally {
       if (checklistItemId) {
         await browserDelete(page, `/api/admin/vehicles/${VEHICLE_ID}/checklist/${checklistItemId}`);
+      }
+      if (secondChecklistItemId) {
+        await browserDelete(page, `/api/admin/vehicles/${VEHICLE_ID}/checklist/${secondChecklistItemId}`);
       }
     }
   });

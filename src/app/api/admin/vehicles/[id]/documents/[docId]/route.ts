@@ -35,6 +35,7 @@ type DocumentPatchInput = {
   documentType?: string;
   label?: string | null;
   maintenanceRecordId?: string | null;
+  checklistItemId?: string | null;
   archived?: boolean;
 };
 
@@ -91,6 +92,14 @@ const DEFAULT_DEPS: AdminVehicleDocumentRouteDeps = {
   getSession: () => getSessionFromRequest(),
   requireCsrfCheck: (request, bodyToken) => requireCsrf(request, bodyToken),
   patchDocument: async (vehicleId, docId, input) => {
+    const currentDocument = await dbQuery<{ id: string; folder: string }>(
+      "select id, folder from vehicle_documents where id = $1::uuid and vehicle_id = $2::uuid limit 1",
+      [docId, vehicleId],
+    );
+    if (currentDocument.rowCount < 1) {
+      return null;
+    }
+
     if (input.maintenanceRecordId) {
       const maintenance = await dbQuery<{ id: string }>(
         "select id from vehicle_maintenance_records where id = $1::uuid and vehicle_id = $2::uuid limit 1",
@@ -98,6 +107,22 @@ const DEFAULT_DEPS: AdminVehicleDocumentRouteDeps = {
       );
       if (maintenance.rowCount < 1) {
         throw new Error("MAINTENANCE_RECORD_NOT_FOUND");
+      }
+    }
+
+    if (input.checklistItemId !== undefined && input.checklistItemId) {
+      const checklistItem = await dbQuery<{ id: string; folder: string }>(
+        "select id, folder from vehicle_checklist_items where id = $1::uuid and vehicle_id = $2::uuid and archived_at is null limit 1",
+        [input.checklistItemId, vehicleId],
+      );
+      if (checklistItem.rowCount < 1) {
+        throw new Error("CHECKLIST_ITEM_NOT_FOUND");
+      }
+
+      const documentFolder = currentDocument.rows[0]?.folder?.trim().toLowerCase() ?? "";
+      const checklistFolder = checklistItem.rows[0]?.folder?.trim().toLowerCase() ?? "";
+      if (documentFolder !== checklistFolder) {
+        throw new Error("CHECKLIST_ITEM_FOLDER_MISMATCH");
       }
     }
 
@@ -133,6 +158,20 @@ const DEFAULT_DEPS: AdminVehicleDocumentRouteDeps = {
         "update vehicle_checklist_items set uploaded_document_id = null, updated_at = now() where uploaded_document_id = $1::uuid and vehicle_id = $2::uuid",
         [docId, vehicleId],
       );
+    }
+
+    if (row && input.archived !== true && input.checklistItemId !== undefined) {
+      await dbQuery(
+        "update vehicle_checklist_items set uploaded_document_id = null, updated_at = now() where uploaded_document_id = $1::uuid and vehicle_id = $2::uuid",
+        [docId, vehicleId],
+      );
+
+      if (input.checklistItemId) {
+        await dbQuery(
+          "update vehicle_checklist_items set uploaded_document_id = $1::uuid, updated_at = now() where id = $2::uuid and vehicle_id = $3::uuid",
+          [docId, input.checklistItemId, vehicleId],
+        );
+      }
     }
 
     return row;
@@ -179,6 +218,10 @@ export async function handleAdminVehicleDocumentPatch(
     body && ("maintenanceRecordId" in body || "maintenance_record_id" in body)
       ? normalizeRecordId(body.maintenanceRecordId ?? body.maintenance_record_id)
       : undefined;
+  const checklistItemId =
+    body && ("checklistItemId" in body || "checklist_item_id" in body)
+      ? normalizeRecordId(body.checklistItemId ?? body.checklist_item_id)
+      : undefined;
   const archived = body && "archived" in body ? Boolean(body.archived) : undefined;
 
   if (documentType !== undefined && !documentType) {
@@ -190,6 +233,7 @@ export async function handleAdminVehicleDocumentPatch(
       documentType,
       label,
       maintenanceRecordId,
+      checklistItemId,
       archived,
     });
 
@@ -204,6 +248,18 @@ export async function handleAdminVehicleDocumentPatch(
       return NextResponse.json(
         { ok: false, error: "Maintenance record not found for this vehicle." },
         { status: 404 },
+      );
+    }
+    if (message === "CHECKLIST_ITEM_NOT_FOUND") {
+      return NextResponse.json(
+        { ok: false, error: "Checklist item not found for this vehicle." },
+        { status: 404 },
+      );
+    }
+    if (message === "CHECKLIST_ITEM_FOLDER_MISMATCH") {
+      return NextResponse.json(
+        { ok: false, error: "Checklist item folder must match the document folder." },
+        { status: 400 },
       );
     }
     if (isVehicleExtensionsMissingTableError(error)) {

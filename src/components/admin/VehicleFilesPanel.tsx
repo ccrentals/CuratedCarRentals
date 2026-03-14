@@ -156,7 +156,9 @@ export function VehicleFilesPanel({
   const [label, setLabel] = useState("");
   const [title, setTitle] = useState("");
   const [selectedChecklistItemId, setSelectedChecklistItemId] = useState("");
+  const [rowChecklistSelections, setRowChecklistSelections] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [linkSavingDocId, setLinkSavingDocId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [previewItem, setPreviewItem] = useState<VehicleDocument | null>(null);
   const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
@@ -298,6 +300,14 @@ export function VehicleFilesPanel({
       setSelectedChecklistItemId("");
     }
   }, [availableChecklistItems, selectedChecklistItemId]);
+
+  useEffect(() => {
+    const nextSelections: Record<string, string> = {};
+    for (const item of items) {
+      nextSelections[item.id] = item.checklistItemId ?? "";
+    }
+    setRowChecklistSelections(nextSelections);
+  }, [items]);
 
   useEffect(() => {
     let cancelled = false;
@@ -498,6 +508,41 @@ export function VehicleFilesPanel({
 
     setMessage("File archived.");
     await Promise.all([loadDocuments(), loadChecklistItems()]);
+  };
+
+  const updateDocumentChecklistLink = async (docId: string, checklistItemId: string) => {
+    if (linkSavingDocId) return;
+
+    setLinkSavingDocId(docId);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const csrfToken = await ensureCsrfToken();
+      const response = await fetch(`/api/admin/vehicles/${vehicleId}/documents/${docId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "x-csrf-token": csrfToken ?? "",
+        },
+        body: JSON.stringify({
+          checklistItemId: checklistItemId || null,
+          csrfToken,
+        }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!response.ok || !payload.ok) {
+        setError(payload.error ?? "Unable to update file link.");
+        return;
+      }
+
+      setMessage(checklistItemId ? "File link updated." : "File unlinked from checklist.");
+      await Promise.all([loadDocuments(), loadChecklistItems()]);
+    } catch {
+      setError("Unable to update file link.");
+    } finally {
+      setLinkSavingDocId(null);
+    }
   };
 
   return (
@@ -714,6 +759,45 @@ export function VehicleFilesPanel({
                       Archive
                     </button>
                   </div>
+
+                  <div className="mt-3 grid gap-2">
+                    <label className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                      Checklist link
+                      <select
+                        data-testid="vehicle-file-link-select"
+                        value={rowChecklistSelections[item.id] ?? ""}
+                        onChange={(event) =>
+                          setRowChecklistSelections((current) => ({
+                            ...current,
+                            [item.id]: event.target.value,
+                          }))
+                        }
+                        className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs text-[var(--ccr-text)]"
+                      >
+                        <option value="">No checklist link</option>
+                        {availableChecklistItems.map((checklistItem) => (
+                          <option key={checklistItem.id} value={checklistItem.id}>
+                            {checklistItem.label}
+                            {checklistItem.required ? " (required)" : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <button
+                      type="button"
+                      data-testid="vehicle-file-link-save"
+                      onClick={() =>
+                        void updateDocumentChecklistLink(item.id, rowChecklistSelections[item.id] ?? "")
+                      }
+                      disabled={
+                        linkSavingDocId === item.id ||
+                        (rowChecklistSelections[item.id] ?? "") === (item.checklistItemId ?? "")
+                      }
+                      className="min-h-10 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
+                    >
+                      {linkSavingDocId === item.id ? "Saving link..." : "Save link"}
+                    </button>
+                  </div>
                 </article>
               ))}
             </div>
@@ -778,6 +862,41 @@ export function VehicleFilesPanel({
                             className="min-h-9 rounded-lg border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-3 py-1 text-xs font-semibold text-[var(--ccr-accent-strong)]"
                           >
                             Archive
+                          </button>
+                        </div>
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <select
+                            data-testid="vehicle-file-link-select"
+                            value={rowChecklistSelections[item.id] ?? ""}
+                            onChange={(event) =>
+                              setRowChecklistSelections((current) => ({
+                                ...current,
+                                [item.id]: event.target.value,
+                              }))
+                            }
+                            className="min-h-9 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-xs text-[var(--ccr-text)]"
+                          >
+                            <option value="">No checklist link</option>
+                            {availableChecklistItems.map((checklistItem) => (
+                              <option key={checklistItem.id} value={checklistItem.id}>
+                                {checklistItem.label}
+                                {checklistItem.required ? " (required)" : ""}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            data-testid="vehicle-file-link-save"
+                            onClick={() =>
+                              void updateDocumentChecklistLink(item.id, rowChecklistSelections[item.id] ?? "")
+                            }
+                            disabled={
+                              linkSavingDocId === item.id ||
+                              (rowChecklistSelections[item.id] ?? "") === (item.checklistItemId ?? "")
+                            }
+                            className="min-h-9 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
+                          >
+                            {linkSavingDocId === item.id ? "Saving link..." : "Save link"}
                           </button>
                         </div>
                       </td>

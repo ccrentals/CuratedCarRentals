@@ -408,3 +408,90 @@ test("admin vehicle documents API: PATCH archives and relabels document", async 
   assert.equal(body.ok, true);
   assert.equal(typeof body.item?.archivedAt, "string");
 });
+
+test("admin vehicle documents API: PATCH forwards checklist link updates", async () => {
+  let capturedInput: Record<string, unknown> | null = null;
+
+  const response = await handleAdminVehicleDocumentPatch(
+    new Request(`http://localhost/api/admin/vehicles/${VEHICLE_ID}/documents/${DOC_ID}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "x-csrf-token": "token",
+      },
+      body: JSON.stringify({
+        checklistItemId: CHECKLIST_ITEM_ID,
+        csrfToken: "token",
+      }),
+    }),
+    { params: Promise.resolve({ id: VEHICLE_ID, docId: DOC_ID }) },
+    {
+      getSession: async () => ({
+        userId: "admin-user-id",
+        role: "ADMIN",
+        issuedAt: Date.now(),
+        expiresAt: Date.now() + 60_000,
+      }),
+      requireCsrfCheck: async () => true,
+      patchDocument: async (_vehicleId, _docId, input) => {
+        capturedInput = input as unknown as Record<string, unknown>;
+        return {
+          id: DOC_ID,
+          vehicle_id: VEHICLE_ID,
+          maintenance_record_id: null,
+          folder: "Paperwork",
+          document_type: "OTHER",
+          title: "Invoice",
+          label: "Invoice",
+          storage_provider: "UPLOADCARE_FILE_ID",
+          mime_type: "application/pdf",
+          size_bytes: 222,
+          file_size_bytes: 222,
+          tags: [],
+          uploaded_by_user_id: "admin-user-id",
+          created_at: "2026-02-22T10:00:00.000Z",
+          archived_at: null,
+        };
+      },
+      archiveDocument: async () => true,
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(capturedInput?.checklistItemId, CHECKLIST_ITEM_ID);
+});
+
+test("admin vehicle documents API: PATCH rejects checklist folder mismatch", async () => {
+  const response = await handleAdminVehicleDocumentPatch(
+    new Request(`http://localhost/api/admin/vehicles/${VEHICLE_ID}/documents/${DOC_ID}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "x-csrf-token": "token",
+      },
+      body: JSON.stringify({
+        checklistItemId: CHECKLIST_ITEM_ID,
+        csrfToken: "token",
+      }),
+    }),
+    { params: Promise.resolve({ id: VEHICLE_ID, docId: DOC_ID }) },
+    {
+      getSession: async () => ({
+        userId: "admin-user-id",
+        role: "ADMIN",
+        issuedAt: Date.now(),
+        expiresAt: Date.now() + 60_000,
+      }),
+      requireCsrfCheck: async () => true,
+      patchDocument: async () => {
+        throw new Error("CHECKLIST_ITEM_FOLDER_MISMATCH");
+      },
+      archiveDocument: async () => true,
+    },
+  );
+
+  assert.equal(response.status, 400);
+  const body = (await response.json()) as { ok?: boolean; error?: string };
+  assert.equal(body.ok, false);
+  assert.match(String(body.error), /folder must match/i);
+});
