@@ -38,6 +38,45 @@ test("vehicle checklist foundation smoke: GET returns ok payload", async () => {
   assert.deepEqual(payload.items, []);
 });
 
+test("vehicle checklist foundation smoke: GET exposes attached file label", async () => {
+  const response = await handleAdminVehicleChecklistGet(
+    new Request(`http://localhost/api/admin/vehicles/${VEHICLE_ID}/checklist`),
+    { params: Promise.resolve({ id: VEHICLE_ID }) },
+    {
+      getSession: async () => adminSession(),
+      requireCsrfCheck: async () => true,
+      listItems: async () => [
+        {
+          id: "77777777-7777-4777-8777-777777777777",
+          vehicle_id: VEHICLE_ID,
+          label: "Insurance Certificate",
+          folder: "Insurance",
+          required: true,
+          allow_not_required: false,
+          uploaded_document_id: "88888888-8888-4888-8888-888888888888",
+          uploaded_document_title: "Insurance 2026.pdf",
+          uploaded_document_label: "Insurance 2026",
+          expiration_date: "2026-09-30",
+          created_at: "2026-03-13T00:00:00.000Z",
+          updated_at: "2026-03-13T00:00:00.000Z",
+        },
+      ],
+      createItem: async () => {
+        throw new Error("unreachable");
+      },
+    },
+  );
+
+  assert.equal(response.status, 200);
+  const payload = (await response.json()) as {
+    ok?: boolean;
+    items?: Array<{ uploadedDocumentDisplayLabel?: string | null; uploadedDocumentId?: string | null }>;
+  };
+  assert.equal(payload.ok, true);
+  assert.equal(payload.items?.[0]?.uploadedDocumentDisplayLabel, "Insurance 2026");
+  assert.equal(payload.items?.[0]?.uploadedDocumentId, "88888888-8888-4888-8888-888888888888");
+});
+
 test("vehicle checklist foundation smoke: POST persists allowNotRequired metadata", async () => {
   let createArgs:
     | {
@@ -80,6 +119,8 @@ test("vehicle checklist foundation smoke: POST persists allowNotRequired metadat
           required: input.required,
           allow_not_required: input.allowNotRequired,
           uploaded_document_id: null,
+          uploaded_document_title: null,
+          uploaded_document_label: null,
           expiration_date: input.expirationDate,
           created_at: "2026-03-13T00:00:00.000Z",
           updated_at: "2026-03-13T00:00:00.000Z",

@@ -10,6 +10,7 @@ import { handleAdminVehicleDocumentPatch } from "@/app/api/admin/vehicles/[id]/d
 
 const VEHICLE_ID = "11111111-1111-4111-8111-111111111111";
 const DOC_ID = "22222222-2222-4222-8222-222222222222";
+const CHECKLIST_ITEM_ID = "33333333-3333-4333-8333-333333333333";
 const FILE_ID = "7f6b5a4a-84f9-4e57-8be4-7b4b2cbf76ad";
 
 test("admin vehicle documents API: GET requires auth", async () => {
@@ -96,6 +97,8 @@ test("admin vehicle documents API: POST stores opaque Uploadcare id", async () =
           vehicle_id: VEHICLE_ID,
           maintenance_record_id: null,
           maintenance_title: null,
+          checklist_item_id: null,
+          checklist_label: null,
           folder: input.folder,
           document_type: input.documentType,
           title: input.title,
@@ -126,6 +129,115 @@ test("admin vehicle documents API: POST stores opaque Uploadcare id", async () =
   assert.equal(body.ok, true);
   assert.equal(body.item.storageProvider, "UPLOADCARE_FILE_ID");
   assert.equal("storageKey" in body.item, false);
+});
+
+test("admin vehicle documents API: POST forwards checklist link selection", async () => {
+  let capturedInput: Record<string, unknown> | null = null;
+
+  const response = await handleAdminVehicleDocumentsPost(
+    new Request(`http://localhost/api/admin/vehicles/${VEHICLE_ID}/documents`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-csrf-token": "token",
+      },
+      body: JSON.stringify({
+        folder: "Paperwork",
+        title: "Insurance 2026",
+        label: "Insurance 2026",
+        document_type: "Insurance Certificate",
+        uploadcare_file_id: FILE_ID,
+        checklistItemId: CHECKLIST_ITEM_ID,
+        storage_provider: "UPLOADCARE_FILE_ID",
+        csrfToken: "token",
+      }),
+    }),
+    { params: Promise.resolve({ id: VEHICLE_ID }) },
+    {
+      getSession: async () => ({
+        userId: "admin-user-id",
+        role: "ADMIN",
+        issuedAt: Date.now(),
+        expiresAt: Date.now() + 60_000,
+      }),
+      requireCsrfCheck: async () => true,
+      listDocuments: async () => [],
+      createDocument: async (_vehicleId, input) => {
+        capturedInput = input as unknown as Record<string, unknown>;
+        return {
+          id: DOC_ID,
+          vehicle_id: VEHICLE_ID,
+          maintenance_record_id: null,
+          maintenance_title: null,
+          checklist_item_id: CHECKLIST_ITEM_ID,
+          checklist_label: "Insurance Certificate",
+          folder: input.folder,
+          document_type: input.documentType,
+          title: input.title,
+          label: input.label,
+          storage_provider: input.storageProvider,
+          mime_type: input.mimeType,
+          size_bytes: input.sizeBytes,
+          file_size_bytes: input.fileSizeBytes,
+          tags: input.tags,
+          uploaded_by_user_id: "admin-user-id",
+          created_at: "2026-02-22T10:00:00.000Z",
+          archived_at: null,
+        };
+      },
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(capturedInput?.checklistItemId, CHECKLIST_ITEM_ID);
+
+  const body = (await response.json()) as {
+    ok?: boolean;
+    item?: { checklistItemId?: string | null; checklistItemLabel?: string | null };
+  };
+  assert.equal(body.ok, true);
+  assert.equal(body.item?.checklistItemId, CHECKLIST_ITEM_ID);
+  assert.equal(body.item?.checklistItemLabel, "Insurance Certificate");
+});
+
+test("admin vehicle documents API: POST rejects checklist folder mismatch", async () => {
+  const response = await handleAdminVehicleDocumentsPost(
+    new Request(`http://localhost/api/admin/vehicles/${VEHICLE_ID}/documents`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-csrf-token": "token",
+      },
+      body: JSON.stringify({
+        folder: "Paperwork",
+        title: "Insurance 2026",
+        document_type: "Insurance Certificate",
+        uploadcare_file_id: FILE_ID,
+        checklistItemId: CHECKLIST_ITEM_ID,
+        storage_provider: "UPLOADCARE_FILE_ID",
+        csrfToken: "token",
+      }),
+    }),
+    { params: Promise.resolve({ id: VEHICLE_ID }) },
+    {
+      getSession: async () => ({
+        userId: "admin-user-id",
+        role: "ADMIN",
+        issuedAt: Date.now(),
+        expiresAt: Date.now() + 60_000,
+      }),
+      requireCsrfCheck: async () => true,
+      listDocuments: async () => [],
+      createDocument: async () => {
+        throw new Error("CHECKLIST_ITEM_FOLDER_MISMATCH");
+      },
+    },
+  );
+
+  assert.equal(response.status, 400);
+  const body = (await response.json()) as { ok?: boolean; error?: string };
+  assert.equal(body.ok, false);
+  assert.match(String(body.error), /folder must match/i);
 });
 
 test("admin vehicle documents API: POST preserves signed delivery URL references", async () => {
@@ -167,6 +279,8 @@ test("admin vehicle documents API: POST preserves signed delivery URL references
           vehicle_id: VEHICLE_ID,
           maintenance_record_id: null,
           maintenance_title: null,
+          checklist_item_id: null,
+          checklist_label: null,
           folder: input.folder,
           document_type: input.documentType,
           title: input.title,

@@ -127,13 +127,27 @@ const DEFAULT_DEPS: AdminVehicleDocumentRouteDeps = {
       ],
     );
 
-    return update.rows[0] ?? null;
+    const row = update.rows[0] ?? null;
+    if (row && input.archived === true) {
+      await dbQuery(
+        "update vehicle_checklist_items set uploaded_document_id = null, updated_at = now() where uploaded_document_id = $1::uuid and vehicle_id = $2::uuid",
+        [docId, vehicleId],
+      );
+    }
+
+    return row;
   },
   archiveDocument: async (vehicleId, docId) => {
     const result = await dbQuery<{ id: string }>(
       "update vehicle_documents set archived_at = now() where id = $1::uuid and vehicle_id = $2::uuid and archived_at is null returning id",
       [docId, vehicleId],
     );
+    if (result.rowCount > 0) {
+      await dbQuery(
+        "update vehicle_checklist_items set uploaded_document_id = null, updated_at = now() where uploaded_document_id = $1::uuid and vehicle_id = $2::uuid",
+        [docId, vehicleId],
+      );
+    }
     return result.rowCount > 0;
   },
 };

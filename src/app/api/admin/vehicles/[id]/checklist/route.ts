@@ -21,6 +21,8 @@ type ChecklistRow = {
   required: boolean;
   allow_not_required: boolean;
   uploaded_document_id: string | null;
+  uploaded_document_title: string | null;
+  uploaded_document_label: string | null;
   expiration_date: string | null;
   created_at: string;
   updated_at: string;
@@ -79,6 +81,7 @@ function mapItem(row: ChecklistRow) {
     required: row.required,
     allowNotRequired: row.allow_not_required,
     uploadedDocumentId: row.uploaded_document_id,
+    uploadedDocumentDisplayLabel: row.uploaded_document_label ?? row.uploaded_document_title,
     expirationDate: row.expiration_date,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -90,14 +93,32 @@ const DEFAULT_DEPS: AdminVehicleChecklistRouteDeps = {
   requireCsrfCheck: (request, bodyToken) => requireCsrf(request, bodyToken),
   listItems: async (vehicleId) => {
     const result = await dbQuery<ChecklistRow>(
-      "select id, vehicle_id, label, folder, required, allow_not_required, uploaded_document_id, expiration_date, created_at, updated_at from vehicle_checklist_items where vehicle_id = $1::uuid order by required desc, lower(label) asc, created_at desc",
+      `select
+         i.id,
+         i.vehicle_id,
+         i.label,
+         i.folder,
+         i.required,
+         i.allow_not_required,
+         i.uploaded_document_id,
+         d.title as uploaded_document_title,
+         d.label as uploaded_document_label,
+         i.expiration_date,
+         i.created_at,
+         i.updated_at
+       from vehicle_checklist_items i
+       left join vehicle_documents d
+         on d.id = i.uploaded_document_id
+        and d.archived_at is null
+       where i.vehicle_id = $1::uuid
+       order by i.required desc, lower(i.label) asc, i.created_at desc`,
       [vehicleId],
     );
     return result.rows;
   },
   createItem: async (vehicleId, input) => {
     const result = await dbQuery<ChecklistRow>(
-      "insert into vehicle_checklist_items (vehicle_id, label, folder, required, allow_not_required, expiration_date) values ($1::uuid, $2, $3, $4, $5, $6::date) returning id, vehicle_id, label, folder, required, allow_not_required, uploaded_document_id, expiration_date, created_at, updated_at",
+      "insert into vehicle_checklist_items (vehicle_id, label, folder, required, allow_not_required, expiration_date) values ($1::uuid, $2, $3, $4, $5, $6::date) returning id, vehicle_id, label, folder, required, allow_not_required, uploaded_document_id, null::text as uploaded_document_title, null::text as uploaded_document_label, expiration_date, created_at, updated_at",
       [vehicleId, input.label, input.folder, input.required, input.allowNotRequired, input.expirationDate],
     );
     return result.rows[0];

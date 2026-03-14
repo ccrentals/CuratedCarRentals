@@ -20,6 +20,7 @@ type ChecklistItem = {
   folder: string;
   required: boolean;
   allowNotRequired: boolean;
+  uploadedDocumentDisplayLabel: string | null;
   expirationDate: string | null;
   uploadedDocumentId: string | null;
   createdAt: string;
@@ -93,6 +94,7 @@ export function VehicleChecklistPanel({
           folder: string;
           required: boolean;
           allowNotRequired: boolean;
+          uploadedDocumentDisplayLabel: string | null;
           expirationDate: string | null;
           uploadedDocumentId: string | null;
           createdAt: string;
@@ -113,6 +115,7 @@ export function VehicleChecklistPanel({
           folder: item.folder,
           required: Boolean(item.required),
           allowNotRequired: Boolean(item.allowNotRequired),
+          uploadedDocumentDisplayLabel: item.uploadedDocumentDisplayLabel ?? null,
           expirationDate: item.expirationDate ?? null,
           uploadedDocumentId: item.uploadedDocumentId ?? null,
           createdAt: item.createdAt,
@@ -414,6 +417,11 @@ export function VehicleChecklistPanel({
                 Expiration: {item.expirationDate ? item.expirationDate : "Not set"}
                 {item.uploadedDocumentId ? " · Document attached" : ""}
               </p>
+              {item.uploadedDocumentId ? (
+                <p>
+                  Attached file: {item.uploadedDocumentDisplayLabel ?? "Linked vehicle file"}
+                </p>
+              ) : null}
               {item.required && !item.allowNotRequired ? (
                 <p>This item should remain required.</p>
               ) : null}

@@ -21,6 +21,8 @@ type VehicleDocument = {
   folder: string;
   documentType: string;
   label: string | null;
+  checklistItemId: string | null;
+  checklistItemLabel: string | null;
   linkedTo: string;
   title: string;
   storageProvider: string;
@@ -28,6 +30,15 @@ type VehicleDocument = {
   sizeBytes: number | null;
   canDownload: boolean;
   createdAt: string;
+};
+
+type ChecklistItemOption = {
+  id: string;
+  label: string;
+  folder: string;
+  required: boolean;
+  uploadedDocumentId: string | null;
+  uploadedDocumentDisplayLabel: string | null;
 };
 
 type UploadcareFileInfo = {
@@ -137,11 +148,14 @@ export function VehicleFilesPanel({
   const [items, setItems] = useState<VehicleDocument[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [checklistItems, setChecklistItems] = useState<ChecklistItemOption[]>([]);
+  const [checklistError, setChecklistError] = useState<string | null>(null);
 
   const [pendingUpload, setPendingUpload] = useState<PendingUpload | null>(null);
   const [documentType, setDocumentType] = useState(documentTypes[0] ?? "General");
   const [label, setLabel] = useState("");
   const [title, setTitle] = useState("");
+  const [selectedChecklistItemId, setSelectedChecklistItemId] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [previewItem, setPreviewItem] = useState<VehicleDocument | null>(null);
@@ -166,6 +180,8 @@ export function VehicleFilesPanel({
           folder: string;
           documentType: string;
           label: string | null;
+          checklistItemId: string | null;
+          checklistItemLabel: string | null;
           linkedTo: string;
           title: string;
           storageProvider: string;
@@ -188,6 +204,8 @@ export function VehicleFilesPanel({
             folder: entry.folder,
             documentType: entry.documentType,
             label: entry.label,
+            checklistItemId: entry.checklistItemId ?? null,
+            checklistItemLabel: entry.checklistItemLabel ?? null,
             linkedTo: entry.linkedTo,
             title: entry.title,
             storageProvider: entry.storageProvider,
@@ -207,9 +225,53 @@ export function VehicleFilesPanel({
     }
   }, [activeFolder, vehicleId]);
 
+  const loadChecklistItems = useCallback(async () => {
+    setChecklistError(null);
+
+    try {
+      const response = await fetch(`/api/admin/vehicles/${vehicleId}/checklist`, { cache: "no-store" });
+      const payload = (await response.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        items?: Array<{
+          id: string;
+          label: string;
+          folder: string;
+          required: boolean;
+          uploadedDocumentId: string | null;
+          uploadedDocumentDisplayLabel: string | null;
+        }>;
+      };
+
+      if (!response.ok || !payload.ok) {
+        setChecklistError(payload.error ?? "Unable to load checklist items for file linking.");
+        setChecklistItems([]);
+        return;
+      }
+
+      setChecklistItems(
+        (payload.items ?? []).map((item) => ({
+          id: item.id,
+          label: item.label,
+          folder: item.folder,
+          required: Boolean(item.required),
+          uploadedDocumentId: item.uploadedDocumentId ?? null,
+          uploadedDocumentDisplayLabel: item.uploadedDocumentDisplayLabel ?? null,
+        })),
+      );
+    } catch {
+      setChecklistError("Unable to load checklist items for file linking.");
+      setChecklistItems([]);
+    }
+  }, [vehicleId]);
+
   useEffect(() => {
     void loadDocuments();
   }, [loadDocuments]);
+
+  useEffect(() => {
+    void loadChecklistItems();
+  }, [loadChecklistItems]);
 
   useEffect(() => {
     if (!documentType.trim()) {
@@ -219,6 +281,23 @@ export function VehicleFilesPanel({
 
   const isCustomDocumentType = !documentTypes.includes(documentType);
   const selectedDocumentTypeValue = isCustomDocumentType ? CUSTOM_DOCUMENT_TYPE_VALUE : documentType;
+  const availableChecklistItems = useMemo(
+    () => checklistItems.filter((item) => item.folder === activeFolder),
+    [activeFolder, checklistItems],
+  );
+  const selectedChecklistItem = useMemo(
+    () => availableChecklistItems.find((item) => item.id === selectedChecklistItemId) ?? null,
+    [availableChecklistItems, selectedChecklistItemId],
+  );
+
+  useEffect(() => {
+    if (
+      selectedChecklistItemId &&
+      !availableChecklistItems.some((item) => item.id === selectedChecklistItemId)
+    ) {
+      setSelectedChecklistItemId("");
+    }
+  }, [availableChecklistItems, selectedChecklistItemId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -363,6 +442,7 @@ export function VehicleFilesPanel({
         },
         body: JSON.stringify({
           folder: activeFolder,
+          checklistItemId: selectedChecklistItemId || null,
           documentType: normalizedType,
           label: normalizedLabel || null,
           title: normalizedTitle,
@@ -384,9 +464,10 @@ export function VehicleFilesPanel({
       setPendingUpload(null);
       setLabel("");
       setTitle("");
+      setSelectedChecklistItemId("");
       setDocumentType(documentTypes[0] ?? "General");
       setMessage("File added.");
-      await loadDocuments();
+      await Promise.all([loadDocuments(), loadChecklistItems()]);
     } catch {
       setError("Unable to save file.");
     } finally {
@@ -416,7 +497,7 @@ export function VehicleFilesPanel({
     }
 
     setMessage("File archived.");
-    await loadDocuments();
+    await Promise.all([loadDocuments(), loadChecklistItems()]);
   };
 
   return (
@@ -498,11 +579,39 @@ export function VehicleFilesPanel({
               placeholder="Insurance 2026"
             />
           </label>
+          <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+            Link checklist item
+            <select
+              data-testid="vehicle-files-checklist-link"
+              value={selectedChecklistItemId}
+              onChange={(event) => setSelectedChecklistItemId(event.target.value)}
+              className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)] disabled:opacity-60"
+              disabled={availableChecklistItems.length < 1}
+            >
+              <option value="">No checklist link</option>
+              {availableChecklistItems.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.label}
+                  {item.required ? " (required)" : ""}
+                  {item.uploadedDocumentId ? " · replaces current attachment" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
 
         <div className="mt-2 grid gap-1 text-xs text-[var(--ccr-muted)]">
           <p>Label is shown in the file list. Leave it blank to fall back to the title.</p>
           <p>Title stores the file title and defaults to the uploaded filename.</p>
+          <p>Linking a file marks that checklist item as attached. Archiving the file clears the link.</p>
+          {availableChecklistItems.length < 1 ? (
+            <p>No checklist items exist in this folder yet.</p>
+          ) : null}
+          {selectedChecklistItem?.uploadedDocumentId ? (
+            <p>
+              Saving will replace the current attachment for {selectedChecklistItem.label}.
+            </p>
+          ) : null}
         </div>
 
         <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap sm:items-center">
@@ -531,6 +640,7 @@ export function VehicleFilesPanel({
       </div>
 
       {error ? <p className="mt-3 text-xs font-semibold text-red-300">{error}</p> : null}
+      {checklistError ? <p className="mt-3 text-xs font-semibold text-red-300">{checklistError}</p> : null}
       {message ? <p className="mt-3 text-xs font-semibold text-emerald-200">{message}</p> : null}
 
       <div className="mt-4 space-y-3">
@@ -569,6 +679,7 @@ export function VehicleFilesPanel({
 
                   <div className="mt-2 text-xs text-[var(--ccr-muted)] break-words">
                     <p>Linked to: {item.linkedTo}</p>
+                    {item.checklistItemLabel ? <p>Checklist: {item.checklistItemLabel}</p> : null}
                     <p>Uploaded: <DateTimeInline value={item.createdAt} /></p>
                     <p>{item.mimeType || "Unknown type"} · {normalizeBytes(item.sizeBytes)}</p>
                   </div>
@@ -614,6 +725,7 @@ export function VehicleFilesPanel({
                     <th className="px-3 py-2">Type</th>
                     <th className="px-3 py-2">Label</th>
                     <th className="px-3 py-2">Linked To</th>
+                    <th className="px-3 py-2">Checklist</th>
                     <th className="px-3 py-2">Uploaded</th>
                     <th className="px-3 py-2">Actions</th>
                   </tr>
@@ -631,6 +743,9 @@ export function VehicleFilesPanel({
                         </div>
                       </td>
                       <td className="px-3 py-2 text-[var(--ccr-muted)] break-words">{item.linkedTo}</td>
+                      <td className="px-3 py-2 text-[var(--ccr-muted)] break-words">
+                        {item.checklistItemLabel ? item.checklistItemLabel : "Not linked"}
+                      </td>
                       <td className="px-3 py-2 text-[var(--ccr-muted)]">
                         <TableDateTime value={item.createdAt} />
                       </td>
@@ -692,6 +807,7 @@ export function VehicleFilesPanel({
                 <p className="truncate text-xs text-[var(--ccr-muted)]">
                   {previewItem.documentType}
                   {previewItem.label ? ` · ${previewItem.title}` : ""}
+                  {previewItem.checklistItemLabel ? ` · Checklist: ${previewItem.checklistItemLabel}` : ""}
                 </p>
               </div>
               <div className="flex gap-2">
