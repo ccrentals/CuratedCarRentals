@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
+import type { VehicleChecklistTemplateSetting } from "@/lib/adminSettings";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
 const DEFAULT_FOLDERS = ["Paperwork", "Insurance", "Registration", "Other"];
@@ -10,7 +11,7 @@ const DEFAULT_FOLDERS = ["Paperwork", "Insurance", "Registration", "Other"];
 type VehicleChecklistPanelProps = {
   vehicleId: string;
   folders?: string[];
-  templateItems?: string[];
+  templates?: VehicleChecklistTemplateSetting[];
 };
 
 type ChecklistItem = {
@@ -18,6 +19,7 @@ type ChecklistItem = {
   label: string;
   folder: string;
   required: boolean;
+  allowNotRequired: boolean;
   expirationDate: string | null;
   uploadedDocumentId: string | null;
   createdAt: string;
@@ -32,16 +34,38 @@ function normalizeFolders(input: string[] | undefined) {
   return cleaned.length > 0 ? cleaned : [...DEFAULT_FOLDERS];
 }
 
-function normalizeTemplates(input: string[] | undefined) {
+function normalizeTemplates(
+  input: VehicleChecklistTemplateSetting[] | undefined,
+  folders: string[],
+) {
   return (input ?? [])
-    .map((item) => item.trim())
-    .filter(Boolean)
+    .map((template) => {
+      const label = template.label.trim();
+      if (!label) return null;
+      return {
+        ...template,
+        label,
+        folder: folders.includes(template.folder) ? template.folder : folders[0] ?? "Unsorted",
+      };
+    })
+    .filter((template): template is VehicleChecklistTemplateSetting => Boolean(template))
     .slice(0, 40);
 }
 
-export function VehicleChecklistPanel({ vehicleId, folders: configuredFolders, templateItems }: VehicleChecklistPanelProps) {
+export function VehicleChecklistPanel({
+  vehicleId,
+  folders: configuredFolders,
+  templates: configuredTemplates,
+}: VehicleChecklistPanelProps) {
   const folders = useMemo(() => normalizeFolders(configuredFolders), [configuredFolders]);
-  const templates = useMemo(() => normalizeTemplates(templateItems), [templateItems]);
+  const templates = useMemo(
+    () => normalizeTemplates(configuredTemplates, folders),
+    [configuredTemplates, folders],
+  );
+  const activeTemplates = useMemo(
+    () => templates.filter((template) => template.isActive),
+    [templates],
+  );
 
   const [items, setItems] = useState<ChecklistItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -68,6 +92,7 @@ export function VehicleChecklistPanel({ vehicleId, folders: configuredFolders, t
           label: string;
           folder: string;
           required: boolean;
+          allowNotRequired: boolean;
           expirationDate: string | null;
           uploadedDocumentId: string | null;
           createdAt: string;
@@ -87,6 +112,7 @@ export function VehicleChecklistPanel({ vehicleId, folders: configuredFolders, t
           label: item.label,
           folder: item.folder,
           required: Boolean(item.required),
+          allowNotRequired: Boolean(item.allowNotRequired),
           expirationDate: item.expirationDate ?? null,
           uploadedDocumentId: item.uploadedDocumentId ?? null,
           createdAt: item.createdAt,
@@ -111,7 +137,13 @@ export function VehicleChecklistPanel({ vehicleId, folders: configuredFolders, t
     }
   }, [folder, folders]);
 
-  async function createItem(inputLabel: string, inputFolder: string, inputRequired: boolean, inputExpirationDate: string | null) {
+  async function createItem(
+    inputLabel: string,
+    inputFolder: string,
+    inputRequired: boolean,
+    inputAllowNotRequired: boolean,
+    inputExpirationDate: string | null,
+  ) {
     const csrfToken = await ensureCsrfToken();
     const response = await fetch(`/api/admin/vehicles/${vehicleId}/checklist`, {
       method: "POST",
@@ -123,6 +155,7 @@ export function VehicleChecklistPanel({ vehicleId, folders: configuredFolders, t
         label: inputLabel,
         folder: inputFolder,
         required: inputRequired,
+        allowNotRequired: inputAllowNotRequired,
         expirationDate: inputExpirationDate,
         csrfToken,
       }),
@@ -146,7 +179,7 @@ export function VehicleChecklistPanel({ vehicleId, folders: configuredFolders, t
     setMessage(null);
 
     try {
-      await createItem(normalizedLabel, folder, required, expirationDate || null);
+      await createItem(normalizedLabel, folder, required, true, expirationDate || null);
       setLabel("");
       setRequired(false);
       setExpirationDate("");
@@ -160,16 +193,27 @@ export function VehicleChecklistPanel({ vehicleId, folders: configuredFolders, t
   }
 
   async function handleApplyTemplate() {
-    if (templates.length < 1) return;
+    if (activeTemplates.length < 1) return;
     setSaving(true);
     setError(null);
     setMessage(null);
 
     try {
-      for (const templateLabel of templates) {
-        await createItem(templateLabel, folder, true, null);
+      for (const template of activeTemplates) {
+        await createItem(
+          template.label,
+          template.folder,
+          template.required,
+          template.allowNotRequired,
+          null,
+        );
       }
-      setMessage("Template checklist items added.");
+      const expiryRequiredCount = activeTemplates.filter((template) => template.expiryRequired).length;
+      setMessage(
+        expiryRequiredCount > 0
+          ? `Template checklist items added. ${expiryRequiredCount} item(s) still need expiration dates.`
+          : "Template checklist items added.",
+      );
       await loadItems();
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Unable to apply template items.");
@@ -211,7 +255,7 @@ export function VehicleChecklistPanel({ vehicleId, folders: configuredFolders, t
           <h2 className="text-lg font-bold text-[var(--ccr-text)]">Checklist</h2>
           <p className="text-xs text-[var(--ccr-muted)]">Track required vehicle paperwork and renewals.</p>
         </div>
-        {templates.length > 0 ? (
+        {activeTemplates.length > 0 ? (
           <button
             type="button"
             onClick={() => void handleApplyTemplate()}
@@ -222,6 +266,64 @@ export function VehicleChecklistPanel({ vehicleId, folders: configuredFolders, t
           </button>
         ) : null}
       </div>
+
+      {templates.length > 0 ? (
+        <div className="mt-4 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-sm font-semibold text-[var(--ccr-text)]">Template coverage</p>
+              <p className="mt-1 text-xs text-[var(--ccr-muted)]">
+                Apply uses each template&apos;s own folder, required flag, and optional override
+                rule.
+              </p>
+            </div>
+            <p className="text-xs text-[var(--ccr-muted)]">
+              Active templates:{" "}
+              <span className="font-semibold text-[var(--ccr-text)]">{activeTemplates.length}</span>
+            </p>
+          </div>
+
+          <div className="mt-3 grid gap-3 md:grid-cols-2">
+            {templates.map((template) => (
+              <article
+                key={template.key}
+                className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <p className="font-semibold text-[var(--ccr-text)]">{template.label}</p>
+                    <p className="text-xs text-[var(--ccr-muted)]">Folder: {template.folder}</p>
+                  </div>
+                  {!template.isActive ? (
+                    <span className="rounded-full border border-[var(--ccr-border)] px-2 py-1 text-[11px] font-semibold text-[var(--ccr-muted)]">
+                      Inactive
+                    </span>
+                  ) : null}
+                </div>
+
+                <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
+                  <span className="rounded-full border border-[var(--ccr-border)] px-2 py-1 text-[var(--ccr-text)]">
+                    {template.required ? "Required" : "Optional"}
+                  </span>
+                  <span className="rounded-full border border-[var(--ccr-border)] px-2 py-1 text-[var(--ccr-text)]">
+                    {template.allowNotRequired ? "Can be marked optional" : "Must stay required"}
+                  </span>
+                  {template.expiryRequired ? (
+                    <span className="rounded-full border border-amber-300/50 bg-amber-500/15 px-2 py-1 text-[var(--ccr-required-text)]">
+                      Expiry required
+                    </span>
+                  ) : null}
+                  {template.expiryWarningDays !== null ? (
+                    <span className="rounded-full border border-[var(--ccr-border)] px-2 py-1 text-[var(--ccr-text)]">
+                      Warn {template.expiryWarningDays}d
+                    </span>
+                  ) : null}
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       <div className="mt-4 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
         <div className="grid gap-3 md:grid-cols-2">
@@ -285,7 +387,7 @@ export function VehicleChecklistPanel({ vehicleId, folders: configuredFolders, t
 
       <div className="mt-4 space-y-3">
         {loading ? <p className="text-sm text-[var(--ccr-muted)]">Loading checklist...</p> : null}
-      {!loading && items.length < 1 ? (
+        {!loading && items.length < 1 ? (
           <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-4 py-5">
             <p className="text-sm font-semibold text-[var(--ccr-text)]">No checklist items yet.</p>
             <p className="mt-1 text-xs text-[var(--ccr-muted)]">
@@ -312,6 +414,9 @@ export function VehicleChecklistPanel({ vehicleId, folders: configuredFolders, t
                 Expiration: {item.expirationDate ? item.expirationDate : "Not set"}
                 {item.uploadedDocumentId ? " · Document attached" : ""}
               </p>
+              {item.required && !item.allowNotRequired ? (
+                <p>This item should remain required.</p>
+              ) : null}
             </div>
 
             <div className="absolute right-4 top-1/2 flex -translate-y-1/2 items-center gap-2">

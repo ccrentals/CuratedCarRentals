@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { handleAdminVehicleChecklistGet } from "@/app/api/admin/vehicles/[id]/checklist/route";
+import {
+  handleAdminVehicleChecklistGet,
+  handleAdminVehicleChecklistPost,
+} from "@/app/api/admin/vehicles/[id]/checklist/route";
 import { handleVehicleMaintenanceGet } from "@/app/api/admin/vehicles/[id]/maintenance/route";
 
 const VEHICLE_ID = "11111111-1111-4111-8111-111111111111";
@@ -33,6 +36,78 @@ test("vehicle checklist foundation smoke: GET returns ok payload", async () => {
   const payload = (await response.json()) as { ok?: boolean; items?: unknown[] };
   assert.equal(payload.ok, true);
   assert.deepEqual(payload.items, []);
+});
+
+test("vehicle checklist foundation smoke: POST persists allowNotRequired metadata", async () => {
+  let createArgs:
+    | {
+        vehicleId: string;
+        input: {
+          label: string;
+          folder: string;
+          required: boolean;
+          allowNotRequired: boolean;
+          expirationDate: string | null;
+        };
+      }
+    | null = null;
+
+  const response = await handleAdminVehicleChecklistPost(
+    new Request(`http://localhost/api/admin/vehicles/${VEHICLE_ID}/checklist`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        label: "Insurance Certificate",
+        folder: "Insurance",
+        required: true,
+        allowNotRequired: false,
+        expirationDate: "2026-03-30",
+        csrfToken: "test-token",
+      }),
+    }),
+    { params: Promise.resolve({ id: VEHICLE_ID }) },
+    {
+      getSession: async () => adminSession(),
+      requireCsrfCheck: async () => true,
+      listItems: async () => [],
+      createItem: async (vehicleId, input) => {
+        createArgs = { vehicleId, input };
+        return {
+          id: "22222222-2222-4222-8222-222222222222",
+          vehicle_id: vehicleId,
+          label: input.label,
+          folder: input.folder,
+          required: input.required,
+          allow_not_required: input.allowNotRequired,
+          uploaded_document_id: null,
+          expiration_date: input.expirationDate,
+          created_at: "2026-03-13T00:00:00.000Z",
+          updated_at: "2026-03-13T00:00:00.000Z",
+        };
+      },
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(createArgs, {
+    vehicleId: VEHICLE_ID,
+    input: {
+      label: "Insurance Certificate",
+      folder: "Insurance",
+      required: true,
+      allowNotRequired: false,
+      expirationDate: "2026-03-30",
+    },
+  });
+
+  const payload = (await response.json()) as {
+    ok?: boolean;
+    item?: { allowNotRequired?: boolean; required?: boolean; folder?: string };
+  };
+  assert.equal(payload.ok, true);
+  assert.equal(payload.item?.required, true);
+  assert.equal(payload.item?.allowNotRequired, false);
+  assert.equal(payload.item?.folder, "Insurance");
 });
 
 test("vehicle maintenance foundation smoke: GET returns ok payload", async () => {

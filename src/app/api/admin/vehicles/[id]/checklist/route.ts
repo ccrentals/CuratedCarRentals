@@ -19,6 +19,7 @@ type ChecklistRow = {
   label: string;
   folder: string;
   required: boolean;
+  allow_not_required: boolean;
   uploaded_document_id: string | null;
   expiration_date: string | null;
   created_at: string;
@@ -36,6 +37,7 @@ type CreateChecklistInput = {
   label: string;
   folder: string;
   required: boolean;
+  allowNotRequired: boolean;
   expirationDate: string | null;
 };
 
@@ -75,6 +77,7 @@ function mapItem(row: ChecklistRow) {
     label: row.label,
     folder: row.folder,
     required: row.required,
+    allowNotRequired: row.allow_not_required,
     uploadedDocumentId: row.uploaded_document_id,
     expirationDate: row.expiration_date,
     createdAt: row.created_at,
@@ -87,15 +90,15 @@ const DEFAULT_DEPS: AdminVehicleChecklistRouteDeps = {
   requireCsrfCheck: (request, bodyToken) => requireCsrf(request, bodyToken),
   listItems: async (vehicleId) => {
     const result = await dbQuery<ChecklistRow>(
-      "select id, vehicle_id, label, folder, required, uploaded_document_id, expiration_date, created_at, updated_at from vehicle_checklist_items where vehicle_id = $1::uuid order by required desc, lower(label) asc, created_at desc",
+      "select id, vehicle_id, label, folder, required, allow_not_required, uploaded_document_id, expiration_date, created_at, updated_at from vehicle_checklist_items where vehicle_id = $1::uuid order by required desc, lower(label) asc, created_at desc",
       [vehicleId],
     );
     return result.rows;
   },
   createItem: async (vehicleId, input) => {
     const result = await dbQuery<ChecklistRow>(
-      "insert into vehicle_checklist_items (vehicle_id, label, folder, required, expiration_date) values ($1::uuid, $2, $3, $4, $5::date) returning id, vehicle_id, label, folder, required, uploaded_document_id, expiration_date, created_at, updated_at",
-      [vehicleId, input.label, input.folder, input.required, input.expirationDate],
+      "insert into vehicle_checklist_items (vehicle_id, label, folder, required, allow_not_required, expiration_date) values ($1::uuid, $2, $3, $4, $5, $6::date) returning id, vehicle_id, label, folder, required, allow_not_required, uploaded_document_id, expiration_date, created_at, updated_at",
+      [vehicleId, input.label, input.folder, input.required, input.allowNotRequired, input.expirationDate],
     );
     return result.rows[0];
   },
@@ -155,6 +158,7 @@ export async function handleAdminVehicleChecklistPost(
     label,
     folder: normalizeFolder(body?.folder),
     required: normalizeRequired(body?.required),
+    allowNotRequired: normalizeRequired(body?.allowNotRequired ?? body?.allow_not_required ?? true),
     expirationDate: normalizeExpirationDate(body?.expirationDate ?? body?.expiration_date),
   };
 

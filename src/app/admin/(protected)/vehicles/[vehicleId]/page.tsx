@@ -201,16 +201,22 @@ export default async function AdminVehicleDetailPage({
 
   let documentFolders = [...DEFAULT_ADMIN_SETTINGS.vehicleDocumentFolders];
   let documentTypeOptions = [...DEFAULT_ADMIN_SETTINGS.vehicleDocumentTypeOptions];
-  let checklistTemplateItems = [...DEFAULT_ADMIN_SETTINGS.vehicleChecklistTemplateItems];
+  let checklistTemplates = DEFAULT_ADMIN_SETTINGS.vehicleChecklistTemplates.map((template) => ({
+    ...template,
+  }));
   try {
     const { settings } = await loadAdminSettings();
     documentFolders = settings.vehicleDocumentFolders;
     documentTypeOptions = settings.vehicleDocumentTypeOptions;
-    checklistTemplateItems = settings.vehicleChecklistTemplateItems;
+    checklistTemplates = settings.vehicleChecklistTemplates.map((template) => ({
+      ...template,
+    }));
   } catch {
     documentFolders = [...DEFAULT_ADMIN_SETTINGS.vehicleDocumentFolders];
     documentTypeOptions = [...DEFAULT_ADMIN_SETTINGS.vehicleDocumentTypeOptions];
-    checklistTemplateItems = [...DEFAULT_ADMIN_SETTINGS.vehicleChecklistTemplateItems];
+    checklistTemplates = DEFAULT_ADMIN_SETTINGS.vehicleChecklistTemplates.map((template) => ({
+      ...template,
+    }));
   }
 
   const visibleTabs = canManageCommercial
@@ -272,7 +278,7 @@ export default async function AdminVehicleDetailPage({
           <VehicleChecklistPanel
             vehicleId={vehicle.id}
             folders={documentFolders}
-            templateItems={checklistTemplateItems}
+            templates={checklistTemplates}
           />
         ) : null}
 
