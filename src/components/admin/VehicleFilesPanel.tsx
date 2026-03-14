@@ -7,6 +7,7 @@ import { TableDateTime } from "@/components/shared/TableDateTime";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
 const DEFAULT_FOLDERS = ["Paperwork", "Insurance", "Registration", "Other"] as const;
+const CUSTOM_DOCUMENT_TYPE_VALUE = "__custom__";
 const WIDGET_SRC = "https://ucarecdn.com/libs/widget/3.x/uploadcare.full.min.js";
 
 type VehicleFilesPanelProps = {
@@ -115,6 +116,11 @@ function normalizeDocumentTypes(input: string[] | undefined) {
   return ["General", "Registration", "Insurance", "Service Invoice", "Receipt", "Photo", "Other"];
 }
 
+function getDocumentDisplayLabel(item: Pick<VehicleDocument, "label" | "title">) {
+  const label = item.label?.trim();
+  return label ? label : item.title;
+}
+
 export function VehicleFilesPanel({
   vehicleId,
   folders: configuredFolders,
@@ -134,6 +140,7 @@ export function VehicleFilesPanel({
 
   const [pendingUpload, setPendingUpload] = useState<PendingUpload | null>(null);
   const [documentType, setDocumentType] = useState(documentTypes[0] ?? "General");
+  const [label, setLabel] = useState("");
   const [title, setTitle] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -209,6 +216,9 @@ export function VehicleFilesPanel({
       setDocumentType(documentTypes[0] ?? "General");
     }
   }, [documentType, documentTypes]);
+
+  const isCustomDocumentType = !documentTypes.includes(documentType);
+  const selectedDocumentTypeValue = isCustomDocumentType ? CUSTOM_DOCUMENT_TYPE_VALUE : documentType;
 
   useEffect(() => {
     let cancelled = false;
@@ -332,6 +342,7 @@ export function VehicleFilesPanel({
     if (saving) return;
 
     const normalizedType = documentType.trim();
+    const normalizedLabel = label.trim();
     const normalizedTitle = title.trim();
     if (!normalizedType || !normalizedTitle) {
       setError("Document type and title are required.");
@@ -353,6 +364,7 @@ export function VehicleFilesPanel({
         body: JSON.stringify({
           folder: activeFolder,
           documentType: normalizedType,
+          label: normalizedLabel || null,
           title: normalizedTitle,
           storageProvider: "UPLOADCARE_FILE_ID",
           storageKey: pendingUpload.reference,
@@ -370,8 +382,9 @@ export function VehicleFilesPanel({
       }
 
       setPendingUpload(null);
+      setLabel("");
       setTitle("");
-      setDocumentType("General");
+      setDocumentType(documentTypes[0] ?? "General");
       setMessage("File added.");
       await loadDocuments();
     } catch {
@@ -437,18 +450,44 @@ export function VehicleFilesPanel({
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
             Document type
-            <input
-              list={`vehicle-document-types-${vehicleId}`}
-              value={documentType}
-              onChange={(event) => setDocumentType(event.target.value)}
+            <select
+              value={selectedDocumentTypeValue}
+              onChange={(event) =>
+                setDocumentType(
+                  event.target.value === CUSTOM_DOCUMENT_TYPE_VALUE
+                    ? ""
+                    : event.target.value,
+                )
+              }
               className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
-              placeholder="Insurance certificate"
-            />
-            <datalist id={`vehicle-document-types-${vehicleId}`}>
+            >
               {documentTypes.map((option) => (
-                <option key={option} value={option} />
+                <option key={option} value={option}>
+                  {option}
+                </option>
               ))}
-            </datalist>
+              <option value={CUSTOM_DOCUMENT_TYPE_VALUE}>Custom type</option>
+            </select>
+          </label>
+          {isCustomDocumentType ? (
+            <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+              Custom document type
+              <input
+                value={documentType}
+                onChange={(event) => setDocumentType(event.target.value)}
+                className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+                placeholder="Roadside contract"
+              />
+            </label>
+          ) : null}
+          <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+            Label
+            <input
+              value={label}
+              onChange={(event) => setLabel(event.target.value)}
+              className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+              placeholder="Insurance 2026"
+            />
           </label>
           <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
             Title
@@ -459,6 +498,11 @@ export function VehicleFilesPanel({
               placeholder="Insurance 2026"
             />
           </label>
+        </div>
+
+        <div className="mt-2 grid gap-1 text-xs text-[var(--ccr-muted)]">
+          <p>Label is shown in the file list. Leave it blank to fall back to the title.</p>
+          <p>Title stores the file title and defaults to the uploaded filename.</p>
         </div>
 
         <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap sm:items-center">
@@ -510,7 +554,12 @@ export function VehicleFilesPanel({
                 >
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div>
-                      <p className="font-semibold text-[var(--ccr-text)] break-words">{item.label || item.title}</p>
+                      <p className="font-semibold text-[var(--ccr-text)] break-words">
+                        {getDocumentDisplayLabel(item)}
+                      </p>
+                      {item.label ? (
+                        <p className="text-xs text-[var(--ccr-muted)] break-words">{item.title}</p>
+                      ) : null}
                       <p className="text-xs text-[var(--ccr-muted)]">{item.documentType}</p>
                     </div>
                     <span className="rounded-full border border-[var(--ccr-border)] px-2 py-1 text-[11px] font-semibold text-[var(--ccr-muted)]">
@@ -573,7 +622,14 @@ export function VehicleFilesPanel({
                   {items.map((item) => (
                     <tr key={`desktop-${item.id}`} className="border-b border-[var(--ccr-border)] last:border-b-0">
                       <td className="px-3 py-2 text-[var(--ccr-text)]">{item.documentType}</td>
-                      <td className="px-3 py-2 text-[var(--ccr-text)] break-words">{item.label || item.title}</td>
+                      <td className="px-3 py-2 text-[var(--ccr-text)] break-words">
+                        <div className="space-y-1">
+                          <p>{getDocumentDisplayLabel(item)}</p>
+                          {item.label ? (
+                            <p className="text-xs text-[var(--ccr-muted)]">{item.title}</p>
+                          ) : null}
+                        </div>
+                      </td>
                       <td className="px-3 py-2 text-[var(--ccr-muted)] break-words">{item.linkedTo}</td>
                       <td className="px-3 py-2 text-[var(--ccr-muted)]">
                         <TableDateTime value={item.createdAt} />
@@ -631,9 +687,12 @@ export function VehicleFilesPanel({
             <div className="flex items-center justify-between gap-3 border-b border-[var(--ccr-border)] px-4 py-3">
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold text-[var(--ccr-text)]">
-                  {previewItem.label || previewItem.title}
+                  {getDocumentDisplayLabel(previewItem)}
                 </p>
-                <p className="truncate text-xs text-[var(--ccr-muted)]">{previewItem.documentType}</p>
+                <p className="truncate text-xs text-[var(--ccr-muted)]">
+                  {previewItem.documentType}
+                  {previewItem.label ? ` · ${previewItem.title}` : ""}
+                </p>
               </div>
               <div className="flex gap-2">
                 {previewItem.canDownload ? (
