@@ -215,6 +215,7 @@ test.describe("@tour vehicle files and checklist integration", () => {
     const checklistLabel = `Codex Checklist A ${stamp}`;
     const secondChecklistLabel = `Codex Checklist B ${stamp}`;
     const fileLabel = `Codex File ${stamp}`;
+    const spareFileLabel = `Codex Spare ${stamp}`;
     let checklistItemId: string | null = null;
     let secondChecklistItemId: string | null = null;
 
@@ -287,14 +288,17 @@ test.describe("@tour vehicle files and checklist integration", () => {
         secondChecklistItemId ?? "",
       );
       await fileRow.getByRole("button", { name: "Save link" }).click();
-      await expect(page.getByText("File link updated.")).toBeVisible();
+      await expect(page.getByTestId("vehicle-files-message")).toContainText("File link updated.");
+      await expect(page.getByTestId("vehicle-files-message")).toHaveClass(
+        /text-\[var\(--ccr-accent-strong\)\]/,
+      );
       await expect(fileRow).toContainText(secondChecklistLabel);
 
       await page.goto(`/admin/vehicles/${VEHICLE_ID}?tab=checklist`, { waitUntil: "networkidle" });
-      const checklistCard = page.locator("article", { hasText: checklistLabel }).first();
+      const checklistCard = page.getByTestId(`vehicle-checklist-item-${checklistItemId}`);
       await expect(checklistCard).toBeVisible();
       await expect(checklistCard).not.toContainText(`Attached file: ${fileLabel}`);
-      const secondChecklistCard = page.locator("article", { hasText: secondChecklistLabel }).first();
+      const secondChecklistCard = page.getByTestId(`vehicle-checklist-item-${secondChecklistItemId}`);
       await expect(secondChecklistCard).toBeVisible();
       await expect(secondChecklistCard).toContainText(`Attached file: ${fileLabel}`);
       await expect(
@@ -312,6 +316,7 @@ test.describe("@tour vehicle files and checklist integration", () => {
       await expect(page.getByTestId("vehicle-checklist-preview-meta")).toContainText(
         secondChecklistLabel,
       );
+      await expect(page.getByTestId("vehicle-checklist-preview-meta")).toContainText("Other");
       await expect(page).toHaveURL(
         new RegExp(`/admin/vehicles/${VEHICLE_ID}\\?tab=checklist$`),
       );
@@ -342,7 +347,9 @@ test.describe("@tour vehicle files and checklist integration", () => {
         "false",
       );
       await page.goto(`/admin/vehicles/${VEHICLE_ID}?tab=checklist`, { waitUntil: "networkidle" });
-      const secondChecklistCardAgain = page.locator("article", { hasText: secondChecklistLabel }).first();
+      const secondChecklistCardAgain = page.getByTestId(
+        `vehicle-checklist-item-${secondChecklistItemId}`,
+      );
       await expect(secondChecklistCardAgain).toBeVisible();
       await secondChecklistCardAgain.getByTestId("vehicle-checklist-manage-file").click();
       await page.waitForURL(
@@ -368,6 +375,7 @@ test.describe("@tour vehicle files and checklist integration", () => {
       await expect(page.getByTestId("vehicle-checklist-preview-meta")).toContainText(
         secondChecklistLabel,
       );
+      await expect(page.getByTestId("vehicle-checklist-preview-meta")).toContainText("Other");
       await expect(page).toHaveURL(
         new RegExp(`/admin/vehicles/${VEHICLE_ID}\\?tab=checklist$`),
       );
@@ -385,21 +393,89 @@ test.describe("@tour vehicle files and checklist integration", () => {
       const archiveRow = page.locator("tr", { hasText: fileLabel }).first();
       await archiveRow.locator('[data-testid="vehicle-file-link-select"]').selectOption("");
       await archiveRow.getByRole("button", { name: "Save link" }).click();
-      await expect(page.getByText("File unlinked from checklist.")).toBeVisible();
+      await expect(page.getByTestId("vehicle-files-message")).toContainText(
+        "File unlinked from checklist.",
+      );
+      await expect(page.getByTestId("vehicle-files-message")).toHaveClass(
+        /text-\[var\(--ccr-accent-strong\)\]/,
+      );
 
       await page.goto(`/admin/vehicles/${VEHICLE_ID}?tab=checklist`, { waitUntil: "networkidle" });
-      const secondChecklistCardAfterUnlink = page.locator("article", { hasText: secondChecklistLabel }).first();
+      const secondChecklistCardAfterUnlink = page.getByTestId(
+        `vehicle-checklist-item-${secondChecklistItemId}`,
+      );
       await expect(secondChecklistCardAfterUnlink).toBeVisible();
       await expect(secondChecklistCardAfterUnlink).not.toContainText(`Attached file: ${fileLabel}`);
+
+      const spareFileCreate = await browserPost<{
+        ok?: boolean;
+        item?: { id?: string | null };
+      }>(page, `/api/admin/vehicles/${VEHICLE_ID}/documents`, {
+        folder: "Paperwork",
+        documentType: "Other",
+        label: spareFileLabel,
+        title: `${spareFileLabel}.pdf`,
+        storageProvider: "UPLOADCARE_FILE_ID",
+        storageKey: "e7b9c1d1-7fd9-4f93-a6d9-d77e4cd1a84b",
+      });
+      expect(spareFileCreate.status).toBe(200);
+      expect(spareFileCreate.body.ok).toBe(true);
+      const spareDocumentId = spareFileCreate.body.item?.id ?? "";
+      expect(spareDocumentId).not.toBe("");
+
+      await page.reload({ waitUntil: "networkidle" });
+      await page
+        .getByTestId(`vehicle-checklist-attachment-select-${secondChecklistItemId}`)
+        .selectOption(spareDocumentId);
+      await page
+        .getByTestId(`vehicle-checklist-attachment-save-${secondChecklistItemId}`)
+        .click();
+      await expect(page.getByTestId("vehicle-checklist-message")).toContainText(
+        "Checklist attachment added.",
+      );
+      await expect(page.getByTestId("vehicle-checklist-message")).toHaveClass(
+        /text-\[var\(--ccr-accent-strong\)\]/,
+      );
+
+      const secondChecklistCardAfterAttach = page.getByTestId(
+        `vehicle-checklist-item-${secondChecklistItemId}`,
+      );
+      await expect(secondChecklistCardAfterAttach).toContainText(`Attached file: ${spareFileLabel}`);
+      await secondChecklistCardAfterAttach.getByTestId("vehicle-checklist-preview-file").click();
+      await expect(page.getByTestId("vehicle-checklist-preview-modal")).toBeVisible();
+      await expect(page.getByTestId("vehicle-checklist-preview-meta")).toContainText(
+        secondChecklistLabel,
+      );
+      await expect(page.getByTestId("vehicle-checklist-preview-meta")).toContainText("Other");
+      await page.getByRole("button", { name: "Close" }).click();
+      await expect(page.getByTestId("vehicle-checklist-preview-modal")).not.toBeVisible();
+
+      await page
+        .getByTestId(`vehicle-checklist-attachment-clear-${secondChecklistItemId}`)
+        .click();
+      await expect(page.getByTestId("vehicle-checklist-message")).toContainText(
+        "Checklist attachment cleared.",
+      );
+      const secondChecklistCardAfterChecklistClear = page.getByTestId(
+        `vehicle-checklist-item-${secondChecklistItemId}`,
+      );
+      await expect(secondChecklistCardAfterChecklistClear).not.toContainText(
+        `Attached file: ${spareFileLabel}`,
+      );
 
       await page.goto(`/admin/vehicles/${VEHICLE_ID}?tab=files`, { waitUntil: "networkidle" });
       const archiveRowAfterUnlink = page.locator("tr", { hasText: fileLabel }).first();
       page.once("dialog", (dialog) => void dialog.accept());
       await archiveRowAfterUnlink.getByRole("button", { name: "Archive" }).click();
-      await expect(page.getByText("File archived.")).toBeVisible();
+      await expect(page.getByTestId("vehicle-files-message")).toContainText("File archived.");
+
+      const archiveSpareRow = page.locator("tr", { hasText: spareFileLabel }).first();
+      page.once("dialog", (dialog) => void dialog.accept());
+      await archiveSpareRow.getByRole("button", { name: "Archive" }).click();
+      await expect(page.getByTestId("vehicle-files-message")).toContainText("File archived.");
 
       await page.goto(`/admin/vehicles/${VEHICLE_ID}?tab=checklist`, { waitUntil: "networkidle" });
-      const checklistCardAfterArchive = page.locator("article", { hasText: checklistLabel }).first();
+      const checklistCardAfterArchive = page.getByTestId(`vehicle-checklist-item-${checklistItemId}`);
       await expect(checklistCardAfterArchive).toBeVisible();
       await expect(checklistCardAfterArchive).not.toContainText(`Attached file: ${fileLabel}`);
 

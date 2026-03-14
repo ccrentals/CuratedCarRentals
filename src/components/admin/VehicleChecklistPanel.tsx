@@ -3,7 +3,11 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { VehicleDocumentPreviewModal } from "@/components/admin/VehicleDocumentPreviewModal";
+import {
+  getVehicleDocumentDisplayLabel,
+  type VehicleDocumentPreviewItem,
+  VehicleDocumentPreviewModal,
+} from "@/components/admin/VehicleDocumentPreviewModal";
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import type { VehicleChecklistTemplateSetting } from "@/lib/adminSettings";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
@@ -28,6 +32,18 @@ type ChecklistItem = {
   uploadedDocumentId: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+type ChecklistDocument = {
+  id: string;
+  folder: string;
+  documentType: string | null;
+  title: string;
+  label: string | null;
+  checklistItemId: string | null;
+  checklistItemLabel: string | null;
+  mimeType: string | null;
+  canDownload: boolean;
 };
 
 function normalizeFolders(input: string[] | undefined) {
@@ -73,26 +89,66 @@ export function VehicleChecklistPanel({
   );
 
   const [items, setItems] = useState<ChecklistItem[]>([]);
+  const [documents, setDocuments] = useState<ChecklistDocument[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [attachmentSavingItemId, setAttachmentSavingItemId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [highlightedItemId, setHighlightedItemId] = useState<string | null>(
     initialChecklistItemId?.trim() || null,
   );
-  const [previewItem, setPreviewItem] = useState<{
-    id: string;
-    title: string;
-    checklistItemLabel: string;
-  } | null>(null);
+  const [previewItem, setPreviewItem] = useState<VehicleDocumentPreviewItem | null>(null);
   const [initialScrollHandled, setInitialScrollHandled] = useState(false);
   const [initialUrlFocusHandled, setInitialUrlFocusHandled] = useState(false);
+  const [rowAttachmentSelections, setRowAttachmentSelections] = useState<Record<string, string>>({});
   const itemRefs = useRef<Record<string, HTMLElement | null>>({});
 
   const [label, setLabel] = useState("");
   const [folder, setFolder] = useState(folders[0] ?? "Unsorted");
   const [required, setRequired] = useState(false);
   const [expirationDate, setExpirationDate] = useState("");
+
+  const loadDocuments = useCallback(async () => {
+    try {
+      const response = await fetch(`/api/admin/vehicles/${vehicleId}/documents`, { cache: "no-store" });
+      const payload = (await response.json().catch(() => ({}))) as {
+        ok?: boolean;
+        items?: Array<{
+          id: string;
+          folder: string;
+          documentType: string;
+          title: string;
+          label: string | null;
+          checklistItemId: string | null;
+          checklistItemLabel: string | null;
+          mimeType: string | null;
+          canDownload: boolean;
+        }>;
+      };
+
+      if (!response.ok || !payload.ok) {
+        setDocuments([]);
+        return;
+      }
+
+      setDocuments(
+        (payload.items ?? []).map((item) => ({
+          id: item.id,
+          folder: item.folder,
+          documentType: item.documentType ?? null,
+          title: item.title,
+          label: item.label ?? null,
+          checklistItemId: item.checklistItemId ?? null,
+          checklistItemLabel: item.checklistItemLabel ?? null,
+          mimeType: item.mimeType ?? null,
+          canDownload: Boolean(item.canDownload),
+        })),
+      );
+    } catch {
+      setDocuments([]);
+    }
+  }, [vehicleId]);
 
   const loadItems = useCallback(async () => {
     setLoading(true);
@@ -146,8 +202,8 @@ export function VehicleChecklistPanel({
   }, [vehicleId]);
 
   useEffect(() => {
-    void loadItems();
-  }, [loadItems]);
+    void Promise.all([loadItems(), loadDocuments()]);
+  }, [loadDocuments, loadItems]);
 
   useEffect(() => {
     setHighlightedItemId(initialChecklistItemId?.trim() || null);
@@ -165,6 +221,17 @@ export function VehicleChecklistPanel({
     () => items.find((item) => item.id === highlightedItemId) ?? null,
     [highlightedItemId, items],
   );
+  const documentsById = useMemo(() => {
+    return new Map(documents.map((document) => [document.id, document]));
+  }, [documents]);
+
+  useEffect(() => {
+    const nextSelections: Record<string, string> = {};
+    for (const item of items) {
+      nextSelections[item.id] = item.uploadedDocumentId ?? "";
+    }
+    setRowAttachmentSelections(nextSelections);
+  }, [items]);
 
   useEffect(() => {
     if (!highlightedItemId || initialScrollHandled || loading) return;
@@ -307,7 +374,91 @@ export function VehicleChecklistPanel({
     }
 
     setMessage("Checklist item deleted.");
-    await loadItems();
+    await Promise.all([loadItems(), loadDocuments()]);
+  }
+
+  function openPreviewForItem(item: ChecklistItem) {
+    if (!item.uploadedDocumentId) return;
+    const document = documentsById.get(item.uploadedDocumentId);
+    setPreviewItem(
+      document
+        ? {
+            id: document.id,
+            title: document.title,
+            label: document.label,
+            documentType: document.documentType,
+            mimeType: document.mimeType,
+            canDownload: document.canDownload,
+            checklistItemLabel: item.label,
+          }
+        : {
+            id: item.uploadedDocumentId,
+            title: item.uploadedDocumentDisplayLabel ?? `${item.label} attachment`,
+            label: item.uploadedDocumentDisplayLabel ?? null,
+            checklistItemLabel: item.label,
+            canDownload: true,
+          },
+    );
+  }
+
+  async function updateChecklistAttachment(item: ChecklistItem, nextDocumentId: string) {
+    const selectedDocumentId = nextDocumentId.trim();
+    const currentDocumentId = item.uploadedDocumentId ?? "";
+    if (selectedDocumentId === currentDocumentId) return;
+    if (attachmentSavingItemId) return;
+
+    setAttachmentSavingItemId(item.id);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const csrfToken = await ensureCsrfToken();
+      if (currentDocumentId && !selectedDocumentId) {
+        const response = await fetch(`/api/admin/vehicles/${vehicleId}/documents/${currentDocumentId}`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            "x-csrf-token": csrfToken ?? "",
+          },
+          body: JSON.stringify({
+            checklistItemId: null,
+            csrfToken,
+          }),
+        });
+        const payload = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+        if (!response.ok || !payload.ok) {
+          throw new Error(payload.error ?? "Unable to clear checklist attachment.");
+        }
+        setMessage("Checklist attachment cleared.");
+      } else if (selectedDocumentId) {
+        const response = await fetch(`/api/admin/vehicles/${vehicleId}/documents/${selectedDocumentId}`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            "x-csrf-token": csrfToken ?? "",
+          },
+          body: JSON.stringify({
+            checklistItemId: item.id,
+            csrfToken,
+          }),
+        });
+        const payload = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+        if (!response.ok || !payload.ok) {
+          throw new Error(payload.error ?? "Unable to update checklist attachment.");
+        }
+        setMessage(currentDocumentId ? "Checklist attachment updated." : "Checklist attachment added.");
+      }
+
+      await Promise.all([loadItems(), loadDocuments()]);
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Unable to update checklist attachment.",
+      );
+    } finally {
+      setAttachmentSavingItemId(null);
+    }
   }
 
   function clearHighlight() {
@@ -449,7 +600,14 @@ export function VehicleChecklistPanel({
       </div>
 
       {error ? <p className="mt-3 text-xs font-semibold text-red-300">{error}</p> : null}
-      {message ? <p className="mt-3 text-xs font-semibold text-emerald-200">{message}</p> : null}
+      {message ? (
+        <div
+          data-testid="vehicle-checklist-message"
+          className="mt-3 rounded-xl border border-[var(--ccr-accent)] bg-[color-mix(in_srgb,var(--ccr-accent)_10%,var(--ccr-surface-soft))] px-4 py-3 text-xs font-semibold text-[var(--ccr-accent-strong)]"
+        >
+          {message}
+        </div>
+      ) : null}
       {highlightedItem ? (
         <div
           data-testid="vehicle-checklist-focus-banner"
@@ -467,13 +625,7 @@ export function VehicleChecklistPanel({
                 type="button"
                 data-testid="vehicle-checklist-preview-highlighted-file"
                 onClick={() =>
-                  setPreviewItem({
-                    id: highlightedItem.uploadedDocumentId!,
-                    title:
-                      highlightedItem.uploadedDocumentDisplayLabel ??
-                      `${highlightedItem.label} attachment`,
-                    checklistItemLabel: highlightedItem.label,
-                  })
+                  openPreviewForItem(highlightedItem)
                 }
                 className="min-h-9 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-xs font-semibold text-[var(--ccr-text)]"
               >
@@ -514,6 +666,8 @@ export function VehicleChecklistPanel({
 
         {items.map((item) => {
           const isHighlighted = highlightedItemId === item.id;
+          const folderDocuments = documents.filter((document) => document.folder === item.folder);
+          const selectedAttachmentId = rowAttachmentSelections[item.id] ?? "";
           return (
             <article
               key={item.id}
@@ -554,12 +708,7 @@ export function VehicleChecklistPanel({
                         type="button"
                         data-testid="vehicle-checklist-preview-file"
                         onClick={() =>
-                          setPreviewItem({
-                            id: item.uploadedDocumentId!,
-                            title:
-                              item.uploadedDocumentDisplayLabel ?? `${item.label} attachment`,
-                            checklistItemLabel: item.label,
-                          })
+                          openPreviewForItem(item)
                         }
                         className="inline-flex min-h-9 items-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-text)]"
                       >
@@ -582,6 +731,67 @@ export function VehicleChecklistPanel({
                     </div>
                   </div>
                 ) : null}
+                <div className="mt-3 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3">
+                  <label className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                    Attachment
+                    <select
+                      data-testid={`vehicle-checklist-attachment-select-${item.id}`}
+                      value={selectedAttachmentId}
+                      onChange={(event) =>
+                        setRowAttachmentSelections((current) => ({
+                          ...current,
+                          [item.id]: event.target.value,
+                        }))
+                      }
+                      className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-2 text-xs text-[var(--ccr-text)]"
+                    >
+                      <option value="">No attachment</option>
+                      {folderDocuments.map((document) => (
+                        <option key={document.id} value={document.id}>
+                          {getVehicleDocumentDisplayLabel(document)}
+                          {document.documentType ? ` · ${document.documentType}` : ""}
+                          {document.checklistItemLabel && document.checklistItemLabel !== item.label
+                            ? ` · currently on ${document.checklistItemLabel}`
+                            : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      data-testid={`vehicle-checklist-attachment-save-${item.id}`}
+                      onClick={() => void updateChecklistAttachment(item, selectedAttachmentId)}
+                      disabled={
+                        attachmentSavingItemId === item.id ||
+                        selectedAttachmentId === (item.uploadedDocumentId ?? "")
+                      }
+                      className="min-h-9 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-text)] disabled:opacity-60"
+                    >
+                      {attachmentSavingItemId === item.id
+                        ? "Saving..."
+                        : item.uploadedDocumentId
+                          ? "Save attachment"
+                          : "Attach file"}
+                    </button>
+                    {item.uploadedDocumentId ? (
+                      <button
+                        type="button"
+                        data-testid={`vehicle-checklist-attachment-clear-${item.id}`}
+                        onClick={() => void updateChecklistAttachment(item, "")}
+                        disabled={attachmentSavingItemId === item.id}
+                        className="min-h-9 rounded-lg border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-accent-strong)] disabled:opacity-60"
+                      >
+                        Unlink file
+                      </button>
+                    ) : null}
+                  </div>
+                  <p className="mt-2 text-[11px] text-[var(--ccr-muted)]">
+                    {folderDocuments.length > 0
+                      ? "Choose any saved file in this folder to attach or replace the current attachment."
+                      : "No saved files exist in this folder yet."}
+                  </p>
+                </div>
                 {item.required && !item.allowNotRequired ? (
                   <p>This item should remain required.</p>
                 ) : null}

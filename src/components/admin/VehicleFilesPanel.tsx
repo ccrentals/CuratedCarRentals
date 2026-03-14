@@ -704,7 +704,14 @@ export function VehicleFilesPanel({
 
       {error ? <p className="mt-3 text-xs font-semibold text-red-300">{error}</p> : null}
       {checklistError ? <p className="mt-3 text-xs font-semibold text-red-300">{checklistError}</p> : null}
-      {message ? <p className="mt-3 text-xs font-semibold text-emerald-200">{message}</p> : null}
+      {message ? (
+        <div
+          data-testid="vehicle-files-message"
+          className="mt-3 rounded-xl border border-[var(--ccr-accent)] bg-[color-mix(in_srgb,var(--ccr-accent)_10%,var(--ccr-surface-soft))] px-4 py-3 text-xs font-semibold text-[var(--ccr-accent-strong)]"
+        >
+          {message}
+        </div>
+      ) : null}
       {highlightedItem ? (
         <div
           data-testid="vehicle-file-focus-banner"
