@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { TableDateTime } from "@/components/shared/TableDateTime";
@@ -174,6 +174,9 @@ export function VehicleFilesPanel({
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [initialPreviewHandled, setInitialPreviewHandled] = useState(false);
+  const [initialScrollHandled, setInitialScrollHandled] = useState(false);
+  const rowRefs = useRef<Record<string, HTMLElement | null>>({});
+  const highlightedDocumentId = initialDocumentId?.trim() || null;
 
   const loadDocuments = useCallback(async () => {
     setLoading(true);
@@ -301,6 +304,7 @@ export function VehicleFilesPanel({
 
   useEffect(() => {
     setInitialPreviewHandled(false);
+    setInitialScrollHandled(false);
   }, [initialDocumentId]);
 
   const isCustomDocumentType = !documentTypes.includes(documentType);
@@ -341,6 +345,17 @@ export function VehicleFilesPanel({
     }
     setInitialPreviewHandled(true);
   }, [documentsLoaded, initialDocumentId, initialPreviewHandled, items]);
+
+  useEffect(() => {
+    if (!highlightedDocumentId || initialScrollHandled || !documentsLoaded) return;
+    const matchedRow = rowRefs.current[highlightedDocumentId];
+    if (matchedRow) {
+      matchedRow.scrollIntoView({ block: "center", behavior: "smooth" });
+      setInitialScrollHandled(true);
+      return;
+    }
+    setInitialScrollHandled(true);
+  }, [documentsLoaded, highlightedDocumentId, initialScrollHandled]);
 
   useEffect(() => {
     let cancelled = false;
@@ -735,12 +750,22 @@ export function VehicleFilesPanel({
         {!loading && items.length > 0 ? (
           <>
             <div className="space-y-3 md:hidden">
-              {items.map((item) => (
-                <article
-                  key={item.id}
-                  data-testid="vehicle-file-card"
-                  className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4"
-                >
+              {items.map((item) => {
+                const isHighlighted = highlightedDocumentId === item.id;
+                return (
+                  <article
+                    key={item.id}
+                    ref={(node) => {
+                      rowRefs.current[item.id] = node;
+                    }}
+                    data-testid="vehicle-file-card"
+                    data-highlighted={isHighlighted ? "true" : "false"}
+                    className={`rounded-xl border p-4 transition-colors ${
+                      isHighlighted
+                        ? "border-[var(--ccr-accent)] bg-[color-mix(in_srgb,var(--ccr-accent)_10%,var(--ccr-surface-soft))] shadow-[0_0_0_1px_var(--ccr-accent)]"
+                        : "border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)]"
+                    }`}
+                  >
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div>
                       <p className="font-semibold text-[var(--ccr-text)] break-words">
@@ -832,8 +857,9 @@ export function VehicleFilesPanel({
                       {linkSavingDocId === item.id ? "Saving link..." : "Save link"}
                     </button>
                   </div>
-                </article>
-              ))}
+                  </article>
+                );
+              })}
             </div>
 
             <div className="hidden overflow-x-auto md:block">
@@ -849,8 +875,22 @@ export function VehicleFilesPanel({
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map((item) => (
-                    <tr key={`desktop-${item.id}`} className="border-b border-[var(--ccr-border)] last:border-b-0">
+                  {items.map((item) => {
+                    const isHighlighted = highlightedDocumentId === item.id;
+                    return (
+                      <tr
+                        key={`desktop-${item.id}`}
+                        ref={(node) => {
+                          rowRefs.current[item.id] = node;
+                        }}
+                        data-testid={`vehicle-file-row-${item.id}`}
+                        data-highlighted={isHighlighted ? "true" : "false"}
+                        className={`border-b last:border-b-0 ${
+                          isHighlighted
+                            ? "border-[var(--ccr-accent)] bg-[color-mix(in_srgb,var(--ccr-accent)_8%,transparent)]"
+                            : "border-[var(--ccr-border)]"
+                        }`}
+                      >
                       <td className="px-3 py-2 text-[var(--ccr-text)]">{item.documentType}</td>
                       <td className="px-3 py-2 text-[var(--ccr-text)] break-words">
                         <div className="space-y-1">
@@ -934,8 +974,9 @@ export function VehicleFilesPanel({
                           </button>
                         </div>
                       </td>
-                    </tr>
-                  ))}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

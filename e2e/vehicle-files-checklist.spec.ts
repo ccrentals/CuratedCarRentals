@@ -317,6 +317,10 @@ test.describe("@tour vehicle files and checklist integration", () => {
       await expect(page.getByTestId("vehicle-file-preview-meta")).toContainText(secondChecklistLabel);
       await page.getByRole("button", { name: "Close" }).click();
       await expect(page.getByTestId("vehicle-file-preview-modal")).not.toBeVisible();
+      await expect(page.getByTestId(`vehicle-file-row-${documentId}`)).toHaveAttribute(
+        "data-highlighted",
+        "true",
+      );
 
       const archiveRow = page.locator("tr", { hasText: fileLabel }).first();
       await archiveRow.locator('[data-testid="vehicle-file-link-select"]').selectOption("");
