@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { PaginationSummary } from "@/components/admin/PaginationSummaryNav";
+import { SortableTh } from "@/components/admin/SortableTh";
+import type { SortState } from "@/components/admin/tableSort";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 import { formatJmdDecimalFromCents, formatJmdFromCents } from "@/lib/money";
 
@@ -48,6 +51,8 @@ type VehicleDepreciationPanelProps = {
   vehicleId: string;
 };
 
+const SNAPSHOT_PAGE_SIZE = 10;
+
 function currentMonthValue() {
   return new Date().toISOString().slice(0, 7);
 }
@@ -80,6 +85,11 @@ function formatSnapshotMonth(value: string) {
   const parsed = new Date(raw);
   if (Number.isNaN(parsed.getTime())) return raw || "—";
   return parsed.toISOString().slice(0, 7);
+}
+
+function snapshotMonthTimestamp(value: string) {
+  const normalized = formatSnapshotMonth(value);
+  return new Date(`${normalized}-01T00:00:00.000Z`).getTime();
 }
 
 export function VehicleDepreciationPanel({ vehicleId }: VehicleDepreciationPanelProps) {
@@ -117,6 +127,11 @@ export function VehicleDepreciationPanel({ vehicleId }: VehicleDepreciationPanel
       depreciationForMonthCents: number;
     }>
   >([]);
+  const [snapshotSort, setSnapshotSort] = useState<SortState>({
+    sortBy: "month",
+    sortDir: "desc",
+  });
+  const [snapshotPage, setSnapshotPage] = useState(1);
 
   const applyPayload = useCallback((payload: FinanceResponse) => {
     const defaults = payload.defaults;
@@ -336,6 +351,40 @@ export function VehicleDepreciationPanel({ vehicleId }: VehicleDepreciationPanel
   }
 
   const isIncomplete = useMemo(() => Boolean(incompleteReason), [incompleteReason]);
+  const sortedSnapshots = useMemo(() => {
+    const direction = snapshotSort.sortDir === "asc" ? 1 : -1;
+    return [...snapshotHistory].sort((left, right) => {
+      switch (snapshotSort.sortBy) {
+        case "bookValue":
+          return (left.bookValueCents - right.bookValueCents) * direction;
+        case "accumulated":
+          return (
+            (left.accumulatedDepreciationCents - right.accumulatedDepreciationCents) * direction
+          );
+        case "monthlyDepreciation":
+          return (left.depreciationForMonthCents - right.depreciationForMonthCents) * direction;
+        case "month":
+        default:
+          return (snapshotMonthTimestamp(left.asOfMonth) - snapshotMonthTimestamp(right.asOfMonth)) * direction;
+      }
+    });
+  }, [snapshotHistory, snapshotSort]);
+
+  const snapshotTotalPages = Math.max(1, Math.ceil(sortedSnapshots.length / SNAPSHOT_PAGE_SIZE));
+
+  useEffect(() => {
+    setSnapshotPage((current) => Math.min(current, snapshotTotalPages));
+  }, [snapshotTotalPages]);
+
+  const visibleSnapshots = useMemo(() => {
+    const startIndex = (snapshotPage - 1) * SNAPSHOT_PAGE_SIZE;
+    return sortedSnapshots.slice(startIndex, startIndex + SNAPSHOT_PAGE_SIZE);
+  }, [snapshotPage, sortedSnapshots]);
+
+  const snapshotFrom = sortedSnapshots.length === 0 ? 0 : (snapshotPage - 1) * SNAPSHOT_PAGE_SIZE + 1;
+  const snapshotTo = sortedSnapshots.length === 0 ? 0 : snapshotFrom + visibleSnapshots.length - 1;
+  const snapshotHasPrev = snapshotPage > 1;
+  const snapshotHasNext = snapshotPage < snapshotTotalPages;
 
   return (
     <section
@@ -585,39 +634,124 @@ export function VehicleDepreciationPanel({ vehicleId }: VehicleDepreciationPanel
             No snapshots saved yet. Generate snapshots to populate this history.
           </p>
         ) : (
-          <div className="mt-3 overflow-x-auto">
-            <table className="min-w-full text-left text-sm">
-              <thead className="border-b border-[var(--ccr-border)] text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
-                <tr>
-                  <th className="px-3 py-2">Month</th>
-                  <th className="px-3 py-2">Book Value</th>
-                  <th className="px-3 py-2">Accumulated</th>
-                  <th className="px-3 py-2">Monthly Depreciation</th>
-                </tr>
-              </thead>
-              <tbody>
-                {snapshotHistory.map((snapshot) => (
-                  <tr
-                    key={snapshot.asOfMonth}
-                    className="border-b border-[var(--ccr-border)] last:border-b-0"
-                    data-testid="vehicle-depreciation-snapshot-row"
-                  >
-                    <td className="px-3 py-2 text-[var(--ccr-text)]">
-                      {formatSnapshotMonth(snapshot.asOfMonth)}
-                    </td>
-                    <td className="px-3 py-2 text-[var(--ccr-text)]">
-                      {formatJmdFromCents(snapshot.bookValueCents)}
-                    </td>
-                    <td className="px-3 py-2 text-[var(--ccr-text)]">
-                      {formatJmdFromCents(snapshot.accumulatedDepreciationCents)}
-                    </td>
-                    <td className="px-3 py-2 text-[var(--ccr-text)]">
-                      {formatJmdFromCents(snapshot.depreciationForMonthCents)}
-                    </td>
+          <div className="mt-3">
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-left text-sm">
+                <thead className="border-b border-[var(--ccr-border)] text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
+                  <tr>
+                    <SortableTh
+                      label="Month"
+                      columnKey="month"
+                      sort={snapshotSort}
+                      onChange={(next) => {
+                        setSnapshotSort(next);
+                        setSnapshotPage(1);
+                      }}
+                      className="px-3 py-2"
+                      defaultDirection="desc"
+                    />
+                    <SortableTh
+                      label="Book Value"
+                      columnKey="bookValue"
+                      sort={snapshotSort}
+                      onChange={(next) => {
+                        setSnapshotSort(next);
+                        setSnapshotPage(1);
+                      }}
+                      className="px-3 py-2"
+                      defaultDirection="desc"
+                    />
+                    <SortableTh
+                      label="Accumulated"
+                      columnKey="accumulated"
+                      sort={snapshotSort}
+                      onChange={(next) => {
+                        setSnapshotSort(next);
+                        setSnapshotPage(1);
+                      }}
+                      className="px-3 py-2"
+                      defaultDirection="desc"
+                    />
+                    <SortableTh
+                      label="Monthly Depreciation"
+                      columnKey="monthlyDepreciation"
+                      sort={snapshotSort}
+                      onChange={(next) => {
+                        setSnapshotSort(next);
+                        setSnapshotPage(1);
+                      }}
+                      className="px-3 py-2"
+                      defaultDirection="desc"
+                    />
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {visibleSnapshots.map((snapshot) => (
+                    <tr
+                      key={snapshot.asOfMonth}
+                      className="border-b border-[var(--ccr-border)] last:border-b-0"
+                      data-testid="vehicle-depreciation-snapshot-row"
+                      data-snapshot-month={formatSnapshotMonth(snapshot.asOfMonth)}
+                    >
+                      <td className="px-3 py-2 text-[var(--ccr-text)]">
+                        {formatSnapshotMonth(snapshot.asOfMonth)}
+                      </td>
+                      <td className="px-3 py-2 text-[var(--ccr-text)]">
+                        {formatJmdFromCents(snapshot.bookValueCents)}
+                      </td>
+                      <td className="px-3 py-2 text-[var(--ccr-text)]">
+                        {formatJmdFromCents(snapshot.accumulatedDepreciationCents)}
+                      </td>
+                      <td className="px-3 py-2 text-[var(--ccr-text)]">
+                        {formatJmdFromCents(snapshot.depreciationForMonthCents)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="border-t border-[var(--ccr-border)] pt-3">
+              <PaginationSummary
+                from={snapshotFrom}
+                to={snapshotTo}
+                totalCount={sortedSnapshots.length}
+                page={snapshotPage}
+                totalPages={snapshotTotalPages}
+                rightContent={
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSnapshotPage((current) => Math.max(1, current - 1))}
+                      disabled={!snapshotHasPrev}
+                      className={`rounded-lg border px-2 py-1 font-semibold ${
+                        snapshotHasPrev
+                          ? "border-[var(--ccr-border)] text-[var(--ccr-text)]"
+                          : "cursor-not-allowed border-[var(--ccr-border)]/40 text-[var(--ccr-muted)]/60"
+                      }`}
+                    >
+                      Prev
+                    </button>
+                    <span className="font-semibold text-[var(--ccr-text)]">
+                      Page {snapshotPage} of {snapshotTotalPages}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSnapshotPage((current) => Math.min(snapshotTotalPages, current + 1))
+                      }
+                      disabled={!snapshotHasNext}
+                      className={`rounded-lg border px-2 py-1 font-semibold ${
+                        snapshotHasNext
+                          ? "border-[var(--ccr-border)] text-[var(--ccr-text)]"
+                          : "cursor-not-allowed border-[var(--ccr-border)]/40 text-[var(--ccr-muted)]/60"
+                      }`}
+                    >
+                      Next
+                    </button>
+                  </div>
+                }
+              />
+            </div>
           </div>
         )}
       </div>
