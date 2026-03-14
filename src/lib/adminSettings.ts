@@ -299,11 +299,14 @@ function normalizeChecklistTemplateEntry(
   const label = String(value.label ?? "").trim();
   if (!label) return null;
   const folderText = String(value.folder ?? "").trim();
+  const folderOptions = folders.filter(Boolean);
+  const fallbackFolder = folderOptions[0] ?? "Unsorted";
+  const folder = folderOptions.includes(folderText) ? folderText : fallbackFolder;
 
   return {
     key: normalizeChecklistTemplateKey(value.key, label, index),
     label: label.slice(0, 160),
-    folder: (folderText || folders[0] || "Unsorted").slice(0, 80),
+    folder: folder.slice(0, 80),
     required: normalizeBool(value.required, true),
     allowNotRequired: normalizeBool(
       value.allowNotRequired ?? value.allow_not_required,

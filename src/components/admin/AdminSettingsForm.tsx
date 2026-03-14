@@ -18,6 +18,7 @@ type AdminSettings = {
   contactNotifyCooldownMinutes: number;
   vehicleDocumentFolders: string[];
   vehicleDocumentTypeOptions: string[];
+  vehicleChecklistTemplates: VehicleChecklistTemplateSetting[];
   vehicleChecklistTemplateItems: string[];
   maintenanceRemindersEnabled: boolean;
   maintenanceReminderLeadDays: number;
@@ -28,6 +29,17 @@ type AdminSettings = {
   depreciationDefaultMethod: "STRAIGHT_LINE";
   depreciationDefaultUsefulLifeMonths: number;
   depreciationDefaultResidualPercent: number;
+};
+
+type VehicleChecklistTemplateSetting = {
+  key: string;
+  label: string;
+  folder: string;
+  required: boolean;
+  allowNotRequired: boolean;
+  expiryRequired: boolean;
+  expiryWarningDays: number | null;
+  isActive: boolean;
 };
 
 type ServiceType = {
@@ -113,6 +125,21 @@ const TOGGLE_FIELD_TAB_MAP: Record<ToggleField["key"], AdminSettingsFormTab> = {
   sendLateDropoffAlert: "notifications",
   maintenanceRemindersEnabled: "maintenance",
 };
+
+function buildChecklistTemplateItems(templates: VehicleChecklistTemplateSetting[]) {
+  return templates
+    .map((template) => template.label.trim())
+    .filter(Boolean)
+    .slice(0, 80);
+}
+
+function normalizeTemplateFolder(folder: string, folders: string[]) {
+  const normalizedFolder = folder.trim();
+  if (folders.includes(normalizedFolder)) {
+    return normalizedFolder;
+  }
+  return folders[0] ?? "Paperwork";
+}
 
 export function AdminSettingsForm({
   initialSettings,
@@ -310,6 +337,27 @@ export function AdminSettingsForm({
     await loadServiceTypes();
   }
 
+  function updateChecklistTemplates(
+    updater: (
+      currentTemplates: VehicleChecklistTemplateSetting[],
+      availableFolders: string[],
+    ) => VehicleChecklistTemplateSetting[],
+  ) {
+    setSettings((current) => {
+      const folderOptions =
+        current.vehicleDocumentFolders.length > 0
+          ? current.vehicleDocumentFolders
+          : ["Paperwork"];
+      const nextTemplates = updater(current.vehicleChecklistTemplates, folderOptions).slice(0, 80);
+
+      return {
+        ...current,
+        vehicleChecklistTemplates: nextTemplates,
+        vehicleChecklistTemplateItems: buildChecklistTemplateItems(nextTemplates),
+      };
+    });
+  }
+
   const dayViewBookingLimitValue =
     settings.dayViewBookingLimit === "all" ? "all" : String(settings.dayViewBookingLimit);
   const maintenanceLeadDaysValue = String(settings.maintenanceReminderLeadDays);
@@ -321,9 +369,12 @@ export function AdminSettingsForm({
   const depreciationResidualPercentValue = String(
     settings.depreciationDefaultResidualPercent,
   );
+  const checklistTemplateFolderOptions =
+    settings.vehicleDocumentFolders.length > 0
+      ? settings.vehicleDocumentFolders
+      : ["Paperwork"];
   const vehicleDocumentFoldersValue = settings.vehicleDocumentFolders.join("\n");
   const vehicleDocumentTypeOptionsValue = settings.vehicleDocumentTypeOptions.join("\n");
-  const vehicleChecklistTemplateItemsValue = settings.vehicleChecklistTemplateItems.join("\n");
   const maintenanceCategoriesValue = settings.maintenanceCategories.join("\n");
   const maintenancePrioritiesValue = settings.maintenancePriorities.join("\n");
   const isGeneralTab = activeTab === "general";
@@ -662,7 +713,8 @@ export function AdminSettingsForm({
         >
           <p className="text-sm font-semibold text-[var(--ccr-text)]">Vehicle document folders</p>
           <p className="mt-1 text-xs text-[var(--ccr-muted)]">
-            One folder per line. These options appear in the vehicle Files and Checklist tabs.
+            One folder per line. These options are shared by the vehicle Files and Checklist
+            tabs.
           </p>
           <div className="mt-3">
             <textarea
@@ -677,6 +729,18 @@ export function AdminSettingsForm({
                     .map((entry) => entry.trim())
                     .filter(Boolean)
                     .slice(0, 40),
+                  vehicleChecklistTemplates: current.vehicleChecklistTemplates.map((template) => {
+                    const nextFolders = event.target.value
+                      .split(/\n|,|;/)
+                      .map((entry) => entry.trim())
+                      .filter(Boolean)
+                      .slice(0, 40);
+                    const folderOptions = nextFolders.length > 0 ? nextFolders : ["Paperwork"];
+                    return {
+                      ...template,
+                      folder: normalizeTemplateFolder(template.folder, folderOptions),
+                    };
+                  }),
                 }))
               }
               className="w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
@@ -691,7 +755,8 @@ export function AdminSettingsForm({
         >
           <p className="text-sm font-semibold text-[var(--ccr-text)]">Vehicle document types</p>
           <p className="mt-1 text-xs text-[var(--ccr-muted)]">
-            One type per line. Used as quick type suggestions in vehicle document forms.
+            One type per line. Files tab only. Used as quick type suggestions in vehicle
+            document forms.
           </p>
           <div className="mt-3">
             <textarea
@@ -718,28 +783,228 @@ export function AdminSettingsForm({
           data-testid="settings-panel-documents"
           className={`${isDocumentsTab ? "" : "hidden"} rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4`}
         >
-          <p className="text-sm font-semibold text-[var(--ccr-text)]">Vehicle checklist template items</p>
+          <p className="text-sm font-semibold text-[var(--ccr-text)]">Vehicle checklist templates</p>
           <p className="mt-1 text-xs text-[var(--ccr-muted)]">
-            One checklist item per line. Used by the Checklist tab quick template action.
+            Checklist tab only. These structured templates are the saved source of truth for
+            checklist items. The current vehicle Checklist quick template action still uses the
+            label list derived from these entries.
           </p>
-          <div className="mt-3">
-            <textarea
-              value={vehicleChecklistTemplateItemsValue}
-              disabled={disabled || saving}
-              rows={5}
-              onChange={(event) =>
-                setSettings((current) => ({
-                  ...current,
-                  vehicleChecklistTemplateItems: event.target.value
-                    .split(/\n|,|;/)
-                    .map((entry) => entry.trim())
-                    .filter(Boolean)
-                    .slice(0, 40),
-                }))
-              }
-              className="w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
-              placeholder={"Insurance Certificate\nRegistration\nRoadside Assistance"}
-            />
+          <div className="mt-4 space-y-4">
+            {settings.vehicleChecklistTemplates.map((template, index) => (
+              <div
+                key={template.key || `template-${index}`}
+                className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4"
+              >
+                <div className="grid gap-3 md:grid-cols-2">
+                  <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                    Label
+                    <input
+                      type="text"
+                      value={template.label}
+                      disabled={disabled || saving}
+                      onChange={(event) =>
+                        updateChecklistTemplates((currentTemplates) =>
+                          currentTemplates.map((entry, entryIndex) =>
+                            entryIndex === index
+                              ? { ...entry, label: event.target.value.slice(0, 160) }
+                              : entry,
+                          ),
+                        )
+                      }
+                      className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+                      placeholder="Insurance Certificate"
+                    />
+                  </label>
+
+                  <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                    Folder
+                    <select
+                      value={normalizeTemplateFolder(template.folder, checklistTemplateFolderOptions)}
+                      disabled={disabled || saving}
+                      onChange={(event) =>
+                        updateChecklistTemplates((currentTemplates) =>
+                          currentTemplates.map((entry, entryIndex) =>
+                            entryIndex === index
+                              ? { ...entry, folder: event.target.value }
+                              : entry,
+                          ),
+                        )
+                      }
+                      className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+                    >
+                      {checklistTemplateFolderOptions.map((folder) => (
+                        <option key={folder} value={folder}>
+                          {folder}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="flex items-center gap-3 rounded-xl border border-[var(--ccr-border)] px-3 py-3 text-sm text-[var(--ccr-text)]">
+                    <input
+                      type="checkbox"
+                      checked={template.required}
+                      disabled={disabled || saving}
+                      onChange={(event) =>
+                        updateChecklistTemplates((currentTemplates) =>
+                          currentTemplates.map((entry, entryIndex) =>
+                            entryIndex === index
+                              ? { ...entry, required: event.target.checked }
+                              : entry,
+                          ),
+                        )
+                      }
+                      className="h-5 w-5 rounded border border-[var(--ccr-border)] bg-transparent"
+                    />
+                    Required by default
+                  </label>
+
+                  <label className="flex items-center gap-3 rounded-xl border border-[var(--ccr-border)] px-3 py-3 text-sm text-[var(--ccr-text)]">
+                    <input
+                      type="checkbox"
+                      checked={template.allowNotRequired}
+                      disabled={disabled || saving}
+                      onChange={(event) =>
+                        updateChecklistTemplates((currentTemplates) =>
+                          currentTemplates.map((entry, entryIndex) =>
+                            entryIndex === index
+                              ? { ...entry, allowNotRequired: event.target.checked }
+                              : entry,
+                          ),
+                        )
+                      }
+                      className="h-5 w-5 rounded border border-[var(--ccr-border)] bg-transparent"
+                    />
+                    Staff can mark optional later
+                  </label>
+
+                  <label className="flex items-center gap-3 rounded-xl border border-[var(--ccr-border)] px-3 py-3 text-sm text-[var(--ccr-text)]">
+                    <input
+                      type="checkbox"
+                      checked={template.expiryRequired}
+                      disabled={disabled || saving}
+                      onChange={(event) =>
+                        updateChecklistTemplates((currentTemplates) =>
+                          currentTemplates.map((entry, entryIndex) =>
+                            entryIndex === index
+                              ? {
+                                  ...entry,
+                                  expiryRequired: event.target.checked,
+                                  expiryWarningDays: event.target.checked
+                                    ? entry.expiryWarningDays ?? 30
+                                    : null,
+                                }
+                              : entry,
+                          ),
+                        )
+                      }
+                      className="h-5 w-5 rounded border border-[var(--ccr-border)] bg-transparent"
+                    />
+                    Expiry date required
+                  </label>
+
+                  <label className="flex items-center gap-3 rounded-xl border border-[var(--ccr-border)] px-3 py-3 text-sm text-[var(--ccr-text)]">
+                    <input
+                      type="checkbox"
+                      checked={template.isActive}
+                      disabled={disabled || saving}
+                      onChange={(event) =>
+                        updateChecklistTemplates((currentTemplates) =>
+                          currentTemplates.map((entry, entryIndex) =>
+                            entryIndex === index
+                              ? { ...entry, isActive: event.target.checked }
+                              : entry,
+                          ),
+                        )
+                      }
+                      className="h-5 w-5 rounded border border-[var(--ccr-border)] bg-transparent"
+                    />
+                    Available in Checklist template apply
+                  </label>
+
+                  <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                    Expiry Warning Days
+                    <input
+                      type="number"
+                      min={0}
+                      max={3650}
+                      value={template.expiryWarningDays === null ? "" : String(template.expiryWarningDays)}
+                      disabled={disabled || saving || !template.expiryRequired}
+                      onChange={(event) =>
+                        updateChecklistTemplates((currentTemplates) =>
+                          currentTemplates.map((entry, entryIndex) =>
+                            entryIndex === index
+                              ? {
+                                  ...entry,
+                                  expiryWarningDays: event.target.value
+                                    ? Math.min(3650, Math.max(0, Number(event.target.value)))
+                                    : null,
+                                }
+                              : entry,
+                          ),
+                        )
+                      }
+                      className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+                      placeholder="30"
+                    />
+                  </label>
+                </div>
+
+                <div className="mt-3 flex justify-end">
+                  <button
+                    type="button"
+                    disabled={disabled || saving}
+                    onClick={() =>
+                      updateChecklistTemplates((currentTemplates) =>
+                        currentTemplates.filter((_, entryIndex) => entryIndex !== index),
+                      )
+                    }
+                    className="rounded-xl border border-[var(--ccr-border)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
+                  >
+                    Remove template
+                  </button>
+                </div>
+              </div>
+            ))}
+
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-[var(--ccr-border)] px-4 py-3">
+              <div className="text-xs text-[var(--ccr-muted)]">
+                Add a new checklist template entry with folder, required, and expiry metadata.
+              </div>
+              <button
+                type="button"
+                disabled={disabled || saving}
+                onClick={() =>
+                  updateChecklistTemplates((currentTemplates, availableFolders) => [
+                    ...currentTemplates,
+                    {
+                      key: "",
+                      label: "",
+                      folder: availableFolders[0] ?? "Paperwork",
+                      required: true,
+                      allowNotRequired: true,
+                      expiryRequired: false,
+                      expiryWarningDays: null,
+                      isActive: true,
+                    },
+                  ])
+                }
+                className={`${buttonStyles({ variant: "secondary" })} min-h-11`}
+              >
+                Add template
+              </button>
+            </div>
+
+            <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                Derived Checklist Labels
+              </p>
+              <p className="mt-2 text-sm text-[var(--ccr-text)]">
+                {settings.vehicleChecklistTemplateItems.length > 0
+                  ? settings.vehicleChecklistTemplateItems.join(", ")
+                  : "No active checklist labels yet."}
+              </p>
+            </div>
           </div>
         </div>
 
