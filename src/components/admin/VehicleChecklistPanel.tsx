@@ -1555,8 +1555,8 @@ export function VehicleChecklistPanel({
                     </div>
                   </div>
                 ) : (
-                  <div className="mt-3 xl:grid xl:grid-cols-[minmax(0,19rem)_minmax(0,1fr)] xl:items-start xl:gap-4">
-                    <div className="space-y-3 text-xs text-[var(--ccr-muted)]">
+                  <div className="mt-3 grid gap-4 xl:grid-cols-[minmax(0,18rem)_minmax(22rem,1fr)] xl:items-start xl:gap-6">
+                    <div className="min-w-0 space-y-3 text-xs text-[var(--ccr-muted)]">
                       <div>
                         <p>Created: <DateTimeInline value={item.createdAt} /></p>
                         <p>
@@ -1617,8 +1617,8 @@ export function VehicleChecklistPanel({
                       ) : null}
                     </div>
 
-                    <div className="mt-3 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3 xl:mt-0">
-                      <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+                    <div className="min-w-0 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3">
+                      <div className="space-y-2">
                         <label className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
                           Search files
                           <input
