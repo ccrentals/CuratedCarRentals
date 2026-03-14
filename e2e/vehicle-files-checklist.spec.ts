@@ -346,10 +346,10 @@ test.describe("@tour vehicle files and checklist integration", () => {
       );
       await expect(page.getByTestId("vehicle-file-focus-banner")).toBeVisible();
       await page.getByTestId("vehicle-file-view-checklist-item").click();
-      await page.waitForURL(
-        `**/admin/vehicles/${VEHICLE_ID}?tab=checklist&checklistItemId=${secondChecklistItemId}`,
-      );
       await expect(page.getByTestId("vehicle-checklist-focus-banner")).toBeVisible();
+      await expect(page).toHaveURL(
+        new RegExp(`/admin/vehicles/${VEHICLE_ID}\\?tab=checklist$`),
+      );
       await expect(
         page.getByTestId(`vehicle-checklist-item-${secondChecklistItemId}`),
       ).toHaveAttribute("data-highlighted", "true");

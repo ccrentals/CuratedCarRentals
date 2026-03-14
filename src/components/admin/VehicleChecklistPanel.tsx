@@ -80,6 +80,7 @@ export function VehicleChecklistPanel({
     initialChecklistItemId?.trim() || null,
   );
   const [initialScrollHandled, setInitialScrollHandled] = useState(false);
+  const [initialUrlFocusHandled, setInitialUrlFocusHandled] = useState(false);
   const itemRefs = useRef<Record<string, HTMLElement | null>>({});
 
   const [label, setLabel] = useState("");
@@ -145,6 +146,7 @@ export function VehicleChecklistPanel({
   useEffect(() => {
     setHighlightedItemId(initialChecklistItemId?.trim() || null);
     setInitialScrollHandled(false);
+    setInitialUrlFocusHandled(false);
   }, [initialChecklistItemId]);
 
   useEffect(() => {
@@ -170,6 +172,26 @@ export function VehicleChecklistPanel({
       setInitialScrollHandled(true);
     }
   }, [highlightedItemId, initialScrollHandled, loading, items]);
+
+  useEffect(() => {
+    const shouldClearUrl =
+      typeof window !== "undefined" &&
+      initialChecklistItemId &&
+      highlightedItemId === initialChecklistItemId &&
+      initialScrollHandled &&
+      !initialUrlFocusHandled;
+    if (!shouldClearUrl) return;
+
+    const nextUrl = new URL(window.location.href);
+    nextUrl.searchParams.delete("checklistItemId");
+    window.history.replaceState(window.history.state, "", nextUrl.toString());
+    setInitialUrlFocusHandled(true);
+  }, [
+    highlightedItemId,
+    initialChecklistItemId,
+    initialScrollHandled,
+    initialUrlFocusHandled,
+  ]);
 
   async function createItem(
     inputLabel: string,
