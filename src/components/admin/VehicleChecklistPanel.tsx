@@ -1355,15 +1355,15 @@ export function VehicleChecklistPanel({
               }}
               data-testid={`vehicle-checklist-item-${item.id}`}
               data-highlighted={isHighlighted ? "true" : "false"}
-              className={`relative rounded-xl border p-4 pr-4 transition-colors md:pr-44 xl:pr-60 ${
+              className={`relative rounded-xl border p-4 pr-4 transition-colors md:pr-40 xl:pr-44 ${
                 isHighlighted
                   ? "border-[var(--ccr-accent)] bg-[color-mix(in_srgb,var(--ccr-accent)_10%,var(--ccr-surface-soft))] shadow-[0_0_0_1px_var(--ccr-accent)]"
                   : itemStatus.needsAttention
                     ? "border-amber-300/50 bg-[color-mix(in_srgb,rgba(245,158,11,0.12)_55%,var(--ccr-surface-soft))]"
-                  : "border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)]"
+                    : "border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)]"
               }`}
             >
-              <div className="max-w-full xl:max-w-[calc(100%-15rem)]">
+              <div className="max-w-full xl:max-w-[calc(100%-11rem)]">
                 <div className="flex flex-wrap items-start gap-2">
                   <div>
                     <p className="font-semibold text-[var(--ccr-text)] break-words">{item.label}</p>
@@ -1394,12 +1394,6 @@ export function VehicleChecklistPanel({
                   </div>
                 ) : null}
 
-                <div className="mt-2 text-xs text-[var(--ccr-muted)]">
-                <p>Created: <DateTimeInline value={item.createdAt} /></p>
-                <p>
-                  Expiration: {item.expirationDate ? formatExpirationDisplay(item.expirationDate) : "Not set"}
-                  {item.uploadedDocumentId ? " · Document attached" : ""}
-                </p>
                 {isEditing ? (
                   <div className="mt-3 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3">
                     <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -1560,153 +1554,164 @@ export function VehicleChecklistPanel({
                       </div>
                     </div>
                   </div>
-                ) : null}
-                {item.uploadedDocumentId ? (
-                  <div className="space-y-2">
-                    <p>Attached file: {item.uploadedDocumentDisplayLabel ?? "Linked vehicle file"}</p>
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        data-testid="vehicle-checklist-preview-file"
-                        onClick={() =>
-                          openPreviewForItem(item)
-                        }
-                        className="inline-flex min-h-9 items-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-text)]"
-                      >
-                        Preview file
-                      </button>
-                      <a
-                        data-testid="vehicle-checklist-download-file"
-                        href={`/api/admin/vehicles/${vehicleId}/documents/${item.uploadedDocumentId}/download`}
-                        className="inline-flex min-h-9 items-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-text)]"
-                      >
-                        Download file
-                      </a>
-                      <Link
-                        data-testid="vehicle-checklist-manage-file"
-                        href={`/admin/vehicles/${vehicleId}?tab=files&folder=${encodeURIComponent(item.folder)}&documentId=${encodeURIComponent(item.uploadedDocumentId)}`}
-                        className="inline-flex min-h-9 items-center rounded-lg border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-accent-strong)]"
-                      >
-                        Manage in Files
-                      </Link>
-                      <Link
-                        data-testid="vehicle-checklist-replace-file"
-                        href={`/admin/vehicles/${vehicleId}?tab=files&folder=${encodeURIComponent(item.folder)}&attachChecklistItemId=${encodeURIComponent(item.id)}`}
-                        className="inline-flex min-h-9 items-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-text)]"
-                      >
-                        Replace in Files
-                      </Link>
+                ) : (
+                  <div className="mt-3 xl:grid xl:grid-cols-[minmax(0,19rem)_minmax(0,1fr)] xl:items-start xl:gap-4">
+                    <div className="space-y-3 text-xs text-[var(--ccr-muted)]">
+                      <div>
+                        <p>Created: <DateTimeInline value={item.createdAt} /></p>
+                        <p>
+                          Expiration: {item.expirationDate ? formatExpirationDisplay(item.expirationDate) : "Not set"}
+                          {item.uploadedDocumentId ? " · Document attached" : ""}
+                        </p>
+                      </div>
+                      {item.uploadedDocumentId ? (
+                        <div className="space-y-2">
+                          <p>Attached file: {item.uploadedDocumentDisplayLabel ?? "Linked vehicle file"}</p>
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              data-testid="vehicle-checklist-preview-file"
+                              onClick={() =>
+                                openPreviewForItem(item)
+                              }
+                              className="inline-flex min-h-9 items-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-text)]"
+                            >
+                              Preview file
+                            </button>
+                            <a
+                              data-testid="vehicle-checklist-download-file"
+                              href={`/api/admin/vehicles/${vehicleId}/documents/${item.uploadedDocumentId}/download`}
+                              className="inline-flex min-h-9 items-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-text)]"
+                            >
+                              Download file
+                            </a>
+                            <Link
+                              data-testid="vehicle-checklist-manage-file"
+                              href={`/admin/vehicles/${vehicleId}?tab=files&folder=${encodeURIComponent(item.folder)}&documentId=${encodeURIComponent(item.uploadedDocumentId)}`}
+                              className="inline-flex min-h-9 items-center rounded-lg border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-accent-strong)]"
+                            >
+                              Manage in Files
+                            </Link>
+                            <Link
+                              data-testid="vehicle-checklist-replace-file"
+                              href={`/admin/vehicles/${vehicleId}?tab=files&folder=${encodeURIComponent(item.folder)}&attachChecklistItemId=${encodeURIComponent(item.id)}`}
+                              className="inline-flex min-h-9 items-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-text)]"
+                            >
+                              Replace in Files
+                            </Link>
+                          </div>
+                        </div>
+                      ) : (
+                        <div>
+                          <Link
+                            data-testid="vehicle-checklist-add-file"
+                            href={`/admin/vehicles/${vehicleId}?tab=files&folder=${encodeURIComponent(item.folder)}&attachChecklistItemId=${encodeURIComponent(item.id)}`}
+                            className="inline-flex min-h-9 items-center rounded-lg border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-accent-strong)]"
+                          >
+                            Add file in Files
+                          </Link>
+                        </div>
+                      )}
+                      {item.required && !item.allowNotRequired ? (
+                        <p>This item should remain required.</p>
+                      ) : null}
+                    </div>
+
+                    <div className="mt-3 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3 xl:mt-0">
+                      <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+                        <label className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                          Search files
+                          <input
+                            data-testid={`vehicle-checklist-attachment-search-${item.id}`}
+                            value={attachmentSearch}
+                            onChange={(event) =>
+                              setRowAttachmentSearches((current) => ({
+                                ...current,
+                                [item.id]: event.target.value,
+                              }))
+                            }
+                            placeholder="Search label, title, or type"
+                            className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-2 text-xs text-[var(--ccr-text)]"
+                          />
+                        </label>
+                        <label className="inline-flex min-h-9 items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                          <input
+                            data-testid={`vehicle-checklist-attachment-include-linked-${item.id}`}
+                            type="checkbox"
+                            checked={includeLinkedFiles}
+                            onChange={(event) =>
+                              setRowAttachmentIncludeLinked((current) => ({
+                                ...current,
+                                [item.id]: event.target.checked,
+                              }))
+                            }
+                            className="h-4 w-4 rounded border border-[var(--ccr-border)] bg-transparent accent-[var(--ccr-accent)]"
+                          />
+                          Show files linked elsewhere
+                        </label>
+                      </div>
+                      <label className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                        Attachment
+                        <select
+                          data-testid={`vehicle-checklist-attachment-select-${item.id}`}
+                          value={selectedAttachmentId}
+                          onChange={(event) =>
+                            setRowAttachmentSelections((current) => ({
+                              ...current,
+                              [item.id]: event.target.value,
+                            }))
+                          }
+                          className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-2 text-xs text-[var(--ccr-text)]"
+                        >
+                          <option value="">No attachment</option>
+                          {attachmentOptions.map((document) => (
+                            <option key={document.id} value={document.id}>
+                              {getVehicleDocumentDisplayLabel(document)}
+                              {document.documentType ? ` · ${document.documentType}` : ""}
+                              {document.checklistItemLabel && document.checklistItemLabel !== item.label
+                                ? ` · currently on ${document.checklistItemLabel}`
+                                : ""}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          data-testid={`vehicle-checklist-attachment-save-${item.id}`}
+                          onClick={() => void updateChecklistAttachment(item, selectedAttachmentId)}
+                          disabled={
+                            attachmentSavingItemId === item.id ||
+                            selectedAttachmentId === (item.uploadedDocumentId ?? "")
+                          }
+                          className="min-h-9 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-text)] disabled:opacity-60"
+                        >
+                          {attachmentSavingItemId === item.id
+                            ? "Saving..."
+                            : item.uploadedDocumentId
+                              ? "Save attachment"
+                              : "Attach file"}
+                        </button>
+                        {item.uploadedDocumentId ? (
+                          <button
+                            type="button"
+                            data-testid={`vehicle-checklist-attachment-clear-${item.id}`}
+                            onClick={() => void updateChecklistAttachment(item, "")}
+                            disabled={attachmentSavingItemId === item.id}
+                            className="min-h-9 rounded-lg border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-accent-strong)] disabled:opacity-60"
+                          >
+                            Unlink file
+                          </button>
+                        ) : null}
+                      </div>
+                      <p className="mt-2 text-[11px] text-[var(--ccr-muted)]">
+                        {folderDocuments.length > 0
+                          ? `${attachmentOptions.length} file(s) shown in ${item.folder}. ${availableDocuments.length} available by default.${hiddenLinkedDocuments.length > 0 ? ` ${hiddenLinkedDocuments.length} linked elsewhere hidden until enabled.` : ""}`
+                          : "No saved files exist in this folder yet."}
+                      </p>
                     </div>
                   </div>
-                ) : null}
-                {!item.uploadedDocumentId ? (
-                  <div className="mt-2">
-                    <Link
-                      data-testid="vehicle-checklist-add-file"
-                      href={`/admin/vehicles/${vehicleId}?tab=files&folder=${encodeURIComponent(item.folder)}&attachChecklistItemId=${encodeURIComponent(item.id)}`}
-                      className="inline-flex min-h-9 items-center rounded-lg border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-accent-strong)]"
-                    >
-                      Add file in Files
-                    </Link>
-                  </div>
-                ) : null}
-                <div className="mt-3 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3">
-                  <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
-                    <label className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-                      Search files
-                      <input
-                        data-testid={`vehicle-checklist-attachment-search-${item.id}`}
-                        value={attachmentSearch}
-                        onChange={(event) =>
-                          setRowAttachmentSearches((current) => ({
-                            ...current,
-                            [item.id]: event.target.value,
-                          }))
-                        }
-                        placeholder="Search label, title, or type"
-                        className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-2 text-xs text-[var(--ccr-text)]"
-                      />
-                    </label>
-                    <label className="inline-flex min-h-9 items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-                      <input
-                        data-testid={`vehicle-checklist-attachment-include-linked-${item.id}`}
-                        type="checkbox"
-                        checked={includeLinkedFiles}
-                        onChange={(event) =>
-                          setRowAttachmentIncludeLinked((current) => ({
-                            ...current,
-                            [item.id]: event.target.checked,
-                          }))
-                        }
-                        className="h-4 w-4 rounded border border-[var(--ccr-border)] bg-transparent accent-[var(--ccr-accent)]"
-                      />
-                      Show files linked elsewhere
-                    </label>
-                  </div>
-                  <label className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-                    Attachment
-                    <select
-                      data-testid={`vehicle-checklist-attachment-select-${item.id}`}
-                      value={selectedAttachmentId}
-                      onChange={(event) =>
-                        setRowAttachmentSelections((current) => ({
-                          ...current,
-                          [item.id]: event.target.value,
-                        }))
-                      }
-                      className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-2 text-xs text-[var(--ccr-text)]"
-                    >
-                      <option value="">No attachment</option>
-                      {attachmentOptions.map((document) => (
-                        <option key={document.id} value={document.id}>
-                          {getVehicleDocumentDisplayLabel(document)}
-                          {document.documentType ? ` · ${document.documentType}` : ""}
-                          {document.checklistItemLabel && document.checklistItemLabel !== item.label
-                            ? ` · currently on ${document.checklistItemLabel}`
-                            : ""}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      data-testid={`vehicle-checklist-attachment-save-${item.id}`}
-                      onClick={() => void updateChecklistAttachment(item, selectedAttachmentId)}
-                      disabled={
-                        attachmentSavingItemId === item.id ||
-                        selectedAttachmentId === (item.uploadedDocumentId ?? "")
-                      }
-                      className="min-h-9 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-text)] disabled:opacity-60"
-                    >
-                      {attachmentSavingItemId === item.id
-                        ? "Saving..."
-                        : item.uploadedDocumentId
-                          ? "Save attachment"
-                          : "Attach file"}
-                    </button>
-                    {item.uploadedDocumentId ? (
-                      <button
-                        type="button"
-                        data-testid={`vehicle-checklist-attachment-clear-${item.id}`}
-                        onClick={() => void updateChecklistAttachment(item, "")}
-                        disabled={attachmentSavingItemId === item.id}
-                        className="min-h-9 rounded-lg border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-accent-strong)] disabled:opacity-60"
-                      >
-                        Unlink file
-                      </button>
-                    ) : null}
-                  </div>
-                  <p className="mt-2 text-[11px] text-[var(--ccr-muted)]">
-                    {folderDocuments.length > 0
-                      ? `${attachmentOptions.length} file(s) shown in ${item.folder}. ${availableDocuments.length} available by default.${hiddenLinkedDocuments.length > 0 ? ` ${hiddenLinkedDocuments.length} linked elsewhere hidden until enabled.` : ""}`
-                      : "No saved files exist in this folder yet."}
-                  </p>
-                </div>
-                  {item.required && !item.allowNotRequired ? (
-                    <p>This item should remain required.</p>
-                  ) : null}
-                </div>
+                )}
               </div>
 
               <div className="absolute right-4 top-4 flex max-w-[12rem] flex-wrap justify-end gap-2">
