@@ -3,6 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { BlockoutModal } from "@/components/admin/BlockoutModal";
+import { PaginationSummary } from "@/components/admin/PaginationSummaryNav";
+import { SortableTh } from "@/components/admin/SortableTh";
+import type { SortState } from "@/components/admin/tableSort";
 import { TableDateTime } from "@/components/shared/TableDateTime";
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { buttonStyles } from "@/components/ui/Button";
@@ -27,6 +30,12 @@ type VehicleBlockoutsProps = {
   vehicle: VehicleOption;
 };
 
+const BLOCKOUTS_PAGE_SIZE = 5;
+
+function compareBlockoutText(left: string | null | undefined, right: string | null | undefined) {
+  return (left ?? "").localeCompare(right ?? "", undefined, { sensitivity: "base" });
+}
+
 export function VehicleBlockouts({ vehicle }: VehicleBlockoutsProps) {
   const [blockouts, setBlockouts] = useState<BlockoutRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -34,6 +43,8 @@ export function VehicleBlockouts({ vehicle }: VehicleBlockoutsProps) {
   const [error, setError] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [activeBlockout, setActiveBlockout] = useState<BlockoutRow | null>(null);
+  const [sort, setSort] = useState<SortState>({ sortBy: "start", sortDir: "asc" });
+  const [page, setPage] = useState(1);
 
   async function loadBlockouts() {
     setLoading(true);
@@ -58,6 +69,7 @@ export function VehicleBlockouts({ vehicle }: VehicleBlockoutsProps) {
     }
 
     setBlockouts(Array.isArray(data.blockouts) ? data.blockouts : []);
+    setPage(1);
   }
 
   async function handleDelete(blockout: BlockoutRow) {
@@ -84,6 +96,7 @@ export function VehicleBlockouts({ vehicle }: VehicleBlockoutsProps) {
   }
 
   useEffect(() => {
+    setPage(1);
     loadBlockouts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vehicle.id]);
@@ -111,6 +124,41 @@ export function VehicleBlockouts({ vehicle }: VehicleBlockoutsProps) {
       notes: "",
     };
   }, [activeBlockout, vehicle.id]);
+
+  const sortedBlockouts = useMemo(() => {
+    const direction = sort.sortDir === "desc" ? -1 : 1;
+    const sorted = [...blockouts].sort((left, right) => {
+      switch (sort.sortBy) {
+        case "end":
+          return (new Date(left.end_at).getTime() - new Date(right.end_at).getTime()) * direction;
+        case "reason":
+          return compareBlockoutText(left.reason, right.reason) * direction;
+        case "notes":
+          return compareBlockoutText(left.notes, right.notes) * direction;
+        case "start":
+        default:
+          return (new Date(left.start_at).getTime() - new Date(right.start_at).getTime()) * direction;
+      }
+    });
+
+    return sorted;
+  }, [blockouts, sort]);
+
+  const totalPages = Math.max(1, Math.ceil(sortedBlockouts.length / BLOCKOUTS_PAGE_SIZE));
+
+  useEffect(() => {
+    setPage((current) => Math.min(current, totalPages));
+  }, [totalPages]);
+
+  const currentPageBlockouts = useMemo(() => {
+    const startIndex = (page - 1) * BLOCKOUTS_PAGE_SIZE;
+    return sortedBlockouts.slice(startIndex, startIndex + BLOCKOUTS_PAGE_SIZE);
+  }, [page, sortedBlockouts]);
+
+  const from = sortedBlockouts.length === 0 ? 0 : (page - 1) * BLOCKOUTS_PAGE_SIZE + 1;
+  const to = sortedBlockouts.length === 0 ? 0 : from + currentPageBlockouts.length - 1;
+  const hasPrev = page > 1;
+  const hasNext = page < totalPages;
 
   return (
     <section
@@ -161,7 +209,7 @@ export function VehicleBlockouts({ vehicle }: VehicleBlockoutsProps) {
       {!loading && blockouts.length > 0 ? (
         <>
           <div className="mt-4 divide-y divide-[var(--ccr-border)] md:hidden">
-            {blockouts.map((blockout) => (
+            {currentPageBlockouts.map((blockout) => (
               <article
                 key={`mobile-${blockout.id}`}
                 data-testid="vehicle-blockout-row"
@@ -220,15 +268,55 @@ export function VehicleBlockouts({ vehicle }: VehicleBlockoutsProps) {
             <table className="min-w-full text-left text-sm">
               <thead className="border-b border-[var(--ccr-border)] text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
                 <tr>
-                  <th className="px-3 py-2">Start</th>
-                  <th className="px-3 py-2">End</th>
-                  <th className="px-3 py-2">Reason</th>
-                  <th className="px-3 py-2">Notes</th>
+                  <SortableTh
+                    label="Start"
+                    columnKey="start"
+                    sort={sort}
+                    onChange={(next) => {
+                      setSort(next);
+                      setPage(1);
+                    }}
+                    className="px-3 py-2"
+                    defaultDirection="asc"
+                  />
+                  <SortableTh
+                    label="End"
+                    columnKey="end"
+                    sort={sort}
+                    onChange={(next) => {
+                      setSort(next);
+                      setPage(1);
+                    }}
+                    className="px-3 py-2"
+                    defaultDirection="asc"
+                  />
+                  <SortableTh
+                    label="Reason"
+                    columnKey="reason"
+                    sort={sort}
+                    onChange={(next) => {
+                      setSort(next);
+                      setPage(1);
+                    }}
+                    className="px-3 py-2"
+                    defaultDirection="asc"
+                  />
+                  <SortableTh
+                    label="Notes"
+                    columnKey="notes"
+                    sort={sort}
+                    onChange={(next) => {
+                      setSort(next);
+                      setPage(1);
+                    }}
+                    className="px-3 py-2"
+                    defaultDirection="asc"
+                  />
                   <th className="px-3 py-2">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {blockouts.map((blockout) => (
+                {currentPageBlockouts.map((blockout) => (
                   <tr
                     key={blockout.id}
                     data-testid="vehicle-blockout-row"
@@ -271,6 +359,47 @@ export function VehicleBlockouts({ vehicle }: VehicleBlockoutsProps) {
                 ))}
               </tbody>
             </table>
+          </div>
+
+          <div className="mt-4 border-t border-[var(--ccr-border)] pt-3">
+            <PaginationSummary
+              from={from}
+              to={to}
+              totalCount={sortedBlockouts.length}
+              page={page}
+              totalPages={totalPages}
+              rightContent={
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPage((current) => Math.max(1, current - 1))}
+                    disabled={!hasPrev}
+                    className={`rounded-lg border px-2 py-1 font-semibold ${
+                      hasPrev
+                        ? "border-[var(--ccr-border)] text-[var(--ccr-text)]"
+                        : "cursor-not-allowed border-[var(--ccr-border)]/40 text-[var(--ccr-muted)]/60"
+                    }`}
+                  >
+                    Prev
+                  </button>
+                  <span className="font-semibold text-[var(--ccr-text)]">
+                    Page {page} of {totalPages}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                    disabled={!hasNext}
+                    className={`rounded-lg border px-2 py-1 font-semibold ${
+                      hasNext
+                        ? "border-[var(--ccr-border)] text-[var(--ccr-text)]"
+                        : "cursor-not-allowed border-[var(--ccr-border)]/40 text-[var(--ccr-muted)]/60"
+                    }`}
+                  >
+                    Next
+                  </button>
+                </div>
+              }
+            />
           </div>
         </>
       ) : null}
