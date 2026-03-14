@@ -175,8 +175,10 @@ export function VehicleFilesPanel({
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [initialPreviewHandled, setInitialPreviewHandled] = useState(false);
   const [initialScrollHandled, setInitialScrollHandled] = useState(false);
+  const [highlightedDocumentId, setHighlightedDocumentId] = useState<string | null>(
+    initialDocumentId?.trim() || null,
+  );
   const rowRefs = useRef<Record<string, HTMLElement | null>>({});
-  const highlightedDocumentId = initialDocumentId?.trim() || null;
 
   const loadDocuments = useCallback(async () => {
     setLoading(true);
@@ -305,6 +307,7 @@ export function VehicleFilesPanel({
   useEffect(() => {
     setInitialPreviewHandled(false);
     setInitialScrollHandled(false);
+    setHighlightedDocumentId(initialDocumentId?.trim() || null);
   }, [initialDocumentId]);
 
   const isCustomDocumentType = !documentTypes.includes(documentType);
@@ -591,6 +594,19 @@ export function VehicleFilesPanel({
     } finally {
       setLinkSavingDocId(null);
     }
+  };
+
+  const closePreview = () => {
+    const shouldClearDeepLink =
+      typeof window !== "undefined" &&
+      initialDocumentId &&
+      previewItem?.id === initialDocumentId;
+    setPreviewItem(null);
+    if (!shouldClearDeepLink) return;
+
+    const nextUrl = new URL(window.location.href);
+    nextUrl.searchParams.delete("documentId");
+    window.history.replaceState(window.history.state, "", nextUrl.toString());
   };
 
   return (
@@ -988,7 +1004,7 @@ export function VehicleFilesPanel({
         <div
           data-testid="vehicle-file-preview-modal"
           className="fixed inset-0 z-50 bg-black/70 p-3 sm:p-6"
-          onClick={() => setPreviewItem(null)}
+          onClick={closePreview}
         >
           <div
             className="mx-auto flex h-full w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)]"
@@ -1019,7 +1035,7 @@ export function VehicleFilesPanel({
                 ) : null}
                 <button
                   type="button"
-                  onClick={() => setPreviewItem(null)}
+                  onClick={closePreview}
                   className="min-h-9 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-semibold text-[var(--ccr-text)]"
                 >
                   Close

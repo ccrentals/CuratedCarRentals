@@ -317,6 +317,9 @@ test.describe("@tour vehicle files and checklist integration", () => {
       await expect(page.getByTestId("vehicle-file-preview-meta")).toContainText(secondChecklistLabel);
       await page.getByRole("button", { name: "Close" }).click();
       await expect(page.getByTestId("vehicle-file-preview-modal")).not.toBeVisible();
+      await expect(page).toHaveURL(
+        new RegExp(`/admin/vehicles/${VEHICLE_ID}\\?tab=files&folder=Paperwork$`),
+      );
       await expect(page.getByTestId(`vehicle-file-row-${documentId}`)).toHaveAttribute(
         "data-highlighted",
         "true",
