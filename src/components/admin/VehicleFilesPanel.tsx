@@ -316,6 +316,10 @@ export function VehicleFilesPanel({
     () => checklistItems.filter((item) => item.folder === activeFolder),
     [activeFolder, checklistItems],
   );
+  const highlightedItem = useMemo(
+    () => items.find((item) => item.id === highlightedDocumentId) ?? null,
+    [highlightedDocumentId, items],
+  );
   const selectedChecklistItem = useMemo(
     () => availableChecklistItems.find((item) => item.id === selectedChecklistItemId) ?? null,
     [availableChecklistItems, selectedChecklistItemId],
@@ -609,6 +613,10 @@ export function VehicleFilesPanel({
     window.history.replaceState(window.history.state, "", nextUrl.toString());
   };
 
+  const clearHighlight = () => {
+    setHighlightedDocumentId(null);
+  };
+
   return (
     <section
       data-testid="vehicle-files-panel"
@@ -752,6 +760,27 @@ export function VehicleFilesPanel({
       {error ? <p className="mt-3 text-xs font-semibold text-red-300">{error}</p> : null}
       {checklistError ? <p className="mt-3 text-xs font-semibold text-red-300">{checklistError}</p> : null}
       {message ? <p className="mt-3 text-xs font-semibold text-emerald-200">{message}</p> : null}
+      {highlightedItem ? (
+        <div
+          data-testid="vehicle-file-focus-banner"
+          className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--ccr-accent)] bg-[color-mix(in_srgb,var(--ccr-accent)_10%,var(--ccr-surface-soft))] px-4 py-3"
+        >
+          <div>
+            <p className="text-sm font-semibold text-[var(--ccr-text)]">Focused from Checklist</p>
+            <p className="text-xs text-[var(--ccr-muted)]">
+              {getDocumentDisplayLabel(highlightedItem)} is still highlighted in this folder.
+            </p>
+          </div>
+          <button
+            type="button"
+            data-testid="vehicle-file-clear-highlight"
+            onClick={clearHighlight}
+            className="min-h-9 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-xs font-semibold text-[var(--ccr-text)]"
+          >
+            Clear highlight
+          </button>
+        </div>
+      ) : null}
 
       <div className="mt-4 space-y-3">
         {loading ? <p className="text-sm text-[var(--ccr-muted)]">Loading files...</p> : null}
@@ -782,97 +811,102 @@ export function VehicleFilesPanel({
                         : "border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)]"
                     }`}
                   >
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div>
-                      <p className="font-semibold text-[var(--ccr-text)] break-words">
-                        {getDocumentDisplayLabel(item)}
-                      </p>
-                      {item.label ? (
-                        <p className="text-xs text-[var(--ccr-muted)] break-words">{item.title}</p>
-                      ) : null}
-                      <p className="text-xs text-[var(--ccr-muted)]">{item.documentType}</p>
-                    </div>
-                    <span className="rounded-full border border-[var(--ccr-border)] px-2 py-1 text-[11px] font-semibold text-[var(--ccr-muted)]">
-                      {item.folder}
-                    </span>
-                  </div>
-
-                  <div className="mt-2 text-xs text-[var(--ccr-muted)] break-words">
-                    <p>Linked to: {item.linkedTo}</p>
-                    {item.checklistItemLabel ? <p>Checklist: {item.checklistItemLabel}</p> : null}
-                    <p>Uploaded: <DateTimeInline value={item.createdAt} /></p>
-                    <p>{item.mimeType || "Unknown type"} · {normalizeBytes(item.sizeBytes)}</p>
-                  </div>
-
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {item.canDownload ? (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => setPreviewItem(item)}
-                          className="inline-flex min-h-10 items-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
-                        >
-                          View
-                        </button>
-                        <a
-                          href={`/api/admin/vehicles/${vehicleId}/documents/${item.id}/download`}
-                          className="inline-flex min-h-10 items-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
-                        >
-                          Download
-                        </a>
-                      </>
-                    ) : (
-                      <span className="inline-flex min-h-10 items-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-muted)]">
-                        Unavailable
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <p className="font-semibold text-[var(--ccr-text)] break-words">
+                          {getDocumentDisplayLabel(item)}
+                        </p>
+                        {isHighlighted ? (
+                          <span className="mt-1 inline-flex rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-2 py-1 text-[11px] font-semibold text-[var(--ccr-accent-strong)]">
+                            Focused from Checklist
+                          </span>
+                        ) : null}
+                        {item.label ? (
+                          <p className="text-xs text-[var(--ccr-muted)] break-words">{item.title}</p>
+                        ) : null}
+                        <p className="text-xs text-[var(--ccr-muted)]">{item.documentType}</p>
+                      </div>
+                      <span className="rounded-full border border-[var(--ccr-border)] px-2 py-1 text-[11px] font-semibold text-[var(--ccr-muted)]">
+                        {item.folder}
                       </span>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => void archiveDocument(item.id)}
-                      className="min-h-10 rounded-lg border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-accent-strong)]"
-                    >
-                      Archive
-                    </button>
-                  </div>
+                    </div>
 
-                  <div className="mt-3 grid gap-2">
-                    <label className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-                      Checklist link
-                      <select
-                        data-testid="vehicle-file-link-select"
-                        value={rowChecklistSelections[item.id] ?? ""}
-                        onChange={(event) =>
-                          setRowChecklistSelections((current) => ({
-                            ...current,
-                            [item.id]: event.target.value,
-                          }))
-                        }
-                        className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs text-[var(--ccr-text)]"
+                    <div className="mt-2 text-xs text-[var(--ccr-muted)] break-words">
+                      <p>Linked to: {item.linkedTo}</p>
+                      {item.checklistItemLabel ? <p>Checklist: {item.checklistItemLabel}</p> : null}
+                      <p>Uploaded: <DateTimeInline value={item.createdAt} /></p>
+                      <p>{item.mimeType || "Unknown type"} · {normalizeBytes(item.sizeBytes)}</p>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {item.canDownload ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setPreviewItem(item)}
+                            className="inline-flex min-h-10 items-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+                          >
+                            View
+                          </button>
+                          <a
+                            href={`/api/admin/vehicles/${vehicleId}/documents/${item.id}/download`}
+                            className="inline-flex min-h-10 items-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+                          >
+                            Download
+                          </a>
+                        </>
+                      ) : (
+                        <span className="inline-flex min-h-10 items-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-muted)]">
+                          Unavailable
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => void archiveDocument(item.id)}
+                        className="min-h-10 rounded-lg border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-accent-strong)]"
                       >
-                        <option value="">No checklist link</option>
-                        {availableChecklistItems.map((checklistItem) => (
-                          <option key={checklistItem.id} value={checklistItem.id}>
-                            {checklistItem.label}
-                            {checklistItem.required ? " (required)" : ""}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <button
-                      type="button"
-                      data-testid="vehicle-file-link-save"
-                      onClick={() =>
-                        void updateDocumentChecklistLink(item.id, rowChecklistSelections[item.id] ?? "")
-                      }
-                      disabled={
-                        linkSavingDocId === item.id ||
-                        (rowChecklistSelections[item.id] ?? "") === (item.checklistItemId ?? "")
-                      }
-                      className="min-h-10 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
-                    >
-                      {linkSavingDocId === item.id ? "Saving link..." : "Save link"}
-                    </button>
-                  </div>
+                        Archive
+                      </button>
+                    </div>
+
+                    <div className="mt-3 grid gap-2">
+                      <label className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                        Checklist link
+                        <select
+                          data-testid="vehicle-file-link-select"
+                          value={rowChecklistSelections[item.id] ?? ""}
+                          onChange={(event) =>
+                            setRowChecklistSelections((current) => ({
+                              ...current,
+                              [item.id]: event.target.value,
+                            }))
+                          }
+                          className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs text-[var(--ccr-text)]"
+                        >
+                          <option value="">No checklist link</option>
+                          {availableChecklistItems.map((checklistItem) => (
+                            <option key={checklistItem.id} value={checklistItem.id}>
+                              {checklistItem.label}
+                              {checklistItem.required ? " (required)" : ""}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <button
+                        type="button"
+                        data-testid="vehicle-file-link-save"
+                        onClick={() =>
+                          void updateDocumentChecklistLink(item.id, rowChecklistSelections[item.id] ?? "")
+                        }
+                        disabled={
+                          linkSavingDocId === item.id ||
+                          (rowChecklistSelections[item.id] ?? "") === (item.checklistItemId ?? "")
+                        }
+                        className="min-h-10 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
+                      >
+                        {linkSavingDocId === item.id ? "Saving link..." : "Save link"}
+                      </button>
+                    </div>
                   </article>
                 );
               })}
@@ -907,89 +941,94 @@ export function VehicleFilesPanel({
                             : "border-[var(--ccr-border)]"
                         }`}
                       >
-                      <td className="px-3 py-2 text-[var(--ccr-text)]">{item.documentType}</td>
-                      <td className="px-3 py-2 text-[var(--ccr-text)] break-words">
-                        <div className="space-y-1">
-                          <p>{getDocumentDisplayLabel(item)}</p>
-                          {item.label ? (
-                            <p className="text-xs text-[var(--ccr-muted)]">{item.title}</p>
-                          ) : null}
-                        </div>
-                      </td>
-                      <td className="px-3 py-2 text-[var(--ccr-muted)] break-words">{item.linkedTo}</td>
-                      <td className="px-3 py-2 text-[var(--ccr-muted)] break-words">
-                        {item.checklistItemLabel ? item.checklistItemLabel : "Not linked"}
-                      </td>
-                      <td className="px-3 py-2 text-[var(--ccr-muted)]">
-                        <TableDateTime value={item.createdAt} />
-                      </td>
-                      <td className="px-3 py-2">
-                        <div className="flex flex-wrap gap-2">
-                          {item.canDownload ? (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => setPreviewItem(item)}
-                                className="inline-flex min-h-9 items-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-xs font-semibold text-[var(--ccr-text)]"
-                              >
-                                View
-                              </button>
-                              <a
-                                href={`/api/admin/vehicles/${vehicleId}/documents/${item.id}/download`}
-                                className="inline-flex min-h-9 items-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-xs font-semibold text-[var(--ccr-text)]"
-                              >
-                                Download
-                              </a>
-                            </>
-                          ) : (
-                            <span className="inline-flex min-h-9 items-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-xs font-semibold text-[var(--ccr-muted)]">
-                              Unavailable
-                            </span>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => void archiveDocument(item.id)}
-                            className="min-h-9 rounded-lg border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-3 py-1 text-xs font-semibold text-[var(--ccr-accent-strong)]"
-                          >
-                            Archive
-                          </button>
-                        </div>
-                        <div className="mt-2 flex flex-wrap items-center gap-2">
-                          <select
-                            data-testid="vehicle-file-link-select"
-                            value={rowChecklistSelections[item.id] ?? ""}
-                            onChange={(event) =>
-                              setRowChecklistSelections((current) => ({
-                                ...current,
-                                [item.id]: event.target.value,
-                              }))
-                            }
-                            className="min-h-9 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-xs text-[var(--ccr-text)]"
-                          >
-                            <option value="">No checklist link</option>
-                            {availableChecklistItems.map((checklistItem) => (
-                              <option key={checklistItem.id} value={checklistItem.id}>
-                                {checklistItem.label}
-                                {checklistItem.required ? " (required)" : ""}
-                              </option>
-                            ))}
-                          </select>
-                          <button
-                            type="button"
-                            data-testid="vehicle-file-link-save"
-                            onClick={() =>
-                              void updateDocumentChecklistLink(item.id, rowChecklistSelections[item.id] ?? "")
-                            }
-                            disabled={
-                              linkSavingDocId === item.id ||
-                              (rowChecklistSelections[item.id] ?? "") === (item.checklistItemId ?? "")
-                            }
-                            className="min-h-9 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
-                          >
-                            {linkSavingDocId === item.id ? "Saving link..." : "Save link"}
-                          </button>
-                        </div>
-                      </td>
+                        <td className="px-3 py-2 text-[var(--ccr-text)]">{item.documentType}</td>
+                        <td className="px-3 py-2 text-[var(--ccr-text)] break-words">
+                          <div className="space-y-1">
+                            <p>{getDocumentDisplayLabel(item)}</p>
+                            {isHighlighted ? (
+                              <p className="text-[11px] font-semibold text-[var(--ccr-accent-strong)]">
+                                Focused from Checklist
+                              </p>
+                            ) : null}
+                            {item.label ? (
+                              <p className="text-xs text-[var(--ccr-muted)]">{item.title}</p>
+                            ) : null}
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 text-[var(--ccr-muted)] break-words">{item.linkedTo}</td>
+                        <td className="px-3 py-2 text-[var(--ccr-muted)] break-words">
+                          {item.checklistItemLabel ? item.checklistItemLabel : "Not linked"}
+                        </td>
+                        <td className="px-3 py-2 text-[var(--ccr-muted)]">
+                          <TableDateTime value={item.createdAt} />
+                        </td>
+                        <td className="px-3 py-2">
+                          <div className="flex flex-wrap gap-2">
+                            {item.canDownload ? (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => setPreviewItem(item)}
+                                  className="inline-flex min-h-9 items-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-xs font-semibold text-[var(--ccr-text)]"
+                                >
+                                  View
+                                </button>
+                                <a
+                                  href={`/api/admin/vehicles/${vehicleId}/documents/${item.id}/download`}
+                                  className="inline-flex min-h-9 items-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-xs font-semibold text-[var(--ccr-text)]"
+                                >
+                                  Download
+                                </a>
+                              </>
+                            ) : (
+                              <span className="inline-flex min-h-9 items-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-xs font-semibold text-[var(--ccr-muted)]">
+                                Unavailable
+                              </span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => void archiveDocument(item.id)}
+                              className="min-h-9 rounded-lg border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-3 py-1 text-xs font-semibold text-[var(--ccr-accent-strong)]"
+                            >
+                              Archive
+                            </button>
+                          </div>
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <select
+                              data-testid="vehicle-file-link-select"
+                              value={rowChecklistSelections[item.id] ?? ""}
+                              onChange={(event) =>
+                                setRowChecklistSelections((current) => ({
+                                  ...current,
+                                  [item.id]: event.target.value,
+                                }))
+                              }
+                              className="min-h-9 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-xs text-[var(--ccr-text)]"
+                            >
+                              <option value="">No checklist link</option>
+                              {availableChecklistItems.map((checklistItem) => (
+                                <option key={checklistItem.id} value={checklistItem.id}>
+                                  {checklistItem.label}
+                                  {checklistItem.required ? " (required)" : ""}
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              type="button"
+                              data-testid="vehicle-file-link-save"
+                              onClick={() =>
+                                void updateDocumentChecklistLink(item.id, rowChecklistSelections[item.id] ?? "")
+                              }
+                              disabled={
+                                linkSavingDocId === item.id ||
+                                (rowChecklistSelections[item.id] ?? "") === (item.checklistItemId ?? "")
+                              }
+                              className="min-h-9 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
+                            >
+                              {linkSavingDocId === item.id ? "Saving link..." : "Save link"}
+                            </button>
+                          </div>
+                        </td>
                       </tr>
                     );
                   })}

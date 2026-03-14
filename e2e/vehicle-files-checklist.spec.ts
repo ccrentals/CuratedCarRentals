@@ -320,9 +320,16 @@ test.describe("@tour vehicle files and checklist integration", () => {
       await expect(page).toHaveURL(
         new RegExp(`/admin/vehicles/${VEHICLE_ID}\\?tab=files&folder=Paperwork$`),
       );
+      await expect(page.getByTestId("vehicle-file-focus-banner")).toBeVisible();
       await expect(page.getByTestId(`vehicle-file-row-${documentId}`)).toHaveAttribute(
         "data-highlighted",
         "true",
+      );
+      await page.getByTestId("vehicle-file-clear-highlight").click();
+      await expect(page.getByTestId("vehicle-file-focus-banner")).not.toBeVisible();
+      await expect(page.getByTestId(`vehicle-file-row-${documentId}`)).toHaveAttribute(
+        "data-highlighted",
+        "false",
       );
 
       const archiveRow = page.locator("tr", { hasText: fileLabel }).first();
