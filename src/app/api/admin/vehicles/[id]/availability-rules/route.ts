@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import {
+  deleteVehicleAvailabilityRules,
   getVehicleAvailabilityRules,
   upsertVehicleAvailabilityRules,
   type VehicleAvailabilityRulesPatch,
@@ -26,6 +27,7 @@ export type AdminVehicleAvailabilityRulesRouteDeps = {
   requireCsrfCheck: (request: Request, bodyToken?: string | null) => Promise<boolean>;
   vehicleExists: (vehicleId: string) => Promise<boolean>;
   getRules: (vehicleId: string) => Promise<VehicleAvailabilityRulesReadResult>;
+  deleteRules: (vehicleId: string) => Promise<void>;
   saveRules: (vehicleId: string, patch: VehicleAvailabilityRulesPatch) => Promise<{
     id: string | null;
     vehicleId: string;
@@ -53,6 +55,7 @@ const DEFAULT_DEPS: AdminVehicleAvailabilityRulesRouteDeps = {
     return Boolean(result.rows[0]?.exists);
   },
   getRules: (vehicleId) => getVehicleAvailabilityRules(vehicleId),
+  deleteRules: (vehicleId) => deleteVehicleAvailabilityRules(vehicleId),
   saveRules: (vehicleId, patch) => upsertVehicleAvailabilityRules(vehicleId, patch),
 };
 
@@ -280,10 +283,59 @@ export async function handleAdminVehicleAvailabilityRulesPatch(
   }
 }
 
+export async function handleAdminVehicleAvailabilityRulesDelete(
+  request: Request,
+  context: RouteContext,
+  deps: AdminVehicleAvailabilityRulesRouteDeps = DEFAULT_DEPS,
+) {
+  const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
+  if (!auth.ok) return auth.response;
+
+  const body = (await request.json().catch(() => null)) as RawBody;
+  if (!(await deps.requireCsrfCheck(request, (body?.csrfToken as string | null | undefined) ?? null))) {
+    return NextResponse.json({ ok: false, error: "Invalid CSRF token" }, { status: 403 });
+  }
+
+  const { id } = await context.params;
+  if (!UUID_REGEX.test(id)) {
+    return NextResponse.json({ ok: false, error: "Invalid vehicle id." }, { status: 400 });
+  }
+
+  try {
+    const exists = await deps.vehicleExists(id);
+    if (!exists) {
+      return NextResponse.json({ ok: false, error: "Vehicle not found." }, { status: 404 });
+    }
+
+    await deps.deleteRules(id);
+    const result = await deps.getRules(id);
+    return NextResponse.json({
+      ok: true,
+      rules: result.rules,
+      defaultsApplied: result.defaultsApplied,
+    });
+  } catch (error) {
+    if (isVehicleExtensionsMissingTableError(error)) {
+      return NextResponse.json(
+        { ok: false, error: "Vehicle availability rules tables are not installed." },
+        { status: 503 },
+      );
+    }
+    return NextResponse.json(
+      { ok: false, error: "Failed to restore default vehicle availability rules." },
+      { status: 500 },
+    );
+  }
+}
+
 export async function GET(request: Request, context: RouteContext) {
   return handleAdminVehicleAvailabilityRulesGet(request, context);
 }
 
 export async function PATCH(request: Request, context: RouteContext) {
   return handleAdminVehicleAvailabilityRulesPatch(request, context);
+}
+
+export async function DELETE(request: Request, context: RouteContext) {
+  return handleAdminVehicleAvailabilityRulesDelete(request, context);
 }

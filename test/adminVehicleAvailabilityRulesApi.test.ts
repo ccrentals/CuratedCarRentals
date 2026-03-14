@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  handleAdminVehicleAvailabilityRulesDelete,
   handleAdminVehicleAvailabilityRulesGet,
   handleAdminVehicleAvailabilityRulesPatch,
 } from "@/app/api/admin/vehicles/[id]/availability-rules/route";
@@ -43,6 +44,7 @@ test("vehicle availability rules API: GET requires auth", async () => {
       requireCsrfCheck: async () => true,
       vehicleExists: async () => true,
       getRules: async () => ({ rules: defaultRules(), defaultsApplied: true }),
+      deleteRules: async () => {},
       saveRules: async () => defaultRules(),
     },
   );
@@ -59,6 +61,7 @@ test("vehicle availability rules API: GET validates vehicle id", async () => {
       requireCsrfCheck: async () => true,
       vehicleExists: async () => true,
       getRules: async () => ({ rules: defaultRules(), defaultsApplied: true }),
+      deleteRules: async () => {},
       saveRules: async () => defaultRules(),
     },
   );
@@ -75,6 +78,7 @@ test("vehicle availability rules API: GET returns 404 when vehicle missing", asy
       requireCsrfCheck: async () => true,
       vehicleExists: async () => false,
       getRules: async () => ({ rules: defaultRules(), defaultsApplied: true }),
+      deleteRules: async () => {},
       saveRules: async () => defaultRules(),
     },
   );
@@ -94,6 +98,7 @@ test("vehicle availability rules API: GET returns defaults when no record exists
         rules: defaultRules(),
         defaultsApplied: true,
       }),
+      deleteRules: async () => {},
       saveRules: async () => defaultRules(),
     },
   );
@@ -123,6 +128,7 @@ test("vehicle availability rules API: PATCH requires CSRF", async () => {
       requireCsrfCheck: async () => false,
       vehicleExists: async () => true,
       getRules: async () => ({ rules: defaultRules(), defaultsApplied: true }),
+      deleteRules: async () => {},
       saveRules: async () => defaultRules(),
     },
   );
@@ -147,6 +153,7 @@ test("vehicle availability rules API: PATCH validates invalid ranges", async () 
       requireCsrfCheck: async () => true,
       vehicleExists: async () => true,
       getRules: async () => ({ rules: defaultRules(), defaultsApplied: true }),
+      deleteRules: async () => {},
       saveRules: async () => defaultRules(),
     },
   );
@@ -179,6 +186,7 @@ test("vehicle availability rules API: PATCH persists and returns saved values", 
       requireCsrfCheck: async () => true,
       vehicleExists: async () => true,
       getRules: async () => ({ rules: defaultRules(), defaultsApplied: true }),
+      deleteRules: async () => {},
       saveRules: async (_vehicleId, patch) => {
         capturedPatch = patch as unknown as Record<string, unknown>;
         return {
@@ -229,4 +237,46 @@ test("vehicle availability rules API: PATCH persists and returns saved values", 
   assert.equal(body.rules.bufferAfterMinutes, 20);
   assert.equal(body.rules.allowedPickupStartHour, 8);
   assert.equal(body.rules.allowedPickupEndHour, 18);
+});
+
+test("vehicle availability rules API: DELETE restores defaults", async () => {
+  let deletedVehicleId: string | null = null;
+  let defaultsApplied = false;
+
+  const response = await handleAdminVehicleAvailabilityRulesDelete(
+    new Request(`http://localhost/api/admin/vehicles/${VEHICLE_ID}/availability-rules`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json", "x-csrf-token": "token" },
+      body: JSON.stringify({ csrfToken: "token" }),
+    }),
+    { params: Promise.resolve({ id: VEHICLE_ID }) },
+    {
+      getSession: async () => adminSession(),
+      requireCsrfCheck: async () => true,
+      vehicleExists: async () => true,
+      getRules: async () => ({
+        rules: defaultRules(),
+        defaultsApplied,
+      }),
+      deleteRules: async (vehicleId) => {
+        deletedVehicleId = vehicleId;
+        defaultsApplied = true;
+      },
+      saveRules: async () => defaultRules(),
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(deletedVehicleId, VEHICLE_ID);
+
+  const body = (await response.json()) as {
+    ok: boolean;
+    defaultsApplied: boolean;
+    rules: { advanceNoticeHours: number; isActive: boolean };
+  };
+
+  assert.equal(body.ok, true);
+  assert.equal(body.defaultsApplied, true);
+  assert.equal(body.rules.advanceNoticeHours, 0);
+  assert.equal(body.rules.isActive, true);
 });

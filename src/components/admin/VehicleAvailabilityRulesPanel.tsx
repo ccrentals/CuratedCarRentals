@@ -35,6 +35,8 @@ type FormState = {
   isActive: boolean;
 };
 
+const HOUR_WINDOW_LABEL = "Jamaica time";
+
 function toInput(value: number | null) {
   return value === null || Number.isNaN(value) ? "" : String(value);
 }
@@ -79,6 +81,7 @@ function normalizeOptionalHour(value: string, label: string) {
 export function VehicleAvailabilityRulesPanel({ vehicleId }: VehicleAvailabilityRulesPanelProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [restoringDefaults, setRestoringDefaults] = useState(false);
   const [defaultsApplied, setDefaultsApplied] = useState(true);
   const [form, setForm] = useState<FormState>({
     advanceNoticeHours: "0",
@@ -130,12 +133,30 @@ export function VehicleAvailabilityRulesPanel({ vehicleId }: VehicleAvailability
     void loadRules();
   }, [loadRules]);
 
-  const helperText = useMemo(() => {
+  const panelState = useMemo(() => {
     if (defaultsApplied) {
-      return "Defaults are active (no extra restrictions). Save once to apply vehicle-specific rules.";
+      return {
+        badgeLabel: "Defaults",
+        helperText:
+          "Defaults are active (no extra restrictions). Save to create a vehicle-specific override.",
+        toggleHint: "Enable and save to apply vehicle-specific rules for this vehicle.",
+      };
     }
-    return "Vehicle-specific availability rules are active for quote and booking availability checks.";
-  }, [defaultsApplied]);
+    if (!form.isActive) {
+      return {
+        badgeLabel: "Override inactive",
+        helperText:
+          "Saved vehicle-specific values are inactive. Quote and booking availability checks currently use default availability behavior.",
+        toggleHint: "Enable to apply the saved vehicle-specific rules for this vehicle.",
+      };
+    }
+    return {
+      badgeLabel: "Override active",
+      helperText:
+        "Vehicle-specific availability rules are active for quote and booking availability checks.",
+      toggleHint: "Disable to fall back to default availability behavior for this vehicle.",
+    };
+  }, [defaultsApplied, form.isActive]);
 
   async function handleSave(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -252,6 +273,48 @@ export function VehicleAvailabilityRulesPanel({ vehicleId }: VehicleAvailability
     }
   }
 
+  async function handleRestoreDefaults() {
+    setError(null);
+    setMessage(null);
+    setRestoringDefaults(true);
+
+    try {
+      const csrfToken = await ensureCsrfToken();
+      const response = await fetch(`/api/admin/vehicles/${vehicleId}/availability-rules`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          "x-csrf-token": csrfToken ?? "",
+        },
+        body: JSON.stringify({
+          csrfToken: csrfToken ?? null,
+        }),
+      });
+
+      const payload = (await response.json().catch(() => ({}))) as {
+        ok?: boolean;
+        rules?: RulesPayload;
+        defaultsApplied?: boolean;
+        error?: string;
+      };
+      if (!response.ok || !payload.ok || !payload.rules) {
+        throw new Error(payload.error ?? "Failed to restore default availability rules.");
+      }
+
+      setForm(toFormState(payload.rules));
+      setDefaultsApplied(Boolean(payload.defaultsApplied));
+      setMessage("Default availability rules restored.");
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Failed to restore default availability rules.",
+      );
+    } finally {
+      setRestoringDefaults(false);
+    }
+  }
+
   return (
     <section
       data-testid="vehicle-availability-rules-panel"
@@ -265,7 +328,7 @@ export function VehicleAvailabilityRulesPanel({ vehicleId }: VehicleAvailability
           </p>
         </div>
         <p className="rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-muted)]">
-          {defaultsApplied ? "Defaults" : "Vehicle override"}
+          {panelState.badgeLabel}
         </p>
       </div>
 
@@ -275,13 +338,13 @@ export function VehicleAvailabilityRulesPanel({ vehicleId }: VehicleAvailability
 
       {!loading ? (
         <form className="mt-4 space-y-4" onSubmit={handleSave}>
-          <p className="text-xs text-[var(--ccr-muted)]">{helperText}</p>
+          <p className="text-xs text-[var(--ccr-muted)]">{panelState.helperText}</p>
 
           <label className="flex items-center justify-between gap-3 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-4 py-3">
             <span>
               <span className="block text-sm font-semibold text-[var(--ccr-text)]">Rules active</span>
               <span className="block text-xs text-[var(--ccr-muted)]">
-                Disable to fall back to default availability behavior for this vehicle.
+                {panelState.toggleHint}
               </span>
             </span>
             <input
@@ -346,7 +409,9 @@ export function VehicleAvailabilityRulesPanel({ vehicleId }: VehicleAvailability
               </legend>
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="space-y-1">
-                  <span className="text-xs text-[var(--ccr-muted)]">Start hour (0-23)</span>
+                  <span className="text-xs text-[var(--ccr-muted)]">
+                    Start hour (0-23, {HOUR_WINDOW_LABEL})
+                  </span>
                   <input
                     data-testid="availability-rules-pickup-start"
                     type="number"
@@ -361,7 +426,9 @@ export function VehicleAvailabilityRulesPanel({ vehicleId }: VehicleAvailability
                   />
                 </label>
                 <label className="space-y-1">
-                  <span className="text-xs text-[var(--ccr-muted)]">End hour (0-23)</span>
+                  <span className="text-xs text-[var(--ccr-muted)]">
+                    End hour (0-23, {HOUR_WINDOW_LABEL})
+                  </span>
                   <input
                     data-testid="availability-rules-pickup-end"
                     type="number"
@@ -384,7 +451,9 @@ export function VehicleAvailabilityRulesPanel({ vehicleId }: VehicleAvailability
               </legend>
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="space-y-1">
-                  <span className="text-xs text-[var(--ccr-muted)]">Start hour (0-23)</span>
+                  <span className="text-xs text-[var(--ccr-muted)]">
+                    Start hour (0-23, {HOUR_WINDOW_LABEL})
+                  </span>
                   <input
                     data-testid="availability-rules-dropoff-start"
                     type="number"
@@ -399,7 +468,9 @@ export function VehicleAvailabilityRulesPanel({ vehicleId }: VehicleAvailability
                   />
                 </label>
                 <label className="space-y-1">
-                  <span className="text-xs text-[var(--ccr-muted)]">End hour (0-23)</span>
+                  <span className="text-xs text-[var(--ccr-muted)]">
+                    End hour (0-23, {HOUR_WINDOW_LABEL})
+                  </span>
                   <input
                     data-testid="availability-rules-dropoff-end"
                     type="number"
@@ -425,14 +496,27 @@ export function VehicleAvailabilityRulesPanel({ vehicleId }: VehicleAvailability
                 setMessage(null);
                 void loadRules();
               }}
+              disabled={saving || restoringDefaults}
               className={buttonStyles({ variant: "secondary", size: "sm" })}
             >
-              Reset
+              Discard changes
             </button>
+            {!defaultsApplied ? (
+              <button
+                type="button"
+                onClick={() => {
+                  void handleRestoreDefaults();
+                }}
+                disabled={saving || restoringDefaults}
+                className={buttonStyles({ variant: "secondary", size: "sm" })}
+              >
+                {restoringDefaults ? "Restoring..." : "Restore defaults"}
+              </button>
+            ) : null}
             <button
               data-testid="availability-rules-save"
               type="submit"
-              disabled={saving}
+              disabled={saving || restoringDefaults}
               className={buttonStyles({ variant: "primary", size: "sm" })}
             >
               {saving ? "Saving..." : "Save Rules"}

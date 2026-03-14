@@ -8,6 +8,13 @@ import type { Queryable } from "@/lib/payments/pricing";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const AVAILABILITY_RULES_TIME_ZONE = "America/Jamaica";
+const availabilityRuleHourFormatter = new Intl.DateTimeFormat("en-US", {
+  hour: "2-digit",
+  hour12: false,
+  hourCycle: "h23",
+  timeZone: AVAILABILITY_RULES_TIME_ZONE,
+});
 
 type VehicleAvailabilityRulesRow = {
   id: string;
@@ -172,6 +179,22 @@ function formatHourRange(startHour: number | null, endHour: number | null) {
   return `until ${endHour}:59`;
 }
 
+function normalizeAvailabilityWindow(startAtIso: string, endAtIso: string) {
+  const start = new Date(startAtIso);
+  const end = new Date(endAtIso);
+  return {
+    startAt: start.toISOString(),
+    endAt: end.toISOString(),
+    effectiveStartAt: start.toISOString(),
+    effectiveEndAt: end.toISOString(),
+  };
+}
+
+function getAvailabilityRuleHour(date: Date) {
+  const hour = Number(availabilityRuleHourFormatter.format(date));
+  return Number.isFinite(hour) ? hour : date.getHours();
+}
+
 function applyBufferWindow(
   startAtIso: string,
   endAtIso: string,
@@ -326,6 +349,17 @@ export async function upsertVehicleAvailabilityRules(
   return normalizeRulesRow((result.rows[0] ?? defaultRulesForVehicle(vehicleId)) as VehicleAvailabilityRulesRow);
 }
 
+export async function deleteVehicleAvailabilityRules(
+  vehicleId: string,
+  options: { client?: Queryable } = {},
+): Promise<void> {
+  const queryable = options.client ?? {
+    query: (text: string, params: unknown[] = []) => dbQuery(text, params),
+  };
+
+  await queryable.query("delete from vehicle_availability_rules where vehicle_id = $1::uuid", [vehicleId]);
+}
+
 export function evaluateVehicleAvailabilityRules(input: {
   rules: VehicleAvailabilityRules;
   startAt: string | Date;
@@ -352,7 +386,9 @@ export function evaluateVehicleAvailabilityRules(input: {
     };
   }
 
-  const normalized = applyBufferWindow(startAtIso, endAtIso, input.rules);
+  const normalized = input.rules.isActive
+    ? applyBufferWindow(startAtIso, endAtIso, input.rules)
+    : normalizeAvailabilityWindow(startAtIso, endAtIso);
   if (!input.rules.isActive) {
     return { ok: true, reasons: [], normalized };
   }
@@ -368,7 +404,7 @@ export function evaluateVehicleAvailabilityRules(input: {
     }
   }
 
-  const pickupHour = start.getUTCHours();
+  const pickupHour = getAvailabilityRuleHour(start);
   if (
     hourOutsideRange(
       pickupHour,
@@ -380,11 +416,11 @@ export function evaluateVehicleAvailabilityRules(input: {
       `Pickup time must be ${formatHourRange(
         input.rules.allowedPickupStartHour,
         input.rules.allowedPickupEndHour,
-      )}.`,
+      )} Jamaica time.`,
     );
   }
 
-  const dropoffHour = end.getUTCHours();
+  const dropoffHour = getAvailabilityRuleHour(end);
   if (
     hourOutsideRange(
       dropoffHour,
@@ -396,7 +432,7 @@ export function evaluateVehicleAvailabilityRules(input: {
       `Dropoff time must be ${formatHourRange(
         input.rules.allowedDropoffStartHour,
         input.rules.allowedDropoffEndHour,
-      )}.`,
+      )} Jamaica time.`,
     );
   }
 

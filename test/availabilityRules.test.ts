@@ -50,12 +50,53 @@ test("availability rules evaluator: blocks pickup/dropoff hours outside allowed 
       allowedDropoffEndHour: 18,
     }),
     startAt: "2026-03-10T08:00:00.000Z",
-    endAt: "2026-03-10T19:00:00.000Z",
+    endAt: "2026-03-11T00:00:00.000Z",
   });
 
   assert.equal(result.ok, false);
   assert.equal(result.reasons.some((reason) => reason.includes("Pickup time")), true);
   assert.equal(result.reasons.some((reason) => reason.includes("Dropoff time")), true);
+});
+
+test("availability rules evaluator: interprets hour windows in Jamaica time", () => {
+  const result = evaluateVehicleAvailabilityRules({
+    rules: baseRules({
+      allowedPickupStartHour: 9,
+      allowedPickupEndHour: 9,
+      allowedDropoffStartHour: 18,
+      allowedDropoffEndHour: 18,
+    }),
+    startAt: "2026-03-10T14:00:00.000Z",
+    endAt: "2026-03-10T23:00:00.000Z",
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.reasons, []);
+});
+
+test("availability rules evaluator: inactive rules preserve the raw rental window", () => {
+  const startAt = "2026-03-10T10:00:00.000Z";
+  const endAt = "2026-03-10T12:00:00.000Z";
+  const result = evaluateVehicleAvailabilityRules({
+    rules: baseRules({
+      advanceNoticeHours: 24,
+      bufferBeforeMinutes: 60,
+      bufferAfterMinutes: 45,
+      allowedPickupStartHour: 23,
+      allowedPickupEndHour: 23,
+      allowedDropoffStartHour: 23,
+      allowedDropoffEndHour: 23,
+      isActive: false,
+    }),
+    startAt,
+    endAt,
+    now: new Date("2026-03-10T09:00:00.000Z"),
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.reasons, []);
+  assert.equal(result.normalized?.effectiveStartAt, startAt);
+  assert.equal(result.normalized?.effectiveEndAt, endAt);
 });
 
 test("availability rules enforcement: buffer-expanded window blocks adjacent booking conflicts", async () => {
@@ -132,6 +173,49 @@ test("availability rules enforcement: buffer-expanded window blocks adjacent boo
   );
   assert.equal(result.normalized?.effectiveStartAt, expectedEffectiveStart);
   assert.equal(result.normalized?.effectiveEndAt, expectedEffectiveEnd);
+});
+
+test("availability rules enforcement: inactive rules skip buffer expansion during conflict checks", async () => {
+  const startAt = "2026-03-10T10:00:00.000Z";
+  const endAt = "2026-03-10T12:00:00.000Z";
+
+  const result = await isVehicleUnavailableWithAvailabilityRules(
+    {
+      vehicleId: VEHICLE_ID,
+      startAt,
+      endAt,
+    },
+    {
+      includeBlockouts: true,
+      rulesOverride: baseRules({
+        advanceNoticeHours: 24,
+        bufferBeforeMinutes: 60,
+        bufferAfterMinutes: 30,
+        allowedPickupStartHour: 23,
+        allowedPickupEndHour: 23,
+        allowedDropoffStartHour: 23,
+        allowedDropoffEndHour: 23,
+        isActive: false,
+      }),
+      client: {
+        query: async <T>(text: string, params: unknown[] = []) => {
+          if (/from bookings b join vehicles v on v.id = b.vehicle_id/i.test(text)) {
+            assert.equal(params[1], startAt);
+            assert.equal(params[2], endAt);
+            return { rows: [] as T[], rowCount: 0 };
+          }
+          if (/from blockouts bo/i.test(text)) {
+            return { rows: [] as T[], rowCount: 0 };
+          }
+          return { rows: [] as T[], rowCount: 0 };
+        },
+      },
+    },
+  );
+
+  assert.equal(result.unavailable, false);
+  assert.equal(result.normalized?.effectiveStartAt, startAt);
+  assert.equal(result.normalized?.effectiveEndAt, endAt);
 });
 
 test("availability rules list: excludes vehicles blocked by rule precheck before conflict query", async () => {
