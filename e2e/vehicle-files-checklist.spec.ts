@@ -742,4 +742,100 @@ test.describe("@tour vehicle files and checklist integration", () => {
       }
     }
   });
+
+  test("@tour desktop checklist surfaces attention states", async ({ page }, testInfo: TestInfo) => {
+    test.setTimeout(150_000);
+    test.skip(testInfo.project.name !== "desktop", "Desktop-only verification for stable selectors.");
+
+    await authenticateAdmin(page);
+    await page.goto(`/admin/vehicles/${VEHICLE_ID}?tab=checklist`, { waitUntil: "networkidle" });
+
+    const stamp = Date.now();
+    const missingFileLabel = `Codex Missing File ${stamp}`;
+    const expiredDate = new Date();
+    expiredDate.setDate(expiredDate.getDate() - 1);
+    const expiredValue = expiredDate.toISOString().slice(0, 10);
+    let missingFileItemId: string | null = null;
+    let expiringItemId: string | null = null;
+    let expiringDocumentId: string | null = null;
+
+    try {
+      const missingFileCreate = await browserPost<{
+        ok?: boolean;
+        item?: { id?: string | null };
+      }>(page, `/api/admin/vehicles/${VEHICLE_ID}/checklist`, {
+        label: missingFileLabel,
+        folder: "Paperwork",
+        required: true,
+        allowNotRequired: false,
+      });
+      expect(missingFileCreate.status).toBe(200);
+      missingFileItemId = missingFileCreate.body.item?.id ?? null;
+      expect(missingFileItemId).toBeTruthy();
+
+      const expiringItemCreate = await browserPost<{
+        ok?: boolean;
+        item?: { id?: string | null };
+      }>(page, `/api/admin/vehicles/${VEHICLE_ID}/checklist`, {
+        label: "Insurance Certificate",
+        folder: "Insurance",
+        required: true,
+        allowNotRequired: true,
+        expirationDate: expiredValue,
+      });
+      expect(expiringItemCreate.status).toBe(200);
+      expiringItemId = expiringItemCreate.body.item?.id ?? null;
+      expect(expiringItemId).toBeTruthy();
+
+      const expiringFileCreate = await browserPost<{ ok?: boolean; item?: { id?: string | null } }>(
+        page,
+        `/api/admin/vehicles/${VEHICLE_ID}/documents`,
+        {
+          folder: "Insurance",
+          documentType: "Insurance Certificate",
+          label: `Codex Insurance ${stamp}`,
+          title: `Codex Insurance ${stamp}.pdf`,
+          storageProvider: "UPLOADCARE_FILE_ID",
+          storageKey: "d99d5f6d-efcb-4f4e-8db5-4f5a46ce1c11",
+          checklistItemId: expiringItemId,
+        },
+      );
+      expect(expiringFileCreate.status).toBe(200);
+      expiringDocumentId = expiringFileCreate.body.item?.id ?? null;
+      expect(expiringDocumentId).toBeTruthy();
+
+      await page.reload({ waitUntil: "networkidle" });
+
+      await expect(page.getByTestId("vehicle-checklist-summary")).toBeVisible();
+      await expect(page.getByTestId("vehicle-checklist-summary")).toContainText("Needs attention");
+
+      const missingFileCard = page.getByTestId(`vehicle-checklist-item-${missingFileItemId}`);
+      await expect(missingFileCard).toBeVisible();
+      await expect(missingFileCard.getByTestId(`vehicle-checklist-status-${missingFileItemId}`)).toContainText(
+        "Missing file",
+      );
+
+      const expiringCard = page.getByTestId(`vehicle-checklist-item-${expiringItemId}`);
+      await expect(expiringCard).toBeVisible();
+      await expect(expiringCard.getByTestId(`vehicle-checklist-status-${expiringItemId}`)).toContainText(
+        "Expired",
+      );
+    } finally {
+      if (expiringDocumentId) {
+        await browserPatch(page, `/api/admin/vehicles/${VEHICLE_ID}/documents/${expiringDocumentId}`, {
+          archived: true,
+        }).catch(() => undefined);
+      }
+      if (missingFileItemId) {
+        await browserDelete(page, `/api/admin/vehicles/${VEHICLE_ID}/checklist/${missingFileItemId}`).catch(
+          () => undefined,
+        );
+      }
+      if (expiringItemId) {
+        await browserDelete(page, `/api/admin/vehicles/${VEHICLE_ID}/checklist/${expiringItemId}`).catch(
+          () => undefined,
+        );
+      }
+    }
+  });
 });

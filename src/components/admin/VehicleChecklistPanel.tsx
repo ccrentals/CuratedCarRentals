@@ -46,6 +46,17 @@ type ChecklistDocument = {
   canDownload: boolean;
 };
 
+type ChecklistStatusTone = "default" | "warning" | "danger" | "success";
+
+type ChecklistStatusSummary = {
+  needsAttention: boolean;
+  missingFile: boolean;
+  expirationNeeded: boolean;
+  expired: boolean;
+  expiringSoon: boolean;
+  badges: Array<{ label: string; tone: ChecklistStatusTone }>;
+};
+
 function normalizeFolders(input: string[] | undefined) {
   const cleaned = (input ?? [])
     .map((item) => item.trim())
@@ -72,6 +83,94 @@ function normalizeTemplates(
     .slice(0, 40);
 }
 
+function getTemplateKey(label: string, folder: string) {
+  return `${folder.trim().toLowerCase()}::${label.trim().toLowerCase()}`;
+}
+
+function parseDateOnly(value: string | null) {
+  if (!value) return null;
+  const normalized = value.trim().slice(0, 10);
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(normalized);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+  return new Date(Date.UTC(year, month - 1, day));
+}
+
+function formatExpirationDisplay(value: string | null) {
+  const parsed = parseDateOnly(value);
+  if (!parsed) return value ?? "Not set";
+  return parsed.toISOString().slice(0, 10);
+}
+
+function diffDaysFromToday(dateString: string | null) {
+  const parsed = parseDateOnly(dateString);
+  if (!parsed) return null;
+  const today = new Date();
+  const todayUtc = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+  return Math.floor((parsed.getTime() - todayUtc) / 86_400_000);
+}
+
+function getChecklistStatusSummary(
+  item: ChecklistItem,
+  template: VehicleChecklistTemplateSetting | null,
+): ChecklistStatusSummary {
+  const missingFile = item.required && !item.uploadedDocumentId;
+  const expirationNeeded = Boolean(template?.expiryRequired) && !item.expirationDate;
+  const expirationDiff = diffDaysFromToday(item.expirationDate);
+  const expired = expirationDiff !== null && expirationDiff < 0;
+  const expiringSoon =
+    expirationDiff !== null &&
+    !expired &&
+    template?.expiryWarningDays !== null &&
+    template?.expiryWarningDays !== undefined &&
+    expirationDiff <= template.expiryWarningDays;
+  const needsAttention = missingFile || expirationNeeded || expired || expiringSoon;
+
+  const badges: ChecklistStatusSummary["badges"] = [];
+  if (missingFile) {
+    badges.push({ label: "Missing file", tone: "danger" });
+  }
+  if (expirationNeeded) {
+    badges.push({ label: "Expiration needed", tone: "warning" });
+  }
+  if (expired) {
+    badges.push({ label: "Expired", tone: "danger" });
+  } else if (expiringSoon && expirationDiff !== null) {
+    badges.push({ label: `Expiring in ${expirationDiff}d`, tone: "warning" });
+  }
+  if (!needsAttention) {
+    badges.push({
+      label: item.required ? "Ready" : "Optional",
+      tone: item.required ? "success" : "default",
+    });
+  }
+
+  return {
+    needsAttention,
+    missingFile,
+    expirationNeeded,
+    expired,
+    expiringSoon,
+    badges,
+  };
+}
+
+function getStatusBadgeClass(tone: ChecklistStatusTone) {
+  switch (tone) {
+    case "danger":
+      return "border-rose-300/50 bg-rose-500/15 text-rose-200";
+    case "warning":
+      return "border-amber-300/50 bg-amber-500/15 text-[var(--ccr-required-text)]";
+    case "success":
+      return "border-[var(--ccr-accent)] bg-[color-mix(in_srgb,var(--ccr-accent)_12%,var(--ccr-surface))] text-[var(--ccr-accent-strong)]";
+    default:
+      return "border-[var(--ccr-border)] bg-[var(--ccr-surface)] text-[var(--ccr-text)]";
+  }
+}
+
 export function VehicleChecklistPanel({
   vehicleId,
   folders: configuredFolders,
@@ -87,6 +186,9 @@ export function VehicleChecklistPanel({
     () => templates.filter((template) => template.isActive),
     [templates],
   );
+  const templateMap = useMemo(() => {
+    return new Map(activeTemplates.map((template) => [getTemplateKey(template.label, template.folder), template]));
+  }, [activeTemplates]);
 
   const [items, setItems] = useState<ChecklistItem[]>([]);
   const [documents, setDocuments] = useState<ChecklistDocument[]>([]);
@@ -229,6 +331,40 @@ export function VehicleChecklistPanel({
     () => items.find((item) => item.id === highlightedItemId) ?? null,
     [highlightedItemId, items],
   );
+  const itemStatusMap = useMemo(() => {
+    const next = new Map<string, ChecklistStatusSummary>();
+    for (const item of items) {
+      const template = templateMap.get(getTemplateKey(item.label, item.folder)) ?? null;
+      next.set(item.id, getChecklistStatusSummary(item, template));
+    }
+    return next;
+  }, [items, templateMap]);
+  const checklistSummary = useMemo(() => {
+    let attentionCount = 0;
+    let missingFileCount = 0;
+    let expirationCount = 0;
+    let readyCount = 0;
+
+    for (const item of items) {
+      const status = itemStatusMap.get(item.id);
+      if (!status) continue;
+      if (status.needsAttention) {
+        attentionCount += 1;
+      } else {
+        readyCount += 1;
+      }
+      if (status.missingFile) missingFileCount += 1;
+      if (status.expirationNeeded || status.expired || status.expiringSoon) expirationCount += 1;
+    }
+
+    return {
+      totalCount: items.length,
+      attentionCount,
+      missingFileCount,
+      expirationCount,
+      readyCount,
+    };
+  }, [itemStatusMap, items]);
   const documentsById = useMemo(() => {
     return new Map(documents.map((document) => [document.id, document]));
   }, [documents]);
@@ -677,6 +813,44 @@ export function VehicleChecklistPanel({
           {message}
         </div>
       ) : null}
+
+      {items.length > 0 ? (
+        <div
+          data-testid="vehicle-checklist-summary"
+          className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-5"
+        >
+          <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-4 py-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+              Total items
+            </p>
+            <p className="mt-1 text-2xl font-bold text-[var(--ccr-text)]">{checklistSummary.totalCount}</p>
+          </div>
+          <div className="rounded-xl border border-amber-300/50 bg-amber-500/10 px-4 py-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-required-text)]">
+              Needs attention
+            </p>
+            <p className="mt-1 text-2xl font-bold text-[var(--ccr-text)]">{checklistSummary.attentionCount}</p>
+          </div>
+          <div className="rounded-xl border border-rose-300/40 bg-rose-500/10 px-4 py-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-rose-200">
+              Missing files
+            </p>
+            <p className="mt-1 text-2xl font-bold text-[var(--ccr-text)]">{checklistSummary.missingFileCount}</p>
+          </div>
+          <div className="rounded-xl border border-amber-300/50 bg-amber-500/10 px-4 py-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-required-text)]">
+              Expiry issues
+            </p>
+            <p className="mt-1 text-2xl font-bold text-[var(--ccr-text)]">{checklistSummary.expirationCount}</p>
+          </div>
+          <div className="rounded-xl border border-[var(--ccr-accent)] bg-[color-mix(in_srgb,var(--ccr-accent)_10%,var(--ccr-surface-soft))] px-4 py-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-accent-strong)]">
+              Ready
+            </p>
+            <p className="mt-1 text-2xl font-bold text-[var(--ccr-text)]">{checklistSummary.readyCount}</p>
+          </div>
+        </div>
+      ) : null}
       {highlightedItem ? (
         <div
           data-testid="vehicle-checklist-focus-banner"
@@ -736,6 +910,14 @@ export function VehicleChecklistPanel({
         {items.map((item) => {
           const isHighlighted = highlightedItemId === item.id;
           const isEditing = editingItemId === item.id;
+          const itemStatus = itemStatusMap.get(item.id) ?? {
+            needsAttention: false,
+            missingFile: false,
+            expirationNeeded: false,
+            expired: false,
+            expiringSoon: false,
+            badges: [],
+          };
           const folderDocuments = documents.filter((document) => document.folder === item.folder);
           const selectedAttachmentId = rowAttachmentSelections[item.id] ?? "";
           const attachmentSearch = rowAttachmentSearches[item.id] ?? "";
@@ -789,6 +971,8 @@ export function VehicleChecklistPanel({
               className={`relative rounded-xl border p-4 pr-36 transition-colors sm:pr-44 ${
                 isHighlighted
                   ? "border-[var(--ccr-accent)] bg-[color-mix(in_srgb,var(--ccr-accent)_10%,var(--ccr-surface-soft))] shadow-[0_0_0_1px_var(--ccr-accent)]"
+                  : itemStatus.needsAttention
+                    ? "border-amber-300/50 bg-[color-mix(in_srgb,rgba(245,158,11,0.12)_55%,var(--ccr-surface-soft))]"
                   : "border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)]"
               }`}
             >
@@ -804,10 +988,23 @@ export function VehicleChecklistPanel({
                 </div>
               </div>
 
+              {itemStatus.badges.length > 0 ? (
+                <div className="mt-2 flex flex-wrap gap-2" data-testid={`vehicle-checklist-status-${item.id}`}>
+                  {itemStatus.badges.map((badge) => (
+                    <span
+                      key={`${item.id}-${badge.label}`}
+                      className={`rounded-full border px-2 py-1 text-[11px] font-semibold ${getStatusBadgeClass(badge.tone)}`}
+                    >
+                      {badge.label}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+
               <div className="mt-2 text-xs text-[var(--ccr-muted)]">
                 <p>Created: <DateTimeInline value={item.createdAt} /></p>
                 <p>
-                  Expiration: {item.expirationDate ? item.expirationDate : "Not set"}
+                  Expiration: {item.expirationDate ? formatExpirationDisplay(item.expirationDate) : "Not set"}
                   {item.uploadedDocumentId ? " · Document attached" : ""}
                 </p>
                 {isEditing ? (
