@@ -926,6 +926,164 @@ test.describe("@tour vehicle files and checklist integration", () => {
     }
   });
 
+  test("@tour desktop legacy checklist items can regain template warnings", async ({
+    page,
+  }, testInfo: TestInfo) => {
+    test.setTimeout(150_000);
+    test.skip(testInfo.project.name !== "desktop", "Desktop-only verification for stable selectors.");
+
+    await authenticateAdmin(page);
+    await page.goto(`/admin/vehicles/${VEHICLE_ID}?tab=checklist`, { waitUntil: "networkidle" });
+
+    const stamp = Date.now();
+    const legacyLabel = `Codex Legacy Insurance ${stamp}`;
+    const fileLabel = `Codex Legacy File ${stamp}`;
+    let originalSettings: Record<string, unknown> | null = null;
+    let checklistItemId: string | null = null;
+    let documentId: string | null = null;
+
+    try {
+      const settingsResponse = await browserGet<{
+        settings?: Record<string, unknown> & {
+          vehicleChecklistTemplates?: Array<Record<string, unknown>>;
+        };
+      }>(page, "/api/admin/settings");
+      expect(settingsResponse.status).toBe(200);
+      originalSettings = settingsResponse.body.settings ?? null;
+      expect(originalSettings).toBeTruthy();
+
+      const originalTemplates = Array.isArray(originalSettings?.vehicleChecklistTemplates)
+        ? originalSettings.vehicleChecklistTemplates
+        : [];
+      const normalizedTemplates =
+        originalTemplates.length > 0
+          ? originalTemplates.map((template) => {
+              if (String(template.key ?? "").trim().toLowerCase() !== "insurance-certificate") {
+                return template;
+              }
+              return {
+                ...template,
+                label: "Insurance Certificate",
+                folder: "Insurance",
+                required: true,
+                allowNotRequired: true,
+                expiryRequired: true,
+                expiryWarningDays: 30,
+                isActive: true,
+              };
+            })
+          : [
+              {
+                key: "insurance-certificate",
+                label: "Insurance Certificate",
+                folder: "Insurance",
+                required: true,
+                allowNotRequired: true,
+                expiryRequired: true,
+                expiryWarningDays: 30,
+                isActive: true,
+              },
+            ];
+      const hasInsuranceTemplate = normalizedTemplates.some(
+        (template) =>
+          String(template.key ?? "").trim().toLowerCase() === "insurance-certificate",
+      );
+      const nextTemplates = hasInsuranceTemplate
+        ? normalizedTemplates
+        : [
+            ...normalizedTemplates,
+            {
+              key: "insurance-certificate",
+              label: "Insurance Certificate",
+              folder: "Insurance",
+              required: true,
+              allowNotRequired: true,
+              expiryRequired: true,
+              expiryWarningDays: 30,
+              isActive: true,
+            },
+          ];
+      const settingsPatch = await browserPatch<{
+        ok?: boolean;
+      }>(page, "/api/admin/settings", {
+        settings: {
+          ...originalSettings,
+          vehicleChecklistTemplates: nextTemplates,
+        },
+      });
+      expect(settingsPatch.status).toBe(200);
+      expect(settingsPatch.body.ok).toBe(true);
+
+      const checklistCreate = await browserPost<{
+        ok?: boolean;
+        item?: { id?: string | null };
+      }>(page, `/api/admin/vehicles/${VEHICLE_ID}/checklist`, {
+        label: legacyLabel,
+        folder: "Insurance",
+        required: true,
+        allowNotRequired: true,
+      });
+      expect(checklistCreate.status).toBe(200);
+      checklistItemId = checklistCreate.body.item?.id ?? null;
+      expect(checklistItemId).toBeTruthy();
+
+      const fileCreate = await browserPost<{ ok?: boolean; item?: { id?: string | null } }>(
+        page,
+        `/api/admin/vehicles/${VEHICLE_ID}/documents`,
+        {
+          folder: "Insurance",
+          documentType: "Insurance Certificate",
+          label: fileLabel,
+          title: `${fileLabel}.pdf`,
+          storageProvider: "UPLOADCARE_FILE_ID",
+          storageKey: "ab183c61-9c09-4316-8e44-a213108306f1",
+          checklistItemId,
+        },
+      );
+      expect(fileCreate.status).toBe(200);
+      documentId = fileCreate.body.item?.id ?? null;
+      expect(documentId).toBeTruthy();
+
+      await page.reload({ waitUntil: "networkidle" });
+
+      const checklistCard = page.getByTestId(`vehicle-checklist-item-${checklistItemId}`);
+      await expect(checklistCard).toBeVisible();
+      await expect(
+        checklistCard.getByTestId(`vehicle-checklist-status-${checklistItemId}`),
+      ).toContainText("Ready");
+
+      await checklistCard.getByTestId(`vehicle-checklist-edit-toggle-${checklistItemId}`).click();
+      await checklistCard
+        .getByTestId(`vehicle-checklist-edit-template-${checklistItemId}`)
+        .selectOption("insurance-certificate");
+      await checklistCard.getByTestId(`vehicle-checklist-edit-save-${checklistItemId}`).click();
+
+      await expect(page.getByTestId("vehicle-checklist-message")).toContainText(
+        "Checklist item updated.",
+      );
+      await expect(checklistCard).toContainText("Template linked: Insurance Certificate");
+      await expect(
+        checklistCard.getByTestId(`vehicle-checklist-status-${checklistItemId}`),
+      ).toContainText("Expiration needed");
+    } finally {
+      if (originalSettings) {
+        await browserPatch(page, "/api/admin/settings", {
+          settings: originalSettings,
+        }).catch(() => undefined);
+      }
+      if (documentId) {
+        await browserPatch(page, `/api/admin/vehicles/${VEHICLE_ID}/documents/${documentId}`, {
+          archived: true,
+        }).catch(() => undefined);
+      }
+      if (checklistItemId) {
+        await browserDelete(page, `/api/admin/vehicles/${VEHICLE_ID}/checklist/${checklistItemId}`).catch(
+          () => undefined,
+        );
+      }
+    }
+  });
+
   test("@tour desktop checklist surfaces attention states", async ({ page }, testInfo: TestInfo) => {
     test.setTimeout(150_000);
     test.skip(testInfo.project.name !== "desktop", "Desktop-only verification for stable selectors.");

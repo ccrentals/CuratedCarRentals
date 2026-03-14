@@ -235,6 +235,7 @@ export function VehicleChecklistPanel({
   const [editLabel, setEditLabel] = useState("");
   const [editRequired, setEditRequired] = useState(false);
   const [editExpirationDate, setEditExpirationDate] = useState("");
+  const [editTemplateKey, setEditTemplateKey] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [highlightedItemId, setHighlightedItemId] = useState<string | null>(
@@ -375,14 +376,21 @@ export function VehicleChecklistPanel({
     () => items.find((item) => item.id === highlightedItemId) ?? null,
     [highlightedItemId, items],
   );
-  const itemStatusMap = useMemo(() => {
-    const next = new Map<string, ChecklistStatusSummary>();
+  const itemTemplateMap = useMemo(() => {
+    const next = new Map<string, VehicleChecklistTemplateSetting | null>();
     for (const item of items) {
-      const template = resolveItemTemplate(item, templateKeyMap, templateMap);
-      next.set(item.id, getChecklistStatusSummary(item, template));
+      next.set(item.id, resolveItemTemplate(item, templateKeyMap, templateMap));
     }
     return next;
   }, [items, templateKeyMap, templateMap]);
+  const itemStatusMap = useMemo(() => {
+    const next = new Map<string, ChecklistStatusSummary>();
+    for (const item of items) {
+      const template = itemTemplateMap.get(item.id) ?? null;
+      next.set(item.id, getChecklistStatusSummary(item, template));
+    }
+    return next;
+  }, [itemTemplateMap, items]);
   const checklistSummary = useMemo(() => {
     let attentionCount = 0;
     let missingFileCount = 0;
@@ -669,6 +677,10 @@ export function VehicleChecklistPanel({
     setEditLabel(item.label);
     setEditRequired(item.required);
     setEditExpirationDate(item.expirationDate ?? "");
+    setEditTemplateKey(
+      item.templateKey ??
+        (templateMap.get(getTemplateKey(item.label, item.folder))?.key ?? ""),
+    );
     setError(null);
     setMessage(null);
   }
@@ -678,6 +690,7 @@ export function VehicleChecklistPanel({
     setEditLabel("");
     setEditRequired(false);
     setEditExpirationDate("");
+    setEditTemplateKey("");
   }
 
   async function saveItemEdits(item: ChecklistItem) {
@@ -705,6 +718,7 @@ export function VehicleChecklistPanel({
           label: normalizedLabel,
           required: item.allowNotRequired ? editRequired : true,
           expirationDate: editExpirationDate || null,
+          templateKey: editTemplateKey || null,
           csrfToken,
         }),
       });
@@ -965,6 +979,7 @@ export function VehicleChecklistPanel({
         {items.map((item) => {
           const isHighlighted = highlightedItemId === item.id;
           const isEditing = editingItemId === item.id;
+          const linkedTemplate = itemTemplateMap.get(item.id) ?? null;
           const itemStatus = itemStatusMap.get(item.id) ?? {
             needsAttention: false,
             missingFile: false,
@@ -1040,6 +1055,11 @@ export function VehicleChecklistPanel({
                     </span>
                   ) : null}
                   <p className="text-xs text-[var(--ccr-muted)]">Folder: {item.folder}</p>
+                  {item.templateId || item.templateKey ? (
+                    <p className="text-xs text-[var(--ccr-muted)]">
+                      Template linked: {linkedTemplate?.label ?? item.templateKey ?? "Unknown template"}
+                    </p>
+                  ) : null}
                 </div>
               </div>
 
@@ -1083,6 +1103,28 @@ export function VehicleChecklistPanel({
                           onChange={(event) => setEditExpirationDate(event.target.value)}
                           className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-2 text-xs text-[var(--ccr-text)]"
                         />
+                      </label>
+                      <label className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                        Template
+                        <select
+                          data-testid={`vehicle-checklist-edit-template-${item.id}`}
+                          value={editTemplateKey}
+                          onChange={(event) => setEditTemplateKey(event.target.value)}
+                          className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-2 text-xs text-[var(--ccr-text)]"
+                        >
+                          <option value="">No linked template</option>
+                          {editTemplateKey &&
+                          !activeTemplates.some((template) => template.key === editTemplateKey) ? (
+                            <option value={editTemplateKey}>
+                              Current linked template
+                            </option>
+                          ) : null}
+                          {activeTemplates.map((template) => (
+                            <option key={template.key} value={template.key}>
+                              {template.label} · {template.folder}
+                            </option>
+                          ))}
+                        </select>
                       </label>
                     </div>
                     <div className="mt-3 flex flex-wrap items-center gap-3">

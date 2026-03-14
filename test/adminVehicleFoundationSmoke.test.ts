@@ -174,6 +174,7 @@ test("vehicle checklist foundation smoke: PATCH updates editable fields", async 
           label: string;
           required: boolean;
           expirationDate: string | null;
+          templateId: string | null;
         };
       }
     | null = null;
@@ -194,6 +195,7 @@ test("vehicle checklist foundation smoke: PATCH updates editable fields", async 
     {
       getSession: async () => adminSession(),
       requireCsrfCheck: async () => true,
+      resolveTemplateId: async () => null,
       getItem: async () => ({
         id: itemId,
         vehicle_id: VEHICLE_ID,
@@ -245,6 +247,7 @@ test("vehicle checklist foundation smoke: PATCH updates editable fields", async 
       label: "Updated Insurance Certificate",
       required: false,
       expirationDate: "2026-11-15",
+      templateId: null,
     },
   });
 
@@ -256,6 +259,99 @@ test("vehicle checklist foundation smoke: PATCH updates editable fields", async 
   assert.equal(payload.item?.label, "Updated Insurance Certificate");
   assert.equal(payload.item?.required, false);
   assert.equal(payload.item?.expirationDate, "2026-11-15");
+});
+
+test("vehicle checklist foundation smoke: PATCH updates template identity", async () => {
+  let updateArgs:
+    | {
+        vehicleId: string;
+        itemId: string;
+        input: {
+          label: string;
+          required: boolean;
+          expirationDate: string | null;
+          templateId: string | null;
+        };
+      }
+    | null = null;
+
+  const itemId = "55555555-5555-4555-8555-555555555555";
+  const response = await handleAdminVehicleChecklistItemPatch(
+    new Request(`http://localhost/api/admin/vehicles/${VEHICLE_ID}/checklist/${itemId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        templateKey: "insurance-certificate",
+        csrfToken: "test-token",
+      }),
+    }),
+    { params: Promise.resolve({ id: VEHICLE_ID, itemId }) },
+    {
+      getSession: async () => adminSession(),
+      requireCsrfCheck: async () => true,
+      resolveTemplateId: async () => "66666666-6666-4666-8666-666666666666",
+      getItem: async () => ({
+        id: itemId,
+        vehicle_id: VEHICLE_ID,
+        label: "Legacy Insurance",
+        folder: "Insurance",
+        required: true,
+        allow_not_required: true,
+        template_id: null,
+        template_key: null,
+        template_expiry_required: null,
+        template_expiry_warning_days: null,
+        uploaded_document_id: null,
+        uploaded_document_title: null,
+        uploaded_document_label: null,
+        expiration_date: null,
+        created_at: "2026-03-13T00:00:00.000Z",
+        updated_at: "2026-03-13T00:00:00.000Z",
+      }),
+      updateItem: async (vehicleId, updatedItemId, input) => {
+        updateArgs = { vehicleId, itemId: updatedItemId, input };
+        return {
+          id: updatedItemId,
+          vehicle_id: vehicleId,
+          label: "Legacy Insurance",
+          folder: "Insurance",
+          required: true,
+          allow_not_required: true,
+          template_id: input.templateId,
+          template_key: "insurance-certificate",
+          template_expiry_required: true,
+          template_expiry_warning_days: 30,
+          uploaded_document_id: null,
+          uploaded_document_title: null,
+          uploaded_document_label: null,
+          expiration_date: null,
+          created_at: "2026-03-13T00:00:00.000Z",
+          updated_at: "2026-03-14T00:00:00.000Z",
+        };
+      },
+      deleteItem: async () => false,
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(updateArgs, {
+    vehicleId: VEHICLE_ID,
+    itemId,
+    input: {
+      label: "Legacy Insurance",
+      required: true,
+      expirationDate: null,
+      templateId: "66666666-6666-4666-8666-666666666666",
+    },
+  });
+
+  const payload = (await response.json()) as {
+    ok?: boolean;
+    item?: { templateId?: string | null; templateKey?: string | null };
+  };
+  assert.equal(payload.ok, true);
+  assert.equal(payload.item?.templateId, "66666666-6666-4666-8666-666666666666");
+  assert.equal(payload.item?.templateKey, "insurance-certificate");
 });
 
 test("vehicle checklist foundation smoke: POST resolves template identity", async () => {
