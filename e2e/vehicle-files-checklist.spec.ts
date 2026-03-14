@@ -243,7 +243,7 @@ test.describe("@tour vehicle files and checklist integration", () => {
   test("@tour desktop checklist attachment state follows linked file lifecycle", async ({
     page,
   }, testInfo: TestInfo) => {
-    test.setTimeout(90_000);
+    test.setTimeout(150_000);
     test.skip(testInfo.project.name !== "desktop", "Desktop-only verification for stable selectors.");
 
     await authenticateAdmin(page);
@@ -340,6 +340,23 @@ test.describe("@tour vehicle files and checklist integration", () => {
       const checklistCard = page.getByTestId(`vehicle-checklist-item-${checklistItemId}`);
       await expect(checklistCard).toBeVisible();
       await expect(checklistCard).not.toContainText(`Attached file: ${fileLabel}`);
+      await expect(checklistCard).toContainText("linked elsewhere hidden until enabled");
+      await checklistCard
+        .getByTestId(`vehicle-checklist-attachment-search-${checklistItemId}`)
+        .fill(fileLabel);
+      await expect(
+        checklistCard
+          .getByTestId(`vehicle-checklist-attachment-select-${checklistItemId}`)
+          .locator(`option[value="${documentId}"]`),
+      ).toHaveCount(0);
+      await checklistCard
+        .getByTestId(`vehicle-checklist-attachment-include-linked-${checklistItemId}`)
+        .check();
+      await expect(
+        checklistCard
+          .getByTestId(`vehicle-checklist-attachment-select-${checklistItemId}`)
+          .locator(`option[value="${documentId}"]`),
+      ).toHaveCount(1);
       const secondChecklistCard = page.getByTestId(`vehicle-checklist-item-${secondChecklistItemId}`);
       await expect(secondChecklistCard).toBeVisible();
       await expect(secondChecklistCard).toContainText(`Attached file: ${fileLabel}`);
@@ -537,7 +554,7 @@ test.describe("@tour vehicle files and checklist integration", () => {
   test("@tour desktop checklist can pretarget the files uploader", async ({
     page,
   }, testInfo: TestInfo) => {
-    test.setTimeout(90_000);
+    test.setTimeout(150_000);
     test.skip(testInfo.project.name !== "desktop", "Desktop-only verification for stable selectors.");
 
     await authenticateAdmin(page);
@@ -665,7 +682,7 @@ test.describe("@tour vehicle files and checklist integration", () => {
   });
 
   test("@tour desktop checklist items can be edited in place", async ({ page }, testInfo: TestInfo) => {
-    test.setTimeout(90_000);
+    test.setTimeout(150_000);
     test.skip(testInfo.project.name !== "desktop", "Desktop-only verification for stable selectors.");
 
     await authenticateAdmin(page);

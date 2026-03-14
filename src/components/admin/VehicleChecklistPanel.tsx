@@ -106,6 +106,10 @@ export function VehicleChecklistPanel({
   const [initialScrollHandled, setInitialScrollHandled] = useState(false);
   const [initialUrlFocusHandled, setInitialUrlFocusHandled] = useState(false);
   const [rowAttachmentSelections, setRowAttachmentSelections] = useState<Record<string, string>>({});
+  const [rowAttachmentSearches, setRowAttachmentSearches] = useState<Record<string, string>>({});
+  const [rowAttachmentIncludeLinked, setRowAttachmentIncludeLinked] = useState<Record<string, boolean>>(
+    {},
+  );
   const itemRefs = useRef<Record<string, HTMLElement | null>>({});
 
   const [label, setLabel] = useState("");
@@ -734,6 +738,46 @@ export function VehicleChecklistPanel({
           const isEditing = editingItemId === item.id;
           const folderDocuments = documents.filter((document) => document.folder === item.folder);
           const selectedAttachmentId = rowAttachmentSelections[item.id] ?? "";
+          const attachmentSearch = rowAttachmentSearches[item.id] ?? "";
+          const includeLinkedFiles = rowAttachmentIncludeLinked[item.id] ?? false;
+          const normalizedAttachmentSearch = attachmentSearch.trim().toLowerCase();
+          const availableDocuments = folderDocuments.filter(
+            (document) => !document.checklistItemId || document.checklistItemId === item.id,
+          );
+          const hiddenLinkedDocuments = folderDocuments.filter(
+            (document) => document.checklistItemId && document.checklistItemId !== item.id,
+          );
+          const filteredFolderDocuments = folderDocuments.filter((document) => {
+            if (
+              !includeLinkedFiles &&
+              document.checklistItemId &&
+              document.checklistItemId !== item.id
+            ) {
+              return false;
+            }
+
+            if (!normalizedAttachmentSearch) return true;
+
+            const haystack = [
+              getVehicleDocumentDisplayLabel(document),
+              document.title,
+              document.documentType ?? "",
+              document.checklistItemLabel ?? "",
+            ]
+              .join(" ")
+              .toLowerCase();
+            return haystack.includes(normalizedAttachmentSearch);
+          });
+          const selectedAttachmentDocument =
+            selectedAttachmentId && documentsById.get(selectedAttachmentId)
+              ? documentsById.get(selectedAttachmentId)
+              : null;
+          const attachmentOptions =
+            selectedAttachmentDocument &&
+            selectedAttachmentDocument.folder === item.folder &&
+            !filteredFolderDocuments.some((document) => document.id === selectedAttachmentDocument.id)
+              ? [selectedAttachmentDocument, ...filteredFolderDocuments]
+              : filteredFolderDocuments;
           return (
             <article
               key={item.id}
@@ -879,6 +923,38 @@ export function VehicleChecklistPanel({
                   </div>
                 ) : null}
                 <div className="mt-3 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3">
+                  <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+                    <label className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                      Search files
+                      <input
+                        data-testid={`vehicle-checklist-attachment-search-${item.id}`}
+                        value={attachmentSearch}
+                        onChange={(event) =>
+                          setRowAttachmentSearches((current) => ({
+                            ...current,
+                            [item.id]: event.target.value,
+                          }))
+                        }
+                        placeholder="Search label, title, or type"
+                        className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-2 text-xs text-[var(--ccr-text)]"
+                      />
+                    </label>
+                    <label className="inline-flex min-h-9 items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                      <input
+                        data-testid={`vehicle-checklist-attachment-include-linked-${item.id}`}
+                        type="checkbox"
+                        checked={includeLinkedFiles}
+                        onChange={(event) =>
+                          setRowAttachmentIncludeLinked((current) => ({
+                            ...current,
+                            [item.id]: event.target.checked,
+                          }))
+                        }
+                        className="h-4 w-4 rounded border border-[var(--ccr-border)] bg-transparent accent-[var(--ccr-accent)]"
+                      />
+                      Show files linked elsewhere
+                    </label>
+                  </div>
                   <label className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
                     Attachment
                     <select
@@ -893,7 +969,7 @@ export function VehicleChecklistPanel({
                       className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-2 text-xs text-[var(--ccr-text)]"
                     >
                       <option value="">No attachment</option>
-                      {folderDocuments.map((document) => (
+                      {attachmentOptions.map((document) => (
                         <option key={document.id} value={document.id}>
                           {getVehicleDocumentDisplayLabel(document)}
                           {document.documentType ? ` · ${document.documentType}` : ""}
@@ -935,7 +1011,7 @@ export function VehicleChecklistPanel({
                   </div>
                   <p className="mt-2 text-[11px] text-[var(--ccr-muted)]">
                     {folderDocuments.length > 0
-                      ? "Choose any saved file in this folder to attach or replace the current attachment."
+                      ? `${attachmentOptions.length} file(s) shown in ${item.folder}. ${availableDocuments.length} available by default.${hiddenLinkedDocuments.length > 0 ? ` ${hiddenLinkedDocuments.length} linked elsewhere hidden until enabled.` : ""}`
                       : "No saved files exist in this folder yet."}
                   </p>
                 </div>
