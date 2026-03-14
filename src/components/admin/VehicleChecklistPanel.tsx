@@ -1355,7 +1355,7 @@ export function VehicleChecklistPanel({
               }}
               data-testid={`vehicle-checklist-item-${item.id}`}
               data-highlighted={isHighlighted ? "true" : "false"}
-              className={`relative rounded-xl border p-4 pr-4 transition-colors md:pr-40 xl:pr-44 ${
+              className={`rounded-xl border p-4 transition-colors ${
                 isHighlighted
                   ? "border-[var(--ccr-accent)] bg-[color-mix(in_srgb,var(--ccr-accent)_10%,var(--ccr-surface-soft))] shadow-[0_0_0_1px_var(--ccr-accent)]"
                   : itemStatus.needsAttention
@@ -1364,6 +1364,29 @@ export function VehicleChecklistPanel({
               }`}
             >
               <div className="max-w-full">
+                <div className="mb-3 flex flex-wrap justify-end gap-2">
+                  {item.required ? (
+                    <span className="rounded-full border border-amber-300/50 bg-amber-500/15 px-2 py-1 text-[11px] font-semibold text-[var(--ccr-required-text)]">
+                      Required
+                    </span>
+                  ) : null}
+                  <button
+                    type="button"
+                    data-testid={`vehicle-checklist-edit-toggle-${item.id}`}
+                    onClick={() => (isEditing ? cancelEditing() : startEditing(item))}
+                    className="rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-text)]"
+                  >
+                    {isEditing ? "Cancel" : "Edit"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleDelete(item.id)}
+                    className="rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-accent-strong)]"
+                  >
+                    Delete
+                  </button>
+                </div>
+
                 {isEditing ? (
                   <>
                     <div className="flex flex-wrap items-start gap-2">
@@ -1746,28 +1769,6 @@ export function VehicleChecklistPanel({
                 )}
               </div>
 
-              <div className="absolute right-4 top-4 flex max-w-[12rem] flex-wrap justify-end gap-2">
-                {item.required ? (
-                  <span className="rounded-full border border-amber-300/50 bg-amber-500/15 px-2 py-1 text-[11px] font-semibold text-[var(--ccr-required-text)]">
-                    Required
-                  </span>
-                ) : null}
-                <button
-                  type="button"
-                  data-testid={`vehicle-checklist-edit-toggle-${item.id}`}
-                  onClick={() => (isEditing ? cancelEditing() : startEditing(item))}
-                  className="rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-text)]"
-                >
-                  {isEditing ? "Cancel" : "Edit"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void handleDelete(item.id)}
-                  className="rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-accent-strong)]"
-                >
-                  Delete
-                </button>
-              </div>
             </article>
           );
         })}
