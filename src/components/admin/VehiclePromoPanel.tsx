@@ -2,6 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import { PaginationSummary } from "@/components/admin/PaginationSummaryNav";
+import { SortableTh } from "@/components/admin/SortableTh";
+import type { SortState } from "@/components/admin/tableSort";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 import { formatJmd } from "@/lib/money";
 
@@ -45,6 +48,8 @@ type VehiclePromoPanelProps = {
   vehicleId: string;
   vehicleLabel: string;
 };
+
+const PROMOS_PAGE_SIZE = 5;
 
 function normalizePromoCode(value: string) {
   return value.trim().replace(/\s+/g, "").toUpperCase();
@@ -116,6 +121,8 @@ export function VehiclePromoPanel({ vehicleId, vehicleLabel }: VehiclePromoPanel
   const [newDiscountValue, setNewDiscountValue] = useState("");
 
   const [selectedPromoId, setSelectedPromoId] = useState("");
+  const [sort, setSort] = useState<SortState>({ sortBy: "code", sortDir: "asc" });
+  const [page, setPage] = useState(1);
 
   const scopedPromos = useMemo(
     () => promos.filter((promo) => isScopedToVehicle(promo, vehicleId)),
@@ -125,6 +132,48 @@ export function VehiclePromoPanel({ vehicleId, vehicleLabel }: VehiclePromoPanel
     () => promos.filter((promo) => !isScopedToVehicle(promo, vehicleId)),
     [promos, vehicleId],
   );
+  const sortedScopedPromos = useMemo(() => {
+    const direction = sort.sortDir === "asc" ? 1 : -1;
+    return [...scopedPromos].sort((left, right) => {
+      switch (sort.sortBy) {
+        case "discount":
+          return (left.discount_value - right.discount_value) * direction;
+        case "appliesTo":
+          return (
+            (left.apply_scope === "DAYS_TOTAL" ? "Days total only" : "Overall total").localeCompare(
+              right.apply_scope === "DAYS_TOTAL" ? "Days total only" : "Overall total",
+              undefined,
+              { sensitivity: "base" },
+            ) * direction
+          );
+        case "status":
+          return (Number(left.is_active) - Number(right.is_active)) * direction;
+        case "code":
+        default:
+          return left.code.localeCompare(right.code, undefined, { sensitivity: "base" }) * direction;
+      }
+    });
+  }, [scopedPromos, sort]);
+
+  const totalPages = Math.max(1, Math.ceil(sortedScopedPromos.length / PROMOS_PAGE_SIZE));
+
+  useEffect(() => {
+    setPage(1);
+  }, [vehicleId]);
+
+  useEffect(() => {
+    setPage((current) => Math.min(current, totalPages));
+  }, [totalPages]);
+
+  const visibleScopedPromos = useMemo(() => {
+    const startIndex = (page - 1) * PROMOS_PAGE_SIZE;
+    return sortedScopedPromos.slice(startIndex, startIndex + PROMOS_PAGE_SIZE);
+  }, [page, sortedScopedPromos]);
+
+  const from = sortedScopedPromos.length === 0 ? 0 : (page - 1) * PROMOS_PAGE_SIZE + 1;
+  const to = sortedScopedPromos.length === 0 ? 0 : from + visibleScopedPromos.length - 1;
+  const hasPrev = page > 1;
+  const hasNext = page < totalPages;
 
   async function loadPromos() {
     setLoading(true);
@@ -440,58 +489,145 @@ export function VehiclePromoPanel({ vehicleId, vehicleLabel }: VehiclePromoPanel
             No promo codes currently scoped to this vehicle.
           </div>
         ) : (
-          <table className="min-w-full text-left text-sm">
-            <thead className="border-b border-[var(--ccr-border)] text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
-              <tr>
-                <th className="px-3 py-2">Code</th>
-                <th className="px-3 py-2">Discount</th>
-                <th className="px-3 py-2">Applies To</th>
-                <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {scopedPromos.map((promo) => (
-                <tr key={promo.id} className="border-b border-[var(--ccr-border)] last:border-b-0">
-                  <td className="px-3 py-2">
-                    <p className="font-semibold text-[var(--ccr-text)]">{promo.code}</p>
-                    <p className="mt-1 font-mono text-[10px] text-[var(--ccr-muted)]">{promo.public_id}</p>
-                  </td>
-                  <td className="px-3 py-2 text-[var(--ccr-text)]">
-                    {promo.discount_type === "PERCENT"
-                      ? `${promo.discount_value}%`
-                      : formatJmd(promo.discount_value)}
-                  </td>
-                  <td className="px-3 py-2 text-[var(--ccr-muted)]">
-                    {promo.apply_scope === "DAYS_TOTAL" ? "Days total only" : "Overall total"}
-                  </td>
-                  <td className="px-3 py-2 text-[var(--ccr-text)]">
-                    {promo.is_active ? "Active" : "Inactive"}
-                  </td>
-                  <td className="px-3 py-2">
-                    <div className="flex justify-end gap-2">
-                      <button
-                        type="button"
-                        onClick={() => void toggleActive(promo)}
-                        disabled={saving}
-                        className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
-                      >
-                        {promo.is_active ? "Deactivate" : "Activate"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void removePromoFromVehicle(promo.id)}
-                        disabled={saving}
-                        className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  </td>
+          <>
+            <table className="min-w-full text-left text-sm">
+              <thead className="border-b border-[var(--ccr-border)] text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
+                <tr>
+                  <SortableTh
+                    label="Code"
+                    columnKey="code"
+                    sort={sort}
+                    onChange={(next) => {
+                      setSort(next);
+                      setPage(1);
+                    }}
+                    className="px-3 py-2"
+                    defaultDirection="asc"
+                  />
+                  <SortableTh
+                    label="Discount"
+                    columnKey="discount"
+                    sort={sort}
+                    onChange={(next) => {
+                      setSort(next);
+                      setPage(1);
+                    }}
+                    className="px-3 py-2"
+                    defaultDirection="desc"
+                  />
+                  <SortableTh
+                    label="Applies To"
+                    columnKey="appliesTo"
+                    sort={sort}
+                    onChange={(next) => {
+                      setSort(next);
+                      setPage(1);
+                    }}
+                    className="px-3 py-2"
+                    defaultDirection="asc"
+                  />
+                  <SortableTh
+                    label="Status"
+                    columnKey="status"
+                    sort={sort}
+                    onChange={(next) => {
+                      setSort(next);
+                      setPage(1);
+                    }}
+                    className="px-3 py-2"
+                    defaultDirection="desc"
+                  />
+                  <th className="px-3 py-2 text-right">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {visibleScopedPromos.map((promo) => (
+                  <tr
+                    key={promo.id}
+                    className="border-b border-[var(--ccr-border)] last:border-b-0"
+                    data-testid="vehicle-promo-row"
+                    data-promo-code={promo.code}
+                  >
+                    <td className="px-3 py-2">
+                      <p className="font-semibold text-[var(--ccr-text)]">{promo.code}</p>
+                      <p className="mt-1 font-mono text-[10px] text-[var(--ccr-muted)]">{promo.public_id}</p>
+                    </td>
+                    <td className="px-3 py-2 text-[var(--ccr-text)]">
+                      {promo.discount_type === "PERCENT"
+                        ? `${promo.discount_value}%`
+                        : formatJmd(promo.discount_value)}
+                    </td>
+                    <td className="px-3 py-2 text-[var(--ccr-muted)]">
+                      {promo.apply_scope === "DAYS_TOTAL" ? "Days total only" : "Overall total"}
+                    </td>
+                    <td className="px-3 py-2 text-[var(--ccr-text)]">
+                      {promo.is_active ? "Active" : "Inactive"}
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void toggleActive(promo)}
+                          disabled={saving}
+                          className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
+                        >
+                          {promo.is_active ? "Deactivate" : "Activate"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void removePromoFromVehicle(promo.id)}
+                          disabled={saving}
+                          className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="border-t border-[var(--ccr-border)] px-3 py-3">
+              <PaginationSummary
+                from={from}
+                to={to}
+                totalCount={sortedScopedPromos.length}
+                page={page}
+                totalPages={totalPages}
+                rightContent={
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPage((current) => Math.max(1, current - 1))}
+                      disabled={!hasPrev}
+                      className={`rounded-lg border px-2 py-1 font-semibold ${
+                        hasPrev
+                          ? "border-[var(--ccr-border)] text-[var(--ccr-text)]"
+                          : "cursor-not-allowed border-[var(--ccr-border)]/40 text-[var(--ccr-muted)]/60"
+                      }`}
+                    >
+                      Prev
+                    </button>
+                    <span className="font-semibold text-[var(--ccr-text)]">
+                      Page {page} of {totalPages}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                      disabled={!hasNext}
+                      className={`rounded-lg border px-2 py-1 font-semibold ${
+                        hasNext
+                          ? "border-[var(--ccr-border)] text-[var(--ccr-text)]"
+                          : "cursor-not-allowed border-[var(--ccr-border)]/40 text-[var(--ccr-muted)]/60"
+                      }`}
+                    >
+                      Next
+                    </button>
+                  </div>
+                }
+              />
+            </div>
+          </>
         )}
       </div>
 
