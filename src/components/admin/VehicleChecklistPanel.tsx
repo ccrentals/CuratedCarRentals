@@ -1363,7 +1363,7 @@ export function VehicleChecklistPanel({
                     : "border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)]"
               }`}
             >
-              <div className="max-w-full xl:max-w-[calc(100%-11rem)]">
+              <div className="max-w-full">
                 <div className="flex flex-wrap items-start gap-2">
                   <div>
                     <p className="font-semibold text-[var(--ccr-text)] break-words">{item.label}</p>
@@ -1555,8 +1555,8 @@ export function VehicleChecklistPanel({
                     </div>
                   </div>
                 ) : (
-                  <div className="mt-3 grid gap-4 xl:grid-cols-[minmax(0,18rem)_minmax(22rem,1fr)] xl:items-start xl:gap-6">
-                    <div className="min-w-0 space-y-3 text-xs text-[var(--ccr-muted)]">
+                  <div className="mt-3 grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(28rem,36rem)] xl:items-start xl:gap-8">
+                    <div className="min-w-0 space-y-3 text-xs text-[var(--ccr-muted)] xl:max-w-[32rem]">
                       <div>
                         <p>Created: <DateTimeInline value={item.createdAt} /></p>
                         <p>
@@ -1617,7 +1617,7 @@ export function VehicleChecklistPanel({
                       ) : null}
                     </div>
 
-                    <div className="min-w-0 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3">
+                    <div className="min-w-0 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3 xl:justify-self-end xl:w-full xl:max-w-[36rem]">
                       <div className="space-y-2">
                         <label className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
                           Search files
