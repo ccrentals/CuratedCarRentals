@@ -1555,8 +1555,8 @@ export function VehicleChecklistPanel({
                     </div>
                   </div>
                 ) : (
-                  <div className="mt-3 grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(28rem,36rem)] xl:items-start xl:gap-8">
-                    <div className="min-w-0 space-y-3 text-xs text-[var(--ccr-muted)] xl:max-w-[32rem]">
+                  <div className="mt-3 grid gap-4 xl:grid-cols-[minmax(18rem,22rem)_minmax(0,1fr)] xl:items-start xl:gap-6">
+                    <div className="min-w-0 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3 text-xs text-[var(--ccr-muted)]">
                       <div>
                         <p>Created: <DateTimeInline value={item.createdAt} /></p>
                         <p>
@@ -1565,7 +1565,7 @@ export function VehicleChecklistPanel({
                         </p>
                       </div>
                       {item.uploadedDocumentId ? (
-                        <div className="space-y-2">
+                        <div className="mt-3 space-y-2">
                           <p>Attached file: {item.uploadedDocumentDisplayLabel ?? "Linked vehicle file"}</p>
                           <div className="flex flex-wrap gap-2">
                             <button
@@ -1574,50 +1574,50 @@ export function VehicleChecklistPanel({
                               onClick={() =>
                                 openPreviewForItem(item)
                               }
-                              className="inline-flex min-h-9 items-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-text)]"
+                              className="inline-flex min-h-9 items-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-text)]"
                             >
                               Preview file
                             </button>
                             <a
                               data-testid="vehicle-checklist-download-file"
                               href={`/api/admin/vehicles/${vehicleId}/documents/${item.uploadedDocumentId}/download`}
-                              className="inline-flex min-h-9 items-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-text)]"
+                              className="inline-flex min-h-9 items-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-text)]"
                             >
                               Download file
                             </a>
                             <Link
                               data-testid="vehicle-checklist-manage-file"
                               href={`/admin/vehicles/${vehicleId}?tab=files&folder=${encodeURIComponent(item.folder)}&documentId=${encodeURIComponent(item.uploadedDocumentId)}`}
-                              className="inline-flex min-h-9 items-center rounded-lg border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-accent-strong)]"
+                              className="inline-flex min-h-9 items-center rounded-lg border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-accent-strong)]"
                             >
                               Manage in Files
                             </Link>
                             <Link
                               data-testid="vehicle-checklist-replace-file"
                               href={`/admin/vehicles/${vehicleId}?tab=files&folder=${encodeURIComponent(item.folder)}&attachChecklistItemId=${encodeURIComponent(item.id)}`}
-                              className="inline-flex min-h-9 items-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-text)]"
+                              className="inline-flex min-h-9 items-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-text)]"
                             >
                               Replace in Files
                             </Link>
                           </div>
                         </div>
                       ) : (
-                        <div>
+                        <div className="mt-3">
                           <Link
                             data-testid="vehicle-checklist-add-file"
                             href={`/admin/vehicles/${vehicleId}?tab=files&folder=${encodeURIComponent(item.folder)}&attachChecklistItemId=${encodeURIComponent(item.id)}`}
-                            className="inline-flex min-h-9 items-center rounded-lg border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-accent-strong)]"
+                            className="inline-flex min-h-9 items-center rounded-lg border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-accent-strong)]"
                           >
                             Add file in Files
                           </Link>
                         </div>
                       )}
                       {item.required && !item.allowNotRequired ? (
-                        <p>This item should remain required.</p>
+                        <p className="mt-3">This item should remain required.</p>
                       ) : null}
                     </div>
 
-                    <div className="min-w-0 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3 xl:justify-self-end xl:w-full xl:max-w-[36rem]">
+                    <div className="min-w-0 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3">
                       <div className="space-y-2">
                         <label className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
                           Search files
