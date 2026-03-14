@@ -21,6 +21,7 @@ type VehicleFilesPanelProps = {
   documentTypes?: string[];
   initialFolder?: string;
   initialDocumentId?: string;
+  initialChecklistItemId?: string;
 };
 
 type VehicleDocument = {
@@ -140,6 +141,7 @@ export function VehicleFilesPanel({
   documentTypes: configuredDocumentTypes,
   initialFolder,
   initialDocumentId,
+  initialChecklistItemId,
 }: VehicleFilesPanelProps) {
   const publicKey = process.env.NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY ?? "";
   const folders = useMemo(() => normalizeFolders(configuredFolders), [configuredFolders]);
@@ -165,6 +167,9 @@ export function VehicleFilesPanel({
   const [label, setLabel] = useState("");
   const [title, setTitle] = useState("");
   const [selectedChecklistItemId, setSelectedChecklistItemId] = useState("");
+  const [focusedChecklistUploadItemId, setFocusedChecklistUploadItemId] = useState<string | null>(
+    initialChecklistItemId?.trim() || null,
+  );
   const [rowChecklistSelections, setRowChecklistSelections] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [linkSavingDocId, setLinkSavingDocId] = useState<string | null>(null);
@@ -172,6 +177,8 @@ export function VehicleFilesPanel({
   const [previewItem, setPreviewItem] = useState<VehicleDocument | null>(null);
   const [initialPreviewHandled, setInitialPreviewHandled] = useState(false);
   const [initialScrollHandled, setInitialScrollHandled] = useState(false);
+  const [initialChecklistTargetHandled, setInitialChecklistTargetHandled] = useState(false);
+  const [initialChecklistTargetUrlHandled, setInitialChecklistTargetUrlHandled] = useState(false);
   const [highlightedDocumentId, setHighlightedDocumentId] = useState<string | null>(
     initialDocumentId?.trim() || null,
   );
@@ -307,6 +314,12 @@ export function VehicleFilesPanel({
     setHighlightedDocumentId(initialDocumentId?.trim() || null);
   }, [initialDocumentId]);
 
+  useEffect(() => {
+    setFocusedChecklistUploadItemId(initialChecklistItemId?.trim() || null);
+    setInitialChecklistTargetHandled(false);
+    setInitialChecklistTargetUrlHandled(false);
+  }, [initialChecklistItemId]);
+
   const isCustomDocumentType = !documentTypes.includes(documentType);
   const selectedDocumentTypeValue = isCustomDocumentType ? CUSTOM_DOCUMENT_TYPE_VALUE : documentType;
   const availableChecklistItems = useMemo(
@@ -321,6 +334,13 @@ export function VehicleFilesPanel({
     () => availableChecklistItems.find((item) => item.id === selectedChecklistItemId) ?? null,
     [availableChecklistItems, selectedChecklistItemId],
   );
+  const focusedChecklistUploadItem = useMemo(
+    () =>
+      focusedChecklistUploadItemId
+        ? availableChecklistItems.find((item) => item.id === focusedChecklistUploadItemId) ?? null
+        : null,
+    [availableChecklistItems, focusedChecklistUploadItemId],
+  );
 
   useEffect(() => {
     if (
@@ -330,6 +350,43 @@ export function VehicleFilesPanel({
       setSelectedChecklistItemId("");
     }
   }, [availableChecklistItems, selectedChecklistItemId]);
+
+  useEffect(() => {
+    if (!initialChecklistItemId || initialChecklistTargetHandled) return;
+    const matchedItem = availableChecklistItems.find((item) => item.id === initialChecklistItemId);
+    if (matchedItem) {
+      setSelectedChecklistItemId(matchedItem.id);
+      setFocusedChecklistUploadItemId(matchedItem.id);
+      setInitialChecklistTargetHandled(true);
+      return;
+    }
+    if (checklistItems.length > 0) {
+      setInitialChecklistTargetHandled(true);
+    }
+  }, [
+    availableChecklistItems,
+    checklistItems.length,
+    initialChecklistItemId,
+    initialChecklistTargetHandled,
+  ]);
+
+  useEffect(() => {
+    const shouldClearUrl =
+      typeof window !== "undefined" &&
+      initialChecklistItemId &&
+      initialChecklistTargetHandled &&
+      !initialChecklistTargetUrlHandled;
+    if (!shouldClearUrl) return;
+
+    const nextUrl = new URL(window.location.href);
+    nextUrl.searchParams.delete("attachChecklistItemId");
+    window.history.replaceState(window.history.state, "", nextUrl.toString());
+    setInitialChecklistTargetUrlHandled(true);
+  }, [
+    initialChecklistItemId,
+    initialChecklistTargetHandled,
+    initialChecklistTargetUrlHandled,
+  ]);
 
   useEffect(() => {
     const nextSelections: Record<string, string> = {};
@@ -475,6 +532,7 @@ export function VehicleFilesPanel({
       setLabel("");
       setTitle("");
       setSelectedChecklistItemId("");
+      setFocusedChecklistUploadItemId(null);
       setDocumentType(documentTypes[0] ?? "General");
       setMessage("File added.");
       await Promise.all([loadDocuments(), loadChecklistItems()]);
@@ -562,6 +620,11 @@ export function VehicleFilesPanel({
     setHighlightedDocumentId(null);
   };
 
+  const clearUploadTarget = () => {
+    setFocusedChecklistUploadItemId(null);
+    setSelectedChecklistItemId("");
+  };
+
   return (
     <section
       data-testid="vehicle-files-panel"
@@ -647,7 +710,13 @@ export function VehicleFilesPanel({
             <select
               data-testid="vehicle-files-checklist-link"
               value={selectedChecklistItemId}
-              onChange={(event) => setSelectedChecklistItemId(event.target.value)}
+              onChange={(event) => {
+                const nextValue = event.target.value;
+                setSelectedChecklistItemId(nextValue);
+                if (focusedChecklistUploadItemId !== null) {
+                  setFocusedChecklistUploadItemId(nextValue || null);
+                }
+              }}
               className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)] disabled:opacity-60"
               disabled={availableChecklistItems.length < 1}
             >
@@ -710,6 +779,30 @@ export function VehicleFilesPanel({
           className="mt-3 rounded-xl border border-[var(--ccr-accent)] bg-[color-mix(in_srgb,var(--ccr-accent)_10%,var(--ccr-surface-soft))] px-4 py-3 text-xs font-semibold text-[var(--ccr-accent-strong)]"
         >
           {message}
+        </div>
+      ) : null}
+      {focusedChecklistUploadItem ? (
+        <div
+          data-testid="vehicle-files-upload-target-banner"
+          className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--ccr-accent)] bg-[color-mix(in_srgb,var(--ccr-accent)_10%,var(--ccr-surface-soft))] px-4 py-3"
+        >
+          <div>
+            <p className="text-sm font-semibold text-[var(--ccr-text)]">Ready to attach upload</p>
+            <p className="text-xs text-[var(--ccr-muted)]">
+              New uploads in {activeFolder} will attach to {focusedChecklistUploadItem.label}.
+              {focusedChecklistUploadItem.uploadedDocumentId
+                ? " Saving will replace the current attachment."
+                : ""}
+            </p>
+          </div>
+          <button
+            type="button"
+            data-testid="vehicle-files-clear-upload-target"
+            onClick={clearUploadTarget}
+            className="min-h-9 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-xs font-semibold text-[var(--ccr-text)]"
+          >
+            Clear target
+          </button>
         </div>
       ) : null}
       {highlightedItem ? (

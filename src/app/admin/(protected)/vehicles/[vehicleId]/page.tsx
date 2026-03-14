@@ -116,6 +116,10 @@ export default async function AdminVehicleDetailPage({
     typeof query.checklistItemId === "string" && query.checklistItemId.trim()
       ? query.checklistItemId.trim()
       : undefined;
+  const requestedAttachChecklistItemId =
+    typeof query.attachChecklistItemId === "string" && query.attachChecklistItemId.trim()
+      ? query.attachChecklistItemId.trim()
+      : undefined;
   const maintenanceRecordId =
     typeof query.recordId === "string" && query.recordId.trim()
       ? query.recordId.trim()
@@ -283,6 +287,7 @@ export default async function AdminVehicleDetailPage({
             documentTypes={documentTypeOptions}
             initialFolder={requestedFolder}
             initialDocumentId={requestedDocumentId}
+            initialChecklistItemId={requestedAttachChecklistItemId}
           />
         ) : null}
 

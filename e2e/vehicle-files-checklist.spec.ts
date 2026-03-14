@@ -197,6 +197,48 @@ async function browserDelete(page: Page, url: string) {
   }, url);
 }
 
+async function browserPatch<T>(
+  page: Page,
+  url: string,
+  payload: Record<string, unknown>,
+): Promise<BrowserApiResult<T>> {
+  return page.evaluate(
+    async ({ endpoint, body }) => {
+      function readCookieToken() {
+        const match = document.cookie
+          .split("; ")
+          .find((entry) => entry.startsWith("ccr_csrf="));
+        return match ? decodeURIComponent(match.split("=").slice(1).join("=")) : null;
+      }
+
+      let csrfToken = readCookieToken();
+      if (!csrfToken) {
+        await fetch("/api/security/csrf", { method: "GET", credentials: "include" });
+        csrfToken = readCookieToken();
+      }
+      if (!csrfToken) throw new Error("Missing CSRF token");
+
+      const response = await fetch(endpoint, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "x-csrf-token": csrfToken,
+        },
+        body: JSON.stringify({
+          ...body,
+          csrfToken,
+        }),
+      });
+
+      return {
+        status: response.status,
+        body: (await response.json().catch(() => ({}))) as T,
+      };
+    },
+    { endpoint: url, body: payload },
+  );
+}
+
 test.describe("@tour vehicle files and checklist integration", () => {
   test("@tour desktop checklist attachment state follows linked file lifecycle", async ({
     page,
@@ -488,6 +530,136 @@ test.describe("@tour vehicle files and checklist integration", () => {
       }
       if (secondChecklistItemId) {
         await browserDelete(page, `/api/admin/vehicles/${VEHICLE_ID}/checklist/${secondChecklistItemId}`);
+      }
+    }
+  });
+
+  test("@tour desktop checklist can pretarget the files uploader", async ({
+    page,
+  }, testInfo: TestInfo) => {
+    test.setTimeout(90_000);
+    test.skip(testInfo.project.name !== "desktop", "Desktop-only verification for stable selectors.");
+
+    await authenticateAdmin(page);
+    await page.goto(`/admin/vehicles/${VEHICLE_ID}?tab=checklist`, { waitUntil: "networkidle" });
+
+    const stamp = Date.now();
+    const checklistLabel = `Codex Upload Target A ${stamp}`;
+    const attachedChecklistLabel = `Codex Upload Target B ${stamp}`;
+    const fileLabel = `Codex Upload Target File ${stamp}`;
+    let checklistItemId: string | null = null;
+    let attachedChecklistItemId: string | null = null;
+    let documentId: string | null = null;
+
+    try {
+      const checklistCreate = await browserPost<{ ok?: boolean; item?: { id?: string | null } }>(
+        page,
+        `/api/admin/vehicles/${VEHICLE_ID}/checklist`,
+        {
+          label: checklistLabel,
+          folder: "Paperwork",
+          required: false,
+          allowNotRequired: true,
+        },
+      );
+      expect(checklistCreate.status).toBe(200);
+      checklistItemId = checklistCreate.body.item?.id ?? null;
+      expect(checklistItemId).toBeTruthy();
+
+      const attachedChecklistCreate = await browserPost<{
+        ok?: boolean;
+        item?: { id?: string | null };
+      }>(page, `/api/admin/vehicles/${VEHICLE_ID}/checklist`, {
+        label: attachedChecklistLabel,
+        folder: "Paperwork",
+        required: true,
+        allowNotRequired: false,
+      });
+      expect(attachedChecklistCreate.status).toBe(200);
+      attachedChecklistItemId = attachedChecklistCreate.body.item?.id ?? null;
+      expect(attachedChecklistItemId).toBeTruthy();
+
+      const fileCreate = await browserPost<{ ok?: boolean; item?: { id?: string | null } }>(
+        page,
+        `/api/admin/vehicles/${VEHICLE_ID}/documents`,
+        {
+          folder: "Paperwork",
+          documentType: "Other",
+          label: fileLabel,
+          title: `${fileLabel}.pdf`,
+          storageProvider: "UPLOADCARE_FILE_ID",
+          storageKey: "f5e9e3a1-4d55-4c74-b6f8-2c8ee4903cb5",
+          checklistItemId: attachedChecklistItemId,
+        },
+      );
+      expect(fileCreate.status).toBe(200);
+      documentId = fileCreate.body.item?.id ?? null;
+      expect(documentId).toBeTruthy();
+
+      await page.reload({ waitUntil: "networkidle" });
+
+      const checklistCard = page.getByTestId(`vehicle-checklist-item-${checklistItemId}`);
+      await expect(checklistCard).toBeVisible();
+      await expect(checklistCard.getByTestId("vehicle-checklist-add-file")).toHaveAttribute(
+        "href",
+        `/admin/vehicles/${VEHICLE_ID}?tab=files&folder=Paperwork&attachChecklistItemId=${checklistItemId}`,
+      );
+      await checklistCard.getByTestId("vehicle-checklist-add-file").click();
+      await page.waitForURL(
+        `**/admin/vehicles/${VEHICLE_ID}?tab=files&folder=Paperwork&attachChecklistItemId=${checklistItemId}`,
+      );
+      await expect(page.getByTestId("vehicle-files-checklist-link")).toHaveValue(checklistItemId ?? "");
+      await expect(page.getByTestId("vehicle-files-upload-target-banner")).toContainText(
+        checklistLabel,
+      );
+      await expect(page).toHaveURL(
+        new RegExp(`/admin/vehicles/${VEHICLE_ID}\\?tab=files&folder=Paperwork$`),
+      );
+      await page.getByTestId("vehicle-files-clear-upload-target").click();
+      await expect(page.getByTestId("vehicle-files-upload-target-banner")).not.toBeVisible();
+      await expect(page.getByTestId("vehicle-files-checklist-link")).toHaveValue("");
+
+      await page.goto(`/admin/vehicles/${VEHICLE_ID}?tab=checklist`, { waitUntil: "networkidle" });
+      const attachedChecklistCard = page.getByTestId(
+        `vehicle-checklist-item-${attachedChecklistItemId}`,
+      );
+      await expect(attachedChecklistCard).toBeVisible();
+      await expect(attachedChecklistCard.getByTestId("vehicle-checklist-replace-file")).toHaveAttribute(
+        "href",
+        `/admin/vehicles/${VEHICLE_ID}?tab=files&folder=Paperwork&attachChecklistItemId=${attachedChecklistItemId}`,
+      );
+      await attachedChecklistCard.getByTestId("vehicle-checklist-replace-file").click();
+      await page.waitForURL(
+        `**/admin/vehicles/${VEHICLE_ID}?tab=files&folder=Paperwork&attachChecklistItemId=${attachedChecklistItemId}`,
+      );
+      await expect(page.getByTestId("vehicle-files-checklist-link")).toHaveValue(
+        attachedChecklistItemId ?? "",
+      );
+      await expect(page.getByTestId("vehicle-files-upload-target-banner")).toContainText(
+        attachedChecklistLabel,
+      );
+      await expect(page.getByTestId("vehicle-files-upload-target-banner")).toContainText(
+        "replace the current attachment",
+      );
+      await expect(page).toHaveURL(
+        new RegExp(`/admin/vehicles/${VEHICLE_ID}\\?tab=files&folder=Paperwork$`),
+      );
+    } finally {
+      if (documentId) {
+        await browserPatch(page, `/api/admin/vehicles/${VEHICLE_ID}/documents/${documentId}`, {
+          archived: true,
+        }).catch(() => undefined);
+      }
+      if (checklistItemId) {
+        await browserDelete(page, `/api/admin/vehicles/${VEHICLE_ID}/checklist/${checklistItemId}`).catch(
+          () => undefined,
+        );
+      }
+      if (attachedChecklistItemId) {
+        await browserDelete(
+          page,
+          `/api/admin/vehicles/${VEHICLE_ID}/checklist/${attachedChecklistItemId}`,
+        ).catch(() => undefined);
       }
     }
   });

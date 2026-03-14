@@ -728,7 +728,25 @@ export function VehicleChecklistPanel({
                       >
                         Manage in Files
                       </Link>
+                      <Link
+                        data-testid="vehicle-checklist-replace-file"
+                        href={`/admin/vehicles/${vehicleId}?tab=files&folder=${encodeURIComponent(item.folder)}&attachChecklistItemId=${encodeURIComponent(item.id)}`}
+                        className="inline-flex min-h-9 items-center rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-text)]"
+                      >
+                        Replace in Files
+                      </Link>
                     </div>
+                  </div>
+                ) : null}
+                {!item.uploadedDocumentId ? (
+                  <div className="mt-2">
+                    <Link
+                      data-testid="vehicle-checklist-add-file"
+                      href={`/admin/vehicles/${vehicleId}?tab=files&folder=${encodeURIComponent(item.folder)}&attachChecklistItemId=${encodeURIComponent(item.id)}`}
+                      className="inline-flex min-h-9 items-center rounded-lg border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-accent-strong)]"
+                    >
+                      Add file in Files
+                    </Link>
                   </div>
                 ) : null}
                 <div className="mt-3 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3">
