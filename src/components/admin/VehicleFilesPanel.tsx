@@ -326,6 +326,27 @@ export function VehicleFilesPanel({
     () => checklistItems.filter((item) => item.folder === activeFolder),
     [activeFolder, checklistItems],
   );
+  const checklistFoldersWithItems = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          checklistItems
+            .map((item) => item.folder.trim())
+            .filter(Boolean),
+        ),
+      ).sort((left, right) => left.localeCompare(right)),
+    [checklistItems],
+  );
+  const otherChecklistFolders = useMemo(
+    () => checklistFoldersWithItems.filter((folder) => folder !== activeFolder),
+    [activeFolder, checklistFoldersWithItems],
+  );
+  const hasChecklistItemsInActiveFolder = availableChecklistItems.length > 0;
+  const showChecklistFolderMismatch =
+    !checklistError && checklistItems.length > 0 && !hasChecklistItemsInActiveFolder;
+  const checklistLinkPlaceholder = hasChecklistItemsInActiveFolder
+    ? "No checklist link"
+    : `No checklist items in ${activeFolder}`;
   const highlightedItem = useMemo(
     () => items.find((item) => item.id === highlightedDocumentId) ?? null,
     [highlightedDocumentId, items],
@@ -720,7 +741,7 @@ export function VehicleFilesPanel({
               className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)] disabled:opacity-60"
               disabled={availableChecklistItems.length < 1}
             >
-              <option value="">No checklist link</option>
+              <option value="">{checklistLinkPlaceholder}</option>
               {availableChecklistItems.map((item) => (
                 <option key={item.id} value={item.id}>
                   {item.label}
@@ -736,7 +757,16 @@ export function VehicleFilesPanel({
           <p>Label is shown in the file list. Leave it blank to fall back to the title.</p>
           <p>Title stores the file title and defaults to the uploaded filename.</p>
           <p>Linking a file marks that checklist item as attached. Archiving the file clears the link.</p>
-          {availableChecklistItems.length < 1 ? (
+          {showChecklistFolderMismatch ? (
+            <>
+              <p>Files can only link to checklist items in the same folder.</p>
+              <p>
+                No checklist items are currently in {activeFolder}. Checklist items currently exist in{" "}
+                {otherChecklistFolders.join(", ")}.
+              </p>
+            </>
+          ) : null}
+          {!showChecklistFolderMismatch && availableChecklistItems.length < 1 ? (
             <p>No checklist items exist in this folder yet.</p>
           ) : null}
           {selectedChecklistItem?.uploadedDocumentId ? (
@@ -745,6 +775,24 @@ export function VehicleFilesPanel({
             </p>
           ) : null}
         </div>
+        {showChecklistFolderMismatch ? (
+          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-3">
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-[var(--ccr-text)]">Checklist item is in a different folder</p>
+              <p className="mt-1 text-xs text-[var(--ccr-muted)]">
+                Move the checklist item to {activeFolder}, or open the checklist item and use{" "}
+                <span className="font-semibold text-[var(--ccr-text)]">Add file in Files</span> so the correct
+                folder and checklist target are preselected.
+              </p>
+            </div>
+            <Link
+              href={`/admin/vehicles/${vehicleId}?tab=checklist`}
+              className="inline-flex min-h-10 items-center rounded-lg border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-accent-strong)]"
+            >
+              Go to Checklist
+            </Link>
+          </div>
+        ) : null}
 
         <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap sm:items-center">
           <button
@@ -939,7 +987,7 @@ export function VehicleFilesPanel({
                           }
                           className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs text-[var(--ccr-text)]"
                         >
-                          <option value="">No checklist link</option>
+                          <option value="">{checklistLinkPlaceholder}</option>
                           {availableChecklistItems.map((checklistItem) => (
                             <option key={checklistItem.id} value={checklistItem.id}>
                               {checklistItem.label}
@@ -1057,15 +1105,15 @@ export function VehicleFilesPanel({
                                 setRowChecklistSelections((current) => ({
                                   ...current,
                                   [item.id]: event.target.value,
-                                }))
-                              }
-                              className="min-h-9 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-xs text-[var(--ccr-text)]"
-                            >
-                              <option value="">No checklist link</option>
-                              {availableChecklistItems.map((checklistItem) => (
-                                <option key={checklistItem.id} value={checklistItem.id}>
-                                  {checklistItem.label}
-                                  {checklistItem.required ? " (required)" : ""}
+                            }))
+                          }
+                          className="min-h-9 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-xs text-[var(--ccr-text)]"
+                        >
+                          <option value="">{checklistLinkPlaceholder}</option>
+                          {availableChecklistItems.map((checklistItem) => (
+                            <option key={checklistItem.id} value={checklistItem.id}>
+                              {checklistItem.label}
+                              {checklistItem.required ? " (required)" : ""}
                                 </option>
                               ))}
                             </select>
