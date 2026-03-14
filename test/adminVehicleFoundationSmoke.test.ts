@@ -27,6 +27,7 @@ test("vehicle checklist foundation smoke: GET returns ok payload", async () => {
       getSession: async () => adminSession(),
       requireCsrfCheck: async () => true,
       listItems: async () => [],
+      resolveTemplateId: async () => null,
       createItem: async () => {
         throw new Error("unreachable");
       },
@@ -54,6 +55,10 @@ test("vehicle checklist foundation smoke: GET exposes attached file label", asyn
           folder: "Insurance",
           required: true,
           allow_not_required: false,
+          template_id: null,
+          template_key: null,
+          template_expiry_required: null,
+          template_expiry_warning_days: null,
           uploaded_document_id: "88888888-8888-4888-8888-888888888888",
           uploaded_document_title: "Insurance 2026.pdf",
           uploaded_document_label: "Insurance 2026",
@@ -62,6 +67,7 @@ test("vehicle checklist foundation smoke: GET exposes attached file label", asyn
           updated_at: "2026-03-13T00:00:00.000Z",
         },
       ],
+      resolveTemplateId: async () => null,
       createItem: async () => {
         throw new Error("unreachable");
       },
@@ -88,6 +94,7 @@ test("vehicle checklist foundation smoke: POST persists allowNotRequired metadat
           required: boolean;
           allowNotRequired: boolean;
           expirationDate: string | null;
+          templateId: string | null;
         };
       }
     | null = null;
@@ -110,6 +117,7 @@ test("vehicle checklist foundation smoke: POST persists allowNotRequired metadat
       getSession: async () => adminSession(),
       requireCsrfCheck: async () => true,
       listItems: async () => [],
+      resolveTemplateId: async () => null,
       createItem: async (vehicleId, input) => {
         createArgs = { vehicleId, input };
         return {
@@ -119,6 +127,10 @@ test("vehicle checklist foundation smoke: POST persists allowNotRequired metadat
           folder: input.folder,
           required: input.required,
           allow_not_required: input.allowNotRequired,
+          template_id: input.templateId,
+          template_key: null,
+          template_expiry_required: null,
+          template_expiry_warning_days: null,
           uploaded_document_id: null,
           uploaded_document_title: null,
           uploaded_document_label: null,
@@ -139,6 +151,7 @@ test("vehicle checklist foundation smoke: POST persists allowNotRequired metadat
       required: true,
       allowNotRequired: false,
       expirationDate: "2026-03-30",
+      templateId: null,
     },
   });
 
@@ -188,6 +201,10 @@ test("vehicle checklist foundation smoke: PATCH updates editable fields", async 
         folder: "Insurance",
         required: true,
         allow_not_required: true,
+        template_id: null,
+        template_key: null,
+        template_expiry_required: null,
+        template_expiry_warning_days: null,
         uploaded_document_id: null,
         uploaded_document_title: null,
         uploaded_document_label: null,
@@ -204,6 +221,10 @@ test("vehicle checklist foundation smoke: PATCH updates editable fields", async 
           folder: "Insurance",
           required: input.required,
           allow_not_required: true,
+          template_id: null,
+          template_key: null,
+          template_expiry_required: null,
+          template_expiry_warning_days: null,
           uploaded_document_id: null,
           uploaded_document_title: null,
           uploaded_document_label: null,
@@ -235,6 +256,86 @@ test("vehicle checklist foundation smoke: PATCH updates editable fields", async 
   assert.equal(payload.item?.label, "Updated Insurance Certificate");
   assert.equal(payload.item?.required, false);
   assert.equal(payload.item?.expirationDate, "2026-11-15");
+});
+
+test("vehicle checklist foundation smoke: POST resolves template identity", async () => {
+  let createArgs:
+    | {
+        vehicleId: string;
+        input: {
+          label: string;
+          folder: string;
+          required: boolean;
+          allowNotRequired: boolean;
+          expirationDate: string | null;
+          templateId: string | null;
+        };
+      }
+    | null = null;
+
+  const response = await handleAdminVehicleChecklistPost(
+    new Request(`http://localhost/api/admin/vehicles/${VEHICLE_ID}/checklist`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        label: "Insurance Certificate",
+        folder: "Insurance",
+        required: true,
+        allowNotRequired: true,
+        templateKey: "insurance-certificate",
+        csrfToken: "test-token",
+      }),
+    }),
+    { params: Promise.resolve({ id: VEHICLE_ID }) },
+    {
+      getSession: async () => adminSession(),
+      requireCsrfCheck: async () => true,
+      listItems: async () => [],
+      resolveTemplateId: async () => "33333333-3333-4333-8333-333333333333",
+      createItem: async (vehicleId, input) => {
+        createArgs = { vehicleId, input };
+        return {
+          id: "44444444-4444-4444-8444-444444444444",
+          vehicle_id: vehicleId,
+          label: input.label,
+          folder: input.folder,
+          required: input.required,
+          allow_not_required: input.allowNotRequired,
+          template_id: input.templateId,
+          template_key: "insurance-certificate",
+          template_expiry_required: true,
+          template_expiry_warning_days: 30,
+          uploaded_document_id: null,
+          uploaded_document_title: null,
+          uploaded_document_label: null,
+          expiration_date: null,
+          created_at: "2026-03-13T00:00:00.000Z",
+          updated_at: "2026-03-13T00:00:00.000Z",
+        };
+      },
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(createArgs, {
+    vehicleId: VEHICLE_ID,
+    input: {
+      label: "Insurance Certificate",
+      folder: "Insurance",
+      required: true,
+      allowNotRequired: true,
+      expirationDate: null,
+      templateId: "33333333-3333-4333-8333-333333333333",
+    },
+  });
+
+  const payload = (await response.json()) as {
+    ok?: boolean;
+    item?: { templateId?: string | null; templateKey?: string | null };
+  };
+  assert.equal(payload.ok, true);
+  assert.equal(payload.item?.templateId, "33333333-3333-4333-8333-333333333333");
+  assert.equal(payload.item?.templateKey, "insurance-certificate");
 });
 
 test("vehicle maintenance foundation smoke: GET returns ok payload", async () => {

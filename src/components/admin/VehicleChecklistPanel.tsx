@@ -27,6 +27,10 @@ type ChecklistItem = {
   folder: string;
   required: boolean;
   allowNotRequired: boolean;
+  templateId: string | null;
+  templateKey: string | null;
+  templateExpiryRequired: boolean | null;
+  templateExpiryWarningDays: number | null;
   uploadedDocumentDisplayLabel: string | null;
   expirationDate: string | null;
   uploadedDocumentId: string | null;
@@ -85,6 +89,35 @@ function normalizeTemplates(
 
 function getTemplateKey(label: string, folder: string) {
   return `${folder.trim().toLowerCase()}::${label.trim().toLowerCase()}`;
+}
+
+function buildPersistedTemplate(item: ChecklistItem): VehicleChecklistTemplateSetting | null {
+  if (!item.templateId && !item.templateKey) return null;
+  return {
+    key: item.templateKey?.trim() || item.templateId || "persisted-template",
+    label: item.label,
+    folder: item.folder,
+    required: item.required,
+    allowNotRequired: item.allowNotRequired,
+    expiryRequired: Boolean(item.templateExpiryRequired),
+    expiryWarningDays: item.templateExpiryWarningDays ?? null,
+    isActive: true,
+  };
+}
+
+function resolveItemTemplate(
+  item: ChecklistItem,
+  templateKeyMap: Map<string, VehicleChecklistTemplateSetting>,
+  templateLabelMap: Map<string, VehicleChecklistTemplateSetting>,
+) {
+  const normalizedTemplateKey = item.templateKey?.trim().toLowerCase() ?? "";
+  if (normalizedTemplateKey) {
+    return templateKeyMap.get(normalizedTemplateKey) ?? buildPersistedTemplate(item);
+  }
+  if (item.templateId) {
+    return buildPersistedTemplate(item);
+  }
+  return templateLabelMap.get(getTemplateKey(item.label, item.folder)) ?? null;
 }
 
 function parseDateOnly(value: string | null) {
@@ -189,6 +222,9 @@ export function VehicleChecklistPanel({
   const templateMap = useMemo(() => {
     return new Map(activeTemplates.map((template) => [getTemplateKey(template.label, template.folder), template]));
   }, [activeTemplates]);
+  const templateKeyMap = useMemo(() => {
+    return new Map(activeTemplates.map((template) => [template.key.trim().toLowerCase(), template]));
+  }, [activeTemplates]);
 
   const [items, setItems] = useState<ChecklistItem[]>([]);
   const [documents, setDocuments] = useState<ChecklistDocument[]>([]);
@@ -275,6 +311,10 @@ export function VehicleChecklistPanel({
           folder: string;
           required: boolean;
           allowNotRequired: boolean;
+          templateId: string | null;
+          templateKey: string | null;
+          templateExpiryRequired: boolean | null;
+          templateExpiryWarningDays: number | null;
           uploadedDocumentDisplayLabel: string | null;
           expirationDate: string | null;
           uploadedDocumentId: string | null;
@@ -296,6 +336,10 @@ export function VehicleChecklistPanel({
           folder: item.folder,
           required: Boolean(item.required),
           allowNotRequired: Boolean(item.allowNotRequired),
+          templateId: item.templateId ?? null,
+          templateKey: item.templateKey ?? null,
+          templateExpiryRequired: item.templateExpiryRequired ?? null,
+          templateExpiryWarningDays: item.templateExpiryWarningDays ?? null,
           uploadedDocumentDisplayLabel: item.uploadedDocumentDisplayLabel ?? null,
           expirationDate: item.expirationDate ?? null,
           uploadedDocumentId: item.uploadedDocumentId ?? null,
@@ -334,11 +378,11 @@ export function VehicleChecklistPanel({
   const itemStatusMap = useMemo(() => {
     const next = new Map<string, ChecklistStatusSummary>();
     for (const item of items) {
-      const template = templateMap.get(getTemplateKey(item.label, item.folder)) ?? null;
+      const template = resolveItemTemplate(item, templateKeyMap, templateMap);
       next.set(item.id, getChecklistStatusSummary(item, template));
     }
     return next;
-  }, [items, templateMap]);
+  }, [items, templateKeyMap, templateMap]);
   const checklistSummary = useMemo(() => {
     let attentionCount = 0;
     let missingFileCount = 0;
@@ -416,6 +460,7 @@ export function VehicleChecklistPanel({
     inputRequired: boolean,
     inputAllowNotRequired: boolean,
     inputExpirationDate: string | null,
+    inputTemplateKey: string | null,
   ) {
     const csrfToken = await ensureCsrfToken();
     const response = await fetch(`/api/admin/vehicles/${vehicleId}/checklist`, {
@@ -430,6 +475,7 @@ export function VehicleChecklistPanel({
         required: inputRequired,
         allowNotRequired: inputAllowNotRequired,
         expirationDate: inputExpirationDate,
+        templateKey: inputTemplateKey,
         csrfToken,
       }),
     });
@@ -452,7 +498,15 @@ export function VehicleChecklistPanel({
     setMessage(null);
 
     try {
-      await createItem(normalizedLabel, folder, required, true, expirationDate || null);
+      const matchedTemplate = templateMap.get(getTemplateKey(normalizedLabel, folder)) ?? null;
+      await createItem(
+        normalizedLabel,
+        folder,
+        required,
+        true,
+        expirationDate || null,
+        matchedTemplate?.key ?? null,
+      );
       setLabel("");
       setRequired(false);
       setExpirationDate("");
@@ -479,6 +533,7 @@ export function VehicleChecklistPanel({
           template.required,
           template.allowNotRequired,
           null,
+          template.key,
         );
       }
       const expiryRequiredCount = activeTemplates.filter((template) => template.expiryRequired).length;

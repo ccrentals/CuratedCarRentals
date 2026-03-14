@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
+import { loadAdminSettings } from "@/lib/adminSettings";
 import { dbQuery } from "@/lib/db";
 import { requireCsrf } from "@/lib/security/csrf";
 import { isVehicleExtensionsMissingTableError } from "@/lib/vehicles/extensionTables";
@@ -20,6 +21,10 @@ type ChecklistRow = {
   folder: string;
   required: boolean;
   allow_not_required: boolean;
+  template_id: string | null;
+  template_key: string | null;
+  template_expiry_required: boolean | null;
+  template_expiry_warning_days: number | null;
   uploaded_document_id: string | null;
   uploaded_document_title: string | null;
   uploaded_document_label: string | null;
@@ -32,6 +37,7 @@ export type AdminVehicleChecklistRouteDeps = {
   getSession: () => Promise<AdminSession | null>;
   requireCsrfCheck: (request: Request, bodyToken?: string | null) => Promise<boolean>;
   listItems: (vehicleId: string) => Promise<ChecklistRow[]>;
+  resolveTemplateId: (templateKey: string) => Promise<string | null>;
   createItem: (vehicleId: string, input: CreateChecklistInput) => Promise<ChecklistRow>;
 };
 
@@ -41,6 +47,7 @@ type CreateChecklistInput = {
   required: boolean;
   allowNotRequired: boolean;
   expirationDate: string | null;
+  templateId: string | null;
 };
 
 function normalizeText(value: unknown) {
@@ -80,6 +87,10 @@ function mapItem(row: ChecklistRow) {
     folder: row.folder,
     required: row.required,
     allowNotRequired: row.allow_not_required,
+    templateId: row.template_id,
+    templateKey: row.template_key,
+    templateExpiryRequired: row.template_expiry_required,
+    templateExpiryWarningDays: row.template_expiry_warning_days,
     uploadedDocumentId: row.uploaded_document_id,
     uploadedDocumentDisplayLabel: row.uploaded_document_label ?? row.uploaded_document_title,
     expirationDate: row.expiration_date,
@@ -100,6 +111,10 @@ const DEFAULT_DEPS: AdminVehicleChecklistRouteDeps = {
          i.folder,
          i.required,
          i.allow_not_required,
+         i.template_id,
+         t.key as template_key,
+         t.expiry_required as template_expiry_required,
+         t.expiry_warning_days as template_expiry_warning_days,
          i.uploaded_document_id,
          d.title as uploaded_document_title,
          d.label as uploaded_document_label,
@@ -107,6 +122,8 @@ const DEFAULT_DEPS: AdminVehicleChecklistRouteDeps = {
          i.created_at,
          i.updated_at
        from vehicle_checklist_items i
+       left join vehicle_checklist_templates t
+         on t.id = i.template_id
        left join vehicle_documents d
          on d.id = i.uploaded_document_id
         and d.archived_at is null
@@ -116,10 +133,98 @@ const DEFAULT_DEPS: AdminVehicleChecklistRouteDeps = {
     );
     return result.rows;
   },
+  resolveTemplateId: async (templateKey) => {
+    const normalizedKey = templateKey.trim().toLowerCase();
+    if (!normalizedKey) return null;
+
+    const { settings } = await loadAdminSettings();
+    const template = settings.vehicleChecklistTemplates.find(
+      (entry) => entry.key.trim().toLowerCase() === normalizedKey,
+    );
+    if (!template) return null;
+
+    const result = await dbQuery<{ id: string }>(
+      `insert into vehicle_checklist_templates (
+         key,
+         label,
+         default_folder,
+         required,
+         allow_not_required,
+         expiry_required,
+         expiry_warning_days,
+         is_active,
+         source,
+         updated_at
+       )
+       values ($1, $2, $3, $4, $5, $6, $7, $8, 'SETTINGS', now())
+       on conflict (key) do update
+         set label = excluded.label,
+             default_folder = excluded.default_folder,
+             required = excluded.required,
+             allow_not_required = excluded.allow_not_required,
+             expiry_required = excluded.expiry_required,
+             expiry_warning_days = excluded.expiry_warning_days,
+             is_active = excluded.is_active,
+             source = 'SETTINGS',
+             updated_at = now()
+       returning id`,
+      [
+        template.key,
+        template.label,
+        template.folder,
+        template.required,
+        template.allowNotRequired,
+        template.expiryRequired,
+        template.expiryWarningDays,
+        template.isActive,
+      ],
+    );
+    return result.rows[0]?.id ?? null;
+  },
   createItem: async (vehicleId, input) => {
     const result = await dbQuery<ChecklistRow>(
-      "insert into vehicle_checklist_items (vehicle_id, label, folder, required, allow_not_required, expiration_date) values ($1::uuid, $2, $3, $4, $5, $6::date) returning id, vehicle_id, label, folder, required, allow_not_required, uploaded_document_id, null::text as uploaded_document_title, null::text as uploaded_document_label, expiration_date, created_at, updated_at",
-      [vehicleId, input.label, input.folder, input.required, input.allowNotRequired, input.expirationDate],
+      `with inserted as (
+         insert into vehicle_checklist_items (
+           vehicle_id,
+           template_id,
+           label,
+           folder,
+           required,
+           allow_not_required,
+           expiration_date
+         )
+         values ($1::uuid, $2::uuid, $3, $4, $5, $6, $7::date)
+         returning *
+       )
+       select
+         i.id,
+         i.vehicle_id,
+         i.label,
+         i.folder,
+         i.required,
+         i.allow_not_required,
+         i.template_id,
+         t.key as template_key,
+         t.expiry_required as template_expiry_required,
+         t.expiry_warning_days as template_expiry_warning_days,
+         i.uploaded_document_id,
+         null::text as uploaded_document_title,
+         null::text as uploaded_document_label,
+         i.expiration_date,
+         i.created_at,
+         i.updated_at
+       from inserted i
+       left join vehicle_checklist_templates t
+         on t.id = i.template_id`,
+      [
+        vehicleId,
+        input.templateId,
+        input.label,
+        input.folder,
+        input.required,
+        input.allowNotRequired,
+        input.expirationDate,
+      ],
     );
     return result.rows[0];
   },
@@ -175,12 +280,19 @@ export async function handleAdminVehicleChecklistPost(
     return NextResponse.json({ ok: false, error: "Label is required." }, { status: 400 });
   }
 
+  const templateKey = normalizeText(body?.templateKey ?? body?.template_key).toLowerCase();
+  const templateId = templateKey ? await deps.resolveTemplateId(templateKey) : null;
+  if (templateKey && !templateId) {
+    return NextResponse.json({ ok: false, error: "Checklist template not found." }, { status: 400 });
+  }
+
   const input: CreateChecklistInput = {
     label,
     folder: normalizeFolder(body?.folder),
     required: normalizeRequired(body?.required),
     allowNotRequired: normalizeRequired(body?.allowNotRequired ?? body?.allow_not_required ?? true),
     expirationDate: normalizeExpirationDate(body?.expirationDate ?? body?.expiration_date),
+    templateId,
   };
 
   try {
