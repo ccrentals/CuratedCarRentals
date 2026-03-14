@@ -429,6 +429,7 @@ export function VehicleChecklistPanel({
     });
     const settingsPayload = (await settingsResponse.json().catch(() => ({}))) as {
       settings?: AdminSettings;
+      updatedAt?: string | null;
       error?: string;
     };
     if (!settingsResponse.ok) {
@@ -470,23 +471,29 @@ export function VehicleChecklistPanel({
           ...currentSettings,
           vehicleChecklistTemplates: nextTemplates,
         },
+        baseUpdatedAt: settingsPayload.updatedAt ?? null,
         csrfToken,
       }),
     });
     const patchPayload = (await patchResponse.json().catch(() => ({}))) as {
       ok?: boolean;
       error?: string;
+      message?: string;
       settings?: AdminSettings;
     };
+    const nextSettings = patchPayload.settings;
+    if (nextSettings) {
+      setTemplateSettings(nextSettings.vehicleChecklistTemplates);
+    }
     if (!patchResponse.ok || !patchPayload.ok) {
-      throw new Error(patchPayload.error ?? "Unable to save checklist template.");
+      throw new Error(
+        patchPayload.message ?? patchPayload.error ?? "Unable to save checklist template.",
+      );
     }
 
-    const nextSettings = patchPayload.settings;
     if (!nextSettings) {
       throw new Error("Checklist template saved but updated settings were not returned.");
     }
-    setTemplateSettings(nextSettings.vehicleChecklistTemplates);
     return nextSettings.vehicleChecklistTemplates.find((template) => template.key === normalizedKey) ?? nextTemplate;
   }
 

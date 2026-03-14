@@ -40,6 +40,28 @@ export type AdminSettings = {
   depreciationDefaultResidualPercent: number;
 };
 
+export type AdminSettingsField =
+  | "contactNotificationEmails"
+  | "dayViewBookingLimit"
+  | "contactNotifyCooldownMinutes"
+  | "vehicleDocumentFolders"
+  | "vehicleDocumentTypeOptions"
+  | "vehicleChecklistTemplates"
+  | "maintenanceReminderLeadDays"
+  | "maintenanceDueSoonDays"
+  | "maintenanceDueSoonKm"
+  | "maintenanceCategories"
+  | "maintenancePriorities"
+  | "depreciationDefaultUsefulLifeMonths"
+  | "depreciationDefaultResidualPercent";
+
+export type AdminSettingsFieldErrors = Partial<Record<AdminSettingsField, string>>;
+
+export type AdminSettingsValidationResult = {
+  settings: AdminSettings;
+  fieldErrors: AdminSettingsFieldErrors;
+};
+
 export const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
   authLoginMethod: DEFAULT_ADMIN_LOGIN_METHOD,
   blockoutSupersedesBookings: false,
@@ -158,12 +180,7 @@ function normalizeDayViewBookingLimit(value: unknown): number | "all" {
 
 function normalizeNotificationEmails(value: unknown) {
   if (typeof value !== "string") return DEFAULT_ADMIN_SETTINGS.contactNotificationEmails;
-  return value
-    .split(/[,;\n]/)
-    .map((entry) => entry.trim())
-    .filter(Boolean)
-    .slice(0, 25)
-    .join(", ");
+  return splitDelimitedEntries(value).slice(0, 25).join(", ");
 }
 
 function normalizeContactNotifyCooldownMinutes(value: unknown) {
@@ -231,16 +248,7 @@ function normalizeDepreciationDefaultResidualPercent(value: unknown) {
 }
 
 function normalizeStringList(value: unknown, fallback: string[]) {
-  const rawList = Array.isArray(value)
-    ? value
-    : typeof value === "string"
-      ? value.split(/[,;\n]/)
-      : [];
-
-  const list = rawList
-    .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
-    .filter(Boolean)
-    .slice(0, 40);
+  const list = splitDelimitedEntries(value).slice(0, 40);
 
   return list.length > 0 ? list : [...fallback];
 }
@@ -272,6 +280,45 @@ function normalizeChecklistTemplateWarningDays(value: unknown) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return null;
   return Math.min(3650, Math.max(0, Math.floor(parsed)));
+}
+
+function splitDelimitedEntries(value: unknown) {
+  const rawList = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? value.split(/[,;\n]/)
+      : [];
+
+  return rawList
+    .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+    .filter(Boolean);
+}
+
+function hasExplicitListValue(value: unknown) {
+  return Array.isArray(value) || typeof value === "string";
+}
+
+function validateIntegerRange(
+  value: unknown,
+  min: number,
+  max: number,
+  label: string,
+) {
+  const parsed =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && value.trim()
+        ? Number(value)
+        : Number.NaN;
+
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed < min || parsed > max) {
+    return `${label} must be a whole number between ${min} and ${max}.`;
+  }
+  return null;
+}
+
+function isValidEmailAddress(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
 function normalizeChecklistTemplateEntry(
@@ -453,6 +500,156 @@ export function normalizeAdminSettingsValue(raw: unknown): AdminSettings {
       normalizeDepreciationDefaultResidualPercent(
         value.depreciationDefaultResidualPercent,
       ),
+  };
+}
+
+export function validateAdminSettingsValue(raw: unknown): AdminSettingsValidationResult {
+  const fieldErrors: AdminSettingsFieldErrors = {};
+
+  if (raw && typeof raw === "object") {
+    const value = raw as Record<string, unknown>;
+
+    if (typeof value.contactNotificationEmails === "string") {
+      const invalidEmails = splitDelimitedEntries(value.contactNotificationEmails).filter(
+        (entry) => !isValidEmailAddress(entry),
+      );
+      if (invalidEmails.length > 0) {
+        fieldErrors.contactNotificationEmails =
+          invalidEmails.length === 1
+            ? `Enter a valid email address. "${invalidEmails[0]}" is not valid.`
+            : `Enter valid email addresses. Invalid entries: ${invalidEmails.join(", ")}.`;
+      }
+    }
+
+    if (
+      hasExplicitListValue(value.vehicleDocumentFolders) &&
+      splitDelimitedEntries(value.vehicleDocumentFolders).length < 1
+    ) {
+      fieldErrors.vehicleDocumentFolders = "Add at least one vehicle document folder.";
+    }
+
+    if (
+      hasExplicitListValue(value.vehicleDocumentTypeOptions) &&
+      splitDelimitedEntries(value.vehicleDocumentTypeOptions).length < 1
+    ) {
+      fieldErrors.vehicleDocumentTypeOptions = "Add at least one vehicle document type.";
+    }
+
+    if (
+      hasExplicitListValue(value.maintenanceCategories) &&
+      splitDelimitedEntries(value.maintenanceCategories).length < 1
+    ) {
+      fieldErrors.maintenanceCategories = "Add at least one maintenance category.";
+    }
+
+    if (
+      hasExplicitListValue(value.maintenancePriorities) &&
+      splitDelimitedEntries(value.maintenancePriorities).length < 1
+    ) {
+      fieldErrors.maintenancePriorities = "Add at least one maintenance priority.";
+    }
+
+    if (Array.isArray(value.vehicleChecklistTemplates)) {
+      const hasBlankTemplate = value.vehicleChecklistTemplates.some((entry) => {
+        if (typeof entry === "string") return !entry.trim();
+        if (!entry || typeof entry !== "object") return true;
+        return !String((entry as { label?: unknown }).label ?? "").trim();
+      });
+      if (hasBlankTemplate) {
+        fieldErrors.vehicleChecklistTemplates =
+          "Checklist template labels cannot be blank. Remove blank rows or add a label.";
+      }
+    }
+
+    if (value.dayViewBookingLimit !== undefined) {
+      const rawValue = value.dayViewBookingLimit;
+      const isAll =
+        rawValue === "all" ||
+        (typeof rawValue === "string" && rawValue.trim().toLowerCase() === "all");
+      if (!isAll) {
+        const error = validateIntegerRange(rawValue, 1, 50, "Day View booking limit");
+        if (error) {
+          fieldErrors.dayViewBookingLimit = error;
+        }
+      }
+    }
+
+    if (value.contactNotifyCooldownMinutes !== undefined) {
+      const error = validateIntegerRange(
+        value.contactNotifyCooldownMinutes,
+        1,
+        120,
+        "Contact notification cooldown",
+      );
+      if (error) {
+        fieldErrors.contactNotifyCooldownMinutes = error;
+      }
+    }
+
+    if (value.maintenanceReminderLeadDays !== undefined) {
+      const error = validateIntegerRange(
+        value.maintenanceReminderLeadDays,
+        1,
+        90,
+        "Maintenance reminder lead time",
+      );
+      if (error) {
+        fieldErrors.maintenanceReminderLeadDays = error;
+      }
+    }
+
+    if (value.maintenanceDueSoonDays !== undefined) {
+      const error = validateIntegerRange(
+        value.maintenanceDueSoonDays,
+        1,
+        180,
+        "Maintenance due-soon days",
+      );
+      if (error) {
+        fieldErrors.maintenanceDueSoonDays = error;
+      }
+    }
+
+    if (value.maintenanceDueSoonKm !== undefined) {
+      const error = validateIntegerRange(
+        value.maintenanceDueSoonKm,
+        0,
+        25000,
+        "Maintenance due-soon mileage",
+      );
+      if (error) {
+        fieldErrors.maintenanceDueSoonKm = error;
+      }
+    }
+
+    if (value.depreciationDefaultUsefulLifeMonths !== undefined) {
+      const error = validateIntegerRange(
+        value.depreciationDefaultUsefulLifeMonths,
+        1,
+        240,
+        "Depreciation useful life",
+      );
+      if (error) {
+        fieldErrors.depreciationDefaultUsefulLifeMonths = error;
+      }
+    }
+
+    if (value.depreciationDefaultResidualPercent !== undefined) {
+      const error = validateIntegerRange(
+        value.depreciationDefaultResidualPercent,
+        0,
+        95,
+        "Depreciation residual value",
+      );
+      if (error) {
+        fieldErrors.depreciationDefaultResidualPercent = error;
+      }
+    }
+  }
+
+  return {
+    settings: normalizeAdminSettingsValue(raw),
+    fieldErrors,
   };
 }
 

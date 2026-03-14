@@ -4,32 +4,8 @@ import { useEffect, useState } from "react";
 
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { buttonStyles } from "@/components/ui/Button";
+import type { AdminSettings, AdminSettingsFieldErrors } from "@/lib/adminSettings";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
-
-type AdminSettings = {
-  authLoginMethod: "clerk" | "legacy";
-  blockoutSupersedesBookings: boolean;
-  requireRestoreReason: boolean;
-  sendPickupReminder: boolean;
-  sendDropoffReminder: boolean;
-  sendLateDropoffAlert: boolean;
-  dayViewBookingLimit: number | "all";
-  contactNotificationEmails: string;
-  contactNotifyCooldownMinutes: number;
-  vehicleDocumentFolders: string[];
-  vehicleDocumentTypeOptions: string[];
-  vehicleChecklistTemplates: VehicleChecklistTemplateSetting[];
-  vehicleChecklistTemplateItems: string[];
-  maintenanceRemindersEnabled: boolean;
-  maintenanceReminderLeadDays: number;
-  maintenanceDueSoonDays: number;
-  maintenanceDueSoonKm: number;
-  maintenanceCategories: string[];
-  maintenancePriorities: string[];
-  depreciationDefaultMethod: "STRAIGHT_LINE";
-  depreciationDefaultUsefulLifeMonths: number;
-  depreciationDefaultResidualPercent: number;
-};
 
 type VehicleChecklistTemplateSetting = {
   key: string;
@@ -152,9 +128,12 @@ export function AdminSettingsForm({
   authLoginMethodSource,
 }: AdminSettingsFormProps) {
   const [settings, setSettings] = useState<AdminSettings>(initialSettings);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(updatedAt);
+  const [lastUpdatedByEmail, setLastUpdatedByEmail] = useState<string | null>(updatedByEmail);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<AdminSettingsFieldErrors>({});
   const [serviceTypes, setServiceTypes] = useState<ServiceType[]>([]);
   const [serviceTypesLoading, setServiceTypesLoading] = useState(false);
   const [serviceTypesError, setServiceTypesError] = useState<string | null>(null);
@@ -173,6 +152,18 @@ export function AdminSettingsForm({
     defaultIntervalOdometer: "",
     isActive: true,
   });
+
+  useEffect(() => {
+    setSettings(initialSettings);
+  }, [initialSettings]);
+
+  useEffect(() => {
+    setLastUpdatedAt(updatedAt);
+  }, [updatedAt]);
+
+  useEffect(() => {
+    setLastUpdatedByEmail(updatedByEmail);
+  }, [updatedByEmail]);
 
   async function loadServiceTypes() {
     setServiceTypesLoading(true);
@@ -208,32 +199,63 @@ export function AdminSettingsForm({
     setSaving(true);
     setError(null);
     setSuccess(null);
+    setFieldErrors({});
 
-    const csrfToken = await ensureCsrfToken();
-    const response = await fetch("/api/admin/settings", {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-        "x-csrf-token": csrfToken ?? "",
-      },
-      body: JSON.stringify({ settings }),
-    });
+    try {
+      const csrfToken = await ensureCsrfToken();
+      const response = await fetch("/api/admin/settings", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "x-csrf-token": csrfToken ?? "",
+        },
+        body: JSON.stringify({
+          settings,
+          baseUpdatedAt: lastUpdatedAt,
+          csrfToken,
+        }),
+      });
 
-    const data = (await response.json().catch(() => ({}))) as {
-      error?: string;
-      ok?: boolean;
-      updatedAt?: string | null;
-    };
+      const data = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        message?: string;
+        ok?: boolean;
+        settings?: AdminSettings;
+        updatedAt?: string | null;
+        updatedByEmail?: string | null;
+        fieldErrors?: AdminSettingsFieldErrors;
+      };
 
-    setSaving(false);
+      if (!response.ok || !data.ok) {
+        if (data.settings) {
+          setSettings(data.settings);
+        }
+        if ("updatedAt" in data) {
+          setLastUpdatedAt(data.updatedAt ?? null);
+        }
+        if ("updatedByEmail" in data) {
+          setLastUpdatedByEmail(data.updatedByEmail ?? null);
+        }
+        setFieldErrors(data.fieldErrors ?? {});
+        setError(data.message ?? data.error ?? "Failed to save settings.");
+        return;
+      }
 
-    if (!response.ok || !data.ok) {
-      setError(data.error ?? "Failed to save settings.");
-      return;
+      if (data.settings) {
+        setSettings(data.settings);
+      }
+      setLastUpdatedAt(data.updatedAt ?? null);
+      setLastUpdatedByEmail(data.updatedByEmail ?? null);
+      setFieldErrors({});
+      setSuccess("Settings saved.");
+    } catch {
+      setError("Unable to save settings right now. Please try again.");
+    } finally {
+      setSaving(false);
     }
-
-    setSuccess("Settings saved.");
   }
+
+  const validationMessages = Object.values(fieldErrors).filter(Boolean);
 
   async function createServiceType() {
     if (disabled) return;
@@ -402,17 +424,31 @@ export function AdminSettingsForm({
         <div className="text-xs text-[var(--ccr-muted)]">
           <div>
             Updated:{" "}
-            {updatedAt ? (
-              <DateTimeInline value={updatedAt} className="inline-flex font-semibold text-[var(--ccr-text)]" />
+            {lastUpdatedAt ? (
+              <DateTimeInline value={lastUpdatedAt} className="inline-flex font-semibold text-[var(--ccr-text)]" />
             ) : (
               <span className="font-semibold text-[var(--ccr-text)]">Never</span>
             )}
           </div>
           <div>
-            By: <span className="font-semibold text-[var(--ccr-text)]">{updatedByEmail ?? "System"}</span>
+            By: <span className="font-semibold text-[var(--ccr-text)]">{lastUpdatedByEmail ?? "System"}</span>
           </div>
         </div>
       </div>
+
+      {validationMessages.length > 0 ? (
+        <div
+          data-testid="settings-validation-errors"
+          className="mt-4 rounded-xl border border-rose-400/40 bg-rose-500/10 p-4 text-sm text-rose-100"
+        >
+          <p className="font-semibold">Fix these settings before saving:</p>
+          <ul className="mt-2 list-disc space-y-1 pl-5">
+            {validationMessages.map((message) => (
+              <li key={message}>{message}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       <div className="mt-5 space-y-3">
         {showDeveloperControls && isGeneralTab ? (
@@ -493,6 +529,9 @@ export function AdminSettingsForm({
               <option value="20">20 bookings</option>
               <option value="all">All bookings</option>
             </select>
+            {fieldErrors.dayViewBookingLimit ? (
+              <p className="mt-2 text-xs font-semibold text-rose-300">{fieldErrors.dayViewBookingLimit}</p>
+            ) : null}
           </div>
         </div>
 
@@ -518,6 +557,11 @@ export function AdminSettingsForm({
               }
               className="w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
             />
+            {fieldErrors.contactNotificationEmails ? (
+              <p className="mt-2 text-xs font-semibold text-rose-300">
+                {fieldErrors.contactNotificationEmails}
+              </p>
+            ) : null}
           </div>
         </div>
 
@@ -547,6 +591,11 @@ export function AdminSettingsForm({
               <option value="30">30 minutes</option>
               <option value="60">60 minutes</option>
             </select>
+            {fieldErrors.contactNotifyCooldownMinutes ? (
+              <p className="mt-2 text-xs font-semibold text-rose-300">
+                {fieldErrors.contactNotifyCooldownMinutes}
+              </p>
+            ) : null}
           </div>
         </div>
 
@@ -577,6 +626,11 @@ export function AdminSettingsForm({
               <option value="21">21 days</option>
               <option value="30">30 days</option>
             </select>
+            {fieldErrors.maintenanceReminderLeadDays ? (
+              <p className="mt-2 text-xs font-semibold text-rose-300">
+                {fieldErrors.maintenanceReminderLeadDays}
+              </p>
+            ) : null}
           </div>
         </div>
 
@@ -609,6 +663,11 @@ export function AdminSettingsForm({
                 }
                 className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
               />
+              {fieldErrors.maintenanceDueSoonDays ? (
+                <p className="mt-2 text-[11px] font-semibold normal-case tracking-normal text-rose-300">
+                  {fieldErrors.maintenanceDueSoonDays}
+                </p>
+              ) : null}
             </label>
 
             <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
@@ -630,6 +689,11 @@ export function AdminSettingsForm({
                 }
                 className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
               />
+              {fieldErrors.maintenanceDueSoonKm ? (
+                <p className="mt-2 text-[11px] font-semibold normal-case tracking-normal text-rose-300">
+                  {fieldErrors.maintenanceDueSoonKm}
+                </p>
+              ) : null}
             </label>
           </div>
         </div>
@@ -682,6 +746,11 @@ export function AdminSettingsForm({
                 }
                 className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
               />
+              {fieldErrors.depreciationDefaultUsefulLifeMonths ? (
+                <p className="mt-2 text-[11px] font-semibold normal-case tracking-normal text-rose-300">
+                  {fieldErrors.depreciationDefaultUsefulLifeMonths}
+                </p>
+              ) : null}
             </label>
 
             <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
@@ -703,6 +772,11 @@ export function AdminSettingsForm({
                 }
                 className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
               />
+              {fieldErrors.depreciationDefaultResidualPercent ? (
+                <p className="mt-2 text-[11px] font-semibold normal-case tracking-normal text-rose-300">
+                  {fieldErrors.depreciationDefaultResidualPercent}
+                </p>
+              ) : null}
             </label>
           </div>
         </div>
@@ -746,6 +820,11 @@ export function AdminSettingsForm({
               className="w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
               placeholder={"Paperwork\nInsurance\nRegistration\nOther"}
             />
+            {fieldErrors.vehicleDocumentFolders ? (
+              <p className="mt-2 text-xs font-semibold text-rose-300">
+                {fieldErrors.vehicleDocumentFolders}
+              </p>
+            ) : null}
           </div>
         </div>
 
@@ -776,6 +855,11 @@ export function AdminSettingsForm({
               className="w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
               placeholder={"Registration\nInsurance Certificate\nService Invoice\nReceipt\nPhoto\nOther"}
             />
+            {fieldErrors.vehicleDocumentTypeOptions ? (
+              <p className="mt-2 text-xs font-semibold text-rose-300">
+                {fieldErrors.vehicleDocumentTypeOptions}
+              </p>
+            ) : null}
           </div>
         </div>
 
@@ -789,6 +873,11 @@ export function AdminSettingsForm({
             checklist items. The current vehicle Checklist quick template action still uses the
             label list derived from these entries.
           </p>
+          {fieldErrors.vehicleChecklistTemplates ? (
+            <p className="mt-3 text-xs font-semibold text-rose-300">
+              {fieldErrors.vehicleChecklistTemplates}
+            </p>
+          ) : null}
           <div className="mt-4 space-y-4">
             {settings.vehicleChecklistTemplates.map((template, index) => (
               <div
@@ -1034,6 +1123,11 @@ export function AdminSettingsForm({
               className="w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
               placeholder={"SERVICE\nREPAIR\nINSPECTION\nREGISTRATION\nINSURANCE"}
             />
+            {fieldErrors.maintenanceCategories ? (
+              <p className="mt-2 text-xs font-semibold text-rose-300">
+                {fieldErrors.maintenanceCategories}
+              </p>
+            ) : null}
           </div>
         </div>
 
@@ -1063,6 +1157,11 @@ export function AdminSettingsForm({
               className="w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
               placeholder={"LOW\nNORMAL\nHIGH\nURGENT"}
             />
+            {fieldErrors.maintenancePriorities ? (
+              <p className="mt-2 text-xs font-semibold text-rose-300">
+                {fieldErrors.maintenancePriorities}
+              </p>
+            ) : null}
           </div>
         </div>
 

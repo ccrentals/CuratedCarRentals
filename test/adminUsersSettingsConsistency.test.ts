@@ -16,7 +16,8 @@ test("Users page search uses contains matching and SQL total-count pagination", 
 
 test("Settings API GET requires admin role only", () => {
   const code = read("src/app/api/admin/settings/route.ts");
-  assert.match(code, /const auth = await requireAdminRole\(\);/);
+  assert.match(code, /requireAdmin\?: \(\) => Promise<RequireAdminRoleResult>;/);
+  assert.match(code, /deps\.requireAdmin \?\? requireAdminRole/);
   assert.doesNotMatch(code, /requireStaffOrAdminRole/);
 });
 

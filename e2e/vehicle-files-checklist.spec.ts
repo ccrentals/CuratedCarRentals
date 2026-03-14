@@ -236,6 +236,22 @@ async function browserPatch<T>(
       }
       if (!csrfToken) throw new Error("Missing CSRF token");
 
+      const nextBody = { ...body } as Record<string, unknown>;
+      if (endpoint === "/api/admin/settings" && "settings" in nextBody && !("baseUpdatedAt" in nextBody)) {
+        const settingsResponse = await fetch("/api/admin/settings", {
+          method: "GET",
+          credentials: "include",
+          headers: {
+            Accept: "application/json",
+          },
+          cache: "no-store",
+        });
+        const settingsPayload = (await settingsResponse.json().catch(() => ({}))) as {
+          updatedAt?: string | null;
+        };
+        nextBody.baseUpdatedAt = settingsPayload.updatedAt ?? null;
+      }
+
       const response = await fetch(endpoint, {
         method: "PATCH",
         headers: {
@@ -243,7 +259,7 @@ async function browserPatch<T>(
           "x-csrf-token": csrfToken,
         },
         body: JSON.stringify({
-          ...body,
+          ...nextBody,
           csrfToken,
         }),
       });
