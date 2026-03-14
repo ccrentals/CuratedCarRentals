@@ -61,6 +61,30 @@ type FormState = {
   isActive: boolean;
 };
 
+function flashStorageKey(vehicleId: string) {
+  return `ccr_vehicle_pricing_flash_${vehicleId}`;
+}
+
+function persistFlashMessage(vehicleId: string, value: string) {
+  if (typeof window === "undefined") return;
+  const key = flashStorageKey(vehicleId);
+  window.sessionStorage.setItem(key, value);
+  window.setTimeout(() => {
+    if (window.sessionStorage.getItem(key) === value) {
+      window.sessionStorage.removeItem(key);
+    }
+  }, 15000);
+}
+
+function consumeFlashMessage(vehicleId: string) {
+  if (typeof window === "undefined") return null;
+  const key = flashStorageKey(vehicleId);
+  const value = window.sessionStorage.getItem(key);
+  if (!value) return null;
+  window.sessionStorage.removeItem(key);
+  return value;
+}
+
 function toInput(value: number | null) {
   return value === null || Number.isNaN(value) ? "" : String(value);
 }
@@ -202,6 +226,13 @@ export function VehiclePricingRulesPanel({ vehicleId }: VehiclePricingRulesPanel
   useEffect(() => {
     void loadRules();
   }, [loadRules]);
+
+  useEffect(() => {
+    const flashedMessage = consumeFlashMessage(vehicleId);
+    if (flashedMessage) {
+      setMessage(flashedMessage);
+    }
+  }, [vehicleId]);
 
   const panelState = useMemo(() => {
     if (defaultsApplied) {
@@ -387,7 +418,9 @@ export function VehiclePricingRulesPanel({ vehicleId }: VehiclePricingRulesPanel
       next.baseDepositCents = toInput(vehiclePayload.vehicle.deposit_cents ?? 0);
       setForm(next);
       setDefaultsApplied(Boolean(payload.defaultsApplied));
-      setMessage("Vehicle pricing saved.");
+      const nextMessage = "Vehicle pricing saved.";
+      persistFlashMessage(vehicleId, nextMessage);
+      setMessage(nextMessage);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Failed to save vehicle pricing.");
     } finally {
@@ -444,7 +477,9 @@ export function VehiclePricingRulesPanel({ vehicleId }: VehiclePricingRulesPanel
       next.baseDepositCents = toInput(vehiclePayload.vehicle.deposit_cents ?? 0);
       setForm(next);
       setDefaultsApplied(Boolean(payload.defaultsApplied));
-      setMessage("Default pricing rules restored.");
+      const nextMessage = "Vehicle pricing restored to defaults.";
+      persistFlashMessage(vehicleId, nextMessage);
+      setMessage(nextMessage);
     } catch (requestError) {
       setError(
         requestError instanceof Error
@@ -475,7 +510,15 @@ export function VehiclePricingRulesPanel({ vehicleId }: VehiclePricingRulesPanel
 
       {loading ? <p className="mt-4 text-sm text-[var(--ccr-muted)]">Loading pricing rules...</p> : null}
       {error ? <p className="mt-4 text-sm text-red-600">{error}</p> : null}
-      {message ? <p className="mt-4 text-sm text-emerald-600">{message}</p> : null}
+      {message ? (
+        <div
+          role="status"
+          aria-live="polite"
+          className="mt-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200"
+        >
+          {message}
+        </div>
+      ) : null}
 
       {!loading ? (
         <form className="mt-4 space-y-6" onSubmit={handleSave}>
