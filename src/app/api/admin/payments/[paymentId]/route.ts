@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { requireAdminRole } from "@/lib/auth/adminGuards";
 import { getDbPool } from "@/lib/db";
+import { loadAdminSettings } from "@/lib/adminSettings";
 import { writeAuditLog } from "@/lib/audit";
 import { logError } from "@/lib/log";
 import { requireCsrf } from "@/lib/security/csrf";
@@ -11,19 +12,6 @@ import {
   sendBookingOverriddenByPaidBookingEmail,
 } from "@/lib/notifications/email";
 import { maybeEntitleBookingAfterPayment } from "@/lib/availability/entitlement";
-
-function parseRequireRestoreReason(content: unknown) {
-  if (typeof content !== "string" || !content.trim()) return true;
-  try {
-    const parsed = JSON.parse(content) as Record<string, unknown>;
-    if (typeof parsed.requireRestoreReason === "boolean") {
-      return parsed.requireRestoreReason;
-    }
-    return true;
-  } catch {
-    return true;
-  }
-}
 
 export async function PATCH(
   request: Request,
@@ -60,18 +48,8 @@ export async function PATCH(
   const client = await pool.connect();
 
   try {
-    let requireRestoreReason = true;
-    try {
-      const settingsResult = await client.query(
-        "select content from admin_documents where key = 'settings' limit 1",
-      );
-      requireRestoreReason = parseRequireRestoreReason(settingsResult.rows[0]?.content);
-    } catch (settingsError) {
-      const settingsCode = (settingsError as { code?: string } | null)?.code;
-      if (settingsCode !== "42P01") {
-        throw settingsError;
-      }
-    }
+    const { settings } = await loadAdminSettings();
+    const requireRestoreReason = settings.requireRestoreReason;
 
     if (action === "restore" && requireRestoreReason && !note) {
       return NextResponse.json({ error: "Reason is required" }, { status: 400 });

@@ -32,7 +32,7 @@ export type EnvValidation = {
 export type InvoiceProvider = "pdfmonkey" | "gotenberg";
 
 export function getInvoiceProvider(): InvoiceProvider {
-  const provider = (process.env.PDF_PROVIDER ?? "pdfmonkey").trim().toLowerCase();
+  const provider = (process.env.INVOICE_PDF_PROVIDER ?? "pdfmonkey").trim().toLowerCase();
   if (provider === "gotenberg") return "gotenberg";
   return "pdfmonkey";
 }
@@ -78,10 +78,12 @@ export function validateEnv(): EnvValidation {
 
   const invoicesMissing: string[] = [];
   const invoicesInvalid: string[] = [];
-  const invoiceProviderRaw = (process.env.PDF_PROVIDER ?? "pdfmonkey").trim().toLowerCase();
+  const invoiceProviderRaw = (process.env.INVOICE_PDF_PROVIDER ?? "pdfmonkey")
+    .trim()
+    .toLowerCase();
   const invoiceProvider = getInvoiceProvider();
   if (!INVOICE_PROVIDERS.has(invoiceProviderRaw)) {
-    invoicesInvalid.push("PDF_PROVIDER must be pdfmonkey or gotenberg");
+    invoicesInvalid.push("INVOICE_PDF_PROVIDER must be pdfmonkey or gotenberg");
   }
   if (invoiceProvider === "gotenberg") {
     const gotenbergUrl = (process.env.GOTENBERG_URL ?? "").trim();

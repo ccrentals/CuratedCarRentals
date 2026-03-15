@@ -3,6 +3,10 @@ import { NextResponse } from "next/server";
 import { requireAdminRole, requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { fetchAdminBookingsPage } from "@/lib/bookings/adminBookingsList";
+import {
+  buildAdminCreateBookingWindow,
+  computeAdminCreateBookingPricingPreview,
+} from "@/lib/bookings/adminCreateBooking";
 import { getDbPool } from "@/lib/db";
 import { sendBookingCreatedEmail } from "@/lib/notifications/email";
 import { calcDaysInclusive, dateOnlyUtc } from "@/lib/payments/dateMath";
@@ -16,17 +20,6 @@ import { writeAuditLog } from "@/lib/audit";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-function buildWindowFromDates(startDate: string, endDate: string) {
-  const startAt = new Date(`${startDate}T00:00:00.000Z`);
-  const endAt = new Date(`${endDate}T00:00:00.000Z`);
-  if (Number.isNaN(startAt.getTime()) || Number.isNaN(endAt.getTime())) return null;
-  endAt.setUTCDate(endAt.getUTCDate() + 1);
-  return {
-    startAt: startAt.toISOString(),
-    endAt: endAt.toISOString(),
-  };
-}
 
 export async function GET(request: Request) {
   return handleAdminBookingsGet(request);
@@ -68,11 +61,44 @@ export async function handleAdminBookingsGet(
 }
 
 export async function POST(request: Request) {
-  const auth = await requireAdminRole();
+  return handleAdminBookingsPost(request);
+}
+
+export type AdminBookingsPostRouteDeps = {
+  requireAdmin: typeof requireAdminRole;
+  requireCsrfToken: typeof requireCsrf;
+  getPool: typeof getDbPool;
+  isVehicleUnavailable: typeof isVehicleUnavailableEntitlementBased;
+  upsertCustomer: typeof upsertCustomerForBooking;
+  validatePromo: typeof validatePromoForBooking;
+  upsertPromo: typeof upsertPromoRedemption;
+  writeAudit: typeof writeAuditLog;
+  sendCreatedEmail: typeof sendBookingCreatedEmail;
+  log: typeof logError;
+};
+
+const DEFAULT_BOOKINGS_POST_DEPS: AdminBookingsPostRouteDeps = {
+  requireAdmin: requireAdminRole,
+  requireCsrfToken: requireCsrf,
+  getPool: getDbPool,
+  isVehicleUnavailable: isVehicleUnavailableEntitlementBased,
+  upsertCustomer: upsertCustomerForBooking,
+  validatePromo: validatePromoForBooking,
+  upsertPromo: upsertPromoRedemption,
+  writeAudit: writeAuditLog,
+  sendCreatedEmail: sendBookingCreatedEmail,
+  log: logError,
+};
+
+export async function handleAdminBookingsPost(
+  request: Request,
+  deps: AdminBookingsPostRouteDeps = DEFAULT_BOOKINGS_POST_DEPS,
+) {
+  const auth = await deps.requireAdmin();
   if (!auth.ok) return auth.response;
   const { actor } = auth;
 
-  if (!(await requireCsrf(request))) {
+  if (!(await deps.requireCsrfToken(request))) {
     return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
   }
 
@@ -129,7 +155,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid rental duration" }, { status: 400 });
   }
 
-  const pool = getDbPool();
+  const pool = deps.getPool();
   const client = await pool.connect();
 
   try {
@@ -145,13 +171,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Vehicle not found" }, { status: 404 });
     }
 
-    const availabilityWindow = buildWindowFromDates(startDate, endDate);
+    const availabilityWindow = buildAdminCreateBookingWindow(startDate, endDate);
     if (!availabilityWindow) {
       await client.query("rollback");
       return NextResponse.json({ error: "Invalid booking dates." }, { status: 400 });
     }
 
-    const isUnavailable = await isVehicleUnavailableEntitlementBased(
+    const isUnavailable = await deps.isVehicleUnavailable(
       vehicleId,
       availabilityWindow,
       { client },
@@ -164,7 +190,7 @@ export async function POST(request: Request) {
     const normalizedEmail = String(email).trim().toLowerCase();
     let customerUpsert;
     try {
-      customerUpsert = await upsertCustomerForBooking(
+      customerUpsert = await deps.upsertCustomer(
         {
           customerId: typeof customerId === "string" ? customerId : undefined,
           fullName: String(fullName).trim(),
@@ -198,7 +224,7 @@ export async function POST(request: Request) {
     let promoId: string | null = null;
 
     if (promoCode) {
-      const promoValidation = await validatePromoForBooking({
+      const promoValidation = await deps.validatePromo({
         code: promoCode,
         vehicleId,
         startDate: String(startDate),
@@ -217,16 +243,23 @@ export async function POST(request: Request) {
       promoId = promoValidation.promoId;
     }
 
-    const totalAmount = Math.max(0, subtotalAmount - promoDiscount);
+    const pricingPreview = computeAdminCreateBookingPricingPreview({
+      dailyRateCents: dailyRate,
+      depositCents: depositAmount,
+      startDate: String(startDate),
+      endDate: String(endDate),
+      promoDiscountCents: promoDiscount,
+    });
+    const totalAmount = pricingPreview?.totalCents ?? Math.max(0, subtotalAmount - promoDiscount);
 
     const pricing = {
       daily_rate_cents: dailyRate,
       deposit_cents: depositAmount,
-      days,
+      days: pricingPreview?.days ?? days,
       customer_name_snapshot: String(fullName).trim(),
       customer_email_snapshot: normalizedEmail,
       customer_phone_snapshot: String(phone).trim(),
-      subtotal_cents: subtotalAmount,
+      subtotal_cents: pricingPreview?.subtotalCents ?? subtotalAmount,
       promo_code: promoCode || null,
       promo_code_id: promoId,
       promo_discount_cents: promoDiscount,
@@ -236,7 +269,7 @@ export async function POST(request: Request) {
       balance_due: totalAmount,
       payment_status: "UNPAID",
       payment_option_selected: "DEPOSIT",
-      currency: "JMD",
+      currency: pricingPreview?.currency ?? "JMD",
     };
 
     const bookingInsert = await client.query(
@@ -245,7 +278,7 @@ export async function POST(request: Request) {
     );
 
     if (promoId && promoDiscount > 0) {
-      await upsertPromoRedemption({
+      await deps.upsertPromo({
         bookingId: bookingInsert.rows[0].id as string,
         promoId,
         customerId: customerUpsert.customerId,
@@ -257,25 +290,34 @@ export async function POST(request: Request) {
 
     await client.query("commit");
 
-    await writeAuditLog({
-      userId: actor.userId,
-      action: "BOOKING_CREATED_BY_ADMIN",
-      entityType: "booking",
-      entityId: bookingInsert.rows[0].id,
-      details: {
-        customer_id: customerUpsert.customerId,
-        created_on_behalf: Boolean(customerId),
-        customer_created: customerUpsert.created,
-        vehicle_id: vehicleId,
-        start_date: String(startDate),
-        end_date: String(endDate),
-        promo_code: promoCode || null,
-        promo_discount_cents: promoDiscount,
-      },
-    });
+    try {
+      await deps.writeAudit({
+        userId: actor.userId,
+        action: "BOOKING_CREATED_BY_ADMIN",
+        entityType: "booking",
+        entityId: bookingInsert.rows[0].id,
+        details: {
+          customer_id: customerUpsert.customerId,
+          created_on_behalf: Boolean(customerId),
+          customer_created: customerUpsert.created,
+          vehicle_id: vehicleId,
+          start_date: String(startDate),
+          end_date: String(endDate),
+          promo_code: promoCode || null,
+          promo_discount_cents: promoDiscount,
+        },
+      });
+    } catch (error) {
+      deps.log("admin_booking_create_audit_failed", error, {
+        userId: actor.userId,
+        bookingId: bookingInsert.rows[0]?.id,
+        vehicleId,
+        customerId: customerUpsert.customerId,
+      });
+    }
 
     try {
-      await sendBookingCreatedEmail({
+      await deps.sendCreatedEmail({
         bookingId: bookingInsert.rows[0].id,
         customerEmail: normalizedEmail,
         customerName: String(fullName).trim(),
@@ -289,7 +331,7 @@ export async function POST(request: Request) {
         promoDiscount,
       });
     } catch (error) {
-      logError("admin_booking_email_failed", error, {
+      deps.log("admin_booking_email_failed", error, {
         bookingId: bookingInsert.rows[0]?.id,
         vehicleId,
         customerId: customerUpsert.customerId,
@@ -303,7 +345,7 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     await client.query("rollback");
-    logError("admin_booking_create_failed", error, {
+    deps.log("admin_booking_create_failed", error, {
       userId: actor.userId,
       vehicleId: String(vehicleId ?? ""),
       startDate: String(startDate ?? ""),

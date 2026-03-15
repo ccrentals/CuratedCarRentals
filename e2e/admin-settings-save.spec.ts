@@ -332,4 +332,41 @@ test.describe("@tour admin settings save hardening", () => {
     await serviceTypeRequest;
     expect(serviceTypeRequests.length).toBeGreaterThan(0);
   });
+
+  test("@tour desktop maintenance service types can recover from a fetch failure", async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(120_000);
+    test.skip(testInfo.project.name !== "desktop", "Desktop-only verification for stable selectors.");
+
+    await authenticateAdmin(page);
+
+    let shouldFailFirstLoad = true;
+    await page.route("**/api/admin/maintenance/service-types", async (route) => {
+      if (route.request().method() === "GET" && shouldFailFirstLoad) {
+        shouldFailFirstLoad = false;
+        await route.fulfill({
+          status: 500,
+          contentType: "application/json",
+          body: JSON.stringify({ ok: false, error: "Failed to load service types." }),
+        });
+        return;
+      }
+      await route.continue();
+    });
+
+    await page.goto("/admin/settings?tab=maintenance", { waitUntil: "networkidle" });
+
+    await expect(page.getByTestId("settings-service-types-error")).toContainText(
+      "Failed to load service types.",
+    );
+    await expect(page.getByTestId("settings-service-types-retry")).toBeVisible();
+
+    await page.getByTestId("settings-service-types-retry").click();
+
+    await expect(page.getByTestId("settings-service-types-error")).toHaveCount(0);
+    await expect(
+      page.getByText("No maintenance service types yet.").or(page.getByRole("button", { name: "Edit" }).first()),
+    ).toBeVisible();
+  });
 });

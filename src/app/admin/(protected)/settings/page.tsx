@@ -178,6 +178,9 @@ export default async function AdminSettingsPage({
               The <code>admin_documents</code> table is missing. Apply the current schema in Neon and
               refresh this page.
             </p>
+            <p className="mt-2 text-sm text-[var(--ccr-muted)]">
+              Until storage is installed, some admin features may continue using built-in default settings.
+            </p>
           </section>
         ) : isSettingsFormTab(activeTab) ? (
           <AdminSettingsForm

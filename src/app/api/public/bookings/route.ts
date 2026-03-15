@@ -9,7 +9,11 @@ import { CustomerBlockedError, upsertCustomerForBooking } from "@/lib/customers"
 import { normalizeCountryName, normalizeRegionForCountry } from "@/lib/jamaicaParishes";
 import { normalizeLegalIdType } from "@/lib/customers/legalId";
 import { isPublicVehicleUnavailableForWindow } from "@/lib/publicVehicles";
-import { createBookingAccessToken, hashBookingAccessToken } from "@/lib/bookings/privateAccess";
+import {
+  createBookingAccessToken,
+  hashBookingAccessToken,
+  hashBookingSubmissionKey,
+} from "@/lib/bookings/privateAccess";
 import { normalizePromoInputCode, upsertPromoRedemption } from "@/lib/promos";
 import {
   computeBookingPricingFromStoredSnapshot,
@@ -108,6 +112,7 @@ export async function POST(request: Request) {
   const paymentOptionInput = parsePaymentOptionInput(body?.paymentOption);
   const paymentOption = paymentOptionInput ?? "DEPOSIT";
   const customPaymentAmountCents = parseAmount(body?.customPaymentAmountCents);
+  const submissionKey = normalizeText(body?.submissionKey);
   const driversLicenseNumber = normalizeText(body?.driversLicenseNumber) || normalizeText(body?.legalIdNumber);
   const hasDriversLicenseNumber = isNonEmptyString(driversLicenseNumber, 4);
   const driversLicenseExpirationDate = parseOptionalDate(body?.driversLicenseExpirationDate);
@@ -137,11 +142,11 @@ export async function POST(request: Request) {
   if (!isNonEmptyString(fullName, 2)) {
     return NextResponse.json({ error: "Invalid fullName" }, { status: 400 });
   }
-  if (emailInput && !isEmail(emailInput)) {
-    return NextResponse.json({ error: "Invalid email" }, { status: 400 });
+  if (!emailInput || !isEmail(emailInput)) {
+    return NextResponse.json({ error: "Valid email is required" }, { status: 400 });
   }
-  if (phoneInput && !isNonEmptyString(phoneInput, 7)) {
-    return NextResponse.json({ error: "Invalid phone" }, { status: 400 });
+  if (!phoneInput || !isNonEmptyString(phoneInput, 7)) {
+    return NextResponse.json({ error: "Valid phone is required" }, { status: 400 });
   }
   if (!isISODate(startDate) || !isISODate(endDate)) {
     return NextResponse.json({ error: "Invalid dates" }, { status: 400 });
@@ -173,6 +178,9 @@ export async function POST(request: Request) {
   if (body && body.paymentOption !== undefined && paymentOptionInput === null) {
     return NextResponse.json({ error: "Invalid payment option." }, { status: 400 });
   }
+  if (!isNonEmptyString(submissionKey, 16)) {
+    return NextResponse.json({ error: "Invalid submission key." }, { status: 400 });
+  }
 
   const start = dateOnlyUtc(startDate);
   const end = dateOnlyUtc(endDate);
@@ -203,14 +211,33 @@ export async function POST(request: Request) {
     );
   }
 
-  const normalizedEmail = emailInput ? emailInput.toLowerCase() : `no-email+${Date.now()}@curated.local`;
-  const normalizedPhone = phoneInput || "0000000";
+  const normalizedEmail = emailInput.toLowerCase();
+  const normalizedPhone = phoneInput;
+  const submissionKeyHash = hashBookingSubmissionKey(submissionKey);
+  const bookingAccessToken = createBookingAccessToken(submissionKey);
+  const bookingAccessTokenHash = hashBookingAccessToken(bookingAccessToken);
 
   const pool = getDbPool();
   const client = await pool.connect();
 
   try {
     await client.query("begin");
+    await client.query("select pg_advisory_xact_lock(hashtext($1))", [submissionKeyHash]);
+
+    const existingSubmissionResult = (await client.query(
+      "select id, status from bookings where pricing_json->>'public_submit_key_hash' = $1 order by created_at desc limit 1",
+      [submissionKeyHash],
+    )) as { rows: Array<{ id: string; status: string }> };
+    const existingSubmission = existingSubmissionResult.rows[0] ?? null;
+    if (existingSubmission) {
+      await client.query("rollback");
+      return NextResponse.json({
+        bookingId: existingSubmission.id,
+        bookingAccessToken,
+        status: existingSubmission.status,
+        duplicate: true,
+      });
+    }
 
     const vehicleResult = await client.query(
       "select id, make, model, year from vehicles where id = $1 and status <> 'INACTIVE'",
@@ -369,8 +396,6 @@ export async function POST(request: Request) {
       }
     }
 
-    const bookingAccessToken = createBookingAccessToken();
-    const bookingAccessTokenHash = hashBookingAccessToken(bookingAccessToken);
     const driversLicenseUploadedAt = driversLicenseFileId || hasDriversLicenseDataUrl
       ? new Date().toISOString()
       : null;
@@ -397,6 +422,7 @@ export async function POST(request: Request) {
       payment_status: pricingSummary.paymentStatus,
       payment_option_selected: pricingSummary.paymentOption,
       custom_payment_amount_cents: customAmount,
+      public_submit_key_hash: submissionKeyHash,
       private_access_token_hash: bookingAccessTokenHash,
       currency: String(quoteSnapshot.pricingJson.currency ?? "JMD"),
     };

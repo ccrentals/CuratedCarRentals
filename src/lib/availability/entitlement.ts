@@ -184,7 +184,10 @@ function normalizeWindow(window: OverlapWindowInput) {
 }
 
 function normalizeBookingDate(value: unknown, fallbackTime: "start" | "end") {
-  const dateOnly = toText(value);
+  const dateOnly =
+    value instanceof Date && Number.isFinite(value.getTime())
+      ? value.toISOString().slice(0, 10)
+      : toText(value);
   if (!dateOnly) return null;
   if (fallbackTime === "start") {
     return toIso(`${dateOnly}T00:00:00.000Z`);

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { bookingAccessForbiddenResponse, hasPublicBookingAccessForRequest } from "@/lib/bookings/publicAccess";
 import { getDbPool } from "@/lib/db";
 import { logError } from "@/lib/log";
 import { clearPromoRedemptionForBooking, normalizePromoInputCode, upsertPromoRedemption, validatePromoForBooking } from "@/lib/promos";
@@ -120,6 +121,15 @@ export async function POST(
       await client.query("rollback");
       return NextResponse.json({ ok: false, error: "Booking not found." }, { status: 404 });
     }
+    const isAuthorized = await hasPublicBookingAccessForRequest(
+      request,
+      booking.id,
+      booking.pricing_json,
+    );
+    if (!isAuthorized) {
+      await client.query("rollback");
+      return bookingAccessForbiddenResponse();
+    }
 
     if (["CANCELLED", "RETURNED"].includes(booking.status)) {
       await client.query("rollback");
@@ -205,6 +215,15 @@ export async function DELETE(
     if (!booking) {
       await client.query("rollback");
       return NextResponse.json({ ok: false, error: "Booking not found." }, { status: 404 });
+    }
+    const isAuthorized = await hasPublicBookingAccessForRequest(
+      request,
+      booking.id,
+      booking.pricing_json,
+    );
+    if (!isAuthorized) {
+      await client.query("rollback");
+      return bookingAccessForbiddenResponse();
     }
 
     if (["CANCELLED", "RETURNED"].includes(booking.status)) {

@@ -1,4 +1,5 @@
 import { dbQuery } from "@/lib/db";
+import { loadBookingRentalAgreementPayload } from "@/lib/agreements/rentalAgreementPayload";
 import { getInvoiceProvider } from "@/lib/env";
 import { formatJmd } from "@/lib/money";
 import {
@@ -10,11 +11,9 @@ import {
 import { formatPaymentStatus } from "@/lib/payments/formatPaymentStatus";
 import {
   buildInvoicePayload,
-  buildRentalAgreementPayload,
   generateInvoicePdf,
   generateRentalAgreementPdf,
 } from "@/lib/pdfmonkey";
-import { buildUploadcareCdnUrl, extractUploadcareFileId } from "@/lib/uploads/uploadcare";
 import { QuoteTemplatePreviewFrame } from "@/components/admin/QuoteTemplatePreviewFrame";
 import { resolveStoredRegionCountry } from "@/lib/jamaicaParishes";
 
@@ -97,16 +96,6 @@ type QuoteRow = {
   amount_due_cents: number;
 };
 
-type BookingSignatureFileRow = {
-  storage_provider: string | null;
-  storage_key: string | null;
-  mime_type: string | null;
-};
-
-type BookingSignatureTimeRow = {
-  signature_signed_at: string | Date | null;
-};
-
 const PAYMENT_STATUS_REDUCES_BALANCE = new Set([
   "SUCCESS",
   "SUCCEEDED",
@@ -162,104 +151,6 @@ function buildCustomerAddress(booking: BookingRow) {
 function toMoneyCents(value: unknown) {
   const amount = Number(value);
   return Number.isFinite(amount) ? amount : 0;
-}
-
-function toSignatureDataUrl(
-  storageKey: string,
-): { mimeType: string; dataUrl: string } | null {
-  const match = storageKey.match(/^data:([^;,]+)?(;base64)?,(.*)$/i);
-  if (!match) return null;
-  const mimeType = normalizeText(match[1]) || "image/png";
-  const isBase64 = Boolean(match[2]);
-  const payload = match[3] ?? "";
-  try {
-    const bytes = isBase64
-      ? Buffer.from(payload, "base64")
-      : Buffer.from(decodeURIComponent(payload), "utf-8");
-    if (bytes.length < 1) return null;
-    return {
-      mimeType,
-      dataUrl: `data:${mimeType};base64,${bytes.toString("base64")}`,
-    };
-  } catch {
-    return null;
-  }
-}
-
-async function loadBookingSignatureData(bookingId: string) {
-  const signedAtResult = await (async () => {
-    try {
-      return await dbQuery<BookingSignatureTimeRow>(
-        "select signature_signed_at from bookings where id = $1 limit 1",
-        [bookingId],
-      );
-    } catch (error) {
-      const code = (error as { code?: string } | null)?.code;
-      const message = String((error as { message?: unknown } | null)?.message ?? "");
-      if (code === "42703" && message.includes("\"signature_signed_at\"")) {
-        return { rows: [{ signature_signed_at: null }], rowCount: 1 } as {
-          rows: BookingSignatureTimeRow[];
-          rowCount: number;
-        };
-      }
-      throw error;
-    }
-  })();
-
-  const signedAtRaw = signedAtResult.rows[0]?.signature_signed_at ?? null;
-  const signedAt =
-    signedAtRaw instanceof Date
-      ? signedAtRaw.toISOString()
-      : normalizeText(signedAtRaw);
-
-  const signatureResult = await dbQuery<BookingSignatureFileRow>(
-    "select storage_provider, storage_key, mime_type from booking_private_files where booking_id = $1 and document_type = 'SIGNATURE' order by created_at desc limit 1",
-    [bookingId],
-  );
-  const signature = signatureResult.rows[0] ?? null;
-  if (!signature) {
-    return { signatureDataUrl: null as string | null, signedAt };
-  }
-
-  const storageProvider = normalizeText(signature.storage_provider).toUpperCase();
-  const storageKey = normalizeText(signature.storage_key);
-  if (!storageKey) {
-    return { signatureDataUrl: null as string | null, signedAt };
-  }
-
-  if (storageProvider === "DATA_URL") {
-    const parsed = toSignatureDataUrl(storageKey);
-    return {
-      signatureDataUrl: parsed?.dataUrl ?? null,
-      signedAt,
-    };
-  }
-
-  const uploadcareFileId = extractUploadcareFileId(storageKey);
-  if (!uploadcareFileId) {
-    return { signatureDataUrl: null as string | null, signedAt };
-  }
-
-  try {
-    const upstream = await fetch(buildUploadcareCdnUrl(uploadcareFileId));
-    if (!upstream.ok) {
-      return { signatureDataUrl: null as string | null, signedAt };
-    }
-    const bytes = Buffer.from(await upstream.arrayBuffer());
-    if (bytes.length < 1) {
-      return { signatureDataUrl: null as string | null, signedAt };
-    }
-    const mimeType =
-      normalizeText(signature.mime_type) ||
-      normalizeText(upstream.headers.get("content-type")) ||
-      "image/png";
-    return {
-      signatureDataUrl: `data:${mimeType};base64,${bytes.toString("base64")}`,
-      signedAt,
-    };
-  } catch {
-    return { signatureDataUrl: null as string | null, signedAt };
-  }
 }
 
 function resolveProviderLabel(payment: PaymentRow) {
@@ -495,38 +386,23 @@ async function buildRentalAgreementPreviewFromLatestBooking(): Promise<TemplateP
     return emptyPreview("No bookings found yet. Create a booking first, then refresh this page.");
   }
 
-  const latestReducingPayment = [...context.reducingPayments].reverse().find(isBalanceReducingPayment);
-  const paymentMethod = latestReducingPayment
-    ? resolveProviderLabel(latestReducingPayment)
-    : "Not specified";
-  const signature = await loadBookingSignatureData(context.booking.id);
-
-  const payload = buildRentalAgreementPayload({
-    bookingId: context.booking.public_id || context.booking.id,
-    bookingStatus: context.booking.status,
-    startDate: context.pickupDate,
-    endDate: context.dropoffDate,
-    pickupLocation: context.booking.pickup_location,
-    returnLocation: context.booking.pickup_location,
-    customerName: context.booking.customer_name,
-    customerEmail: context.booking.customer_email,
-    customerPhone: context.booking.customer_phone,
-    customerAddress: context.customerAddress,
-    vehicleMake: context.booking.vehicle_make,
-    vehicleModel: context.booking.vehicle_model,
-    vehicleYear: context.booking.vehicle_year,
-    dailyRate: context.dailyRate,
-    total: context.summary.total,
-    deposit: context.depositPolicy,
-    paidToDate: context.summary.netPaidToDate,
-    balanceDue: context.summary.balanceDue,
-    paymentMethod,
-    signatureDataUrl: signature.signatureDataUrl,
-    signedAt: signature.signedAt || undefined,
-  });
+  const agreement = await loadBookingRentalAgreementPayload(context.booking.id);
+  if (!agreement) {
+    return {
+      sourceId: context.booking.id,
+      sourcePublicId: context.booking.public_id || context.booking.id,
+      sourceLabel: "booking",
+      pdfUrl: null,
+      error: "Rental agreement booking context could not be loaded.",
+      total: context.summary.total,
+      paidToDate: context.summary.netPaidToDate,
+      balanceDue: context.summary.balanceDue,
+      paymentCount: context.reducingPayments.length,
+    };
+  }
 
   try {
-    const pdf = await generateRentalAgreementPdf(payload);
+    const pdf = await generateRentalAgreementPdf(agreement.payload);
     if (!pdf?.previewUrl) {
       return {
         sourceId: context.booking.id,
@@ -537,7 +413,7 @@ async function buildRentalAgreementPreviewFromLatestBooking(): Promise<TemplateP
         total: context.summary.total,
         paidToDate: context.summary.netPaidToDate,
         balanceDue: context.summary.balanceDue,
-        paymentCount: context.reducingPayments.length,
+        paymentCount: agreement.paymentCount,
       };
     }
     return {
@@ -549,7 +425,7 @@ async function buildRentalAgreementPreviewFromLatestBooking(): Promise<TemplateP
       total: context.summary.total,
       paidToDate: context.summary.netPaidToDate,
       balanceDue: context.summary.balanceDue,
-      paymentCount: context.reducingPayments.length,
+      paymentCount: agreement.paymentCount,
     };
   } catch (error) {
     return {
@@ -564,7 +440,7 @@ async function buildRentalAgreementPreviewFromLatestBooking(): Promise<TemplateP
       total: context.summary.total,
       paidToDate: context.summary.netPaidToDate,
       balanceDue: context.summary.balanceDue,
-      paymentCount: context.reducingPayments.length,
+      paymentCount: agreement.paymentCount,
     };
   }
 }
@@ -622,7 +498,12 @@ export default async function AdminTemplateLabPage({
   const activeLabel =
     TEMPLATE_ITEMS.find((item) => item.key === activeTemplate)?.label ??
     (activeTemplate === "agreement" ? "Rental Agreement" : "Invoice");
-  const activeProviderLabel = activeTemplate === "quote" ? "native" : provider;
+  const activeProviderLabel =
+    activeTemplate === "quote"
+      ? "native"
+      : activeTemplate === "agreement"
+        ? "gotenberg"
+        : provider;
 
   return (
     <div className="mx-auto w-full max-w-7xl px-6 py-10">
@@ -677,10 +558,10 @@ export default async function AdminTemplateLabPage({
                 </div>
               </div>
 
-              {activeTemplate !== "quote" && provider !== "gotenberg" ? (
-                <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                  Current PDF provider is <strong>{provider}</strong>. For this template workflow,
-                  set <code>PDF_PROVIDER=gotenberg</code>.
+              {activeTemplate === "agreement" ? (
+                <div className="mt-4 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+                  Rental agreement preview remains pinned to <strong>gotenberg</strong>. Invoice and
+                  receipt preview use the configured invoice provider.
                 </div>
               ) : null}
 

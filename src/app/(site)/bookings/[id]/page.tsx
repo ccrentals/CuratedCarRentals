@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { hasPublicBookingAccessForPage } from "@/lib/bookings/publicAccess";
 import { DateRangeArrow } from "@/components/shared/DateRangeArrow";
 import { dbQuery } from "@/lib/db";
 import { fmtDateOnly } from "@/lib/dateFormat";
@@ -17,6 +18,22 @@ export default async function BookingSummaryPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+
+  const accessResult = await dbQuery<{
+    id: string;
+    pricing_json: Record<string, unknown> | null;
+  }>("select id, pricing_json from bookings where id = $1", [id]);
+  const bookingAccess = accessResult.rows[0];
+  if (!bookingAccess) {
+    notFound();
+  }
+  const isAuthorized = await hasPublicBookingAccessForPage(
+    bookingAccess.id,
+    bookingAccess.pricing_json,
+  );
+  if (!isAuthorized) {
+    notFound();
+  }
 
   const bookingResult = await dbQuery<{
     id: string;

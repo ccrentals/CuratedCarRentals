@@ -1,6 +1,7 @@
 import { BookingPayPanel } from "@/components/payments/BookingPayPanel";
 import { notFound } from "next/navigation";
 import { readBookingOverrideInfo } from "@/lib/bookings/holds";
+import { hasPublicBookingAccessForPage } from "@/lib/bookings/publicAccess";
 import { dbQuery } from "@/lib/db";
 import { fmtDateOnly } from "@/lib/dateFormat";
 import {
@@ -14,6 +15,22 @@ export default async function BookingPayPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+
+  const accessResult = await dbQuery<{
+    id: string;
+    pricing_json: Record<string, unknown> | null;
+  }>("select id, pricing_json from bookings where id = $1", [id]);
+  const bookingAccess = accessResult.rows[0];
+  if (!bookingAccess) {
+    notFound();
+  }
+  const isAuthorized = await hasPublicBookingAccessForPage(
+    bookingAccess.id,
+    bookingAccess.pricing_json,
+  );
+  if (!isAuthorized) {
+    notFound();
+  }
 
   const bookingResult = await dbQuery<{
     id: string;

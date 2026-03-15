@@ -78,7 +78,7 @@ function hasUploadcareDone(
   return typeof (file as UploadcareSingleFile).done === "function";
 }
 
-function loadUploadcareScript() {
+export function loadUploadcareScript() {
   if (typeof window === "undefined") return Promise.resolve();
   if (window.uploadcare) return Promise.resolve();
   const existing = document.querySelector<HTMLScriptElement>(`script[src="${WIDGET_SRC}"]`);
@@ -99,7 +99,7 @@ function loadUploadcareScript() {
   });
 }
 
-async function resolveUploadcareUrls(file: UploadcareSingleFile | UploadcareFileGroup | null) {
+export async function resolveUploadcareUrls(file: UploadcareSingleFile | UploadcareFileGroup | null) {
   if (!file) return [];
   if (isUploadcareGroup(file)) {
     const files = file.files();
@@ -126,6 +126,45 @@ async function resolveUploadcareUrls(file: UploadcareSingleFile | UploadcareFile
   }
 
   return [];
+}
+
+export async function openUploadcareImagesDialog(input: {
+  publicKey: string;
+  multiple?: boolean;
+  imagesOnly?: boolean;
+}) {
+  const publicKey = input.publicKey.trim();
+  if (!publicKey) {
+    throw new Error("Uploadcare is not configured. Add NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY.");
+  }
+
+  await loadUploadcareScript();
+  window.UPLOADCARE_PUBLIC_KEY = publicKey;
+
+  return new Promise<string[]>((resolve, reject) => {
+    const dialog = window.uploadcare?.openDialog(null, {
+      publicKey,
+      multiple: input.multiple ?? true,
+      imagesOnly: input.imagesOnly ?? true,
+    });
+
+    if (!dialog) {
+      reject(new Error("Unable to open upload dialog."));
+      return;
+    }
+
+    dialog.done(async (file) => {
+      try {
+        const urls = await resolveUploadcareUrls(file);
+        resolve(urls);
+      } catch (error) {
+        reject(error instanceof Error ? error : new Error("Upload failed."));
+      }
+    });
+    dialog.fail((error) => {
+      reject(new Error(error?.message ?? "Upload cancelled."));
+    });
+  });
 }
 
 export function UploadcareImagesInput({
@@ -213,29 +252,15 @@ export function UploadcareImagesInput({
     setLoading(true);
     setError(null);
     try {
-      await loadUploadcareScript();
-      window.UPLOADCARE_PUBLIC_KEY = publicKey;
-      const dialog = window.uploadcare?.openDialog(null, {
+      const nextUrls = await openUploadcareImagesDialog({
         publicKey,
         multiple: true,
         imagesOnly: true,
       });
-      if (!dialog) {
-        setError("Unable to open upload dialog.");
-        setLoading(false);
-        return;
-      }
-      dialog.done(async (file) => {
-        const nextUrls = await resolveUploadcareUrls(file);
-        setUrls(nextUrls);
-        setCurrentIndex(0);
-        destroyLightbox();
-        setLoading(false);
-      });
-      dialog.fail((err) => {
-        setError(err?.message ?? "Upload cancelled.");
-        setLoading(false);
-      });
+      setUrls(nextUrls);
+      setCurrentIndex(0);
+      destroyLightbox();
+      setLoading(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed.");
       setLoading(false);

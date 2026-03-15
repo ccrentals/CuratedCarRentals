@@ -158,12 +158,14 @@ async function mockBookingApis(page: Page) {
 
 async function advanceToPaymentsStep(page: Page) {
   await page.getByRole("button", { name: "Next Step" }).click();
-  await page.getByRole("button", { name: "Select Vehicle" }).click();
+  await page.getByRole("button", { name: /^Select$/ }).first().click();
   await page.getByRole("button", { name: "Next Step" }).click();
   await page.getByRole("button", { name: "Next Step" }).click();
 
   await page.getByLabel("First Name *").fill("Draft");
   await page.getByLabel("Last Name *").fill("Restore");
+  await page.getByLabel("Email Address *").fill("draft.restore@example.com");
+  await page.getByLabel("Phone Number *").fill("8765551234");
   await page.getByLabel("DL Number").fill("D1234567");
   const fileInputs = page.locator('input[type="file"]');
   await fileInputs.first().setInputFiles({
@@ -188,7 +190,7 @@ test("booking requires vehicle selection before continue", async ({ page }) => {
   await page.goto("/book", { waitUntil: "networkidle" });
 
   await page.getByRole("button", { name: "Next Step" }).click();
-  await expect(page.getByRole("heading", { name: "Available Vehicle Classes" })).toBeVisible();
+  await expect(page.locator('[data-testid="booking-step-vehicles"]')).toBeVisible();
 
   await page.getByRole("button", { name: "Next Step" }).click();
   await expect(page.getByText("Select a vehicle to continue.")).toBeVisible();
@@ -198,7 +200,7 @@ test("driver's license number, expiration date, and image are optional on custom
   await page.goto("/book", { waitUntil: "networkidle" });
 
   await page.getByRole("button", { name: "Next Step" }).click();
-  await page.getByRole("button", { name: "Select Vehicle" }).click();
+  await page.getByRole("button", { name: /^Select$/ }).first().click();
   await page.getByRole("button", { name: "Next Step" }).click();
   await page.getByRole("button", { name: "Next Step" }).click();
 
@@ -206,6 +208,8 @@ test("driver's license number, expiration date, and image are optional on custom
 
   await page.getByLabel("First Name *").fill("Test");
   await page.getByLabel("Last Name *").fill("Driver");
+  await page.getByLabel("Email Address *").fill("test.driver@example.com");
+  await page.getByLabel("Phone Number *").fill("8765551234");
   await page.getByRole("button", { name: "Next Step" }).click();
   await expect(page.getByText("Driver's license number is required.")).toHaveCount(0);
   await expect(page.getByText("Driver's license image upload is required.")).toHaveCount(0);
@@ -234,7 +238,7 @@ test("insurance and promo update totals using pricing quote", async ({ page }) =
     .inputValue();
 
   await page.getByRole("button", { name: "Next Step" }).click();
-  await page.getByRole("button", { name: "Select Vehicle" }).click();
+  await page.getByRole("button", { name: /^Select$/ }).first().click();
   const initialQuotePromise = page.waitForResponse((response) => {
     if (!response.url().includes("/api/public/pricing/quote")) return false;
     const body = response.request().postData() ?? "";
@@ -454,7 +458,7 @@ test("step tabs unlock by completion and preserve entered Step 3 values", async 
   await page.getByRole("button", { name: "Next Step" }).click();
   await expect(page.locator('[data-testid="booking-step-tab-3"]')).toBeDisabled();
 
-  await page.getByRole("button", { name: "Select Vehicle" }).click();
+  await page.getByRole("button", { name: /^Select$/ }).first().click();
   await page.getByRole("button", { name: "Next Step" }).click();
   await expect(page.locator('[data-testid="booking-step-tab-4"]')).toBeDisabled();
 
@@ -472,6 +476,8 @@ test("step tabs unlock by completion and preserve entered Step 3 values", async 
   await page.getByRole("button", { name: "Next Step" }).click();
   await page.getByLabel("First Name *").fill("Step");
   await page.getByLabel("Last Name *").fill("Tabs");
+  await page.getByLabel("Email Address *").fill("step.tabs@example.com");
+  await page.getByLabel("Phone Number *").fill("8765551234");
   await page.getByLabel("DL Number").fill("D1234567");
   const fileInputs = page.locator('input[type="file"]');
   await fileInputs.first().setInputFiles({

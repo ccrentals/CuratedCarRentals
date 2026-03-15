@@ -23,15 +23,48 @@ const METHOD_LABELS: Record<string, string> = {
   OTHER: "Other",
 };
 
-export async function POST(
+type AddPaymentRouteContext = {
+  params: Promise<{ id: string }>;
+};
+
+export type AdminBookingAddPaymentRouteDeps = {
+  requireStaff: typeof requireStaffOrAdminRole;
+  requireCsrfCheck: typeof requireCsrf;
+  getPool: typeof getDbPool;
+  maybeEntitle: typeof maybeEntitleBookingAfterPayment;
+  recalculate: typeof recalculateBookingPayments;
+  writeAudit: typeof writeAuditLog;
+  sendOverrideEmail: typeof sendBookingOverriddenByPaidBookingEmail;
+  sendCompleteEmail: typeof sendPaymentCompleteEmail;
+  sendUpdateEmail: typeof sendPaymentUpdateEmail;
+  getNotesRecipient: typeof getInternalNotesRecipient;
+  log: typeof logError;
+};
+
+const DEFAULT_ADD_PAYMENT_DEPS: AdminBookingAddPaymentRouteDeps = {
+  requireStaff: requireStaffOrAdminRole,
+  requireCsrfCheck: requireCsrf,
+  getPool: getDbPool,
+  maybeEntitle: maybeEntitleBookingAfterPayment,
+  recalculate: recalculateBookingPayments,
+  writeAudit: writeAuditLog,
+  sendOverrideEmail: sendBookingOverriddenByPaidBookingEmail,
+  sendCompleteEmail: sendPaymentCompleteEmail,
+  sendUpdateEmail: sendPaymentUpdateEmail,
+  getNotesRecipient: getInternalNotesRecipient,
+  log: logError,
+};
+
+export async function handleAdminBookingAddPaymentPost(
   request: Request,
-  { params }: { params: Promise<{ id: string }> },
+  { params }: AddPaymentRouteContext,
+  deps: AdminBookingAddPaymentRouteDeps = DEFAULT_ADD_PAYMENT_DEPS,
 ) {
-  const auth = await requireStaffOrAdminRole();
+  const auth = await deps.requireStaff();
   if (!auth.ok) return auth.response;
   const { actor } = auth;
 
-  if (!(await requireCsrf(request))) {
+  if (!(await deps.requireCsrfCheck(request))) {
     return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
   }
 
@@ -51,8 +84,17 @@ export async function POST(
     return NextResponse.json({ error: "Invalid payment amount" }, { status: 400 });
   }
 
-  const pool = getDbPool();
+  const pool = deps.getPool();
   const client = await pool.connect();
+  let committed = false;
+
+  async function runNonCritical(label: string, work: () => Promise<void>) {
+    try {
+      await work();
+    } catch (error) {
+      deps.log(label, error, { bookingId: id, userId: actor.userId });
+    }
+  }
 
   try {
     await client.query("begin");
@@ -137,66 +179,106 @@ export async function POST(
       ],
     );
 
-    const entitlementResolution = await maybeEntitleBookingAfterPayment(booking.id, {
-      client,
-      auditUserId: actor.userId,
-    });
-    const summary = await recalculateBookingPayments(booking.id, { client });
+    const entitlementResolution = await deps.maybeEntitle(booking.id, { client });
+    const summary = await deps.recalculate(booking.id, { client });
 
     await client.query("commit");
+    committed = true;
 
-    await writeAuditLog({
-      userId: actor.userId,
-      action: "BOOKING_MANUAL_PAYMENT_ADDED",
-      entityType: "booking",
-      entityId: booking.id,
-      details: {
-        amount,
-        method,
-        reference: reference || undefined,
-        confirmed: entitlementResolution.state === "ENTITLED",
-        entitlementState: entitlementResolution.state,
-        winnerBookingId: entitlementResolution.winnerBookingId,
-        overriddenBookings: entitlementResolution.cancelledOverlaps.map((item) => item.id),
-      },
-    });
-
-    for (const overriddenBooking of entitlementResolution.cancelledOverlaps) {
-      await writeAuditLog({
+    await runNonCritical("admin_add_payment_audit_failed", async () => {
+      await deps.writeAudit({
         userId: actor.userId,
-        action: "BOOKING_OVERRIDDEN_BY_PAID_BOOKING",
+        action: "BOOKING_MANUAL_PAYMENT_ADDED",
         entityType: "booking",
-        entityId: overriddenBooking.id,
+        entityId: booking.id,
         details: {
-          overriddenByBookingId: booking.id,
-          overrideReason: "Overridden by paid booking",
+          amount,
+          method,
+          reference: reference || undefined,
+          confirmed: entitlementResolution.state === "ENTITLED",
+          entitlementState: entitlementResolution.state,
+          winnerBookingId: entitlementResolution.winnerBookingId,
+          overriddenBookings: entitlementResolution.cancelledOverlaps.map((item) => item.id),
         },
       });
+    });
 
-      await sendBookingOverriddenByPaidBookingEmail({
-        recipientType: "customer",
-        recipientEmail: overriddenBooking.customerEmail,
-        bookingId: overriddenBooking.id,
-        customerName: overriddenBooking.customerName,
-        customerEmail: overriddenBooking.customerEmail,
-        vehicleLabel: overriddenBooking.vehicleLabel,
-        startDate: overriddenBooking.startDate,
-        endDate: overriddenBooking.endDate,
-        pickupLocation: overriddenBooking.pickupLocation,
-        overriddenByBookingId: booking.id,
+    if (entitlementResolution.state === "ENTITLED") {
+      await runNonCritical("admin_add_payment_entitled_audit_failed", async () => {
+        await deps.writeAudit({
+          userId: actor.userId,
+          action: "BOOKING_ENTITLED_BY_DEPOSIT",
+          entityType: "booking",
+          entityId: booking.id,
+          details: {
+            paidToDate: summary.netPaidToDate,
+            depositRequired: summary.depositAmount,
+            cancelledOverlapCount: entitlementResolution.cancelledOverlaps.length,
+            cancelledOverlapBookingIds: entitlementResolution.cancelledOverlaps.map((item) => item.id),
+          },
+        });
+      });
+    }
+
+    if (entitlementResolution.state === "LOST") {
+      await runNonCritical("admin_add_payment_lost_audit_failed", async () => {
+        await deps.writeAudit({
+          userId: actor.userId,
+          action: "BOOKING_ENTITLEMENT_LOST_AFTER_PAYMENT",
+          entityType: "booking",
+          entityId: booking.id,
+          details: {
+            winnerBookingId: entitlementResolution.winnerBookingId,
+            paidToDate: summary.netPaidToDate,
+            depositRequired: summary.depositAmount,
+            reason: "LOST_TO_FIRST_DEPOSIT",
+          },
+        });
+      });
+    }
+
+    for (const overriddenBooking of entitlementResolution.cancelledOverlaps) {
+      await runNonCritical("admin_add_payment_overridden_audit_failed", async () => {
+        await deps.writeAudit({
+          userId: actor.userId,
+          action: "BOOKING_OVERRIDDEN_BY_PAID_BOOKING",
+          entityType: "booking",
+          entityId: overriddenBooking.id,
+          details: {
+            overriddenByBookingId: booking.id,
+            overrideReason: "Overridden by paid booking",
+          },
+        });
       });
 
-      await sendBookingOverriddenByPaidBookingEmail({
-        recipientType: "internal",
-        recipientEmail: getInternalNotesRecipient(),
-        bookingId: overriddenBooking.id,
-        customerName: overriddenBooking.customerName,
-        customerEmail: overriddenBooking.customerEmail,
-        vehicleLabel: overriddenBooking.vehicleLabel,
-        startDate: overriddenBooking.startDate,
-        endDate: overriddenBooking.endDate,
-        pickupLocation: overriddenBooking.pickupLocation,
-        overriddenByBookingId: booking.id,
+      await runNonCritical("admin_add_payment_customer_override_email_failed", async () => {
+        await deps.sendOverrideEmail({
+          recipientType: "customer",
+          recipientEmail: overriddenBooking.customerEmail,
+          bookingId: overriddenBooking.id,
+          customerName: overriddenBooking.customerName,
+          customerEmail: overriddenBooking.customerEmail,
+          vehicleLabel: overriddenBooking.vehicleLabel,
+          startDate: overriddenBooking.startDate,
+          endDate: overriddenBooking.endDate,
+          pickupLocation: overriddenBooking.pickupLocation,
+          overriddenByBookingId: booking.id,
+        });
+      });
+
+      await runNonCritical("admin_add_payment_internal_override_email_failed", async () => {
+        await deps.sendOverrideEmail({
+          recipientType: "internal",
+          recipientEmail: deps.getNotesRecipient(),
+          bookingId: overriddenBooking.id,
+          customerName: overriddenBooking.customerName,
+          customerEmail: overriddenBooking.customerEmail,
+          vehicleLabel: overriddenBooking.vehicleLabel,
+          startDate: overriddenBooking.startDate,
+          endDate: overriddenBooking.endDate,
+          pickupLocation: overriddenBooking.pickupLocation,
+          overriddenByBookingId: booking.id,
+        });
       });
     }
 
@@ -214,42 +296,46 @@ export async function POST(
     const methodLabel = METHOD_LABELS[method] ?? method;
 
     if (summary.balanceDue <= 0) {
-      await sendPaymentCompleteEmail({
-        bookingId: booking.id,
-        customerEmail: booking.customer_email,
-        customerName: booking.customer_name,
-        vehicleLabel,
-        startDate: booking.start_date,
-        endDate: booking.end_date,
-        pickupLocation: booking.pickup_location,
-        dailyRate: summary.dailyRate,
-        deposit: summary.depositAmount,
-        total: summary.totalAmount,
-        paidToDate: summary.netPaidToDate,
-        balanceDue: summary.balanceDue,
-        paymentAmount: amount,
-        paymentMethod: methodLabel,
-        paymentDateTime: paidAtIso,
-        paymentReference: reference || undefined,
+      await runNonCritical("admin_add_payment_complete_email_failed", async () => {
+        await deps.sendCompleteEmail({
+          bookingId: booking.id,
+          customerEmail: booking.customer_email,
+          customerName: booking.customer_name,
+          vehicleLabel,
+          startDate: booking.start_date,
+          endDate: booking.end_date,
+          pickupLocation: booking.pickup_location,
+          dailyRate: summary.dailyRate,
+          deposit: summary.depositAmount,
+          total: summary.totalAmount,
+          paidToDate: summary.netPaidToDate,
+          balanceDue: summary.balanceDue,
+          paymentAmount: amount,
+          paymentMethod: methodLabel,
+          paymentDateTime: paidAtIso,
+          paymentReference: reference || undefined,
+        });
       });
     } else {
-      await sendPaymentUpdateEmail({
-        bookingId: booking.id,
-        customerEmail: booking.customer_email,
-        customerName: booking.customer_name,
-        vehicleLabel,
-        startDate: booking.start_date,
-        endDate: booking.end_date,
-        pickupLocation: booking.pickup_location,
-        dailyRate: summary.dailyRate,
-        deposit: summary.depositAmount,
-        total: summary.totalAmount,
-        paidToDate: summary.netPaidToDate,
-        balanceDue: summary.balanceDue,
-        paymentAmount: amount,
-        paymentMethod: methodLabel,
-        paymentDateTime: paidAtIso,
-        paymentReference: reference || undefined,
+      await runNonCritical("admin_add_payment_update_email_failed", async () => {
+        await deps.sendUpdateEmail({
+          bookingId: booking.id,
+          customerEmail: booking.customer_email,
+          customerName: booking.customer_name,
+          vehicleLabel,
+          startDate: booking.start_date,
+          endDate: booking.end_date,
+          pickupLocation: booking.pickup_location,
+          dailyRate: summary.dailyRate,
+          deposit: summary.depositAmount,
+          total: summary.totalAmount,
+          paidToDate: summary.netPaidToDate,
+          balanceDue: summary.balanceDue,
+          paymentAmount: amount,
+          paymentMethod: methodLabel,
+          paymentDateTime: paidAtIso,
+          paymentReference: reference || undefined,
+        });
       });
     }
 
@@ -260,10 +346,16 @@ export async function POST(
       paidInFull: summary.balanceDue <= 0,
     });
   } catch (error) {
-    await client.query("rollback");
-    logError("admin_add_payment_failed", error, { bookingId: id, userId: actor.userId });
+    if (!committed) {
+      await client.query("rollback");
+    }
+    deps.log("admin_add_payment_failed", error, { bookingId: id, userId: actor.userId });
     return NextResponse.json({ error: "Failed to add payment" }, { status: 500 });
   } finally {
     client.release();
   }
+}
+
+export async function POST(request: Request, context: AddPaymentRouteContext) {
+  return handleAdminBookingAddPaymentPost(request, context);
 }

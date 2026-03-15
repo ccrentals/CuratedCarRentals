@@ -85,12 +85,12 @@ const TOGGLE_FIELDS: ToggleField[] = [
     description:
       "Enable automatic late-return alerts when dropoff is missed (time-based logic can be expanded later).",
   },
-  {
-    key: "maintenanceRemindersEnabled",
-    label: "Enable maintenance reminders",
-    description:
-      "When enabled, the maintenance reminder cron route creates due-soon reminder records (and optional emails if configured).",
-  },
+          {
+            key: "maintenanceRemindersEnabled",
+            label: "Enable maintenance reminders",
+            description:
+      "When enabled, the maintenance reminder cron route creates due-soon reminder records. This switch does not send customer emails by itself.",
+          },
 ];
 
 const TOGGLE_FIELD_TAB_MAP: Record<ToggleField["key"], AdminSettingsFormTab> = {
@@ -167,6 +167,7 @@ export function AdminSettingsForm({
   const [serviceTypes, setServiceTypes] = useState<ServiceType[]>([]);
   const [serviceTypesLoading, setServiceTypesLoading] = useState(false);
   const [serviceTypesLoaded, setServiceTypesLoaded] = useState(false);
+  const [serviceTypesLoadError, setServiceTypesLoadError] = useState<string | null>(null);
   const [serviceTypesError, setServiceTypesError] = useState<string | null>(null);
   const [serviceTypesMessage, setServiceTypesMessage] = useState<string | null>(null);
   const [serviceTypeDraft, setServiceTypeDraft] = useState({
@@ -210,7 +211,7 @@ export function AdminSettingsForm({
 
   async function loadServiceTypes() {
     setServiceTypesLoading(true);
-    setServiceTypesError(null);
+    setServiceTypesLoadError(null);
     try {
       const response = await fetch("/api/admin/maintenance/service-types", { cache: "no-store" });
       const payload = (await response.json().catch(() => ({}))) as {
@@ -219,13 +220,13 @@ export function AdminSettingsForm({
         items?: ServiceType[];
       };
       if (!response.ok || !payload.ok) {
-        setServiceTypesError(payload.error ?? "Failed to load service types.");
+        setServiceTypesLoadError(payload.error ?? "Failed to load service types.");
         setServiceTypes([]);
         return;
       }
       setServiceTypes(Array.isArray(payload.items) ? payload.items : []);
     } catch {
-      setServiceTypesError("Failed to load service types.");
+      setServiceTypesLoadError("Failed to load service types.");
       setServiceTypes([]);
     } finally {
       setServiceTypesLoaded(true);
@@ -1408,6 +1409,27 @@ export function AdminSettingsForm({
           <div className="mt-4 space-y-3">
             {serviceTypesLoading ? (
               <p className="text-sm text-[var(--ccr-muted)]">Loading service types...</p>
+            ) : serviceTypesLoadError ? (
+              <div
+                data-testid="settings-service-types-error"
+                className="rounded-xl border border-rose-400/40 bg-rose-500/10 p-4"
+              >
+                <p className="text-sm font-semibold text-rose-100">{serviceTypesLoadError}</p>
+                <p className="mt-1 text-xs text-rose-100/90">
+                  Retry to load the latest service types for this tab.
+                </p>
+                <div className="mt-3">
+                  <button
+                    type="button"
+                    onClick={() => void loadServiceTypes()}
+                    disabled={disabled || serviceTypesLoading}
+                    data-testid="settings-service-types-retry"
+                    className={buttonStyles({ variant: "secondary", size: "sm" })}
+                  >
+                    Retry load
+                  </button>
+                </div>
+              </div>
             ) : serviceTypes.length < 1 ? (
               <p className="text-sm text-[var(--ccr-muted)]">No maintenance service types yet.</p>
             ) : (

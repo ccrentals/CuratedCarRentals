@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { bookingAccessForbiddenResponse, hasPublicBookingAccessForRequest } from "@/lib/bookings/publicAccess";
 import { getDbPool } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
 import { logError } from "@/lib/log";
@@ -78,6 +79,16 @@ export async function POST(
     }
 
     const booking = bookingResult.rows[0];
+    const isAuthorized = await hasPublicBookingAccessForRequest(
+      request,
+      booking.id,
+      booking.pricing_json,
+    );
+    if (!isAuthorized) {
+      await client.query("rollback");
+      return bookingAccessForbiddenResponse();
+    }
+
     if (["CANCELLED", "RETURNED"].includes(String(booking.status).toUpperCase())) {
       await client.query("rollback");
       return NextResponse.json(

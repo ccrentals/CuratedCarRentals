@@ -9,13 +9,6 @@ import { fetchAdminBookingsPage } from "@/lib/bookings/adminBookingsList";
 import { normalizeBookingPageSize } from "@/lib/bookings/adminBookingsPagination";
 import { dbQuery } from "@/lib/db";
 
-type VehicleOption = {
-  id: string;
-  year: number;
-  make: string;
-  model: string;
-};
-
 type CustomerPrefill = {
   id: string;
   full_name: string;
@@ -67,15 +60,6 @@ export default async function AdminBookingsPage({
     cursor: null,
   });
 
-  const vehicles = await dbQuery<VehicleOption>(
-    "select id, year, make, model from vehicles where status <> 'INACTIVE' order by year desc, make asc, model asc",
-  );
-
-  const vehicleOptions = vehicles.rows.map((vehicle: VehicleOption) => ({
-    id: vehicle.id,
-    label: `${vehicle.year} ${vehicle.make} ${vehicle.model}`.trim(),
-  }));
-
   let initialCustomer: {
     id: string;
     fullName: string;
@@ -120,7 +104,6 @@ export default async function AdminBookingsPage({
         </div>
         <div className="flex items-center gap-2">
           <AdminCreateBookingModal
-            vehicles={vehicleOptions}
             initialOpen={openCreateModal}
             clearOpenHref={openCreateModal ? "/admin/bookings" : undefined}
             initialCustomer={initialCustomer}

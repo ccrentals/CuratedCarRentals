@@ -135,6 +135,7 @@ export async function POST(
         dedupeKey,
         status: "SENT",
         provider: "resend",
+        providerMessageId: result.providerMessageId ?? null,
       },
       dbQuery,
     );
@@ -185,6 +186,7 @@ export async function POST(
       dedupeKey,
       status: "SENT",
       provider: "resend",
+      providerMessageId: receiptResult.providerMessageId ?? null,
     },
     dbQuery,
   );

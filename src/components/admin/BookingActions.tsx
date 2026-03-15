@@ -48,6 +48,7 @@ type BookingActionsProps = {
   initialPromoCode?: string | null;
   initialInsuranceSelected?: boolean;
   bookingChangesContent?: ReactNode;
+  inspectionContent?: ReactNode;
 };
 
 export function BookingActions({
@@ -64,6 +65,7 @@ export function BookingActions({
   initialPromoCode,
   initialInsuranceSelected,
   bookingChangesContent,
+  inspectionContent,
 }: BookingActionsProps) {
   const router = useRouter();
   const [message, setMessage] = useState<string | null>(null);
@@ -73,7 +75,9 @@ export function BookingActions({
     null,
   );
   const [pricingLoading, setPricingLoading] = useState<"promo" | "insurance" | null>(null);
-  const [activePanel, setActivePanel] = useState<"booking" | "email" | "pricing" | "changes">("booking");
+  const [activePanel, setActivePanel] = useState<
+    "booking" | "email" | "pricing" | "changes" | "inspection"
+  >("booking");
   const [selectedPromoCode, setSelectedPromoCode] = useState<string>(initialPromoCode ?? "");
   const [appliedPromoCode, setAppliedPromoCode] = useState<string>(initialPromoCode ?? "");
   const [insuranceSelected, setInsuranceSelected] = useState<boolean>(initialInsuranceSelected === true);
@@ -391,10 +395,22 @@ export function BookingActions({
             Booking Changes
           </button>
         ) : null}
+        {inspectionContent ? (
+          <button
+            type="button"
+            onClick={() => setActivePanel("inspection")}
+            className={activePanel === "inspection" ? activeTabClass : inactiveTabClass}
+            aria-pressed={activePanel === "inspection"}
+          >
+            Vehicle Inspection
+          </button>
+        ) : null}
       </div>
 
       {activePanel === "changes" && bookingChangesContent ? (
         <div>{bookingChangesContent}</div>
+      ) : activePanel === "inspection" && inspectionContent ? (
+        <div>{inspectionContent}</div>
       ) : (
         <div className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-3">
           {activePanel === "booking" ? (

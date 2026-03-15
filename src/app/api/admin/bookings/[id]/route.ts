@@ -10,6 +10,7 @@ import {
   isNonBlockingPricing,
   readBookingOverrideInfo,
 } from "@/lib/bookings/holds";
+import { hasCompletedBookingVehicleInspection } from "@/lib/bookings/vehicleInspection";
 import { isVehicleUnavailableEntitlementBased } from "@/lib/availability/entitlement";
 import {
   clearPromoRedemptionForBooking,
@@ -216,6 +217,202 @@ export async function GET(request: Request, context: BookingByIdRouteContext) {
   return handleAdminBookingByIdGet(request, context);
 }
 
+type PickupActionBookingRow = {
+  status: string;
+  start_date: string;
+  end_date: string;
+  pricing_json: Record<string, unknown> | null;
+  daily_rate_cents: number;
+  deposit_cents: number;
+};
+
+export type AdminBookingPickupActionDeps = {
+  query: typeof dbQuery;
+  fetchNetPaid: typeof fetchNetPaidToDate;
+  hasCompletedPickupInspection: typeof hasCompletedBookingVehicleInspection;
+  writeAudit: typeof writeAuditLog;
+};
+
+const DEFAULT_BOOKING_PICKUP_ACTION_DEPS: AdminBookingPickupActionDeps = {
+  query: dbQuery,
+  fetchNetPaid: fetchNetPaidToDate,
+  hasCompletedPickupInspection: hasCompletedBookingVehicleInspection,
+  writeAudit: writeAuditLog,
+};
+
+export async function handleAdminBookingPickupAction(
+  bookingId: string,
+  session: AdminSession,
+  deps: Partial<AdminBookingPickupActionDeps> = {},
+) {
+  const resolvedDeps = { ...DEFAULT_BOOKING_PICKUP_ACTION_DEPS, ...deps };
+  const bookingResult = await resolvedDeps.query<PickupActionBookingRow>(
+    "select b.status, b.start_date, b.end_date, b.pricing_json, v.daily_rate_cents, v.deposit_cents from bookings b join vehicles v on v.id = b.vehicle_id where b.id = $1",
+    [bookingId],
+  );
+
+  if (bookingResult.rowCount === 0) {
+    return NextResponse.json({ error: "Booking not found" }, { status: 404 });
+  }
+
+  const booking = bookingResult.rows[0];
+  const statusUpper = booking.status.toUpperCase();
+
+  if (statusUpper === "PICKED_UP") {
+    return NextResponse.json({ ok: true, message: "Booking is already marked as picked up." });
+  }
+
+  if (statusUpper !== "CONFIRMED") {
+    return NextResponse.json(
+      { error: "Only confirmed bookings can be marked as picked up." },
+      { status: 400 },
+    );
+  }
+
+  const pricing = booking.pricing_json ?? {};
+  const netPaidToDate = await resolvedDeps.fetchNetPaid(bookingId);
+  const paymentSummary = computeBookingPricingFromStoredSnapshot({
+    bookingId,
+    bookingStatus: booking.status,
+    startDate: booking.start_date,
+    endDate: booking.end_date,
+    pricing,
+    fallbackDailyRate: booking.daily_rate_cents,
+    fallbackDeposit: booking.deposit_cents,
+    netPaidToDate,
+  });
+
+  if (paymentSummary.paymentStatus !== "PAID_IN_FULL" || paymentSummary.balanceDue > 0) {
+    return NextResponse.json(
+      { error: "Booking must be fully paid before pickup." },
+      { status: 400 },
+    );
+  }
+
+  const hasCompletedInspection = await resolvedDeps.hasCompletedPickupInspection(
+    bookingId,
+    "PICKUP",
+  );
+  if (!hasCompletedInspection) {
+    return NextResponse.json(
+      { error: "Complete the pickup inspection in Vehicle Inspection before confirming pickup." },
+      { status: 400 },
+    );
+  }
+
+  await resolvedDeps.query("update bookings set status = 'PICKED_UP', updated_at = now() where id = $1", [
+    bookingId,
+  ]);
+
+  await resolvedDeps.writeAudit({
+    userId: session.userId,
+    action: "BOOKING_PICKED_UP",
+    entityType: "booking",
+    entityId: bookingId,
+    details: {
+      previous_status: booking.status,
+      net_paid_to_date: paymentSummary.netPaidToDate,
+      balance_due: paymentSummary.balanceDue,
+      pickup_inspection_completed: true,
+    },
+  });
+
+  return NextResponse.json({ ok: true, message: "Booking marked as picked up." });
+}
+
+type CompleteActionBookingRow = {
+  status: string;
+};
+
+export type AdminBookingCompleteActionDeps = {
+  query: typeof dbQuery;
+  hasCompletedReturnInspection: typeof hasCompletedBookingVehicleInspection;
+  writeAudit: typeof writeAuditLog;
+};
+
+const DEFAULT_BOOKING_COMPLETE_ACTION_DEPS: AdminBookingCompleteActionDeps = {
+  query: dbQuery,
+  hasCompletedReturnInspection: hasCompletedBookingVehicleInspection,
+  writeAudit: writeAuditLog,
+};
+
+export async function handleAdminBookingCompleteAction(
+  bookingId: string,
+  session: AdminSession,
+  deps: Partial<AdminBookingCompleteActionDeps> = {},
+) {
+  const resolvedDeps = { ...DEFAULT_BOOKING_COMPLETE_ACTION_DEPS, ...deps };
+  const bookingResult = await resolvedDeps.query<CompleteActionBookingRow>(
+    "select status from bookings where id = $1",
+    [bookingId],
+  );
+
+  if (bookingResult.rowCount === 0) {
+    return NextResponse.json({ error: "Booking not found" }, { status: 404 });
+  }
+
+  const booking = bookingResult.rows[0];
+  const statusUpper = booking.status.toUpperCase();
+
+  if (statusUpper === "RETURNED") {
+    return NextResponse.json({ ok: true, message: "Booking is already marked as completed." });
+  }
+
+  if (statusUpper !== "PICKED_UP") {
+    return NextResponse.json(
+      { error: "Only picked-up bookings can be completed." },
+      { status: 400 },
+    );
+  }
+
+  const hasCompletedInspection = await resolvedDeps.hasCompletedReturnInspection(
+    bookingId,
+    "RETURN",
+  );
+  if (!hasCompletedInspection) {
+    return NextResponse.json(
+      { error: "Complete the return inspection in Vehicle Inspection before completing the booking." },
+      { status: 400 },
+    );
+  }
+
+  try {
+    await resolvedDeps.query(
+      "update bookings set status = 'RETURNED', archived_at = now(), archived_by_user_id = $2, archived_reason = $3, updated_at = now() where id = $1",
+      [bookingId, session.userId, "Completed/Returned"],
+    );
+  } catch (error) {
+    if (isUndefinedColumn(error, "archived_at")) {
+      await resolvedDeps.query("update bookings set status = 'RETURNED', updated_at = now() where id = $1", [
+        bookingId,
+      ]);
+    } else {
+      throw error;
+    }
+  }
+
+  await resolvedDeps.writeAudit({
+    userId: session.userId,
+    action: "BOOKING_COMPLETED",
+    entityType: "booking",
+    entityId: bookingId,
+    details: {
+      previous_status: booking.status,
+      return_inspection_completed: true,
+    },
+  });
+
+  await resolvedDeps.writeAudit({
+    userId: session.userId,
+    action: "BOOKING_ARCHIVED",
+    entityType: "booking",
+    entityId: bookingId,
+    details: { reason: "Completed/Returned" },
+  });
+
+  return NextResponse.json({ ok: true, message: "Booking completed." });
+}
+
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -266,123 +463,11 @@ export async function PATCH(
   }
 
   if (action === "complete") {
-    const bookingResult = await dbQuery<{ status: string }>(
-      "select status from bookings where id = $1",
-      [id],
-    );
-
-    if (bookingResult.rowCount === 0) {
-      return NextResponse.json({ error: "Booking not found" }, { status: 404 });
-    }
-
-    const status = bookingResult.rows[0].status;
-    if (!["CONFIRMED", "PICKED_UP"].includes(status)) {
-      return NextResponse.json({ error: "Booking cannot be completed" }, { status: 400 });
-    }
-
-    try {
-      await dbQuery(
-        "update bookings set status = 'RETURNED', archived_at = now(), archived_by_user_id = $2, archived_reason = $3, updated_at = now() where id = $1",
-        [id, session.userId, "Completed/Returned"],
-      );
-    } catch (error) {
-      // Graceful fallback if DB hasn't been migrated yet.
-      if (isUndefinedColumn(error, "archived_at")) {
-        await dbQuery("update bookings set status = 'RETURNED', updated_at = now() where id = $1", [
-          id,
-        ]);
-      } else {
-        throw error;
-      }
-    }
-
-    await writeAuditLog({
-      userId: session.userId,
-      action: "BOOKING_COMPLETED",
-      entityType: "booking",
-      entityId: id,
-      details: { previous_status: status },
-    });
-
-    await writeAuditLog({
-      userId: session.userId,
-      action: "BOOKING_ARCHIVED",
-      entityType: "booking",
-      entityId: id,
-      details: { reason: "Completed/Returned" },
-    });
-
-    return NextResponse.json({ ok: true });
+    return handleAdminBookingCompleteAction(id, session);
   }
 
   if (action === "pickup") {
-    const bookingResult = await dbQuery<{
-      status: string;
-      start_date: string;
-      end_date: string;
-      pricing_json: Record<string, unknown> | null;
-      daily_rate_cents: number;
-      deposit_cents: number;
-    }>(
-      "select b.status, b.start_date, b.end_date, b.pricing_json, v.daily_rate_cents, v.deposit_cents from bookings b join vehicles v on v.id = b.vehicle_id where b.id = $1",
-      [id],
-    );
-
-    if (bookingResult.rowCount === 0) {
-      return NextResponse.json({ error: "Booking not found" }, { status: 404 });
-    }
-
-    const booking = bookingResult.rows[0];
-    const statusUpper = booking.status.toUpperCase();
-
-    if (statusUpper === "PICKED_UP") {
-      return NextResponse.json({ ok: true, message: "Booking is already marked as picked up." });
-    }
-
-    if (statusUpper !== "CONFIRMED") {
-      return NextResponse.json(
-        { error: "Only confirmed bookings can be marked as picked up." },
-        { status: 400 },
-      );
-    }
-
-    const pricing = booking.pricing_json ?? {};
-    const netPaidToDate = await fetchNetPaidToDate(id);
-    const paymentSummary = computeBookingPricingFromStoredSnapshot({
-      bookingId: id,
-      bookingStatus: booking.status,
-      startDate: booking.start_date,
-      endDate: booking.end_date,
-      pricing,
-      fallbackDailyRate: booking.daily_rate_cents,
-      fallbackDeposit: booking.deposit_cents,
-      netPaidToDate,
-    });
-
-    if (paymentSummary.paymentStatus !== "PAID_IN_FULL" || paymentSummary.balanceDue > 0) {
-      return NextResponse.json(
-        { error: "Booking must be fully paid before pickup." },
-        { status: 400 },
-      );
-    }
-
-    await dbQuery("update bookings set status = 'PICKED_UP', updated_at = now() where id = $1", [
-      id,
-    ]);
-
-    await writeAuditLog({
-      userId: session.userId,
-      action: "BOOKING_PICKED_UP",
-      entityType: "booking",
-      entityId: id,
-      details: {
-        previous_status: booking.status,
-        net_paid_to_date: paymentSummary.netPaidToDate,
-        balance_due: paymentSummary.balanceDue,
-      },
-    });
-
-    return NextResponse.json({ ok: true, message: "Booking marked as picked up." });
+    return handleAdminBookingPickupAction(id, session);
   }
 
   if (action === "archive") {

@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { getSessionFromRequest } from "@/lib/auth/session";
-import { hashBookingAccessToken, bookingAccessCookieName } from "@/lib/bookings/privateAccess";
+import { hasPublicBookingAccessForRequest } from "@/lib/bookings/publicAccess";
 import { dbQuery } from "@/lib/db";
 import { logError } from "@/lib/log";
 import { buildUploadcareCdnUrl, extractUploadcareFileId } from "@/lib/uploads/uploadcare";
@@ -32,18 +31,6 @@ function jsonNoStore(payload: Record<string, unknown>, status: number) {
   });
 }
 
-function parseCookieValue(request: Request, name: string) {
-  const cookieHeader = request.headers.get("cookie") ?? "";
-  const pairs = cookieHeader.split(";").map((entry) => entry.trim());
-  for (const pair of pairs) {
-    if (!pair) continue;
-    const [key, ...rest] = pair.split("=");
-    if (key !== name) continue;
-    return decodeURIComponent(rest.join("="));
-  }
-  return "";
-}
-
 function decodeDataUrl(dataUrl: string) {
   const match = dataUrl.match(/^data:([^;,]+)?(;base64)?,(.*)$/i);
   if (!match) return null;
@@ -61,29 +48,12 @@ function decodeDataUrl(dataUrl: string) {
 }
 
 async function authorizeBookingFileRead(request: Request, bookingId: string) {
-  const session = await getSessionFromRequest();
-  // Any signed-in admin-portal session can read secure booking files.
-  // Public readers still require a booking-specific access token cookie.
-  if (session) return true;
-
   const bookingResult = await dbQuery<{ pricing_json: Record<string, unknown> | null }>(
     "select pricing_json from bookings where id = $1 limit 1",
     [bookingId],
   );
   if (bookingResult.rowCount === 0) return false;
-
-  const pricing = bookingResult.rows[0]?.pricing_json ?? {};
-  const expectedHash =
-    typeof pricing.private_access_token_hash === "string"
-      ? pricing.private_access_token_hash
-      : "";
-  if (!expectedHash) return false;
-
-  const accessToken = parseCookieValue(request, bookingAccessCookieName(bookingId));
-  if (!accessToken) return false;
-
-  const providedHash = hashBookingAccessToken(accessToken);
-  return providedHash === expectedHash;
+  return hasPublicBookingAccessForRequest(request, bookingId, bookingResult.rows[0]?.pricing_json);
 }
 
 export async function GET(

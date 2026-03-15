@@ -1,0 +1,68 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+
+function read(relPath: string) {
+  return fs.readFileSync(path.join(process.cwd(), relPath), "utf8");
+}
+
+test("public booking pages use shared booking-access enforcement", () => {
+  const files = [
+    "src/app/(site)/bookings/[id]/page.tsx",
+    "src/app/(site)/bookings/[id]/pay/page.tsx",
+    "src/app/(site)/bookings/[id]/balance/page.tsx",
+    "src/app/(site)/bookings/[id]/invoice/page.tsx",
+    "src/app/(site)/payment/success/page.tsx",
+  ];
+
+  for (const file of files) {
+    const code = read(file);
+    assert.match(code, /hasPublicBookingAccessForPage\(/);
+  }
+});
+
+test("payment success page denies missing or unauthorized booking access", () => {
+  const code = read("src/app/(site)/payment/success/page.tsx");
+  assert.match(code, /if \(!bookingAccess\) {\s*notFound\(\);/);
+  assert.match(code, /if \(!isAuthorized\) {\s*notFound\(\);/);
+});
+
+test("public booking mutation routes use shared booking-access enforcement", () => {
+  const files = [
+    "src/app/api/public/bookings/[id]/private-files/[documentType]/route.ts",
+    "src/app/api/public/bookings/[id]/promo/route.ts",
+    "src/app/api/public/bookings/[id]/pay-on-pickup/route.ts",
+  ];
+
+  for (const file of files) {
+    const code = read(file);
+    assert.match(code, /hasPublicBookingAccessForRequest\(/);
+  }
+});
+
+test("public booking creation uses submission-key idempotency guard", () => {
+  const code = read("src/app/api/public/bookings/route.ts");
+  assert.match(code, /pg_advisory_xact_lock\(hashtext\(\$1\)\)/);
+  assert.match(code, /public_submit_key_hash/);
+  assert.match(code, /createBookingAccessToken\(submissionKey\)/);
+});
+
+test("public WiPay start routes use shared idempotent start helper", () => {
+  const routeFiles = [
+    "src/app/api/payments/wipay/start/route.ts",
+    "src/app/api/payments/wipay/full/start/route.ts",
+    "src/app/api/payments/wipay/custom/start/route.ts",
+    "src/app/api/payments/wipay/balance/start/route.ts",
+  ];
+
+  for (const file of routeFiles) {
+    const code = read(file);
+    assert.match(code, /startPublicWipayPayment\(/);
+  }
+
+  const helper = read("src/lib/payments/publicPaymentStart.ts");
+  assert.match(helper, /status = 'INITIATED'/);
+  assert.match(helper, /hosted_page_url/);
+  assert.match(helper, /payment_in_progress/);
+});

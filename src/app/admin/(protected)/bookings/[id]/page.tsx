@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { dbQuery } from "@/lib/db";
 import { BookingActions } from "@/components/admin/BookingActions";
+import { BookingVehicleInspectionPanel } from "@/components/admin/BookingVehicleInspectionPanel";
 import { BookingNotes } from "@/components/admin/BookingNotes";
 import { InfoTooltipIcon } from "@/components/admin/InfoTooltipIcon";
 import { BookingUpdateForm } from "@/components/admin/BookingUpdateForm";
@@ -12,6 +13,7 @@ import { RefundRequiredToast } from "@/components/admin/RefundRequiredToast";
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { InlineDateTimeRange } from "@/components/shared/InlineDateTimeRange";
 import { TableDateTime } from "@/components/shared/TableDateTime";
+import { loadAdminSettings } from "@/lib/adminSettings";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { fmtDate, fmtDateNoSeconds, fmtDateOnly } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
@@ -25,6 +27,11 @@ import { readBookingOverrideInfo } from "@/lib/bookings/holds";
 import { formatBookingStatusLabel } from "@/lib/bookings/formatBookingStatusLabel";
 import { refundRequiredStyles } from "@/lib/refundRequiredStyles";
 import { isEntitledBooking } from "@/lib/availability/entitlement";
+import {
+  createEmptyBookingVehicleInspectionSummaries,
+  isBookingVehicleInspectionMissingTableError,
+  loadBookingVehicleInspectionSummaries,
+} from "@/lib/bookings/vehicleInspection";
 
 type BookingDetails = {
   id: string;
@@ -81,10 +88,6 @@ type AdminNote = {
   user_id?: string;
 };
 
-type SettingsRow = {
-  content: string;
-};
-
 type OverriddenByThisBooking = {
   id: string;
   public_id: string;
@@ -132,6 +135,9 @@ type BookingActionInsuranceOption = {
   planId: string | null;
   pricePerDayCents: number;
 };
+
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function isUndefinedColumn(error: unknown, column: string) {
   const code = (error as { code?: string } | null)?.code;
@@ -186,6 +192,10 @@ function formatTimeNoSeconds(value: string | null | undefined) {
 
 export default async function AdminBookingDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  if (!UUID_REGEX.test(id)) {
+    notFound();
+  }
+
   const session = await getSessionFromRequest();
   const normalizedRole = String(session?.role ?? "")
     .trim()
@@ -194,23 +204,8 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
   let requireRestoreReason = true;
 
   if (canAdmin) {
-    try {
-      const settingsResult = await dbQuery<SettingsRow>(
-        "select content from admin_documents where key = 'settings' limit 1",
-      );
-      const content = settingsResult.rows[0]?.content;
-      if (typeof content === "string" && content.trim()) {
-        const parsed = JSON.parse(content) as Record<string, unknown>;
-        if (typeof parsed.requireRestoreReason === "boolean") {
-          requireRestoreReason = parsed.requireRestoreReason;
-        }
-      }
-    } catch (error) {
-      const code = (error as { code?: string } | null)?.code;
-      if (code !== "42P01") {
-        throw error;
-      }
-    }
+    const { settings } = await loadAdminSettings();
+    requireRestoreReason = settings.requireRestoreReason;
   }
 
   let bookingResult;
@@ -481,6 +476,23 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
   );
   const overriddenByThisRows = overriddenByThis.rows as OverriddenByThisBooking[];
   const bookingPublicId = String(booking.public_id ?? "").trim() || booking.id;
+  let vehicleInspectionTablesUnavailable = false;
+  let vehicleInspections = createEmptyBookingVehicleInspectionSummaries({
+    bookingId: booking.id,
+    bookingPublicId,
+    vehicleId: booking.vehicle_id,
+  });
+  try {
+    const loadedVehicleInspections = await loadBookingVehicleInspectionSummaries(booking.id);
+    if (loadedVehicleInspections) {
+      vehicleInspections = loadedVehicleInspections;
+    }
+  } catch (error) {
+    if (!isBookingVehicleInspectionMissingTableError(error)) {
+      throw error;
+    }
+    vehicleInspectionTablesUnavailable = true;
+  }
   let promoOptions: BookingActionPromoOption[] = [];
   try {
     promoOptions = (
@@ -613,6 +625,16 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
                 customerEmail={customerEmailSnapshot}
                 customerPhone={customerPhoneSnapshot}
                 disabled={["RETURNED", "CANCELLED"].includes(booking.status.toUpperCase())}
+              />
+            }
+            inspectionContent={
+              <BookingVehicleInspectionPanel
+                bookingId={booking.id}
+                bookingStatus={booking.status}
+                bookingPublicId={bookingPublicId}
+                inspections={vehicleInspections}
+                tablesUnavailable={vehicleInspectionTablesUnavailable}
+                canCorrectOdometer={canAdmin}
               />
             }
           />

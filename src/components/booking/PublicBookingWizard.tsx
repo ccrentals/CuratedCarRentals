@@ -28,6 +28,7 @@ import { calcDaysInclusive } from "@/lib/payments/dateMath";
 import { formatJmd } from "@/lib/money";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 import { cn } from "@/lib/utils";
+import { isEmail, isNonEmptyString } from "@/lib/validators";
 
 type LocationOption = {
   id: string;
@@ -356,6 +357,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
   const lastQuoteSuccessKeyRef = useRef("");
   const inFlightQuoteRef = useRef<{ key: string; controller: AbortController } | null>(null);
   const quoteRequestCountRef = useRef(0);
+  const bookingSubmissionKeyRef = useRef("");
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -407,6 +409,16 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
   const debugWizardRequest = useCallback((label: string, detail: Record<string, unknown>) => {
     if (!WIZARD_DEBUG_ENABLED || typeof window === "undefined") return;
     console.debug(`[booking-wizard] ${label}`, detail);
+  }, []);
+
+  const getBookingSubmissionKey = useCallback(() => {
+    if (!bookingSubmissionKeyRef.current) {
+      bookingSubmissionKeyRef.current =
+        typeof window !== "undefined" && typeof window.crypto?.randomUUID === "function"
+          ? window.crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    }
+    return bookingSubmissionKeyRef.current;
   }, []);
 
   useEffect(() => {
@@ -1608,6 +1620,14 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
         setErrorMessage("First name and last name are required.");
         return false;
       }
+      if (!isEmail(normalizeText(emailAddress))) {
+        setErrorMessage("A valid email address is required.");
+        return false;
+      }
+      if (!isNonEmptyString(normalizeText(phoneNumber), 7)) {
+        setErrorMessage("A valid phone number is required.");
+        return false;
+      }
     }
 
     if (stepToValidate === 5) {
@@ -2117,8 +2137,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
 
     try {
       const fullName = `${normalizeText(firstName)} ${normalizeText(lastName)}`.trim();
-      const fallbackEmail = `no-email+${Date.now()}@curated.local`;
-      const fallbackPhone = "0000000";
+      const submissionKey = getBookingSubmissionKey();
       const normalizedCustomAmount =
               paymentOption === "CUSTOM" ? Math.max(1, Math.round(customPaymentNumber)) : null;
 
@@ -2127,11 +2146,12 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
               vehicleId: selectedVehicleId,
+              submissionKey,
               turnstileToken,
               customerId,
               fullName,
-              email: normalizeText(emailAddress) || fallbackEmail,
-          phone: normalizeText(phoneNumber) || fallbackPhone,
+              email: normalizeText(emailAddress),
+          phone: normalizeText(phoneNumber),
           startDate: pickupDate,
           endDate: dropoffDate,
           pickupLocation: pickupLocationText,
@@ -2182,6 +2202,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
       }
 
       const bookingId = bookingData.bookingId;
+      bookingSubmissionKeyRef.current = "";
       if (bookingData.bookingAccessToken) {
         document.cookie = `ccr_booking_access_${bookingId}=${encodeURIComponent(
           bookingData.bookingAccessToken,
@@ -2663,7 +2684,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                       />
                     </label>
                     <label className="block">
-                      <span className="text-sm font-semibold text-[var(--ccr-muted)]">Email Address</span>
+                      <span className="text-sm font-semibold text-[var(--ccr-muted)]">Email Address *</span>
                       <input
                         type="email"
                         value={emailAddress}
@@ -2672,7 +2693,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                       />
                     </label>
                     <label className="block">
-                      <span className="text-sm font-semibold text-[var(--ccr-muted)]">Phone Number</span>
+                      <span className="text-sm font-semibold text-[var(--ccr-muted)]">Phone Number *</span>
                       <input
                         value={phoneNumber}
                         onChange={(event) => setPhoneNumber(event.target.value)}

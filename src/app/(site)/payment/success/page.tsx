@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 
 import PrintInvoiceButton from "@/components/payments/PrintInvoiceButton";
+import { hasPublicBookingAccessForPage } from "@/lib/bookings/publicAccess";
 import { DateRangeArrow } from "@/components/shared/DateRangeArrow";
 import { dbQuery } from "@/lib/db";
 import { fmtDateOnly } from "@/lib/dateFormat";
@@ -152,6 +154,24 @@ export default async function PaymentSuccessPage({
 }) {
   const params = await searchParams;
   const bookingId = typeof params.bookingId === "string" ? params.bookingId : "";
+
+  if (bookingId) {
+    const accessResult = await dbQuery<{
+      id: string;
+      pricing_json: Record<string, unknown> | null;
+    }>("select id, pricing_json from bookings where id = $1", [bookingId]);
+    const bookingAccess = accessResult.rows[0] ?? null;
+    if (!bookingAccess) {
+      notFound();
+    }
+    const isAuthorized = await hasPublicBookingAccessForPage(
+      bookingAccess.id,
+      bookingAccess.pricing_json,
+    );
+    if (!isAuthorized) {
+      notFound();
+    }
+  }
 
   const bookingResult = bookingId
     ? await dbQuery<BookingRow>(

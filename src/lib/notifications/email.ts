@@ -1,16 +1,15 @@
 import {
   buildInvoicePayload,
-  buildRentalAgreementPayload,
   downloadPdfBase64,
   generateInvoicePdf,
   generateRentalAgreementPdf,
 } from "@/lib/pdfmonkey";
+import { loadBookingRentalAgreementPayload } from "@/lib/agreements/rentalAgreementPayload";
 import { logError, logWarn, redactText } from "@/lib/log";
 import { readInsurancePricingFields, readPromoPricingFields } from "@/lib/payments/pricing";
 import { dbQuery } from "@/lib/db";
 import { formatPaymentStatus } from "@/lib/payments/formatPaymentStatus";
 import { calcDaysInclusive } from "@/lib/payments/dateMath";
-import { buildUploadcareCdnUrl, extractUploadcareFileId } from "@/lib/uploads/uploadcare";
 import { resolveStoredRegionCountry } from "@/lib/jamaicaParishes";
 
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
@@ -50,7 +49,12 @@ type Attachment = {
   content: string;
 };
 
-type SendEmailResult = { ok: boolean; skipped?: boolean; error?: string };
+type SendEmailResult = {
+  ok: boolean;
+  skipped?: boolean;
+  error?: string;
+  providerMessageId?: string | null;
+};
 
 function emailFailure(error: string): SendEmailResult {
   return { ok: false, skipped: false, error };
@@ -87,19 +91,29 @@ async function sendResendEmail({
     }),
   });
 
+  const payload = (await response.json().catch(() => null)) as
+    | { id?: unknown; message?: unknown }
+    | null;
+
   if (!response.ok) {
-    const text = await response.text().catch(() => "");
     logError("resend_email_failed", new Error(`HTTP ${response.status}`), {
       status: response.status,
-      responseBody: text,
+      responseBody: payload?.message ?? null,
       to,
       subject,
     });
-    const safe = redactText(text).replace(/\s+/g, " ").slice(0, 300);
-    return { ok: false, error: safe || `HTTP ${response.status}` };
+    const safe = redactText(String(payload?.message ?? "")).replace(/\s+/g, " ").slice(0, 300);
+    return {
+      ok: false,
+      error: safe || `HTTP ${response.status}`,
+      providerMessageId: typeof payload?.id === "string" ? payload.id : null,
+    };
   }
 
-  return { ok: true };
+  return {
+    ok: true,
+    providerMessageId: typeof payload?.id === "string" ? payload.id : null,
+  };
 }
 
 function baseUrl() {
@@ -154,16 +168,6 @@ type InvoicePaymentContextRow = {
   metadata_json: Record<string, unknown> | null;
 };
 
-type BookingSignatureFileRow = {
-  storage_provider: string | null;
-  storage_key: string | null;
-  mime_type: string | null;
-};
-
-type BookingSignatureTimeRow = {
-  signature_signed_at: string | Date | null;
-};
-
 function normalizeText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -196,103 +200,6 @@ function buildCustomerAddress(row: InvoiceContextRow | null) {
     normalizeText(addressFields.country),
   ].filter(Boolean);
   return parts.join(", ");
-}
-
-function toSignatureDataUrl(
-  storageKey: string,
-): { mimeType: string; dataUrl: string } | null {
-  const match = storageKey.match(/^data:([^;,]+)?(;base64)?,(.*)$/i);
-  if (!match) return null;
-  const mimeType = normalizeText(match[1]) || "image/png";
-  const isBase64 = Boolean(match[2]);
-  const payload = match[3] ?? "";
-  try {
-    const bytes = isBase64
-      ? Buffer.from(payload, "base64")
-      : Buffer.from(decodeURIComponent(payload), "utf-8");
-    if (bytes.length < 1) return null;
-    return {
-      mimeType,
-      dataUrl: `data:${mimeType};base64,${bytes.toString("base64")}`,
-    };
-  } catch {
-    return null;
-  }
-}
-
-async function loadBookingSignatureData(bookingId: string) {
-  const signedAtResult = await (async () => {
-    try {
-      return await dbQuery<BookingSignatureTimeRow>(
-        "select signature_signed_at from bookings where id = $1 limit 1",
-        [bookingId],
-      );
-    } catch (error) {
-      const code = (error as { code?: string } | null)?.code;
-      const message = String((error as { message?: unknown } | null)?.message ?? "");
-      if (code === "42703" && message.includes("\"signature_signed_at\"")) {
-        return { rows: [{ signature_signed_at: null }], rowCount: 1 } as {
-          rows: BookingSignatureTimeRow[];
-          rowCount: number;
-        };
-      }
-      throw error;
-    }
-  })();
-  const signedAtRaw = signedAtResult.rows[0]?.signature_signed_at ?? null;
-  const signedAt =
-    signedAtRaw instanceof Date
-      ? signedAtRaw.toISOString()
-      : normalizeText(signedAtRaw);
-
-  const signatureResult = await dbQuery<BookingSignatureFileRow>(
-    "select storage_provider, storage_key, mime_type from booking_private_files where booking_id = $1 and document_type = 'SIGNATURE' order by created_at desc limit 1",
-    [bookingId],
-  );
-  const signature = signatureResult.rows[0] ?? null;
-  if (!signature) {
-    return { signatureDataUrl: null as string | null, signedAt };
-  }
-
-  const storageProvider = normalizeText(signature.storage_provider).toUpperCase();
-  const storageKey = normalizeText(signature.storage_key);
-  if (!storageKey) {
-    return { signatureDataUrl: null as string | null, signedAt };
-  }
-
-  if (storageProvider === "DATA_URL") {
-    const parsed = toSignatureDataUrl(storageKey);
-    return {
-      signatureDataUrl: parsed?.dataUrl ?? null,
-      signedAt,
-    };
-  }
-
-  const uploadcareFileId = extractUploadcareFileId(storageKey);
-  if (!uploadcareFileId) {
-    return { signatureDataUrl: null as string | null, signedAt };
-  }
-
-  try {
-    const upstream = await fetch(buildUploadcareCdnUrl(uploadcareFileId));
-    if (!upstream.ok) {
-      return { signatureDataUrl: null as string | null, signedAt };
-    }
-    const bytes = Buffer.from(await upstream.arrayBuffer());
-    if (bytes.length < 1) {
-      return { signatureDataUrl: null as string | null, signedAt };
-    }
-    const mimeType =
-      normalizeText(signature.mime_type) ||
-      normalizeText(upstream.headers.get("content-type")) ||
-      "image/png";
-    return {
-      signatureDataUrl: `data:${mimeType};base64,${bytes.toString("base64")}`,
-      signedAt,
-    };
-  } catch {
-    return { signatureDataUrl: null as string | null, signedAt };
-  }
 }
 
 function resolveProviderLabel(row: InvoicePaymentContextRow) {
@@ -544,46 +451,12 @@ async function buildRentalAgreementAttachment(input: {
   paymentMethod?: string;
 }) {
   try {
-    const context = await loadInvoiceContext(input.bookingId);
-    const displayBookingId =
-      normalizeText(input.bookingPublicId) || context.bookingPublicId || input.bookingId.slice(0, 8);
-    const address = normalizeText(input.customerAddress) || context.customerAddress;
-    const paymentMethod =
-      normalizeText(input.paymentMethod) ||
-      [...context.payments]
-        .reverse()
-        .find((row: { provider: string; amount: number }) => Number(row.amount || 0) > 0)?.provider ||
-      "Not specified";
-    const signature = await loadBookingSignatureData(input.bookingId);
-
-    const payload = buildRentalAgreementPayload({
-      bookingId: displayBookingId,
-      bookingStatus: input.bookingStatus,
-      startDate: input.startDate,
-      endDate: input.endDate,
-      pickupLocation: input.pickupLocation,
-      returnLocation: input.returnLocation ?? input.pickupLocation,
-      customerName: input.customerName,
-      customerEmail: input.customerEmail,
-      customerPhone: input.customerPhone,
-      customerAddress: address,
-      vehicleMake: input.vehicleMake,
-      vehicleModel: input.vehicleModel,
-      vehicleYear: input.vehicleYear,
-      dailyRate: input.dailyRate,
-      total: input.total,
-      deposit: input.deposit,
-      paidToDate: input.paidToDate,
-      balanceDue: input.balanceDue,
-      paymentMethod,
-      signatureDataUrl: signature.signatureDataUrl,
-      signedAt: signature.signedAt || undefined,
-    });
-
-    const pdf = await generateRentalAgreementPdf(payload);
+    const agreement = await loadBookingRentalAgreementPayload(input.bookingId);
+    if (!agreement) return undefined;
+    const pdf = await generateRentalAgreementPdf(agreement.payload);
     if (!pdf?.downloadUrl) return undefined;
     const base64 = await downloadPdfBase64(pdf.downloadUrl);
-    return [{ filename: `rental-agreement-${displayBookingId}.pdf`, content: base64 }];
+    return [{ filename: `rental-agreement-${agreement.bookingPublicId}.pdf`, content: base64 }];
   } catch (error) {
     logError("rental_agreement_pdf_generation_failed", error, { bookingId: input.bookingId });
     return undefined;

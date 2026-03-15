@@ -48,16 +48,25 @@ test("Pricing SSoT: stored booking pricing is reused by booking follow-up and Wi
     "src/app/api/public/bookings/route.ts",
     "src/app/api/public/bookings/[id]/promo/route.ts",
     "src/app/api/public/bookings/[id]/pay-on-pickup/route.ts",
-    "src/app/api/payments/wipay/start/route.ts",
-    "src/app/api/payments/wipay/full/start/route.ts",
-    "src/app/api/payments/wipay/custom/start/route.ts",
-    "src/app/api/payments/wipay/balance/start/route.ts",
+    "src/lib/payments/publicPaymentStart.ts",
     "src/lib/payments/recalculateBooking.ts",
   ];
 
   for (const file of files) {
     const code = read(file);
     assert.match(code, /computeBookingPricingFromStoredSnapshot\(/);
+  }
+
+  const routeFiles = [
+    "src/app/api/payments/wipay/start/route.ts",
+    "src/app/api/payments/wipay/full/start/route.ts",
+    "src/app/api/payments/wipay/custom/start/route.ts",
+    "src/app/api/payments/wipay/balance/start/route.ts",
+  ];
+
+  for (const file of routeFiles) {
+    const code = read(file);
+    assert.match(code, /startPublicWipayPayment\(/);
   }
 });
 
@@ -136,6 +145,18 @@ test("Blockouts linkage wiring: calendar and admin blockout APIs use shared bloc
   const calendarPage = read("src/app/admin/(protected)/calendar/page.tsx");
   assert.match(calendarPage, /from \"@\/lib\/blockouts\/shared\"/);
   assert.match(calendarPage, /listBlockouts\(/);
+});
+
+test("Settings SSoT: requireRestoreReason consumers use loadAdminSettings", () => {
+  const paymentsRoute = read("src/app/api/admin/payments/[paymentId]/route.ts");
+  assert.match(paymentsRoute, /from \"@\/lib\/adminSettings\"/);
+  assert.match(paymentsRoute, /loadAdminSettings\(/);
+  assert.doesNotMatch(paymentsRoute, /select content from admin_documents where key = 'settings'/i);
+
+  const bookingPage = read("src/app/admin/(protected)/bookings/[id]/page.tsx");
+  assert.match(bookingPage, /from \"@\/lib\/adminSettings\"/);
+  assert.match(bookingPage, /loadAdminSettings\(/);
+  assert.doesNotMatch(bookingPage, /select content from admin_documents where key = 'settings'/i);
 });
 
 test("Turnstile coverage: protected public submit routes call shared verifier", () => {
