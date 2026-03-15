@@ -18,6 +18,7 @@
 # generated artifacts (audit/e2e/media)
 audit-artifacts/
 .artifacts/
+tmp/pdfs/
 playwright-report/
 test-results/
 .playwright-cli/
