@@ -17,6 +17,7 @@ import { handleAdminBookingInspectionImageDelete } from "@/app/api/admin/booking
 import { handleAdminBookingInspectionImagesArchivePost } from "@/app/api/admin/bookings/[id]/inspections/images/archive/route";
 import { BookingVehicleInspectionPanel } from "@/components/admin/BookingVehicleInspectionPanel";
 import type { RequireAdminApiSessionResult } from "@/lib/auth/adminGuards";
+import { DEFAULT_ADMIN_SETTINGS } from "@/lib/adminSettings";
 import {
   BOOKING_VEHICLE_INSPECTION_IMAGE_ARCHIVE_MIN_AGE_DAYS,
   archiveEligibleBookingVehicleInspectionImages,
@@ -934,6 +935,21 @@ test("booking vehicle inspection issue processing: creates admin notifications a
     sampleCompletedInspectionSet(),
     {
       actorUserId: "admin-user-id",
+      loadSettings: async () => ({
+        settings: {
+          ...DEFAULT_ADMIN_SETTINGS,
+          sendVehicleInspectionWarningEmails: false,
+        },
+        source: "db" as const,
+      }),
+      resolveOperationalRouting: async () => ({
+        configuredRecipients: [],
+        effectiveRecipients: [],
+        recipients: [],
+        hasConfiguredRecipients: false,
+        usesFallback: false,
+        warnings: [],
+      }),
       query: async <T = unknown>(text: string, params?: unknown[]) => {
         if (text.includes("from bookings b")) {
           return {
@@ -992,6 +1008,21 @@ test("booking vehicle inspection issue processing: skips duplicate alerts", asyn
     BOOKING_ID,
     sampleCompletedInspectionSet(),
     {
+      loadSettings: async () => ({
+        settings: {
+          ...DEFAULT_ADMIN_SETTINGS,
+          sendVehicleInspectionWarningEmails: false,
+        },
+        source: "db" as const,
+      }),
+      resolveOperationalRouting: async () => ({
+        configuredRecipients: [],
+        effectiveRecipients: [],
+        recipients: [],
+        hasConfiguredRecipients: false,
+        usesFallback: false,
+        warnings: [],
+      }),
       query: async <T = unknown>(text: string, params?: unknown[]) => {
         void params;
         if (text.includes("from bookings b")) {
@@ -1059,6 +1090,13 @@ test("booking vehicle inspection issue processing: does not create alerts when t
       },
     }),
     {
+      loadSettings: async () => ({
+        settings: {
+          ...DEFAULT_ADMIN_SETTINGS,
+          sendVehicleInspectionWarningEmails: false,
+        },
+        source: "db" as const,
+      }),
       insertAdminNotification: async () => {
         insertedCount += 1;
         return { id: "message-1" };
@@ -1073,6 +1111,294 @@ test("booking vehicle inspection issue processing: does not create alerts when t
   assert.equal(result.returnDamageCreated, false);
   assert.equal(insertedCount, 0);
   assert.equal(auditWrites, 0);
+});
+
+test("booking vehicle inspection issue processing: sends outbound warning emails when routing is enabled", async () => {
+  const sentEmails: Array<{ recipientEmails: string[]; subject: string }> = [];
+  const dedupeAttempts: string[] = [];
+  const dedupeResults: Array<{ dedupeKey: string; status: string }> = [];
+
+  const result = await processBookingVehicleInspectionIssues(
+    BOOKING_ID,
+    sampleCompletedInspectionSet(),
+    {
+      loadSettings: async () => ({
+        settings: {
+          ...DEFAULT_ADMIN_SETTINGS,
+          sendVehicleInspectionWarningEmails: true,
+          defaultOperationalNotificationEmail: "ops@example.com",
+          additionalOperationalNotificationEmails: ["fleet@example.com"],
+        },
+        source: "db" as const,
+      }),
+      resolveOperationalRouting: async () => ({
+        configuredRecipients: ["ops@example.com", "fleet@example.com"],
+        effectiveRecipients: ["ops@example.com", "fleet@example.com"],
+        recipients: [
+          {
+            email: "ops@example.com",
+            source: "configured-default",
+            label: "Default operational email",
+          },
+          {
+            email: "fleet@example.com",
+            source: "configured-additional",
+            label: "Additional operational recipient",
+          },
+        ],
+        hasConfiguredRecipients: true,
+        usesFallback: false,
+        warnings: [],
+      }),
+      acquireDedupe: async (input) => {
+        dedupeAttempts.push(input.eventType);
+        return { ok: true, acquired: true };
+      },
+      recordDedupeResult: async (input) => {
+        dedupeResults.push({ dedupeKey: input.dedupeKey, status: input.status });
+      },
+      sendWarningEmail: async (input) => {
+        sentEmails.push(input);
+        return { ok: true, providerMessageId: `provider-${sentEmails.length}` };
+      },
+    query: async <T = unknown>(text: string) => {
+      if (text.includes("from bookings b")) {
+        return {
+          rows: [
+            {
+                booking_id: BOOKING_ID,
+                booking_public_id: "BK000334",
+                customer_name: "Damian Thompson",
+                customer_email: "damian.ay.thompson@gmail.com",
+                vehicle_make: "Honda",
+                vehicle_model: "Fit",
+                vehicle_year: 2020,
+              },
+            ] as T[],
+            rowCount: 1,
+          };
+        }
+
+        if (text.includes("from audit_logs")) {
+          return { rows: [] as T[], rowCount: 0 };
+        }
+
+        throw new Error(`Unexpected query: ${text}`);
+      },
+      insertAdminNotification: async () => ({ id: "message-1" }),
+      writeAudit: async () => {},
+    },
+  );
+
+  assert.equal(result.fuelMismatchCreated, true);
+  assert.equal(result.returnDamageCreated, true);
+  assert.deepEqual(dedupeAttempts, [
+    "BOOKING_VEHICLE_INSPECTION_FUEL_MISMATCH_EMAIL",
+    "BOOKING_VEHICLE_INSPECTION_RETURN_DAMAGE_EMAIL",
+  ]);
+  assert.equal(sentEmails.length, 2);
+  assert.deepEqual(sentEmails[0]?.recipientEmails, ["ops@example.com", "fleet@example.com"]);
+  assert.match(sentEmails[0]?.subject ?? "", /Fuel mismatch/i);
+  assert.match(sentEmails[1]?.subject ?? "", /Damage reported/i);
+  assert.deepEqual(
+    dedupeResults.map((entry) => entry.status),
+    ["SENT", "SENT"],
+  );
+});
+
+test("booking vehicle inspection issue processing: does not send outbound warning email when routing is disabled", async () => {
+  let sendCalls = 0;
+
+  await processBookingVehicleInspectionIssues(BOOKING_ID, sampleCompletedInspectionSet(), {
+    loadSettings: async () => ({
+      settings: {
+        ...DEFAULT_ADMIN_SETTINGS,
+        sendVehicleInspectionWarningEmails: false,
+        defaultOperationalNotificationEmail: "ops@example.com",
+      },
+      source: "db" as const,
+    }),
+    resolveOperationalRouting: async () => ({
+      configuredRecipients: ["ops@example.com"],
+      effectiveRecipients: ["ops@example.com"],
+      recipients: [
+        {
+          email: "ops@example.com",
+          source: "configured-default",
+          label: "Default operational email",
+        },
+      ],
+      hasConfiguredRecipients: true,
+      usesFallback: false,
+      warnings: [],
+    }),
+    sendWarningEmail: async () => {
+      sendCalls += 1;
+      return { ok: true, providerMessageId: "provider-1" };
+    },
+    query: async <T = unknown>(text: string) => {
+      if (text.includes("from bookings b")) {
+        return {
+          rows: [
+            {
+              booking_id: BOOKING_ID,
+              booking_public_id: "BK000334",
+              customer_name: "Damian Thompson",
+              customer_email: "damian.ay.thompson@gmail.com",
+              vehicle_make: "Honda",
+              vehicle_model: "Fit",
+              vehicle_year: 2020,
+            },
+          ] as T[],
+          rowCount: 1,
+        };
+      }
+
+      if (text.includes("from audit_logs")) {
+        return { rows: [] as T[], rowCount: 0 };
+      }
+
+      throw new Error(`Unexpected query: ${text}`);
+    },
+    insertAdminNotification: async () => ({ id: "message-1" }),
+    writeAudit: async () => {},
+  });
+
+  assert.equal(sendCalls, 0);
+});
+
+test("booking vehicle inspection issue processing: falls back to internal warnings when no email recipients resolve", async () => {
+  let sendCalls = 0;
+  let notificationCount = 0;
+  let auditWrites = 0;
+
+  const result = await processBookingVehicleInspectionIssues(BOOKING_ID, sampleCompletedInspectionSet(), {
+    loadSettings: async () => ({
+      settings: {
+        ...DEFAULT_ADMIN_SETTINGS,
+        sendVehicleInspectionWarningEmails: true,
+        defaultOperationalNotificationEmail: "",
+        additionalOperationalNotificationEmails: [],
+      },
+      source: "db" as const,
+    }),
+    resolveOperationalRouting: async () => ({
+      configuredRecipients: [],
+      effectiveRecipients: [],
+      recipients: [],
+      hasConfiguredRecipients: false,
+      usesFallback: false,
+      warnings: ["No valid operational notification recipients are configured."],
+    }),
+    sendWarningEmail: async () => {
+      sendCalls += 1;
+      return { ok: true, providerMessageId: "provider-1" };
+    },
+    query: async <T = unknown>(text: string) => {
+      if (text.includes("from bookings b")) {
+        return {
+          rows: [
+            {
+              booking_id: BOOKING_ID,
+              booking_public_id: "BK000334",
+              customer_name: "Damian Thompson",
+              customer_email: "damian.ay.thompson@gmail.com",
+              vehicle_make: "Honda",
+              vehicle_model: "Fit",
+              vehicle_year: 2020,
+            },
+          ] as T[],
+          rowCount: 1,
+        };
+      }
+
+      if (text.includes("from audit_logs")) {
+        return { rows: [] as T[], rowCount: 0 };
+      }
+
+      throw new Error(`Unexpected query: ${text}`);
+    },
+    insertAdminNotification: async () => {
+      notificationCount += 1;
+      return { id: `message-${notificationCount}` };
+    },
+    writeAudit: async () => {
+      auditWrites += 1;
+    },
+  });
+
+  assert.equal(result.fuelMismatchCreated, true);
+  assert.equal(result.returnDamageCreated, true);
+  assert.equal(sendCalls, 0);
+  assert.equal(notificationCount, 2);
+  assert.equal(auditWrites, 2);
+});
+
+test("booking vehicle inspection issue processing: skips duplicate outbound warning email sends", async () => {
+  let sendCalls = 0;
+  let dedupeCalls = 0;
+
+  await processBookingVehicleInspectionIssues(BOOKING_ID, sampleCompletedInspectionSet(), {
+    loadSettings: async () => ({
+      settings: {
+        ...DEFAULT_ADMIN_SETTINGS,
+        sendVehicleInspectionWarningEmails: true,
+        defaultOperationalNotificationEmail: "ops@example.com",
+      },
+      source: "db" as const,
+    }),
+    resolveOperationalRouting: async () => ({
+      configuredRecipients: ["ops@example.com"],
+      effectiveRecipients: ["ops@example.com"],
+      recipients: [
+        {
+          email: "ops@example.com",
+          source: "configured-default",
+          label: "Default operational email",
+        },
+      ],
+      hasConfiguredRecipients: true,
+      usesFallback: false,
+      warnings: [],
+    }),
+    acquireDedupe: async () => {
+      dedupeCalls += 1;
+      return { ok: false, acquired: false };
+    },
+    sendWarningEmail: async () => {
+      sendCalls += 1;
+      return { ok: true, providerMessageId: "provider-1" };
+    },
+    query: async <T = unknown>(text: string) => {
+      if (text.includes("from bookings b")) {
+        return {
+          rows: [
+            {
+              booking_id: BOOKING_ID,
+              booking_public_id: "BK000334",
+              customer_name: "Damian Thompson",
+              customer_email: "damian.ay.thompson@gmail.com",
+              vehicle_make: "Honda",
+              vehicle_model: "Fit",
+              vehicle_year: 2020,
+            },
+          ] as T[],
+          rowCount: 1,
+        };
+      }
+
+      if (text.includes("from audit_logs")) {
+        return { rows: [] as T[], rowCount: 0 };
+      }
+
+      throw new Error(`Unexpected query: ${text}`);
+    },
+    insertAdminNotification: async () => ({ id: "message-1" }),
+    writeAudit: async () => {},
+  });
+
+  assert.equal(dedupeCalls, 2);
+  assert.equal(sendCalls, 0);
 });
 
 test("booking vehicle inspection odometer correction: updates inspection and vehicle odometer", async () => {
@@ -2583,7 +2909,9 @@ test("booking vehicle inspection panel: corrected-state summary is displayed", (
   );
 
   assert.match(html, /Corrected/);
-  assert.match(html, /45,310 KM -&gt; 45,280 KM/);
+  assert.match(html, /45,310 KM/);
+  assert.match(html, /45,280 KM/);
+  assert.doesNotMatch(html, /-&gt;/);
   assert.match(html, /Corrected after double-entry check\./);
   assert.match(html, /Admin User/);
 });

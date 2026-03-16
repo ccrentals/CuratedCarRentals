@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { dbQuery } from "@/lib/db";
 import { BookingActions } from "@/components/admin/BookingActions";
+import { BookingIncidentsCard } from "@/components/admin/BookingIncidentsCard";
 import { BookingVehicleInspectionPanel } from "@/components/admin/BookingVehicleInspectionPanel";
 import { BookingNotes } from "@/components/admin/BookingNotes";
 import { InfoTooltipIcon } from "@/components/admin/InfoTooltipIcon";
@@ -32,6 +33,7 @@ import {
   isBookingVehicleInspectionMissingTableError,
   loadBookingVehicleInspectionSummaries,
 } from "@/lib/bookings/vehicleInspection";
+import { loadBookingIncidents } from "@/lib/bookings/bookingIncidents";
 
 type BookingDetails = {
   id: string;
@@ -493,6 +495,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
     }
     vehicleInspectionTablesUnavailable = true;
   }
+  const bookingIncidents = await loadBookingIncidents(booking.id);
   let promoOptions: BookingActionPromoOption[] = [];
   try {
     promoOptions = (
@@ -753,6 +756,8 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
           </div>
         </section>
       </div>
+
+      <BookingIncidentsCard incidents={bookingIncidents} />
 
       <section className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">

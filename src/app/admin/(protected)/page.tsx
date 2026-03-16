@@ -2,10 +2,20 @@ import Link from "next/link";
 
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { InlineDateTimeRange } from "@/components/shared/InlineDateTimeRange";
+import {
+  fetchDashboardBookingSnapshot,
+  type AdminBookingListItem,
+} from "@/lib/bookings/adminBookingsList";
 import { bookingStartSqlExpr, buildUpcomingWhereSql, getStartOfToday } from "@/lib/bookings/upcoming";
 import { dbQuery } from "@/lib/db";
 import { fmtDate } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
+import {
+  fetchActiveFleetSnapshot,
+  summarizeActiveFleetSnapshot,
+  type ActiveFleetVehicleSnapshot,
+} from "@/lib/vehicles/adminFleetSnapshot";
+import { vehicleDerivedStatusLabel } from "@/lib/vehicles/adminVehicles";
 
 function formatDashboardStatus(status: string) {
   return String(status ?? "")
@@ -22,18 +32,11 @@ export default async function AdminDashboardPage() {
   // Shared gold-ring quick action treatment for visual consistency.
   const quickActionClass =
     `rounded-full bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] shadow-sm ring-1 ring-[var(--ccr-accent)] ring-offset-1 ring-offset-[var(--ccr-surface)] transition hover:bg-[var(--ccr-surface-soft)] hover:ring-[var(--ccr-accent-strong)] ${hoverTextClass}`;
-
-  const vehiclesResult = await dbQuery<{ count: string }>("select count(*) from vehicles");
-  const availableVehiclesResult = await dbQuery<{ count: string }>(
-    "select count(*) from vehicles where status = 'AVAILABLE'",
-  );
-  const bookingsResult = await dbQuery<{ count: string }>("select count(*) from bookings");
-  const pendingResult = await dbQuery<{ count: string }>(
-    "select count(*) from bookings where status = 'PENDING_PAYMENT'",
-  );
-  const confirmedResult = await dbQuery<{ count: string }>(
-    "select count(*) from bookings where status = 'CONFIRMED'",
-  );
+  const [activeFleetRows, bookingSnapshot] = await Promise.all([
+    fetchActiveFleetSnapshot({ now }),
+    fetchDashboardBookingSnapshot({ now }),
+  ]);
+  const fleetSummary = summarizeActiveFleetSnapshot(activeFleetRows);
   const upcomingWhere = buildUpcomingWhereSql({
     bookingAlias: "b",
     paramStartIndex: 1,
@@ -112,64 +115,43 @@ export default async function AdminDashboardPage() {
       "order by balance_due desc, created_at desc limit 5",
   );
 
-  const maintenanceVehicles = await dbQuery<{
-    id: string;
-    make: string;
-    model: string;
-    year: number;
-    status: string;
-    updated_at: string;
-  }>(
-    "select id, make, model, year, status, updated_at from vehicles where status = 'MAINTENANCE' order by updated_at desc limit 5",
-  );
-
-  const recentBookings = await dbQuery<{
-    id: string;
-    public_id: string;
-    status: string;
-    start_date: string;
-    end_date: string;
-    customer_name: string;
-    vehicle_make: string;
-    vehicle_model: string;
-  }>(
-    "select b.id, b.public_id, b.status, b.start_date, b.end_date, c.full_name as customer_name, v.make as vehicle_make, v.model as vehicle_model from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id order by b.created_at desc limit 5",
-  );
-
-  const recentVehicles = await dbQuery<{
-    id: string;
-    make: string;
-    model: string;
-    year: number;
-    status: string;
-    created_at: string;
-  }>("select id, make, model, year, status, created_at from vehicles order by created_at desc limit 5");
+  const maintenanceVehicles = activeFleetRows
+    .filter((vehicle) => vehicle.derived_status === "DIRTY")
+    .sort((left, right) => {
+      const leftTime = new Date(left.updated_at).getTime();
+      const rightTime = new Date(right.updated_at).getTime();
+      if (leftTime !== rightTime) return rightTime - leftTime;
+      return right.id.localeCompare(left.id);
+    })
+    .slice(0, 5);
+  const recentBookings = bookingSnapshot.recentBookings;
+  const recentVehicles = fleetSummary.recentVehicles;
 
   const cards = [
     {
       label: "Total Bookings",
-      value: bookingsResult.rows[0]?.count ?? "0",
+      value: String(bookingSnapshot.counts.totalBookings),
       href: "/admin/bookings",
     },
     {
       label: "Pending Payment",
-      value: pendingResult.rows[0]?.count ?? "0",
+      value: String(bookingSnapshot.counts.pendingPayment),
       href: "/admin/bookings?status=pending_payment",
     },
     {
       label: "Confirmed",
-      value: confirmedResult.rows[0]?.count ?? "0",
+      value: String(bookingSnapshot.counts.confirmed),
       href: "/admin/bookings?status=confirmed",
     },
     {
       label: "Total Vehicles",
-      value: vehiclesResult.rows[0]?.count ?? "0",
+      value: String(fleetSummary.totalVehicles),
       href: "/admin/vehicles",
     },
     {
       label: "Available Vehicles",
-      value: availableVehiclesResult.rows[0]?.count ?? "0",
-      href: "/admin/vehicles?availability=available",
+      value: String(fleetSummary.availableVehicles),
+      href: "/admin/vehicles?fleet=available",
     },
     {
       label: "Upcoming Pickups (7d)",
@@ -215,7 +197,13 @@ export default async function AdminDashboardPage() {
         <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Scope legend</p>
         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[var(--ccr-muted)]">
           <span className="rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-2.5 py-1">
-            Cards: all-time snapshot
+            Cards: operational snapshot
+          </span>
+          <span className="rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-2.5 py-1">
+            Booking cards: archived + cancelled hidden by default
+          </span>
+          <span className="rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-2.5 py-1">
+            Vehicle cards: active fleet with derived status
           </span>
           <span className="rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-2.5 py-1">
             Upcoming pickups today: {todayLabel}
@@ -227,6 +215,12 @@ export default async function AdminDashboardPage() {
             Outstanding balances: open bookings only
           </span>
         </div>
+        {bookingSnapshot.archiveNotConfigured ? (
+          <p className="mt-3 text-xs text-[var(--ccr-muted)]">
+            Archive columns are not configured in the connected database, so booking cards are using the
+            same fallback scope as the bookings list.
+          </p>
+        ) : null}
       </section>
 
       <div className="mt-8 grid gap-6 lg:grid-cols-2">
@@ -376,23 +370,16 @@ export default async function AdminDashboardPage() {
 
         <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-lg font-bold text-[var(--ccr-text)]">Vehicles in maintenance</h2>
+            <h2 className="text-lg font-bold text-[var(--ccr-text)]">Dirty / maintenance vehicles</h2>
             <Link href="/admin/vehicles" className={`text-xs font-semibold text-[var(--ccr-text)] ${hoverTextClass}`}>
               View vehicles
             </Link>
           </div>
-          {maintenanceVehicles.rows.length === 0 ? (
-            <p className="mt-3 text-sm text-[var(--ccr-muted)]">No vehicles in maintenance.</p>
+          {maintenanceVehicles.length === 0 ? (
+            <p className="mt-3 text-sm text-[var(--ccr-muted)]">No dirty or maintenance vehicles.</p>
           ) : (
             <ul className="mt-4 space-y-3 text-sm">
-              {(maintenanceVehicles.rows as Array<{
-                id: string;
-                make: string;
-                model: string;
-                year: number;
-                status: string;
-                updated_at: string;
-              }>).map((vehicle) => (
+              {maintenanceVehicles.map((vehicle) => (
                 <li key={vehicle.id} className="rounded-xl border border-[var(--ccr-border)] p-3">
                   <div className="flex items-start justify-between gap-3">
                     <div>
@@ -411,7 +398,7 @@ export default async function AdminDashboardPage() {
                       </p>
                     </div>
                     <span className="rounded-full bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-semibold text-[var(--ccr-text)]">
-                      {vehicle.status}
+                      {vehicleDerivedStatusLabel(vehicle.derived_status)}
                     </span>
                   </div>
                 </li>
@@ -447,33 +434,24 @@ export default async function AdminDashboardPage() {
               View all
             </Link>
           </div>
-          {recentBookings.rows.length === 0 ? (
+          {recentBookings.length === 0 ? (
             <p className="mt-3 text-sm text-[var(--ccr-muted)]">No bookings yet.</p>
           ) : (
             <ul className="mt-4 space-y-3 text-sm">
-              {(recentBookings.rows as Array<{
-                id: string;
-                public_id: string;
-                status: string;
-                start_date: string;
-                end_date: string;
-                customer_name: string;
-                vehicle_make: string;
-                vehicle_model: string;
-              }>).map((booking) => (
+              {(recentBookings as AdminBookingListItem[]).map((booking) => (
                 <li key={booking.id} className="rounded-xl border border-[var(--ccr-border)]">
                   <details className="group">
                     <summary className="list-none cursor-pointer p-3 [&::-webkit-details-marker]:hidden">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <span className="inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-bold text-[var(--ccr-accent)]">
-                            {String(booking.public_id ?? "").trim() || booking.id}
+                            {booking.publicId || booking.id}
                           </span>
                           <p className="mt-1 text-xs text-[var(--ccr-muted)]">Booking details</p>
                         </div>
                         <div className="flex shrink-0 items-start gap-3">
                           <span className="rounded-full bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-semibold text-[var(--ccr-text)]">
-                            {formatDashboardStatus(booking.status)}
+                            {booking.statusLabel}
                           </span>
                           <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-[var(--ccr-border)] text-[var(--ccr-text)] transition-transform group-open:rotate-180">
                             <svg
@@ -494,12 +472,12 @@ export default async function AdminDashboardPage() {
                     </summary>
                     <div className="border-t border-[var(--ccr-border)] px-3 pb-3 pt-2">
                       <p className="break-words text-xs text-[var(--ccr-muted)]">
-                        {booking.customer_name} • {booking.vehicle_make} {booking.vehicle_model}
+                        {booking.customerName} • {booking.vehicleLabel}
                       </p>
                       <p className="mt-1 text-xs text-[var(--ccr-muted)]">
                         <InlineDateTimeRange
-                          startLabel={fmtDate(booking.start_date)}
-                          endLabel={fmtDate(booking.end_date)}
+                          startLabel={booking.startDateLabel}
+                          endLabel={booking.endDateLabel}
                         />
                       </p>
                       <Link
@@ -524,18 +502,11 @@ export default async function AdminDashboardPage() {
               View all
             </Link>
           </div>
-          {recentVehicles.rows.length === 0 ? (
+          {recentVehicles.length === 0 ? (
             <p className="mt-3 text-sm text-[var(--ccr-muted)]">No vehicles yet.</p>
           ) : (
             <ul className="mt-4 space-y-3 text-sm">
-              {(recentVehicles.rows as Array<{
-                id: string;
-                make: string;
-                model: string;
-                year: number;
-                status: string;
-                created_at: string;
-              }>).map((vehicle) => (
+              {(recentVehicles as ActiveFleetVehicleSnapshot[]).map((vehicle) => (
                 <li key={vehicle.id} className="rounded-xl border border-[var(--ccr-border)] p-3">
                   <div className="flex items-start justify-between gap-3">
                     <div>
@@ -553,14 +524,8 @@ export default async function AdminDashboardPage() {
                         />
                       </p>
                     </div>
-                    <span
-                      className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                        vehicle.status === "ACTIVE"
-                          ? "bg-[var(--ccr-surface-soft)] text-[var(--ccr-accent)] ring-2 ring-[var(--ccr-accent)] ring-offset-2 ring-offset-[var(--ccr-surface)]"
-                          : "bg-[var(--ccr-surface-soft)] text-[var(--ccr-text)]"
-                      }`}
-                    >
-                      {vehicle.status}
+                    <span className="rounded-full bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-semibold text-[var(--ccr-text)]">
+                      {vehicleDerivedStatusLabel(vehicle.derived_status)}
                     </span>
                   </div>
                 </li>

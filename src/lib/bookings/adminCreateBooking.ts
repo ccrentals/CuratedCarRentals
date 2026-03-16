@@ -33,6 +33,11 @@ export type AdminCreateBookingPricingPreview = {
   currency: "JMD";
 };
 
+export function adminCreateBookingVehicleWhereSql(alias?: string) {
+  const prefix = alias && alias.trim().length > 0 ? `${alias.trim()}.` : "";
+  return `${prefix}deleted_at is null and ${prefix}status <> 'INACTIVE'`;
+}
+
 function getQueryable(client?: Queryable) {
   if (client) return client;
   return {
@@ -50,6 +55,24 @@ function mapVehicleOption(vehicle: AdminCreateBookingVehicleRow): AdminCreateBoo
     depositCents: Math.max(0, Number(vehicle.deposit_cents || 0)),
     label: `${vehicle.year} ${vehicle.make} ${vehicle.model}`.trim(),
   };
+}
+
+export async function getAdminCreateBookingVehicleById(
+  vehicleId: string,
+  options: { client?: Queryable } = {},
+): Promise<AdminCreateBookingVehicleOption | null> {
+  const db = getQueryable(options.client);
+  const vehicleResult = (await db.query(
+    `select id, year, make, model, daily_rate_cents, deposit_cents
+       from vehicles
+      where id = $1
+        and ${adminCreateBookingVehicleWhereSql()}
+      limit 1`,
+    [vehicleId],
+  )) as { rows: AdminCreateBookingVehicleRow[]; rowCount: number };
+
+  const vehicle = vehicleResult.rows[0];
+  return vehicle ? mapVehicleOption(vehicle) : null;
 }
 
 export function buildAdminCreateBookingWindow(
@@ -110,7 +133,10 @@ export async function listAdminCreateBookingAvailableVehicles(
 
   const db = getQueryable(options.client);
   const result = (await db.query(
-    "select id, year, make, model, daily_rate_cents, deposit_cents from vehicles where status <> 'INACTIVE' order by year desc, make asc, model asc",
+    `select id, year, make, model, daily_rate_cents, deposit_cents
+       from vehicles
+      where ${adminCreateBookingVehicleWhereSql()}
+      order by year desc, make asc, model asc`,
   )) as { rows: AdminCreateBookingVehicleRow[]; rowCount: number };
 
   const vehicles = result.rows.map(mapVehicleOption);
@@ -127,18 +153,12 @@ export async function getAdminCreateBookingPricingPreview(
   endDate: string,
   options: { client?: Queryable } = {},
 ): Promise<AdminCreateBookingPricingPreview | null> {
-  const db = getQueryable(options.client);
-  const vehicleResult = (await db.query(
-    "select id, year, make, model, daily_rate_cents, deposit_cents from vehicles where id = $1 and status <> 'INACTIVE' limit 1",
-    [vehicleId],
-  )) as { rows: AdminCreateBookingVehicleRow[]; rowCount: number };
-
-  const vehicle = vehicleResult.rows[0];
+  const vehicle = await getAdminCreateBookingVehicleById(vehicleId, options);
   if (!vehicle) return null;
 
   return computeAdminCreateBookingPricingPreview({
-    dailyRateCents: vehicle.daily_rate_cents,
-    depositCents: vehicle.deposit_cents,
+    dailyRateCents: vehicle.dailyRateCents,
+    depositCents: vehicle.depositCents,
     startDate,
     endDate,
   });

@@ -76,6 +76,21 @@ export type AdminBookingListPage = {
   limit: BookingPageSize;
 };
 
+export type AdminBookingCountResult = {
+  totalCount: number;
+  archiveNotConfigured: boolean;
+};
+
+export type DashboardBookingSnapshot = {
+  counts: {
+    totalBookings: number;
+    pendingPayment: number;
+    confirmed: number;
+  };
+  recentBookings: AdminBookingListItem[];
+  archiveNotConfigured: boolean;
+};
+
 export type AdminBookingListQueryInput = {
   status?: string | null;
   scope?: string | null;
@@ -103,6 +118,7 @@ const STATUS_MAP: Record<string, string[]> = {
 const LOST_TO_FIRST_DEPOSIT_FILTER = "lost_to_first_deposit";
 const UPCOMING_SCOPE = "upcoming";
 const PICKUP_DAY_TODAY = "today";
+export const DEFAULT_HIDDEN_BOOKING_STATUSES = ["CANCELLED"] as const;
 const BOOKING_SORT_FIELDS = [
   "booking",
   "customer",
@@ -121,6 +137,13 @@ function normalizeStatusFilter(raw: unknown) {
   if (normalized === "all") return undefined;
   if (normalized === LOST_TO_FIRST_DEPOSIT_FILTER) return undefined;
   return STATUS_MAP[normalized] ?? [normalized.toUpperCase()];
+}
+
+export function shouldExcludeCancelledFromDefaultBookingsScope(rawStatus: unknown) {
+  if (typeof rawStatus !== "string") return true;
+  const normalized = rawStatus.trim().toLowerCase();
+  if (!normalized || normalized === "all") return true;
+  return normalized !== LOST_TO_FIRST_DEPOSIT_FILTER && !Boolean(STATUS_MAP[normalized]);
 }
 
 function normalizeScope(raw: unknown) {
@@ -265,6 +288,8 @@ function normalizeQueryInput(input: AdminBookingListQueryInput) {
   const lostToFirstDepositOnly =
     typeof input.status === "string" &&
     input.status.trim().toLowerCase() === LOST_TO_FIRST_DEPOSIT_FILTER;
+  const excludeCancelledFromDefaultScope =
+    !statusFilter && !lostToFirstDepositOnly && shouldExcludeCancelledFromDefaultBookingsScope(input.status);
   const cursor = decodeBookingsCursor(input.cursor);
   const offset =
     cursor && Number.isInteger(cursor.offset) && Number(cursor.offset) >= 0
@@ -286,6 +311,7 @@ function normalizeQueryInput(input: AdminBookingListQueryInput) {
     pickupDay,
     includeArchived,
     lostToFirstDepositOnly,
+    excludeCancelledFromDefaultScope,
     cursor,
     offset,
     now,
@@ -301,6 +327,7 @@ function buildBookingsQuery(input: {
   scope?: string;
   pickupDay?: string;
   lostToFirstDepositOnly: boolean;
+  excludeCancelledFromDefaultScope: boolean;
   q: string;
   dateRange: BookingDateRange | null;
   offset: number;
@@ -320,6 +347,14 @@ function buildBookingsQuery(input: {
   const forceExcludeArchived = input.scope === UPCOMING_SCOPE;
   if (input.includeArchiveFilter && (!input.includeArchived || forceExcludeArchived)) {
     whereClauses.push("b.archived_at is null");
+  }
+
+  if (input.excludeCancelledFromDefaultScope) {
+    whereClauses.push(
+      `upper(coalesce(b.status, '')) <> all($${index}::text[])`,
+    );
+    values.push([...DEFAULT_HIDDEN_BOOKING_STATUSES]);
+    index += 1;
   }
 
   if (input.statusFilter) {
@@ -409,6 +444,84 @@ function buildBookingsQuery(input: {
   return { text, values };
 }
 
+export async function fetchAdminBookingCount(
+  input: AdminBookingListQueryInput,
+): Promise<AdminBookingCountResult> {
+  const normalized = normalizeQueryInput(input);
+  const requiresArchiveFilter = !normalized.includeArchived || normalized.scope === UPCOMING_SCOPE;
+
+  const runCountQuery = async (includeArchiveFilter: boolean) => {
+    const query = buildBookingsQuery(
+      {
+        includeArchiveFilter,
+        includeArchived: normalized.includeArchived,
+        statusFilter: normalized.statusFilter,
+        scope: normalized.scope,
+        pickupDay: normalized.pickupDay,
+        lostToFirstDepositOnly: normalized.lostToFirstDepositOnly,
+        excludeCancelledFromDefaultScope: normalized.excludeCancelledFromDefaultScope,
+        q: normalized.q,
+        dateRange: normalized.dateRange,
+        offset: 0,
+        sortBy: normalized.sortBy,
+        sortDir: normalized.sortDir,
+        limit: normalized.limit,
+        now: normalized.now,
+      },
+      { countOnly: true },
+    );
+    return dbQuery<{ total_count: unknown }>(query.text, query.values);
+  };
+
+  let archiveNotConfigured = false;
+  let countResult: Awaited<ReturnType<typeof dbQuery<{ total_count: unknown }>>>;
+  try {
+    countResult = await runCountQuery(true);
+  } catch (error) {
+    if (requiresArchiveFilter && isUndefinedColumn(error, "archived_at")) {
+      archiveNotConfigured = true;
+      countResult = await runCountQuery(false);
+    } else {
+      throw error;
+    }
+  }
+
+  return {
+    totalCount: Number(countResult.rows[0]?.total_count ?? 0),
+    archiveNotConfigured,
+  };
+}
+
+export async function fetchDashboardBookingSnapshot(input?: {
+  now?: Date;
+}): Promise<DashboardBookingSnapshot> {
+  const now = input?.now instanceof Date && !Number.isNaN(input.now.getTime()) ? input.now : new Date();
+
+  const [recentBookingsPage, totalBookings, pendingPayment, confirmed] = await Promise.all([
+    fetchAdminBookingsPage({
+      limit: "5",
+      now,
+    }),
+    fetchAdminBookingCount({ now }),
+    fetchAdminBookingCount({ status: "pending_payment", now }),
+    fetchAdminBookingCount({ status: "confirmed", now }),
+  ]);
+
+  return {
+    counts: {
+      totalBookings: totalBookings.totalCount,
+      pendingPayment: pendingPayment.totalCount,
+      confirmed: confirmed.totalCount,
+    },
+    recentBookings: recentBookingsPage.bookings,
+    archiveNotConfigured:
+      recentBookingsPage.archiveNotConfigured ||
+      totalBookings.archiveNotConfigured ||
+      pendingPayment.archiveNotConfigured ||
+      confirmed.archiveNotConfigured,
+  };
+}
+
 export async function fetchAdminBookingsPage(input: AdminBookingListQueryInput): Promise<AdminBookingListPage> {
   const normalized = normalizeQueryInput(input);
   const requiresArchiveFilter = !normalized.includeArchived || normalized.scope === UPCOMING_SCOPE;
@@ -424,6 +537,7 @@ export async function fetchAdminBookingsPage(input: AdminBookingListQueryInput):
       scope: normalized.scope,
       pickupDay: normalized.pickupDay,
       lostToFirstDepositOnly: normalized.lostToFirstDepositOnly,
+      excludeCancelledFromDefaultScope: normalized.excludeCancelledFromDefaultScope,
       q: normalized.q,
       dateRange: normalized.dateRange,
       offset: normalized.offset,
@@ -444,6 +558,7 @@ export async function fetchAdminBookingsPage(input: AdminBookingListQueryInput):
         scope: normalized.scope,
         pickupDay: normalized.pickupDay,
         lostToFirstDepositOnly: normalized.lostToFirstDepositOnly,
+        excludeCancelledFromDefaultScope: normalized.excludeCancelledFromDefaultScope,
         q: normalized.q,
         dateRange: normalized.dateRange,
         offset: 0,

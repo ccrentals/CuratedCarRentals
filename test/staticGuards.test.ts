@@ -105,14 +105,26 @@ test("Upcoming SSoT wiring: dashboard + bookings SQL filters and calendar/day la
   assert.match(bookingsList, /from \"@\/lib\/bookings\/upcoming\"/);
   assert.match(bookingsList, /buildUpcomingWhereSql\(/);
   assert.match(bookingsList, /deriveBookingPhase\(/);
+  assert.match(bookingsList, /export async function fetchDashboardBookingSnapshot/);
+  assert.match(bookingsList, /fetchAdminBookingsPage\(/);
 
   const dashboard = read("src/app/admin/(protected)/page.tsx");
   assert.match(dashboard, /from \"@\/lib\/bookings\/upcoming\"/);
   assert.match(dashboard, /buildUpcomingWhereSql\(/);
+  assert.match(dashboard, /fetchDashboardBookingSnapshot/);
+  assert.match(dashboard, /fetchActiveFleetSnapshot/);
+  assert.doesNotMatch(dashboard, /select count\(\*\) from vehicles where status = 'AVAILABLE'/);
+  assert.doesNotMatch(dashboard, /const vehiclesResult = await dbQuery/);
+  assert.doesNotMatch(dashboard, /const bookingsResult = await dbQuery/);
+  assert.doesNotMatch(dashboard, /const pendingResult = await dbQuery/);
+  assert.doesNotMatch(dashboard, /const confirmedResult = await dbQuery/);
 
   const calendarView = read("src/components/admin/CalendarView.tsx");
   assert.match(calendarView, /from \"@\/lib\/vehicles\/vehicleStatus\"/);
   assert.match(calendarView, /deriveBookingPhase\(/);
+
+  const vehiclesPage = read("src/app/admin/(protected)/vehicles/page.tsx");
+  assert.match(vehiclesPage, /hydrateVehiclesWithDerivedStatus/);
 });
 
 test("Dashboard upcoming context links to bookings with Upcoming scope", () => {

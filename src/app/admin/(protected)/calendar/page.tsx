@@ -2,14 +2,13 @@ import { CalendarView } from "@/components/admin/CalendarView";
 import { CopySqlButton } from "@/components/admin/CopySqlButton";
 import { loadAdminSettings } from "@/lib/adminSettings";
 import { listBlockouts } from "@/lib/blockouts/shared";
+import {
+  buildCalendarBookingStatusClauses,
+  sanitizeCalendarVehicleId,
+  type CalendarVehicleOption,
+} from "@/lib/bookings/adminCalendar";
 import { buildBookingRangeWhere, buildRange } from "@/lib/bookings/dateRangeFilter";
 import { dbQuery } from "@/lib/db";
-
-type VehicleRow = {
-  id: string;
-  make: string;
-  model: string;
-};
 
 type BookingRow = {
   id: string;
@@ -132,20 +131,11 @@ create index if not exists blockouts_range_idx on blockouts(start_at, end_at);`;
     throw new Error("Unable to normalize calendar date range.");
   }
 
-  const vehicles = await dbQuery<VehicleRow>("select id, make, model from vehicles order by make, model");
+  const vehicles = await dbQuery<CalendarVehicleOption>(
+    "select id, make, model from vehicles where deleted_at is null order by make, model",
+  );
+  const selectedVehicleId = sanitizeCalendarVehicleId(vehicleId, vehicles.rows);
   const { settings: adminSettings } = await loadAdminSettings();
-
-  let statusFilter: string | undefined;
-  if (statusParam && statusParam !== "all") {
-    const map: Record<string, string> = {
-      pending_payment: "PENDING_PAYMENT",
-      pending: "PENDING_PAYMENT",
-      confirmed: "CONFIRMED",
-      returned: "RETURNED",
-      cancelled: "CANCELLED",
-    };
-    statusFilter = map[statusParam] ?? statusParam.toUpperCase();
-  }
 
   const bookingRangeWhere = buildBookingRangeWhere({
     rangeStart: bookingRange.rangeStartIso,
@@ -156,17 +146,19 @@ create index if not exists blockouts_range_idx on blockouts(start_at, end_at);`;
   const bookingValues: Array<string> = [...bookingRangeWhere.values];
   let bookingParamIndex = bookingRangeWhere.nextParamIndex;
 
-  if (vehicleId) {
+  if (selectedVehicleId) {
     bookingClauses.push(`b.vehicle_id = $${bookingParamIndex}`);
-    bookingValues.push(vehicleId);
+    bookingValues.push(selectedVehicleId);
     bookingParamIndex += 1;
   }
 
-  if (statusFilter) {
-    bookingClauses.push(`b.status = $${bookingParamIndex}`);
-    bookingValues.push(statusFilter);
-    bookingParamIndex += 1;
-  }
+  const calendarStatus = buildCalendarBookingStatusClauses({
+    statusParam,
+    paramStartIndex: bookingParamIndex,
+    bookingAlias: "b",
+  });
+  bookingClauses.push(...calendarStatus.clauses);
+  bookingValues.push(...calendarStatus.values);
 
   const bookings = showBookings
     ? await dbQuery<BookingRow>(
@@ -182,11 +174,11 @@ create index if not exists blockouts_range_idx on blockouts(start_at, end_at);`;
 
   if (showBlockouts) {
     try {
-      blockouts = (await listBlockouts({
-        rangeStartIso: rangeStart.toISOString(),
-        rangeEndIso: rangeEnd.toISOString(),
-        vehicleId,
-      })) as BlockoutRow[];
+        blockouts = (await listBlockouts({
+          rangeStartIso: rangeStart.toISOString(),
+          rangeEndIso: rangeEnd.toISOString(),
+          vehicleId: selectedVehicleId,
+        })) as BlockoutRow[];
     } catch (error) {
       const code =
         typeof error === "object" && error !== null && "code" in error
@@ -239,11 +231,11 @@ create index if not exists blockouts_range_idx on blockouts(start_at, end_at);`;
         vehicles={vehicles.rows}
         dayViewBookingLimit={adminSettings.dayViewBookingLimit}
         filters={{
-          vehicleId,
+          vehicleId: selectedVehicleId,
           customerQuery,
           showBookings,
           showBlockouts,
-          status: statusParam ?? "all",
+          status: calendarStatus.selectedStatus,
         }}
       />
     </div>

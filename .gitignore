@@ -41,6 +41,7 @@ e2e/responsive-screenshots.spec.ts-snapshots/
 # misc
 .DS_Store
 *.pem
+cookies.txt
 
 # debug
 npm-debug.log*

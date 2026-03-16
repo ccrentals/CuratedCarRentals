@@ -1,4 +1,7 @@
+import { createHash } from "node:crypto";
+
 import { dbQuery, getDbPool } from "@/lib/db";
+import { loadAdminSettings } from "@/lib/adminSettings";
 import {
   buildUploadcareCdnUrl,
   extractUploadcareDeliveryUrl,
@@ -26,6 +29,9 @@ import {
   type BookingVehicleInspectionType,
   type LoadedBookingVehicleInspections,
 } from "@/lib/bookings/vehicleInspectionShared";
+import { markDedupeResult, tryAcquireDedupe, computeDedupeKey } from "@/lib/notifications/dedupe";
+import { sendOperationalAlertEmail } from "@/lib/notifications/email";
+import { loadOperationalNotificationRoutingSummary } from "@/lib/notifications/operationalRouting";
 type DbQueryFn = typeof dbQuery;
 
 export {
@@ -303,6 +309,11 @@ type ProcessBookingVehicleInspectionIssuesDeps = {
     entityId?: string;
     details?: Record<string, unknown>;
   }) => Promise<void>;
+  loadSettings?: typeof loadAdminSettings;
+  resolveOperationalRouting?: typeof loadOperationalNotificationRoutingSummary;
+  sendWarningEmail?: typeof sendOperationalAlertEmail;
+  acquireDedupe?: typeof tryAcquireDedupe;
+  recordDedupeResult?: typeof markDedupeResult;
   actorUserId?: string | null;
 };
 
@@ -1660,12 +1671,67 @@ function buildBookingVehicleInspectionIssueMessage(input: {
   return lines.join("\n");
 }
 
+function buildBookingVehicleInspectionIssueEmailSubject(input: {
+  context: BookingVehicleInspectionAlertContext;
+  issueType: "FUEL_MISMATCH" | "RETURN_DAMAGE";
+}) {
+  return input.issueType === "FUEL_MISMATCH"
+    ? `[Inspection] Fuel mismatch — ${input.context.bookingPublicId}`
+    : `[Inspection] Damage reported — ${input.context.bookingPublicId}`;
+}
+
+function buildBookingVehicleInspectionIssueEmailHtml(input: {
+  context: BookingVehicleInspectionAlertContext;
+  inspections: LoadedBookingVehicleInspections;
+  issueType: "FUEL_MISMATCH" | "RETURN_DAMAGE";
+}) {
+  const bookingLink = `${process.env.SITE_URL ?? "http://localhost:3000"}/admin/bookings/${input.context.bookingId}`;
+  const issueSummary =
+    input.issueType === "FUEL_MISMATCH"
+      ? "Return fuel is lower than pickup fuel."
+      : "Return inspection reports damage.";
+
+  return `
+    <div style="font-family: Arial, sans-serif; color: #0f172a;">
+      <h2>Vehicle inspection warning</h2>
+      <p><strong>Booking:</strong> ${input.context.bookingPublicId}</p>
+      <p><strong>Issue:</strong> ${issueSummary}</p>
+      ${input.context.customerName ? `<p><strong>Customer:</strong> ${input.context.customerName}</p>` : ""}
+      ${input.context.customerEmail ? `<p><strong>Customer email:</strong> ${input.context.customerEmail}</p>` : ""}
+      ${input.context.vehicleLabel ? `<p><strong>Vehicle:</strong> ${input.context.vehicleLabel}</p>` : ""}
+      ${
+        input.issueType === "FUEL_MISMATCH"
+          ? `<p><strong>Pickup fuel:</strong> ${input.inspections.pickup.fuelLevelDisplay}<br /><strong>Return fuel:</strong> ${input.inspections.returnInspection.fuelLevelDisplay}</p>`
+          : `<p><strong>Damage present:</strong> ${input.inspections.returnInspection.damageDisplay}</p>`
+      }
+      ${
+        input.inspections.returnInspection.recordedByDisplay
+          ? `<p><strong>Recorded by:</strong> ${input.inspections.returnInspection.recordedByDisplay}</p>`
+          : ""
+      }
+      ${
+        input.inspections.returnInspection.recordedAt
+          ? `<p><strong>Recorded at:</strong> ${input.inspections.returnInspection.recordedAt}</p>`
+          : ""
+      }
+      <p style="margin-top:16px;">
+        <a href="${bookingLink}" style="background:#1f2d4d; color:#fff; padding:10px 16px; border-radius:8px; text-decoration:none;">Open Booking</a>
+      </p>
+      <p style="font-size:12px; color:#64748b;">This is an automated operational warning.</p>
+    </div>
+  `;
+}
+
 export async function processBookingVehicleInspectionIssues(
   bookingId: string,
   inspections: LoadedBookingVehicleInspections,
   deps: ProcessBookingVehicleInspectionIssuesDeps = {},
 ) {
   const query = deps.query ?? dbQuery;
+  const loadSettings = deps.loadSettings ?? loadAdminSettings;
+  const resolveOperationalRouting =
+    deps.resolveOperationalRouting ??
+    ((settings, options) => loadOperationalNotificationRoutingSummary(settings, { query, ...options }));
   const insertAdminNotification =
     deps.insertAdminNotification ??
     (async (input: { recipientEmail: string; message: string }) => {
@@ -1688,6 +1754,9 @@ export async function processBookingVehicleInspectionIssues(
       const { writeAuditLog } = await import("@/lib/audit");
       await writeAuditLog(input);
     });
+  const sendWarningEmail = deps.sendWarningEmail ?? sendOperationalAlertEmail;
+  const acquireDedupe = deps.acquireDedupe ?? tryAcquireDedupe;
+  const recordDedupeResult = deps.recordDedupeResult ?? markDedupeResult;
 
   const issueFlags = getBookingVehicleInspectionIssueFlags(inspections);
   const returnInspectionId = inspections.returnInspection.inspectionId;
@@ -1700,6 +1769,9 @@ export async function processBookingVehicleInspectionIssues(
   if (!context) {
     return { fuelMismatchCreated: false, returnDamageCreated: false };
   }
+
+  const { settings } = await loadSettings();
+  const operationalRouting = await resolveOperationalRouting(settings);
 
   let fuelMismatchCreated = false;
   let returnDamageCreated = false;
@@ -1761,8 +1833,63 @@ export async function processBookingVehicleInspectionIssues(
         recordedByDisplay: inspections.returnInspection.recordedByDisplay,
         recordedAt: inspections.returnInspection.recordedAt,
         notificationId: notification?.id ?? null,
+        emailWarningEnabled: settings.sendVehicleInspectionWarningEmails,
+        emailRecipients: operationalRouting.effectiveRecipients,
+        emailUsesFallback: operationalRouting.usesFallback,
       },
     });
+
+    if (settings.sendVehicleInspectionWarningEmails && operationalRouting.effectiveRecipients.length > 0) {
+      const recipientSetHash = createHash("sha1")
+        .update(operationalRouting.effectiveRecipients.join(","))
+        .digest("hex");
+      const dedupeKey = computeDedupeKey({
+        entityType: "booking",
+        entityId: bookingId,
+        eventType: `BOOKING_VEHICLE_INSPECTION_${issue.issueType}_EMAIL`,
+        extra: {
+          inspectionId: returnInspectionId,
+          recipientSetHash,
+        },
+      });
+
+      const dedupe = await acquireDedupe(
+        {
+          dedupeKey,
+          entityType: "booking",
+          entityId: bookingId,
+          eventType: `BOOKING_VEHICLE_INSPECTION_${issue.issueType}_EMAIL`,
+          provider: "resend",
+        },
+        query,
+      );
+
+      if (dedupe.acquired) {
+        const emailResult = await sendWarningEmail({
+          recipientEmails: operationalRouting.effectiveRecipients,
+          subject: buildBookingVehicleInspectionIssueEmailSubject({
+            context,
+            issueType: issue.issueType,
+          }),
+          html: buildBookingVehicleInspectionIssueEmailHtml({
+            context,
+            inspections,
+            issueType: issue.issueType,
+          }),
+        });
+
+        await recordDedupeResult(
+          {
+            dedupeKey,
+            status: emailResult.ok ? "SENT" : emailResult.skipped ? "SKIPPED" : "FAILED",
+            provider: "resend",
+            providerMessageId: emailResult.providerMessageId ?? null,
+            error: emailResult.ok ? null : emailResult.error ?? "Delivery failed",
+          },
+          query,
+        );
+      }
+    }
 
     if (issue.issueType === "FUEL_MISMATCH") {
       fuelMismatchCreated = true;

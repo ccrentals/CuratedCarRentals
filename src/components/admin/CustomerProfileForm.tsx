@@ -139,36 +139,74 @@ export function CustomerProfileForm({
 
   return (
     <form onSubmit={onSubmit} className="mt-4 space-y-3">
-      <label className="block text-xs text-[var(--ccr-muted)]">
-        Full name
-        <input
-          type="text"
-          value={nextFullName}
-          onChange={(event) => setNextFullName(event.target.value)}
-          required
-          className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
-        />
-      </label>
-      <label className="block text-xs text-[var(--ccr-muted)]">
-        Email
-        <input
-          type="email"
-          value={nextEmail}
-          onChange={(event) => setNextEmail(event.target.value)}
-          required
-          className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
-        />
-      </label>
-      <label className="block text-xs text-[var(--ccr-muted)]">
-        Phone
-        <input
-          type="text"
-          value={nextPhone}
-          onChange={(event) => setNextPhone(event.target.value)}
-          required
-          className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
-        />
-      </label>
+      <div className="grid gap-3 lg:grid-cols-3">
+        <label className="block text-xs text-[var(--ccr-muted)]">
+          Full name
+          <input
+            type="text"
+            value={nextFullName}
+            onChange={(event) => setNextFullName(event.target.value)}
+            required
+            className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+          />
+        </label>
+        <label className="block text-xs text-[var(--ccr-muted)]">
+          Email
+          <input
+            type="email"
+            value={nextEmail}
+            onChange={(event) => setNextEmail(event.target.value)}
+            required
+            className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+          />
+        </label>
+        <label className="block text-xs text-[var(--ccr-muted)]">
+          Phone
+          <input
+            type="text"
+            value={nextPhone}
+            onChange={(event) => setNextPhone(event.target.value)}
+            required
+            className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+          />
+        </label>
+      </div>
+      <div className="grid gap-3 lg:grid-cols-3">
+        <label className="block text-xs text-[var(--ccr-muted)]">
+          Driver&apos;s license number
+          <input
+            type="text"
+            value={nextDriversLicenseNumber}
+            onChange={(event) => setNextDriversLicenseNumber(event.target.value)}
+            className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+          />
+        </label>
+        <label className="block text-xs text-[var(--ccr-muted)]">
+          Legal ID Type
+          <select
+            value={nextLegalIdType}
+            onChange={(event) => setNextLegalIdType(event.target.value)}
+            required
+            className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+          >
+            {LEGAL_ID_TYPES.map((type) => (
+              <option key={type} value={type}>
+                {formatLegalIdTypeLabel(type)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block text-xs text-[var(--ccr-muted)]">
+          TRN / Passport / Legal ID Number
+          <input
+            type="text"
+            value={nextLegalIdNumber}
+            onChange={(event) => setNextLegalIdNumber(event.target.value)}
+            required
+            className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+          />
+        </label>
+      </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="block text-xs text-[var(--ccr-muted)]">
           First name
@@ -189,40 +227,6 @@ export function CustomerProfileForm({
           />
         </label>
       </div>
-      <label className="block text-xs text-[var(--ccr-muted)]">
-        Driver&apos;s license number
-        <input
-          type="text"
-          value={nextDriversLicenseNumber}
-          onChange={(event) => setNextDriversLicenseNumber(event.target.value)}
-          className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
-        />
-      </label>
-      <label className="block text-xs text-[var(--ccr-muted)]">
-        Legal ID Type
-        <select
-          value={nextLegalIdType}
-          onChange={(event) => setNextLegalIdType(event.target.value)}
-          required
-          className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
-        >
-          {LEGAL_ID_TYPES.map((type) => (
-            <option key={type} value={type}>
-              {formatLegalIdTypeLabel(type)}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="block text-xs text-[var(--ccr-muted)]">
-        TRN / Passport / Legal ID Number
-        <input
-          type="text"
-          value={nextLegalIdNumber}
-          onChange={(event) => setNextLegalIdNumber(event.target.value)}
-          required
-          className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
-        />
-      </label>
       <label className="block text-xs text-[var(--ccr-muted)]">
         Address
         <textarea

@@ -11,6 +11,11 @@ import {
   normalizeAdminSettingsValue,
   validateAdminSettingsValue,
 } from "@/lib/adminSettings";
+import {
+  buildNotificationConfigurationHealth,
+  loadNotificationOwnershipDirectory,
+  loadOperationalNotificationRoutingSummary,
+} from "@/lib/notifications/operationalRouting";
 import { dbQuery } from "@/lib/db";
 import { logError } from "@/lib/log";
 import { requireCsrf } from "@/lib/security/csrf";
@@ -18,6 +23,21 @@ import { requireCsrf } from "@/lib/security/csrf";
 const SETTINGS_KEY = "settings";
 type AdminSettings = typeof DEFAULT_ADMIN_SETTINGS;
 type RequireAdminRoleResult = Awaited<ReturnType<typeof requireAdminRole>>;
+type NotificationOwnershipResult = Awaited<ReturnType<typeof loadNotificationOwnershipDirectory>>;
+type OperationalRoutingResult = Awaited<ReturnType<typeof loadOperationalNotificationRoutingSummary>>;
+type ResolveNotificationOwnership = (
+  settings: Pick<AdminSettings, "primaryAdminUserId" | "primaryDeveloperUserId">,
+) => Promise<NotificationOwnershipResult>;
+type ResolveOperationalRouting = (
+  settings: Pick<
+    AdminSettings,
+    | "primaryAdminUserId"
+    | "primaryDeveloperUserId"
+    | "defaultOperationalNotificationEmail"
+    | "additionalOperationalNotificationEmails"
+  >,
+  options?: Parameters<typeof loadOperationalNotificationRoutingSummary>[1],
+) => Promise<OperationalRoutingResult>;
 
 type SettingsRecordRow = {
   content: string | null;
@@ -32,6 +52,8 @@ type AdminSettingsRouteDeps = {
   query?: typeof dbQuery;
   log?: typeof logError;
   envOverrideValue?: string | undefined;
+  resolveNotificationOwnership?: ResolveNotificationOwnership;
+  resolveOperationalRouting?: ResolveOperationalRouting;
 };
 
 function parseStoredContent(content: unknown): AdminSettings {
@@ -88,13 +110,21 @@ function normalizeUpdatedAtToken(value: unknown) {
   return parsed.toISOString();
 }
 
-function buildConflictResponse(row: SettingsRecordRow | null) {
+async function buildConflictResponse(
+  row: SettingsRecordRow | null,
+  input?: {
+    resolveNotificationOwnership: ResolveNotificationOwnership;
+    resolveOperationalRouting: ResolveOperationalRouting;
+  },
+) {
+  const settings = parseStoredContent(row?.content);
   return NextResponse.json(
     {
       error: "SETTINGS_CONFLICT",
       message:
         "Settings changed since you loaded this page. Latest values were reloaded. Review them and save again.",
-      settings: parseStoredContent(row?.content),
+      settings,
+      ...(input ? await buildSettingsPayload(settings, input) : {}),
       updatedAt: row?.updated_at ?? null,
       updatedByEmail: row?.updated_by_email ?? null,
     },
@@ -102,15 +132,50 @@ function buildConflictResponse(row: SettingsRecordRow | null) {
   );
 }
 
-function buildValidationResponse(fieldErrors: AdminSettingsFieldErrors) {
+function buildValidationResponse(
+  fieldErrors: AdminSettingsFieldErrors,
+  extras?: Partial<Awaited<ReturnType<typeof buildSettingsPayload>>>,
+) {
   return NextResponse.json(
     {
       error: "SETTINGS_VALIDATION_FAILED",
       message: "Fix the highlighted settings and save again.",
       fieldErrors,
+      ...extras,
     },
     { status: 422 },
   );
+}
+
+function applyOwnershipFieldErrors(
+  fieldErrors: AdminSettingsFieldErrors,
+  ownership: NotificationOwnershipResult,
+) {
+  const next = { ...fieldErrors };
+  if (ownership.primaryAdmin.userId && ownership.primaryAdmin.status !== "valid") {
+    next.primaryAdminUserId = ownership.primaryAdmin.message;
+  }
+  if (ownership.primaryDeveloper.userId && ownership.primaryDeveloper.status !== "valid") {
+    next.primaryDeveloperUserId = ownership.primaryDeveloper.message;
+  }
+  return next;
+}
+
+async function buildSettingsPayload(
+  settings: AdminSettings,
+  input: {
+    resolveNotificationOwnership: ResolveNotificationOwnership;
+    resolveOperationalRouting: ResolveOperationalRouting;
+  },
+) {
+  const ownership = await input.resolveNotificationOwnership(settings);
+  const operationalRouting = await input.resolveOperationalRouting(settings, { ownership });
+  const configurationHealth = buildNotificationConfigurationHealth({
+    ownership,
+    routing: operationalRouting,
+    warningEmailsEnabled: settings.sendVehicleInspectionWarningEmails,
+  });
+  return { ownership, operationalRouting, configurationHealth };
 }
 
 export async function handleAdminSettingsGet(
@@ -120,6 +185,23 @@ export async function handleAdminSettingsGet(
   const requireAdmin = deps.requireAdmin ?? requireAdminRole;
   const query = deps.query ?? dbQuery;
   const logger = deps.log ?? logError;
+  const resolveNotificationOwnership =
+    deps.resolveNotificationOwnership ??
+    ((settings: Pick<AdminSettings, "primaryAdminUserId" | "primaryDeveloperUserId">) =>
+      loadNotificationOwnershipDirectory(settings, query));
+  const resolveOperationalRouting =
+    deps.resolveOperationalRouting ??
+    ((
+      settings: Pick<
+        AdminSettings,
+        | "primaryAdminUserId"
+        | "primaryDeveloperUserId"
+        | "defaultOperationalNotificationEmail"
+        | "additionalOperationalNotificationEmails"
+      >,
+      options?: Parameters<typeof loadOperationalNotificationRoutingSummary>[1],
+    ) =>
+      loadOperationalNotificationRoutingSummary(settings, { query, ...options }));
   const auth = await requireAdmin();
   if (!auth.ok) {
     return auth.response;
@@ -127,8 +209,15 @@ export async function handleAdminSettingsGet(
 
   try {
     const row = await loadSettingsRecord(query);
+    const settings = parseStoredContent(row?.content);
+    const { ownership, operationalRouting } = await buildSettingsPayload(settings, {
+      resolveNotificationOwnership,
+      resolveOperationalRouting,
+    });
     return NextResponse.json({
-      settings: parseStoredContent(row?.content),
+      settings,
+      ownership,
+      operationalRouting,
       updatedAt: row?.updated_at ?? null,
       updatedByEmail: row?.updated_by_email ?? null,
     });
@@ -151,6 +240,23 @@ export async function handleAdminSettingsPatch(
   const query = deps.query ?? dbQuery;
   const logger = deps.log ?? logError;
   const envOverrideValue = deps.envOverrideValue ?? process.env.AUTH_LOGIN_METHOD_OVERRIDE;
+  const resolveNotificationOwnership =
+    deps.resolveNotificationOwnership ??
+    ((settings: Pick<AdminSettings, "primaryAdminUserId" | "primaryDeveloperUserId">) =>
+      loadNotificationOwnershipDirectory(settings, query));
+  const resolveOperationalRouting =
+    deps.resolveOperationalRouting ??
+    ((
+      settings: Pick<
+        AdminSettings,
+        | "primaryAdminUserId"
+        | "primaryDeveloperUserId"
+        | "defaultOperationalNotificationEmail"
+        | "additionalOperationalNotificationEmails"
+      >,
+      options?: Parameters<typeof loadOperationalNotificationRoutingSummary>[1],
+    ) =>
+      loadOperationalNotificationRoutingSummary(settings, { query, ...options }));
 
   const auth = await requireAdmin();
   if (!auth.ok) {
@@ -184,7 +290,8 @@ export async function handleAdminSettingsPatch(
   const baseUpdatedAt = normalizeUpdatedAtToken(
     "baseUpdatedAt" in body ? (body as { baseUpdatedAt?: unknown }).baseUpdatedAt : null,
   );
-  const { settings, fieldErrors } = validateAdminSettingsValue(rawSettings);
+  const validation = validateAdminSettingsValue(rawSettings);
+  const settings = validation.settings;
 
   try {
     const currentRow = await loadSettingsRecord(query);
@@ -192,17 +299,56 @@ export async function handleAdminSettingsPatch(
 
     if (currentRow) {
       if (!baseUpdatedAt || baseUpdatedAt !== currentUpdatedAt) {
-        return buildConflictResponse(currentRow);
+        return buildConflictResponse(currentRow, {
+          resolveNotificationOwnership,
+          resolveOperationalRouting,
+        });
       }
     } else if (baseUpdatedAt) {
-      return buildConflictResponse(currentRow);
+      return buildConflictResponse(currentRow, {
+        resolveNotificationOwnership,
+        resolveOperationalRouting,
+      });
+    }
+
+    const ownership = await resolveNotificationOwnership(settings);
+    const operationalRouting = await resolveOperationalRouting(settings, { ownership });
+    const fieldErrors = applyOwnershipFieldErrors(validation.fieldErrors, ownership);
+
+    if (
+      settings.sendVehicleInspectionWarningEmails &&
+      operationalRouting.effectiveRecipients.length === 0
+    ) {
+      fieldErrors.sendVehicleInspectionWarningEmails =
+        "Enable vehicle inspection warning emails only after at least one valid operational recipient resolves.";
     }
 
     if (Object.keys(fieldErrors).length > 0) {
-      return buildValidationResponse(fieldErrors);
+      return buildValidationResponse(fieldErrors, {
+        ownership,
+        operationalRouting,
+        configurationHealth: buildNotificationConfigurationHealth({
+          ownership,
+          routing: operationalRouting,
+          warningEmailsEnabled: settings.sendVehicleInspectionWarningEmails,
+        }),
+      });
     }
 
     const existingSettings = parseStoredContent(currentRow?.content);
+    const isPrimaryDeveloperChanged =
+      existingSettings.primaryDeveloperUserId !== settings.primaryDeveloperUserId;
+
+    if (isPrimaryDeveloperChanged && auth.actor.appRole !== "DEVELOPER") {
+      return NextResponse.json(
+        {
+          error: "Forbidden",
+          message: "Only DEVELOPER users can change the primary developer account.",
+        },
+        { status: 403 },
+      );
+    }
+
     const loginMethodPersistence = evaluatePrimaryAdminLoginMethodPersistence({
       envOverrideValue,
       previousMethod: existingSettings.authLoginMethod,
@@ -259,7 +405,10 @@ export async function handleAdminSettingsPatch(
       );
       savedRow = result.rows[0] ?? null;
       if (!savedRow) {
-        return buildConflictResponse(await loadSettingsRecord(query));
+        return buildConflictResponse(await loadSettingsRecord(query), {
+          resolveNotificationOwnership,
+          resolveOperationalRouting,
+        });
       }
     } else {
       const result = await query<SettingsRecordRow>(
@@ -276,13 +425,20 @@ export async function handleAdminSettingsPatch(
       );
       savedRow = result.rows[0] ?? null;
       if (!savedRow) {
-        return buildConflictResponse(await loadSettingsRecord(query));
+        return buildConflictResponse(await loadSettingsRecord(query), {
+          resolveNotificationOwnership,
+          resolveOperationalRouting,
+        });
       }
     }
 
     return NextResponse.json({
       ok: true,
       settings: parseStoredContent(savedRow.content),
+      ...(await buildSettingsPayload(parseStoredContent(savedRow.content), {
+        resolveNotificationOwnership,
+        resolveOperationalRouting,
+      })),
       updatedAt: savedRow.updated_at ?? null,
       updatedByEmail: savedRow.updated_by_email ?? null,
     });

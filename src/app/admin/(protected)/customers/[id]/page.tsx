@@ -224,7 +224,7 @@ export default async function AdminCustomerDetailPage({
         </div>
       </div>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_2fr]">
+      <div className="mt-6 space-y-6">
         <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-5">
           <h2 className="text-lg font-bold text-[var(--ccr-text)]">Profile</h2>
           <CustomerProfileForm
@@ -253,25 +253,35 @@ export default async function AdminCustomerDetailPage({
             </p>
             <p className="mt-1">Number: {customerRow.legal_id_number || "Not provided"}</p>
             <p className="mt-1">Driver&apos;s License Number: {customerRow.drivers_license_number || "Not provided"}</p>
-            {latestDriversLicenseBookingId ? (
-              <a
-                href={`/admin/bookings/${latestDriversLicenseBookingId}/private-files/DRIVERS_LICENSE`}
-                target="_blank"
-                rel="noreferrer"
-                className="mt-2 inline-flex text-[var(--ccr-accent)] underline"
-              >
-                View secure driver&apos;s license file
-              </a>
-            ) : null}
-            {latestSignatureBookingId ? (
-              <a
-                href={`/admin/bookings/${latestSignatureBookingId}/private-files/SIGNATURE`}
-                target="_blank"
-                rel="noreferrer"
-                className="mt-1 inline-flex text-[var(--ccr-accent)] underline"
-              >
-                View secure signature file
-              </a>
+            {latestDriversLicenseBookingId || latestSignatureBookingId ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {latestDriversLicenseBookingId ? (
+                  <a
+                    href={`/admin/bookings/${latestDriversLicenseBookingId}/private-files/DRIVERS_LICENSE`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className={buttonStyles({
+                      variant: "secondary",
+                      size: "sm",
+                    })}
+                  >
+                    View secure driver&apos;s license file
+                  </a>
+                ) : null}
+                {latestSignatureBookingId ? (
+                  <a
+                    href={`/admin/bookings/${latestSignatureBookingId}/private-files/SIGNATURE`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className={buttonStyles({
+                      variant: "secondary",
+                      size: "sm",
+                    })}
+                  >
+                    View secure signature file
+                  </a>
+                ) : null}
+              </div>
             ) : null}
           </div>
           <div className="mt-5 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3 text-xs text-[var(--ccr-muted)]">

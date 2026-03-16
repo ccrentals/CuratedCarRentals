@@ -5,6 +5,7 @@ import { useState, type ReactNode } from "react";
 import { openUploadcareImagesDialog } from "@/components/admin/UploadcareImagesInput";
 import { buttonStyles } from "@/components/ui/Button";
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
+import { DateRangeArrow } from "@/components/shared/DateRangeArrow";
 import {
   BOOKING_VEHICLE_INSPECTION_IMAGE_CATEGORIES,
   BOOKING_VEHICLE_INSPECTION_FUEL_LEVELS,
@@ -318,13 +319,23 @@ function InspectionSummaryDetails({
         <>
           <SummaryRow
             label="Correction"
-            value={`${formatBookingVehicleInspectionOdometer(
-              summary.odometerCorrectedFromValue,
-              summary.odometerUnit,
-            )} -> ${formatBookingVehicleInspectionOdometer(
-              summary.odometerValue,
-              summary.odometerUnit,
-            )}`}
+            value={
+              <span className="inline-flex items-center justify-end gap-1">
+                <span>
+                  {formatBookingVehicleInspectionOdometer(
+                    summary.odometerCorrectedFromValue,
+                    summary.odometerUnit,
+                  )}
+                </span>
+                <DateRangeArrow size={14} className="mx-0" />
+                <span>
+                  {formatBookingVehicleInspectionOdometer(
+                    summary.odometerValue,
+                    summary.odometerUnit,
+                  )}
+                </span>
+              </span>
+            }
           />
           <SummaryRow
             label="Corrected by"

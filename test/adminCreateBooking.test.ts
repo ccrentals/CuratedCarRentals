@@ -8,6 +8,7 @@ import {
 import {
   buildAdminCreateBookingWindow,
   computeAdminCreateBookingPricingPreview,
+  getAdminCreateBookingPricingPreview,
   listAdminCreateBookingAvailableVehicles,
 } from "@/lib/bookings/adminCreateBooking";
 import {
@@ -84,7 +85,7 @@ test("admin create booking helper: computes pricing preview once dates and vehic
 });
 
 test("admin create booking helper: omits vehicles blocked by entitled overlapping bookings", async () => {
-  const { db } = createMockDb([
+  const { db, calls } = createMockDb([
     {
       rows: [
         {
@@ -122,6 +123,21 @@ test("admin create booking helper: omits vehicles blocked by entitled overlappin
     availableVehicles.map((vehicle) => vehicle.id),
     ["11111111-1111-4111-8111-111111111111"],
   );
+  assert.ok(calls[0]?.text.includes("deleted_at is null"));
+});
+
+test("admin create booking helper: preview ignores soft-deleted vehicles", async () => {
+  const { db, calls } = createMockDb([{ rows: [], rowCount: 0 }]);
+
+  const preview = await getAdminCreateBookingPricingPreview(
+    "11111111-1111-4111-8111-111111111111",
+    "2026-04-10",
+    "2026-04-12",
+    { client: db },
+  );
+
+  assert.equal(preview, null);
+  assert.ok(calls[0]?.text.includes("deleted_at is null"));
 });
 
 test("admin bookings API: submit still rejects unavailable vehicles after UI prefiltering", async () => {
@@ -131,7 +147,7 @@ test("admin bookings API: submit still rejects unavailable vehicles after UI pre
       queries.push(text);
       if (text === "begin") return { rowCount: 0, rows: [] };
       if (text === "rollback") return { rowCount: 0, rows: [] };
-      if (text.includes("select id, make, model, year, daily_rate_cents, deposit_cents from vehicles")) {
+      if (text.includes("select id, year, make, model, daily_rate_cents, deposit_cents")) {
         return {
           rowCount: 1,
           rows: [
@@ -215,13 +231,95 @@ test("admin bookings API: submit still rejects unavailable vehicles after UI pre
   assert.ok(queries.includes("rollback"));
 });
 
+test("admin bookings API: submit rejects soft-deleted vehicles even if posted directly", async () => {
+  const queries: string[] = [];
+  const client = {
+    async query(text: string) {
+      queries.push(text);
+      if (text === "begin") return { rowCount: 0, rows: [] };
+      if (text === "rollback") return { rowCount: 0, rows: [] };
+      if (text.includes("select id, year, make, model, daily_rate_cents, deposit_cents")) {
+        return { rowCount: 0, rows: [] };
+      }
+      throw new Error(`Unexpected query: ${text}`);
+    },
+    release() {
+      return undefined;
+    },
+  };
+
+  const deps: AdminBookingsPostRouteDeps = {
+    requireAdmin: async () =>
+      ({
+        ok: true,
+        actor: {
+          userId: "91c7c89a-9f07-4d59-b79b-f92d55f0cf8b",
+          role: "ADMIN",
+          appRole: "ADMIN",
+          authSource: "legacy",
+          clerkUserId: null,
+          issuedAt: 999999000,
+          expiresAt: 999999999,
+        },
+        session: {
+          userId: "91c7c89a-9f07-4d59-b79b-f92d55f0cf8b",
+          role: "ADMIN",
+          issuedAt: 999999000,
+          expiresAt: 999999999,
+        },
+      }) as Awaited<ReturnType<AdminBookingsPostRouteDeps["requireAdmin"]>>,
+    requireCsrfToken: async () => true,
+    getPool: () =>
+      ({
+        connect: async () => client,
+      }) as ReturnType<AdminBookingsPostRouteDeps["getPool"]>,
+    isVehicleUnavailable: async () => {
+      throw new Error("isVehicleUnavailable should not be reached when vehicle is not bookable");
+    },
+    upsertCustomer: async () => {
+      throw new Error("upsertCustomer should not be reached when vehicle is not bookable");
+    },
+    validatePromo: async () => {
+      throw new Error("validatePromo should not be reached when vehicle is not bookable");
+    },
+    upsertPromo: async () => undefined,
+    writeAudit: async () => undefined,
+    sendCreatedEmail: async () => undefined,
+    log: () => undefined,
+  };
+
+  const response = await handleAdminBookingsPost(
+    new Request("http://localhost/api/admin/bookings", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-csrf-token": "token",
+      },
+      body: JSON.stringify({
+        vehicleId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        fullName: "Admin Booking Tester",
+        email: "admin-booking@example.com",
+        phone: "+18765550144",
+        startDate: "2099-04-10",
+        endDate: "2099-04-12",
+        pickupLocation: "Montego Bay Airport",
+      }),
+    }),
+    deps,
+  );
+
+  assert.equal(response.status, 404);
+  assert.ok(queries.some((query) => query.includes("deleted_at is null")));
+  assert.ok(queries.includes("rollback"));
+});
+
 test("admin bookings API: create still succeeds when audit logging fails after commit", async () => {
   const queries: string[] = [];
   const client = {
     async query(text: string, params?: unknown[]) {
       queries.push(text);
       if (text === "begin" || text === "commit") return { rowCount: 0, rows: [] };
-      if (text.includes("select id, make, model, year, daily_rate_cents, deposit_cents from vehicles")) {
+      if (text.includes("select id, year, make, model, daily_rate_cents, deposit_cents")) {
         return {
           rowCount: 1,
           rows: [

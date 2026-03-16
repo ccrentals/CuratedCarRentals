@@ -17,6 +17,9 @@
 [functions."cron-maintenance-reminders"]
   schedule = "0 14 * * *"
 
+[functions."cron-archive-cancelled-bookings"]
+  schedule = "30 5 * * *"
+
 [functions."cron-archive-file-cleanup"]
   schedule = "0 5 * * *"
 

@@ -25,6 +25,11 @@ export type AdminSettings = {
   dayViewBookingLimit: number | "all";
   contactNotificationEmails: string;
   contactNotifyCooldownMinutes: number;
+  primaryAdminUserId: string | null;
+  primaryDeveloperUserId: string | null;
+  defaultOperationalNotificationEmail: string;
+  additionalOperationalNotificationEmails: string[];
+  sendVehicleInspectionWarningEmails: boolean;
   vehicleDocumentFolders: string[];
   vehicleDocumentTypeOptions: string[];
   vehicleChecklistTemplates: VehicleChecklistTemplateSetting[];
@@ -44,6 +49,11 @@ export type AdminSettingsField =
   | "contactNotificationEmails"
   | "dayViewBookingLimit"
   | "contactNotifyCooldownMinutes"
+  | "primaryAdminUserId"
+  | "primaryDeveloperUserId"
+  | "defaultOperationalNotificationEmail"
+  | "additionalOperationalNotificationEmails"
+  | "sendVehicleInspectionWarningEmails"
   | "vehicleDocumentFolders"
   | "vehicleDocumentTypeOptions"
   | "vehicleChecklistTemplates"
@@ -72,6 +82,11 @@ export const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
   dayViewBookingLimit: 5,
   contactNotificationEmails: "",
   contactNotifyCooldownMinutes: 10,
+  primaryAdminUserId: null,
+  primaryDeveloperUserId: null,
+  defaultOperationalNotificationEmail: "",
+  additionalOperationalNotificationEmails: [],
+  sendVehicleInspectionWarningEmails: false,
   vehicleDocumentFolders: ["Paperwork", "Insurance", "Registration", "Other"],
   vehicleDocumentTypeOptions: [
     "Registration",
@@ -181,6 +196,30 @@ function normalizeDayViewBookingLimit(value: unknown): number | "all" {
 function normalizeNotificationEmails(value: unknown) {
   if (typeof value !== "string") return DEFAULT_ADMIN_SETTINGS.contactNotificationEmails;
   return splitDelimitedEntries(value).slice(0, 25).join(", ");
+}
+
+function normalizeOptionalUserId(value: unknown) {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  return normalized ? normalized : null;
+}
+
+function normalizeOperationalNotificationEmail(value: unknown) {
+  if (typeof value !== "string") return DEFAULT_ADMIN_SETTINGS.defaultOperationalNotificationEmail;
+  return value.trim().toLowerCase();
+}
+
+function normalizeOperationalNotificationEmailList(value: unknown) {
+  const deduped: string[] = [];
+  const seen = new Set<string>();
+  for (const entry of splitDelimitedEntries(value)) {
+    const normalized = entry.trim().toLowerCase();
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    deduped.push(normalized);
+    if (deduped.length >= 25) break;
+  }
+  return deduped;
 }
 
 function normalizeContactNotifyCooldownMinutes(value: unknown) {
@@ -461,6 +500,18 @@ export function normalizeAdminSettingsValue(raw: unknown): AdminSettings {
     contactNotifyCooldownMinutes: normalizeContactNotifyCooldownMinutes(
       value.contactNotifyCooldownMinutes,
     ),
+    primaryAdminUserId: normalizeOptionalUserId(value.primaryAdminUserId),
+    primaryDeveloperUserId: normalizeOptionalUserId(value.primaryDeveloperUserId),
+    defaultOperationalNotificationEmail: normalizeOperationalNotificationEmail(
+      value.defaultOperationalNotificationEmail,
+    ),
+    additionalOperationalNotificationEmails: normalizeOperationalNotificationEmailList(
+      value.additionalOperationalNotificationEmails,
+    ),
+    sendVehicleInspectionWarningEmails: normalizeBool(
+      value.sendVehicleInspectionWarningEmails,
+      DEFAULT_ADMIN_SETTINGS.sendVehicleInspectionWarningEmails,
+    ),
     vehicleDocumentFolders,
     vehicleDocumentTypeOptions: normalizeStringList(
       value.vehicleDocumentTypeOptions,
@@ -527,6 +578,54 @@ export function validateAdminSettingsValue(raw: unknown): AdminSettingsValidatio
       }
       if (notificationEmailErrors.length > 0) {
         fieldErrors.contactNotificationEmails = notificationEmailErrors.join(" ");
+      }
+    }
+
+    if (
+      value.primaryAdminUserId !== undefined &&
+      value.primaryAdminUserId !== null &&
+      typeof value.primaryAdminUserId !== "string"
+    ) {
+      fieldErrors.primaryAdminUserId = "Select a valid primary admin account.";
+    }
+
+    if (
+      value.primaryDeveloperUserId !== undefined &&
+      value.primaryDeveloperUserId !== null &&
+      typeof value.primaryDeveloperUserId !== "string"
+    ) {
+      fieldErrors.primaryDeveloperUserId = "Select a valid primary developer account.";
+    }
+
+    if (
+      typeof value.defaultOperationalNotificationEmail === "string" &&
+      value.defaultOperationalNotificationEmail.trim() &&
+      !isValidEmailAddress(value.defaultOperationalNotificationEmail.trim())
+    ) {
+      fieldErrors.defaultOperationalNotificationEmail =
+        "Enter a valid default operational notification email address.";
+    }
+
+    if (value.additionalOperationalNotificationEmails !== undefined) {
+      const operationalRecipients = splitDelimitedEntries(value.additionalOperationalNotificationEmails);
+      const invalidOperationalRecipients = operationalRecipients.filter(
+        (entry) => !isValidEmailAddress(entry),
+      );
+      const operationalErrors: string[] = [];
+      if (invalidOperationalRecipients.length > 0) {
+        operationalErrors.push(
+          invalidOperationalRecipients.length === 1
+            ? `Enter a valid email address. "${invalidOperationalRecipients[0]}" is not valid.`
+            : `Enter valid email addresses. Invalid entries: ${invalidOperationalRecipients.join(", ")}.`,
+        );
+      }
+      if (operationalRecipients.length > 25) {
+        operationalErrors.push(
+          "Keep the additional operational recipient list to 25 email addresses or fewer.",
+        );
+      }
+      if (operationalErrors.length > 0) {
+        fieldErrors.additionalOperationalNotificationEmails = operationalErrors.join(" ");
       }
     }
 

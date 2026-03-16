@@ -38,7 +38,7 @@ function formatDateTime(value: string) {
 }
 
 type SendEmailInput = {
-  to: string;
+  to: string | string[];
   subject: string;
   html: string;
   replyTo?: string;
@@ -1182,6 +1182,29 @@ export function getInternalNotesRecipient() {
     process.env.RESEND_FROM?.trim() ||
     DEFAULT_FROM
   );
+}
+
+export async function sendOperationalAlertEmail(input: {
+  recipientEmails: string[];
+  subject: string;
+  html: string;
+  replyTo?: string;
+}) {
+  if (!Array.isArray(input.recipientEmails) || input.recipientEmails.length === 0) {
+    return {
+      ok: false,
+      skipped: true,
+      error: "No recipients configured",
+      providerMessageId: null,
+    } as const;
+  }
+
+  return sendResendEmail({
+    to: input.recipientEmails,
+    subject: input.subject,
+    html: input.html,
+    replyTo: input.replyTo,
+  });
 }
 
 export async function sendBookingNoteEmail(input: {

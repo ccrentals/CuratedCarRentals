@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { buttonStyles } from "@/components/ui/Button";
 import { formatJmd } from "@/lib/money";
@@ -17,6 +17,8 @@ const actionLabels = {
   cancel: "Cancel Booking",
   archive: "Archive Booking",
 } as const;
+
+const BOOKING_ACTION_ERROR_AUTO_DISMISS_MS = 6000;
 
 type ActionKey = keyof typeof actionLabels;
 
@@ -119,6 +121,16 @@ export function BookingActions({
     size: "sm",
     className: "uppercase tracking-wide text-[var(--ccr-muted)] hover:text-[var(--ccr-text)]",
   });
+
+  useEffect(() => {
+    if (!error) return undefined;
+
+    const timeoutId = window.setTimeout(() => {
+      setError((current) => (current === error ? null : current));
+    }, BOOKING_ACTION_ERROR_AUTO_DISMISS_MS);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [error]);
 
   async function runAction(actionKey: ActionKey) {
     setMessage(null);

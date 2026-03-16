@@ -19,8 +19,8 @@ export async function POST(
 
   const { id } = await params;
 
-  const bookingResult = await dbQuery<{ status: string }>(
-    "select status from bookings where id = $1",
+  const bookingResult = await dbQuery<{ status: string; pricing_json: Record<string, unknown> | null }>(
+    "select status, pricing_json from bookings where id = $1",
     [id],
   );
 
@@ -29,6 +29,7 @@ export async function POST(
   }
 
   const status = bookingResult.rows[0].status;
+  const pricing = bookingResult.rows[0].pricing_json ?? {};
   if (status === "RETURNED") {
     return NextResponse.json({ error: "Returned bookings cannot be cancelled" }, { status: 400 });
   }
@@ -37,14 +38,21 @@ export async function POST(
     return NextResponse.json({ ok: true, message: "Already cancelled" });
   }
 
-  await dbQuery("update bookings set status = 'CANCELLED', updated_at = now() where id = $1", [id]);
+  const cancelledAt = new Date().toISOString();
+  await dbQuery("update bookings set status = 'CANCELLED', pricing_json = $2, updated_at = now() where id = $1", [
+    id,
+    {
+      ...pricing,
+      cancelled_at: cancelledAt,
+    },
+  ]);
 
   await writeAuditLog({
     userId: actor.userId,
     action: "BOOKING_CANCELLED",
     entityType: "booking",
     entityId: id,
-    details: { previous_status: status },
+    details: { previous_status: status, cancelled_at: cancelledAt },
   });
 
   return NextResponse.json({ ok: true });

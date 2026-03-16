@@ -5,6 +5,13 @@ import { useEffect, useRef, useState } from "react";
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { buttonStyles } from "@/components/ui/Button";
 import type { AdminSettings, AdminSettingsFieldErrors } from "@/lib/adminSettings";
+import type {
+  NotificationConfigurationHealth,
+  NotificationOwnershipDirectory,
+  NotificationOwnershipOption,
+  NotificationOwnershipResolution,
+  OperationalNotificationRoutingSummary,
+} from "@/lib/notifications/operationalRouting";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
 type VehicleChecklistTemplateSetting = {
@@ -29,6 +36,9 @@ type ServiceType = {
 
 type AdminSettingsFormProps = {
   initialSettings: AdminSettings;
+  initialOwnership: NotificationOwnershipDirectory;
+  initialOperationalRouting: OperationalNotificationRoutingSummary;
+  initialConfigurationHealth: NotificationConfigurationHealth;
   updatedAt: string | null;
   updatedByEmail: string | null;
   activeTab: AdminSettingsFormTab;
@@ -109,6 +119,11 @@ const SETTINGS_FIELD_TAB_LABELS: Record<
   contactNotificationEmails: { key: "notifications", label: "Notifications" },
   dayViewBookingLimit: { key: "general", label: "General" },
   contactNotifyCooldownMinutes: { key: "notifications", label: "Notifications" },
+  primaryAdminUserId: { key: "notifications", label: "Notifications" },
+  primaryDeveloperUserId: { key: "notifications", label: "Notifications" },
+  defaultOperationalNotificationEmail: { key: "notifications", label: "Notifications" },
+  additionalOperationalNotificationEmails: { key: "notifications", label: "Notifications" },
+  sendVehicleInspectionWarningEmails: { key: "notifications", label: "Notifications" },
   vehicleDocumentFolders: { key: "documents", label: "Vehicle Docs" },
   vehicleDocumentTypeOptions: { key: "documents", label: "Vehicle Docs" },
   vehicleChecklistTemplates: { key: "documents", label: "Vehicle Docs" },
@@ -123,6 +138,8 @@ const SETTINGS_FIELD_TAB_LABELS: Record<
 
 const UNSAVED_SETTINGS_MESSAGE =
   "You have unsaved settings changes. Leave this page without saving?";
+const SETTINGS_CHECKBOX_CLASS_NAME =
+  "h-5 w-5 rounded border border-[var(--ccr-border)] bg-transparent accent-[var(--ccr-accent)]";
 
 function buildChecklistTemplateItems(templates: VehicleChecklistTemplateSetting[]) {
   return templates
@@ -143,8 +160,54 @@ function serializeSettingsSnapshot(settings: AdminSettings) {
   return JSON.stringify(settings);
 }
 
+function isOwnershipStatusWarning(status: NotificationOwnershipResolution["status"]) {
+  return status === "not_found" || status === "inactive" || status === "wrong_role";
+}
+
+function filterOwnershipOptions(
+  options: NotificationOwnershipOption[],
+  query: string,
+) {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) return options;
+  return options.filter((option) =>
+    [option.label, option.email ?? "", option.fullName ?? "", option.username ?? ""]
+      .join(" ")
+      .toLowerCase()
+      .includes(normalized),
+  );
+}
+
+function ownershipStatusLabel(status: NotificationOwnershipResolution["status"]) {
+  switch (status) {
+    case "valid":
+      return "Valid";
+    case "missing":
+      return "Missing";
+    case "inactive":
+      return "Inactive";
+    case "wrong_role":
+      return "Wrong role";
+    default:
+      return "Unavailable";
+  }
+}
+
+function ownershipStatusClassName(status: NotificationOwnershipResolution["status"]) {
+  if (status === "valid") {
+    return "border-[var(--ccr-accent)]/45 bg-[var(--ccr-accent)]/10 text-[var(--ccr-text)]";
+  }
+  if (status === "missing") {
+    return "border-slate-400/30 bg-slate-500/10 text-slate-200";
+  }
+  return "border-amber-400/40 bg-amber-500/10 text-amber-200";
+}
+
 export function AdminSettingsForm({
   initialSettings,
+  initialOwnership,
+  initialOperationalRouting,
+  initialConfigurationHealth,
   updatedAt,
   updatedByEmail,
   activeTab,
@@ -154,6 +217,11 @@ export function AdminSettingsForm({
   authLoginMethodSource,
 }: AdminSettingsFormProps) {
   const [settings, setSettings] = useState<AdminSettings>(initialSettings);
+  const [ownership, setOwnership] = useState<NotificationOwnershipDirectory>(initialOwnership);
+  const [operationalRouting, setOperationalRouting] =
+    useState<OperationalNotificationRoutingSummary>(initialOperationalRouting);
+  const [configurationHealth, setConfigurationHealth] =
+    useState<NotificationConfigurationHealth>(initialConfigurationHealth);
   const [savedSnapshot, setSavedSnapshot] = useState(() =>
     serializeSettingsSnapshot(initialSettings),
   );
@@ -186,6 +254,10 @@ export function AdminSettingsForm({
   });
   const dirtyRef = useRef(false);
   const navigationApprovedRef = useRef(false);
+  const [ownershipSearch, setOwnershipSearch] = useState({
+    primaryAdmin: "",
+    primaryDeveloper: "",
+  });
   const isGeneralTab = activeTab === "general";
   const isNotificationsTab = activeTab === "notifications";
   const isMaintenanceTab = activeTab === "maintenance";
@@ -194,12 +266,15 @@ export function AdminSettingsForm({
 
   useEffect(() => {
     setSettings(initialSettings);
+    setOwnership(initialOwnership);
+    setOperationalRouting(initialOperationalRouting);
+    setConfigurationHealth(initialConfigurationHealth);
     setSavedSnapshot(serializeSettingsSnapshot(initialSettings));
     setFieldErrors({});
     setError(null);
     setSuccess(null);
     setConflictMessage(null);
-  }, [initialSettings]);
+  }, [initialConfigurationHealth, initialOperationalRouting, initialOwnership, initialSettings]);
 
   useEffect(() => {
     setLastUpdatedAt(updatedAt);
@@ -333,6 +408,9 @@ export function AdminSettingsForm({
         ok?: boolean;
         errorCode?: string;
         settings?: AdminSettings;
+        ownership?: NotificationOwnershipDirectory;
+        operationalRouting?: OperationalNotificationRoutingSummary;
+        configurationHealth?: NotificationConfigurationHealth;
         updatedAt?: string | null;
         updatedByEmail?: string | null;
         fieldErrors?: AdminSettingsFieldErrors;
@@ -349,6 +427,15 @@ export function AdminSettingsForm({
         if ("updatedByEmail" in data) {
           setLastUpdatedByEmail(data.updatedByEmail ?? null);
         }
+        if (data.ownership) {
+          setOwnership(data.ownership);
+        }
+        if (data.operationalRouting) {
+          setOperationalRouting(data.operationalRouting);
+        }
+        if (data.configurationHealth) {
+          setConfigurationHealth(data.configurationHealth);
+        }
         setFieldErrors(data.fieldErrors ?? {});
         if (data.error === "SETTINGS_CONFLICT") {
           setError(null);
@@ -364,6 +451,15 @@ export function AdminSettingsForm({
       if (data.settings) {
         setSettings(data.settings);
         setSavedSnapshot(serializeSettingsSnapshot(data.settings));
+      }
+      if (data.ownership) {
+        setOwnership(data.ownership);
+      }
+      if (data.operationalRouting) {
+        setOperationalRouting(data.operationalRouting);
+      }
+      if (data.configurationHealth) {
+        setConfigurationHealth(data.configurationHealth);
       }
       setLastUpdatedAt(data.updatedAt ?? null);
       setLastUpdatedByEmail(data.updatedByEmail ?? null);
@@ -539,7 +635,22 @@ export function AdminSettingsForm({
     (field) => TOGGLE_FIELD_TAB_MAP[field.key] === activeTab,
   );
   const isAuthLoginMethodOverridden = authLoginMethodSource === "env-override";
-
+  const filteredPrimaryAdminOptions = filterOwnershipOptions(
+    ownership.primaryAdminOptions,
+    ownershipSearch.primaryAdmin,
+  );
+  const filteredPrimaryDeveloperOptions = filterOwnershipOptions(
+    ownership.primaryDeveloperOptions,
+    ownershipSearch.primaryDeveloper,
+  );
+  const selectedPrimaryAdminMissingOption =
+    settings.primaryAdminUserId &&
+    !ownership.primaryAdminOptions.some((option) => option.id === settings.primaryAdminUserId);
+  const selectedPrimaryDeveloperMissingOption =
+    settings.primaryDeveloperUserId &&
+    !ownership.primaryDeveloperOptions.some((option) => option.id === settings.primaryDeveloperUserId);
+  const additionalOperationalNotificationEmailsValue =
+    settings.additionalOperationalNotificationEmails.join("\n");
   return (
     <section
       data-testid="admin-settings"
@@ -681,6 +792,300 @@ export function AdminSettingsForm({
             </select>
             {fieldErrors.dayViewBookingLimit ? (
               <p className="mt-2 text-xs font-semibold text-rose-300">{fieldErrors.dayViewBookingLimit}</p>
+            ) : null}
+          </div>
+        </div>
+
+        <div
+          data-testid="settings-panel-notifications"
+          className={`${isNotificationsTab ? "" : "hidden"} rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4`}
+        >
+          <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-[var(--ccr-text)]">Operational notification readiness</p>
+                <p className="mt-1 text-xs text-[var(--ccr-muted)]">
+                  Review ownership, routing, and fallback health before enabling new warning delivery channels.
+                </p>
+              </div>
+              <span
+                className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${
+                  configurationHealth.status === "ready"
+                    ? "border-[var(--ccr-accent)]/45 bg-[var(--ccr-accent)]/10 text-[var(--ccr-text)]"
+                    : "border-amber-400/40 bg-amber-500/10 text-amber-200"
+                }`}
+              >
+                {configurationHealth.status === "ready" ? "Ready" : "Needs review"}
+              </span>
+            </div>
+            {configurationHealth.warnings.length > 0 ? (
+              <ul className="mt-3 space-y-1 text-sm text-amber-200">
+                {configurationHealth.warnings.map((warning) => (
+                  <li key={warning}>{warning}</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-3 text-sm text-[var(--ccr-muted)]">
+                Ownership and operational recipient settings are in a healthy state.
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div
+          data-testid="settings-panel-notifications"
+          className={`${isNotificationsTab ? "" : "hidden"} rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4`}
+        >
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-[var(--ccr-text)]">Notification ownership</p>
+              <p className="mt-1 text-xs text-[var(--ccr-muted)]">
+                Set the primary accounts responsible for operational notifications. This is separate from the
+                <span className="font-semibold text-[var(--ccr-text)]"> Primary Admin Login Method</span> above.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm font-semibold text-[var(--ccr-text)]">Primary admin account</p>
+                <span
+                  className={`inline-flex items-center rounded-full border px-2 py-1 text-[11px] font-semibold ${ownershipStatusClassName(
+                    ownership.primaryAdmin.status,
+                  )}`}
+                >
+                  {ownershipStatusLabel(ownership.primaryAdmin.status)}
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-[var(--ccr-muted)]">
+                Choose the active ADMIN or DEVELOPER account that owns operational admin notifications.
+              </p>
+              <input
+                type="search"
+                value={ownershipSearch.primaryAdmin}
+                disabled={disabled || saving}
+                placeholder="Search admin accounts"
+                onChange={(event) =>
+                  setOwnershipSearch((current) => ({ ...current, primaryAdmin: event.target.value }))
+                }
+                className="mt-3 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+              />
+              <select
+                value={settings.primaryAdminUserId ?? ""}
+                disabled={disabled || saving}
+                onChange={(event) =>
+                  setSettings((current) => ({
+                    ...current,
+                    primaryAdminUserId: event.target.value || null,
+                  }))
+                }
+                className="mt-3 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+              >
+                <option value="">No primary admin account selected</option>
+                {selectedPrimaryAdminMissingOption ? (
+                  <option value={settings.primaryAdminUserId ?? ""}>{ownership.primaryAdmin.label}</option>
+                ) : null}
+                {filteredPrimaryAdminOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              {fieldErrors.primaryAdminUserId ? (
+                <p className="mt-2 text-xs font-semibold text-rose-300">{fieldErrors.primaryAdminUserId}</p>
+              ) : null}
+              <p
+                className={`mt-2 text-xs ${
+                  isOwnershipStatusWarning(ownership.primaryAdmin.status) ? "font-semibold text-amber-300" : "text-[var(--ccr-muted)]"
+                }`}
+              >
+                {ownership.primaryAdmin.message}
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm font-semibold text-[var(--ccr-text)]">Primary developer account</p>
+                <span
+                  className={`inline-flex items-center rounded-full border px-2 py-1 text-[11px] font-semibold ${ownershipStatusClassName(
+                    ownership.primaryDeveloper.status,
+                  )}`}
+                >
+                  {ownershipStatusLabel(ownership.primaryDeveloper.status)}
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-[var(--ccr-muted)]">
+                Choose the active DEVELOPER account that owns developer-level notification routing and fallback.
+              </p>
+              <input
+                type="search"
+                value={ownershipSearch.primaryDeveloper}
+                disabled={disabled || saving || !showDeveloperControls}
+                placeholder="Search developer accounts"
+                onChange={(event) =>
+                  setOwnershipSearch((current) => ({ ...current, primaryDeveloper: event.target.value }))
+                }
+                className="mt-3 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+              />
+              <select
+                value={settings.primaryDeveloperUserId ?? ""}
+                disabled={disabled || saving || !showDeveloperControls}
+                onChange={(event) =>
+                  setSettings((current) => ({
+                    ...current,
+                    primaryDeveloperUserId: event.target.value || null,
+                  }))
+                }
+                className="mt-3 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+              >
+                <option value="">No primary developer account selected</option>
+                {selectedPrimaryDeveloperMissingOption ? (
+                  <option value={settings.primaryDeveloperUserId ?? ""}>{ownership.primaryDeveloper.label}</option>
+                ) : null}
+                {filteredPrimaryDeveloperOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              {!showDeveloperControls ? (
+                <p className="mt-2 text-xs font-semibold text-amber-300">
+                  Only DEVELOPER users can change the primary developer account.
+                </p>
+              ) : null}
+              {fieldErrors.primaryDeveloperUserId ? (
+                <p className="mt-2 text-xs font-semibold text-rose-300">{fieldErrors.primaryDeveloperUserId}</p>
+              ) : null}
+              <p
+                className={`mt-2 text-xs ${
+                  isOwnershipStatusWarning(ownership.primaryDeveloper.status) ? "font-semibold text-amber-300" : "text-[var(--ccr-muted)]"
+                }`}
+              >
+                {ownership.primaryDeveloper.message}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div
+          data-testid="settings-panel-notifications"
+          className={`${isNotificationsTab ? "" : "hidden"} rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4`}
+        >
+          <p className="text-sm font-semibold text-[var(--ccr-text)]">Operational notification routing</p>
+          <p className="mt-1 text-xs text-[var(--ccr-muted)]">
+            Configure the default operational notification email and any additional recipients used for routed operational warnings.
+          </p>
+
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+              Default operational email
+              <input
+                type="email"
+                value={settings.defaultOperationalNotificationEmail}
+                disabled={disabled || saving}
+                placeholder="ops@example.com"
+                onChange={(event) =>
+                  setSettings((current) => ({
+                    ...current,
+                    defaultOperationalNotificationEmail: event.target.value,
+                  }))
+                }
+                className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm normal-case tracking-normal text-[var(--ccr-text)]"
+              />
+              {fieldErrors.defaultOperationalNotificationEmail ? (
+                <p className="mt-2 text-[11px] font-semibold normal-case tracking-normal text-rose-300">
+                  {fieldErrors.defaultOperationalNotificationEmail}
+                </p>
+              ) : null}
+            </label>
+
+            <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+              Additional operational recipients
+              <textarea
+                value={additionalOperationalNotificationEmailsValue}
+                disabled={disabled || saving}
+                rows={5}
+                placeholder={"ops@example.com\nfleet@example.com"}
+                onChange={(event) =>
+                  setSettings((current) => ({
+                    ...current,
+                    additionalOperationalNotificationEmails: event.target.value
+                      .split(/\n|,|;/)
+                      .map((entry) => entry.trim())
+                      .filter(Boolean)
+                      .slice(0, 25),
+                  }))
+                }
+                className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm normal-case tracking-normal text-[var(--ccr-text)]"
+              />
+              {fieldErrors.additionalOperationalNotificationEmails ? (
+                <p className="mt-2 text-[11px] font-semibold normal-case tracking-normal text-rose-300">
+                  {fieldErrors.additionalOperationalNotificationEmails}
+                </p>
+              ) : null}
+            </label>
+          </div>
+
+          <label className="mt-4 flex items-center gap-3 rounded-xl border border-[var(--ccr-border)] px-3 py-3 text-sm text-[var(--ccr-text)]">
+            <input
+              type="checkbox"
+              checked={settings.sendVehicleInspectionWarningEmails}
+              disabled={disabled || saving}
+              onChange={(event) =>
+                setSettings((current) => ({
+                  ...current,
+                  sendVehicleInspectionWarningEmails: event.target.checked,
+                }))
+              }
+              className={SETTINGS_CHECKBOX_CLASS_NAME}
+            />
+            Enable vehicle inspection warning emails when routed delivery is activated.
+          </label>
+          {fieldErrors.sendVehicleInspectionWarningEmails ? (
+            <p className="mt-2 text-xs font-semibold text-rose-300">
+              {fieldErrors.sendVehicleInspectionWarningEmails}
+            </p>
+          ) : null}
+
+          <div className="mt-4 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
+            <p className="text-sm font-semibold text-[var(--ccr-text)]">Effective operational recipients</p>
+            <p className="mt-1 text-xs text-[var(--ccr-muted)]">
+              Preview of the current recipient resolution order used when vehicle inspection warning emails are enabled.
+            </p>
+            <p className="mt-2 text-xs text-[var(--ccr-muted)]">
+              Routing source:{" "}
+              <span className="font-semibold text-[var(--ccr-text)]">
+                {operationalRouting.hasConfiguredRecipients
+                  ? "Configured recipients"
+                  : operationalRouting.usesFallback
+                    ? "Fallback recipients"
+                    : "No recipients"}
+              </span>
+            </p>
+            {operationalRouting.recipients.length > 0 ? (
+              <ul className="mt-3 space-y-2 text-sm text-[var(--ccr-text)]">
+                {operationalRouting.recipients.map((recipient) => (
+                  <li
+                    key={`${recipient.email}-${recipient.source}`}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--ccr-border)] px-3 py-2"
+                  >
+                    <span className="font-medium">{recipient.email}</span>
+                    <span className="text-xs text-[var(--ccr-muted)]">{recipient.label}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-3 text-sm text-[var(--ccr-muted)]">
+                No operational recipients resolve yet. Add a default email or additional recipients to avoid fallback-only routing later.
+              </p>
+            )}
+            {operationalRouting.warnings.length > 0 ? (
+              <ul className="mt-3 space-y-1 text-xs text-amber-300">
+                {operationalRouting.warnings.map((warning) => (
+                  <li key={warning}>{warning}</li>
+                ))}
+              </ul>
             ) : null}
           </div>
         </div>
@@ -1095,7 +1500,7 @@ export function AdminSettingsForm({
                           ),
                         )
                       }
-                      className="h-5 w-5 rounded border border-[var(--ccr-border)] bg-transparent"
+                      className={SETTINGS_CHECKBOX_CLASS_NAME}
                     />
                     Required by default
                   </label>
@@ -1114,7 +1519,7 @@ export function AdminSettingsForm({
                           ),
                         )
                       }
-                      className="h-5 w-5 rounded border border-[var(--ccr-border)] bg-transparent"
+                      className={SETTINGS_CHECKBOX_CLASS_NAME}
                     />
                     Staff can mark optional later
                   </label>
@@ -1139,7 +1544,7 @@ export function AdminSettingsForm({
                           ),
                         )
                       }
-                      className="h-5 w-5 rounded border border-[var(--ccr-border)] bg-transparent"
+                      className={SETTINGS_CHECKBOX_CLASS_NAME}
                     />
                     Expiry date required
                   </label>
@@ -1158,7 +1563,7 @@ export function AdminSettingsForm({
                           ),
                         )
                       }
-                      className="h-5 w-5 rounded border border-[var(--ccr-border)] bg-transparent"
+                      className={SETTINGS_CHECKBOX_CLASS_NAME}
                     />
                     Available in Checklist template apply
                   </label>
@@ -1553,9 +1958,9 @@ export function AdminSettingsForm({
                         </div>
                         <div className="flex flex-wrap gap-2">
                           <span
-                            className={`inline-flex min-h-8 items-center rounded-full border px-2 py-1 text-[11px] font-semibold ${
+                            className={`inline-flex min-h-7 shrink-0 items-center whitespace-nowrap rounded-full border px-2.5 py-0.5 text-[11px] font-semibold leading-none ${
                               item.isActive
-                                ? "border-emerald-300/45 bg-emerald-500/15 text-emerald-100"
+                                ? "border-[var(--ccr-accent)]/45 bg-[var(--ccr-accent)]/10 text-[var(--ccr-text)]"
                                 : "border-slate-300/45 bg-slate-500/15 text-slate-100"
                             }`}
                           >
@@ -1585,7 +1990,7 @@ export function AdminSettingsForm({
             <p className="mt-3 text-xs font-semibold text-red-300">{serviceTypesError}</p>
           ) : null}
           {serviceTypesMessage ? (
-            <p className="mt-3 text-xs font-semibold text-emerald-200">{serviceTypesMessage}</p>
+            <p className="mt-3 text-xs font-semibold text-[var(--ccr-text)]">{serviceTypesMessage}</p>
           ) : null}
         </div>
 

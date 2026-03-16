@@ -10,6 +10,11 @@ import { loadPrimaryAdminLoginMethodResolution } from "@/lib/auth/adminLoginMeth
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { DEFAULT_ADMIN_SETTINGS, normalizeAdminSettingsValue } from "@/lib/adminSettings";
 import { dbQuery } from "@/lib/db";
+import {
+  buildNotificationConfigurationHealth,
+  loadNotificationOwnershipDirectory,
+  loadOperationalNotificationRoutingSummary,
+} from "@/lib/notifications/operationalRouting";
 type AdminSettings = typeof DEFAULT_ADMIN_SETTINGS;
 
 type SettingRow = {
@@ -136,6 +141,16 @@ export default async function AdminSettingsPage({
     }
   }
 
+  const ownershipDirectory = await loadNotificationOwnershipDirectory(settings);
+  const operationalRouting = await loadOperationalNotificationRoutingSummary(settings, {
+    ownership: ownershipDirectory,
+  });
+  const configurationHealth = buildNotificationConfigurationHealth({
+    ownership: ownershipDirectory,
+    routing: operationalRouting,
+    warningEmailsEnabled: settings.sendVehicleInspectionWarningEmails,
+  });
+
   return (
     <div className="mx-auto w-full max-w-5xl px-6 py-10">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -185,6 +200,9 @@ export default async function AdminSettingsPage({
         ) : isSettingsFormTab(activeTab) ? (
           <AdminSettingsForm
             initialSettings={settings}
+            initialOwnership={ownershipDirectory}
+            initialOperationalRouting={operationalRouting}
+            initialConfigurationHealth={configurationHealth}
             updatedAt={updatedAt}
             updatedByEmail={updatedByEmail}
             activeTab={activeTab}

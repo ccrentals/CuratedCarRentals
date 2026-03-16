@@ -6,6 +6,7 @@ import { fetchAdminBookingsPage } from "@/lib/bookings/adminBookingsList";
 import {
   buildAdminCreateBookingWindow,
   computeAdminCreateBookingPricingPreview,
+  getAdminCreateBookingVehicleById,
 } from "@/lib/bookings/adminCreateBooking";
 import { getDbPool } from "@/lib/db";
 import { sendBookingCreatedEmail } from "@/lib/notifications/email";
@@ -161,12 +162,8 @@ export async function handleAdminBookingsPost(
   try {
     await client.query("begin");
 
-    const vehicleResult = await client.query(
-      "select id, make, model, year, daily_rate_cents, deposit_cents from vehicles where id = $1 and status <> 'INACTIVE'",
-      [vehicleId],
-    );
-
-    if (vehicleResult.rowCount === 0) {
+    const vehicle = await getAdminCreateBookingVehicleById(vehicleId, { client });
+    if (!vehicle) {
       await client.query("rollback");
       return NextResponse.json({ error: "Vehicle not found" }, { status: 404 });
     }
@@ -214,9 +211,8 @@ export async function handleAdminBookingsPost(
       throw error;
     }
 
-    const vehicle = vehicleResult.rows[0];
-    const dailyRate = Number(vehicle.daily_rate_cents || 0);
-    const depositAmount = Number(vehicle.deposit_cents || 0);
+    const dailyRate = Number(vehicle.dailyRateCents || 0);
+    const depositAmount = Number(vehicle.depositCents || 0);
     const subtotalAmount = dailyRate * days;
 
     const promoCode = typeof promoCodeRaw === "string" ? normalizePromoInputCode(promoCodeRaw) : "";

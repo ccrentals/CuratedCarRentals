@@ -5,6 +5,7 @@ import { useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { BlockoutModal } from "@/components/admin/BlockoutModal";
+import { CALENDAR_BOOKING_STATUS_OPTIONS } from "@/lib/bookings/adminCalendar";
 import { deriveBookingPhase, type DerivedBookingPhase } from "@/lib/vehicles/vehicleStatus";
 
 type VehicleOption = {
@@ -317,13 +318,6 @@ export function CalendarView({
     };
   }, [activeBlockout, filters.vehicleId]);
 
-  const statusOptions = [
-    { label: "All", value: "all" },
-    { label: "Pending", value: "pending_payment" },
-    { label: "Confirmed", value: "confirmed" },
-    { label: "Returned", value: "returned" },
-    { label: "Cancelled", value: "cancelled" },
-  ];
   const dayViewMoreButtonClass =
     "mt-2 cursor-pointer appearance-none border-0 bg-transparent text-xs font-semibold text-[var(--ccr-accent)] underline-offset-2 transition hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ccr-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--ccr-surface)]";
   const countBadgeBaseClass =
@@ -442,7 +436,7 @@ export function CalendarView({
                 }}
                 className="mt-2 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
               >
-                {statusOptions.map((option) => (
+                {CALENDAR_BOOKING_STATUS_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.label}
                   </option>
