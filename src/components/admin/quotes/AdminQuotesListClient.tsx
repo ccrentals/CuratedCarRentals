@@ -23,6 +23,8 @@ import {
   STANDARD_PAGE_SIZE_OPTIONS,
 } from "@/lib/pagination/sharedPagination";
 import {
+  MIN_QUOTE_SEARCH_LENGTH,
+  normalizeQuoteSearchTerm,
   normalizeQuoteStatusFilter,
   QUOTE_STATUS_OPTIONS,
   quoteStatusLabel,
@@ -123,7 +125,7 @@ export function AdminQuotesListClient() {
   const searchParams = useSearchParams();
 
   const statusFilter = normalizeQuoteStatusFilter(searchParams.get("status"));
-  const query = searchParams.get("q")?.trim() ?? "";
+  const query = normalizeQuoteSearchTerm(searchParams.get("q"));
   const createdFrom = normalizeDateParam(searchParams.get("createdFrom"));
   const createdTo = normalizeDateParam(searchParams.get("createdTo"));
   const rentalFrom = normalizeDateParam(searchParams.get("rentalFrom"));
@@ -209,6 +211,27 @@ export function AdminQuotesListClient() {
     },
     [pathname, router, searchParams],
   );
+
+  useEffect(() => {
+    const trimmedQuery = draftQuery.trim();
+    const nextQuery = normalizeQuoteSearchTerm(trimmedQuery);
+
+    if (trimmedQuery.length > 0 && trimmedQuery.length < MIN_QUOTE_SEARCH_LENGTH) {
+      if (!query) return;
+      const timeout = window.setTimeout(() => updateParams({ q: null }), 250);
+      return () => window.clearTimeout(timeout);
+    }
+
+    if (!trimmedQuery) {
+      if (!query) return;
+      const timeout = window.setTimeout(() => updateParams({ q: null }), 250);
+      return () => window.clearTimeout(timeout);
+    }
+
+    if (nextQuery === query) return;
+    const timeout = window.setTimeout(() => updateParams({ q: nextQuery }), 250);
+    return () => window.clearTimeout(timeout);
+  }, [draftQuery, query, updateParams]);
 
   const fetchQuotes = useCallback(
     async (options?: { cursor?: string | null; append?: boolean }) => {
@@ -328,7 +351,7 @@ export function AdminQuotesListClient() {
     <div data-testid="quotes-list" className="mx-auto w-full max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Bookings</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Quotes</p>
           <h1 className="text-3xl font-bold text-[var(--ccr-text)]">Quotes</h1>
           <p className="mt-1 text-sm text-[var(--ccr-muted)]">
             Create, manage, print, and email rental quotes.
@@ -476,7 +499,7 @@ export function AdminQuotesListClient() {
             onClick={() => {
               updateParams({
                 status: draftStatus === "all" ? null : draftStatus,
-                q: draftQuery.trim() || null,
+                q: normalizeQuoteSearchTerm(draftQuery) || null,
                 createdFrom: draftCreatedFrom || null,
                 createdTo: draftCreatedTo || null,
                 rentalFrom: draftRentalFrom || null,

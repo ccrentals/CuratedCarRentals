@@ -13,11 +13,15 @@ export type AdminMessagesListRouteDeps = {
   getSession: () => Promise<AdminSession | null>;
   getPage: (input: {
     status?: string | null;
+    source?: string | null;
     q?: string | null;
     sortBy?: string | null;
     sortDir?: string | null;
     limit?: unknown;
     cursor?: unknown;
+    offset?: unknown;
+    dateFrom?: string | null;
+    dateTo?: string | null;
   }) => Promise<AdminMessagesPage>;
 };
 
@@ -38,11 +42,15 @@ export async function handleAdminMessagesListGet(
   try {
     const page = await deps.getPage({
       status: searchParams.get("status"),
+      source: searchParams.get("source"),
       q: searchParams.get("q"),
       sortBy: searchParams.get("sortBy"),
       sortDir: searchParams.get("sortDir"),
       limit: searchParams.get("limit"),
       cursor: searchParams.get("cursor"),
+      offset: searchParams.get("offset"),
+      dateFrom: searchParams.get("dateFrom"),
+      dateTo: searchParams.get("dateTo"),
     });
 
     return NextResponse.json({ ok: true, ...page });

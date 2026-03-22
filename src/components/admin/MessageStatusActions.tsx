@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { refreshUnreadMessagesCount } from "@/lib/messages/useUnreadMessagesCount";
@@ -10,29 +10,31 @@ import { buttonStyles } from "@/components/ui/Button";
 type MessageStatusActionsProps = {
   messageId: string;
   status: "NEW" | "READ" | "ARCHIVED";
-  didAutoMarkRead?: boolean;
+  canDeletePermanent: boolean;
+  backHref: string;
 };
 
-type ActionType = "MARK_READ" | "MARK_NEW" | "ARCHIVE" | "UNARCHIVE";
+type ActionType = "MARK_READ" | "MARK_NEW" | "ARCHIVE" | "UNARCHIVE" | "DELETE_PERMANENT";
 
 export function MessageStatusActions({
   messageId,
   status,
-  didAutoMarkRead = false,
+  canDeletePermanent,
+  backHref,
 }: MessageStatusActionsProps) {
   const router = useRouter();
-  const didAutoRefreshRef = useRef(false);
   const [pendingAction, setPendingAction] = useState<ActionType | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!didAutoMarkRead || didAutoRefreshRef.current) return;
-    didAutoRefreshRef.current = true;
-    void refreshUnreadMessagesCount();
-  }, [didAutoMarkRead]);
-
   async function runAction(action: ActionType) {
     if (pendingAction) return;
+
+    if (
+      action === "DELETE_PERMANENT" &&
+      !window.confirm("Permanently delete this trashed message? This cannot be undone.")
+    ) {
+      return;
+    }
 
     setPendingAction(action);
     setError(null);
@@ -58,6 +60,11 @@ export function MessageStatusActions({
       }
 
       await refreshUnreadMessagesCount();
+      if (action === "DELETE_PERMANENT") {
+        router.push(backHref);
+        router.refresh();
+        return;
+      }
       router.refresh();
     } catch {
       setError("Unable to update message status.");
@@ -80,7 +87,9 @@ export function MessageStatusActions({
           >
             {pendingAction === "MARK_READ" ? "Saving..." : "Mark as Read"}
           </button>
-        ) : (
+        ) : null}
+
+        {status !== "NEW" ? (
           <button
             type="button"
             disabled={isPending}
@@ -89,17 +98,29 @@ export function MessageStatusActions({
           >
             {pendingAction === "MARK_NEW" ? "Saving..." : "Mark as New"}
           </button>
-        )}
+        ) : null}
 
         {status === "ARCHIVED" ? (
-          <button
-            type="button"
-            disabled={isPending}
-            onClick={() => runAction("UNARCHIVE")}
-            className={buttonStyles({ variant: "secondary", size: "sm" })}
-          >
-            {pendingAction === "UNARCHIVE" ? "Saving..." : "Unarchive"}
-          </button>
+          <>
+            <button
+              type="button"
+              disabled={isPending}
+              onClick={() => runAction("UNARCHIVE")}
+              className={buttonStyles({ variant: "secondary", size: "sm" })}
+            >
+              {pendingAction === "UNARCHIVE" ? "Saving..." : "Restore to Read"}
+            </button>
+            {canDeletePermanent ? (
+              <button
+                type="button"
+                disabled={isPending}
+                onClick={() => runAction("DELETE_PERMANENT")}
+                className={buttonStyles({ variant: "danger", size: "sm" })}
+              >
+                {pendingAction === "DELETE_PERMANENT" ? "Deleting..." : "Delete Permanently"}
+              </button>
+            ) : null}
+          </>
         ) : (
           <button
             type="button"
@@ -107,10 +128,19 @@ export function MessageStatusActions({
             onClick={() => runAction("ARCHIVE")}
             className={buttonStyles({ variant: "secondary", size: "sm" })}
           >
-            {pendingAction === "ARCHIVE" ? "Saving..." : "Archive"}
+            {pendingAction === "ARCHIVE" ? "Saving..." : "Trash"}
           </button>
         )}
       </div>
+
+      {status === "ARCHIVED" ? (
+        <p className="text-xs text-[var(--ccr-muted)]">
+          Restore returns this message to{" "}
+          <span className="font-semibold text-[var(--ccr-text)]">Read</span>. Use{" "}
+          <span className="font-semibold text-[var(--ccr-text)]">Mark as New</span> if you need it back in the unread
+          queue.
+        </p>
+      ) : null}
 
       {error ? (
         <p className="rounded-lg border border-red-400/40 bg-red-500/10 px-3 py-2 text-xs text-red-200" role="status">

@@ -2,8 +2,11 @@ const TITLE_CASE_SPLITTER = /[_\s-]+/g;
 
 const EVENT_TITLE_MAP: Record<string, string> = {
   STATUS_CHANGED: "Status updated",
-  UPDATED: "Booking updated",
-  CREATED: "Booking created",
+  UPDATED: "Quote updated",
+  CREATED: "Quote created",
+  EMAILED: "Quote emailed",
+  CONVERTED: "Converted to booking",
+  PDF_GENERATED: "PDF generated",
 };
 
 const EVENT_ACTOR_LABEL_MAP: Record<string, string> = {
@@ -28,12 +31,34 @@ function normalizeMetaKey(value: string) {
   return value.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
+const TITLE_CASE_TOKEN_MAP: Record<string, string> = {
+  api: "API",
+  id: "ID",
+  pdf: "PDF",
+};
+
 function titleCaseWords(value: string) {
   return value
     .split(TITLE_CASE_SPLITTER)
     .filter(Boolean)
-    .map((segment) => segment[0].toUpperCase() + segment.slice(1).toLowerCase())
+    .map((segment) => {
+      const normalized = segment.toLowerCase();
+      if (TITLE_CASE_TOKEN_MAP[normalized]) return TITLE_CASE_TOKEN_MAP[normalized];
+      return normalized[0]?.toUpperCase() + normalized.slice(1);
+    })
     .join(" ");
+}
+
+function stringifyMetaKey(value: string) {
+  return titleCaseWords(value);
+}
+
+function stringifyMetaDisplayValue(key: string, value: unknown): string {
+  const text = stringifyMetaValue(value);
+  if (normalizeMetaKey(key) === "source") {
+    return titleCaseWords(text);
+  }
+  return text;
 }
 
 function stringifyMetaValue(value: unknown): string {
@@ -114,7 +139,7 @@ export function formatQuoteActivityMeta(meta: Record<string, unknown> | null | u
 
   for (const [key, value] of metaEntries) {
     if (consumedKeys.has(key)) continue;
-    fragments.push(`${key}: ${stringifyMetaValue(value)}`);
+    fragments.push(`${stringifyMetaKey(key)}: ${stringifyMetaDisplayValue(key, value)}`);
   }
 
   return fragments.length > 0 ? fragments.join(" · ") : null;

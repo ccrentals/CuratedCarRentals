@@ -68,6 +68,8 @@ function isRateLimitsTableMissingError(error: unknown) {
   return code === "42P01" && message.includes("rate_limits");
 }
 
+export type ContactMessageNotifierQuery = typeof dbQuery;
+
 async function allowByNotificationThrottle(input: { cooldownMinutes: number; nowMs: number }) {
   const windowSeconds = input.cooldownMinutes * 60;
   try {
@@ -96,14 +98,16 @@ async function allowByNotificationThrottle(input: { cooldownMinutes: number; now
   }
 }
 
-async function loadUnreadSummary(): Promise<ContactNotificationSummary> {
-  const countResult = await dbQuery<{ count: unknown }>(
-    "select count(*)::int as count from contact_messages where status = 'NEW'",
+export async function loadUnreadContactSummary(
+  query: ContactMessageNotifierQuery = dbQuery,
+): Promise<ContactNotificationSummary> {
+  const countResult = await query<{ count: unknown }>(
+    "select count(*)::int as count from contact_messages where status = 'NEW' and coalesce(source, 'contact_page') = 'contact_page'",
   );
   const totalNew = Number(countResult.rows[0]?.count ?? 0);
 
-  const previewRows = await dbQuery<UnreadMessageRow>(
-    "select id, created_at, name, email, message from contact_messages where status = 'NEW' order by created_at desc, id::text desc limit 3",
+  const previewRows = await query<UnreadMessageRow>(
+    "select id, created_at, name, email, message from contact_messages where status = 'NEW' and coalesce(source, 'contact_page') = 'contact_page' order by created_at desc, id::text desc limit 3",
   );
 
   return {
@@ -131,7 +135,7 @@ const DEFAULT_DEPS: ContactMessageNotifierDeps = {
   loadSettings: () => loadAdminSettings(),
   nowMs: () => Date.now(),
   allowByThrottle: (input) => allowByNotificationThrottle(input),
-  loadUnreadSummary: () => loadUnreadSummary(),
+  loadUnreadSummary: () => loadUnreadContactSummary(),
   sendSingle: ({ recipients, message }) =>
     sendContactMessageCreatedAlert({
       messageId: message.id,

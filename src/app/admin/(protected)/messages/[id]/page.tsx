@@ -40,6 +40,7 @@ export default async function AdminMessageDetailPage({
 }) {
   const session = await getSessionFromRequest();
   const canView = isStaffRole(session?.role);
+  const canDeletePermanent = canView;
 
   if (!canView || !session) {
     return (
@@ -54,7 +55,7 @@ export default async function AdminMessageDetailPage({
 
   const { id } = await params;
   const query = await searchParams;
-  const markRead = query.markRead !== "0";
+  const markRead = query.markRead === "1";
   const backHref = safeBackHref(typeof query.back === "string" ? query.back : undefined);
 
   let result: Awaited<ReturnType<typeof fetchAdminMessageByIdWithOptionalMarkRead>> | null = null;
@@ -105,6 +106,9 @@ export default async function AdminMessageDetailPage({
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Admin</p>
           <h1 className="text-3xl font-bold text-[var(--ccr-text)]">Message</h1>
+          <p className="mt-1 text-sm text-[var(--ccr-muted)]">
+            Shared inbox item for contact inquiries and internal operational alerts.
+          </p>
         </div>
         <Link
           href={backHref}
@@ -117,8 +121,8 @@ export default async function AdminMessageDetailPage({
       <div className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-xl font-bold text-[var(--ccr-text)]">{result.item.name}</p>
-            <p className="text-sm text-[var(--ccr-muted)]">{result.item.email}</p>
+            <p className="text-xl font-bold text-[var(--ccr-text)]">{result.item.displayName}</p>
+            <p className="text-sm text-[var(--ccr-muted)]">{result.item.displayEmail}</p>
             <p className="mt-1 text-xs text-[var(--ccr-muted)]">
               Received{" "}
               <DateTimeInline value={result.item.createdAt} className="inline-flex text-[var(--ccr-text)]" />
@@ -136,7 +140,7 @@ export default async function AdminMessageDetailPage({
         <dl className="mt-4 grid gap-2 text-xs text-[var(--ccr-muted)] sm:grid-cols-2">
           <div>
             <dt className="font-semibold uppercase tracking-wide">Source</dt>
-            <dd className="mt-0.5 text-[var(--ccr-text)]">{result.item.source}</dd>
+            <dd className="mt-0.5 text-[var(--ccr-text)]">{result.item.sourceLabel}</dd>
           </div>
           <div>
             <dt className="font-semibold uppercase tracking-wide">Read at</dt>
@@ -145,6 +149,29 @@ export default async function AdminMessageDetailPage({
                 <DateTimeInline value={result.item.readAt} className="inline-flex" />
               ) : (
                 "Not read yet"
+              )}
+            </dd>
+          </div>
+          <div>
+            <dt className="font-semibold uppercase tracking-wide">Inbox state</dt>
+            <dd className="mt-0.5 text-[var(--ccr-text)]">{result.item.statusLabel}</dd>
+          </div>
+          <div>
+            <dt className="font-semibold uppercase tracking-wide">Related record</dt>
+            <dd className="mt-0.5 text-[var(--ccr-text)]">
+              {result.item.relatedEntityLabel ? (
+                result.item.relatedEntityHref ? (
+                  <Link
+                    href={result.item.relatedEntityHref}
+                    className="font-semibold text-[var(--ccr-accent)] underline-offset-2 hover:underline"
+                  >
+                    {result.item.relatedEntityLabel}
+                  </Link>
+                ) : (
+                  result.item.relatedEntityLabel
+                )
+              ) : (
+                "No related record"
               )}
             </dd>
           </div>
@@ -166,7 +193,8 @@ export default async function AdminMessageDetailPage({
           <MessageStatusActions
             messageId={result.item.id}
             status={result.item.status}
-            didAutoMarkRead={Boolean(markRead && result.statusChanged && result.previousStatus === "NEW")}
+            canDeletePermanent={canDeletePermanent}
+            backHref={backHref}
           />
         </div>
       </div>

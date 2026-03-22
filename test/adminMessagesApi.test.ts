@@ -6,6 +6,40 @@ import { handleAdminMessagesBulkPost } from "@/app/api/admin/messages/bulk/route
 import { handleAdminMessagePatch } from "@/app/api/admin/messages/[id]/route";
 import { handleAdminMessagesUnreadCountGet } from "@/app/api/admin/messages/unread-count/route";
 
+function buildListItem(id: string, overrides: Record<string, unknown> = {}) {
+  return {
+    id,
+    createdAt: "2026-02-22T08:00:00.000Z",
+    name: "Damian Thompson",
+    email: "damian@example.com",
+    displayName: "Damian Thompson",
+    displayEmail: "damian@example.com",
+    status: "NEW",
+    visibleStatus: "NEW",
+    statusLabel: "NEW",
+    snippet: "Need details for a booking",
+    source: "contact_page",
+    sourceKey: "contact_page",
+    sourceLabel: "Contact form",
+    isTrashed: false,
+    relatedEntityType: null,
+    relatedEntityId: null,
+    relatedEntityPublicId: null,
+    relatedEntityLabel: null,
+    relatedEntityHref: null,
+    ...overrides,
+  };
+}
+
+function buildDetailItem(id: string, overrides: Record<string, unknown> = {}) {
+  return {
+    ...buildListItem(id, overrides),
+    message: "Need details for a booking",
+    readAt: null,
+    readByUserId: null,
+  };
+}
+
 test("admin messages API: list requires auth", async () => {
   const response = await handleAdminMessagesListGet(
     new Request("http://localhost/api/admin/messages"),
@@ -82,15 +116,7 @@ test("admin messages API: list returns items", async () => {
       }),
       getPage: async () => ({
         items: [
-          {
-            id: "msg-1",
-            createdAt: "2026-02-22T08:00:00.000Z",
-            name: "Damian Thompson",
-            email: "damian@example.com",
-            status: "NEW",
-            snippet: "Need details for a booking",
-            source: "contact_page",
-          },
+          buildListItem("msg-1"),
         ],
         nextCursor: "cursor-1",
         hasMore: true,
@@ -118,9 +144,10 @@ test("admin messages API: list returns items", async () => {
 test("admin messages API: list forwards sortBy/sortDir", async () => {
   let capturedSortBy: string | null | undefined;
   let capturedSortDir: string | null | undefined;
+  let capturedSource: string | null | undefined;
 
   const response = await handleAdminMessagesListGet(
-    new Request("http://localhost/api/admin/messages?sortBy=name&sortDir=asc"),
+    new Request("http://localhost/api/admin/messages?sortBy=name&sortDir=asc&source=booking_inspection"),
     {
       getSession: async () => ({
         userId: "91c7c89a-9f07-4d59-b79b-f92d55f0cf8b",
@@ -131,6 +158,7 @@ test("admin messages API: list forwards sortBy/sortDir", async () => {
       getPage: async (input) => {
         capturedSortBy = input.sortBy;
         capturedSortDir = input.sortDir;
+        capturedSource = input.source;
         return {
           items: [],
           nextCursor: null,
@@ -145,6 +173,7 @@ test("admin messages API: list forwards sortBy/sortDir", async () => {
   assert.equal(response.status, 200);
   assert.equal(capturedSortBy, "name");
   assert.equal(capturedSortDir, "asc");
+  assert.equal(capturedSource, "booking_inspection");
 });
 
 test("admin messages API: patch updates status", async () => {
@@ -172,19 +201,16 @@ test("admin messages API: patch updates status", async () => {
       }),
       patchMessage: async () => ({
         previousStatus: "NEW",
-        item: {
-          id: "msg-1",
-          createdAt: "2026-02-22T08:00:00.000Z",
-          name: "Damian",
-          email: "damian@example.com",
+        item: buildDetailItem("msg-1", {
           status: "READ",
+          visibleStatus: "READ",
+          statusLabel: "READ",
           snippet: "Need details",
-          source: "contact_page",
-          message: "Need details for a booking",
           readAt: "2026-02-22T08:10:00.000Z",
           readByUserId: "91c7c89a-9f07-4d59-b79b-f92d55f0cf8b",
-        },
+        }),
       }),
+      deleteMessage: async () => null,
       writeAudit: async () => {},
     },
   );
@@ -220,6 +246,7 @@ test("admin messages API: patch requires auth", async () => {
         previousStatus: null,
         item: null,
       }),
+      deleteMessage: async () => null,
       writeAudit: async () => {},
     },
   );
@@ -262,6 +289,7 @@ test("admin messages API: bulk endpoint requires auth", async () => {
       getSession: async () => null,
       requireCsrfCheck: async () => true,
       bulkUpdate: async () => ({ updatedCount: 0, changes: [] }),
+      bulkDelete: async () => ({ deletedCount: 0, deletedIds: [], blockedIds: [] }),
       writeAudit: async () => {},
     },
   );
@@ -307,6 +335,131 @@ test("admin messages API: bulk endpoint updates statuses", async () => {
             nextStatus: "ARCHIVED",
           },
         ],
+      }),
+      writeAudit: async (input) => {
+        if (input.entityId) auditEntityIds.push(input.entityId);
+      },
+      bulkDelete: async () => ({ deletedCount: 0, deletedIds: [], blockedIds: [] }),
+    },
+  );
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as { ok: boolean; updatedCount: number };
+  assert.equal(body.ok, true);
+  assert.equal(body.updatedCount, 2);
+  assert.deepEqual(auditEntityIds, [
+    "91c7c89a-9f07-4d59-b79b-f92d55f0cf8b",
+    "d0381b5d-17d8-4f1e-a2c6-0b4e64c12ce8",
+  ]);
+});
+
+test("admin messages API: permanent delete allows staff for trashed rows", async () => {
+  const response = await handleAdminMessagePatch(
+    new Request("http://localhost/api/admin/messages/msg-1", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", "x-csrf-token": "token" },
+      body: JSON.stringify({ action: "DELETE_PERMANENT", csrfToken: "token" }),
+    }),
+    {
+      params: Promise.resolve({ id: "msg-1" }),
+    },
+    {
+      getSession: async () => ({
+        userId: "91c7c89a-9f07-4d59-b79b-f92d55f0cf8b",
+        role: "USER",
+        expiresAt: 999999999,
+        issuedAt: 999999000,
+      }),
+      requireCsrfCheck: async () => true,
+      getMessage: async () => ({
+        item: buildDetailItem("msg-1", {
+          status: "ARCHIVED",
+          visibleStatus: "TRASH",
+          statusLabel: "Trash",
+          isTrashed: true,
+        }),
+        statusChanged: false,
+        previousStatus: "ARCHIVED",
+      }),
+      patchMessage: async () => ({ previousStatus: null, item: null }),
+      deleteMessage: async () =>
+        buildDetailItem("msg-1", {
+          status: "ARCHIVED",
+          visibleStatus: "TRASH",
+          statusLabel: "Trash",
+          isTrashed: true,
+        }),
+      writeAudit: async () => {},
+    },
+  );
+
+  assert.equal(response.status, 200);
+});
+
+test("admin messages API: bulk permanent delete rejects non-trashed rows", async () => {
+  const response = await handleAdminMessagesBulkPost(
+    new Request("http://localhost/api/admin/messages/bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-csrf-token": "token" },
+      body: JSON.stringify({
+        ids: ["91c7c89a-9f07-4d59-b79b-f92d55f0cf8b"],
+        action: "DELETE_PERMANENT",
+        csrfToken: "token",
+      }),
+    }),
+    {
+      getSession: async () => ({
+        userId: "91c7c89a-9f07-4d59-b79b-f92d55f0cf8b",
+        role: "ADMIN",
+        expiresAt: 999999999,
+        issuedAt: 999999000,
+      }),
+      requireCsrfCheck: async () => true,
+      bulkUpdate: async () => ({ updatedCount: 0, changes: [] }),
+      bulkDelete: async () => ({
+        deletedCount: 0,
+        deletedIds: [],
+        blockedIds: ["91c7c89a-9f07-4d59-b79b-f92d55f0cf8b"],
+      }),
+      writeAudit: async () => {},
+    },
+  );
+
+  assert.equal(response.status, 400);
+});
+
+test("admin messages API: bulk permanent delete allows staff", async () => {
+  const auditEntityIds: string[] = [];
+
+  const response = await handleAdminMessagesBulkPost(
+    new Request("http://localhost/api/admin/messages/bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-csrf-token": "token" },
+      body: JSON.stringify({
+        ids: [
+          "91c7c89a-9f07-4d59-b79b-f92d55f0cf8b",
+          "d0381b5d-17d8-4f1e-a2c6-0b4e64c12ce8",
+        ],
+        action: "DELETE_PERMANENT",
+        csrfToken: "token",
+      }),
+    }),
+    {
+      getSession: async () => ({
+        userId: "91c7c89a-9f07-4d59-b79b-f92d55f0cf8b",
+        role: "USER",
+        expiresAt: 999999999,
+        issuedAt: 999999000,
+      }),
+      requireCsrfCheck: async () => true,
+      bulkUpdate: async () => ({ updatedCount: 0, changes: [] }),
+      bulkDelete: async () => ({
+        deletedCount: 2,
+        deletedIds: [
+          "91c7c89a-9f07-4d59-b79b-f92d55f0cf8b",
+          "d0381b5d-17d8-4f1e-a2c6-0b4e64c12ce8",
+        ],
+        blockedIds: [],
       }),
       writeAudit: async (input) => {
         if (input.entityId) auditEntityIds.push(input.entityId);

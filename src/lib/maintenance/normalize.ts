@@ -1,5 +1,6 @@
 export const MAINTENANCE_SCHEDULE_STATUSES = ["ACTIVE", "PAUSED", "COMPLETED"] as const;
 export type MaintenanceScheduleStatus = (typeof MAINTENANCE_SCHEDULE_STATUSES)[number];
+export const MIN_MAINTENANCE_SEARCH_LENGTH = 3;
 
 function normalizeText(value: unknown) {
   if (typeof value !== "string") return "";
@@ -75,3 +76,8 @@ export function normalizeStringList(value: unknown, maxItems = 40, maxLength = 1
     .slice(0, maxItems);
 }
 
+export function normalizeMaintenanceSearchTerm(value: unknown) {
+  const text = normalizeText(value);
+  if (text.length < MIN_MAINTENANCE_SEARCH_LENGTH) return "";
+  return text;
+}

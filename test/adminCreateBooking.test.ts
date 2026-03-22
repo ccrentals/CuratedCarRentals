@@ -12,6 +12,7 @@ import {
   listAdminCreateBookingAvailableVehicles,
 } from "@/lib/bookings/adminCreateBooking";
 import {
+  isAdminCreateBookingDateRangeValid,
   suggestAdminCreateBookingEndDate,
   suggestAdminCreateBookingPaymentAmount,
 } from "@/lib/bookings/adminCreateBookingDates";
@@ -54,6 +55,11 @@ test("admin create booking helper: builds full-day window from date-only inputs"
 
 test("admin create booking helper: suggests an end date two days after the selected start date", () => {
   assert.equal(suggestAdminCreateBookingEndDate("2026-05-18"), "2026-05-20");
+});
+
+test("admin create booking helper: treats same-day ranges as valid for initial availability filtering", () => {
+  assert.equal(isAdminCreateBookingDateRangeValid("2026-05-18", "2026-05-18"), true);
+  assert.equal(isAdminCreateBookingDateRangeValid("2026-05-18", "2026-05-17"), false);
 });
 
 test("admin create booking helper: suggests the deposit required as the default payment amount", () => {

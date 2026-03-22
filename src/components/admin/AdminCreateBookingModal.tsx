@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { buttonStyles } from "@/components/ui/Button";
 import {
+  isAdminCreateBookingDateRangeValid,
   suggestAdminCreateBookingEndDate,
   suggestAdminCreateBookingPaymentAmount,
 } from "@/lib/bookings/adminCreateBookingDates";
@@ -74,10 +75,6 @@ function toDateTimeLocalValue(date: Date) {
   return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
 }
 
-function isDateRangeValid(startDate: string, endDate: string) {
-  return startDate.length > 0 && endDate.length > 0 && endDate > startDate;
-}
-
 export function AdminCreateBookingModal({
   initialOpen = false,
   clearOpenHref,
@@ -119,7 +116,10 @@ export function AdminCreateBookingModal({
   const [paymentWarning, setPaymentWarning] = useState<string | null>(null);
   const [createdBookingId, setCreatedBookingId] = useState<string | null>(null);
 
-  const datesValid = useMemo(() => isDateRangeValid(startDate, endDate), [endDate, startDate]);
+  const datesValid = useMemo(
+    () => isAdminCreateBookingDateRangeValid(startDate, endDate),
+    [endDate, startDate],
+  );
   const pickupLocations = useMemo(
     () => locations.filter((location) => location.allow_pickup && location.is_active !== false),
     [locations],
@@ -547,7 +547,7 @@ export function AdminCreateBookingModal({
                       type="date"
                       min={todayIso()}
                       required
-                      className="promo-date-time-input mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+                      className="promo-date-time-input date-icon-edge mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-sm text-[var(--ccr-text)]"
                     />
                   </label>
                   <label className="text-xs text-[var(--ccr-muted)]">
@@ -558,7 +558,7 @@ export function AdminCreateBookingModal({
                       type="date"
                       min={startDate || todayIso()}
                       required
-                      className="promo-date-time-input mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+                      className="promo-date-time-input date-icon-edge mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-sm text-[var(--ccr-text)]"
                     />
                   </label>
                 </section>

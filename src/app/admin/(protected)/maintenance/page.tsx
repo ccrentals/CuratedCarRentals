@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { LoadMorePaginationControls } from "@/components/admin/LoadMorePaginationControls";
+import { MaintenanceFilters } from "@/components/admin/MaintenanceFilters";
 import { SortableTh } from "@/components/admin/SortableTh";
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import {
@@ -11,6 +12,7 @@ import {
 } from "@/components/admin/tableSort";
 import { dbQuery } from "@/lib/db";
 import { formatJmd } from "@/lib/money";
+import { normalizeMaintenanceSearchTerm } from "@/lib/maintenance/normalize";
 import { normalizePageSize, parsePositiveIntParam } from "@/lib/pagination/sharedPagination";
 import {
   listUpcomingMaintenance,
@@ -182,7 +184,7 @@ export default async function AdminMaintenancePage({
     if (typeof value === "string") queryParams.set(key, value);
   }
 
-  const q = typeof params.q === "string" ? params.q.trim() : "";
+  const q = normalizeMaintenanceSearchTerm(typeof params.q === "string" ? params.q : "");
   const scope = normalizeScope(typeof params.scope === "string" ? params.scope : undefined);
   const status = normalizeStatus(typeof params.status === "string" ? params.status : undefined);
   const category = normalizeCategory(typeof params.category === "string" ? params.category : undefined);
@@ -252,10 +254,14 @@ export default async function AdminMaintenancePage({
           <p className="mt-1 text-sm text-[var(--ccr-muted)]">Fleet-wide service history and upcoming maintenance.</p>
         </div>
         <Link
-          href={`/api/admin/maintenance/export?${queryParams.toString()}`}
+          href={`/api/admin/maintenance/export?${new URLSearchParams(
+            queryParams.toString()
+              ? `${queryParams.toString()}&format=pdf`
+              : "format=pdf",
+          ).toString()}`}
           className="inline-flex min-h-11 items-center rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-xs font-semibold text-[var(--ccr-text)]"
         >
-          Export CSV
+          Export PDF
         </Link>
       </div>
 
@@ -285,122 +291,19 @@ export default async function AdminMaintenancePage({
         })}
       </div>
 
-      <form className="mt-4 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-            Search
-            <input
-              type="text"
-              name="q"
-              defaultValue={q}
-              placeholder="Vehicle, title, category"
-              className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
-            />
-          </label>
-
-          <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-            Vehicle
-            <select
-              name="vehicleId"
-              defaultValue={vehicleId}
-              className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
-            >
-              <option value="">All vehicles</option>
-              {vehicleOptions.map((vehicle) => (
-                <option key={vehicle.id} value={vehicle.id}>
-                  {vehicle.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-            Status
-            <select
-              name="status"
-              defaultValue={status}
-              className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
-            >
-              <option value="all">All</option>
-              <option value="SCHEDULED">Scheduled</option>
-              <option value="IN_PROGRESS">In Progress</option>
-              <option value="COMPLETED">Completed</option>
-              <option value="CANCELLED">Cancelled</option>
-            </select>
-          </label>
-
-          <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-            Category
-            <select
-              name="category"
-              defaultValue={category}
-              className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
-            >
-              <option value="all">All</option>
-              <option value="SERVICE">Service</option>
-              <option value="REPAIR">Repair</option>
-              <option value="INSPECTION">Inspection</option>
-              <option value="REGISTRATION">Registration</option>
-              <option value="INSURANCE">Insurance</option>
-              <option value="TIRE">Tire</option>
-              <option value="BRAKE">Brake</option>
-              <option value="BATTERY">Battery</option>
-              <option value="OTHER">Other</option>
-            </select>
-          </label>
-
-          <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-            From
-            <input
-              type="date"
-              name="from"
-              defaultValue={from}
-              className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
-            />
-          </label>
-
-          <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-            To
-            <input
-              type="date"
-              name="to"
-              defaultValue={to}
-              className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
-            />
-          </label>
-
-          <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-            Records
-            <select
-              name="onlyActive"
-              defaultValue={onlyActive ? "1" : "0"}
-              className="mt-1 min-h-11 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
-            >
-              <option value="1">Only active</option>
-              <option value="0">Include archived</option>
-            </select>
-          </label>
-        </div>
-
-        <input type="hidden" name="scope" value={scope === "all" ? "" : scope} />
-        <input type="hidden" name="sortBy" value={sort.sortBy} />
-        <input type="hidden" name="sortDir" value={sort.sortDir} />
-
-        <div className="mt-3 flex flex-wrap gap-2">
-          <button
-            type="submit"
-            className="min-h-11 rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-xs font-semibold text-white"
-          >
-            Apply filters
-          </button>
-          <Link
-            href="/admin/maintenance"
-            className="inline-flex min-h-11 items-center rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-4 py-2 text-xs font-semibold text-[var(--ccr-text)]"
-          >
-            Reset
-          </Link>
-        </div>
-      </form>
+      <MaintenanceFilters
+        initialQuery={q}
+        vehicleId={vehicleId}
+        status={status}
+        category={category}
+        from={from}
+        to={to}
+        onlyActive={onlyActive}
+        scope={scope}
+        sortBy={sort.sortBy}
+        sortDir={sort.sortDir}
+        vehicleOptions={vehicleOptions}
+      />
 
       <section className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)]">
         {tableMissing ? (

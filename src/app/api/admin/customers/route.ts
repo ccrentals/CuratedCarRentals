@@ -7,6 +7,7 @@ import { isEmail } from "@/lib/validators";
 import { writeAuditLog } from "@/lib/audit";
 import { logError } from "@/lib/log";
 import { normalizeLegalIdType } from "@/lib/customers/legalId";
+import { buildAdminExportPdf } from "@/lib/pdf/adminExportPdf";
 import { readSortFromSearchParams, type SortDir } from "@/components/admin/tableSort";
 import { normalizeCountryName, normalizeRegionForCountry } from "@/lib/jamaicaParishes";
 
@@ -167,101 +168,86 @@ function createExcel(rows: CustomerListRow[]) {
 </Workbook>`;
 }
 
-function pdfEscape(value: unknown) {
-  return String(value ?? "")
-    .replace(/\\/g, "\\\\")
-    .replace(/\(/g, "\\(")
-    .replace(/\)/g, "\\)")
-    .replace(/\r/g, " ")
-    .replace(/\n/g, " ");
+function formatDateTime(value: string | null) {
+  if (!value) return "No bookings yet";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("en-JM", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
-function createPdfContentStream(lines: string[]) {
-  const commands = ["BT", "/F1 8 Tf", "11 TL", "36 760 Td"];
-  lines.forEach((line, index) => {
-    commands.push(`(${pdfEscape(line)}) Tj`);
-    if (index < lines.length - 1) {
-      commands.push("T*");
-    }
+function formatGeneratedAt() {
+  return new Date().toLocaleString("en-JM", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
   });
-  commands.push("ET");
-  const stream = commands.join("\n");
-  return `<< /Length ${Buffer.byteLength(stream, "utf8")} >>\nstream\n${stream}\nendstream`;
 }
 
-function createPdf(rows: CustomerListRow[]) {
-  const headerLine =
-    "Customer Name".padEnd(24) +
-    "Email".padEnd(29) +
-    "Phone".padEnd(14) +
-    "Bookings".padStart(9) +
-    "Spend".padStart(14) +
-    "Last Booked".padStart(20);
-  const divider = "-".repeat(110);
-  const generatedAt = new Date().toLocaleString();
+function formatSortLabel(sortBy: CustomerSortBy, sortDir: CustomerSortDir) {
+  const label =
+    sortBy === "customer"
+      ? "Customer"
+      : sortBy === "bookings"
+        ? "Bookings"
+        : sortBy === "totalSpend"
+          ? "Total spend"
+          : sortBy === "created"
+            ? "Created"
+            : "Last booked";
+  return `${label} (${sortDir.toUpperCase()})`;
+}
 
-  const dataLines = rows.map((row) => {
-    const name = row.full_name.slice(0, 23).padEnd(24);
-    const email = row.email.slice(0, 28).padEnd(29);
-    const phone = row.phone.slice(0, 13).padEnd(14);
-    const bookings = String(row.total_bookings).padStart(9);
-    const spend = `J$${(Number(row.total_spend) / 100).toLocaleString(undefined, {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })}`.padStart(14);
-    const lastBooked = (row.last_booked_at ? new Date(row.last_booked_at).toLocaleDateString() : "No bookings")
-      .slice(0, 20)
-      .padStart(20);
-    return `${name}${email}${phone}${bookings}${spend}${lastBooked}`;
+function createPdf(rows: CustomerListRow[], options: { q: string; sortBy: CustomerSortBy; sortDir: CustomerSortDir }) {
+  const totalBookings = rows.reduce((sum, row) => sum + Number(row.total_bookings || 0), 0);
+  const totalSpend = rows.reduce((sum, row) => sum + Number(row.total_spend || 0), 0);
+  const customersWithBookings = rows.filter((row) => Number(row.total_bookings || 0) > 0).length;
+
+  return buildAdminExportPdf({
+    title: "Customers Report",
+    subtitle: "Customer relationships, booking history, and value at a glance.",
+    metadata: [
+      `Generated: ${formatGeneratedAt()}`,
+      options.q ? `Search: ${options.q}` : "Search: All customers",
+      `Sort: ${formatSortLabel(options.sortBy, options.sortDir)}`,
+    ],
+    summary: [
+      { label: "Customers", value: String(rows.length) },
+      { label: "With bookings", value: String(customersWithBookings) },
+      { label: "Bookings", value: String(totalBookings) },
+      {
+        label: "Total spend",
+        value: `J$${(totalSpend / 100).toLocaleString("en-JM", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      },
+    ],
+    columns: [
+      { label: "Customer", width: 88 },
+      { label: "Email", width: 130 },
+      { label: "Phone", width: 62 },
+      { label: "Bookings", width: 40, align: "right" },
+      { label: "Spend", width: 60, align: "right" },
+      { label: "Last Booked", width: 65 },
+      { label: "Created", width: 70 },
+    ],
+    rows: rows.map((row) => [
+      row.full_name || "Unnamed customer",
+      row.email || "No email",
+      row.phone || "No phone",
+      String(row.total_bookings ?? 0),
+      `J$${(Number(row.total_spend) / 100).toLocaleString("en-JM", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      formatDateTime(row.last_booked_at),
+      formatDateTime(row.created_at),
+    ]),
+    emptyState: "No customers matched the selected filters.",
+    footerNote: "Generated from the Curated Car Rentals admin customer export.",
   });
-
-  const maxLinesPerPage = 52;
-  const bodyLines = [headerLine, divider, ...dataLines];
-  const pageChunks: string[][] = [];
-  for (let index = 0; index < bodyLines.length; index += maxLinesPerPage) {
-    pageChunks.push(bodyLines.slice(index, index + maxLinesPerPage));
-  }
-  if (pageChunks.length === 0) pageChunks.push([]);
-
-  const objectBodies: string[] = [];
-  objectBodies.push("<< /Type /Catalog /Pages 2 0 R >>");
-  objectBodies.push("<< /Type /Pages /Kids [] /Count 0 >>");
-  objectBodies.push("<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>");
-
-  const pageObjectNumbers: number[] = [];
-  for (let pageIndex = 0; pageIndex < pageChunks.length; pageIndex += 1) {
-    const titleLines = [
-      "Curated Car Rentals - Customers Report",
-      `Generated: ${generatedAt}`,
-      `Page ${pageIndex + 1} of ${pageChunks.length}`,
-      "",
-      ...pageChunks[pageIndex],
-    ];
-    const contentObjectNumber = objectBodies.push(createPdfContentStream(titleLines));
-    const pageObjectNumber = objectBodies.push(
-      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents ${contentObjectNumber} 0 R >>`,
-    );
-    pageObjectNumbers.push(pageObjectNumber);
-  }
-
-  objectBodies[1] = `<< /Type /Pages /Kids [${pageObjectNumbers.map((num) => `${num} 0 R`).join(" ")}] /Count ${pageObjectNumbers.length} >>`;
-
-  let pdf = "%PDF-1.4\n";
-  const offsets: number[] = [0];
-  for (let index = 0; index < objectBodies.length; index += 1) {
-    const objectNumber = index + 1;
-    offsets[objectNumber] = Buffer.byteLength(pdf, "utf8");
-    pdf += `${objectNumber} 0 obj\n${objectBodies[index]}\nendobj\n`;
-  }
-  const xrefStart = Buffer.byteLength(pdf, "utf8");
-  pdf += `xref\n0 ${objectBodies.length + 1}\n`;
-  pdf += "0000000000 65535 f \n";
-  for (let index = 1; index <= objectBodies.length; index += 1) {
-    pdf += `${String(offsets[index]).padStart(10, "0")} 00000 n \n`;
-  }
-  pdf += `trailer\n<< /Size ${objectBodies.length + 1} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF`;
-
-  return Buffer.from(pdf, "utf8");
 }
 
 function isMissingColumn(error: unknown, column: string) {
@@ -374,7 +360,7 @@ export async function GET(request: Request) {
     });
   }
   if (exportMode === "pdf") {
-    const pdf = createPdf(result.rows);
+    const pdf = createPdf(result.rows, { q, sortBy: sort.sortBy, sortDir: sort.sortDir });
     return new NextResponse(pdf, {
       status: 200,
       headers: {

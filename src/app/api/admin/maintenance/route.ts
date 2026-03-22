@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
+import { normalizeMaintenanceSearchTerm } from "@/lib/maintenance/normalize";
 import {
   listUpcomingMaintenance,
   type MaintenanceDueState,
@@ -78,7 +79,7 @@ export async function handleAdminMaintenanceGet(request: Request, deps: Deps = D
   if (!auth.ok) return auth.response;
 
   const { searchParams } = new URL(request.url);
-  const q = (searchParams.get("q") ?? "").trim().toLowerCase();
+  const q = normalizeMaintenanceSearchTerm(searchParams.get("q")).toLowerCase();
   const vehicleId = (searchParams.get("vehicleId") ?? "").trim() || null;
   const from = (searchParams.get("from") ?? "").trim() || null;
   const to = (searchParams.get("to") ?? "").trim() || null;

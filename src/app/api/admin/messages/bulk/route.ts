@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import {
+  bulkDeleteAdminMessagesPermanently,
   bulkUpdateAdminMessagesStatus,
   isContactMessagesMissingTableError,
   normalizeMessageAction,
@@ -39,6 +40,11 @@ export type AdminMessagesBulkRouteDeps = {
     updatedCount: number;
     changes: ContactMessageStatusChange[];
   }>;
+  bulkDelete: (input: { ids: string[] }) => Promise<{
+    deletedCount: number;
+    deletedIds: string[];
+    blockedIds: string[];
+  }>;
   writeAudit: (input: {
     userId?: string | null;
     action: string;
@@ -52,6 +58,7 @@ const DEFAULT_DEPS: AdminMessagesBulkRouteDeps = {
   getSession: () => getSessionFromRequest(),
   requireCsrfCheck: (request, bodyToken) => requireCsrf(request, bodyToken),
   bulkUpdate: (input) => bulkUpdateAdminMessagesStatus(input),
+  bulkDelete: (input) => bulkDeleteAdminMessagesPermanently(input),
   writeAudit: (input) => writeAuditLog(input),
 };
 
@@ -83,6 +90,40 @@ export async function handleAdminMessagesBulkPost(
   }
 
   try {
+    if (action === "DELETE_PERMANENT") {
+      const result = await deps.bulkDelete({ ids });
+      if (result.blockedIds.length > 0) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: "Only trashed messages can be permanently deleted.",
+            blockedIds: result.blockedIds,
+          },
+          { status: 400 },
+        );
+      }
+
+      await Promise.all(
+        result.deletedIds.map((messageId) =>
+          deps.writeAudit({
+            userId: actor.userId,
+            action: "CONTACT_MESSAGE_DELETED_PERMANENTLY",
+            entityType: "contact_message",
+            entityId: messageId,
+            details: {
+              trigger: "BULK_ACTION",
+              action,
+            },
+          }),
+        ),
+      );
+
+      return NextResponse.json({
+        ok: true,
+        updatedCount: result.deletedCount,
+      });
+    }
+
     const result = await deps.bulkUpdate({
       ids,
       action,

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
@@ -14,24 +14,16 @@ import {
   readSortFromSearchParams,
   type SortState,
 } from "@/components/admin/tableSort";
+import type { AdminMessageListItem, ContactMessageStatus } from "@/lib/messages/adminMessages";
 
-type MessageRow = {
-  id: string;
-  createdAt: string;
-  name: string;
-  email: string;
-  message: string;
-  status: string;
-  source: string | null;
-};
-
-type BulkAction = "MARK_READ" | "ARCHIVE" | "MARK_NEW" | "UNARCHIVE";
+type BulkAction = "MARK_READ" | "ARCHIVE" | "MARK_NEW" | "UNARCHIVE" | "DELETE_PERMANENT";
 
 type MessagesInboxTableProps = {
-  rows: MessageRow[];
+  rows: AdminMessageListItem[];
   currentPath: string;
   canManage: boolean;
-  canRunRetention: boolean;
+  canDeletePermanent: boolean;
+  currentStatusFilter: ContactMessageStatus | null;
 };
 
 function statusBadgeClass(status: string) {
@@ -39,19 +31,13 @@ function statusBadgeClass(status: string) {
     .trim()
     .toUpperCase();
 
-  if (normalized === "ARCHIVED") {
+  if (normalized === "ARCHIVED" || normalized === "TRASH") {
     return "border border-[var(--ccr-status-neutral-border)] bg-[var(--ccr-status-neutral-bg)] text-[var(--ccr-status-neutral-text)]";
   }
   if (normalized === "READ") {
     return "border border-[var(--ccr-status-info-border)] bg-[var(--ccr-status-info-bg)] text-[var(--ccr-status-info-text)]";
   }
   return "border border-[var(--ccr-status-warning-border)] bg-[var(--ccr-status-warning-bg)] text-[var(--ccr-status-warning-text)]";
-}
-
-function statusLabel(status: string) {
-  return String(status ?? "")
-    .trim()
-    .toUpperCase() || "NEW";
 }
 
 function snippet(value: string) {
@@ -64,7 +50,8 @@ export function MessagesInboxTable({
   rows,
   currentPath,
   canManage,
-  canRunRetention,
+  canDeletePermanent,
+  currentStatusFilter,
 }: MessagesInboxTableProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -74,6 +61,29 @@ export function MessagesInboxTable({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [pendingRowAction, setPendingRowAction] = useState<string | null>(null);
+
+  const bulkOptions = useMemo(() => {
+    const options: Array<{ value: BulkAction; label: string }> = [
+      { value: "MARK_READ", label: "Mark as Read" },
+      { value: "ARCHIVE", label: "Trash" },
+      { value: "MARK_NEW", label: "Mark as New" },
+    ];
+
+    if (currentStatusFilter === "ARCHIVED") {
+      options.push({ value: "UNARCHIVE", label: "Restore to Read" });
+      if (canDeletePermanent) {
+        options.push({ value: "DELETE_PERMANENT", label: "Delete Permanently" });
+      }
+    }
+
+    return options;
+  }, [canDeletePermanent, currentStatusFilter]);
+
+  useEffect(() => {
+    if (bulkOptions.some((option) => option.value === bulkAction)) return;
+    setBulkAction(bulkOptions[0]?.value ?? "MARK_READ");
+  }, [bulkAction, bulkOptions]);
 
   const allSelected = useMemo(() => {
     if (rows.length === 0) return false;
@@ -92,6 +102,15 @@ export function MessagesInboxTable({
     const nextUrl = nextQuery ? `${pathname}?${nextQuery}` : pathname;
     router.replace(nextUrl, { scroll: false });
   };
+
+  function bulkActionSuccessLabel(action: BulkAction, count: number) {
+    const suffix = count === 1 ? "" : "s";
+    if (action === "ARCHIVE") return `Moved ${count} message${suffix} to Trash.`;
+    if (action === "UNARCHIVE") return `Restored ${count} message${suffix} to Read.`;
+    if (action === "MARK_NEW") return `Marked ${count} message${suffix} as New.`;
+    if (action === "DELETE_PERMANENT") return `Permanently deleted ${count} message${suffix}.`;
+    return `Marked ${count} message${suffix} as Read.`;
+  }
 
   function toggleSelectAll() {
     if (!canManage) return;
@@ -115,6 +134,43 @@ export function MessagesInboxTable({
     });
   }
 
+  async function runRowAction(rowId: string, action: Exclude<BulkAction, "DELETE_PERMANENT" | "UNARCHIVE" | "MARK_NEW" | "MARK_READ">) {
+    if (!canManage || pending || pendingRowAction) return;
+
+    setPendingRowAction(`${rowId}:${action}`);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const csrfToken = await ensureCsrfToken();
+      const response = await fetch(`/api/admin/messages/${rowId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "x-csrf-token": csrfToken ?? "",
+        },
+        body: JSON.stringify({ action, csrfToken }),
+      });
+
+      const payload = (await response.json().catch(() => null)) as
+        | { ok?: boolean; error?: string }
+        | null;
+
+      if (!response.ok || !payload?.ok) {
+        setError(payload?.error ?? "Unable to update message.");
+        return;
+      }
+
+      setSuccess("Moved message to Trash.");
+      await refreshUnreadMessagesCount();
+      router.refresh();
+    } catch {
+      setError("Unable to update message.");
+    } finally {
+      setPendingRowAction(null);
+    }
+  }
+
   async function applyBulkAction() {
     if (!canManage) return;
     if (pending) return;
@@ -122,6 +178,15 @@ export function MessagesInboxTable({
     const ids = [...selectedIds];
     if (ids.length === 0) {
       setError("Select at least one message.");
+      return;
+    }
+
+    if (
+      bulkAction === "DELETE_PERMANENT" &&
+      !window.confirm(
+        `Permanently delete ${ids.length} trashed message${ids.length === 1 ? "" : "s"}? This cannot be undone.`,
+      )
+    ) {
       return;
     }
 
@@ -149,54 +214,12 @@ export function MessagesInboxTable({
         return;
       }
 
-      setSuccess(`Updated ${payload.updatedCount ?? 0} message${payload.updatedCount === 1 ? "" : "s"}.`);
+      setSuccess(bulkActionSuccessLabel(bulkAction, payload.updatedCount ?? 0));
       setSelectedIds(new Set());
       await refreshUnreadMessagesCount();
       router.refresh();
     } catch {
       setError("Unable to update selected messages.");
-    } finally {
-      setPending(false);
-    }
-  }
-
-  async function runRetentionArchive() {
-    if (!canRunRetention) return;
-    if (pending) return;
-
-    setPending(true);
-    setError(null);
-    setSuccess(null);
-
-    try {
-      const csrfToken = await ensureCsrfToken();
-      const response = await fetch("/api/admin/messages/retention", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-csrf-token": csrfToken ?? "",
-        },
-        body: JSON.stringify({ csrfToken }),
-      });
-
-      const payload = (await response.json().catch(() => null)) as
-        | { ok?: boolean; error?: string; updatedCount?: number }
-        | null;
-
-      if (!response.ok || !payload?.ok) {
-        setError(payload?.error ?? "Unable to run retention archive.");
-        return;
-      }
-
-      setSuccess(
-        `Retention completed. Archived ${payload.updatedCount ?? 0} message${
-          payload?.updatedCount === 1 ? "" : "s"
-        }.`,
-      );
-      await refreshUnreadMessagesCount();
-      router.refresh();
-    } catch {
-      setError("Unable to run retention archive.");
     } finally {
       setPending(false);
     }
@@ -214,7 +237,7 @@ export function MessagesInboxTable({
                 onChange={() => toggleSelectAll()}
                 className="h-4 w-4 rounded border border-[var(--ccr-border)] bg-transparent accent-[var(--ccr-accent)]"
               />
-              Select all
+              Select this page
             </label>
             <span className="text-xs text-[var(--ccr-muted)]">{selectedIds.size} selected</span>
           </div>
@@ -226,10 +249,11 @@ export function MessagesInboxTable({
               disabled={pending}
               className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-2 py-1.5 text-xs font-semibold text-[var(--ccr-text)]"
             >
-              <option value="MARK_READ">Mark Read</option>
-              <option value="ARCHIVE">Archive</option>
-              <option value="MARK_NEW">Mark New</option>
-              <option value="UNARCHIVE">Unarchive</option>
+              {bulkOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
             </select>
             <button
               type="button"
@@ -239,16 +263,6 @@ export function MessagesInboxTable({
             >
               {pending ? "Applying..." : "Apply"}
             </button>
-            {canRunRetention ? (
-              <button
-                type="button"
-                onClick={() => void runRetentionArchive()}
-                disabled={pending}
-                className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-1.5 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-50"
-              >
-                {pending ? "Running..." : "Run 30d Archive"}
-              </button>
-            ) : null}
           </div>
         </div>
       ) : null}
@@ -272,26 +286,53 @@ export function MessagesInboxTable({
                     />
                   ) : null}
                   <div>
-                    <p className="font-semibold text-[var(--ccr-text)]">{row.name}</p>
-                    <p className="text-xs text-[var(--ccr-muted)]">{row.email}</p>
+                    <p className="font-semibold text-[var(--ccr-text)]">{row.displayName}</p>
+                    <p className="text-xs text-[var(--ccr-muted)]">{row.displayEmail}</p>
+                    <p className="mt-1 text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                      {row.sourceLabel}
+                    </p>
                   </div>
                 </div>
                 <span
                   className={`inline-flex rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wide ${statusBadgeClass(
-                    row.status,
+                    row.visibleStatus,
                   )}`}
                 >
-                  {statusLabel(row.status)}
+                  {row.statusLabel}
                 </span>
               </div>
               <DateTimeInline value={row.createdAt} className="text-xs text-[var(--ccr-muted)]" />
-              <p className="text-sm text-[var(--ccr-text)]">{snippet(row.message)}</p>
-              <Link
-                href={`/admin/messages/${row.id}?markRead=1&back=${encodeURIComponent(currentPath)}`}
-                className="inline-flex rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
-              >
-                View
-              </Link>
+              {row.relatedEntityLabel ? (
+                row.relatedEntityHref ? (
+                  <Link
+                    href={row.relatedEntityHref}
+                    className="inline-flex text-xs font-semibold text-[var(--ccr-accent)] underline-offset-2 hover:underline"
+                  >
+                    {row.relatedEntityLabel}
+                  </Link>
+                ) : (
+                  <p className="text-xs text-[var(--ccr-muted)]">{row.relatedEntityLabel}</p>
+                )
+              ) : null}
+              <p className="text-sm text-[var(--ccr-text)]">{snippet(row.snippet)}</p>
+              <div className="flex flex-wrap gap-2">
+                <Link
+                  href={`/admin/messages/${row.id}?back=${encodeURIComponent(currentPath)}`}
+                  className="inline-flex rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+                >
+                  View
+                </Link>
+                {canManage && !row.isTrashed ? (
+                  <button
+                    type="button"
+                    onClick={() => void runRowAction(row.id, "ARCHIVE")}
+                    disabled={Boolean(pendingRowAction) || pending}
+                    className="inline-flex rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-50"
+                  >
+                    {pendingRowAction === `${row.id}:ARCHIVE` ? "Moving..." : "Trash"}
+                  </button>
+                ) : null}
+              </div>
             </article>
           );
         })}
@@ -323,6 +364,7 @@ export function MessagesInboxTable({
                 onChange={updateSort}
                 defaultDirection="asc"
               />
+              <th className="px-4 py-3">Source</th>
               <SortableTh
                 label="Status"
                 columnKey="status"
@@ -352,25 +394,52 @@ export function MessagesInboxTable({
                   <td className="px-4 py-3 text-[var(--ccr-muted)]">
                     <TableDateTime value={row.createdAt} />
                   </td>
-                  <td className="px-4 py-3 font-semibold text-[var(--ccr-text)]">{row.name}</td>
-                  <td className="px-4 py-3 text-[var(--ccr-text)]">{row.email}</td>
+                  <td className="px-4 py-3 font-semibold text-[var(--ccr-text)]">{row.displayName}</td>
+                  <td className="px-4 py-3 text-[var(--ccr-text)]">{row.displayEmail}</td>
+                  <td className="px-4 py-3 text-[var(--ccr-muted)]">{row.sourceLabel}</td>
                   <td className="px-4 py-3">
                     <span
                       className={`inline-flex rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wide ${statusBadgeClass(
-                        row.status,
+                        row.visibleStatus,
                       )}`}
                     >
-                      {statusLabel(row.status)}
+                      {row.statusLabel}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-[var(--ccr-muted)]">{snippet(row.message)}</td>
+                  <td className="px-4 py-3 text-[var(--ccr-muted)]">
+                    <p>{snippet(row.snippet)}</p>
+                    {row.relatedEntityLabel ? (
+                      row.relatedEntityHref ? (
+                        <Link
+                          href={row.relatedEntityHref}
+                          className="mt-1 inline-flex text-xs font-semibold text-[var(--ccr-accent)] underline-offset-2 hover:underline"
+                        >
+                          {row.relatedEntityLabel}
+                        </Link>
+                      ) : (
+                        <p className="mt-1 text-xs">{row.relatedEntityLabel}</p>
+                      )
+                    ) : null}
+                  </td>
                   <td className="px-4 py-3 text-right">
-                    <Link
-                      href={`/admin/messages/${row.id}?markRead=1&back=${encodeURIComponent(currentPath)}`}
-                      className="inline-flex rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
-                    >
-                      View
-                    </Link>
+                    <div className="flex justify-end gap-2">
+                      <Link
+                        href={`/admin/messages/${row.id}?back=${encodeURIComponent(currentPath)}`}
+                        className="inline-flex rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+                      >
+                        View
+                      </Link>
+                      {canManage && !row.isTrashed ? (
+                        <button
+                          type="button"
+                          onClick={() => void runRowAction(row.id, "ARCHIVE")}
+                          disabled={Boolean(pendingRowAction) || pending}
+                          className="inline-flex rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-50"
+                        >
+                          {pendingRowAction === `${row.id}:ARCHIVE` ? "Moving..." : "Trash"}
+                        </button>
+                      ) : null}
+                    </div>
                   </td>
                 </tr>
               );

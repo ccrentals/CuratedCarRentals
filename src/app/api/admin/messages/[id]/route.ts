@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import {
+  deleteAdminMessagePermanently,
   fetchAdminMessageByIdWithOptionalMarkRead,
   isContactMessagesMissingTableError,
   normalizeMessageAction,
@@ -39,6 +40,7 @@ export type AdminMessageRouteDeps = {
     item: AdminMessageDetailItem | null;
     previousStatus: ContactMessageStatus | null;
   }>;
+  deleteMessage: (input: { id: string }) => Promise<AdminMessageDetailItem | null>;
   writeAudit: (input: {
     userId?: string | null;
     action: string;
@@ -53,6 +55,7 @@ const DEFAULT_DEPS: AdminMessageRouteDeps = {
   requireCsrfCheck: (request, bodyToken) => requireCsrf(request, bodyToken),
   getMessage: (input) => fetchAdminMessageByIdWithOptionalMarkRead(input),
   patchMessage: (input) => updateAdminMessageStatus(input),
+  deleteMessage: (input) => deleteAdminMessagePermanently(input),
   writeAudit: (input) => writeAuditLog(input),
 };
 
@@ -139,6 +142,48 @@ export async function handleAdminMessagePatch(
   }
 
   try {
+    if (action === "DELETE_PERMANENT") {
+      const existing = await deps.getMessage({
+        id,
+        markRead: false,
+        actorUserId: actor.userId,
+      });
+
+      if (!existing.item) {
+        return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
+      }
+
+      if (existing.item.status !== "ARCHIVED") {
+        return NextResponse.json(
+          { ok: false, error: "Only trashed messages can be permanently deleted." },
+          { status: 400 },
+        );
+      }
+
+      const deleted = await deps.deleteMessage({ id });
+      if (!deleted) {
+        return NextResponse.json(
+          { ok: false, error: "Unable to permanently delete message." },
+          { status: 500 },
+        );
+      }
+
+      await deps.writeAudit({
+        userId: actor.userId,
+        action: "CONTACT_MESSAGE_DELETED_PERMANENTLY",
+        entityType: "contact_message",
+        entityId: id,
+        details: {
+          trigger: "PATCH_ACTION",
+          action,
+          previousStatus: existing.item.status,
+          source: deleted.sourceKey,
+        },
+      });
+
+      return NextResponse.json({ ok: true, item: deleted, deleted: true });
+    }
+
     const result = await deps.patchMessage({
       id,
       action,

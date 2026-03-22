@@ -1,32 +1,74 @@
-import { SectionHeading } from "@/components/sections/SectionHeading";
-import { Container } from "@/components/site/Container";
+import { PublicCtaBand } from "@/components/site/PublicCtaBand";
+import { PublicPageIntro } from "@/components/site/PublicPageIntro";
+import { PublicSection } from "@/components/site/PublicSection";
+import { PublicStoryBlock } from "@/components/site/PublicStoryBlock";
+import { Button } from "@/components/ui/Button";
 import { services } from "@/data/services";
+
+const serviceImages = [
+  "/cars/real/toyota-corolla-2020-1.jpg",
+  "/cars/real/nissan-xtrail-1.jpg",
+  "/cars/real/honda-fit-2020-3.jpg",
+  "/cars/real/toyota-yaris-2020-2.jpg",
+  "/cars/real/toyota-corolla-2020-3.jpg",
+];
 
 export default function ServicesPage() {
   return (
-    <div className="py-10 md:py-14">
-      <Container>
-        <section className="rounded-3xl border border-[var(--ccr-border)] bg-[var(--ccr-primary)] px-6 py-10 md:px-10">
-          <SectionHeading
-            eyebrow="Services"
-            title="Helpful Add-ons for Smoother Travel"
-            description="Everything here is template content and can be adjusted to match your exact service list."
-            tone="light"
-          />
-        </section>
-
-        <div className="mt-8 grid gap-5 md:grid-cols-2">
+    <>
+      <PublicPageIntro
+        eyebrow="Services"
+        title="Our Services"
+        description="At Curated Car Rentals, we offer more than just vehicles. Discover our premium services designed to make your Jamaican journey exceptional."
+        primaryAction={{ href: "/book", label: "Book Now" }}
+        secondaryAction={{ href: "/fleet", label: "Explore Fleet" }}
+      >
+        <div className="flex flex-wrap gap-2">
           {services.map((service) => (
-            <article
-              key={service.title}
-              className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm"
+            <a
+              key={service.id}
+              href={`#${service.id}`}
+              className="rounded-full border border-white/15 bg-white/6 px-4 py-2 text-sm font-medium text-white/78 transition hover:bg-white/10 hover:text-white"
             >
-              <h2 className="text-lg font-bold text-[var(--ccr-text)]">{service.title}</h2>
-              <p className="mt-2 text-sm text-[var(--ccr-muted)]">{service.description}</p>
-            </article>
+              {service.title}
+            </a>
           ))}
         </div>
-      </Container>
-    </div>
+      </PublicPageIntro>
+
+      <PublicSection className="pt-12 md:pt-16">
+        <div className="space-y-16 md:space-y-24">
+          {services.map((service, index) => (
+            <div key={service.id} id={service.id} className="scroll-mt-32">
+              <PublicStoryBlock
+                eyebrow="Premium Service"
+                title={service.title}
+                paragraphs={[service.description, service.detail]}
+                imageSrc={serviceImages[index % serviceImages.length]}
+                imageAlt={service.title}
+                reverse={index % 2 === 1}
+              >
+                <div className="flex flex-wrap gap-3">
+                  <Button href="/book" className="bg-[var(--ccr-accent-strong)] text-white hover:bg-[var(--ccr-accent)]">
+                    Book This Service
+                  </Button>
+                  <Button href="/contact" variant="outline">
+                    Ask a Question
+                  </Button>
+                </div>
+              </PublicStoryBlock>
+            </div>
+          ))}
+        </div>
+      </PublicSection>
+
+      <PublicCtaBand
+        eyebrow="Planning Made Simple"
+        title="Need help choosing the right service for your stay?"
+        description="From airport pickup to longer rentals, our team can guide you toward the setup that best fits your itinerary."
+        primaryAction={{ href: "/contact", label: "Contact Us" }}
+        secondaryAction={{ href: "/book", label: "Book Now" }}
+      />
+    </>
   );
 }

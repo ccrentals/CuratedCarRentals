@@ -1,27 +1,49 @@
 export type ServiceItem = {
+  id: string;
   title: string;
   description: string;
+  detail: string;
 };
 
 export const services: ServiceItem[] = [
   {
-    title: "Airport Pickup & Drop-off",
+    id: "airport",
+    title: "Airport Pickup",
     description:
-      "Meet-and-greet coordination from major Jamaican airports with flexible timing.",
+      "Free airport pickup from Norman Manley International Airport in Kingston with any paid reservation.",
+    detail:
+      "Start your Jamaican adventure the moment you land with coordinated pickup that keeps arrival day simple and stress-free.",
   },
   {
-    title: "Flexible Rental Durations",
+    id: "chauffeur",
+    title: "Chauffeur Service",
     description:
-      "Daily and weekly rental options with straightforward extensions when needed.",
+      "Professional drivers with local road knowledge so you can relax and enjoy the scenery.",
+    detail:
+      "Ideal for guests who want a polished, effortless travel experience for meetings, airport transfers, or sightseeing days.",
   },
   {
-    title: "Roadside Support",
+    id: "wedding",
+    title: "Wedding Packages",
     description:
-      "Prompt assistance and clear communication if issues happen during your rental.",
+      "Premium wedding vehicle service for couples, guests, and special occasion transport.",
+    detail:
+      "We help make the day feel seamless with elegant vehicle presentation and dependable coordination for the wedding schedule.",
   },
   {
-    title: "Cleaned & Inspected Vehicles",
+    id: "corporate",
+    title: "Corporate Rentals",
     description:
-      "Every vehicle is cleaned and checked before handover for a dependable experience.",
+      "Priority booking, flexible terms, and dedicated support for business travel needs.",
+    detail:
+      "Built for companies that need straightforward rental management and dependable transport for executives, staff, or visiting teams.",
+  },
+  {
+    id: "long-term",
+    title: "Long-term Rentals",
+    description:
+      "Extended rental options that offer convenience and stronger value for longer stays in Jamaica.",
+    detail:
+      "Enjoy the flexibility of having your own vehicle for weeks or months while keeping the service level and support expected from a premium rental brand.",
   },
 ];

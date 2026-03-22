@@ -1,57 +1,90 @@
 import { VehicleCard } from "@/components/sections/VehicleCard";
+import { PublicCtaBand } from "@/components/site/PublicCtaBand";
+import { PublicPageIntro } from "@/components/site/PublicPageIntro";
+import { PublicSection } from "@/components/site/PublicSection";
 import { Container } from "@/components/site/Container";
-import { Button } from "@/components/ui/Button";
 import { getPublicVehicles } from "@/lib/publicVehicles";
-
-const fleetHighlights = ["Compact Cars", "Sedans", "SUVs", "Automatic Options"];
 
 export const dynamic = "force-dynamic";
 
 export default async function FleetPage() {
   const vehicles = await getPublicVehicles();
+  const categories = Array.from(new Set(vehicles.map((vehicle) => vehicle.category))).slice(0, 6);
 
   return (
-    <div className="py-10 md:py-14">
-      <Container>
-        <section className="rounded-3xl border border-[var(--ccr-border)] bg-[var(--ccr-primary)] px-6 py-10 md:px-10">
-          <p className="text-xs font-bold uppercase tracking-[0.2em] text-[var(--ccr-accent)]">Fleet</p>
-          <h1 className="mt-3 max-w-3xl text-3xl font-extrabold tracking-tight text-white md:text-5xl">
-            Choose the right vehicle for your Jamaica trip
-          </h1>
-          <p className="mt-3 max-w-2xl text-base text-slate-200 md:text-lg">
-            Browse our curated selection of clean, reliable rentals for solo travel, couples, and families.
-          </p>
+    <>
+      <PublicPageIntro
+        eyebrow="Fleet"
+        title="Our Complete Fleet"
+        description="Browse our entire collection of premium vehicles available for your Jamaican adventure. From economic options to luxury rides, we have the perfect car for your needs."
+        primaryAction={{ href: "/book", label: "Book Your Vehicle" }}
+        secondaryAction={{ href: "/driving-in-jamaica", label: "Driving in Jamaica" }}
+      >
+        <div className="flex flex-wrap gap-2">
+          {categories.map((category) => (
+            <span
+              key={category}
+              className="rounded-full border border-white/15 bg-white/6 px-4 py-2 text-sm font-medium text-white/78"
+            >
+              {category}
+            </span>
+          ))}
+        </div>
+      </PublicPageIntro>
 
-          <div className="mt-6 flex flex-wrap gap-2">
-            {fleetHighlights.map((item) => (
+      <div className="border-b border-[var(--ccr-border)] bg-[var(--ccr-surface)]">
+        <Container className="py-4">
+          <p className="text-sm font-medium text-[var(--ccr-text)]">
+            <span className="font-semibold text-[var(--ccr-accent-strong)]">Pricing note:</span> Our Simple Pricing
+            includes all fees and taxes - No Surprises! (*optional insurance is extra)
+          </p>
+        </Container>
+      </div>
+
+      <PublicSection
+        eyebrow="Live Availability"
+        title="Backend-fed vehicles presented in a cleaner, more breathable browsing layout."
+        description="The fleet below remains connected to the live published vehicles in the system. Cards, pricing, images, and booking handoff all stay dynamic."
+        className="pt-12 md:pt-16"
+      >
+        <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="text-3xl font-semibold tracking-tight text-[var(--ccr-text)]">{vehicles.length}</p>
+            <p className="mt-2 text-sm leading-7 text-[var(--ccr-muted)]">
+              Currently published vehicles ready to browse and book.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {categories.map((category) => (
               <span
-                key={item}
-                className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white"
+                key={category}
+                className="rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-[var(--ccr-muted)]"
               >
-                {item}
+                {category}
               </span>
             ))}
           </div>
+        </div>
 
-          <div className="mt-6">
-            <Button href="/book" className="bg-[var(--ccr-accent)] text-[var(--ccr-primary)] hover:bg-[#ffd16d]">
-              Book Your Vehicle
-            </Button>
-          </div>
-        </section>
+        <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+          {vehicles.length === 0 ? (
+            <article className="rounded-[1.8rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 text-sm leading-7 text-[var(--ccr-muted)] shadow-[0_18px_56px_rgba(15,23,42,0.08)]">
+              No vehicles are currently published. Add and publish vehicles from the Admin portal.
+            </article>
+          ) : (
+            vehicles.map((vehicle) => <VehicleCard key={vehicle.id} vehicle={vehicle} />)
+          )}
+        </div>
+      </PublicSection>
 
-        <section className="mt-8 rounded-3xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4 md:p-6">
-          <div className="grid gap-5 md:grid-cols-2">
-            {vehicles.length === 0 ? (
-              <article className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm text-sm text-[var(--ccr-muted)]">
-                No vehicles are currently published. Add and publish vehicles from the Admin portal.
-              </article>
-            ) : (
-              vehicles.map((vehicle) => <VehicleCard key={vehicle.id} vehicle={vehicle} />)
-            )}
-          </div>
-        </section>
-      </Container>
-    </div>
+      <PublicCtaBand
+        eyebrow="Need Help Choosing?"
+        title="Compare the fleet, then book the vehicle that fits your route and pace."
+        description="If you already know your travel dates, head straight to booking. If not, keep browsing the fleet and detail pages for the right fit."
+        primaryAction={{ href: "/book", label: "Book Now" }}
+        secondaryAction={{ href: "/contact", label: "Contact Us" }}
+      />
+    </>
   );
 }

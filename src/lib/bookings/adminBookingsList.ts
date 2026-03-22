@@ -8,7 +8,7 @@ import {
 import { buildBookingRangeWhere, buildRange, type BookingDateRange } from "@/lib/bookings/dateRangeFilter";
 import { buildUpcomingWhereSql } from "@/lib/bookings/upcoming";
 import { dbQuery } from "@/lib/db";
-import { fmtDateNoSeconds } from "@/lib/dateFormat";
+import { fmtAdminDateTimeNoSeconds, fmtDateNoSeconds } from "@/lib/dateFormat";
 import {
   isNonBlockingBookingHold,
   readAmountPaid,
@@ -88,6 +88,16 @@ export type DashboardBookingSnapshot = {
     confirmed: number;
   };
   recentBookings: AdminBookingListItem[];
+  recentBookingsPagination: {
+    page: number;
+    totalPages: number;
+    totalCount: number;
+    from: number;
+    to: number;
+    hasPrev: boolean;
+    hasNext: boolean;
+    pageSize: number;
+  };
   archiveNotConfigured: boolean;
 };
 
@@ -103,6 +113,7 @@ export type AdminBookingListQueryInput = {
   archived?: string | null;
   includeArchived?: boolean;
   limit?: unknown;
+  offset?: unknown;
   cursor?: unknown;
   now?: unknown;
 };
@@ -119,6 +130,7 @@ const LOST_TO_FIRST_DEPOSIT_FILTER = "lost_to_first_deposit";
 const UPCOMING_SCOPE = "upcoming";
 const PICKUP_DAY_TODAY = "today";
 export const DEFAULT_HIDDEN_BOOKING_STATUSES = ["CANCELLED"] as const;
+export const DASHBOARD_RECENT_BOOKINGS_PAGE_SIZE = 5;
 const BOOKING_SORT_FIELDS = [
   "booking",
   "customer",
@@ -290,9 +302,14 @@ function normalizeQueryInput(input: AdminBookingListQueryInput) {
     input.status.trim().toLowerCase() === LOST_TO_FIRST_DEPOSIT_FILTER;
   const excludeCancelledFromDefaultScope =
     !statusFilter && !lostToFirstDepositOnly && shouldExcludeCancelledFromDefaultBookingsScope(input.status);
+  const directOffset = Number(input.offset);
+  const normalizedDirectOffset =
+    Number.isInteger(directOffset) && directOffset >= 0 ? directOffset : null;
   const cursor = decodeBookingsCursor(input.cursor);
   const offset =
-    cursor && Number.isInteger(cursor.offset) && Number(cursor.offset) >= 0
+    normalizedDirectOffset !== null
+      ? normalizedDirectOffset
+      : cursor && Number.isInteger(cursor.offset) && Number(cursor.offset) >= 0
       ? Number(cursor.offset)
       : 0;
   const now = input.now instanceof Date && !Number.isNaN(input.now.getTime()) ? input.now : new Date();
@@ -494,18 +511,44 @@ export async function fetchAdminBookingCount(
 
 export async function fetchDashboardBookingSnapshot(input?: {
   now?: Date;
+  recentBookingsPage?: unknown;
 }): Promise<DashboardBookingSnapshot> {
   const now = input?.now instanceof Date && !Number.isNaN(input.now.getTime()) ? input.now : new Date();
+  const parsedRecentBookingsPage = Number(input?.recentBookingsPage);
+  const requestedRecentBookingsPage =
+    Number.isInteger(parsedRecentBookingsPage) && parsedRecentBookingsPage > 0
+      ? parsedRecentBookingsPage
+      : 1;
 
-  const [recentBookingsPage, totalBookings, pendingPayment, confirmed] = await Promise.all([
-    fetchAdminBookingsPage({
-      limit: "5",
-      now,
-    }),
+  const [totalBookings, pendingPayment, confirmed] = await Promise.all([
     fetchAdminBookingCount({ now }),
     fetchAdminBookingCount({ status: "pending_payment", now }),
     fetchAdminBookingCount({ status: "confirmed", now }),
   ]);
+  const totalRecentBookingsPages = Math.max(
+    1,
+    Math.ceil(totalBookings.totalCount / DASHBOARD_RECENT_BOOKINGS_PAGE_SIZE),
+  );
+  const currentRecentBookingsPage = Math.min(requestedRecentBookingsPage, totalRecentBookingsPages);
+  const recentBookingsPage = await fetchAdminBookingsPage({
+    // The shared booking pager only supports 10/30/50 page sizes, so fetch the
+    // minimum supported page and trim it down for the dashboard card.
+    limit: "10",
+    offset: (currentRecentBookingsPage - 1) * DASHBOARD_RECENT_BOOKINGS_PAGE_SIZE,
+    now,
+  });
+  const dashboardRecentBookings = recentBookingsPage.bookings.slice(0, DASHBOARD_RECENT_BOOKINGS_PAGE_SIZE);
+  const recentBookingsFrom =
+    totalBookings.totalCount === 0
+      ? 0
+      : (currentRecentBookingsPage - 1) * DASHBOARD_RECENT_BOOKINGS_PAGE_SIZE + 1;
+  const recentBookingsTo =
+    totalBookings.totalCount === 0
+      ? 0
+      : Math.min(
+          currentRecentBookingsPage * DASHBOARD_RECENT_BOOKINGS_PAGE_SIZE,
+          totalBookings.totalCount,
+        );
 
   return {
     counts: {
@@ -513,7 +556,17 @@ export async function fetchDashboardBookingSnapshot(input?: {
       pendingPayment: pendingPayment.totalCount,
       confirmed: confirmed.totalCount,
     },
-    recentBookings: recentBookingsPage.bookings,
+    recentBookings: dashboardRecentBookings,
+    recentBookingsPagination: {
+      page: currentRecentBookingsPage,
+      totalPages: totalRecentBookingsPages,
+      totalCount: totalBookings.totalCount,
+      from: recentBookingsFrom,
+      to: recentBookingsTo,
+      hasPrev: currentRecentBookingsPage > 1,
+      hasNext: currentRecentBookingsPage < totalRecentBookingsPages,
+      pageSize: DASHBOARD_RECENT_BOOKINGS_PAGE_SIZE,
+    },
     archiveNotConfigured:
       recentBookingsPage.archiveNotConfigured ||
       totalBookings.archiveNotConfigured ||
@@ -658,7 +711,7 @@ export async function fetchAdminBookingsPage(input: AdminBookingListQueryInput):
     const lostToFirstDeposit = cancelReason === "LOST_TO_FIRST_DEPOSIT";
     const cancelledAtRaw =
       typeof pricing.cancelled_at === "string" ? pricing.cancelled_at : null;
-    const cancelledAtLabel = cancelledAtRaw ? fmtDateNoSeconds(cancelledAtRaw) : null;
+    const cancelledAtLabel = cancelledAtRaw ? fmtAdminDateTimeNoSeconds(cancelledAtRaw) : null;
     const derivedPhase = deriveBookingPhase(
       {
         status: row.status,
@@ -684,7 +737,7 @@ export async function fetchAdminBookingsPage(input: AdminBookingListQueryInput):
       startDateIso: asIsoDateOnly(row.start_date),
       endDateIso: asIsoDateOnly(row.end_date),
       createdAtIso: asIsoTimestamp(row.created_at),
-      createdAtLabel: fmtDateNoSeconds(row.created_at),
+      createdAtLabel: fmtAdminDateTimeNoSeconds(row.created_at),
       cancelledAtLabel,
       lostToFirstDeposit,
       status: row.status,

@@ -5,6 +5,9 @@ import { useRouter } from "next/navigation";
 
 import { TurnstileWidget } from "@/components/security/TurnstileWidget";
 import { PublicVehicleOptionCard } from "@/components/booking/PublicVehicleOptionCard";
+import { Container } from "@/components/site/Container";
+import { PublicPageIntro } from "@/components/site/PublicPageIntro";
+import { siteContent } from "@/data/content";
 import { clearBookingDraft } from "@/lib/bookings/draft";
 import {
   createPricingLifecycleState,
@@ -187,6 +190,19 @@ const CUSTOM_PICKUP_ID = "__CUSTOM_PICKUP__";
 const CUSTOM_DROPOFF_ID = "__CUSTOM_DROPOFF__";
 const WIZARD_DRAFT_STORAGE_KEY = "ccr_booking_wizard_draft_v1";
 const WIZARD_DEBUG_ENABLED = process.env.NEXT_PUBLIC_WIZARD_DEBUG === "1";
+
+const bookingFieldClassName =
+  "mt-2 w-full rounded-[1.1rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-3 text-sm text-[var(--ccr-text)] shadow-sm shadow-black/5 outline-none ring-[var(--ccr-accent)] transition focus:ring-2";
+const bookingSoftFieldClassName =
+  "mt-2 w-full rounded-[1.1rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-4 py-3 text-sm text-[var(--ccr-text)] shadow-sm shadow-black/5 outline-none ring-[var(--ccr-accent)] transition focus:ring-2";
+const bookingReadonlyFieldClassName =
+  "mt-2 w-full rounded-[1.1rem] border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-4 py-3 text-sm text-[var(--ccr-text)] shadow-sm shadow-black/5";
+const bookingPrimaryButtonClassName =
+  "rounded-[1rem] bg-[var(--ccr-primary)] px-5 py-3 text-sm font-semibold text-[var(--ccr-on-primary)] transition hover:bg-[var(--ccr-primary-soft)] disabled:opacity-60";
+const bookingOutlineButtonClassName =
+  "rounded-[1rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2.5 text-sm font-semibold text-[var(--ccr-text)] transition hover:bg-[var(--ccr-surface-soft)] disabled:opacity-40";
+const bookingResetButtonClassName =
+  "rounded-[1rem] border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-4 py-2.5 text-sm font-semibold text-[var(--ccr-accent)] transition hover:bg-[var(--ccr-accent)] hover:text-[var(--ccr-primary)] disabled:opacity-40";
 
 const DEFAULT_LOCATIONS: LocationOption[] = [
   {
@@ -2299,46 +2315,113 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
         : "Refreshing selection..."
       : "Not selected";
   const hideFallbackTotals = hasSelectedVehicleId && !pricingQuote;
+  const bookingIntro = (
+    <PublicPageIntro
+      eyebrow="Book"
+      title="Reserve your Curated vehicle with guided steps and clear pricing."
+      description="Choose your dates, review the right vehicle, confirm your details, and continue to secure checkout when you are ready."
+      primaryAction={{ href: "/fleet", label: "Browse Fleet" }}
+      secondaryAction={{ href: "/contact", label: "Need Help?" }}
+    >
+      <div className="grid gap-3 sm:grid-cols-3">
+        <article className="rounded-[1.4rem] border border-white/12 bg-white/8 px-4 py-4 backdrop-blur-sm">
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--ccr-accent)]">
+            Simple pricing
+          </p>
+          <p className="mt-3 text-sm leading-6 text-white/76">
+            Live totals stay updated as your dates, protections, and payment choices change.
+          </p>
+        </article>
+        <article className="rounded-[1.4rem] border border-white/12 bg-white/8 px-4 py-4 backdrop-blur-sm">
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--ccr-accent)]">
+            Local support
+          </p>
+          <p className="mt-3 text-sm leading-6 text-white/76">
+            Questions before checkout? Reach the Kingston team at {siteContent.phones[0]?.label}.
+          </p>
+        </article>
+        <article className="rounded-[1.4rem] border border-white/12 bg-white/8 px-4 py-4 backdrop-blur-sm">
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--ccr-accent)]">
+            Secure checkout
+          </p>
+          <p className="mt-3 text-sm leading-6 text-white/76">
+            Reservation details are reviewed in six steps before Step 7 launches WiPay.
+          </p>
+        </article>
+      </div>
+    </PublicPageIntro>
+  );
 
   if (!hydrated) {
     return (
-      <div className="min-h-screen bg-[var(--ccr-bg)] py-8 md:py-12" data-testid="booking-draft-loading">
-        <div className="mx-auto w-full max-w-3xl px-4 sm:px-6 lg:px-8">
-          <div className="rounded-3xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-8 shadow-xl shadow-[var(--ccr-primary)]/10">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--ccr-muted)]">
-              Curated Car Rentals
+      <div className="bg-[var(--ccr-bg)] pb-16" data-testid="booking-draft-loading">
+        {bookingIntro}
+        <Container className="-mt-8 md:-mt-12">
+          <div className="rounded-[2rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)]/95 p-8 shadow-[0_28px_90px_rgba(15,23,42,0.12)] backdrop-blur-sm">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--ccr-accent-strong)]">
+              Restoring draft
             </p>
-            <h1 className="mt-2 text-2xl font-bold text-[var(--ccr-text)]">Loading your draft...</h1>
-            <p className="mt-2 text-sm text-[var(--ccr-muted)]">
-              Restoring your previous selections and pricing details.
+            <h1 className="mt-3 text-3xl font-semibold tracking-tight text-[var(--ccr-text)]">
+              Loading your booking
+            </h1>
+            <p className="mt-4 max-w-2xl text-base leading-7 text-[var(--ccr-muted)]">
+              We&apos;re restoring your previous selections and pricing details so you can continue where you left off.
             </p>
           </div>
-        </div>
+        </Container>
       </div>
     );
   }
 
   return (
-    <div
-      className="min-h-screen bg-[var(--ccr-bg)] py-8 md:py-12"
-      data-testid="booking-wizard-hydrated"
-    >
-      <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="overflow-hidden rounded-3xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] shadow-xl shadow-[var(--ccr-primary)]/10">
-          <div className="bg-gradient-to-r from-[var(--ccr-primary)] to-[var(--ccr-primary-soft)] px-6 py-8 text-[var(--ccr-on-primary)] md:px-10">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--ccr-on-primary-muted)]">
-              Curated Car Rentals
-            </p>
-            <h1 className="mt-2 text-3xl font-bold tracking-tight md:text-4xl">
-              Reservation Wizard
-            </h1>
-            <p className="mt-2 max-w-2xl text-sm text-[var(--ccr-on-primary-muted)] md:text-base">
-              Complete six steps to review and confirm, then continue to Step 7 WiPay checkout.
-            </p>
-          </div>
+    <div className="bg-[var(--ccr-bg)] pb-16" data-testid="booking-wizard-hydrated">
+      {bookingIntro}
+      <Container className="-mt-8 md:-mt-12">
+        <div className="overflow-hidden rounded-[2rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)]/96 shadow-[0_32px_110px_rgba(15,23,42,0.14)] backdrop-blur-sm">
+          <div className="border-b border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)]/75 px-4 py-6 md:px-8">
+            <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
+              <div className="max-w-2xl">
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--ccr-accent-strong)]">
+                  Guided reservation
+                </p>
+                <h2 className="mt-3 text-3xl font-semibold tracking-tight text-[var(--ccr-text)] md:text-4xl">
+                  Complete six steps before secure checkout.
+                </h2>
+                <p className="mt-4 text-base leading-7 text-[var(--ccr-muted)]">
+                  Keep your selections accurate as dates, availability, pricing, and payment details
+                  update in real time.
+                </p>
+              </div>
 
-          <div className="border-b border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-4 py-4 md:px-8">
-            <ol className="grid grid-cols-4 gap-3 md:grid-cols-7">
+              <div className="grid gap-3 sm:grid-cols-3 xl:w-[34rem]">
+                <article className="rounded-[1.35rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)]/90 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--ccr-accent-strong)]">
+                    Pickup window
+                  </p>
+                  <p className="mt-3 text-sm font-semibold text-[var(--ccr-text)]">
+                    {pickupDate} at {pickupTime}
+                  </p>
+                </article>
+                <article className="rounded-[1.35rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)]/90 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--ccr-accent-strong)]">
+                    Vehicle status
+                  </p>
+                  <p className="mt-3 text-sm font-semibold text-[var(--ccr-text)]">
+                    {summaryVehicleLabel}
+                  </p>
+                </article>
+                <article className="rounded-[1.35rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)]/90 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--ccr-accent-strong)]">
+                    Reserve now
+                  </p>
+                  <p className="mt-3 text-sm font-semibold text-[var(--ccr-text)]">
+                    {hideFallbackTotals ? "Pricing updating" : formatJmd(depositRequired)}
+                  </p>
+                </article>
+              </div>
+            </div>
+
+            <ol className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
               {STEPS.map((item) => {
                 const isActive = item.step === step;
                 const isDone = item.step < step;
@@ -2350,19 +2433,19 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                       onClick={() => jumpToStep(item.step)}
                       disabled={!isUnlocked || submitting}
                       className={cn(
-                        "w-full rounded-2xl border px-3 py-2 text-center transition disabled:opacity-55",
+                        "w-full rounded-[1.35rem] border px-4 py-3 text-left transition disabled:opacity-55",
                         isActive
-                          ? "border-[var(--ccr-accent)] bg-[var(--ccr-accent)]/10 text-[var(--ccr-text)]"
+                          ? "border-[var(--ccr-accent)] bg-[var(--ccr-accent)]/10 text-[var(--ccr-text)] shadow-sm shadow-[var(--ccr-accent)]/10"
                           : isDone
                             ? "border-[var(--ccr-accent)]/40 bg-[var(--ccr-accent)]/5 text-[var(--ccr-text)]"
-                            : "border-[var(--ccr-border)] bg-[var(--ccr-surface)] text-[var(--ccr-muted)]",
+                            : "border-[var(--ccr-border)] bg-[var(--ccr-surface)]/90 text-[var(--ccr-muted)]",
                       )}
                       data-testid={`booking-step-tab-${item.step}`}
                     >
-                      <p className="text-xs font-semibold uppercase tracking-wide">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em]">
                         Step {item.step}
                       </p>
-                      <p className="mt-1 text-sm font-semibold">{item.title}</p>
+                      <p className="mt-2 text-sm font-semibold">{item.title}</p>
                     </button>
                   </li>
                 );
@@ -2377,24 +2460,37 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                   }}
                   disabled={maxStepCompleted < 6 || submitting}
                   className={cn(
-                    "w-full rounded-2xl border px-3 py-2 text-center transition disabled:opacity-55",
+                    "w-full rounded-[1.35rem] border px-4 py-3 text-left transition disabled:opacity-55",
                     maxStepCompleted >= 6
                       ? "border-[var(--ccr-accent)]/40 bg-[var(--ccr-accent)]/5 text-[var(--ccr-text)]"
-                      : "border-[var(--ccr-border)] bg-[var(--ccr-surface)] text-[var(--ccr-muted)]",
+                      : "border-[var(--ccr-border)] bg-[var(--ccr-surface)]/90 text-[var(--ccr-muted)]",
                   )}
                   data-testid="booking-step-tab-7"
                 >
-                  <p className="text-xs font-semibold uppercase tracking-wide">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em]">
                     Step {CHECKOUT_STEP.step}
                   </p>
-                  <p className="mt-1 text-sm font-semibold">{CHECKOUT_STEP.title}</p>
+                  <p className="mt-2 text-sm font-semibold">{CHECKOUT_STEP.title}</p>
                 </button>
               </li>
             </ol>
           </div>
 
-          <div className="grid gap-0 lg:grid-cols-[1.35fr_0.65fr] xl:grid-cols-[1.4fr_0.6fr]">
-            <div className="px-4 py-6 md:px-8 md:py-8">
+          <div className="grid gap-6 bg-[linear-gradient(180deg,rgba(148,163,184,0.06),transparent)] px-4 py-6 md:px-6 md:py-8 lg:grid-cols-[minmax(0,1fr)_22rem] xl:grid-cols-[minmax(0,1fr)_24rem]">
+            <div className="rounded-[1.75rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)]/96 px-4 py-6 shadow-[0_18px_56px_rgba(15,23,42,0.08)] md:px-6 md:py-7">
+              <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-[var(--ccr-border)] pb-5">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--ccr-accent-strong)]">
+                    Step {step} of 6
+                  </p>
+                  <p className="mt-2 text-sm text-[var(--ccr-muted)]">
+                    Review each section carefully. Live availability and pricing stay connected while you move through the wizard.
+                  </p>
+                </div>
+                <div className="rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--ccr-muted)]">
+                  Secure booking flow
+                </div>
+              </div>
               {step === 1 ? (
                 <section data-testid="booking-step-dates">
                   <h2 className="text-xl font-bold text-[var(--ccr-text)]">Date & Time</h2>
@@ -2417,7 +2513,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                           setPickupDate(nextPickupDate);
                           setDropoffDate(addDaysToDateInput(nextPickupDate, 2));
                         }}
-                        className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-sm"
+                        className={bookingSoftFieldClassName}
                       />
                     </label>
                     <label className="block">
@@ -2426,7 +2522,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                         type="time"
                         value={pickupTime}
                         onChange={(event) => setPickupTime(event.target.value)}
-                        className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-sm"
+                        className={bookingSoftFieldClassName}
                       />
                     </label>
                     <label className="block">
@@ -2436,7 +2532,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                         value={dropoffDate}
                         min={pickupDate}
                         onChange={(event) => setDropoffDate(event.target.value)}
-                        className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-sm"
+                        className={bookingSoftFieldClassName}
                       />
                     </label>
                     <label className="block">
@@ -2445,7 +2541,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                         type="time"
                         value={dropoffTime}
                         onChange={(event) => setDropoffTime(event.target.value)}
-                        className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-sm"
+                        className={bookingSoftFieldClassName}
                       />
                     </label>
                   </div>
@@ -2457,7 +2553,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                         value={pickupLocationId}
                         onChange={(event) => setPickupLocationId(event.target.value)}
                         disabled={locationsLoading}
-                        className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-sm"
+                        className={bookingSoftFieldClassName}
                       >
                         {pickupOptions.map((location) => (
                           <option key={location.id} value={location.id}>
@@ -2472,7 +2568,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                         value={dropoffLocationId}
                         onChange={(event) => setDropoffLocationId(event.target.value)}
                         disabled={locationsLoading}
-                        className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-sm"
+                        className={bookingSoftFieldClassName}
                       >
                         {dropoffOptions.map((location) => (
                           <option key={location.id} value={location.id}>
@@ -2490,7 +2586,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                         value={pickupCustomAddress}
                         onChange={(event) => setPickupCustomAddress(event.target.value)}
                         placeholder="Enter your pickup address"
-                        className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-sm"
+                        className={bookingSoftFieldClassName}
                       />
                     </label>
                   ) : null}
@@ -2501,7 +2597,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                         value={dropoffCustomAddress}
                         onChange={(event) => setDropoffCustomAddress(event.target.value)}
                         placeholder="Enter your return address"
-                        className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-sm"
+                        className={bookingSoftFieldClassName}
                       />
                     </label>
                   ) : null}
@@ -2672,7 +2768,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                       <input
                         value={firstName}
                         onChange={(event) => setFirstName(event.target.value)}
-                        className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] px-3 py-2 text-sm"
+                        className={bookingFieldClassName}
                       />
                     </label>
                     <label className="block">
@@ -2680,7 +2776,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                       <input
                         value={lastName}
                         onChange={(event) => setLastName(event.target.value)}
-                        className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] px-3 py-2 text-sm"
+                        className={bookingFieldClassName}
                       />
                     </label>
                     <label className="block">
@@ -2689,7 +2785,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                         type="email"
                         value={emailAddress}
                         onChange={(event) => setEmailAddress(event.target.value)}
-                        className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] px-3 py-2 text-sm"
+                        className={bookingFieldClassName}
                       />
                     </label>
                     <label className="block">
@@ -2697,7 +2793,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                       <input
                         value={phoneNumber}
                         onChange={(event) => setPhoneNumber(event.target.value)}
-                        className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] px-3 py-2 text-sm"
+                        className={bookingFieldClassName}
                       />
                     </label>
                     <label className="block">
@@ -2705,7 +2801,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                       <input
                         value={street}
                         onChange={(event) => setStreet(event.target.value)}
-                        className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] px-3 py-2 text-sm"
+                        className={bookingFieldClassName}
                       />
                     </label>
                     <label className="block">
@@ -2713,7 +2809,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                       <input
                         value={street2}
                         onChange={(event) => setStreet2(event.target.value)}
-                        className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] px-3 py-2 text-sm"
+                        className={bookingFieldClassName}
                       />
                     </label>
                     <label className="block">
@@ -2721,7 +2817,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                       <input
                         value={city}
                         onChange={(event) => setCity(event.target.value)}
-                        className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] px-3 py-2 text-sm"
+                        className={bookingFieldClassName}
                       />
                     </label>
                     <label className="block">
@@ -2731,7 +2827,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                         onChange={(event) => setParish(event.target.value)}
                         list="jamaica-parish-suggestions"
                         placeholder={isJamaicaCountry(country) ? "e.g. St. Andrew" : "e.g. Ontario"}
-                        className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] px-3 py-2 text-sm"
+                        className={bookingFieldClassName}
                       />
                       <datalist id="jamaica-parish-suggestions">
                         {JAMAICA_PARISHES.map((option) => (
@@ -2745,7 +2841,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                         value={country}
                         onChange={(event) => setCountry(event.target.value)}
                         placeholder="Jamaica"
-                        className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] px-3 py-2 text-sm"
+                        className={bookingFieldClassName}
                       />
                     </label>
                     <label className="block">
@@ -2754,7 +2850,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                         type="date"
                         value={birthday}
                         onChange={(event) => setBirthday(event.target.value)}
-                        className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] px-3 py-2 text-sm"
+                        className={bookingFieldClassName}
                       />
                     </label>
                   </div>
@@ -2772,7 +2868,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                         <input
                           value={driversLicenseNumber}
                           onChange={(event) => setDriversLicenseNumber(event.target.value)}
-                          className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-sm"
+                          className={bookingSoftFieldClassName}
                         />
                       </label>
                       <label className="block">
@@ -2783,7 +2879,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                           type="date"
                           value={driversLicenseExpirationDate}
                           onChange={(event) => setDriversLicenseExpirationDate(event.target.value)}
-                          className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-sm"
+                          className={bookingSoftFieldClassName}
                         />
                       </label>
                     </div>
@@ -2995,7 +3091,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                         step={1}
                         value={customPaymentAmount}
                         onChange={(event) => setCustomPaymentAmount(event.target.value)}
-                        className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] px-3 py-2 text-sm"
+                        className={bookingFieldClassName}
                       />
                     </label>
                   ) : null}
@@ -3035,7 +3131,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                       type="button"
                       onClick={submitBooking}
                       disabled={continueToPaymentDisabled}
-                      className="rounded-xl bg-[var(--ccr-primary)] px-5 py-3 text-sm font-semibold text-[var(--ccr-on-primary)] disabled:opacity-60"
+                      className={bookingPrimaryButtonClassName}
                       data-testid="booking-continue-payment"
                     >
                       {submitting
@@ -3049,14 +3145,14 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
               ) : null}
 
               {errorMessage ? (
-                <p className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                <p className="mt-4 rounded-[1.1rem] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
                   {errorMessage}
                 </p>
               ) : null}
               {statusMessage ? (
                 <p
                   className={cn(
-                    "mt-4 rounded-xl border px-4 py-3 text-sm",
+                    "mt-4 rounded-[1.1rem] border px-4 py-3 text-sm",
                     statusIsDraftRestoreNotice
                       ? "border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] text-[var(--ccr-text)] shadow-sm shadow-black/5"
                       : "border-emerald-200 bg-emerald-50 text-emerald-800",
@@ -3066,12 +3162,12 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                 </p>
               ) : null}
 
-              <div className="mt-6 flex flex-wrap items-center gap-3">
+              <div className="mt-8 flex flex-wrap items-center gap-3 border-t border-[var(--ccr-border)] pt-6">
                 <button
                   type="button"
                   onClick={() => setShowStartOverConfirm(true)}
                   disabled={submitting}
-                  className="rounded-xl border border-[var(--ccr-clerk-danger-border)] bg-[var(--ccr-surface-soft)] px-4 py-2 text-sm font-semibold text-[var(--ccr-clerk-danger-text)] disabled:opacity-40"
+                  className={bookingResetButtonClassName}
                   data-testid="booking-start-over"
                 >
                   Start over
@@ -3080,7 +3176,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                   type="button"
                   onClick={moveToPreviousStep}
                   disabled={step === 1 || submitting}
-                  className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] disabled:opacity-40"
+                  className={bookingOutlineButtonClassName}
                 >
                   Back
                 </button>
@@ -3089,7 +3185,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                     type="button"
                     onClick={() => void moveToNextStep()}
                     disabled={submitting}
-                    className="rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-sm font-semibold text-[var(--ccr-on-primary)] disabled:opacity-60"
+                    className={bookingPrimaryButtonClassName}
                   >
                     Next Step
                   </button>
@@ -3097,13 +3193,20 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
               </div>
             </div>
 
-            <aside className="border-t border-[var(--ccr-border)] bg-[var(--ccr-primary)] px-4 py-6 text-[var(--ccr-on-primary)] md:px-8 lg:border-l lg:border-t-0">
-              <h3 className="text-xl font-bold">Summary</h3>
-              <div className="mt-3 flex flex-nowrap items-center gap-1.5 overflow-x-auto pb-1 pr-1">
+            <aside className="lg:sticky lg:top-24 lg:self-start">
+              <div className="overflow-hidden rounded-[1.75rem] border border-[var(--ccr-border)] bg-[linear-gradient(160deg,var(--ccr-primary),rgba(15,23,42,0.96))] px-4 py-6 text-[var(--ccr-on-primary)] shadow-[0_28px_90px_rgba(15,23,42,0.2)] md:px-6">
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--ccr-accent)]">
+                Booking summary
+              </p>
+              <h3 className="mt-3 text-2xl font-semibold tracking-tight">Review before checkout</h3>
+              <p className="mt-3 text-sm leading-6 text-[var(--ccr-on-primary-muted)]">
+                Use these controls to update your itinerary or change the vehicle before final payment.
+              </p>
+              <div className="mt-4 flex flex-nowrap items-center gap-1.5 overflow-x-auto pb-1 pr-1">
                 <button
                   type="button"
                   onClick={handleChangeDates}
-                  className="shrink-0 whitespace-nowrap rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-primary-soft)]/60 px-2.5 py-1 text-[11px] font-semibold leading-5 text-[var(--ccr-on-primary)] sm:px-3 sm:text-xs"
+                  className="shrink-0 whitespace-nowrap rounded-full border border-white/12 bg-white/8 px-3 py-1.5 text-[11px] font-semibold leading-5 text-[var(--ccr-on-primary)] backdrop-blur-sm sm:text-xs"
                   data-testid="booking-summary-change-dates"
                 >
                   Change dates
@@ -3111,7 +3214,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                 <button
                   type="button"
                   onClick={handleChangeVehicle}
-                  className="shrink-0 whitespace-nowrap rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-primary-soft)]/60 px-2.5 py-1 text-[11px] font-semibold leading-5 text-[var(--ccr-on-primary)] sm:px-3 sm:text-xs"
+                  className="shrink-0 whitespace-nowrap rounded-full border border-white/12 bg-white/8 px-3 py-1.5 text-[11px] font-semibold leading-5 text-[var(--ccr-on-primary)] backdrop-blur-sm sm:text-xs"
                   data-testid="booking-summary-change-vehicle"
                 >
                   Change vehicle
@@ -3120,7 +3223,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                   <button
                     type="button"
                     onClick={handleDeselectVehicle}
-                    className="shrink-0 whitespace-nowrap rounded-lg border border-[var(--ccr-clerk-danger-border)] bg-[var(--ccr-primary-soft)]/40 px-2.5 py-1 text-[11px] font-semibold leading-5 text-[var(--ccr-clerk-danger-text)] sm:px-3 sm:text-xs"
+                    className="shrink-0 whitespace-nowrap rounded-full border border-[var(--ccr-clerk-danger-border)] bg-white/6 px-3 py-1.5 text-[11px] font-semibold leading-5 text-[var(--ccr-clerk-danger-text)] sm:text-xs"
                     data-testid="booking-summary-deselect-vehicle"
                   >
                     Deselect vehicle
@@ -3130,14 +3233,14 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                   <button
                     type="button"
                     onClick={() => setShowStartOverConfirm(true)}
-                    className="shrink-0 whitespace-nowrap rounded-lg border border-[var(--ccr-clerk-danger-border)] bg-[var(--ccr-primary-soft)]/40 px-2.5 py-1 text-[11px] font-semibold leading-5 text-[var(--ccr-clerk-danger-text)] sm:px-3 sm:text-xs"
+                    className="shrink-0 whitespace-nowrap rounded-full border border-[var(--ccr-clerk-danger-border)] bg-white/6 px-3 py-1.5 text-[11px] font-semibold leading-5 text-[var(--ccr-clerk-danger-text)] sm:text-xs"
                     data-testid="booking-summary-start-over"
                   >
                     Clear draft
                   </button>
                 ) : null}
               </div>
-              <div className="mt-4 space-y-2 text-sm">
+              <div className="mt-5 space-y-3 rounded-[1.35rem] border border-white/10 bg-white/6 p-4 text-sm shadow-inner shadow-black/10">
                 <p>
                   <span className="text-[var(--ccr-on-primary-muted)]">Pickup:</span> {pickupDate} {pickupTime}
                 </p>
@@ -3158,8 +3261,8 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                 </p>
               </div>
 
-              <div className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-primary-soft)]/70 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-on-primary-muted)]">Pricing (JMD)</p>
+              <div className="mt-6 rounded-[1.5rem] border border-white/10 bg-white/8 p-4 backdrop-blur-sm">
+                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--ccr-on-primary-muted)]">Pricing (JMD)</p>
                 {pricingQuoteLoading ? (
                   <div className="mt-3 space-y-2 text-sm">
                     <p className="animate-pulse text-[var(--ccr-on-primary-muted)]">Updating...</p>
@@ -3210,14 +3313,23 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                   <p className="mt-3 text-xs text-amber-200">{pricingQuoteError}</p>
                 ) : null}
               </div>
+              <div className="mt-6 rounded-[1.35rem] border border-white/10 bg-black/10 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--ccr-accent)]">
+                  Need assistance?
+                </p>
+                <p className="mt-3 text-sm leading-6 text-[var(--ccr-on-primary-muted)]">
+                  Contact the Curated Car Rentals team at {siteContent.phones[0]?.label} if you need help before checkout.
+                </p>
+              </div>
+              </div>
             </aside>
           </div>
         </div>
-      </div>
+      </Container>
 
       {showReturningCustomerModal ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--ccr-primary)]/60 p-4">
-          <div className="w-full max-w-md rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-5 shadow-xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--ccr-primary)]/65 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-[1.75rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-[0_28px_90px_rgba(15,23,42,0.22)]">
             <h4 className="text-lg font-bold text-[var(--ccr-text)]">Returning Customer</h4>
             <p className="mt-1 text-sm text-[var(--ccr-muted)]">
               Verify with your Driver&apos;s License number before prefilling details.
@@ -3230,14 +3342,14 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                   <input
                     value={returningDlInput}
                     onChange={(event) => setReturningDlInput(event.target.value)}
-                    className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] px-3 py-2 text-sm"
+                    className={bookingFieldClassName}
                   />
                 </label>
                 <button
                   type="button"
                   onClick={startReturningCustomerLookup}
                   disabled={returningBusy || !returningTurnstileToken}
-                  className="w-full rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-sm font-semibold text-[var(--ccr-on-primary)] disabled:opacity-60"
+                  className={cn("w-full", bookingPrimaryButtonClassName)}
                 >
                   {returningBusy ? "Checking..." : "Continue"}
                 </button>
@@ -3249,7 +3361,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                   <input
                     value={returningDlInput}
                     readOnly
-                    className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm"
+                    className={bookingReadonlyFieldClassName}
                   />
                 </label>
                 <p className="text-xs text-[var(--ccr-muted)]">
@@ -3261,7 +3373,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                   <input
                     value={returningOtpCode}
                     onChange={(event) => setReturningOtpCode(event.target.value)}
-                    className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] px-3 py-2 text-sm"
+                    className={bookingFieldClassName}
                   />
                 </label>
                 <label className="block">
@@ -3269,7 +3381,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                   <input
                     value={returningLastName}
                     onChange={(event) => setReturningLastName(event.target.value)}
-                    className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] px-3 py-2 text-sm"
+                    className={bookingFieldClassName}
                   />
                 </label>
                 <label className="block">
@@ -3278,14 +3390,14 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                     type="date"
                     value={returningBirthday}
                     onChange={(event) => setReturningBirthday(event.target.value)}
-                    className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] px-3 py-2 text-sm"
+                    className={bookingFieldClassName}
                   />
                 </label>
                 <button
                   type="button"
                   onClick={verifyReturningCustomer}
                   disabled={returningBusy || !returningTurnstileToken}
-                  className="w-full rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-sm font-semibold text-[var(--ccr-on-primary)] disabled:opacity-60"
+                  className={cn("w-full", bookingPrimaryButtonClassName)}
                 >
                   {returningBusy ? "Verifying..." : "Verify & Prefill"}
                 </button>
@@ -3314,7 +3426,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                 setReturningTurnstileResetKey((value) => value + 1);
                 setShowReturningCustomerModal(false);
               }}
-              className="mt-4 w-full rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)]"
+              className={cn("mt-4 w-full", bookingOutlineButtonClassName)}
             >
               Close
             </button>
@@ -3323,9 +3435,9 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
       ) : null}
 
       {showStartOverConfirm ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--ccr-primary)]/60 p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--ccr-primary)]/65 p-4 backdrop-blur-sm">
           <div
-            className="w-full max-w-md rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-5 shadow-xl"
+            className="w-full max-w-md rounded-[1.75rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-[0_28px_90px_rgba(15,23,42,0.22)]"
             role="dialog"
             aria-modal="true"
             aria-labelledby="booking-start-over-title"
@@ -3342,7 +3454,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
               <button
                 type="button"
                 onClick={() => setShowStartOverConfirm(false)}
-                className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)]"
+                className={bookingOutlineButtonClassName}
                 data-testid="booking-start-over-cancel"
               >
                 Cancel
@@ -3350,7 +3462,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
               <button
                 type="button"
                 onClick={handleStartOver}
-                className="rounded-xl border border-[var(--ccr-clerk-danger-border)] bg-[var(--ccr-clerk-danger-bg)] px-4 py-2 text-sm font-semibold text-[var(--ccr-clerk-danger-text)]"
+                className={bookingResetButtonClassName}
                 data-testid="booking-start-over-confirm"
               >
                 Start over

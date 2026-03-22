@@ -1,8 +1,10 @@
 import Link from "next/link";
 
+import { PaginationSummaryNav } from "@/components/admin/PaginationSummaryNav";
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { InlineDateTimeRange } from "@/components/shared/InlineDateTimeRange";
 import {
+  DASHBOARD_RECENT_BOOKINGS_PAGE_SIZE,
   fetchDashboardBookingSnapshot,
   type AdminBookingListItem,
 } from "@/lib/bookings/adminBookingsList";
@@ -10,10 +12,10 @@ import { bookingStartSqlExpr, buildUpcomingWhereSql, getStartOfToday } from "@/l
 import { dbQuery } from "@/lib/db";
 import { fmtDate } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
+import { paginateRows } from "@/lib/pagination/sharedPagination";
 import {
   fetchActiveFleetSnapshot,
   summarizeActiveFleetSnapshot,
-  type ActiveFleetVehicleSnapshot,
 } from "@/lib/vehicles/adminFleetSnapshot";
 import { vehicleDerivedStatusLabel } from "@/lib/vehicles/adminVehicles";
 
@@ -25,16 +27,53 @@ function formatDashboardStatus(status: string) {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-export default async function AdminDashboardPage() {
+type PickupTodayRow = {
+  id: string;
+  public_id: string;
+  status: string;
+  start_at: string;
+  start_date: string;
+  end_date: string;
+  customer_name: string;
+  vehicle_make: string;
+  vehicle_model: string;
+};
+
+type OutstandingBalanceRow = {
+  id: string;
+  public_id: string;
+  status: string;
+  start_date: string;
+  end_date: string;
+  customer_name: string;
+  customer_email: string;
+  vehicle_make: string;
+  vehicle_model: string;
+  balance_due: string;
+};
+
+export default async function AdminDashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const params = await searchParams;
   const now = new Date();
   const todayLabel = now.toLocaleDateString();
   const hoverTextClass = "hover:text-[var(--ccr-muted)]";
   // Shared gold-ring quick action treatment for visual consistency.
   const quickActionClass =
     `rounded-full bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] shadow-sm ring-1 ring-[var(--ccr-accent)] ring-offset-1 ring-offset-[var(--ccr-surface)] transition hover:bg-[var(--ccr-surface-soft)] hover:ring-[var(--ccr-accent-strong)] ${hoverTextClass}`;
+  const currentParams = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (typeof value === "string") currentParams.set(key, value);
+  }
   const [activeFleetRows, bookingSnapshot] = await Promise.all([
     fetchActiveFleetSnapshot({ now }),
-    fetchDashboardBookingSnapshot({ now }),
+    fetchDashboardBookingSnapshot({
+      now,
+      recentBookingsPage: typeof params.recentBookingsPage === "string" ? params.recentBookingsPage : undefined,
+    }),
   ]);
   const fleetSummary = summarizeActiveFleetSnapshot(activeFleetRows);
   const upcomingWhere = buildUpcomingWhereSql({
@@ -57,35 +96,14 @@ export default async function AdminDashboardPage() {
     now,
     mode: "pickup_today",
   });
-  const pickupsToday = await dbQuery<{
-    id: string;
-    public_id: string;
-    status: string;
-    start_at: string;
-    start_date: string;
-    end_date: string;
-    customer_name: string;
-    vehicle_make: string;
-    vehicle_model: string;
-  }>(
+  const pickupsToday = await dbQuery<PickupTodayRow>(
     "select b.id, b.public_id, b.status, coalesce(b.start_at, b.start_date::timestamptz) as start_at, b.start_date, b.end_date, c.full_name as customer_name, v.make as vehicle_make, v.model as vehicle_model from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where " +
       pickupsTodayWhere.clause +
-      ` order by ${bookingStartSqlExpr("b")} asc, b.created_at desc limit 5`,
+      ` order by ${bookingStartSqlExpr("b")} asc, b.created_at desc`,
     pickupsTodayWhere.values,
   );
 
-  const outstandingBalances = await dbQuery<{
-    id: string;
-    public_id: string;
-    status: string;
-    start_date: string;
-    end_date: string;
-    customer_name: string;
-    customer_email: string;
-    vehicle_make: string;
-    vehicle_model: string;
-    balance_due: string;
-  }>(
+  const outstandingBalances = await dbQuery<OutstandingBalanceRow>(
     "with booking_financials as (" +
       "  select b.id, b.public_id, b.status, b.start_date, b.end_date, b.created_at, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model, " +
       "    greatest(0, " +
@@ -112,7 +130,7 @@ export default async function AdminDashboardPage() {
       "select id, public_id, status, start_date, end_date, customer_name, customer_email, vehicle_make, vehicle_model, balance_due::text as balance_due " +
       "from booking_financials " +
       "where balance_due > 0 " +
-      "order by balance_due desc, created_at desc limit 5",
+      "order by balance_due desc, created_at desc",
   );
 
   const maintenanceVehicles = activeFleetRows
@@ -122,10 +140,47 @@ export default async function AdminDashboardPage() {
       const rightTime = new Date(right.updated_at).getTime();
       if (leftTime !== rightTime) return rightTime - leftTime;
       return right.id.localeCompare(left.id);
-    })
-    .slice(0, 5);
+    });
   const recentBookings = bookingSnapshot.recentBookings;
-  const recentVehicles = fleetSummary.recentVehicles;
+  const recentBookingsPagination = bookingSnapshot.recentBookingsPagination;
+  const recentVehicles = [...activeFleetRows]
+    .filter((vehicle) => vehicle.deleted_at == null)
+    .sort((left, right) => {
+      const leftTime = new Date(left.created_at).getTime();
+      const rightTime = new Date(right.created_at).getTime();
+      if (leftTime !== rightTime) return rightTime - leftTime;
+      return right.id.localeCompare(left.id);
+    });
+  const buildDashboardPageHref = (paramKey: string, page: number) => {
+    const nextParams = new URLSearchParams(currentParams);
+    if (page <= 1) {
+      nextParams.delete(paramKey);
+    } else {
+      nextParams.set(paramKey, String(page));
+    }
+    const query = nextParams.toString();
+    return query ? `/admin?${query}` : "/admin";
+  };
+  const pickupsTodayPagination = paginateRows<PickupTodayRow>(
+    pickupsToday.rows,
+    params.pickupsTodayPage,
+    DASHBOARD_RECENT_BOOKINGS_PAGE_SIZE,
+  );
+  const outstandingBalancesPagination = paginateRows<OutstandingBalanceRow>(
+    outstandingBalances.rows,
+    params.outstandingBalancesPage,
+    DASHBOARD_RECENT_BOOKINGS_PAGE_SIZE,
+  );
+  const maintenanceVehiclesPagination = paginateRows<(typeof maintenanceVehicles)[number]>(
+    maintenanceVehicles,
+    params.maintenanceVehiclesPage,
+    DASHBOARD_RECENT_BOOKINGS_PAGE_SIZE,
+  );
+  const recentVehiclesPagination = paginateRows<(typeof recentVehicles)[number]>(
+    recentVehicles,
+    params.recentVehiclesPage,
+    DASHBOARD_RECENT_BOOKINGS_PAGE_SIZE,
+  );
 
   const cards = [
     {
@@ -234,53 +289,57 @@ export default async function AdminDashboardPage() {
               View all
             </Link>
           </div>
-          {pickupsToday.rows.length === 0 ? (
+          {pickupsTodayPagination.rows.length === 0 ? (
             <p className="mt-3 text-sm text-[var(--ccr-muted)]">No pickups today.</p>
           ) : (
-            <ul className="mt-4 space-y-3 text-sm">
-              {(pickupsToday.rows as Array<{
-                id: string;
-                public_id: string;
-                status: string;
-                start_at: string;
-                start_date: string;
-                end_date: string;
-                customer_name: string;
-                vehicle_make: string;
-                vehicle_model: string;
-              }>).map((booking) => {
-                const bookingPublicId = String(booking.public_id ?? "").trim() || booking.id;
-                return (
-                  <li key={booking.id} className="rounded-xl border border-[var(--ccr-border)] p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <Link
-                          href={`/admin/bookings/${booking.id}`}
-                          className={`inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-bold text-[var(--ccr-accent)] transition hover:border-[var(--ccr-accent-strong)] hover:bg-[var(--ccr-surface)] ${hoverTextClass}`}
-                          title="Open booking"
-                        >
-                          {bookingPublicId}
-                        </Link>
-                        <p className="mt-1 break-words text-xs text-[var(--ccr-muted)]">
-                          {booking.customer_name} • {booking.vehicle_make} {booking.vehicle_model}
-                        </p>
-                        <p className="text-xs text-[var(--ccr-muted)]">
-                          <InlineDateTimeRange
-                            startLabel={fmtDate(booking.start_date)}
-                            endLabel={fmtDate(booking.end_date)}
-                          />
-                        </p>
+            <>
+              <ul className="mt-4 space-y-3 text-sm">
+                {pickupsTodayPagination.rows.map((booking) => {
+                  const bookingPublicId = String(booking.public_id ?? "").trim() || booking.id;
+                  return (
+                    <li key={booking.id} className="rounded-xl border border-[var(--ccr-border)] p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <Link
+                            href={`/admin/bookings/${booking.id}`}
+                            className={`inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-bold text-[var(--ccr-accent)] transition hover:border-[var(--ccr-accent-strong)] hover:bg-[var(--ccr-surface)] ${hoverTextClass}`}
+                            title="Open booking"
+                          >
+                            {bookingPublicId}
+                          </Link>
+                          <p className="mt-1 break-words text-xs text-[var(--ccr-muted)]">
+                            {booking.customer_name} • {booking.vehicle_make} {booking.vehicle_model}
+                          </p>
+                          <p className="text-xs text-[var(--ccr-muted)]">
+                            <InlineDateTimeRange
+                              startLabel={fmtDate(booking.start_date)}
+                              endLabel={fmtDate(booking.end_date)}
+                            />
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 flex-col items-end gap-1">
+                          <span className="rounded-full bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-semibold text-[var(--ccr-text)]">
+                            {formatDashboardStatus(booking.status)}
+                          </span>
+                        </div>
                       </div>
-                      <div className="flex shrink-0 flex-col items-end gap-1">
-                        <span className="rounded-full bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-semibold text-[var(--ccr-text)]">
-                          {formatDashboardStatus(booking.status)}
-                        </span>
-                      </div>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
+                    </li>
+                  );
+                })}
+              </ul>
+              <PaginationSummaryNav
+                from={pickupsTodayPagination.from}
+                to={pickupsTodayPagination.to}
+                totalCount={pickupsTodayPagination.totalCount}
+                page={pickupsTodayPagination.page}
+                totalPages={pickupsTodayPagination.totalPages}
+                hasPrev={pickupsTodayPagination.hasPrev}
+                hasNext={pickupsTodayPagination.hasNext}
+                prevHref={buildDashboardPageHref("pickupsTodayPage", pickupsTodayPagination.page - 1)}
+                nextHref={buildDashboardPageHref("pickupsTodayPage", pickupsTodayPagination.page + 1)}
+                className="mt-4"
+              />
+            </>
           )}
         </section>
 
@@ -291,80 +350,83 @@ export default async function AdminDashboardPage() {
               View bookings
             </Link>
           </div>
-          {outstandingBalances.rows.length === 0 ? (
+          {outstandingBalancesPagination.rows.length === 0 ? (
             <p className="mt-3 text-sm text-[var(--ccr-muted)]">No outstanding balances.</p>
           ) : (
-            <ul className="mt-4 space-y-3 text-sm">
-              {(outstandingBalances.rows as Array<{
-                id: string;
-                public_id: string;
-                status: string;
-                start_date: string;
-                end_date: string;
-                customer_name: string;
-                customer_email: string;
-                vehicle_make: string;
-                vehicle_model: string;
-                balance_due: string;
-              }>).map((booking) => {
-                const balanceDue = Number(booking.balance_due ?? 0);
-                const bookingPublicId = String(booking.public_id ?? "").trim() || booking.id;
-                return (
-                  <li key={booking.id} className="rounded-xl border border-[var(--ccr-border)]">
-                    <details className="group">
-                      <summary className="list-none cursor-pointer p-3 [&::-webkit-details-marker]:hidden">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <span className="inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-bold text-[var(--ccr-accent)]">
-                              {bookingPublicId}
-                            </span>
-                            <p className="mt-1 text-xs text-[var(--ccr-muted)]">Booking details</p>
-                          </div>
-                          <div className="flex shrink-0 items-start gap-3 text-right">
-                            <div>
-                              <p className="text-xs font-semibold text-[var(--ccr-muted)]">Balance</p>
-                              <p className="font-bold text-[var(--ccr-text)]">{formatJmd(balanceDue)}</p>
+            <>
+              <ul className="mt-4 space-y-3 text-sm">
+                {outstandingBalancesPagination.rows.map((booking) => {
+                  const balanceDue = Number(booking.balance_due ?? 0);
+                  const bookingPublicId = String(booking.public_id ?? "").trim() || booking.id;
+                  return (
+                    <li key={booking.id} className="rounded-xl border border-[var(--ccr-border)]">
+                      <details className="group">
+                        <summary className="list-none cursor-pointer p-3 [&::-webkit-details-marker]:hidden">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <span className="inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-bold text-[var(--ccr-accent)]">
+                                {bookingPublicId}
+                              </span>
+                              <p className="mt-1 text-xs text-[var(--ccr-muted)]">Booking details</p>
                             </div>
-                            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-[var(--ccr-border)] text-[var(--ccr-text)] transition-transform group-open:rotate-180">
-                              <svg
-                                viewBox="0 0 20 20"
-                                className="h-3.5 w-3.5"
-                                aria-hidden="true"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="2"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                              >
-                                <path d="M5 7l5 6 5-6" />
-                              </svg>
-                            </span>
+                            <div className="flex shrink-0 items-start gap-3 text-right">
+                              <div>
+                                <p className="text-xs font-semibold text-[var(--ccr-muted)]">Balance</p>
+                                <p className="font-bold text-[var(--ccr-text)]">{formatJmd(balanceDue)}</p>
+                              </div>
+                              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-[var(--ccr-border)] text-[var(--ccr-text)] transition-transform group-open:rotate-180">
+                                <svg
+                                  viewBox="0 0 20 20"
+                                  className="h-3.5 w-3.5"
+                                  aria-hidden="true"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                >
+                                  <path d="M5 7l5 6 5-6" />
+                                </svg>
+                              </span>
+                            </div>
                           </div>
+                        </summary>
+                        <div className="border-t border-[var(--ccr-border)] px-3 pb-3 pt-2">
+                          <p className="break-words text-xs text-[var(--ccr-muted)]">
+                            {booking.customer_name} • {booking.vehicle_make} {booking.vehicle_model}
+                          </p>
+                          <p className="mt-1 text-xs text-[var(--ccr-muted)]">
+                            <InlineDateTimeRange
+                              startLabel={fmtDate(booking.start_date)}
+                              endLabel={fmtDate(booking.end_date)}
+                            />
+                          </p>
+                          <Link
+                            href={`/admin/bookings/${booking.id}`}
+                            className={`mt-2 inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-bold text-[var(--ccr-accent)] transition hover:border-[var(--ccr-accent-strong)] hover:bg-[var(--ccr-surface)] ${hoverTextClass}`}
+                            title="Open booking"
+                          >
+                            Open booking
+                          </Link>
                         </div>
-                      </summary>
-                      <div className="border-t border-[var(--ccr-border)] px-3 pb-3 pt-2">
-                        <p className="break-words text-xs text-[var(--ccr-muted)]">
-                          {booking.customer_name} • {booking.vehicle_make} {booking.vehicle_model}
-                        </p>
-                        <p className="mt-1 text-xs text-[var(--ccr-muted)]">
-                          <InlineDateTimeRange
-                            startLabel={fmtDate(booking.start_date)}
-                            endLabel={fmtDate(booking.end_date)}
-                          />
-                        </p>
-                        <Link
-                          href={`/admin/bookings/${booking.id}`}
-                          className={`mt-2 inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-bold text-[var(--ccr-accent)] transition hover:border-[var(--ccr-accent-strong)] hover:bg-[var(--ccr-surface)] ${hoverTextClass}`}
-                          title="Open booking"
-                        >
-                          Open booking
-                        </Link>
-                      </div>
-                    </details>
-                  </li>
-                );
-              })}
-            </ul>
+                      </details>
+                    </li>
+                  );
+                })}
+              </ul>
+              <PaginationSummaryNav
+                from={outstandingBalancesPagination.from}
+                to={outstandingBalancesPagination.to}
+                totalCount={outstandingBalancesPagination.totalCount}
+                page={outstandingBalancesPagination.page}
+                totalPages={outstandingBalancesPagination.totalPages}
+                hasPrev={outstandingBalancesPagination.hasPrev}
+                hasNext={outstandingBalancesPagination.hasNext}
+                prevHref={buildDashboardPageHref("outstandingBalancesPage", outstandingBalancesPagination.page - 1)}
+                nextHref={buildDashboardPageHref("outstandingBalancesPage", outstandingBalancesPagination.page + 1)}
+                className="mt-4"
+              />
+            </>
           )}
         </section>
 
@@ -375,35 +437,49 @@ export default async function AdminDashboardPage() {
               View vehicles
             </Link>
           </div>
-          {maintenanceVehicles.length === 0 ? (
+          {maintenanceVehiclesPagination.rows.length === 0 ? (
             <p className="mt-3 text-sm text-[var(--ccr-muted)]">No dirty or maintenance vehicles.</p>
           ) : (
-            <ul className="mt-4 space-y-3 text-sm">
-              {maintenanceVehicles.map((vehicle) => (
-                <li key={vehicle.id} className="rounded-xl border border-[var(--ccr-border)] p-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <Link
-                        href={`/admin/vehicles/${vehicle.id}`}
-                        className={`font-semibold text-[var(--ccr-text)] ${hoverTextClass}`}
-                      >
-                        {vehicle.year} {vehicle.make} {vehicle.model}
-                      </Link>
-                      <p className="text-xs text-[var(--ccr-muted)]">
-                        Updated{" "}
-                        <DateTimeInline
-                          value={vehicle.updated_at}
-                          className="inline-flex text-[var(--ccr-muted)]"
-                        />
-                      </p>
+            <>
+              <ul className="mt-4 space-y-3 text-sm">
+                {maintenanceVehiclesPagination.rows.map((vehicle) => (
+                  <li key={vehicle.id} className="rounded-xl border border-[var(--ccr-border)] p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <Link
+                          href={`/admin/vehicles/${vehicle.id}`}
+                          className={`font-semibold text-[var(--ccr-text)] ${hoverTextClass}`}
+                        >
+                          {vehicle.year} {vehicle.make} {vehicle.model}
+                        </Link>
+                        <p className="text-xs text-[var(--ccr-muted)]">
+                          Updated{" "}
+                          <DateTimeInline
+                            value={vehicle.updated_at}
+                            className="inline-flex text-[var(--ccr-muted)]"
+                          />
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-semibold text-[var(--ccr-text)]">
+                        {vehicleDerivedStatusLabel(vehicle.derived_status)}
+                      </span>
                     </div>
-                    <span className="rounded-full bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-semibold text-[var(--ccr-text)]">
-                      {vehicleDerivedStatusLabel(vehicle.derived_status)}
-                    </span>
-                  </div>
-                </li>
-              ))}
-            </ul>
+                  </li>
+                ))}
+              </ul>
+              <PaginationSummaryNav
+                from={maintenanceVehiclesPagination.from}
+                to={maintenanceVehiclesPagination.to}
+                totalCount={maintenanceVehiclesPagination.totalCount}
+                page={maintenanceVehiclesPagination.page}
+                totalPages={maintenanceVehiclesPagination.totalPages}
+                hasPrev={maintenanceVehiclesPagination.hasPrev}
+                hasNext={maintenanceVehiclesPagination.hasNext}
+                prevHref={buildDashboardPageHref("maintenanceVehiclesPage", maintenanceVehiclesPagination.page - 1)}
+                nextHref={buildDashboardPageHref("maintenanceVehiclesPage", maintenanceVehiclesPagination.page + 1)}
+                className="mt-4"
+              />
+            </>
           )}
         </section>
 
@@ -437,61 +513,75 @@ export default async function AdminDashboardPage() {
           {recentBookings.length === 0 ? (
             <p className="mt-3 text-sm text-[var(--ccr-muted)]">No bookings yet.</p>
           ) : (
-            <ul className="mt-4 space-y-3 text-sm">
-              {(recentBookings as AdminBookingListItem[]).map((booking) => (
-                <li key={booking.id} className="rounded-xl border border-[var(--ccr-border)]">
-                  <details className="group">
-                    <summary className="list-none cursor-pointer p-3 [&::-webkit-details-marker]:hidden">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <span className="inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-bold text-[var(--ccr-accent)]">
-                            {booking.publicId || booking.id}
-                          </span>
-                          <p className="mt-1 text-xs text-[var(--ccr-muted)]">Booking details</p>
+            <>
+              <ul className="mt-4 space-y-3 text-sm">
+                {(recentBookings as AdminBookingListItem[]).map((booking) => (
+                  <li key={booking.id} className="rounded-xl border border-[var(--ccr-border)]">
+                    <details className="group">
+                      <summary className="list-none cursor-pointer p-3 [&::-webkit-details-marker]:hidden">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <span className="inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-bold text-[var(--ccr-accent)]">
+                              {booking.publicId || booking.id}
+                            </span>
+                            <p className="mt-1 text-xs text-[var(--ccr-muted)]">Booking details</p>
+                          </div>
+                          <div className="flex shrink-0 items-start gap-3">
+                            <span className="rounded-full bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-semibold text-[var(--ccr-text)]">
+                              {booking.statusLabel}
+                            </span>
+                            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-[var(--ccr-border)] text-[var(--ccr-text)] transition-transform group-open:rotate-180">
+                              <svg
+                                viewBox="0 0 20 20"
+                                className="h-3.5 w-3.5"
+                                aria-hidden="true"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              >
+                                <path d="M5 7l5 6 5-6" />
+                              </svg>
+                            </span>
+                          </div>
                         </div>
-                        <div className="flex shrink-0 items-start gap-3">
-                          <span className="rounded-full bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-semibold text-[var(--ccr-text)]">
-                            {booking.statusLabel}
-                          </span>
-                          <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-[var(--ccr-border)] text-[var(--ccr-text)] transition-transform group-open:rotate-180">
-                            <svg
-                              viewBox="0 0 20 20"
-                              className="h-3.5 w-3.5"
-                              aria-hidden="true"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            >
-                              <path d="M5 7l5 6 5-6" />
-                            </svg>
-                          </span>
-                        </div>
+                      </summary>
+                      <div className="border-t border-[var(--ccr-border)] px-3 pb-3 pt-2">
+                        <p className="break-words text-xs text-[var(--ccr-muted)]">
+                          {booking.customerName} • {booking.vehicleLabel}
+                        </p>
+                        <p className="mt-1 text-xs text-[var(--ccr-muted)]">
+                          <InlineDateTimeRange
+                            startLabel={booking.startDateLabel}
+                            endLabel={booking.endDateLabel}
+                          />
+                        </p>
+                        <Link
+                          href={`/admin/bookings/${booking.id}`}
+                          className={`mt-2 inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-bold text-[var(--ccr-accent)] transition hover:border-[var(--ccr-accent-strong)] hover:bg-[var(--ccr-surface)] ${hoverTextClass}`}
+                          title="Open booking"
+                        >
+                          Open booking
+                        </Link>
                       </div>
-                    </summary>
-                    <div className="border-t border-[var(--ccr-border)] px-3 pb-3 pt-2">
-                      <p className="break-words text-xs text-[var(--ccr-muted)]">
-                        {booking.customerName} • {booking.vehicleLabel}
-                      </p>
-                      <p className="mt-1 text-xs text-[var(--ccr-muted)]">
-                        <InlineDateTimeRange
-                          startLabel={booking.startDateLabel}
-                          endLabel={booking.endDateLabel}
-                        />
-                      </p>
-                      <Link
-                        href={`/admin/bookings/${booking.id}`}
-                        className={`mt-2 inline-flex items-center rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-bold text-[var(--ccr-accent)] transition hover:border-[var(--ccr-accent-strong)] hover:bg-[var(--ccr-surface)] ${hoverTextClass}`}
-                        title="Open booking"
-                      >
-                        Open booking
-                      </Link>
-                    </div>
-                  </details>
-                </li>
-              ))}
-            </ul>
+                    </details>
+                  </li>
+                ))}
+              </ul>
+              <PaginationSummaryNav
+                from={recentBookingsPagination.from}
+                to={recentBookingsPagination.to}
+                totalCount={recentBookingsPagination.totalCount}
+                page={recentBookingsPagination.page}
+                totalPages={recentBookingsPagination.totalPages}
+                hasPrev={recentBookingsPagination.hasPrev}
+                hasNext={recentBookingsPagination.hasNext}
+                prevHref={buildDashboardPageHref("recentBookingsPage", recentBookingsPagination.page - 1)}
+                nextHref={buildDashboardPageHref("recentBookingsPage", recentBookingsPagination.page + 1)}
+                className="mt-4"
+              />
+            </>
           )}
         </section>
 
@@ -502,35 +592,49 @@ export default async function AdminDashboardPage() {
               View all
             </Link>
           </div>
-          {recentVehicles.length === 0 ? (
+          {recentVehiclesPagination.rows.length === 0 ? (
             <p className="mt-3 text-sm text-[var(--ccr-muted)]">No vehicles yet.</p>
           ) : (
-            <ul className="mt-4 space-y-3 text-sm">
-              {(recentVehicles as ActiveFleetVehicleSnapshot[]).map((vehicle) => (
-                <li key={vehicle.id} className="rounded-xl border border-[var(--ccr-border)] p-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <Link
-                        href={`/admin/vehicles/${vehicle.id}`}
-                        className={`font-semibold text-[var(--ccr-text)] ${hoverTextClass}`}
-                      >
-                        {vehicle.year} {vehicle.make} {vehicle.model}
-                      </Link>
-                      <p className="text-xs text-[var(--ccr-muted)]">
-                        Added{" "}
-                        <DateTimeInline
-                          value={vehicle.created_at}
-                          className="inline-flex text-[var(--ccr-muted)]"
-                        />
-                      </p>
+            <>
+              <ul className="mt-4 space-y-3 text-sm">
+                {recentVehiclesPagination.rows.map((vehicle) => (
+                  <li key={vehicle.id} className="rounded-xl border border-[var(--ccr-border)] p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <Link
+                          href={`/admin/vehicles/${vehicle.id}`}
+                          className={`font-semibold text-[var(--ccr-text)] ${hoverTextClass}`}
+                        >
+                          {vehicle.year} {vehicle.make} {vehicle.model}
+                        </Link>
+                        <p className="text-xs text-[var(--ccr-muted)]">
+                          Added{" "}
+                          <DateTimeInline
+                            value={vehicle.created_at}
+                            className="inline-flex text-[var(--ccr-muted)]"
+                          />
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-semibold text-[var(--ccr-text)]">
+                        {vehicleDerivedStatusLabel(vehicle.derived_status)}
+                      </span>
                     </div>
-                    <span className="rounded-full bg-[var(--ccr-surface-soft)] px-3 py-1 text-xs font-semibold text-[var(--ccr-text)]">
-                      {vehicleDerivedStatusLabel(vehicle.derived_status)}
-                    </span>
-                  </div>
-                </li>
-              ))}
-            </ul>
+                  </li>
+                ))}
+              </ul>
+              <PaginationSummaryNav
+                from={recentVehiclesPagination.from}
+                to={recentVehiclesPagination.to}
+                totalCount={recentVehiclesPagination.totalCount}
+                page={recentVehiclesPagination.page}
+                totalPages={recentVehiclesPagination.totalPages}
+                hasPrev={recentVehiclesPagination.hasPrev}
+                hasNext={recentVehiclesPagination.hasNext}
+                prevHref={buildDashboardPageHref("recentVehiclesPage", recentVehiclesPagination.page - 1)}
+                nextHref={buildDashboardPageHref("recentVehiclesPage", recentVehiclesPagination.page + 1)}
+                className="mt-4"
+              />
+            </>
           )}
         </section>
       </div>

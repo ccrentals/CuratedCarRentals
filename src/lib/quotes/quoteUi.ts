@@ -13,6 +13,7 @@ export const QUOTE_STATUS_OPTIONS = [
 ] as const;
 
 export type QuoteStatusValue = (typeof QUOTE_STATUS_OPTIONS)[number]["value"];
+export const MIN_QUOTE_SEARCH_LENGTH = 3;
 
 const QUOTE_STATUS_SET = new Set<string>(
   QUOTE_STATUS_OPTIONS.filter((option) => option.value !== "all").map((option) => option.value),
@@ -36,6 +37,12 @@ export function quoteStatusLabel(status: string | null | undefined) {
     .filter(Boolean)
     .map((segment) => segment[0] + segment.slice(1).toLowerCase())
     .join(" ");
+}
+
+export function normalizeQuoteSearchTerm(value: string | null | undefined) {
+  const normalized = String(value ?? "").trim();
+  if (normalized.length < MIN_QUOTE_SEARCH_LENGTH) return "";
+  return normalized;
 }
 
 export const QUOTE_STATUS_PILL_BASE_CLASS =

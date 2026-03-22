@@ -273,7 +273,7 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
     <div data-testid="quote-detail" className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Quote</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Quotes</p>
           <div className="mt-1 flex flex-wrap items-center gap-2">
             <h1 data-testid="quote-public-id" className="text-3xl font-bold text-[var(--ccr-text)]">
               Quote {shortQuoteId(item.id, item.publicId)}

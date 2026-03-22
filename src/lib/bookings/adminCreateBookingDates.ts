@@ -1,6 +1,10 @@
 import { formatJmdDecimal } from "@/lib/money";
 import { isISODate } from "@/lib/validators";
 
+export function isAdminCreateBookingDateRangeValid(startDate: string, endDate: string) {
+  return isISODate(startDate) && isISODate(endDate) && endDate >= startDate;
+}
+
 export function suggestAdminCreateBookingEndDate(startDate: string, offsetDays = 2): string | null {
   if (!isISODate(startDate)) return null;
 
