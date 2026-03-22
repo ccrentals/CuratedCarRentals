@@ -23,6 +23,18 @@ type E2EFixtures = {
   depreciationProfile?: { id?: string };
   maintenance?: { recordId?: string; blockoutId?: string | null };
   document?: { id?: string | null };
+  promoCodes?: {
+    active?: { id?: string };
+    scheduled?: { id?: string };
+    expired?: { id?: string };
+    limitReached?: { id?: string };
+    inactive?: { id?: string };
+    vehicleRestricted?: { id?: string };
+    blackoutRestricted?: { id?: string };
+    perCustomerLimited?: { id?: string };
+    reconstructedHistory?: { id?: string };
+    fillers?: Array<{ id?: string }>;
+  };
 };
 
 const FIXTURES_PATH = path.join(process.cwd(), ".artifacts", "e2e-fixtures.json");
@@ -101,6 +113,18 @@ async function main() {
   const adminUserCreatedBySeed = fixtures.adminUser?.createdBySeed === true;
   const pickupLocationId = fixtures.bookingLocations?.pickup?.id ?? null;
   const dropoffLocationId = fixtures.bookingLocations?.dropoff?.id ?? null;
+  const promoIds = [
+    fixtures.promoCodes?.active?.id,
+    fixtures.promoCodes?.scheduled?.id,
+    fixtures.promoCodes?.expired?.id,
+    fixtures.promoCodes?.limitReached?.id,
+    fixtures.promoCodes?.inactive?.id,
+    fixtures.promoCodes?.vehicleRestricted?.id,
+    fixtures.promoCodes?.blackoutRestricted?.id,
+    fixtures.promoCodes?.perCustomerLimited?.id,
+    fixtures.promoCodes?.reconstructedHistory?.id,
+    ...(fixtures.promoCodes?.fillers?.map((entry) => entry.id) ?? []),
+  ].filter((value): value is string => typeof value === "string" && value.length > 0);
   const runMarker = `%${fixtures.runId}%`;
 
   const pool = new Pool({ connectionString: normalizeDatabaseUrl(rawUrl), max: 1 });
@@ -218,6 +242,10 @@ async function main() {
           )`,
       [vehicleId, customerId, runMarker],
     );
+
+    if (promoIds.length > 0) {
+      await remove("promo_codes", "delete from promo_codes where id = any($1::uuid[])", [promoIds]);
+    }
 
     await remove(
       "booking_locations",

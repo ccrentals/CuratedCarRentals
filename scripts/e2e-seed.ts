@@ -46,6 +46,24 @@ type E2EFixtures = {
   document: {
     id: string | null;
   };
+  promoCodes: {
+    active: PromoFixtureRef;
+    scheduled: PromoFixtureRef;
+    expired: PromoFixtureRef;
+    limitReached: PromoFixtureRef;
+    inactive: PromoFixtureRef;
+    vehicleRestricted: PromoFixtureRef;
+    blackoutRestricted: PromoFixtureRef;
+    perCustomerLimited: PromoFixtureRef;
+    reconstructedHistory: PromoFixtureRef;
+    fillers: PromoFixtureRef[];
+  };
+};
+
+type PromoFixtureRef = {
+  id: string;
+  publicId: string;
+  code: string;
 };
 
 const ARTIFACTS_DIR = path.join(process.cwd(), ".artifacts");
@@ -99,6 +117,246 @@ function addDays(base: Date, days: number) {
   const next = new Date(base);
   next.setDate(next.getDate() + days);
   return next;
+}
+
+function addMinutes(base: Date, minutes: number) {
+  return new Date(base.getTime() + minutes * 60_000);
+}
+
+async function insertPromoCode(
+  client: { query: (text: string, values?: unknown[]) => Promise<{ rows: Array<Record<string, unknown>> }> },
+  input: {
+    code: string;
+    isActive?: boolean;
+    discountType?: "PERCENT" | "FIXED";
+    applyScope?: "OVERALL_TOTAL" | "DAYS_TOTAL";
+    discountValue?: number;
+    minSubtotalCents?: number | null;
+    maxRedemptions?: number | null;
+    maxRedemptionsPerCustomer?: number | null;
+    startAt?: string | null;
+    endAt?: string | null;
+    allowedVehicleIds?: string[];
+    excludedVehicleIds?: string[];
+    blackoutDates?: string[];
+    createdBy?: string | null;
+    createdAt: string;
+  },
+) {
+  const result = await client.query(
+    `insert into promo_codes (
+       code,
+       is_active,
+       discount_type,
+       apply_scope,
+       discount_value,
+       min_subtotal_cents,
+       max_redemptions,
+       max_redemptions_per_customer,
+       start_at,
+       end_at,
+       allowed_vehicle_ids_json,
+       excluded_vehicle_ids_json,
+       blackout_dates_json,
+       created_by,
+       created_at,
+       updated_at
+     )
+     values (
+       $1,
+       $2,
+       $3,
+       $4,
+       $5,
+       $6,
+       $7,
+       $8,
+       $9::timestamptz,
+       $10::timestamptz,
+       $11::jsonb,
+       $12::jsonb,
+       $13::jsonb,
+       $14::uuid,
+       $15::timestamptz,
+       $15::timestamptz
+     )
+     returning id, public_id, code`,
+    [
+      input.code,
+      input.isActive ?? true,
+      input.discountType ?? "FIXED",
+      input.applyScope ?? "OVERALL_TOTAL",
+      input.discountValue ?? 5000,
+      input.minSubtotalCents ?? null,
+      input.maxRedemptions ?? null,
+      input.maxRedemptionsPerCustomer ?? null,
+      input.startAt ?? null,
+      input.endAt ?? null,
+      JSON.stringify(input.allowedVehicleIds ?? []),
+      JSON.stringify(input.excludedVehicleIds ?? []),
+      JSON.stringify(input.blackoutDates ?? []),
+      input.createdBy ?? null,
+      input.createdAt,
+    ],
+  );
+
+  return {
+    id: String(result.rows[0]?.id ?? ""),
+    publicId: String(result.rows[0]?.public_id ?? ""),
+    code: String(result.rows[0]?.code ?? input.code),
+  } satisfies PromoFixtureRef;
+}
+
+async function insertPromoBooking(
+  client: { query: (text: string, values?: unknown[]) => Promise<{ rows: Array<Record<string, unknown>> }> },
+  input: {
+    vehicleId: string;
+    customerId: string;
+    pickupLocation: string;
+    startDate: string;
+    endDate: string;
+    status: string;
+    pricingJson: Record<string, unknown>;
+    createdAt: string;
+  },
+) {
+  const result = await client.query(
+    `insert into bookings (
+       vehicle_id,
+       customer_id,
+       start_date,
+       end_date,
+       pickup_location,
+       status,
+       pricing_json,
+       created_at,
+       updated_at
+     )
+     values ($1::uuid, $2::uuid, $3::date, $4::date, $5, $6, $7::jsonb, $8::timestamptz, $8::timestamptz)
+     returning id, public_id`,
+    [
+      input.vehicleId,
+      input.customerId,
+      input.startDate,
+      input.endDate,
+      input.pickupLocation,
+      input.status,
+      JSON.stringify(input.pricingJson),
+      input.createdAt,
+    ],
+  );
+
+  return {
+    id: String(result.rows[0]?.id ?? ""),
+    publicId: String(result.rows[0]?.public_id ?? ""),
+  };
+}
+
+async function insertPayment(
+  client: { query: (text: string, values?: unknown[]) => Promise<{ rows: Array<Record<string, unknown>> }> },
+  input: {
+    bookingId: string;
+    provider: "MANUAL" | "WIPAY";
+    amountCents: number;
+    status: "DEPOSIT_PAID" | "REFUNDED";
+    providerRef: string;
+    metadata?: Record<string, unknown>;
+    createdAt: string;
+  },
+) {
+  await client.query(
+    `insert into payments (
+       booking_id,
+       provider,
+       deposit_amount_cents,
+       currency,
+       status,
+       provider_ref,
+       metadata_json,
+       created_at,
+       updated_at
+     )
+     values ($1::uuid, $2, $3, 'JMD', $4, $5, $6::jsonb, $7::timestamptz, $7::timestamptz)`,
+    [
+      input.bookingId,
+      input.provider,
+      input.amountCents,
+      input.status,
+      input.providerRef,
+      JSON.stringify(input.metadata ?? {}),
+      input.createdAt,
+    ],
+  );
+}
+
+async function insertPromoRedemption(
+  client: { query: (text: string, values?: unknown[]) => Promise<{ rows: Array<Record<string, unknown>> }> },
+  input: {
+    promoCodeId: string;
+    bookingId: string;
+    customerId: string;
+    customerEmail: string;
+    discountAmountCents: number;
+    createdAt: string;
+  },
+) {
+  await client.query(
+    `insert into promo_redemptions (
+       promo_code_id,
+       booking_id,
+       customer_id,
+       customer_email,
+       discount_amount_cents,
+       created_at
+     )
+     values ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6::timestamptz)`,
+    [
+      input.promoCodeId,
+      input.bookingId,
+      input.customerId,
+      input.customerEmail,
+      input.discountAmountCents,
+      input.createdAt,
+    ],
+  );
+}
+
+async function insertPromoRedemptionEvent(
+  client: { query: (text: string, values?: unknown[]) => Promise<{ rows: Array<Record<string, unknown>> }> },
+  input: {
+    promoCodeId: string;
+    bookingId: string;
+    customerId: string;
+    customerEmail: string;
+    discountAmountCents: number;
+    eventType: "REDEEMED" | "REVERSED";
+    eventAt: string;
+    metadata?: Record<string, unknown>;
+  },
+) {
+  await client.query(
+    `insert into promo_redemption_events (
+       promo_code_id,
+       booking_id,
+       customer_id,
+       customer_email,
+       discount_amount_cents,
+       event_type,
+       event_at,
+       metadata_json
+     )
+     values ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7::timestamptz, $8::jsonb)`,
+    [
+      input.promoCodeId,
+      input.bookingId,
+      input.customerId,
+      input.customerEmail,
+      input.discountAmountCents,
+      input.eventType,
+      input.eventAt,
+      JSON.stringify(input.metadata ?? {}),
+    ],
+  );
 }
 
 async function tableHasColumn(client: { query: (text: string, values?: unknown[]) => Promise<{ rows: Array<Record<string, unknown>> }> }, tableName: string, columnName: string) {
@@ -482,6 +740,224 @@ async function main() {
       documentId = docResult.rows[0].id;
     }
 
+    const promoSuffix = runId.slice(-4).toUpperCase();
+    const promoCreatedBase = new Date(now);
+    promoCreatedBase.setSeconds(0, 0);
+    const promoHolidayA = toDateOnly(addDays(now, 60));
+    const promoHolidayB = toDateOnly(addDays(now, 61));
+
+    const promoCreatedAt = (offsetMinutes: number) => addMinutes(promoCreatedBase, -offsetMinutes).toISOString();
+
+    const activePromo = await insertPromoCode(client, {
+      code: `ACTIVE${promoSuffix}`,
+      discountType: "PERCENT",
+      discountValue: 10,
+      createdBy: adminUserId,
+      createdAt: promoCreatedAt(0),
+    });
+    const scheduledPromo = await insertPromoCode(client, {
+      code: `SCHED${promoSuffix}`,
+      discountValue: 2500,
+      startAt: addDays(now, 14).toISOString(),
+      createdBy: adminUserId,
+      createdAt: promoCreatedAt(1),
+    });
+    const expiredPromo = await insertPromoCode(client, {
+      code: `EXPIRE${promoSuffix}`,
+      discountValue: 2000,
+      endAt: addDays(now, -10).toISOString(),
+      createdBy: adminUserId,
+      createdAt: promoCreatedAt(2),
+    });
+    const limitReachedPromo = await insertPromoCode(client, {
+      code: `LIMIT${promoSuffix}`,
+      discountValue: 1500,
+      maxRedemptions: 20,
+      createdBy: adminUserId,
+      createdAt: promoCreatedAt(3),
+    });
+    const inactivePromo = await insertPromoCode(client, {
+      code: `OFF${promoSuffix}`,
+      isActive: false,
+      discountValue: 1750,
+      createdBy: adminUserId,
+      createdAt: promoCreatedAt(4),
+    });
+    const vehicleRestrictedPromo = await insertPromoCode(client, {
+      code: `VEH${promoSuffix}`,
+      discountValue: 2200,
+      allowedVehicleIds: [vehicleId],
+      minSubtotalCents: 15000,
+      createdBy: adminUserId,
+      createdAt: promoCreatedAt(5),
+    });
+    const blackoutRestrictedPromo = await insertPromoCode(client, {
+      code: `BLACK${promoSuffix}`,
+      discountValue: 1800,
+      blackoutDates: [promoHolidayA, promoHolidayB],
+      createdBy: adminUserId,
+      createdAt: promoCreatedAt(6),
+    });
+    const perCustomerLimitedPromo = await insertPromoCode(client, {
+      code: `CUST${promoSuffix}`,
+      discountValue: 1200,
+      maxRedemptionsPerCustomer: 1,
+      createdBy: adminUserId,
+      createdAt: promoCreatedAt(7),
+    });
+    const reconstructedPromo = await insertPromoCode(client, {
+      code: `BACK${promoSuffix}`,
+      discountValue: 2600,
+      createdBy: adminUserId,
+      createdAt: promoCreatedAt(8),
+    });
+
+    const fillerPromos: PromoFixtureRef[] = [];
+    for (let index = 0; index < 4; index += 1) {
+      fillerPromos.push(
+        await insertPromoCode(client, {
+          code: `FILL${index + 1}${promoSuffix}`,
+          discountValue: 1000 + index * 100,
+          createdBy: adminUserId,
+          createdAt: promoCreatedAt(9 + index),
+        }),
+      );
+    }
+
+    const limitDiscountCents = 1500;
+    for (let index = 0; index < 25; index += 1) {
+      const bookingCreatedAt = addMinutes(addDays(now, -6), index).toISOString();
+      const bookingStart = addDays(now, 20 + index);
+      const bookingEnd = addDays(bookingStart, 3);
+      const booking = await insertPromoBooking(client, {
+        vehicleId,
+        customerId: customerResult.rows[0].id,
+        pickupLocation: pickupLabel,
+        startDate: toDateOnly(bookingStart),
+        endDate: toDateOnly(bookingEnd),
+        status: index < 20 ? "CONFIRMED" : "CANCELLED",
+        pricingJson: {
+          subtotal_cents: 36000,
+          total_cents: 34500,
+          deposit_cents: 5000,
+          amount_paid: index < 20 ? 5000 : 0,
+          balance_due: index < 20 ? 29500 : 34500,
+          payment_status: index < 20 ? "DEPOSIT_PAID" : "UNPAID",
+          promo_code_id: limitReachedPromo.id,
+          promo_code: limitReachedPromo.code,
+          promo_discount_cents: limitDiscountCents,
+        },
+        createdAt: bookingCreatedAt,
+      });
+
+      await insertPayment(client, {
+        bookingId: booking.id,
+        provider: "MANUAL",
+        amountCents: 5000,
+        status: "DEPOSIT_PAID",
+        providerRef: `E2E_PROMO_LIMIT_PAID_${runId}_${index + 1}`,
+        metadata: { source: "e2e_seed", promoCodeId: limitReachedPromo.id },
+        createdAt: bookingCreatedAt,
+      });
+
+      const redeemedAt = addMinutes(addDays(now, -3), index).toISOString();
+      await insertPromoRedemptionEvent(client, {
+        promoCodeId: limitReachedPromo.id,
+        bookingId: booking.id,
+        customerId: customerResult.rows[0].id,
+        customerEmail,
+        discountAmountCents: limitDiscountCents,
+        eventType: "REDEEMED",
+        eventAt: redeemedAt,
+        metadata: { source: "e2e_seed_live_promo" },
+      });
+
+      if (index < 20) {
+        await insertPromoRedemption(client, {
+          promoCodeId: limitReachedPromo.id,
+          bookingId: booking.id,
+          customerId: customerResult.rows[0].id,
+          customerEmail,
+          discountAmountCents: limitDiscountCents,
+          createdAt: redeemedAt,
+        });
+      } else {
+        const reversedAt = addMinutes(addDays(now, -2), index).toISOString();
+        await insertPayment(client, {
+          bookingId: booking.id,
+          provider: "WIPAY",
+          amountCents: -5000,
+          status: "REFUNDED",
+          providerRef: `E2E_PROMO_LIMIT_REFUND_${runId}_${index + 1}`,
+          metadata: { source: "e2e_seed", promoCodeId: limitReachedPromo.id },
+          createdAt: reversedAt,
+        });
+        await insertPromoRedemptionEvent(client, {
+          promoCodeId: limitReachedPromo.id,
+          bookingId: booking.id,
+          customerId: customerResult.rows[0].id,
+          customerEmail,
+          discountAmountCents: limitDiscountCents,
+          eventType: "REVERSED",
+          eventAt: reversedAt,
+          metadata: { source: "e2e_seed_live_promo" },
+        });
+      }
+    }
+
+    const reconstructedBookingCreatedAt = addMinutes(addDays(now, -1), 15).toISOString();
+    const reconstructedBooking = await insertPromoBooking(client, {
+      vehicleId,
+      customerId: customerResult.rows[0].id,
+      pickupLocation: pickupLabel,
+      startDate: toDateOnly(addDays(now, 10)),
+      endDate: toDateOnly(addDays(now, 13)),
+      status: "CONFIRMED",
+      pricingJson: {
+        subtotal_cents: 32000,
+        total_cents: 29400,
+        deposit_cents: 5000,
+        amount_paid: 5000,
+        balance_due: 24400,
+        payment_status: "DEPOSIT_PAID",
+        promo_code_id: reconstructedPromo.id,
+        promo_code: reconstructedPromo.code,
+        promo_discount_cents: 2600,
+      },
+      createdAt: reconstructedBookingCreatedAt,
+    });
+    await insertPayment(client, {
+      bookingId: reconstructedBooking.id,
+      provider: "MANUAL",
+      amountCents: 5000,
+      status: "DEPOSIT_PAID",
+      providerRef: `E2E_PROMO_RECONSTRUCTED_PAID_${runId}`,
+      metadata: { source: "e2e_seed", promoCodeId: reconstructedPromo.id },
+      createdAt: reconstructedBookingCreatedAt,
+    });
+    await insertPromoRedemption(client, {
+      promoCodeId: reconstructedPromo.id,
+      bookingId: reconstructedBooking.id,
+      customerId: customerResult.rows[0].id,
+      customerEmail,
+      discountAmountCents: 2600,
+      createdAt: reconstructedBookingCreatedAt,
+    });
+    await insertPromoRedemptionEvent(client, {
+      promoCodeId: reconstructedPromo.id,
+      bookingId: reconstructedBooking.id,
+      customerId: customerResult.rows[0].id,
+      customerEmail,
+      discountAmountCents: 2600,
+      eventType: "REDEEMED",
+      eventAt: reconstructedBookingCreatedAt,
+      metadata: {
+        reconstructed: true,
+        source: "legacy_reconstruction",
+        timestampSource: "payment",
+      },
+    });
+
     await client.query("commit");
 
     const fixtures: E2EFixtures = {
@@ -523,6 +999,18 @@ async function main() {
       document: {
         id: documentId,
       },
+      promoCodes: {
+        active: activePromo,
+        scheduled: scheduledPromo,
+        expired: expiredPromo,
+        limitReached: limitReachedPromo,
+        inactive: inactivePromo,
+        vehicleRestricted: vehicleRestrictedPromo,
+        blackoutRestricted: blackoutRestrictedPromo,
+        perCustomerLimited: perCustomerLimitedPromo,
+        reconstructedHistory: reconstructedPromo,
+        fillers: fillerPromos,
+      },
     };
 
     fs.mkdirSync(ARTIFACTS_DIR, { recursive: true });
@@ -536,6 +1024,8 @@ async function main() {
           vehicleId: fixtures.vehicle.id,
           maintenanceRecordId: fixtures.maintenance.recordId,
           depreciationProfileId: fixtures.depreciationProfile.id,
+          promoLimitReachedId: fixtures.promoCodes.limitReached.id,
+          promoReconstructedId: fixtures.promoCodes.reconstructedHistory.id,
           fixturesPath: FIXTURES_PATH,
         },
         null,
