@@ -750,6 +750,20 @@ create table if not exists promo_redemptions (
   unique (promo_code_id, booking_id)
 );
 
+create table if not exists promo_redemption_events (
+  id uuid primary key default gen_random_uuid(),
+  promo_code_id uuid not null references promo_codes(id) on delete cascade,
+  booking_id uuid not null references bookings(id) on delete cascade,
+  customer_id uuid references customers(id) on delete set null,
+  customer_email text,
+  discount_amount_cents int not null,
+  event_type text not null,
+  event_at timestamptz not null default now(),
+  metadata_json jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  constraint promo_redemption_events_type_check check (event_type in ('REDEEMED', 'REVERSED'))
+);
+
 create table if not exists webhook_events (
   id uuid primary key default gen_random_uuid(),
   provider text not null,
@@ -874,6 +888,11 @@ create index if not exists promo_redemptions_promo_code_id_idx on promo_redempti
 create index if not exists promo_redemptions_booking_id_idx on promo_redemptions(booking_id);
 create index if not exists promo_redemptions_customer_id_idx on promo_redemptions(customer_id);
 create index if not exists promo_redemptions_customer_email_lower_idx on promo_redemptions (lower(customer_email));
+create index if not exists promo_redemption_events_promo_code_id_idx on promo_redemption_events(promo_code_id);
+create index if not exists promo_redemption_events_booking_id_idx on promo_redemption_events(booking_id);
+create index if not exists promo_redemption_events_event_at_idx on promo_redemption_events(event_at desc);
+create index if not exists promo_redemption_events_customer_id_idx on promo_redemption_events(customer_id);
+create index if not exists promo_redemption_events_customer_email_lower_idx on promo_redemption_events (lower(customer_email));
 create index if not exists contact_messages_status_created_idx on contact_messages(status, created_at desc);
 create index if not exists contact_messages_created_idx on contact_messages(created_at desc);
 -- Booking revamp foundation (additive / backward-compatible)

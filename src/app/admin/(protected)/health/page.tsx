@@ -28,6 +28,8 @@ function checkLabel(key: keyof Awaited<ReturnType<typeof getHealthSnapshot>>["ch
   switch (key) {
     case "db":
       return "Neon (DB)";
+    case "promoLedger":
+      return "Promo Ledger";
     case "wipay":
       return "WiPay";
     case "resend":
@@ -63,7 +65,7 @@ export default async function AdminHealthPage() {
           <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Admin</p>
           <h1 className="text-3xl font-bold text-[var(--ccr-text)]">Health</h1>
           <p className="mt-2 text-sm text-[var(--ccr-muted)]">
-            Readiness snapshot for database, providers, and required environment variables.
+            Readiness snapshot for database schema, providers, and required environment variables.
           </p>
           <p className="mt-2 text-xs text-[var(--ccr-muted)]">
             Updated: <span className="font-semibold text-[var(--ccr-text)]">{snapshot.timestamp}</span>

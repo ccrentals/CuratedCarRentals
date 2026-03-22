@@ -13,8 +13,7 @@ import {
 import { hasCompletedBookingVehicleInspection } from "@/lib/bookings/vehicleInspection";
 import { isVehicleUnavailableEntitlementBased } from "@/lib/availability/entitlement";
 import {
-  clearPromoRedemptionForBooking,
-  upsertPromoRedemption,
+  syncPromoRedemptionStateForBooking,
   validatePromoForBooking,
 } from "@/lib/promos";
 import {
@@ -104,6 +103,56 @@ function buildPricingSnapshot(
     payment_option_selected: summary.paymentOption,
     refund_required: summary.refundRequired,
     currency: "JMD",
+  };
+}
+
+type DbClientLike = {
+  query: (text: string, params?: unknown[]) => Promise<{ rows: unknown[]; rowCount: number }>;
+};
+
+async function resolveValidatedPromoForBookingUpdate(input: {
+  client: DbClientLike;
+  existingPromoCode: string | null;
+  vehicleId: string;
+  startDate: string;
+  endDate: string;
+  subtotalCents: number;
+  baseTotalCents: number;
+  customerId: string;
+  customerEmail: string;
+}) {
+  if (!input.existingPromoCode) {
+    return {
+      promoCode: null,
+      promoDiscount: 0,
+      promoId: null,
+    };
+  }
+
+  const promoValidation = await validatePromoForBooking({
+    code: input.existingPromoCode,
+    vehicleId: input.vehicleId,
+    startDate: input.startDate,
+    endDate: input.endDate,
+    subtotalCents: input.subtotalCents,
+    baseTotalCents: input.baseTotalCents,
+    customerId: input.customerId,
+    customerEmail: input.customerEmail,
+    client: input.client,
+  });
+
+  if (!promoValidation.ok) {
+    return {
+      promoCode: null,
+      promoDiscount: 0,
+      promoId: null,
+    };
+  }
+
+  return {
+    promoCode: promoValidation.code,
+    promoDiscount: promoValidation.discountAmountCents,
+    promoId: promoValidation.promoId,
   };
 }
 
@@ -633,8 +682,31 @@ export async function PATCH(
       const dailyRate = Number(currentPricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
       const deposit = Number(currentPricing.deposit_cents ?? booking.deposit_cents ?? 0);
       const paymentOption = readPaymentOption(currentPricing);
-      const { promoCode, promoDiscount } = readPromoPricingFields(currentPricing);
+      const { promoCode: existingPromoCode } = readPromoPricingFields(currentPricing);
       const netPaidToDate = await fetchNetPaidToDate(booking.id, { client });
+      const provisionalSummary = computeBookingPricing({
+        bookingId: booking.id,
+        bookingStatus: booking.status,
+        startDate,
+        endDate,
+        dailyRate,
+        deposit,
+        paymentOption,
+        netPaidToDate,
+        promoCode: null,
+        promoDiscount: 0,
+      });
+      const validatedPromo = await resolveValidatedPromoForBookingUpdate({
+        client,
+        existingPromoCode,
+        vehicleId: booking.vehicle_id,
+        startDate,
+        endDate,
+        subtotalCents: provisionalSummary.subtotal,
+        baseTotalCents: provisionalSummary.baseTotal,
+        customerId: booking.customer_id,
+        customerEmail,
+      });
       const pricingSummary = computeBookingPricing({
         bookingId: booking.id,
         bookingStatus: booking.status,
@@ -644,8 +716,8 @@ export async function PATCH(
         deposit,
         paymentOption,
         netPaidToDate,
-        promoCode,
-        promoDiscount,
+        promoCode: validatedPromo.promoCode,
+        promoDiscount: validatedPromo.promoDiscount,
       });
 
       const nextPricing = {
@@ -658,6 +730,7 @@ export async function PATCH(
         deposit_cents: pricingSummary.deposit,
         subtotal_cents: pricingSummary.subtotal,
         promo_code: pricingSummary.promoCode,
+        promo_code_id: validatedPromo.promoId,
         promo_discount_cents: pricingSummary.promoDiscount,
         total_cents: pricingSummary.total,
         total_amount: pricingSummary.total,
@@ -678,6 +751,10 @@ export async function PATCH(
         "update bookings set start_date = $2, end_date = $3, pickup_location = $4, pricing_json = $5, updated_at = now() where id = $1",
         [booking.id, startDate, endDate, pickupLocation, nextPricing],
       );
+      await syncPromoRedemptionStateForBooking(booking.id, {
+        client,
+        source: "admin_booking_update_details",
+      });
 
       await client.query("commit");
 
@@ -821,29 +898,17 @@ export async function PATCH(
         insurancePricePerDay,
       });
 
-      let nextPromoCode: string | null = null;
-      let nextPromoDiscount = 0;
-      let nextPromoId: string | null = null;
-
-      if (existingPromoCode) {
-        const promoValidation = await validatePromoForBooking({
-          code: existingPromoCode,
-          vehicleId: booking.vehicle_id,
-          startDate: booking.start_date,
-          endDate: booking.end_date,
-          subtotalCents: provisionalSummary.subtotal,
-          baseTotalCents: provisionalSummary.baseTotal,
-          customerId: booking.customer_id,
-          customerEmail: booking.customer_email,
-          client,
-        });
-
-        if (promoValidation.ok) {
-          nextPromoCode = promoValidation.code;
-          nextPromoDiscount = promoValidation.discountAmountCents;
-          nextPromoId = promoValidation.promoId;
-        }
-      }
+      const validatedPromo = await resolveValidatedPromoForBookingUpdate({
+        client,
+        existingPromoCode,
+        vehicleId: booking.vehicle_id,
+        startDate: booking.start_date,
+        endDate: booking.end_date,
+        subtotalCents: provisionalSummary.subtotal,
+        baseTotalCents: provisionalSummary.baseTotal,
+        customerId: booking.customer_id,
+        customerEmail: booking.customer_email,
+      });
 
       const nextSummary = computeBookingPricingFromStoredSnapshot({
         bookingId: booking.id,
@@ -855,13 +920,13 @@ export async function PATCH(
         fallbackDeposit: booking.deposit_cents,
         paymentOption,
         netPaidToDate,
-        promoCode: nextPromoCode,
-        promoDiscount: nextPromoDiscount,
+        promoCode: validatedPromo.promoCode,
+        promoDiscount: validatedPromo.promoDiscount,
         insuranceSelected: enableInsurance,
         insurancePricePerDay,
       });
 
-      const nextPricing = buildPricingSnapshot(currentPricing, nextSummary, nextPromoId);
+      const nextPricing = buildPricingSnapshot(currentPricing, nextSummary, validatedPromo.promoId);
 
       await client.query(
         "update bookings set insurance_selected = $2, insurance_plan_id = $3::uuid, insurance_price_per_day_cents = $4, insurance_total_cents = $5, pricing_json = $6, updated_at = now() where id = $1",
@@ -874,19 +939,10 @@ export async function PATCH(
           nextPricing,
         ],
       );
-
-      if (nextPromoId && nextPromoCode) {
-        await upsertPromoRedemption({
-          bookingId: booking.id,
-          promoId: nextPromoId,
-          customerId: booking.customer_id,
-          customerEmail: booking.customer_email,
-          discountAmountCents: nextSummary.promoDiscount,
-          client,
-        });
-      } else {
-        await clearPromoRedemptionForBooking(booking.id, { client });
-      }
+      await syncPromoRedemptionStateForBooking(booking.id, {
+        client,
+        source: "admin_booking_update_insurance",
+      });
 
       await client.query("commit");
 

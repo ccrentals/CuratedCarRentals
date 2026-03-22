@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { bookingAccessForbiddenResponse, hasPublicBookingAccessForRequest } from "@/lib/bookings/publicAccess";
 import { getDbPool } from "@/lib/db";
 import { logError } from "@/lib/log";
-import { clearPromoRedemptionForBooking, normalizePromoInputCode, upsertPromoRedemption, validatePromoForBooking } from "@/lib/promos";
+import { normalizePromoInputCode, syncPromoRedemptionStateForBooking, validatePromoForBooking } from "@/lib/promos";
 import {
   computeBookingPricingFromStoredSnapshot,
   fetchNetPaidToDate,
@@ -170,13 +170,9 @@ export async function POST(
 
     const pricingSnapshot = buildPricingSnapshot(booking.pricing_json, nextSummary, validation.promoId);
     await client.query("update bookings set pricing_json = $2 where id = $1", [booking.id, pricingSnapshot]);
-    await upsertPromoRedemption({
-      bookingId: booking.id,
-      promoId: validation.promoId,
-      customerId: booking.customer_id,
-      customerEmail: booking.customer_email,
-      discountAmountCents: validation.discountAmountCents,
+    await syncPromoRedemptionStateForBooking(booking.id, {
       client,
+      source: "public_booking_apply_promo",
     });
 
     await client.query("commit");
@@ -248,7 +244,10 @@ export async function DELETE(
 
     const pricingSnapshot = buildPricingSnapshot(booking.pricing_json, nextSummary, null);
     await client.query("update bookings set pricing_json = $2 where id = $1", [booking.id, pricingSnapshot]);
-    await clearPromoRedemptionForBooking(booking.id, { client });
+    await syncPromoRedemptionStateForBooking(booking.id, {
+      client,
+      source: "public_booking_remove_promo",
+    });
 
     await client.query("commit");
     return NextResponse.json({

@@ -4,7 +4,7 @@ import { writeAuditLog } from "@/lib/audit";
 import { CustomerBlockedError, upsertCustomerForBooking } from "@/lib/customers";
 import { dbQuery, getDbPool } from "@/lib/db";
 import { logError, logWarn, redactText } from "@/lib/log";
-import { upsertPromoRedemption, validatePromoForBooking } from "@/lib/promos";
+import { validatePromoForBooking } from "@/lib/promos";
 import { resolveEffectiveQuoteStatus } from "@/lib/quotes/lifecycle";
 import { buildQuotePricingSnapshot } from "@/lib/quotes/quotePricing";
 
@@ -1006,17 +1006,6 @@ export async function convertQuoteToBooking(input: {
     const bookingId = (bookingInsert.rows[0] as { id?: string } | undefined)?.id;
     if (!bookingId) {
       throw new QuoteOpsError("BOOKING_CREATE_FAILED", "Failed to create booking from quote.", 500);
-    }
-
-    if (promoId && promoDiscount > 0) {
-      await upsertPromoRedemption({
-        bookingId,
-        promoId,
-        customerId: customerUpsert.customerId,
-        customerEmail: quote.customerEmail,
-        discountAmountCents: promoDiscount,
-        client,
-      });
     }
 
     await client.query(

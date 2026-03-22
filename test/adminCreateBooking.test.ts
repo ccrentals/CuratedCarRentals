@@ -207,7 +207,6 @@ test("admin bookings API: submit still rejects unavailable vehicles after UI pre
     validatePromo: async () => {
       throw new Error("validatePromo should not be reached when vehicle is unavailable");
     },
-    upsertPromo: async () => undefined,
     writeAudit: async () => undefined,
     sendCreatedEmail: async () => undefined,
     log: () => undefined,
@@ -288,7 +287,6 @@ test("admin bookings API: submit rejects soft-deleted vehicles even if posted di
     validatePromo: async () => {
       throw new Error("validatePromo should not be reached when vehicle is not bookable");
     },
-    upsertPromo: async () => undefined,
     writeAudit: async () => undefined,
     sendCreatedEmail: async () => undefined,
     log: () => undefined,
@@ -384,7 +382,6 @@ test("admin bookings API: create still succeeds when audit logging fails after c
       created: true,
     }),
     validatePromo: async () => ({ ok: true, discountAmountCents: 0, promoId: null }),
-    upsertPromo: async () => undefined,
     writeAudit: async () => {
       throw new Error("audit unavailable");
     },

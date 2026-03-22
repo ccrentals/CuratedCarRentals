@@ -1,4 +1,5 @@
 import { calcDaysInclusive, dateOnlyUtc } from "@/lib/payments/dateMath";
+import { fetchNetPaidToDate, readPromoPricingFields } from "@/lib/payments/pricing";
 import { dbQuery } from "@/lib/db";
 
 type Queryable = {
@@ -27,6 +28,49 @@ type PromoCodeRow = {
   blackout_dates_json: unknown;
 };
 
+type BookingPromoSyncRow = {
+  id: string;
+  status: string;
+  customer_id: string | null;
+  customer_email: string | null;
+  pricing_json: Record<string, unknown> | null;
+};
+
+type PromoCurrentRedemptionRow = {
+  id: string;
+  promo_code_id: string;
+  booking_id: string;
+  customer_id: string | null;
+  customer_email: string | null;
+  discount_amount_cents: number;
+};
+
+export type PromoAdminState = "ACTIVE" | "INACTIVE" | "SCHEDULED" | "EXPIRED" | "LIMIT_REACHED";
+export type PromoLedgerTimestampSource = "payment" | "refund_payment" | "cancel_audit" | "booking_updated";
+
+export type ReconstructedPromoLedgerEvent = {
+  eventType: "REDEEMED" | "REVERSED";
+  eventAt: string;
+  metadata: {
+    reconstructed: true;
+    source: "legacy_reconstruction";
+    timestampSource: PromoLedgerTimestampSource;
+  };
+};
+
+export type ReconstructedPromoLedgerState = {
+  events: ReconstructedPromoLedgerEvent[];
+  currentRedemption:
+    | {
+        promoCodeId: string;
+        bookingId: string;
+        customerId: string | null;
+        customerEmail: string | null;
+        discountAmountCents: number;
+      }
+    | null;
+};
+
 function parseStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value
@@ -38,7 +82,28 @@ function normalizePromoCode(value: string) {
   return value.trim().replace(/\s+/g, "").toUpperCase();
 }
 
-function toNumber(value: string | number | null | undefined, fallback = 0) {
+function normalizeNullableString(value: unknown) {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function normalizePromoDiscountAmount(value: unknown) {
+  return Math.max(0, Math.round(toNumber(value, 0)));
+}
+
+function normalizeIsoDateTime(value: unknown) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString();
+  }
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) return parsed.toISOString();
+  }
+  return null;
+}
+
+function toNumber(value: unknown, fallback = 0) {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim().length > 0) {
     const parsed = Number(value);
@@ -125,6 +190,146 @@ function normalizeApplyScope(value: unknown): PromoApplyScope {
     .toUpperCase();
   if (normalized === "DAYS_TOTAL") return "DAYS_TOTAL";
   return "OVERALL_TOTAL";
+}
+
+export function derivePromoAdminState(input: {
+  isActive: boolean;
+  startAt: string | null;
+  endAt: string | null;
+  maxRedemptions: number | null;
+  currentRedemptionCount: number;
+  now?: Date;
+}): PromoAdminState {
+  const now = input.now ?? new Date();
+
+  if (input.endAt) {
+    const end = new Date(input.endAt);
+    if (!Number.isNaN(end.getTime()) && end < now) {
+      return "EXPIRED";
+    }
+  }
+
+  if (!input.isActive) return "INACTIVE";
+
+  if (input.startAt) {
+    const start = new Date(input.startAt);
+    if (!Number.isNaN(start.getTime()) && start > now) {
+      return "SCHEDULED";
+    }
+  }
+
+  if (input.maxRedemptions !== null && input.currentRedemptionCount >= input.maxRedemptions) {
+    return "LIMIT_REACHED";
+  }
+
+  return "ACTIVE";
+}
+
+export function promoAdminStateLabel(state: PromoAdminState) {
+  if (state === "ACTIVE") return "Active";
+  if (state === "INACTIVE") return "Inactive";
+  if (state === "SCHEDULED") return "Scheduled";
+  if (state === "LIMIT_REACHED") return "Limit reached";
+  return "Expired";
+}
+
+export function computeRemainingRedemptions(maxRedemptions: number | null, currentRedemptionCount: number) {
+  if (maxRedemptions === null) return null;
+  return Math.max(0, maxRedemptions - currentRedemptionCount);
+}
+
+export function deriveReconstructedPromoLedgerState(input: {
+  promoCodeId: string | null;
+  bookingId: string;
+  bookingStatus: string | null;
+  customerId: string | null;
+  customerEmail: string | null;
+  discountAmountCents: number;
+  netPaidToDate: number;
+  redeemedAt: string | null;
+  refundedAt: string | null;
+  cancelledAt: string | null;
+  updatedAt: string | null;
+}): ReconstructedPromoLedgerState {
+  const promoCodeId = normalizeNullableString(input.promoCodeId);
+  if (!promoCodeId) {
+    return { events: [], currentRedemption: null };
+  }
+
+  const redeemedAt = normalizeIsoDateTime(input.redeemedAt);
+  if (!redeemedAt) {
+    return { events: [], currentRedemption: null };
+  }
+
+  const bookingStatus = String(input.bookingStatus ?? "").trim().toUpperCase();
+  const customerId = normalizeNullableString(input.customerId);
+  const customerEmail = normalizeNullableString(input.customerEmail)?.toLowerCase() ?? null;
+  const discountAmountCents = normalizePromoDiscountAmount(input.discountAmountCents);
+  const netPaidToDate = toNumber(input.netPaidToDate, 0);
+
+  const events: ReconstructedPromoLedgerEvent[] = [
+    {
+      eventType: "REDEEMED",
+      eventAt: redeemedAt,
+      metadata: {
+        reconstructed: true,
+        source: "legacy_reconstruction",
+        timestampSource: "payment",
+      },
+    },
+  ];
+
+  const paidAtMs = new Date(redeemedAt).getTime();
+  const refundedAt = normalizeIsoDateTime(input.refundedAt);
+  const cancelledAt = normalizeIsoDateTime(input.cancelledAt);
+  const updatedAt = normalizeIsoDateTime(input.updatedAt);
+  const shouldRemainCounted = bookingStatus !== "CANCELLED" && netPaidToDate > 0;
+
+  let reversalAt: string | null = null;
+  let reversalSource: PromoLedgerTimestampSource | null = null;
+
+  if (!shouldRemainCounted && refundedAt && new Date(refundedAt).getTime() >= paidAtMs) {
+    reversalAt = refundedAt;
+    reversalSource = "refund_payment";
+  } else if (!shouldRemainCounted) {
+    if (cancelledAt) {
+      reversalAt = cancelledAt;
+      reversalSource = "cancel_audit";
+    } else if (updatedAt) {
+      reversalAt = updatedAt;
+      reversalSource = "booking_updated";
+    }
+  }
+
+  if (reversalAt && new Date(reversalAt).getTime() < paidAtMs) {
+    reversalAt = redeemedAt;
+  }
+
+  if (reversalAt && reversalSource) {
+    events.push({
+      eventType: "REVERSED",
+      eventAt: reversalAt,
+      metadata: {
+        reconstructed: true,
+        source: "legacy_reconstruction",
+        timestampSource: reversalSource,
+      },
+    });
+  }
+
+  return {
+    events,
+    currentRedemption:
+      shouldRemainCounted && !reversalAt
+        ? {
+            promoCodeId,
+            bookingId: input.bookingId,
+            customerId,
+            customerEmail,
+            discountAmountCents,
+          }
+        : null,
+  };
 }
 
 export async function validatePromoForBooking(
@@ -276,36 +481,170 @@ export async function validatePromoForBooking(
   };
 }
 
-export async function upsertPromoRedemption(
-  input: {
+async function resolveBookingPromoId(
+  db: Queryable,
+  pricing: Record<string, unknown> | null | undefined,
+) {
+  const promoCodeId = normalizeNullableString(pricing?.promo_code_id);
+  if (promoCodeId) {
+    const byId = await db.query("select id from promo_codes where id = $1 limit 1", [promoCodeId]);
+    if (byId.rowCount > 0) {
+      return String((byId.rows[0] as { id: string }).id);
+    }
+  }
+
+  const { promoCode } = readPromoPricingFields(pricing);
+  if (!promoCode) return null;
+
+  const byCode = await db.query("select id from promo_codes where lower(code) = lower($1) limit 1", [promoCode]);
+  if (byCode.rowCount === 0) return null;
+  return String((byCode.rows[0] as { id: string }).id);
+}
+
+async function appendPromoRedemptionEvent(
+  db: Queryable,
+  row: {
+    promoCodeId: string;
     bookingId: string;
-    promoId: string;
-    customerId?: string | null;
-    customerEmail?: string | null;
+    customerId: string | null;
+    customerEmail: string | null;
     discountAmountCents: number;
-    client?: Queryable;
+  },
+  input: {
+    eventType: "REDEEMED" | "REVERSED";
+    eventAt: string;
+    source: string;
+    reason: string;
   },
 ) {
-  const db = getQueryable(input.client);
-  await db.query("delete from promo_redemptions where booking_id = $1 and promo_code_id <> $2", [
-    input.bookingId,
-    input.promoId,
-  ]);
   await db.query(
-    "insert into promo_redemptions (promo_code_id, booking_id, customer_id, customer_email, discount_amount_cents) values ($1, $2, $3, $4, $5) on conflict (promo_code_id, booking_id) do update set customer_id = excluded.customer_id, customer_email = excluded.customer_email, discount_amount_cents = excluded.discount_amount_cents",
+    "insert into promo_redemption_events (promo_code_id, booking_id, customer_id, customer_email, discount_amount_cents, event_type, event_at, metadata_json) values ($1, $2, $3, $4, $5, $6, $7::timestamptz, $8::jsonb)",
     [
-      input.promoId,
-      input.bookingId,
-      input.customerId ?? null,
-      input.customerEmail ? input.customerEmail.trim().toLowerCase() : null,
-      Math.max(0, Math.round(input.discountAmountCents)),
+      row.promoCodeId,
+      row.bookingId,
+      row.customerId,
+      row.customerEmail,
+      row.discountAmountCents,
+      input.eventType,
+      input.eventAt,
+      JSON.stringify({
+        source: input.source,
+        reason: input.reason,
+      }),
     ],
   );
 }
 
-export async function clearPromoRedemptionForBooking(bookingId: string, options: { client?: Queryable } = {}) {
+function isEquivalentCurrentRedemption(
+  row: PromoCurrentRedemptionRow,
+  target: {
+    promoCodeId: string;
+    bookingId: string;
+    customerId: string | null;
+    customerEmail: string | null;
+    discountAmountCents: number;
+  },
+) {
+  return (
+    row.promo_code_id === target.promoCodeId &&
+    row.booking_id === target.bookingId &&
+    row.customer_id === target.customerId &&
+    normalizeNullableString(row.customer_email)?.toLowerCase() ===
+      normalizeNullableString(target.customerEmail)?.toLowerCase() &&
+    Math.round(Number(row.discount_amount_cents ?? 0)) === Math.round(Number(target.discountAmountCents ?? 0))
+  );
+}
+
+export async function syncPromoRedemptionStateForBooking(
+  bookingId: string,
+  options: { client?: Queryable; source?: string } = {},
+) {
   const db = getQueryable(options.client);
-  await db.query("delete from promo_redemptions where booking_id = $1", [bookingId]);
+  const source = normalizeNullableString(options.source) ?? "promo_redemption_sync";
+  const eventAt = new Date().toISOString();
+
+  const bookingResult = await db.query(
+    "select b.id, b.status, b.customer_id, c.email as customer_email, b.pricing_json from bookings b join customers c on c.id = b.customer_id where b.id = $1 limit 1",
+    [bookingId],
+  );
+  if (bookingResult.rowCount === 0) {
+    throw new Error("Booking not found");
+  }
+
+  const booking = bookingResult.rows[0] as BookingPromoSyncRow;
+  const pricing = booking.pricing_json ?? {};
+  const promoCodeId = await resolveBookingPromoId(db, pricing);
+  const promoDiscountCents = normalizePromoDiscountAmount(pricing.promo_discount_cents);
+  const normalizedStatus = String(booking.status ?? "").trim().toUpperCase();
+  const netPaidToDate = await fetchNetPaidToDate(bookingId, { client: db });
+
+  const shouldRedeem = Boolean(promoCodeId) && normalizedStatus !== "CANCELLED" && netPaidToDate > 0;
+
+  const targetRedemption = shouldRedeem && promoCodeId
+    ? {
+        promoCodeId,
+        bookingId,
+        customerId: normalizeNullableString(booking.customer_id),
+        customerEmail: normalizeNullableString(booking.customer_email)?.toLowerCase() ?? null,
+        discountAmountCents: promoDiscountCents,
+      }
+    : null;
+
+  const currentResult = await db.query(
+    "select id, promo_code_id, booking_id, customer_id, customer_email, discount_amount_cents from promo_redemptions where booking_id = $1",
+    [bookingId],
+  );
+
+  const currentRows = currentResult.rows as PromoCurrentRedemptionRow[];
+  const matchingCurrentRow =
+    targetRedemption === null
+      ? null
+      : currentRows.find((row) => isEquivalentCurrentRedemption(row, targetRedemption)) ?? null;
+
+  for (const row of currentRows) {
+    if (matchingCurrentRow && row.id === matchingCurrentRow.id) {
+      continue;
+    }
+
+    await appendPromoRedemptionEvent(
+      db,
+      {
+        promoCodeId: row.promo_code_id,
+        bookingId: row.booking_id,
+        customerId: normalizeNullableString(row.customer_id),
+        customerEmail: normalizeNullableString(row.customer_email)?.toLowerCase() ?? null,
+        discountAmountCents: normalizePromoDiscountAmount(row.discount_amount_cents),
+      },
+      {
+        eventType: "REVERSED",
+        eventAt,
+        source,
+        reason: targetRedemption ? "state_changed" : "no_longer_redeemed",
+      },
+    );
+
+    await db.query("delete from promo_redemptions where id = $1", [row.id]);
+  }
+
+  if (targetRedemption && !matchingCurrentRow) {
+    await db.query(
+      "insert into promo_redemptions (promo_code_id, booking_id, customer_id, customer_email, discount_amount_cents) values ($1, $2, $3, $4, $5)",
+      [
+        targetRedemption.promoCodeId,
+        targetRedemption.bookingId,
+        targetRedemption.customerId,
+        targetRedemption.customerEmail,
+        targetRedemption.discountAmountCents,
+      ],
+    );
+
+    await appendPromoRedemptionEvent(db, targetRedemption, {
+      eventType: "REDEEMED",
+      eventAt,
+      source,
+      reason: "currently_redeemed",
+    });
+  }
 }
 
 export function normalizePromoInputCode(value: string) {

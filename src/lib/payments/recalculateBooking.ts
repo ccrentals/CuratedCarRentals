@@ -4,6 +4,7 @@ import {
   fetchNetPaidToDate,
   type Queryable,
 } from "@/lib/payments/pricing";
+import { syncPromoRedemptionStateForBooking } from "@/lib/promos";
 
 export type BookingPaymentSummary = {
   bookingId: string;
@@ -97,6 +98,11 @@ export async function recalculateBookingPayments(
     updatedPricing,
     bookingId,
   ]);
+
+  await syncPromoRedemptionStateForBooking(bookingId, {
+    client: db,
+    source: "recalculate_booking_payments",
+  });
 
   return {
     bookingId,

@@ -16,6 +16,7 @@ export type HealthSnapshot = {
   env: EnvValidation;
   checks: {
     db: CheckResult;
+    promoLedger: CheckResult;
     wipay: CheckResult;
     resend: CheckResult;
     pdfmonkey: CheckResult;
@@ -96,6 +97,46 @@ export async function getHealthSnapshot(): Promise<HealthSnapshot> {
         ok: false,
         configured: true,
         status: 0,
+        latencyMs: Date.now() - started,
+        error: safeSnippet(message),
+      };
+    }
+  })();
+
+  const promoLedgerCheck = (async () => {
+    const started = Date.now();
+    const configured = Boolean(process.env.DATABASE_URL?.trim());
+    if (!configured) {
+      return {
+        ok: false,
+        configured: false,
+        latencyMs: Date.now() - started,
+        error: "DATABASE_URL is not set",
+      };
+    }
+
+    try {
+      const result = await dbQuery(
+        "select to_regclass('public.promo_redemption_events') is not null as exists",
+      );
+      const existsValue = (result.rows[0] as { exists?: unknown } | undefined)?.exists;
+      const exists =
+        existsValue === true ||
+        existsValue === "t" ||
+        existsValue === "true" ||
+        existsValue === 1;
+
+      return {
+        ok: exists,
+        configured: true,
+        latencyMs: Date.now() - started,
+        error: exists ? undefined : "Required table public.promo_redemption_events is missing",
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Promo ledger schema check failed";
+      return {
+        ok: false,
+        configured: true,
         latencyMs: Date.now() - started,
         error: safeSnippet(message),
       };
@@ -267,8 +308,9 @@ export async function getHealthSnapshot(): Promise<HealthSnapshot> {
     };
   })();
 
-  const [db, wipay, resend, pdfmonkey, uploadcare, netlify] = await Promise.all([
+  const [db, promoLedger, wipay, resend, pdfmonkey, uploadcare, netlify] = await Promise.all([
     dbCheck,
+    promoLedgerCheck,
     wipayCheck,
     resendCheck,
     invoiceProviderCheck,
@@ -276,7 +318,7 @@ export async function getHealthSnapshot(): Promise<HealthSnapshot> {
     netlifyCheck,
   ]);
 
-  const ok = runtimeCoreOk(env) && db.ok;
+  const ok = runtimeCoreOk(env) && db.ok && promoLedger.ok;
   const goLiveReady =
     strictOk(env.core) &&
     strictOk(env.payments) &&
@@ -285,6 +327,7 @@ export async function getHealthSnapshot(): Promise<HealthSnapshot> {
     strictOk(env.uploads) &&
     strictOk(env.cron) &&
     db.ok &&
+    promoLedger.ok &&
     wipay.ok &&
     resend.ok &&
     pdfmonkey.ok &&
@@ -294,7 +337,7 @@ export async function getHealthSnapshot(): Promise<HealthSnapshot> {
     ok,
     goLiveReady,
     env,
-    checks: { db, wipay, resend, pdfmonkey, uploadcare, netlify },
+    checks: { db, promoLedger, wipay, resend, pdfmonkey, uploadcare, netlify },
     timestamp: new Date().toISOString(),
   };
   })();

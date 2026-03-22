@@ -14,7 +14,7 @@ import {
   hashBookingAccessToken,
   hashBookingSubmissionKey,
 } from "@/lib/bookings/privateAccess";
-import { normalizePromoInputCode, upsertPromoRedemption } from "@/lib/promos";
+import { normalizePromoInputCode } from "@/lib/promos";
 import {
   computeBookingPricingFromStoredSnapshot,
   parsePaymentOptionInput,
@@ -457,17 +457,6 @@ export async function POST(request: Request) {
         pricing,
       ],
     );
-
-    if (quoteSnapshot.promoId && quoteSnapshot.summary.discountTotalCents > 0) {
-      await upsertPromoRedemption({
-        bookingId: bookingInsert.rows[0].id as string,
-        promoId: quoteSnapshot.promoId,
-        customerId: customerUpsert.customerId,
-        customerEmail: normalizedEmail,
-        discountAmountCents: quoteSnapshot.summary.discountTotalCents,
-        client,
-      });
-    }
 
     if (hasDriversLicenseDataUrl) {
       await client.query(

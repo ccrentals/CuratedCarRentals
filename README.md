@@ -81,6 +81,29 @@ npm run migrate
 
 This applies pending files in filename order (e.g. `001_...sql`, `002_...sql`) and is safe to re-run.
 
+After promo-ledger changes, verify the required schema contract before promoting app code that depends on it:
+
+```bash
+npm run migrate
+npm run check:promo-ledger-schema
+```
+
+Rebuild the canonical promo ledger history locally before first shared promotion:
+
+```bash
+npm run rebuild:promo-ledger-history
+npm run rebuild:promo-ledger-history -- --apply
+```
+
+The default run is a dry run and writes reconciliation output to `.artifacts/promo-ledger-reconciliation.json`.
+
+Promotion order for promo-ledger releases:
+1. Merge schema-contract changes first.
+2. Run `npm run migrate`.
+3. Run `npm run check:promo-ledger-schema`.
+4. Run `npm run rebuild:promo-ledger-history -- --apply`.
+5. Only then promote app code that depends on `promo_redemption_events`.
+
 ### Public fleet vehicle import (one-time)
 
 The public Fleet/Home pages now read from Admin vehicles in Neon.
@@ -205,6 +228,7 @@ For a “goLiveReady: true” signal you must have:
 - PDFMonkey configured + reachable.
 - Uploadcare public key configured + reachable.
 - DB OK.
+- Promo ledger schema present (`promo_redemption_events`).
 
 ## Security docs
 

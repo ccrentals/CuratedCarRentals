@@ -16,7 +16,7 @@ import { requireCsrf } from "@/lib/security/csrf";
 import { isEmail, isISODate, isNonEmptyString } from "@/lib/validators";
 import { logError } from "@/lib/log";
 import { CustomerBlockedError, upsertCustomerForBooking } from "@/lib/customers";
-import { normalizePromoInputCode, upsertPromoRedemption, validatePromoForBooking } from "@/lib/promos";
+import { normalizePromoInputCode, validatePromoForBooking } from "@/lib/promos";
 import { writeAuditLog } from "@/lib/audit";
 
 const UUID_REGEX =
@@ -72,7 +72,6 @@ export type AdminBookingsPostRouteDeps = {
   isVehicleUnavailable: typeof isVehicleUnavailableEntitlementBased;
   upsertCustomer: typeof upsertCustomerForBooking;
   validatePromo: typeof validatePromoForBooking;
-  upsertPromo: typeof upsertPromoRedemption;
   writeAudit: typeof writeAuditLog;
   sendCreatedEmail: typeof sendBookingCreatedEmail;
   log: typeof logError;
@@ -85,7 +84,6 @@ const DEFAULT_BOOKINGS_POST_DEPS: AdminBookingsPostRouteDeps = {
   isVehicleUnavailable: isVehicleUnavailableEntitlementBased,
   upsertCustomer: upsertCustomerForBooking,
   validatePromo: validatePromoForBooking,
-  upsertPromo: upsertPromoRedemption,
   writeAudit: writeAuditLog,
   sendCreatedEmail: sendBookingCreatedEmail,
   log: logError,
@@ -272,17 +270,6 @@ export async function handleAdminBookingsPost(
       "insert into bookings (vehicle_id, customer_id, start_date, end_date, pickup_location, status, pricing_json) values ($1, $2, $3, $4, $5, 'PENDING_PAYMENT', $6) returning id, status",
       [vehicleId, customerUpsert.customerId, startDate, endDate, String(pickupLocation).trim(), pricing],
     );
-
-    if (promoId && promoDiscount > 0) {
-      await deps.upsertPromo({
-        bookingId: bookingInsert.rows[0].id as string,
-        promoId,
-        customerId: customerUpsert.customerId,
-        customerEmail: normalizedEmail,
-        discountAmountCents: promoDiscount,
-        client,
-      });
-    }
 
     await client.query("commit");
 
