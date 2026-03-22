@@ -3,9 +3,14 @@ import { NextResponse } from "next/server";
 import { requireAdminRole } from "@/lib/auth/adminGuards";
 import { dbQuery } from "@/lib/db";
 import { requireCsrf } from "@/lib/security/csrf";
-import { normalizePromoInputCode } from "@/lib/promos";
+import {
+  computeRemainingRedemptions,
+  derivePromoAdminState,
+  normalizePromoInputCode,
+} from "@/lib/promos";
 import { writeAuditLog } from "@/lib/audit";
 import { logError } from "@/lib/log";
+import { parsePositiveIntParam } from "@/lib/pagination/sharedPagination";
 
 type PromoRow = {
   id: string;
@@ -33,8 +38,32 @@ type RedemptionRow = {
   booking_public_id: string | null;
   customer_email: string | null;
   discount_amount_cents: number;
+  event_type: "REDEEMED" | "REVERSED";
+  event_at: string;
   created_at: string;
+  is_reconstructed: boolean;
+  timestamp_source: string | null;
 };
+
+type PromoCurrentCountRow = {
+  count: number;
+};
+
+type PromoActivityAggregateRow = {
+  redeemed_events: number;
+  reversed_events: number;
+  total_discount_redeemed: number;
+  total_discount_reversed: number;
+  history_coverage_started_at: string | null;
+  has_reconstructed_history: boolean;
+};
+
+type PromoActivityCountRow = {
+  count: number;
+};
+
+const PROMO_ACTIVITY_PAGE_SIZE = 25;
+const PROMO_HISTORY_COVERAGE = "COMPLETE_RECONSTRUCTED_HISTORY" as const;
 
 function asInteger(value: unknown): number | null {
   if (value === null || value === undefined || value === "") return null;
@@ -48,6 +77,17 @@ function asDateIso(value: unknown): string | null {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return null;
   return parsed.toISOString();
+}
+
+function asIsoDateTime(value: unknown): string | null {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString();
+  }
+  if (typeof value === "string" && value.trim()) {
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) return parsed.toISOString();
+  }
+  return null;
 }
 
 function parseStringArray(value: unknown) {
@@ -80,7 +120,16 @@ function normalizePromoPayload(row: PromoRow) {
   };
 }
 
-export async function fetchAdminPromoCodeById(id: string) {
+function normalizeActivityPage(value: string | number | null | undefined) {
+  if (typeof value === "number" && Number.isInteger(value) && value > 0) return value;
+  if (typeof value === "string") return parsePositiveIntParam(value) ?? 1;
+  return 1;
+}
+
+export async function fetchAdminPromoCodeById(
+  id: string,
+  input: { activityPage?: string | number | null } = {},
+) {
   const promo = await dbQuery<PromoRow>(
     "select id, public_id, code, is_active, discount_type, apply_scope, discount_value, min_subtotal_cents, max_redemptions, max_redemptions_per_customer, start_at, end_at, allowed_vehicle_ids_json, excluded_vehicle_ids_json, blackout_dates_json, created_at, updated_at from promo_codes where id = $1 limit 1",
     [id],
@@ -88,31 +137,151 @@ export async function fetchAdminPromoCodeById(id: string) {
   if (promo.rowCount === 0) {
     return null;
   }
-  return normalizePromoPayload(promo.rows[0]);
+
+  const currentCountResult = await dbQuery<PromoCurrentCountRow>(
+    "select count(*)::int as count from promo_redemptions where promo_code_id = $1",
+    [id],
+  );
+  const currentCount = Number(currentCountResult.rows[0]?.count ?? 0);
+
+  const requestedActivityPage = normalizeActivityPage(input.activityPage);
+  const aggregateResult: { rows: PromoActivityAggregateRow[]; rowCount: number } = await dbQuery<PromoActivityAggregateRow>(
+    `select
+       coalesce(sum(case when event_type = 'REDEEMED' then 1 else 0 end), 0)::int as redeemed_events,
+       coalesce(sum(case when event_type = 'REVERSED' then 1 else 0 end), 0)::int as reversed_events,
+       coalesce(sum(case when event_type = 'REDEEMED' then discount_amount_cents else 0 end), 0)::int as total_discount_redeemed,
+       coalesce(sum(case when event_type = 'REVERSED' then discount_amount_cents else 0 end), 0)::int as total_discount_reversed,
+       min(event_at) as history_coverage_started_at,
+       coalesce(
+         bool_or(lower(coalesce(metadata_json->>'reconstructed', 'false')) = 'true'),
+         false
+       ) as has_reconstructed_history
+     from promo_redemption_events
+     where promo_code_id = $1`,
+    [id],
+  );
+  let activityTotalCount = 0;
+  let activityTotalPages = 1;
+  let activityPage = requestedActivityPage;
+  let activityOffset = 0;
+  let activityRows: { rows: RedemptionRow[]; rowCount: number } = { rows: [], rowCount: 0 };
+
+  const activityCountResult = await dbQuery<PromoActivityCountRow>(
+    "select count(*)::int as count from promo_redemption_events where promo_code_id = $1",
+    [id],
+  );
+  activityTotalCount = Number(activityCountResult.rows[0]?.count ?? 0);
+  activityTotalPages = Math.max(1, Math.ceil(activityTotalCount / PROMO_ACTIVITY_PAGE_SIZE));
+  activityPage = Math.min(Math.max(1, requestedActivityPage), activityTotalPages);
+  activityOffset = (activityPage - 1) * PROMO_ACTIVITY_PAGE_SIZE;
+
+  activityRows = await dbQuery<RedemptionRow>(
+    `select
+       e.id,
+       e.booking_id,
+       b.public_id as booking_public_id,
+       e.customer_email,
+       e.discount_amount_cents,
+       e.event_type,
+       e.event_at,
+       e.created_at,
+       case
+         when lower(coalesce(e.metadata_json->>'reconstructed', 'false')) = 'true' then true
+         else false
+       end as is_reconstructed,
+       nullif(e.metadata_json->>'timestampSource', '') as timestamp_source
+     from promo_redemption_events e
+     left join bookings b on b.id = e.booking_id
+     where e.promo_code_id = $1
+     order by e.event_at desc, e.created_at desc
+     limit $2
+     offset $3`,
+    [id, PROMO_ACTIVITY_PAGE_SIZE, activityOffset],
+  );
+
+  const normalizedPromo = normalizePromoPayload(promo.rows[0]);
+  const adminState = derivePromoAdminState({
+    isActive: normalizedPromo.is_active,
+    startAt: normalizedPromo.start_at,
+    endAt: normalizedPromo.end_at,
+    maxRedemptions: normalizedPromo.max_redemptions,
+    currentRedemptionCount: currentCount,
+  });
+
+  const aggregates = aggregateResult.rows[0] as Partial<PromoActivityAggregateRow> | undefined;
+  const redeemedEvents = Number(aggregates?.redeemed_events ?? 0);
+  const reversedEvents = Number(aggregates?.reversed_events ?? 0);
+  const totalDiscountRedeemed = Number(aggregates?.total_discount_redeemed ?? 0);
+  const totalDiscountReversed = Number(aggregates?.total_discount_reversed ?? 0);
+  const historyCoverageStartedAt = asIsoDateTime(aggregates?.history_coverage_started_at);
+  const hasReconstructedHistory = aggregates?.has_reconstructed_history === true;
+  const remaining = computeRemainingRedemptions(normalizedPromo.max_redemptions, currentCount);
+
+  return {
+    promo: {
+      ...normalizedPromo,
+      current_redemption_count: currentCount,
+      remaining_redemptions: remaining,
+      admin_state: adminState,
+    },
+    summary: {
+      currentCount,
+      remaining,
+      status: adminState,
+      redeemedEvents,
+      reversedEvents,
+      netCounted: Math.max(0, redeemedEvents - reversedEvents),
+      totalDiscountRedeemed,
+      totalDiscountReversed,
+    },
+    historyCoverage: PROMO_HISTORY_COVERAGE,
+    historyCoverageStartedAt,
+    hasReconstructedHistory,
+    activity: {
+      rows: activityRows.rows.map((row) => ({
+        ...row,
+        discount_amount_cents: Number(row.discount_amount_cents ?? 0),
+        event_at: asIsoDateTime(row.event_at) ?? String(row.event_at ?? ""),
+        created_at: asIsoDateTime(row.created_at) ?? String(row.created_at ?? ""),
+        is_reconstructed: row.is_reconstructed === true,
+        timestamp_source:
+          typeof row.timestamp_source === "string" && row.timestamp_source.trim().length > 0
+            ? row.timestamp_source.trim()
+            : null,
+      })),
+      page: activityPage,
+      totalPages: activityTotalPages,
+      totalCount: activityTotalCount,
+      pageSize: PROMO_ACTIVITY_PAGE_SIZE,
+      from: activityTotalCount === 0 ? 0 : activityOffset + 1,
+      to: activityTotalCount === 0 ? 0 : activityOffset + activityRows.rows.length,
+      hasPrev: activityPage > 1,
+      hasNext: activityPage < activityTotalPages,
+    },
+  };
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const auth = await requireAdminRole();
   if (!auth.ok) return auth.response;
 
   const { id } = await params;
-  const promo = await fetchAdminPromoCodeById(id);
-  if (!promo) {
-    return NextResponse.json({ error: "Promo code not found." }, { status: 404 });
+  const url = new URL(request.url);
+  const activityPage = url.searchParams.get("activityPage");
+  try {
+    const promoData = await fetchAdminPromoCodeById(id, { activityPage });
+    if (!promoData) {
+      return NextResponse.json({ error: "Promo code not found." }, { status: 404 });
+    }
+
+    return NextResponse.json(promoData);
+  } catch (error) {
+    logError("api.admin.promo-codes.[id].GET", error, { promoId: id });
+    return NextResponse.json({ error: "Failed to load promo code." }, { status: 500 });
   }
-
-  const redemptions = await dbQuery<RedemptionRow>(
-    "select r.id, r.booking_id, b.public_id as booking_public_id, r.customer_email, r.discount_amount_cents, r.created_at from promo_redemptions r left join bookings b on b.id = r.booking_id where r.promo_code_id = $1 order by r.created_at desc limit 100",
-    [id],
-  );
-
-  return NextResponse.json({
-    promo,
-    redemptions: redemptions.rows,
-  });
 }
 
 export async function PATCH(

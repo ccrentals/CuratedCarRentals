@@ -100,17 +100,38 @@ test("admin promo search + detail include promo public_id", async (t) => {
     const promo = await insertPromo(runTag);
     promoIds.push(promo.id);
 
-    const list = (await fetchAdminPromoCodes({ q: promo.public_id.toLowerCase() })) as Array<{
-      id: string;
-      public_id: string;
-    }>;
-    const found = list.find((item: { id: string; public_id: string }) => item.id === promo.id);
+    const list = await fetchAdminPromoCodes({ q: promo.public_id.toLowerCase() });
+    const found = list.promos.find((item) => item.id === promo.id);
     assert.ok(found);
     assert.equal(found?.public_id, promo.public_id);
 
     const detail = await fetchAdminPromoCodeById(promo.id);
     assert.ok(detail);
-    assert.equal(detail?.public_id, promo.public_id);
+    assert.equal(detail?.promo.public_id, promo.public_id);
+  } finally {
+    await cleanup(promoIds);
+  }
+});
+
+test("admin promo list supports substring search and pagination metadata", async (t) => {
+  requireDatabaseOrSkip(t);
+
+  const runTag = `pr-public-id-page-${randomUUID().slice(0, 8)}`;
+  const promoIds: string[] = [];
+
+  try {
+    const first = await insertPromo(`${runTag}-1`);
+    const second = await insertPromo(`${runTag}-2`);
+    promoIds.push(first.id, second.id);
+
+    const fragment = runTag.slice(-5).toUpperCase();
+    const page = await fetchAdminPromoCodes({ q: fragment, rows: 10, page: 1 });
+
+    assert.ok(page.totalCount >= 2);
+    assert.equal(page.page, 1);
+    assert.equal(page.rowsPerPage, 10);
+    assert.ok(page.promos.some((item) => item.id === first.id));
+    assert.ok(page.promos.some((item) => item.id === second.id));
   } finally {
     await cleanup(promoIds);
   }

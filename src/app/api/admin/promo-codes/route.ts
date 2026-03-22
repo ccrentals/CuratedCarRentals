@@ -3,9 +3,14 @@ import { NextResponse } from "next/server";
 import { requireAdminRole } from "@/lib/auth/adminGuards";
 import { dbQuery } from "@/lib/db";
 import { requireCsrf } from "@/lib/security/csrf";
-import { normalizePromoInputCode } from "@/lib/promos";
+import {
+  computeRemainingRedemptions,
+  derivePromoAdminState,
+  normalizePromoInputCode,
+} from "@/lib/promos";
 import { writeAuditLog } from "@/lib/audit";
 import { logError } from "@/lib/log";
+import { normalizePageSize, parsePositiveIntParam } from "@/lib/pagination/sharedPagination";
 
 type PromoListRow = {
   id: string;
@@ -22,32 +27,155 @@ type PromoListRow = {
   end_at: string | null;
   allowed_vehicle_ids_json: unknown;
   excluded_vehicle_ids_json: unknown;
+  blackout_dates_json: unknown;
   created_at: string;
   updated_at: string;
-  redemption_count: number;
+  current_redemption_count: number;
 };
 
-export async function fetchAdminPromoCodes(input: { q?: string } = {}) {
-  const q = (input.q ?? "").trim();
-  const values = q ? [`${q}%`] : [];
-  const whereSql = q ? "where (p.code ilike $1 or p.public_id ilike $1)" : "";
+type PromoCountRow = {
+  count: number;
+};
 
-  const result = await dbQuery<PromoListRow>(
-    "select p.id, p.public_id, p.code, p.is_active, p.discount_type, p.apply_scope, p.discount_value, p.min_subtotal_cents, p.max_redemptions, p.max_redemptions_per_customer, p.start_at, p.end_at, p.allowed_vehicle_ids_json, p.excluded_vehicle_ids_json, p.created_at, p.updated_at, count(r.id)::int as redemption_count from promo_codes p left join promo_redemptions r on r.promo_code_id = p.id " +
-      whereSql +
-      " group by p.id, p.public_id, p.code, p.is_active, p.discount_type, p.apply_scope, p.discount_value, p.min_subtotal_cents, p.max_redemptions, p.max_redemptions_per_customer, p.start_at, p.end_at, p.allowed_vehicle_ids_json, p.excluded_vehicle_ids_json, p.created_at, p.updated_at order by p.created_at desc",
-    values,
-  );
+export type AdminPromoListItem = {
+  id: string;
+  public_id: string;
+  code: string;
+  is_active: boolean;
+  discount_type: "PERCENT" | "FIXED";
+  apply_scope: "OVERALL_TOTAL" | "DAYS_TOTAL";
+  discount_value: number;
+  min_subtotal_cents: number | null;
+  max_redemptions: number | null;
+  max_redemptions_per_customer: number | null;
+  start_at: string | null;
+  end_at: string | null;
+  allowed_vehicle_ids_json: string[];
+  excluded_vehicle_ids_json: string[];
+  blackout_dates_json: string[];
+  created_at: string;
+  updated_at: string;
+  current_redemption_count: number;
+  remaining_redemptions: number | null;
+  admin_state: ReturnType<typeof derivePromoAdminState>;
+};
 
-  return result.rows.map((row: PromoListRow) => ({
+export type AdminPromoListPage = {
+  promos: AdminPromoListItem[];
+  totalCount: number;
+  page: number;
+  totalPages: number;
+  rowsPerPage: number;
+  from: number;
+  to: number;
+  hasPrev: boolean;
+  hasNext: boolean;
+};
+
+function parsePageParam(value: string | number | null | undefined) {
+  if (typeof value === "number" && Number.isInteger(value) && value > 0) {
+    return value;
+  }
+  if (typeof value === "string") {
+    return parsePositiveIntParam(value) ?? 1;
+  }
+  return 1;
+}
+
+function normalizePromoListRow(row: PromoListRow): AdminPromoListItem {
+  const currentRedemptionCount = Number(row.current_redemption_count ?? 0);
+  const adminState = derivePromoAdminState({
+    isActive: row.is_active,
+    startAt: row.start_at,
+    endAt: row.end_at,
+    maxRedemptions: row.max_redemptions,
+    currentRedemptionCount,
+  });
+
+  return {
     ...row,
     apply_scope: row.apply_scope === "DAYS_TOTAL" ? "DAYS_TOTAL" : "OVERALL_TOTAL",
     allowed_vehicle_ids_json: parseVehicleIds(row.allowed_vehicle_ids_json),
     excluded_vehicle_ids_json: parseVehicleIds(row.excluded_vehicle_ids_json),
+    blackout_dates_json: parseBlackoutDates(row.blackout_dates_json),
     discount_value: Number(row.discount_value ?? 0),
-    remaining_redemptions:
-      row.max_redemptions === null ? null : Math.max(0, row.max_redemptions - row.redemption_count),
-  }));
+    current_redemption_count: currentRedemptionCount,
+    remaining_redemptions: computeRemainingRedemptions(row.max_redemptions, currentRedemptionCount),
+    admin_state: adminState,
+  };
+}
+
+export async function fetchAdminPromoCodes(input: {
+  q?: string | null;
+  page?: string | number | null;
+  rows?: string | number | null;
+} = {}): Promise<AdminPromoListPage> {
+  const q = (input.q ?? "").trim();
+  const searchValue = q ? `%${q}%` : null;
+  const whereSql = searchValue ? "where (p.code ilike $1 or p.public_id ilike $1)" : "";
+  const countParams = searchValue ? [searchValue] : [];
+  const rowsPerPage = normalizePageSize(input.rows ?? undefined);
+  const requestedPage = parsePageParam(input.page);
+
+  const countResult = await dbQuery<PromoCountRow>(
+    `select count(*)::int as count
+     from promo_codes p
+     ${whereSql}`,
+    countParams,
+  );
+  const totalCount = Number(countResult.rows[0]?.count ?? 0);
+  const totalPages = Math.max(1, Math.ceil(totalCount / rowsPerPage));
+  const page = Math.min(Math.max(1, requestedPage), totalPages);
+  const offset = (page - 1) * rowsPerPage;
+
+  const result = await dbQuery<PromoListRow>(
+    `select
+       p.id,
+       p.public_id,
+       p.code,
+       p.is_active,
+       p.discount_type,
+       p.apply_scope,
+       p.discount_value,
+       p.min_subtotal_cents,
+       p.max_redemptions,
+       p.max_redemptions_per_customer,
+       p.start_at,
+       p.end_at,
+       p.allowed_vehicle_ids_json,
+       p.excluded_vehicle_ids_json,
+       p.blackout_dates_json,
+       p.created_at,
+       p.updated_at,
+       coalesce(r.current_redemption_count, 0)::int as current_redemption_count
+     from promo_codes p
+     left join (
+       select promo_code_id, count(*)::int as current_redemption_count
+       from promo_redemptions
+       group by promo_code_id
+     ) r on r.promo_code_id = p.id
+     ${whereSql}
+     order by p.created_at desc
+     limit $${countParams.length + 1}
+     offset $${countParams.length + 2}`,
+    [...countParams, rowsPerPage, offset],
+  );
+
+  const promos = result.rows.map(normalizePromoListRow);
+  const from = totalCount === 0 ? 0 : offset + 1;
+  const to = totalCount === 0 ? 0 : offset + promos.length;
+
+  return {
+    promos,
+    totalCount,
+    page,
+    totalPages,
+    rowsPerPage,
+    from,
+    to,
+    hasPrev: page > 1,
+    hasNext: page < totalPages,
+  };
 }
 
 function asInteger(value: unknown): number | null {
@@ -93,9 +221,11 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const q = url.searchParams.get("q") ?? "";
-  const promos = await fetchAdminPromoCodes({ q });
+  const page = url.searchParams.get("page");
+  const rows = url.searchParams.get("rows");
+  const promoPage = await fetchAdminPromoCodes({ q, page, rows });
 
-  return NextResponse.json({ promos });
+  return NextResponse.json(promoPage);
 }
 
 export async function POST(request: Request) {

@@ -1,12 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 
-import { TableDateTime } from "@/components/shared/TableDateTime";
-import { ensureCsrfToken } from "@/lib/security/csrf-client";
+import { PaginationSummaryNav } from "@/components/admin/PaginationSummaryNav";
+import { StackedDateTimeRange } from "@/components/shared/StackedDateTimeRange";
+import { fmtAdminDateTimeNoSeconds } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
+import { ensureCsrfToken } from "@/lib/security/csrf-client";
+
+type PromoAdminState = "ACTIVE" | "INACTIVE" | "SCHEDULED" | "EXPIRED" | "LIMIT_REACHED";
 
 type PromoDetails = {
   id: string;
@@ -26,15 +30,60 @@ type PromoDetails = {
   blackout_dates_json: string[];
   created_at: string;
   updated_at: string;
+  current_redemption_count: number;
+  remaining_redemptions: number | null;
+  admin_state: PromoAdminState;
 };
 
-type RedemptionRow = {
+type PromoSummary = {
+  currentCount: number;
+  remaining: number | null;
+  status: PromoAdminState;
+  redeemedEvents: number;
+  reversedEvents: number;
+  netCounted: number;
+  totalDiscountRedeemed: number;
+  totalDiscountReversed: number;
+};
+
+type PromoActivityRow = {
   id: string;
   booking_id: string;
   booking_public_id: string | null;
   customer_email: string | null;
   discount_amount_cents: number;
+  event_type: "REDEEMED" | "REVERSED";
+  event_at: string;
   created_at: string;
+  is_reconstructed: boolean;
+  timestamp_source: string | null;
+};
+
+type PromoActivityPage = {
+  rows: PromoActivityRow[];
+  page: number;
+  totalPages: number;
+  totalCount: number;
+  pageSize: number;
+  from: number;
+  to: number;
+  hasPrev: boolean;
+  hasNext: boolean;
+};
+
+type PromoResponse = {
+  promo: PromoDetails;
+  summary: PromoSummary;
+  historyCoverage: "COMPLETE_RECONSTRUCTED_HISTORY";
+  historyCoverageStartedAt: string | null;
+  hasReconstructedHistory: boolean;
+  activity: PromoActivityPage;
+};
+
+type PromoHistoryInfo = {
+  historyCoverage: "COMPLETE_RECONSTRUCTED_HISTORY";
+  historyCoverageStartedAt: string | null;
+  hasReconstructedHistory: boolean;
 };
 
 type VehicleRow = {
@@ -43,8 +92,6 @@ type VehicleRow = {
   model: string;
   year: number;
 };
-
-type PromoRuntimeStatus = "ACTIVE" | "INACTIVE" | "EXPIRED";
 
 function isVehicleRow(row: unknown): row is VehicleRow {
   if (!row || typeof row !== "object") return false;
@@ -80,29 +127,72 @@ function fromCommaSeparated(value: string) {
     .filter(Boolean);
 }
 
-function getPromoRuntimeStatus(promo: PromoDetails, now = new Date()): PromoRuntimeStatus {
-  if (promo.end_at) {
-    const end = new Date(promo.end_at);
-    if (!Number.isNaN(end.getTime()) && end < now) {
-      return "EXPIRED";
-    }
-  }
-  if (!promo.is_active) return "INACTIVE";
-  return "ACTIVE";
-}
-
-function promoStatusLabel(status: PromoRuntimeStatus) {
+function promoStatusLabel(status: PromoAdminState) {
   if (status === "ACTIVE") return "Active";
   if (status === "INACTIVE") return "Inactive";
+  if (status === "SCHEDULED") return "Scheduled";
+  if (status === "LIMIT_REACHED") return "Limit reached";
   return "Expired";
 }
+
+function promoMinThresholdLabel(scope: PromoDetails["apply_scope"] | "OVERALL_TOTAL" | "DAYS_TOTAL") {
+  return scope === "DAYS_TOTAL" ? "Min rental-days total (JMD)" : "Min overall subtotal (JMD)";
+}
+
+function formatWindowLabel(value: string | null, fallback: string) {
+  if (!value) return fallback;
+  return `${fmtAdminDateTimeNoSeconds(value)} Jamaica time`;
+}
+
+function formatActivityType(value: PromoActivityRow["event_type"]) {
+  return value === "REVERSED" ? "Reversed" : "Redeemed";
+}
+
+function formatHistoryCoverageNote(history: PromoHistoryInfo) {
+  if (history.historyCoverageStartedAt) {
+    return `Historical ledger coverage begins ${fmtAdminDateTimeNoSeconds(history.historyCoverageStartedAt)} Jamaica time and is reconstructed from booking, payment, and cancellation records.`;
+  }
+  return "Historical ledger is complete. No promo redemption activity has been recorded for this code yet.";
+}
+
+function formatTimestampSource(value: string | null) {
+  if (value === "refund_payment") return "Refund payment";
+  if (value === "cancel_audit") return "Cancellation audit";
+  if (value === "booking_updated") return "Booking update";
+  if (value === "payment") return "Payment";
+  return "Derived";
+}
+
+const EMPTY_ACTIVITY: PromoActivityPage = {
+  rows: [],
+  page: 1,
+  totalPages: 1,
+  totalCount: 0,
+  pageSize: 25,
+  from: 0,
+  to: 0,
+  hasPrev: false,
+  hasNext: false,
+};
+
+const DEFAULT_HISTORY_INFO: PromoHistoryInfo = {
+  historyCoverage: "COMPLETE_RECONSTRUCTED_HISTORY",
+  historyCoverageStartedAt: null,
+  hasReconstructedHistory: false,
+};
 
 export default function AdminPromoCodeDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const promoId = params?.id ?? "";
+  const activityPageParam = searchParams.get("activityPage") ?? "";
+
   const [promo, setPromo] = useState<PromoDetails | null>(null);
-  const [redemptions, setRedemptions] = useState<RedemptionRow[]>([]);
+  const [summary, setSummary] = useState<PromoSummary | null>(null);
+  const [historyInfo, setHistoryInfo] = useState<PromoHistoryInfo>(DEFAULT_HISTORY_INFO);
+  const [activity, setActivity] = useState<PromoActivityPage>(EMPTY_ACTIVITY);
   const [vehicles, setVehicles] = useState<VehicleRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -128,105 +218,113 @@ export default function AdminPromoCodeDetailPage() {
   const selectedAllowedSet = useMemo(() => new Set(allowedVehicleIds), [allowedVehicleIds]);
   const selectedExcludedSet = useMemo(() => new Set(excludedVehicleIds), [excludedVehicleIds]);
 
-  async function loadPromo() {
-    if (!promoId) return;
-    setLoading(true);
-    setError(null);
-    const response = await fetch(`/api/admin/promo-codes/${promoId}`, { cache: "no-store" });
-    const data = await response.json().catch(() => ({}));
-    setLoading(false);
-
-    if (!response.ok) {
-      setError(data.error ?? "Unable to load promo code.");
-      return;
-    }
-
-    const promoData = data.promo as PromoDetails;
-    setPromo(promoData);
-    setRedemptions(Array.isArray(data.redemptions) ? (data.redemptions as RedemptionRow[]) : []);
-    setCode(promoData.code);
-    setIsActive(promoData.is_active);
-    setDiscountType(promoData.discount_type);
-    setApplyScope(promoData.apply_scope === "DAYS_TOTAL" ? "DAYS_TOTAL" : "OVERALL_TOTAL");
-    setDiscountValue(String(promoData.discount_value));
-    setMinSubtotal(promoData.min_subtotal_cents === null ? "" : String(promoData.min_subtotal_cents));
-    setMaxRedemptions(promoData.max_redemptions === null ? "" : String(promoData.max_redemptions));
+  function applyPromoState(nextPromo: PromoDetails) {
+    setPromo(nextPromo);
+    setCode(nextPromo.code);
+    setIsActive(nextPromo.is_active);
+    setDiscountType(nextPromo.discount_type);
+    setApplyScope(nextPromo.apply_scope === "DAYS_TOTAL" ? "DAYS_TOTAL" : "OVERALL_TOTAL");
+    setDiscountValue(String(nextPromo.discount_value));
+    setMinSubtotal(nextPromo.min_subtotal_cents === null ? "" : String(nextPromo.min_subtotal_cents));
+    setMaxRedemptions(nextPromo.max_redemptions === null ? "" : String(nextPromo.max_redemptions));
     setMaxPerCustomer(
-      promoData.max_redemptions_per_customer === null
-        ? ""
-        : String(promoData.max_redemptions_per_customer),
+      nextPromo.max_redemptions_per_customer === null ? "" : String(nextPromo.max_redemptions_per_customer),
     );
-    const start = toDateTimeParts(promoData.start_at);
-    const end = toDateTimeParts(promoData.end_at);
+    const start = toDateTimeParts(nextPromo.start_at);
+    const end = toDateTimeParts(nextPromo.end_at);
     setStartDate(start.date);
     setStartTime(start.time);
     setEndDate(end.date);
     setEndTime(end.time);
-    setAllowedVehicleIds(promoData.allowed_vehicle_ids_json ?? []);
-    setExcludedVehicleIds(promoData.excluded_vehicle_ids_json ?? []);
-    setBlackoutDates((promoData.blackout_dates_json ?? []).join(", "));
+    setAllowedVehicleIds(nextPromo.allowed_vehicle_ids_json ?? []);
+    setExcludedVehicleIds(nextPromo.excluded_vehicle_ids_json ?? []);
+    setBlackoutDates((nextPromo.blackout_dates_json ?? []).join(", "));
   }
+
+  const loadPromo = useCallback(async (input: { activityPage?: string } = {}) => {
+    if (!promoId) return;
+    setLoading(true);
+    setError(null);
+    const params = new URLSearchParams();
+    const nextActivityPage = input.activityPage ?? activityPageParam;
+    if (nextActivityPage) {
+      params.set("activityPage", nextActivityPage);
+    }
+
+    const response = await fetch(
+      `/api/admin/promo-codes/${promoId}${params.toString() ? `?${params}` : ""}`,
+      { cache: "no-store" },
+    );
+    const data = (await response.json().catch(() => ({}))) as Partial<PromoResponse> & { error?: string };
+    setLoading(false);
+
+    if (!response.ok || !data.promo || !data.summary || !data.activity) {
+      setHistoryInfo(DEFAULT_HISTORY_INFO);
+      setError(data.error ?? "Unable to load promo code.");
+      return;
+    }
+
+    applyPromoState(data.promo as PromoDetails);
+    setSummary(data.summary as PromoSummary);
+    setHistoryInfo({
+      historyCoverage:
+        data.historyCoverage === "COMPLETE_RECONSTRUCTED_HISTORY"
+          ? data.historyCoverage
+          : DEFAULT_HISTORY_INFO.historyCoverage,
+      historyCoverageStartedAt:
+        typeof data.historyCoverageStartedAt === "string" && data.historyCoverageStartedAt.trim()
+          ? data.historyCoverageStartedAt
+          : null,
+      hasReconstructedHistory: data.hasReconstructedHistory === true,
+    });
+    setActivity(data.activity as PromoActivityPage);
+  }, [activityPageParam, promoId]);
 
   useEffect(() => {
     if (!promoId) return;
+    const timer = window.setTimeout(() => {
+      void loadPromo();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [loadPromo, promoId]);
+
+  useEffect(() => {
     let isCurrent = true;
 
-    async function bootstrap() {
-      const [promoResponse, vehiclesResponse] = await Promise.all([
-        fetch(`/api/admin/promo-codes/${promoId}`, { cache: "no-store" }),
-        fetch("/api/admin/vehicles", { cache: "no-store" }),
-      ]);
-      const promoData = await promoResponse.json().catch(() => ({}));
-      const vehiclesData = await vehiclesResponse.json().catch(() => ({}));
-
+    async function loadVehicles() {
+      const response = await fetch("/api/admin/vehicles", { cache: "no-store" });
+      const data = await response.json().catch(() => ({}));
       if (!isCurrent) return;
-
-      if (!promoResponse.ok) {
-        setError(promoData.error ?? "Unable to load promo code.");
-      } else {
-        const nextPromo = promoData.promo as PromoDetails;
-        setPromo(nextPromo);
-        setRedemptions(Array.isArray(promoData.redemptions) ? (promoData.redemptions as RedemptionRow[]) : []);
-        setCode(nextPromo.code);
-        setIsActive(nextPromo.is_active);
-        setDiscountType(nextPromo.discount_type);
-        setApplyScope(nextPromo.apply_scope === "DAYS_TOTAL" ? "DAYS_TOTAL" : "OVERALL_TOTAL");
-        setDiscountValue(String(nextPromo.discount_value));
-        setMinSubtotal(nextPromo.min_subtotal_cents === null ? "" : String(nextPromo.min_subtotal_cents));
-        setMaxRedemptions(nextPromo.max_redemptions === null ? "" : String(nextPromo.max_redemptions));
-        setMaxPerCustomer(
-          nextPromo.max_redemptions_per_customer === null ? "" : String(nextPromo.max_redemptions_per_customer),
-        );
-        const start = toDateTimeParts(nextPromo.start_at);
-        const end = toDateTimeParts(nextPromo.end_at);
-        setStartDate(start.date);
-        setStartTime(start.time);
-        setEndDate(end.date);
-        setEndTime(end.time);
-        setAllowedVehicleIds(nextPromo.allowed_vehicle_ids_json ?? []);
-        setExcludedVehicleIds(nextPromo.excluded_vehicle_ids_json ?? []);
-        setBlackoutDates((nextPromo.blackout_dates_json ?? []).join(", "));
-      }
-
-      if (vehiclesResponse.ok) {
-        const list = Array.isArray(vehiclesData?.vehicles) ? vehiclesData.vehicles : [];
-        const mapped = list
-          .filter(isVehicleRow)
-          .map((row: VehicleRow) => ({ id: row.id, make: row.make, model: row.model, year: row.year }));
-        setVehicles(mapped);
-      } else {
+      if (!response.ok) {
         setVehicles([]);
+        return;
       }
 
-      setLoading(false);
+      const list = Array.isArray(data?.vehicles) ? data.vehicles : [];
+      setVehicles(
+        list
+          .filter(isVehicleRow)
+          .map((row: VehicleRow) => ({ id: row.id, make: row.make, model: row.model, year: row.year })),
+      );
     }
 
-    void bootstrap();
+    void loadVehicles();
 
     return () => {
       isCurrent = false;
     };
-  }, [promoId]);
+  }, []);
+
+  function buildActivityHref(page: number) {
+    const params = new URLSearchParams(searchParams.toString());
+    if (page <= 1) {
+      params.delete("activityPage");
+    } else {
+      params.set("activityPage", String(page));
+    }
+    const next = params.toString();
+    return next ? `${pathname}?${next}` : pathname;
+  }
 
   async function savePromo() {
     if (!promoId || saving) return;
@@ -269,40 +367,75 @@ export default function AdminPromoCodeDetailPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-6 py-10">
+    <div className="mx-auto w-full max-w-7xl px-6 py-10">
       {promo ? (
         <div className="mb-3">
           <span className="rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-xs font-semibold uppercase tracking-wide text-[var(--ccr-text)]">
-            {promoStatusLabel(getPromoRuntimeStatus(promo))}
+            {promoStatusLabel(promo.admin_state)}
           </span>
         </div>
       ) : null}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Promo</p>
-          <h1 className="text-3xl font-bold text-[var(--ccr-text)]">
-            {promo ? promo.code : "Promo Code"}
-          </h1>
+          <h1 className="text-3xl font-bold text-[var(--ccr-text)]">{promo ? promo.code : "Promo Code"}</h1>
           {promo ? <p className="mt-1 font-mono text-xs text-[var(--ccr-muted)]">{promo.public_id}</p> : null}
         </div>
-        <div className="flex items-center gap-2">
-          <Link
-            href="/admin/promo-codes"
-            className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
-          >
-            Back to promo codes
-          </Link>
-        </div>
+        <Link
+          href="/admin/promo-codes"
+          className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+        >
+          Back to promo codes
+        </Link>
       </div>
 
       {loading ? (
         <div className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 text-sm text-[var(--ccr-muted)]">
           Loading promo code…
         </div>
-      ) : promo ? (
+      ) : promo && summary ? (
         <>
+          <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <article className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Current Counted</p>
+              <p className="mt-2 text-2xl font-bold text-[var(--ccr-text)]">{summary.currentCount}</p>
+              <p className="mt-1 text-xs text-[var(--ccr-muted)]">
+                {summary.remaining === null ? "Unlimited remaining" : `${summary.remaining} remaining`}
+              </p>
+            </article>
+            <article className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Activity Totals</p>
+              <p className="mt-2 text-2xl font-bold text-[var(--ccr-text)]">{summary.redeemedEvents}</p>
+              <p className="mt-1 text-xs text-[var(--ccr-muted)]">{summary.reversedEvents} reversed events</p>
+            </article>
+            <article className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Discount Redeemed</p>
+              <p className="mt-2 text-2xl font-bold text-[var(--ccr-text)]">{formatJmd(summary.totalDiscountRedeemed)}</p>
+              <p className="mt-1 text-xs text-[var(--ccr-muted)]">Net counted {summary.netCounted}</p>
+            </article>
+            <article className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Discount Reversed</p>
+              <p className="mt-2 text-2xl font-bold text-[var(--ccr-text)]">{formatJmd(summary.totalDiscountReversed)}</p>
+              <p className="mt-1 text-xs text-[var(--ccr-muted)]">Status {promoStatusLabel(summary.status)}</p>
+            </article>
+          </section>
+
           <section className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
-            <h2 className="text-lg font-bold text-[var(--ccr-text)]">Configuration</h2>
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-bold text-[var(--ccr-text)]">Configuration</h2>
+                <p className="mt-1 text-sm text-[var(--ccr-muted)]">
+                  The valid window is shown in Jamaica time and the current status comes from live redemption state.
+                </p>
+              </div>
+              <div className="text-sm text-[var(--ccr-muted)]">
+                <StackedDateTimeRange
+                  startLabel={formatWindowLabel(promo.start_at, "Any time")}
+                  endLabel={formatWindowLabel(promo.end_at, "No end")}
+                />
+              </div>
+            </div>
+
             <div className="mt-4 grid gap-3 md:grid-cols-2">
               <label className="text-xs text-[var(--ccr-muted)]">
                 Code
@@ -337,13 +470,11 @@ export default function AdminPromoCodeDetailPage() {
                 Apply To
                 <select
                   value={applyScope}
-                  onChange={(event) =>
-                    setApplyScope(event.target.value as "OVERALL_TOTAL" | "DAYS_TOTAL")
-                  }
+                  onChange={(event) => setApplyScope(event.target.value as "OVERALL_TOTAL" | "DAYS_TOTAL")}
                   className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
                 >
-                  <option value="OVERALL_TOTAL">Overall total</option>
-                  <option value="DAYS_TOTAL">Rental days total only</option>
+                  <option value="OVERALL_TOTAL">Overall subtotal</option>
+                  <option value="DAYS_TOTAL">Rental days total</option>
                 </select>
               </label>
               <label className="text-xs text-[var(--ccr-muted)]">
@@ -357,9 +488,8 @@ export default function AdminPromoCodeDetailPage() {
                   className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
                 />
               </label>
-
               <label className="text-xs text-[var(--ccr-muted)]">
-                Min Subtotal (JMD)
+                {promoMinThresholdLabel(applyScope)}
                 <input
                   type="number"
                   min="0"
@@ -436,7 +566,7 @@ export default function AdminPromoCodeDetailPage() {
                 />
               </label>
 
-              <div className="md:col-span-2 grid gap-3 md:grid-cols-2">
+              <div className="grid gap-3 md:col-span-2 md:grid-cols-2">
                 <fieldset className="rounded-lg border border-[var(--ccr-border)] p-3">
                   <legend className="px-1 text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
                     Allowed Vehicles
@@ -484,10 +614,13 @@ export default function AdminPromoCodeDetailPage() {
                       </label>
                     ))}
                   </div>
+                  <p className="mt-3 text-[11px] text-[var(--ccr-muted)]">
+                    Excluded vehicles override allowed vehicles when the same vehicle appears in both lists.
+                  </p>
                 </fieldset>
               </div>
 
-              <div className="md:col-span-2 flex items-center gap-2">
+              <div className="flex items-center gap-2 md:col-span-2">
                 <button
                   type="button"
                   onClick={savePromo}
@@ -503,31 +636,61 @@ export default function AdminPromoCodeDetailPage() {
           </section>
 
           <section className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
-            <div className="flex items-center justify-between gap-3">
-              <h2 className="text-lg font-bold text-[var(--ccr-text)]">Redemption History</h2>
-              <p className="text-xs text-[var(--ccr-muted)]">
-                Total discount granted:{" "}
-                <span className="font-semibold text-[var(--ccr-text)]">
-                  {formatJmd(redemptions.reduce((sum, row) => sum + Number(row.discount_amount_cents || 0), 0))}
-                </span>
-              </p>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-bold text-[var(--ccr-text)]">Redemption Activity</h2>
+                <p className="mt-1 text-sm text-[var(--ccr-muted)]">
+                  Current counted remains authoritative for enforcement. {formatHistoryCoverageNote(historyInfo)}
+                </p>
+                {historyInfo.hasReconstructedHistory ? (
+                  <p className="mt-2 text-xs text-[var(--ccr-muted)]">
+                    Rows marked <span className="font-semibold text-[var(--ccr-text)]">Reconstructed</span>{" "}
+                    were rebuilt from legacy booking, payment, and cancellation records.
+                  </p>
+                ) : null}
+              </div>
+              <div className="text-right text-xs text-[var(--ccr-muted)]">
+                <p>
+                  Redeemed total{" "}
+                  <span className="font-semibold text-[var(--ccr-text)]">
+                    {formatJmd(summary.totalDiscountRedeemed)}
+                  </span>
+                </p>
+                <p>
+                  Reversed total{" "}
+                  <span className="font-semibold text-[var(--ccr-text)]">
+                    {formatJmd(summary.totalDiscountReversed)}
+                  </span>
+                </p>
+              </div>
             </div>
             <div className="mt-4 overflow-x-auto rounded-xl border border-[var(--ccr-border)]">
-              {redemptions.length === 0 ? (
-                <div className="px-4 py-8 text-sm text-[var(--ccr-muted)]">No redemptions yet.</div>
+              {activity.rows.length === 0 ? (
+                <div className="px-4 py-8 text-sm text-[var(--ccr-muted)]">No redemption activity yet.</div>
               ) : (
                 <table className="min-w-full text-left text-sm">
                   <thead className="border-b border-[var(--ccr-border)] text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
                     <tr>
+                      <th className="px-3 py-2">Event</th>
                       <th className="px-3 py-2">Booking</th>
                       <th className="px-3 py-2">Customer</th>
                       <th className="px-3 py-2">Discount</th>
-                      <th className="px-3 py-2">Redeemed</th>
+                      <th className="px-3 py-2">Occurred</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {redemptions.map((row) => (
+                    {activity.rows.map((row) => (
                       <tr key={row.id} className="border-b border-[var(--ccr-border)] last:border-b-0">
+                        <td className="px-3 py-2 text-[var(--ccr-text)]">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span>{formatActivityType(row.event_type)}</span>
+                            {row.is_reconstructed ? (
+                              <span className="rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                                Reconstructed
+                              </span>
+                            ) : null}
+                          </div>
+                        </td>
                         <td className="px-3 py-2">
                           <Link href={`/admin/bookings/${row.booking_id}`} className="font-mono text-xs text-[var(--ccr-text)]">
                             {row.booking_public_id ?? row.booking_id}
@@ -536,7 +699,10 @@ export default function AdminPromoCodeDetailPage() {
                         <td className="px-3 py-2 text-[var(--ccr-text)]">{row.customer_email ?? "Unknown"}</td>
                         <td className="px-3 py-2 text-[var(--ccr-text)]">{formatJmd(row.discount_amount_cents)}</td>
                         <td className="px-3 py-2 text-[var(--ccr-muted)]">
-                          <TableDateTime value={row.created_at} />
+                          <div>{fmtAdminDateTimeNoSeconds(row.event_at)} Jamaica time</div>
+                          {row.timestamp_source ? (
+                            <div className="text-[11px]">{formatTimestampSource(row.timestamp_source)}</div>
+                          ) : null}
                         </td>
                       </tr>
                     ))}
@@ -544,6 +710,21 @@ export default function AdminPromoCodeDetailPage() {
                 </table>
               )}
             </div>
+
+            {activity.totalCount > 0 ? (
+              <PaginationSummaryNav
+                from={activity.from}
+                to={activity.to}
+                totalCount={activity.totalCount}
+                page={activity.page}
+                totalPages={activity.totalPages}
+                hasPrev={activity.hasPrev}
+                hasNext={activity.hasNext}
+                prevHref={buildActivityHref(activity.hasPrev ? activity.page - 1 : activity.page)}
+                nextHref={buildActivityHref(activity.hasNext ? activity.page + 1 : activity.page)}
+                className="mt-4"
+              />
+            ) : null}
           </section>
         </>
       ) : (

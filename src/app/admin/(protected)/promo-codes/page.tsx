@@ -1,14 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
-import { PaginationSummary } from "@/components/admin/PaginationSummaryNav";
-import { StackedDateTimeRange } from "@/components/shared/StackedDateTimeRange";
-import { ensureCsrfToken } from "@/lib/security/csrf-client";
+import { PaginationSummaryNav } from "@/components/admin/PaginationSummaryNav";
 import { SlideDownPanel } from "@/components/admin/SlideDownPanel";
+import { StackedDateTimeRange } from "@/components/shared/StackedDateTimeRange";
+import { fmtAdminDateTimeNoSeconds } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
-import { buildLoadedPaginationProgress, STANDARD_PAGE_SIZE_OPTIONS } from "@/lib/pagination/sharedPagination";
+import { STANDARD_PAGE_SIZE_OPTIONS, normalizePageSize } from "@/lib/pagination/sharedPagination";
+import { ensureCsrfToken } from "@/lib/security/csrf-client";
+
+type PromoAdminState = "ACTIVE" | "INACTIVE" | "SCHEDULED" | "EXPIRED" | "LIMIT_REACHED";
 
 type PromoRow = {
   id: string;
@@ -23,9 +27,26 @@ type PromoRow = {
   max_redemptions_per_customer: number | null;
   start_at: string | null;
   end_at: string | null;
-  redemption_count: number;
-  remaining_redemptions: number | null;
+  allowed_vehicle_ids_json: string[];
+  excluded_vehicle_ids_json: string[];
+  blackout_dates_json: string[];
   created_at: string;
+  updated_at: string;
+  current_redemption_count: number;
+  remaining_redemptions: number | null;
+  admin_state: PromoAdminState;
+};
+
+type PromoPageResponse = {
+  promos: PromoRow[];
+  totalCount: number;
+  page: number;
+  totalPages: number;
+  rowsPerPage: number;
+  from: number;
+  to: number;
+  hasPrev: boolean;
+  hasNext: boolean;
 };
 
 type VehicleRow = {
@@ -34,8 +55,6 @@ type VehicleRow = {
   model: string;
   year: number;
 };
-
-type PromoRuntimeStatus = "ACTIVE" | "INACTIVE" | "EXPIRED";
 
 function isVehicleRow(row: unknown): row is VehicleRow {
   if (!row || typeof row !== "object") return false;
@@ -70,36 +89,78 @@ function generatePromoCode() {
   return code;
 }
 
-function getPromoRuntimeStatus(promo: PromoRow, now = new Date()): PromoRuntimeStatus {
-  if (promo.end_at) {
-    const end = new Date(promo.end_at);
-    if (!Number.isNaN(end.getTime()) && end < now) {
-      return "EXPIRED";
-    }
-  }
-  if (!promo.is_active) return "INACTIVE";
-  return "ACTIVE";
-}
-
-function promoStatusLabel(status: PromoRuntimeStatus) {
+function promoStatusLabel(status: PromoAdminState) {
   if (status === "ACTIVE") return "Active";
   if (status === "INACTIVE") return "Inactive";
+  if (status === "SCHEDULED") return "Scheduled";
+  if (status === "LIMIT_REACHED") return "Limit reached";
   return "Expired";
 }
 
+function promoApplyScopeLabel(scope: PromoRow["apply_scope"]) {
+  return scope === "DAYS_TOTAL" ? "Rental days total" : "Overall subtotal";
+}
+
+function promoMinThresholdLabel(scope: PromoRow["apply_scope"] | "OVERALL_TOTAL" | "DAYS_TOTAL") {
+  return scope === "DAYS_TOTAL" ? "Min rental-days total (JMD)" : "Min overall subtotal (JMD)";
+}
+
+function formatWindowLabel(value: string | null, fallback: string) {
+  if (!value) return fallback;
+  return `${fmtAdminDateTimeNoSeconds(value)} Jamaica time`;
+}
+
+function buildConstraintBadges(promo: PromoRow) {
+  const badges: string[] = [];
+  if (promo.min_subtotal_cents !== null) {
+    badges.push(`Min ${formatJmd(promo.min_subtotal_cents)}`);
+  }
+  if (promo.max_redemptions_per_customer !== null) {
+    badges.push(`Per customer ${promo.max_redemptions_per_customer}`);
+  }
+  if (promo.allowed_vehicle_ids_json.length > 0) {
+    badges.push(`Allowed vehicles ${promo.allowed_vehicle_ids_json.length}`);
+  }
+  if (promo.excluded_vehicle_ids_json.length > 0) {
+    badges.push(`Excluded vehicles ${promo.excluded_vehicle_ids_json.length}`);
+  }
+  if (promo.blackout_dates_json.length > 0) {
+    badges.push(`Blackout dates ${promo.blackout_dates_json.length}`);
+  }
+  return badges;
+}
+
+const EMPTY_PROMO_PAGE: PromoPageResponse = {
+  promos: [],
+  totalCount: 0,
+  page: 1,
+  totalPages: 1,
+  rowsPerPage: STANDARD_PAGE_SIZE_OPTIONS[0],
+  from: 0,
+  to: 0,
+  hasPrev: false,
+  hasNext: false,
+};
+
 export default function AdminPromoCodesPage() {
-  const [promos, setPromos] = useState<PromoRow[]>([]);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  const queryParam = searchParams.get("q") ?? "";
+  const pageParam = searchParams.get("page") ?? "";
+  const rowsPerPage = normalizePageSize(searchParams.get("rows") ?? undefined);
+
+  const [promoPage, setPromoPage] = useState<PromoPageResponse>(EMPTY_PROMO_PAGE);
   const [vehicles, setVehicles] = useState<VehicleRow[]>([]);
-  const [search, setSearch] = useState("");
-  const [isBootstrapped, setIsBootstrapped] = useState(false);
+  const [search, setSearch] = useState(queryParam);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const [rowsPerPage, setRowsPerPage] = useState<number>(STANDARD_PAGE_SIZE_OPTIONS[0]);
-  const [visibleCount, setVisibleCount] = useState<number>(STANDARD_PAGE_SIZE_OPTIONS[0]);
 
   const [code, setCode] = useState("");
+  const [isActive, setIsActive] = useState(true);
   const [discountType, setDiscountType] = useState<"PERCENT" | "FIXED">("PERCENT");
   const [applyScope, setApplyScope] = useState<"OVERALL_TOTAL" | "DAYS_TOTAL">("OVERALL_TOTAL");
   const [discountValue, setDiscountValue] = useState("");
@@ -114,55 +175,108 @@ export default function AdminPromoCodesPage() {
   const [excludedVehicleIds, setExcludedVehicleIds] = useState<string[]>([]);
   const [blackoutDates, setBlackoutDates] = useState("");
 
-  async function loadPromos(nextSearch = "") {
-    setLoading(true);
-    setError(null);
-    const query = nextSearch.trim() ? `?q=${encodeURIComponent(nextSearch.trim())}` : "";
-    const response = await fetch(`/api/admin/promo-codes${query}`, { cache: "no-store" });
-    const data = await response.json().catch(() => ({}));
-    setLoading(false);
-    if (!response.ok) {
-      setError(data.error ?? "Unable to load promo codes.");
-      return;
-    }
-    setPromos(Array.isArray(data.promos) ? (data.promos as PromoRow[]) : []);
-  }
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setSearch(queryParam);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [queryParam]);
+
+  const updateParams = useCallback(
+    (updates: Record<string, string | null | undefined>) => {
+      const params = new URLSearchParams(searchParams.toString());
+      Object.entries(updates).forEach(([key, value]) => {
+        if (!value) {
+          params.delete(key);
+          return;
+        }
+        params.set(key, value);
+      });
+
+      const next = params.toString();
+      const nextUrl = next ? `${pathname}?${next}` : pathname;
+      const current = searchParams.toString();
+      const currentUrl = current ? `${pathname}?${current}` : pathname;
+      if (nextUrl !== currentUrl) {
+        router.replace(nextUrl, { scroll: false });
+      }
+    },
+    [pathname, router, searchParams],
+  );
+
+  const loadPromos = useCallback(
+    async (input: { q?: string; page?: string; rows?: number } = {}) => {
+      setLoading(true);
+      setError(null);
+
+      const params = new URLSearchParams();
+      const nextQuery = (input.q ?? queryParam).trim();
+      const nextPage = input.page ?? pageParam;
+      const nextRows = input.rows ?? rowsPerPage;
+
+      if (nextQuery) params.set("q", nextQuery);
+      if (nextPage) params.set("page", nextPage);
+      if (nextRows !== STANDARD_PAGE_SIZE_OPTIONS[0]) {
+        params.set("rows", String(nextRows));
+      }
+
+      const response = await fetch(`/api/admin/promo-codes${params.toString() ? `?${params}` : ""}`, {
+        cache: "no-store",
+      });
+      const data = (await response.json().catch(() => ({}))) as Partial<PromoPageResponse> & {
+        error?: string;
+      };
+      setLoading(false);
+
+      if (!response.ok) {
+        setError(data.error ?? "Unable to load promo codes.");
+        setPromoPage((current) => ({ ...current, promos: [] }));
+        return;
+      }
+
+      setPromoPage({
+        promos: Array.isArray(data.promos) ? (data.promos as PromoRow[]) : [],
+        totalCount: Number(data.totalCount ?? 0),
+        page: Number(data.page ?? 1),
+        totalPages: Number(data.totalPages ?? 1),
+        rowsPerPage: Number(data.rowsPerPage ?? rowsPerPage),
+        from: Number(data.from ?? 0),
+        to: Number(data.to ?? 0),
+        hasPrev: Boolean(data.hasPrev),
+        hasNext: Boolean(data.hasNext),
+      });
+    },
+    [pageParam, queryParam, rowsPerPage],
+  );
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void loadPromos();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [loadPromos]);
 
   useEffect(() => {
     let isCurrent = true;
 
-    async function bootstrap() {
-      const [promosResponse, vehiclesResponse] = await Promise.all([
-        fetch("/api/admin/promo-codes", { cache: "no-store" }),
-        fetch("/api/admin/vehicles", { cache: "no-store" }),
-      ]);
-      const promosData = await promosResponse.json().catch(() => ({}));
-      const vehiclesData = await vehiclesResponse.json().catch(() => ({}));
-
+    async function loadVehicles() {
+      const response = await fetch("/api/admin/vehicles", { cache: "no-store" });
+      const data = await response.json().catch(() => ({}));
       if (!isCurrent) return;
-
-      if (!promosResponse.ok) {
-        setError(promosData.error ?? "Unable to load promo codes.");
-        setPromos([]);
-      } else {
-        setPromos(Array.isArray(promosData.promos) ? (promosData.promos as PromoRow[]) : []);
-      }
-
-      if (vehiclesResponse.ok) {
-        const list = Array.isArray(vehiclesData?.vehicles) ? vehiclesData.vehicles : [];
-        const mapped = list
-          .filter(isVehicleRow)
-          .map((row: VehicleRow) => ({ id: row.id, make: row.make, model: row.model, year: row.year }));
-        setVehicles(mapped);
-      } else {
+      if (!response.ok) {
         setVehicles([]);
+        return;
       }
 
-      setLoading(false);
-      setIsBootstrapped(true);
+      const list = Array.isArray(data?.vehicles) ? data.vehicles : [];
+      setVehicles(
+        list
+          .filter(isVehicleRow)
+          .map((row: VehicleRow) => ({ id: row.id, make: row.make, model: row.model, year: row.year })),
+      );
     }
 
-    void bootstrap();
+    void loadVehicles();
 
     return () => {
       isCurrent = false;
@@ -170,28 +284,33 @@ export default function AdminPromoCodesPage() {
   }, []);
 
   useEffect(() => {
-    if (!isBootstrapped) return;
-
     const timer = window.setTimeout(() => {
       const trimmed = search.trim();
-      if (trimmed.length > 0 && trimmed.length < 3) return;
-      void loadPromos(trimmed);
+      if (trimmed === queryParam) return;
+      updateParams({
+        q: trimmed ? trimmed : null,
+        page: null,
+      });
     }, 300);
 
     return () => window.clearTimeout(timer);
-  }, [isBootstrapped, search]);
+  }, [queryParam, search, updateParams]);
 
   const selectedAllowedSet = useMemo(() => new Set(allowedVehicleIds), [allowedVehicleIds]);
   const selectedExcludedSet = useMemo(() => new Set(excludedVehicleIds), [excludedVehicleIds]);
-  const visiblePromos = useMemo(
-    () => promos.slice(0, Math.max(rowsPerPage, visibleCount)),
-    [promos, rowsPerPage, visibleCount],
-  );
-  const pagination = useMemo(
-    () => buildLoadedPaginationProgress(visiblePromos.length, promos.length, rowsPerPage),
-    [visiblePromos.length, promos.length, rowsPerPage],
-  );
-  const hasMorePromos = visiblePromos.length < promos.length;
+
+  function buildPromoHref(updates: Record<string, string | null | undefined>) {
+    const params = new URLSearchParams(searchParams.toString());
+    Object.entries(updates).forEach(([key, value]) => {
+      if (!value) {
+        params.delete(key);
+        return;
+      }
+      params.set(key, value);
+    });
+    const next = params.toString();
+    return next ? `${pathname}?${next}` : pathname;
+  }
 
   async function submitCreatePromo() {
     if (saving) return;
@@ -208,6 +327,7 @@ export default function AdminPromoCodesPage() {
       },
       body: JSON.stringify({
         code,
+        isActive,
         discountType,
         applyScope,
         discountValue: Number(discountValue),
@@ -230,6 +350,7 @@ export default function AdminPromoCodesPage() {
     }
 
     setCode("");
+    setIsActive(true);
     setDiscountType("PERCENT");
     setApplyScope("OVERALL_TOTAL");
     setDiscountValue("");
@@ -244,10 +365,15 @@ export default function AdminPromoCodesPage() {
     setExcludedVehicleIds([]);
     setBlackoutDates("");
     setMessage("Promo code created.");
-    await loadPromos(search);
+    if (pageParam) {
+      updateParams({ page: null });
+      return;
+    }
+    await loadPromos({ page: "" });
   }
 
   async function toggleActive(promo: PromoRow) {
+    setError(null);
     const csrfToken = await ensureCsrfToken();
     const response = await fetch(`/api/admin/promo-codes/${promo.id}`, {
       method: "PATCH",
@@ -265,11 +391,15 @@ export default function AdminPromoCodesPage() {
       setError(data.error ?? "Unable to update promo code.");
       return;
     }
-    await loadPromos(search);
+    await loadPromos();
   }
 
+  const emptyStateMessage = queryParam.trim()
+    ? "No promo codes match this search."
+    : "No promo codes created yet.";
+
   return (
-    <div className="mx-auto w-full max-w-6xl px-6 py-10">
+    <div className="mx-auto w-full max-w-7xl px-6 py-10">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Admin</p>
@@ -283,7 +413,7 @@ export default function AdminPromoCodesPage() {
       <div className="mt-6">
         <SlideDownPanel
           title="Create promo code"
-          description="Set validity windows, limits, and optional vehicle/date constraints."
+          description="Set activation windows, paid-use limits, and optional vehicle/date constraints."
         >
           <div className="grid gap-3 md:grid-cols-2">
             <label className="text-xs text-[var(--ccr-muted)]">
@@ -304,46 +434,51 @@ export default function AdminPromoCodesPage() {
                 </button>
               </div>
             </label>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="text-xs text-[var(--ccr-muted)]">
-                Discount Type
-                <select
-                  value={discountType}
-                  onChange={(event) => setDiscountType(event.target.value as "PERCENT" | "FIXED")}
-                  className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
-                >
-                  <option value="PERCENT">Percent</option>
-                  <option value="FIXED">Fixed (JMD)</option>
-                </select>
-              </label>
-              <label className="text-xs text-[var(--ccr-muted)]">
-                Apply To
-                <select
-                  value={applyScope}
-                  onChange={(event) =>
-                    setApplyScope(event.target.value as "OVERALL_TOTAL" | "DAYS_TOTAL")
-                  }
-                  className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
-                >
-                  <option value="OVERALL_TOTAL">Overall total</option>
-                  <option value="DAYS_TOTAL">Rental days total only</option>
-                </select>
-              </label>
-              <label className="text-xs text-[var(--ccr-muted)]">
-                Discount Value
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={discountValue}
-                  onChange={(event) => setDiscountValue(event.target.value)}
-                  className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
-                />
-              </label>
-            </div>
+            <label className="flex items-center gap-2 text-xs text-[var(--ccr-muted)]">
+              <input
+                type="checkbox"
+                checked={isActive}
+                onChange={(event) => setIsActive(event.target.checked)}
+                className="h-4 w-4"
+              />
+              Active on creation
+            </label>
 
             <label className="text-xs text-[var(--ccr-muted)]">
-              Min Subtotal (JMD)
+              Discount Type
+              <select
+                value={discountType}
+                onChange={(event) => setDiscountType(event.target.value as "PERCENT" | "FIXED")}
+                className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+              >
+                <option value="PERCENT">Percent</option>
+                <option value="FIXED">Fixed (JMD)</option>
+              </select>
+            </label>
+            <label className="text-xs text-[var(--ccr-muted)]">
+              Apply To
+              <select
+                value={applyScope}
+                onChange={(event) => setApplyScope(event.target.value as "OVERALL_TOTAL" | "DAYS_TOTAL")}
+                className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+              >
+                <option value="OVERALL_TOTAL">Overall subtotal</option>
+                <option value="DAYS_TOTAL">Rental days total</option>
+              </select>
+            </label>
+            <label className="text-xs text-[var(--ccr-muted)]">
+              Discount Value
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={discountValue}
+                onChange={(event) => setDiscountValue(event.target.value)}
+                className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+              />
+            </label>
+            <label className="text-xs text-[var(--ccr-muted)]">
+              {promoMinThresholdLabel(applyScope)}
               <input
                 type="number"
                 min="0"
@@ -353,31 +488,28 @@ export default function AdminPromoCodesPage() {
                 className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
               />
             </label>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="text-xs text-[var(--ccr-muted)]">
-                Max Redemptions
-                <input
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={maxRedemptions}
-                  onChange={(event) => setMaxRedemptions(event.target.value)}
-                  className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
-                />
-              </label>
-              <label className="text-xs text-[var(--ccr-muted)]">
-                Max Per Customer
-                <input
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={maxPerCustomer}
-                  onChange={(event) => setMaxPerCustomer(event.target.value)}
-                  className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
-                />
-              </label>
-            </div>
-
+            <label className="text-xs text-[var(--ccr-muted)]">
+              Max Redemptions
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={maxRedemptions}
+                onChange={(event) => setMaxRedemptions(event.target.value)}
+                className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+              />
+            </label>
+            <label className="text-xs text-[var(--ccr-muted)]">
+              Max Per Customer
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={maxPerCustomer}
+                onChange={(event) => setMaxPerCustomer(event.target.value)}
+                className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+              />
+            </label>
             <label className="text-xs text-[var(--ccr-muted)]">
               Start At
               <div className="mt-1 grid gap-2 sm:grid-cols-2">
@@ -425,7 +557,7 @@ export default function AdminPromoCodesPage() {
               />
             </label>
 
-            <div className="md:col-span-2 grid gap-3 md:grid-cols-2">
+            <div className="grid gap-3 md:col-span-2 md:grid-cols-2">
               <fieldset className="rounded-lg border border-[var(--ccr-border)] p-3">
                 <legend className="px-1 text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
                   Allowed Vehicles
@@ -473,10 +605,13 @@ export default function AdminPromoCodesPage() {
                     </label>
                   ))}
                 </div>
+                <p className="mt-3 text-[11px] text-[var(--ccr-muted)]">
+                  Excluded vehicles override allowed vehicles when the same vehicle appears in both lists.
+                </p>
               </fieldset>
             </div>
 
-            <div className="md:col-span-2 flex items-center gap-2">
+            <div className="flex items-center gap-2 md:col-span-2">
               <button
                 type="button"
                 onClick={submitCreatePromo}
@@ -492,42 +627,49 @@ export default function AdminPromoCodesPage() {
         </SlideDownPanel>
       </div>
 
-      <div className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="min-w-[260px] flex-1 text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          updateParams({ q: search.trim() ? search.trim() : null, page: null });
+        }}
+        className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4"
+      >
+        {rowsPerPage !== STANDARD_PAGE_SIZE_OPTIONS[0] ? (
+          <input type="hidden" name="rows" value={String(rowsPerPage)} />
+        ) : null}
+        <div className="grid gap-3 md:grid-cols-[2fr_auto]">
+          <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
             Search code or promo ID
             <input
+              name="q"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="SUMMER, PR000123, etc."
               className="mt-2 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
             />
           </label>
-          <button
-            type="button"
-            onClick={() => loadPromos(search)}
-            className="rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-xs font-semibold text-white"
-          >
-            Apply
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setSearch("");
-              loadPromos("");
-            }}
-            className="rounded-xl border border-[var(--ccr-border)] px-4 py-2 text-xs font-semibold text-[var(--ccr-text)]"
-          >
-            Reset
-          </button>
+          <div className="grid grid-cols-2 gap-2 md:flex md:items-end">
+            <button
+              type="submit"
+              className="rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-xs font-semibold text-white"
+            >
+              Apply
+            </button>
+            <Link
+              href={buildPromoHref({ q: null, page: null })}
+              className="inline-flex items-center justify-center rounded-xl border border-[var(--ccr-border)] px-4 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+            >
+              Reset
+            </Link>
+          </div>
         </div>
-      </div>
+      </form>
 
       <div className="mt-6 overflow-x-auto rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)]">
         {loading ? (
           <div className="px-6 py-10 text-sm text-[var(--ccr-muted)]">Loading promo codes…</div>
-        ) : promos.length === 0 ? (
-          <div className="px-6 py-10 text-sm text-[var(--ccr-muted)]">No promo codes found.</div>
+        ) : promoPage.promos.length === 0 ? (
+          <div className="px-6 py-10 text-sm text-[var(--ccr-muted)]">{emptyStateMessage}</div>
         ) : (
           <table className="min-w-full text-left text-sm">
             <thead className="border-b border-[var(--ccr-border)] text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
@@ -537,73 +679,90 @@ export default function AdminPromoCodesPage() {
                 <th className="px-4 py-3">Applies To</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Valid Window</th>
-                <th className="px-4 py-3">Redeemed</th>
+                <th className="px-4 py-3">Counted / Remaining</th>
+                <th className="px-4 py-3">Constraints</th>
                 <th className="px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {visiblePromos.map((promo) => {
-                const status = getPromoRuntimeStatus(promo);
+              {promoPage.promos.map((promo) => {
+                const constraintBadges = buildConstraintBadges(promo);
                 return (
-                <tr key={promo.id} className="border-b border-[var(--ccr-border)] last:border-b-0">
-                  <td className="px-4 py-3">
-                    <p className="font-semibold text-[var(--ccr-text)]">{promo.code}</p>
-                    <p className="mt-1 font-mono text-[10px] text-[var(--ccr-muted)]">{promo.public_id}</p>
-                  </td>
-                  <td className="px-4 py-3 text-[var(--ccr-text)]">
-                    {promo.discount_type === "PERCENT"
-                      ? `${promo.discount_value}%`
-                      : formatJmd(promo.discount_value)}
-                  </td>
-                  <td className="px-4 py-3 text-[var(--ccr-muted)]">
-                    {promo.apply_scope === "DAYS_TOTAL" ? "Days total only" : "Overall total"}
-                  </td>
-                  <td className="px-4 py-3 text-[var(--ccr-text)]">
-                    {promoStatusLabel(status)}
-                  </td>
-                  <td className="px-4 py-3 text-[var(--ccr-muted)]">
-                    <StackedDateTimeRange
-                      startLabel={promo.start_at ? new Date(promo.start_at).toLocaleString() : "Any time"}
-                      endLabel={promo.end_at ? new Date(promo.end_at).toLocaleString() : "No end"}
-                    />
-                  </td>
-                  <td className="px-4 py-3 text-[var(--ccr-text)]">
-                    {promo.redemption_count}
-                    {promo.remaining_redemptions !== null ? ` (${promo.remaining_redemptions} left)` : ""}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <button
-                        type="button"
-                        onClick={() => toggleActive(promo)}
-                        className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
-                      >
-                        {promo.is_active ? "Deactivate" : "Activate"}
-                      </button>
-                      <Link
-                        href={`/admin/promo-codes/${promo.id}`}
-                        className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
-                      >
-                        View/Edit
-                      </Link>
-                    </div>
-                  </td>
-                </tr>
+                  <tr key={promo.id} className="border-b border-[var(--ccr-border)] last:border-b-0">
+                    <td className="px-4 py-3">
+                      <p className="font-semibold text-[var(--ccr-text)]">{promo.code}</p>
+                      <p className="mt-1 font-mono text-[10px] text-[var(--ccr-muted)]">{promo.public_id}</p>
+                    </td>
+                    <td className="px-4 py-3 text-[var(--ccr-text)]">
+                      {promo.discount_type === "PERCENT"
+                        ? `${promo.discount_value}%`
+                        : formatJmd(promo.discount_value)}
+                    </td>
+                    <td className="px-4 py-3 text-[var(--ccr-muted)]">{promoApplyScopeLabel(promo.apply_scope)}</td>
+                    <td className="px-4 py-3 text-[var(--ccr-text)]">{promoStatusLabel(promo.admin_state)}</td>
+                    <td className="px-4 py-3 text-[var(--ccr-muted)]">
+                      <StackedDateTimeRange
+                        startLabel={formatWindowLabel(promo.start_at, "Any time")}
+                        endLabel={formatWindowLabel(promo.end_at, "No end")}
+                      />
+                    </td>
+                    <td className="px-4 py-3 text-[var(--ccr-text)]">
+                      <p>{promo.current_redemption_count}</p>
+                      <p className="mt-1 text-xs text-[var(--ccr-muted)]">
+                        {promo.remaining_redemptions === null ? "Unlimited remaining" : `${promo.remaining_redemptions} remaining`}
+                      </p>
+                    </td>
+                    <td className="px-4 py-3">
+                      {constraintBadges.length === 0 ? (
+                        <span className="text-xs text-[var(--ccr-muted)]">No extra constraints</span>
+                      ) : (
+                        <div className="flex flex-wrap gap-2">
+                          {constraintBadges.map((badge) => (
+                            <span
+                              key={`${promo.id}-${badge}`}
+                              className="rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-2 py-1 text-[11px] font-semibold text-[var(--ccr-text)]"
+                            >
+                              {badge}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => toggleActive(promo)}
+                          className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+                        >
+                          {promo.is_active ? "Deactivate" : "Activate"}
+                        </button>
+                        <Link
+                          href={`/admin/promo-codes/${promo.id}`}
+                          className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+                        >
+                          View/Edit
+                        </Link>
+                      </div>
+                    </td>
+                  </tr>
                 );
               })}
             </tbody>
           </table>
         )}
-        {promos.length > 0 ? (
+        {promoPage.totalCount > 0 ? (
           <div className="flex flex-col gap-3 border-t border-[var(--ccr-border)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
             <label className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
               Rows per page
               <select
                 value={String(rowsPerPage)}
                 onChange={(event) => {
-                  const nextValue = Number(event.target.value);
-                  setRowsPerPage(nextValue);
-                  setVisibleCount(nextValue);
+                  const nextRows = Number(event.target.value);
+                  updateParams({
+                    rows: nextRows === STANDARD_PAGE_SIZE_OPTIONS[0] ? null : String(nextRows),
+                    page: null,
+                  });
                 }}
                 className="cursor-pointer rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-2 py-1 text-xs font-semibold text-[var(--ccr-text)]"
               >
@@ -615,24 +774,22 @@ export default function AdminPromoCodesPage() {
               </select>
             </label>
 
-            <div className="flex min-w-0 flex-1 items-center justify-end gap-3">
-              <PaginationSummary
-                from={pagination.from}
-                to={pagination.to}
-                totalCount={promos.length}
-                page={pagination.page}
-                totalPages={pagination.totalPages}
-                className="mt-0 shrink-0 flex-nowrap justify-end gap-3 whitespace-nowrap"
-              />
-              <button
-                type="button"
-                onClick={() => setVisibleCount((current) => current + rowsPerPage)}
-                disabled={!hasMorePromos}
-                className="cursor-pointer rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {hasMorePromos ? "Load more" : "No more promo codes"}
-              </button>
-            </div>
+            <PaginationSummaryNav
+              from={promoPage.from}
+              to={promoPage.to}
+              totalCount={promoPage.totalCount}
+              page={promoPage.page}
+              totalPages={promoPage.totalPages}
+              hasPrev={promoPage.hasPrev}
+              hasNext={promoPage.hasNext}
+              prevHref={buildPromoHref({
+                page: promoPage.hasPrev ? String(promoPage.page - 1) : String(promoPage.page),
+              })}
+              nextHref={buildPromoHref({
+                page: promoPage.hasNext ? String(promoPage.page + 1) : String(promoPage.page),
+              })}
+              className="mt-0"
+            />
           </div>
         ) : null}
       </div>
