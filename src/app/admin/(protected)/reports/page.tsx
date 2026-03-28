@@ -28,15 +28,32 @@ type VehicleRow = {
   id: string;
   make: string;
   model: string;
+  status?: string;
 };
 
 type ReportExportFormat = "csv" | "excel" | "pdf";
 type ReportExportKey =
+  | "cash_collections"
+  | "vehicle_profitability"
+  | "vehicle_utilization"
   | "outstanding_balances"
-  | "pickups"
-  | "returns"
+  | "aging_receivables"
+  | "location_performance"
+  | "booking_status_funnel"
+  | "customer_cohort"
   | "upcoming_combined"
   | "cancellations_refunds";
+type ReportCardKey =
+  | "revenue"
+  | "profitability"
+  | "utilization"
+  | "outstanding"
+  | "aging"
+  | "location"
+  | "funnel"
+  | "cohort"
+  | "upcoming"
+  | "impact";
 type ImpactPageSize = 5 | 10 | 20 | 30 | 50;
 type ReportGroup = "all" | "financial" | "operations" | "customer";
 const AGING_BUCKET_FILTERS = [
@@ -78,13 +95,26 @@ const IMPACT_BUCKET_FILTER_KEYS = [
   "netImpact",
 ] as const;
 
+const REPORT_CARD_EXPORT_KEYS = {
+  revenue: "cash_collections",
+  profitability: "vehicle_profitability",
+  utilization: "vehicle_utilization",
+  outstanding: "outstanding_balances",
+  aging: "aging_receivables",
+  location: "location_performance",
+  funnel: "booking_status_funnel",
+  cohort: "customer_cohort",
+  upcoming: "upcoming_combined",
+  impact: "cancellations_refunds",
+} as const satisfies Record<ReportCardKey, ReportExportKey>;
+
 const REPORT_CARDS = [
   {
     key: "revenue",
     group: "financial",
-    title: "Revenue by Period",
+    title: "Cash Collections by Period",
     description:
-      "Gross/net revenue by period. Revenue uses payment dates when available, then booking created date fallback for confirmed/returned bookings with no payments.",
+      "Payment-based gross collections, refunds, and net cash movement grouped by the selected historical period.",
   },
   {
     key: "profitability",
@@ -119,7 +149,7 @@ const REPORT_CARDS = [
     group: "operations",
     title: "Location Performance",
     description:
-      "Pickup-location bookings, revenue, paid amounts, and outstanding balances by selected date range.",
+      "Pickup-location booking activity, amounts paid, and outstanding balances by pickup date in the selected historical range.",
   },
   {
     key: "funnel",
@@ -168,7 +198,6 @@ const REVENUE_SORT_COLUMNS = [
   "refunds",
   "net",
   "payments",
-  "fallbackBookings",
 ] as const;
 const PROFITABILITY_SORT_COLUMNS = [
   "vehicle",
@@ -202,7 +231,7 @@ const AGING_SORT_COLUMNS = [
   "booking",
   "customer",
   "vehicle",
-  "return",
+  "dueDate",
   "balance",
   "daysPastDue",
   "bucket",
@@ -251,6 +280,13 @@ function readQueryValue(params: Record<string, string | string[] | undefined>, k
   if (typeof value === "string") return value;
   if (Array.isArray(value) && value.length > 0 && typeof value[0] === "string") return value[0];
   return undefined;
+}
+
+function readBooleanFlag(value: string | undefined) {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase();
+  return normalized === "1" || normalized === "true";
 }
 
 function normalizeReportGroup(value: string | undefined): ReportGroup {
@@ -506,6 +542,40 @@ function ReportExportDropdown({
   );
 }
 
+function ReportModeBadge({ mode }: { mode: "operational" | "historical" }) {
+  const label = mode === "operational" ? "Operational snapshot" : "Historical analysis";
+  const classes =
+    mode === "operational"
+      ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-200"
+      : "border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] text-[var(--ccr-accent)]";
+
+  return (
+    <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${classes}`}>
+      {label}
+    </span>
+  );
+}
+
+function ReportWarnings({ warnings }: { warnings: string[] }) {
+  if (warnings.length === 0) return null;
+  return (
+    <div className="mt-3 space-y-2">
+      {warnings.map((warning) => (
+        <div
+          key={warning}
+          className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900"
+        >
+          {warning}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function mergeWarnings(...groups: Array<readonly string[] | string[]>) {
+  return [...new Set(groups.flatMap((group) => group))];
+}
+
 function FunnelConversionRow({
   from,
   to,
@@ -533,6 +603,13 @@ export default async function AdminReportsPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = await searchParams;
+  const reportsPreviewFlagsEnabled = readBooleanFlag(process.env.REPORTS_PREVIEW_FLAGS_ENABLED);
+  const previewMissingBlockouts =
+    reportsPreviewFlagsEnabled && readBooleanFlag(readQueryValue(params, "previewMissingBlockouts"));
+  const previewMissingMaintenance =
+    reportsPreviewFlagsEnabled &&
+    readBooleanFlag(readQueryValue(params, "previewMissingMaintenance"));
+  const previewModeActive = previewMissingBlockouts || previewMissingMaintenance;
   const currentQueryParams = toQueryParams(params);
   const reportGroup = normalizeReportGroup(readQueryValue(params, "reportGroup"));
   const revenueBucketQuery = readQueryValue(params, "revenueBucket");
@@ -567,17 +644,11 @@ export default async function AdminReportsPage({
     IMPACT_PAGE_SIZE_OPTIONS,
     5,
   ) as ImpactPageSize;
-  const rawDateFrom = readQueryValue(params, "dateFrom");
-  const rawDateTo = readQueryValue(params, "dateTo");
-  const hasExplicitDateRange =
-    typeof rawDateFrom === "string" &&
-    /^\d{4}-\d{2}-\d{2}$/.test(rawDateFrom) &&
-    typeof rawDateTo === "string" &&
-    /^\d{4}-\d{2}-\d{2}$/.test(rawDateTo);
 
   const report = await getAdminReportsPayload({
-    dateFrom: readQueryValue(params, "dateFrom"),
-    dateTo: readQueryValue(params, "dateTo"),
+    snapshotDate: readQueryValue(params, "snapshotDate"),
+    rangeFrom: readQueryValue(params, "rangeFrom"),
+    rangeTo: readQueryValue(params, "rangeTo"),
     vehicleId: readQueryValue(params, "vehicleId"),
     revenueGranularity: readQueryValue(params, "revenueGranularity"),
   });
@@ -585,6 +656,12 @@ export default async function AdminReportsPage({
   const filters = report.filters;
   const baseFilterQuery = buildReportsFilterQueryString(filters);
   const baseUiQuery = new URLSearchParams(baseFilterQuery);
+  if (previewMissingBlockouts) {
+    baseUiQuery.set("previewMissingBlockouts", "1");
+  }
+  if (previewMissingMaintenance) {
+    baseUiQuery.set("previewMissingMaintenance", "1");
+  }
   if (rowsPerPage !== 10) {
     baseUiQuery.set("rows", String(rowsPerPage));
   }
@@ -639,7 +716,9 @@ export default async function AdminReportsPage({
   }
 
   const vehicles = await dbQuery<VehicleRow>(
-    "select id, make, model from vehicles where status <> 'INACTIVE' order by make, model",
+    "select v.id, v.make, v.model, v.status from vehicles v where v.status <> 'INACTIVE' or exists (" +
+      "select 1 from bookings b where b.vehicle_id = v.id" +
+      ") order by v.make, v.model",
   );
 
   const buildReportsHref = (updates: Record<string, string | null | undefined>) => {
@@ -663,6 +742,42 @@ export default async function AdminReportsPage({
     excel: exportHref(reportKey, "excel"),
     pdf: exportHref(reportKey, "pdf"),
   });
+  const reportSectionMetaByCardKey = {
+    revenue: report.sectionMeta.revenue,
+    profitability: report.sectionMeta.vehicleProfitability,
+    utilization: report.sectionMeta.utilization,
+    outstanding: report.sectionMeta.outstandingBalances,
+    aging: report.sectionMeta.agingReceivables,
+    location: report.sectionMeta.locationPerformance,
+    funnel: report.sectionMeta.funnel,
+    cohort: report.sectionMeta.customerCohort,
+    upcoming: report.sectionMeta.upcoming,
+    impact: report.sectionMeta.cancellationRefundImpact,
+  } as const;
+  const previewWarnings = {
+    blockouts:
+      report.sectionMeta.utilization.warnings.find((warning) => warning.includes("Blockouts table not found")) ??
+      "Blockouts table not found. Utilization is based on booked days only.",
+    maintenance:
+      report.sectionMeta.vehicleProfitability.warnings.find((warning) =>
+        warning.includes("Maintenance records table not found"),
+      ) ?? "Maintenance records table not found. Maintenance costs are excluded from this section.",
+  } as const;
+  const displaySectionMetaByCardKey = {
+    ...reportSectionMetaByCardKey,
+    utilization: {
+      ...reportSectionMetaByCardKey.utilization,
+      warnings: previewMissingBlockouts
+        ? mergeWarnings(reportSectionMetaByCardKey.utilization.warnings, [previewWarnings.blockouts])
+        : reportSectionMetaByCardKey.utilization.warnings,
+    },
+    profitability: {
+      ...reportSectionMetaByCardKey.profitability,
+      warnings: previewMissingMaintenance
+        ? mergeWarnings(reportSectionMetaByCardKey.profitability.warnings, [previewWarnings.maintenance])
+        : reportSectionMetaByCardKey.profitability.warnings,
+    },
+  } as const;
 
   const revenueSort = normalizeTableSort(currentQueryParams, {
     sortByParam: "revenueSortBy",
@@ -761,9 +876,7 @@ export default async function AdminReportsPage({
       point.grossRevenue !== 0 ||
       point.refunds !== 0 ||
       point.netRevenue !== 0 ||
-      point.paymentCount !== 0 ||
-      point.fallbackBookingCount !== 0 ||
-      point.fallbackRevenue !== 0,
+      point.paymentCount !== 0,
   );
   const sortedRevenuePoints = [...visibleRevenuePoints].sort((left, right) => {
     let result = 0;
@@ -778,7 +891,7 @@ export default async function AdminReportsPage({
     } else if (revenueSort.sortBy === "payments") {
       result = compareNumber(left.paymentCount, right.paymentCount);
     } else {
-      result = compareNumber(left.fallbackBookingCount, right.fallbackBookingCount);
+      result = compareText(left.periodStart, right.periodStart);
     }
     if (result === 0) {
       result = compareText(left.periodStart, right.periodStart);
@@ -922,8 +1035,8 @@ export default async function AdminReportsPage({
       result = compareText(left.customerName, right.customerName);
     } else if (agingSort.sortBy === "vehicle") {
       result = compareText(left.vehicleLabel, right.vehicleLabel);
-    } else if (agingSort.sortBy === "return") {
-      result = compareText(left.returnDate, right.returnDate);
+    } else if (agingSort.sortBy === "dueDate") {
+      result = compareText(left.pickupDate, right.pickupDate);
     } else if (agingSort.sortBy === "balance") {
       result = compareNumber(left.balanceDue, right.balanceDue);
     } else if (agingSort.sortBy === "daysPastDue") {
@@ -1197,33 +1310,56 @@ export default async function AdminReportsPage({
         <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
           Active scope
         </p>
-        <p className="mt-1 text-sm font-semibold text-[var(--ccr-text)]">
-          Date range: {filters.dateFrom} to {filters.dateTo}
-        </p>
+        <div className="mt-1 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-[var(--ccr-text)]">
+          <p>
+            <span className="font-semibold">Snapshot date:</span> {filters.snapshotDate}
+          </p>
+          <p>
+            <span className="font-semibold">Historical range:</span> {filters.rangeFrom} to{" "}
+            {filters.rangeTo}
+          </p>
+        </div>
         <p className="mt-1 text-xs text-[var(--ccr-muted)]">
-          {hasExplicitDateRange
-            ? "Using your selected date range filters."
-            : "No date range was passed, so reports defaulted to all-time activity (earliest record to today)."}
+          Operational cards use the snapshot date. Historical cards use the selected range and show
+          their date basis on each report card.
         </p>
       </section>
 
       <form className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
-        <div className="grid grid-cols-2 gap-3 max-[359px]:grid-cols-1 md:grid-cols-[1fr_1fr_1.5fr_140px_auto_auto] md:gap-4">
+        <input type="hidden" name="reportGroup" value={reportGroup} />
+        <input type="hidden" name="impactRows" value={String(impactRowsPerPage)} />
+        <input type="hidden" name="revenueGranularity" value={report.revenue.granularity} />
+        {reportsPreviewFlagsEnabled && previewMissingBlockouts ? (
+          <input type="hidden" name="previewMissingBlockouts" value="1" />
+        ) : null}
+        {reportsPreviewFlagsEnabled && previewMissingMaintenance ? (
+          <input type="hidden" name="previewMissingMaintenance" value="1" />
+        ) : null}
+        <div className="grid grid-cols-2 gap-3 max-[359px]:grid-cols-1 md:grid-cols-[1fr_1fr_1fr_1.5fr_140px_auto_auto] md:gap-4">
           <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-            Date From
+            Snapshot Date
             <input
               type="date"
-              name="dateFrom"
-              defaultValue={filters.dateFrom}
+              name="snapshotDate"
+              defaultValue={filters.snapshotDate}
               className="promo-date-time-input date-icon-edge mt-2 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
             />
           </label>
           <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-            Date To
+            Range From
             <input
               type="date"
-              name="dateTo"
-              defaultValue={filters.dateTo}
+              name="rangeFrom"
+              defaultValue={filters.rangeFrom}
+              className="promo-date-time-input date-icon-edge mt-2 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+            />
+          </label>
+          <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+            Range To
+            <input
+              type="date"
+              name="rangeTo"
+              defaultValue={filters.rangeTo}
               className="promo-date-time-input date-icon-edge mt-2 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
             />
           </label>
@@ -1238,6 +1374,7 @@ export default async function AdminReportsPage({
               {vehicles.rows.map((vehicle: VehicleRow) => (
                 <option key={vehicle.id} value={vehicle.id}>
                   {vehicle.make} {vehicle.model}
+                  {String(vehicle.status ?? "").toUpperCase() === "INACTIVE" ? " (Inactive)" : ""}
                 </option>
               ))}
             </select>
@@ -1271,17 +1408,70 @@ export default async function AdminReportsPage({
         </div>
       </form>
 
+      {reportsPreviewFlagsEnabled ? (
+        <section className="mt-3 rounded-2xl border border-dashed border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                Preview Controls
+              </p>
+              <p className="mt-1 text-xs text-[var(--ccr-muted)]">
+                Page-only QA toggles for degraded warning banners. Exports and APIs remain real.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Link
+                href={buildReportsHref({
+                  previewMissingBlockouts: previewMissingBlockouts ? null : "1",
+                })}
+                prefetch={false}
+                scroll={false}
+                aria-pressed={previewMissingBlockouts}
+                className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                  previewMissingBlockouts
+                    ? "border-amber-300 bg-amber-100 text-amber-900"
+                    : "border-[var(--ccr-border)] bg-[var(--ccr-bg)] text-[var(--ccr-text)]"
+                }`}
+              >
+                Simulate missing blockouts
+              </Link>
+              <Link
+                href={buildReportsHref({
+                  previewMissingMaintenance: previewMissingMaintenance ? null : "1",
+                })}
+                prefetch={false}
+                scroll={false}
+                aria-pressed={previewMissingMaintenance}
+                className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                  previewMissingMaintenance
+                    ? "border-amber-300 bg-amber-100 text-amber-900"
+                    : "border-[var(--ccr-border)] bg-[var(--ccr-bg)] text-[var(--ccr-text)]"
+                }`}
+              >
+                Simulate missing maintenance records
+              </Link>
+            </div>
+          </div>
+
+          {previewModeActive ? (
+            <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              Preview mode: simulating degraded report warnings.
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
       <section className="mt-6 grid grid-cols-2 gap-3 max-[359px]:grid-cols-1 md:grid-cols-4 md:gap-4">
         <div
           className={`min-w-0 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4 ${REPORT_BLOCK_RING_ON_BG_CLASS}`}
         >
-          <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Gross Revenue</p>
+          <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Gross Collections</p>
           <MetricCurrencyValue amount={report.revenue.totals.grossRevenue} />
         </div>
         <div
           className={`min-w-0 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4 ${REPORT_BLOCK_RING_ON_BG_CLASS}`}
         >
-          <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Net Revenue</p>
+          <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Net Collections</p>
           <MetricCurrencyValue amount={report.revenue.totals.netRevenue} />
         </div>
         <div
@@ -1305,8 +1495,8 @@ export default async function AdminReportsPage({
           className={`flex items-center justify-between gap-3 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-6 py-4 ${REPORT_BLOCK_RING_ON_BG_CLASS}`}
         >
           <h2 className="text-lg font-bold text-[var(--ccr-text)]">Recommended Reports</h2>
-          <span className="rounded-full border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-3 py-1 text-[11px] font-semibold text-[var(--ccr-accent)] transition hover:ring-2 hover:ring-[var(--ccr-accent)] hover:ring-offset-1 hover:ring-offset-[var(--ccr-surface)]">
-            Live
+          <span className="text-xs text-[var(--ccr-muted)]">
+            Operational snapshot and historical analysis are separated per card.
           </span>
         </div>
 
@@ -1326,30 +1516,18 @@ export default async function AdminReportsPage({
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <h3 className="text-base font-bold text-[var(--ccr-text)]">{card.title}</h3>
-                  <p className="mt-1 text-sm text-[var(--ccr-muted)]">{card.description}</p>
-                </div>
-                {card.key === "outstanding" ? (
-                  <ReportExportDropdown
-                    label="Export"
-                    hrefs={exportHrefSet("outstanding_balances")}
-                  />
-                ) : null}
-                {card.key === "upcoming" ? (
-                  <div className="flex flex-wrap gap-2">
-                    <ReportExportDropdown label="Export Pickups" hrefs={exportHrefSet("pickups")} />
-                    <ReportExportDropdown label="Export Returns" hrefs={exportHrefSet("returns")} />
-                    <ReportExportDropdown
-                      label="Export Both"
-                      hrefs={exportHrefSet("upcoming_combined")}
-                    />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-base font-bold text-[var(--ccr-text)]">{card.title}</h3>
+                    <ReportModeBadge mode={displaySectionMetaByCardKey[card.key].mode} />
                   </div>
-                ) : null}
-                {card.key === "impact" ? (
-                  <ReportExportDropdown
-                    label="Export"
-                    hrefs={exportHrefSet("cancellations_refunds")}
-                  />
+                  <p className="mt-1 text-sm text-[var(--ccr-muted)]">{card.description}</p>
+                  <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                    {displaySectionMetaByCardKey[card.key].dateBasisLabel}
+                  </p>
+                  <ReportWarnings warnings={displaySectionMetaByCardKey[card.key].warnings} />
+                </div>
+                {displaySectionMetaByCardKey[card.key].supportsExport ? (
+                  <ReportExportDropdown label="Export" hrefs={exportHrefSet(REPORT_CARD_EXPORT_KEYS[card.key])} />
                 ) : null}
               </div>
 
@@ -1365,14 +1543,13 @@ export default async function AdminReportsPage({
                       }}
                     />
                     <p className="text-xs text-[var(--ccr-muted)]">
-                      Payments: {report.revenue.totals.paymentCount} · Fallback bookings:{" "}
-                      {report.revenue.totals.fallbackBookingCount}
+                      Recorded payments: {report.revenue.totals.paymentCount}
                     </p>
                   </div>
 
                   {sortedRevenuePoints.length === 0 ? (
                     <p className="mt-4 text-sm text-[var(--ccr-muted)]">
-                      No data for selected range.
+                      No payment activity matched the selected historical range.
                     </p>
                   ) : (
                     <>
@@ -1504,21 +1681,13 @@ export default async function AdminReportsPage({
                                 href={revenueSortHref("payments", "desc")}
                                 defaultDirection="desc"
                               />
-                              <SortableTh
-                                className="px-3 py-2"
-                                label="Fallback Bookings"
-                                columnKey="fallbackBookings"
-                                sort={revenueSort}
-                                href={revenueSortHref("fallbackBookings", "desc")}
-                                defaultDirection="desc"
-                              />
                             </tr>
                           </thead>
                           <tbody>
                             {filteredRevenuePoints.length === 0 ? (
                               <tr className="border-b border-[var(--ccr-border)] last:border-b-0">
                                 <td
-                                  colSpan={6}
+                                  colSpan={5}
                                   className="px-3 py-6 text-center text-sm text-[var(--ccr-muted)]"
                                 >
                                   No rows in the selected period bucket.
@@ -1535,7 +1704,6 @@ export default async function AdminReportsPage({
                                   <td className="px-3 py-2 text-[var(--ccr-text)]">{formatJmd(point.refunds)}</td>
                                   <td className="px-3 py-2 text-[var(--ccr-text)]">{formatJmd(point.netRevenue)}</td>
                                   <td className="px-3 py-2 text-[var(--ccr-text)]">{point.paymentCount}</td>
-                                  <td className="px-3 py-2 text-[var(--ccr-text)]">{point.fallbackBookingCount}</td>
                                 </tr>
                               ))
                             )}
@@ -1550,7 +1718,9 @@ export default async function AdminReportsPage({
               {card.key === "profitability" ? (
                 <div className="mt-4">
                   {sortedProfitabilityRows.length === 0 ? (
-                    <p className="text-sm text-[var(--ccr-muted)]">No data for selected range.</p>
+                    <p className="text-sm text-[var(--ccr-muted)]">
+                      No vehicle profitability data matched the selected historical range.
+                    </p>
                   ) : (
                     <>
                       <div className="grid grid-cols-2 gap-3 max-[359px]:grid-cols-1 md:grid-cols-5">
@@ -1781,14 +1951,10 @@ export default async function AdminReportsPage({
 
               {card.key === "utilization" ? (
                 <div className="mt-4">
-                  {!report.utilization.includesBlockouts ? (
-                    <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                      Blockouts table not found. Utilization is currently based on booked days only.
-                    </div>
-                  ) : null}
-
                   {sortedUtilizationRows.length === 0 ? (
-                    <p className="text-sm text-[var(--ccr-muted)]">No data for selected range.</p>
+                    <p className="text-sm text-[var(--ccr-muted)]">
+                      No utilization data matched the selected historical range.
+                    </p>
                   ) : (
                     <>
                       <MobileTableAffordance>
@@ -1892,7 +2058,9 @@ export default async function AdminReportsPage({
               {card.key === "outstanding" ? (
                 <div className="mt-4">
                   {report.outstandingBalances.rows.length === 0 ? (
-                    <p className="text-sm text-[var(--ccr-muted)]">No data for selected range.</p>
+                    <p className="text-sm text-[var(--ccr-muted)]">
+                      No open balances existed on the selected snapshot date.
+                    </p>
                   ) : (
                     <>
                       <div className="mb-3 grid grid-cols-2 gap-3 max-[359px]:grid-cols-1 md:grid-cols-4">
@@ -2110,7 +2278,9 @@ export default async function AdminReportsPage({
               {card.key === "aging" ? (
                 <div className="mt-4">
                   {report.agingReceivables.rows.length === 0 ? (
-                    <p className="text-sm text-[var(--ccr-muted)]">No data for selected range.</p>
+                    <p className="text-sm text-[var(--ccr-muted)]">
+                      No aged receivables existed on the selected snapshot date.
+                    </p>
                   ) : (
                     <>
                       <div className="grid grid-cols-2 gap-3 max-[359px]:grid-cols-1 md:grid-cols-4">
@@ -2215,10 +2385,10 @@ export default async function AdminReportsPage({
                               />
                               <SortableTh
                                 className="px-3 py-2"
-                                label="Return Date"
-                                columnKey="return"
+                                label="Pickup Due Date"
+                                columnKey="dueDate"
                                 sort={agingSort}
-                                href={agingSortHref("return", "asc")}
+                                href={agingSortHref("dueDate", "asc")}
                               />
                               <SortableTh
                                 className="px-3 py-2"
@@ -2271,7 +2441,7 @@ export default async function AdminReportsPage({
                                   </td>
                                   <td className="px-3 py-2 text-[var(--ccr-text)]">{row.customerName}</td>
                                   <td className="px-3 py-2 text-[var(--ccr-text)]">{row.vehicleLabel}</td>
-                                  <td className="px-3 py-2 text-[var(--ccr-text)]">{row.returnDate}</td>
+                                  <td className="px-3 py-2 text-[var(--ccr-text)]">{row.pickupDate}</td>
                                   <td className="px-3 py-2 font-semibold text-[var(--ccr-text)]">
                                     {formatJmd(row.balanceDue)}
                                   </td>
@@ -2308,7 +2478,9 @@ export default async function AdminReportsPage({
               {card.key === "location" ? (
                 <div className="mt-4">
                   {report.locationPerformance.rows.length === 0 ? (
-                    <p className="text-sm text-[var(--ccr-muted)]">No data for selected range.</p>
+                    <p className="text-sm text-[var(--ccr-muted)]">
+                      No location activity matched the selected historical range.
+                    </p>
                   ) : (
                     <>
                       <div className="grid grid-cols-2 gap-3 max-[359px]:grid-cols-1 md:grid-cols-5">
@@ -2593,7 +2765,9 @@ export default async function AdminReportsPage({
               {card.key === "cohort" ? (
                 <div className="mt-4">
                   {report.customerCohort.rows.length === 0 ? (
-                    <p className="text-sm text-[var(--ccr-muted)]">No data for selected range.</p>
+                    <p className="text-sm text-[var(--ccr-muted)]">
+                      No cohort activity matched the selected historical range.
+                    </p>
                   ) : (
                     <>
                       <div className="grid grid-cols-2 gap-3 max-[359px]:grid-cols-1 md:grid-cols-4">
@@ -2769,7 +2943,9 @@ export default async function AdminReportsPage({
                   <div className="min-w-0">
                     <h4 className="text-sm font-semibold text-[var(--ccr-text)]">Pickups in range</h4>
                     {report.upcoming.pickups.length === 0 ? (
-                      <p className="mt-2 text-sm text-[var(--ccr-muted)]">No data for selected range.</p>
+                      <p className="mt-2 text-sm text-[var(--ccr-muted)]">
+                        No pickups matched the selected operational range.
+                      </p>
                     ) : (
                       <>
                         <MobileTableAffordance className="mt-2 max-w-full rounded-xl border border-[var(--ccr-border)]">
@@ -2893,7 +3069,9 @@ export default async function AdminReportsPage({
                   <div className="min-w-0">
                     <h4 className="text-sm font-semibold text-[var(--ccr-text)]">Returns in range</h4>
                     {report.upcoming.returns.length === 0 ? (
-                      <p className="mt-2 text-sm text-[var(--ccr-muted)]">No data for selected range.</p>
+                      <p className="mt-2 text-sm text-[var(--ccr-muted)]">
+                        No returns matched the selected operational range.
+                      </p>
                     ) : (
                       <>
                         <MobileTableAffordance className="mt-2 max-w-full rounded-xl border border-[var(--ccr-border)]">
@@ -3152,7 +3330,9 @@ export default async function AdminReportsPage({
                   </div>
 
                   {report.cancellationRefundImpact.breakdown.length === 0 ? (
-                    <p className="mt-3 text-sm text-[var(--ccr-muted)]">No data for selected range.</p>
+                    <p className="mt-3 text-sm text-[var(--ccr-muted)]">
+                      No cancellation or refund activity matched the selected historical range.
+                    </p>
                   ) : (
                     <>
                       <MobileTableAffordance className="mt-4 rounded-xl border border-[var(--ccr-border)]">

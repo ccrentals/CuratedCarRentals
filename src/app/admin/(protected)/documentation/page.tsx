@@ -2,8 +2,13 @@ import Link from "next/link";
 import { isDeveloperRole } from "@/lib/auth/roles";
 
 import { DocumentationEditor } from "@/components/admin/DocumentationEditor";
+import { DocumentationSectionSearch } from "@/components/admin/DocumentationSectionSearch";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery } from "@/lib/db";
+import {
+  buildDocumentationSearchEntries,
+  DOCUMENTATION_SECTION_LINKS,
+} from "@/lib/documentation/catalog";
 
 type DocRow = {
   content: string;
@@ -11,54 +16,14 @@ type DocRow = {
   updated_by_email: string | null;
 };
 
-const DOCUMENTATION_SECTIONS = [
-  {
-    href: "/admin/documentation/prd",
-    label: "PRD / Specification",
-    description: "Project goals, scope, requirements, sitemap, and user stories.",
-    topics: ["Purpose & goals", "Personas", "Functional + non-functional requirements", "Sitemap", "User stories"],
-  },
-  {
-    href: "/admin/documentation/design",
-    label: "Design Documentation",
-    description: "Brand tokens, UI patterns, accessibility standards, and layout guidance.",
-    topics: ["Brand guidelines", "Wireframes & mockups", "UI style guide", "WCAG accessibility"],
-  },
-  {
-    href: "/admin/documentation/integrations",
-    label: "Integrations & Documents",
-    description: "Payment, email, PDF, and scheduled processing behavior across the booking lifecycle.",
-    topics: ["WiPay payment flows", "Resend email flows", "Invoice/Quote providers", "Retention jobs"],
-  },
-  {
-    href: "/admin/documentation/technical",
-    label: "Technical Documentation",
-    description: "System architecture, APIs, database schema, and deployment environment.",
-    topics: ["Technology stack", "API endpoints", "Database schema", "Hosting & deployment", "Repo structure"],
-  },
-  {
-    href: "/admin/documentation/operations",
-    label: "Operational & User Documentation",
-    description: "Runbooks for content, roles, maintenance, and troubleshooting.",
-    topics: ["Content updates", "User roles", "Maintenance plan", "Troubleshooting"],
-  },
-  {
-    href: "/admin/documentation/legal",
-    label: "Legal & Compliance",
-    description: "Policy templates and third-party processor disclosures.",
-    topics: ["Privacy policy", "Terms & conditions", "Cookie policy", "PCI considerations"],
-  },
-  {
-    href: "/admin/documentation/project-management",
-    label: "Project Management",
-    description: "Milestones, change log process, and resourcing templates.",
-    topics: ["Timeline", "Milestones", "Budget & resources", "Change log"],
-  },
-] as const;
-
-export default async function AdminDocumentationPage() {
+export default async function AdminDocumentationPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const session = await getSessionFromRequest();
   const canDeveloper = isDeveloperRole(session?.role);
+  const params = await searchParams;
 
   if (!canDeveloper) {
     return (
@@ -97,6 +62,9 @@ export default async function AdminDocumentationPage() {
   const updatedAt = doc?.updated_at ? new Date(doc.updated_at).toLocaleDateString() : "Not yet set";
   const updatedBy = doc?.updated_by_email ?? "System";
   const notesContent = doc?.content ?? "";
+  const initialQuery =
+    typeof params.q === "string" ? params.q.trim() : Array.isArray(params.q) ? String(params.q[0] ?? "").trim() : "";
+  const searchEntries = buildDocumentationSearchEntries(notesContent);
 
   return (
     <div className="mx-auto w-full max-w-5xl px-6 py-10">
@@ -120,44 +88,28 @@ export default async function AdminDocumentationPage() {
           <h2 className="text-lg font-bold text-[var(--ccr-text)]">Documentation</h2>
           <p className="mt-2 text-[var(--ccr-muted)]">
             This area is the source of truth for product, design, technical, and operational notes. Use the
-            section pages below for detailed documentation, and use the notes panel at the bottom for quick
-            release notes / reminders.
+            section pages below for detailed documentation, use search to jump across sections, topics, and
+            notes, and use the notes panel at the bottom for quick release reminders.
           </p>
         </section>
 
         <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
           <h2 className="text-lg font-bold text-[var(--ccr-text)]">Sections</h2>
           <p className="mt-2 text-[var(--ccr-muted)]">
-            Child links are grouped by main headings (not per-topic). Each section page includes multiple
-            topics.
+            Child links are grouped by main headings (not per-topic). Search can also surface individual
+            documentation topics and matching notes content.
           </p>
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
-            {DOCUMENTATION_SECTIONS.map((section) => (
-              <Link
-                key={section.href}
-                href={section.href}
-                className="group rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-5 transition hover:bg-[var(--ccr-surface-soft)]"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <h3 className="text-base font-bold text-[var(--ccr-text)]">{section.label}</h3>
-                    <p className="mt-1 text-sm text-[var(--ccr-muted)]">{section.description}</p>
-                  </div>
-                  <span className="mt-0.5 rounded-full border border-[var(--ccr-border)] px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)] group-hover:text-[var(--ccr-text)]">
-                    Open
-                  </span>
-                </div>
-                <ul className="mt-3 list-disc space-y-1 pl-5 text-xs text-[var(--ccr-muted)]">
-                  {section.topics.map((topic) => (
-                    <li key={topic}>{topic}</li>
-                  ))}
-                </ul>
-              </Link>
-            ))}
-          </div>
+          <DocumentationSectionSearch
+            initialQuery={initialQuery}
+            sections={DOCUMENTATION_SECTION_LINKS}
+            searchEntries={searchEntries}
+          />
         </section>
 
-        <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
+        <section
+          id="notes-change-log"
+          className="scroll-mt-24 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6"
+        >
           <h2 className="text-lg font-bold text-[var(--ccr-text)]">Notes & Change Log</h2>
           <p className="mt-2 text-[var(--ccr-muted)]">
             Last updated: <span className="font-semibold text-[var(--ccr-text)]">{updatedAt}</span> ·

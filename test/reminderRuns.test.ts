@@ -9,6 +9,7 @@ import {
 import {
   latestReminderRunsByEventType,
   parseReminderRunRow,
+  recentReminderRunsFromRows,
 } from "@/lib/cron/reminderRuns";
 
 test("reminder event inventory: labels exist for every canonical event type", () => {
@@ -116,4 +117,47 @@ test("latestReminderRunsByEventType: can represent one run row for every canonic
     assert.ok(latest[eventType], `expected latest run for ${eventType}`);
     assert.equal(latest[eventType]?.eventType, eventType);
   }
+});
+
+test("recentReminderRunsFromRows: returns the latest parsed run rows in descending order with a limit", () => {
+  const rows = [
+    {
+      created_at: "2026-02-13T14:00:00.000Z",
+      details_json: {
+        event_type: "BOOKING_PICKUP_REMINDER_SENT",
+        status: "SUCCESS",
+        finished_at: "2026-02-13T14:00:00.000Z",
+      },
+    },
+    {
+      created_at: "2026-02-13T15:00:00.000Z",
+      details_json: {
+        event_type: "BOOKING_NOTE_EMAIL_FAILED",
+        status: "FAILED",
+        finished_at: "2026-02-13T15:00:00.000Z",
+      },
+    },
+    {
+      created_at: "2026-02-13T16:00:00.000Z",
+      details_json: {
+        event_type: "BOOKING_BALANCE_REMINDER_SENT",
+        status: "SUCCESS",
+        finished_at: "2026-02-13T16:00:00.000Z",
+      },
+    },
+    {
+      created_at: "2026-02-13T17:00:00.000Z",
+      details_json: {
+        event_type: "INVALID_EVENT_TYPE",
+        status: "SUCCESS",
+      },
+    },
+  ];
+
+  const recent = recentReminderRunsFromRows(rows, 2);
+  assert.equal(recent.length, 2);
+  assert.equal(recent[0]?.createdAt, "2026-02-13T16:00:00.000Z");
+  assert.equal(recent[1]?.createdAt, "2026-02-13T15:00:00.000Z");
+  assert.equal(recent[0]?.eventType, "BOOKING_BALANCE_REMINDER_SENT");
+  assert.equal(recent[1]?.status, "FAILED");
 });

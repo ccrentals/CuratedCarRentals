@@ -8,6 +8,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ADMIN_ACCENT_RING_CLASS } from "@/components/admin/adminUiClasses";
 import { UserMenu } from "@/components/admin/UserMenu";
 import { buttonStyles } from "@/components/ui/Button";
+import { DOCUMENTATION_SECTION_CHILDREN } from "@/lib/documentation/catalog";
 import { useUnreadMessagesCount } from "@/lib/messages/useUnreadMessagesCount";
 
 const SIDEBAR_STORAGE_KEY = "adminSidebarCollapsed";
@@ -50,15 +51,7 @@ type AdminNavLinksProps = {
 
 const ADMIN_HOVER_TEXT_CLASS = "hover:text-[var(--ccr-muted)]";
 
-const DOCUMENTATION_CHILDREN: NavChild[] = [
-  { label: "PRD / Specification", href: "/admin/documentation/prd" },
-  { label: "Design", href: "/admin/documentation/design" },
-  { label: "Integrations", href: "/admin/documentation/integrations" },
-  { label: "Technical", href: "/admin/documentation/technical" },
-  { label: "Operations", href: "/admin/documentation/operations" },
-  { label: "Legal & Compliance", href: "/admin/documentation/legal" },
-  { label: "Project Management", href: "/admin/documentation/project-management" },
-];
+const DOCUMENTATION_CHILDREN: NavChild[] = [...DOCUMENTATION_SECTION_CHILDREN];
 
 const BOOKINGS_CHILDREN: NavChild[] = [
   {

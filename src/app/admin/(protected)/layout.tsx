@@ -22,7 +22,7 @@ export default async function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const access = await resolveAdminActor({ requirement: "staff" });
+  const access = await resolveAdminActor({ requirement: "admin" });
 
   if (!access.ok) {
     if (access.reason === "forbidden") {

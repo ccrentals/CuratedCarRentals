@@ -77,7 +77,9 @@ async function fetchDashboardOutstandingAllTime(): Promise<ParitySnapshot> {
   };
 }
 
-async function fetchReportsOutstandingAllTime(): Promise<ParitySnapshot & { dateFrom: string; dateTo: string }> {
+async function fetchReportsOutstandingSnapshot(): Promise<
+  ParitySnapshot & { snapshotDate: string; rangeFrom: string; rangeTo: string }
+> {
   const payload = await getAdminReportsPayload({});
   const byBookingId = new Map<string, number>();
   let total = 0;
@@ -92,8 +94,9 @@ async function fetchReportsOutstandingAllTime(): Promise<ParitySnapshot & { date
     count: payload.outstandingBalances.rows.length,
     total: toRoundedMoney(total),
     byBookingId,
-    dateFrom: payload.filters.dateFrom,
-    dateTo: payload.filters.dateTo,
+    snapshotDate: payload.filters.snapshotDate,
+    rangeFrom: payload.filters.rangeFrom,
+    rangeTo: payload.filters.rangeTo,
   };
 }
 
@@ -124,7 +127,7 @@ async function main() {
   }
 
   const dashboard = await fetchDashboardOutstandingAllTime();
-  const reports = await fetchReportsOutstandingAllTime();
+  const reports = await fetchReportsOutstandingSnapshot();
 
   const dashboardOnly = [...dashboard.byBookingId.keys()].filter((key) => !reports.byBookingId.has(key));
   const reportsOnly = [...reports.byBookingId.keys()].filter((key) => !dashboard.byBookingId.has(key));
@@ -144,8 +147,9 @@ async function main() {
     reports: {
       count: reports.count,
       total: reports.total,
-      dateFrom: reports.dateFrom,
-      dateTo: reports.dateTo,
+      snapshotDate: reports.snapshotDate,
+      rangeFrom: reports.rangeFrom,
+      rangeTo: reports.rangeTo,
     },
     mismatch: {
       countDelta: dashboard.count - reports.count,

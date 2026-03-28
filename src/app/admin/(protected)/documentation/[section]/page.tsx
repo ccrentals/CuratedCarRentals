@@ -4,6 +4,12 @@ import type { ReactNode } from "react";
 
 import { DateRangeArrow } from "@/components/shared/DateRangeArrow";
 import { getSessionFromRequest } from "@/lib/auth/session";
+import {
+  getDocumentationBlockMeta,
+  getDocumentationSectionMeta,
+  DOCUMENTATION_SECTION_LINKS,
+  toDocumentationAnchorId,
+} from "@/lib/documentation/catalog";
 
 const SVG_FONT_FAMILY =
   "var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial";
@@ -19,9 +25,20 @@ type DocSection = {
   blocks: DocBlock[];
 };
 
-function Card({ title, children }: { title: string; children: ReactNode }) {
+function Card({
+  id,
+  title,
+  children,
+}: {
+  id?: string;
+  title: string;
+  children: ReactNode;
+}) {
   return (
-    <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
+    <section
+      id={id}
+      className="scroll-mt-24 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6"
+    >
       <h2 className="text-lg font-bold text-[var(--ccr-text)]">{title}</h2>
       <div className="mt-2 space-y-3 text-[var(--ccr-muted)]">{children}</div>
     </section>
@@ -231,12 +248,13 @@ Admin (requires login)
 - /admin/developer
 - /admin/documentation
   - /admin/documentation/prd
-  - /admin/documentation/design
-  - /admin/documentation/integrations
-  - /admin/documentation/technical
-  - /admin/documentation/operations
-  - /admin/documentation/legal
-  - /admin/documentation/project-management`;
+- /admin/documentation/design
+- /admin/documentation/integrations
+- /admin/documentation/technical
+- /admin/documentation/security
+- /admin/documentation/operations
+- /admin/documentation/legal
+- /admin/documentation/project-management`;
 
 const BOOKING_FLOW_DIAGRAM = `Customer booking + deposit (high level)
 
@@ -933,7 +951,7 @@ const DOCS: Record<string, DocSection> = {
   technical: {
     title: "Technical Documentation",
     description:
-      "Developer-facing documentation: stack, APIs, DB schema, hosting, and project structure.",
+      "Developer-facing documentation: stack, APIs, DB schema, hosting, and project structure. See Security for auth, CSRF, webhook, and operational hardening specifics.",
     blocks: [
       {
         title: "System Architecture Diagram",
@@ -1183,6 +1201,14 @@ const DOCS: Record<string, DocSection> = {
                 bootstrap CSRF token for protected requests.
               </li>
             </ul>
+            <p className="mt-4 text-sm text-[var(--ccr-muted)]">
+              For role boundaries, session protection, webhook verification, auditability, and secrets
+              handling, see{" "}
+              <Link href="/admin/documentation/security" className="font-semibold text-[var(--ccr-text)] underline">
+                Security
+              </Link>
+              .
+            </p>
 
             <p className="mt-4 text-[var(--ccr-text)] font-semibold">Cron</p>
             <ul className="mt-1 list-disc space-y-1 pl-5">
@@ -1653,10 +1679,219 @@ Cron
       },
     ],
   },
+  security: {
+    title: "Security",
+    description:
+      "Consolidated security guidance for access control, authentication, webhook verification, auditability, and operational hardening.",
+    blocks: [
+      {
+        title: "Security Overview",
+        content: (
+          <>
+            <p>
+              Security responsibilities in this system are split across the public site, the admin portal,
+              third-party providers, and scheduled jobs. The public experience accepts customer details and
+              starts hosted checkout, while the admin portal exposes higher-risk actions such as booking edits,
+              payments, users, reports, cron runs, and document access.
+            </p>
+            <ul className="list-disc space-y-2 pl-5">
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">Public surface:</span> fleet browsing,
+                pricing/quote requests, booking creation, and hosted payment handoff.
+              </li>
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">Admin-only surface:</span> authenticated
+                routes under <code>/admin</code>, manual payment actions, cron execution, document generation,
+                and user management.
+              </li>
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">Third-party trust boundaries:</span>{" "}
+                WiPay handles card entry, Resend handles outbound email, configurable PDF providers render
+                invoices/documents, and Uploadcare is optional for uploads.
+              </li>
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">Operational principle:</span> use the
+                smallest privileges needed, record sensitive actions, and verify provider callbacks before
+                changing booking/payment state.
+              </li>
+            </ul>
+          </>
+        ),
+      },
+      {
+        title: "Access & Roles",
+        content: (
+          <>
+            <p>
+              Roles are stored in <code>users.role</code> and gate access to admin features. Any action that
+              changes bookings, payments, users, cron behavior, or system configuration should be treated as
+              admin-only unless there is explicit product intent otherwise.
+            </p>
+            <ul className="list-disc space-y-2 pl-5">
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">Least privilege:</span> only grant admin
+                access to staff who need operational controls; avoid shared admin accounts.
+              </li>
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">Developer-only surfaces:</span>{" "}
+                documentation, template-lab, and higher-risk tooling should remain restricted to the intended
+                internal roles.
+              </li>
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">Admin-only actions:</span> user invites,
+                status changes, payment reconciliation, promo management, cron runs, and health/deployment
+                checks should stay behind authenticated role checks.
+              </li>
+              <li>
+                Review the operational role summary in{" "}
+                <Link href="/admin/documentation/operations" className="font-semibold text-[var(--ccr-text)] underline">
+                  Operational &amp; User Documentation
+                </Link>
+                , but keep security-sensitive role decisions anchored here.
+              </li>
+            </ul>
+          </>
+        ),
+      },
+      {
+        title: "Authentication & Session Security",
+        content: (
+          <>
+            <ul className="list-disc space-y-2 pl-5">
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">Passwords:</span> admin credentials are
+                stored as bcrypt hashes; never log or export raw passwords.
+              </li>
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">Sessions:</span> admin authentication uses
+                signed session cookies; session secrets must be strong and rotated if exposed.
+              </li>
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">Login protection:</span> use lockouts and
+                rate-limited login attempts to reduce brute-force risk.
+              </li>
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">CSRF:</span> state-changing requests
+                require CSRF protection via the bootstrap token flow at <code>/api/security/csrf</code>.
+              </li>
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">Environment secrets:</span>{" "}
+                <code>ADMIN_SESSION_SECRET</code> and <code>CSRF_SECRET</code> should be unique per environment
+                and never reused across unrelated deployments.
+              </li>
+            </ul>
+          </>
+        ),
+      },
+      {
+        title: "Payments, Webhooks & Cron Verification",
+        content: (
+          <>
+            <ul className="list-disc space-y-2 pl-5">
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">Hosted checkout boundary:</span> WiPay
+                handles card entry, which reduces PCI scope; this app should only store transaction references and
+                reconciliation metadata.
+              </li>
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">Webhook safety:</span> payment webhooks
+                must be validated and processed idempotently so duplicate provider events do not create duplicate
+                payments.
+              </li>
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">Return vs webhook:</span> redirects improve
+                UX, but provider webhook reconciliation remains the stronger system-of-record signal.
+              </li>
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">Cron protection:</span> cron routes
+                require <code>x-cron-secret</code>; do not expose or reuse <code>CRON_SECRET</code> in client-side
+                code or public config.
+              </li>
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">Simulation boundaries:</span> admin cron
+                simulation is for validation and observability, not for bypassing provider verification or sending
+                uncontrolled live traffic.
+              </li>
+            </ul>
+            <p className="mt-3 text-sm text-[var(--ccr-muted)]">
+              The underlying endpoint inventory remains in{" "}
+              <Link href="/admin/documentation/technical" className="font-semibold text-[var(--ccr-text)] underline">
+                Technical Documentation
+              </Link>
+              .
+            </p>
+          </>
+        ),
+      },
+      {
+        title: "Data Handling, Files & Auditability",
+        content: (
+          <>
+            <ul className="list-disc space-y-2 pl-5">
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">Customer data:</span> booking/contact
+                fields, payment metadata, and reminders should be treated as operationally sensitive even when not
+                regulated as card data.
+              </li>
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">Documents & uploads:</span> invoices,
+                rental agreements, signatures, and uploaded files should only be exposed through authorized admin
+                flows and provider configurations that match the intended retention/access policy.
+              </li>
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">Audit logs:</span> user/system actions,
+                webhook events, and other admin traces should remain available for investigation and operational
+                accountability.
+              </li>
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">Retention-sensitive areas:</span> archived
+                files, generated documents, provider logs, and exported operational data should follow documented
+                cleanup and access rules.
+              </li>
+              <li>
+                See{" "}
+                <Link href="/admin/documentation/legal" className="font-semibold text-[var(--ccr-text)] underline">
+                  Legal &amp; Compliance
+                </Link>
+                {" "}for privacy/cookie/compliance framing, and keep implementation controls here.
+              </li>
+            </ul>
+          </>
+        ),
+      },
+      {
+        title: "Operational Security Checklist",
+        content: (
+          <>
+            <ul className="list-disc space-y-2 pl-5">
+              <li>Use strong unique secrets for admin session, CSRF, cron, payments, and email providers.</li>
+              <li>Rotate secrets immediately if they are exposed in logs, screenshots, preview configs, or shared docs.</li>
+              <li>Confirm least-privilege admin access before go-live and after staffing changes.</li>
+              <li>Validate health/readiness checks before releases and after provider/config changes.</li>
+              <li>Smoke-test booking creation, payment return/webhook reconciliation, admin login, and reminder flows after deploys.</li>
+              <li>Review cron outcomes and audit logs regularly for failed sends, unexpected manual actions, or replayed provider traffic.</li>
+              <li>Document who owns incident response, rollback authority, and provider escalation paths.</li>
+            </ul>
+            <p className="mt-3 text-sm text-[var(--ccr-muted)]">
+              Use this together with the production checklist in{" "}
+              <Link href="/admin/documentation/technical" className="font-semibold text-[var(--ccr-text)] underline">
+                Technical Documentation
+              </Link>
+              {" "}and the day-to-day runbooks in{" "}
+              <Link href="/admin/documentation/operations" className="font-semibold text-[var(--ccr-text)] underline">
+                Operational &amp; User Documentation
+              </Link>
+              .
+            </p>
+          </>
+        ),
+      },
+    ],
+  },
   operations: {
     title: "Operational & User Documentation",
     description:
-      "Runbooks for day-to-day usage: content updates, roles, maintenance, support, and troubleshooting.",
+      "Runbooks for day-to-day usage: content updates, roles, maintenance, support, and troubleshooting. See Security for access control and operational safety guidance.",
     blocks: [
       {
         title: "Booking Lifecycle Diagram",
@@ -1766,6 +2001,14 @@ Cron
                 gating can be expanded as needed).
               </li>
             </ul>
+            <p className="mt-3 text-sm text-[var(--ccr-muted)]">
+              For least-privilege guidance, admin-only action boundaries, session security, and secrets handling,
+              see{" "}
+              <Link href="/admin/documentation/security" className="font-semibold text-[var(--ccr-text)] underline">
+                Security
+              </Link>
+              .
+            </p>
           </>
         ),
       },
@@ -1837,7 +2080,7 @@ Cron
   legal: {
     title: "Legal & Compliance",
     description:
-      "Policy templates and compliance notes. Review with qualified counsel before publishing.",
+      "Policy templates and compliance notes. Review with qualified counsel before publishing. See Security for implementation-side controls and verification patterns.",
     blocks: [
       {
         title: "Data Processing Diagram",
@@ -1970,6 +2213,14 @@ Cron
                 access controls for admin accounts.
               </li>
             </ul>
+            <p className="mt-3 text-sm text-[var(--ccr-muted)]">
+              This section covers policy/compliance framing. For the application-level controls behind sessions,
+              webhook verification, cron protection, and auditability, see{" "}
+              <Link href="/admin/documentation/security" className="font-semibold text-[var(--ccr-text)] underline">
+                Security
+              </Link>
+              .
+            </p>
           </>
         ),
       },
@@ -2145,15 +2396,16 @@ export default async function AdminDocumentationSectionPage({
 
   const { section } = await params;
   const doc = DOCS[section];
-  if (!doc) notFound();
+  const docMeta = getDocumentationSectionMeta(section);
+  if (!doc || !docMeta) notFound();
 
   return (
     <div className="mx-auto w-full max-w-5xl px-6 py-10">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Admin</p>
-          <h1 className="text-3xl font-bold text-[var(--ccr-text)]">{doc.title}</h1>
-          <p className="mt-2 max-w-3xl text-sm text-[var(--ccr-muted)]">{doc.description}</p>
+          <h1 className="text-3xl font-bold text-[var(--ccr-text)]">{docMeta.label}</h1>
+          <p className="mt-2 max-w-3xl text-sm text-[var(--ccr-muted)]">{docMeta.description}</p>
         </div>
         <Link
           href="/admin/documentation"
@@ -2164,11 +2416,65 @@ export default async function AdminDocumentationSectionPage({
       </div>
 
       <div className="mt-6 space-y-6 text-sm text-[var(--ccr-text)]">
-        {doc.blocks.map((block) => (
-          <Card key={block.title} title={block.title}>
-            {block.content}
-          </Card>
-        ))}
+        <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
+          <div className="grid gap-6 lg:grid-cols-[1.3fr_1fr]">
+            <div>
+              <h2 className="text-lg font-bold text-[var(--ccr-text)]">Browse documentation</h2>
+              <p className="mt-2 text-[var(--ccr-muted)]">
+                Jump across the full documentation area without going back to the home page.
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {DOCUMENTATION_SECTION_LINKS.map((sectionLink) => {
+                  const isActive = sectionLink.href === `/admin/documentation/${section}`;
+                  return (
+                    <Link
+                      key={sectionLink.href}
+                      href={sectionLink.href}
+                      className={`rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-wide transition ${
+                        isActive
+                          ? "border-[var(--ccr-accent-strong)] bg-[var(--ccr-surface-soft)] text-[var(--ccr-text)]"
+                          : "border-[var(--ccr-border)] bg-[var(--ccr-surface)] text-[var(--ccr-muted)] hover:text-[var(--ccr-text)]"
+                      }`}
+                    >
+                      {sectionLink.label}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-[var(--ccr-text)]">In this section</h2>
+              <p className="mt-2 text-[var(--ccr-muted)]">
+                Use these anchors to jump straight to a topic on this page.
+              </p>
+              <div className="mt-4 space-y-2">
+                {docMeta.blocks.map((block) => (
+                  <Link
+                    key={block.id}
+                    href={`#${block.id}`}
+                    className="block rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-4 py-3 text-sm font-semibold text-[var(--ccr-text)] transition hover:bg-[var(--ccr-bg)]"
+                  >
+                    <span>{block.title}</span>
+                    <p className="mt-1 text-xs font-normal text-[var(--ccr-muted)]">{block.summary}</p>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {doc.blocks.map((block) => {
+          const blockMeta = getDocumentationBlockMeta(section, block.title);
+          return (
+            <Card
+              key={block.title}
+              id={blockMeta?.id ?? toDocumentationAnchorId(block.title)}
+              title={block.title}
+            >
+              {block.content}
+            </Card>
+          );
+        })}
       </div>
     </div>
   );

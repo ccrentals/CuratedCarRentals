@@ -17,8 +17,6 @@ test("summarizeRevenuePoints: aggregates gross/refunds/net and counts from fixtu
       refunds: 5_000,
       netRevenue: 95_000,
       paymentCount: 4,
-      fallbackBookingCount: 1,
-      fallbackRevenue: 15_000,
     },
     {
       periodStart: "2026-02-02",
@@ -27,8 +25,6 @@ test("summarizeRevenuePoints: aggregates gross/refunds/net and counts from fixtu
       refunds: 10_000,
       netRevenue: 190_000,
       paymentCount: 8,
-      fallbackBookingCount: 2,
-      fallbackRevenue: 20_000,
     },
   ];
 
@@ -38,7 +34,6 @@ test("summarizeRevenuePoints: aggregates gross/refunds/net and counts from fixtu
     refunds: 15_000,
     netRevenue: 285_000,
     paymentCount: 12,
-    fallbackBookingCount: 3,
   });
 });
 

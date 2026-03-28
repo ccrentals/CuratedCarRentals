@@ -72,79 +72,119 @@ export function CronRunButtons() {
   };
 
   return (
-    <div className="mt-4 flex flex-wrap gap-3">
-      <button
-        type="button"
-        onClick={() =>
-          handleRun(
-            "pickup",
-            "/api/admin/cron/run-pickup-reminders",
-            setPickupState,
-          )
-        }
-        disabled={pickupState === "running"}
-        className={buttonStyles({ variant: "secondary", size: "sm" })}
-      >
-        {pickupState === "running" ? "Running..." : "Run Pickup Reminder Now"}
-      </button>
-      <button
-        type="button"
-        onClick={() =>
-          handleRun(
-            "balance",
-            "/api/admin/cron/run-balance-reminders",
-            setBalanceState,
-          )
-        }
-        disabled={balanceState === "running"}
-        className={buttonStyles({ variant: "secondary", size: "sm" })}
-      >
-        {balanceState === "running" ? "Running..." : "Run Balance Reminder Now"}
-      </button>
-      <button
-        type="button"
-        onClick={() =>
-          handleRun(
-            "notes",
-            "/api/admin/cron/run-note-emails",
-            setNotesState,
-          )
-        }
-        disabled={notesState === "running"}
-        className={buttonStyles({ variant: "secondary", size: "sm" })}
-      >
-        {notesState === "running" ? "Running..." : "Run Scheduled Note Emails Now"}
-      </button>
-      <button
-        type="button"
-        onClick={() =>
-          handleRun(
-            "maintenance",
-            "/api/admin/cron/run-maintenance-reminders",
-            setMaintenanceState,
-          )
-        }
-        disabled={maintenanceState === "running"}
-        className={buttonStyles({ variant: "secondary", size: "sm" })}
-      >
-        {maintenanceState === "running" ? "Running..." : "Run Maintenance Reminders Now"}
-      </button>
-      <button
-        type="button"
-        onClick={() =>
-          handleRun(
-            "simulate",
-            "/api/admin/cron/simulate-reminders",
-            setSimulateState,
-          )
-        }
-        disabled={simulateState === "running"}
-        className={buttonStyles({ variant: "secondary", size: "sm" })}
-      >
-        {simulateState === "running" ? "Running..." : "Simulate Reminder Logs"}
-      </button>
-      {message ? <p className="w-full text-xs text-emerald-600">{message}</p> : null}
-      {error ? <p className="w-full text-xs text-red-600">{error}</p> : null}
+    <div className="mt-4 space-y-4">
+      <div>
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+          Run Reminder Jobs
+        </p>
+        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={() =>
+              handleRun(
+                "pickup",
+                "/api/admin/cron/run-pickup-reminders",
+                setPickupState,
+              )
+            }
+            disabled={pickupState === "running"}
+            className={buttonStyles({
+              variant: "secondary",
+              size: "sm",
+              className: "w-full justify-center",
+            })}
+          >
+            {pickupState === "running" ? "Running..." : "Run Pickup Reminders"}
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              handleRun(
+                "balance",
+                "/api/admin/cron/run-balance-reminders",
+                setBalanceState,
+              )
+            }
+            disabled={balanceState === "running"}
+            className={buttonStyles({
+              variant: "secondary",
+              size: "sm",
+              className: "w-full justify-center",
+            })}
+          >
+            {balanceState === "running" ? "Running..." : "Run Balance Reminders"}
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              handleRun(
+                "notes",
+                "/api/admin/cron/run-note-emails",
+                setNotesState,
+              )
+            }
+            disabled={notesState === "running"}
+            className={buttonStyles({
+              variant: "secondary",
+              size: "sm",
+              className: "w-full justify-center",
+            })}
+          >
+            {notesState === "running" ? "Running..." : "Run Scheduled Notes"}
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              handleRun(
+                "maintenance",
+                "/api/admin/cron/run-maintenance-reminders",
+                setMaintenanceState,
+              )
+            }
+            disabled={maintenanceState === "running"}
+            className={buttonStyles({
+              variant: "secondary",
+              size: "sm",
+              className: "w-full justify-center",
+            })}
+          >
+            {maintenanceState === "running" ? "Running..." : "Run Maintenance Reminders"}
+          </button>
+        </div>
+      </div>
+
+      <div>
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+          Diagnostics
+        </p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() =>
+              handleRun(
+                "simulate",
+                "/api/admin/cron/simulate-reminders",
+                setSimulateState,
+              )
+            }
+            disabled={simulateState === "running"}
+            className={buttonStyles({ variant: "outline", size: "sm" })}
+          >
+            {simulateState === "running" ? "Running..." : "Simulate Reminder Logs"}
+          </button>
+        </div>
+      </div>
+
+      {message ? (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+          {message}
+        </div>
+      ) : null}
+      {error ? (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+          {error}
+        </div>
+      ) : null}
     </div>
   );
 }

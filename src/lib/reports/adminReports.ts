@@ -12,6 +12,9 @@ import {
 export type ReportGranularity = "day" | "week" | "month";
 
 export type ReportsFilterInput = {
+  snapshotDate?: string | null;
+  rangeFrom?: string | null;
+  rangeTo?: string | null;
   dateFrom?: string | null;
   dateTo?: string | null;
   vehicleId?: string | null;
@@ -19,8 +22,9 @@ export type ReportsFilterInput = {
 };
 
 export type ReportsFilters = {
-  dateFrom: string;
-  dateTo: string;
+  snapshotDate: string;
+  rangeFrom: string;
+  rangeTo: string;
   vehicleId: string;
   revenueGranularity: ReportGranularity;
 };
@@ -32,8 +36,6 @@ export type RevenuePoint = {
   refunds: number;
   netRevenue: number;
   paymentCount: number;
-  fallbackBookingCount: number;
-  fallbackRevenue: number;
 };
 
 export type RevenueReport = {
@@ -43,7 +45,6 @@ export type RevenueReport = {
     refunds: number;
     netRevenue: number;
     paymentCount: number;
-    fallbackBookingCount: number;
   };
   points: RevenuePoint[];
 };
@@ -166,6 +167,7 @@ export type CancellationRefundImpactReport = {
   breakdown: CancellationBreakdownPoint[];
   cancellations: CancellationRow[];
   refunds: RefundRow[];
+  excludedUnknownTimestampCount: number;
 };
 
 export type VehicleProfitabilityRow = {
@@ -187,7 +189,30 @@ export type VehicleProfitabilityReport = {
     maintenanceCost: number;
     netProfit: number;
   };
+  includesMaintenanceData: boolean;
   rows: VehicleProfitabilityRow[];
+};
+
+export type ReportSectionMode = "operational" | "historical";
+
+export type ReportSectionMeta = {
+  mode: ReportSectionMode;
+  dateBasisLabel: string;
+  supportsExport: boolean;
+  warnings: string[];
+};
+
+export type AdminReportsSectionMeta = {
+  revenue: ReportSectionMeta;
+  vehicleProfitability: ReportSectionMeta;
+  utilization: ReportSectionMeta;
+  outstandingBalances: ReportSectionMeta;
+  agingReceivables: ReportSectionMeta;
+  customerCohort: ReportSectionMeta;
+  locationPerformance: ReportSectionMeta;
+  funnel: ReportSectionMeta;
+  upcoming: ReportSectionMeta;
+  cancellationRefundImpact: ReportSectionMeta;
 };
 
 export type AgingReceivableBucketLabel = "Current" | "1-15 days" | "16-30 days" | "30+ days";
@@ -260,6 +285,7 @@ export type LocationPerformanceReport = {
 export type AdminReportsPayload = {
   filters: ReportsFilters;
   generatedAt: string;
+  sectionMeta: AdminReportsSectionMeta;
   revenue: RevenueReport;
   vehicleProfitability: VehicleProfitabilityReport;
   utilization: UtilizationReport;
@@ -272,7 +298,18 @@ export type AdminReportsPayload = {
   cancellationRefundImpact: CancellationRefundImpactReport;
 };
 
-type CsvExportReportKey = "outstanding_balances" | "pickups" | "returns" | "cancellations_refunds";
+type CsvExportReportKey =
+  | "cash_collections"
+  | "vehicle_profitability"
+  | "vehicle_utilization"
+  | "outstanding_balances"
+  | "aging_receivables"
+  | "location_performance"
+  | "booking_status_funnel"
+  | "customer_cohort"
+  | "pickups"
+  | "returns"
+  | "cancellations_refunds";
 
 const NUMERIC_PATTERN = "^-?[0-9]+(\\.[0-9]+)?$";
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -327,10 +364,6 @@ function normalizeGranularity(value: unknown): ReportGranularity {
   return "day";
 }
 
-function isDateOnlyText(value: unknown): value is string {
-  return typeof value === "string" && DATE_ONLY_PATTERN.test(value);
-}
-
 function dateFromKey(value: unknown) {
   const date = dateOnlyUtc(value);
   if (!date) return "";
@@ -340,6 +373,10 @@ function dateFromKey(value: unknown) {
 
 function startOfUtcMonth(date: Date) {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
+}
+
+function startOfUtcDay(date: Date) {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
 }
 
 function startOfUtcWeekMonday(date: Date) {
@@ -418,7 +455,6 @@ export function summarizeRevenuePoints(points: RevenuePoint[]) {
     refunds: points.reduce((sum, point) => sum + asNumber(point.refunds), 0),
     netRevenue: points.reduce((sum, point) => sum + asNumber(point.netRevenue), 0),
     paymentCount: points.reduce((sum, point) => sum + asNumber(point.paymentCount), 0),
-    fallbackBookingCount: points.reduce((sum, point) => sum + asNumber(point.fallbackBookingCount), 0),
   };
 }
 
@@ -507,45 +543,43 @@ export function isDateInInclusiveRange(dateValue: unknown, rangeStart: unknown, 
 }
 
 export function normalizeReportsFilters(input: ReportsFilterInput): ReportsFilters {
-  const today = dateOnlyUtc(new Date()) ?? new Date();
-  const defaultFrom = startOfUtcMonth(today);
-  const defaultTo = today;
+  const today = startOfUtcDay(dateOnlyUtc(new Date()) ?? new Date());
+  const rawSnapshotDate =
+    typeof input.snapshotDate === "string" && DATE_ONLY_PATTERN.test(input.snapshotDate)
+      ? input.snapshotDate
+      : null;
+  const parsedSnapshot =
+    dateOnlyUtc(rawSnapshotDate ? `${rawSnapshotDate}T00:00:00Z` : today) ?? today;
+  const defaultRangeFrom = startOfUtcMonth(parsedSnapshot);
+  const defaultRangeTo = parsedSnapshot;
+  const rawRangeFrom =
+    typeof input.rangeFrom === "string" && DATE_ONLY_PATTERN.test(input.rangeFrom)
+      ? input.rangeFrom
+      : typeof input.dateFrom === "string" && DATE_ONLY_PATTERN.test(input.dateFrom)
+        ? input.dateFrom
+        : null;
+  const rawRangeTo =
+    typeof input.rangeTo === "string" && DATE_ONLY_PATTERN.test(input.rangeTo)
+      ? input.rangeTo
+      : typeof input.dateTo === "string" && DATE_ONLY_PATTERN.test(input.dateTo)
+        ? input.dateTo
+        : null;
 
-  const parsedFrom = dateOnlyUtc(
-    typeof input.dateFrom === "string" && /^\d{4}-\d{2}-\d{2}$/.test(input.dateFrom)
-      ? `${input.dateFrom}T00:00:00Z`
-      : defaultFrom,
-  ) ?? defaultFrom;
-
-  const parsedTo = dateOnlyUtc(
-    typeof input.dateTo === "string" && /^\d{4}-\d{2}-\d{2}$/.test(input.dateTo)
-      ? `${input.dateTo}T00:00:00Z`
-      : defaultTo,
-  ) ?? defaultTo;
+  const parsedFrom =
+    dateOnlyUtc(rawRangeFrom ? `${rawRangeFrom}T00:00:00Z` : defaultRangeFrom) ?? defaultRangeFrom;
+  const parsedTo =
+    dateOnlyUtc(rawRangeTo ? `${rawRangeTo}T00:00:00Z` : defaultRangeTo) ?? defaultRangeTo;
 
   const fromDate = parsedFrom <= parsedTo ? parsedFrom : parsedTo;
   const toDate = parsedFrom <= parsedTo ? parsedTo : parsedFrom;
 
   return {
-    dateFrom: dateFromKey(fromDate),
-    dateTo: dateFromKey(toDate),
+    snapshotDate: dateFromKey(parsedSnapshot),
+    rangeFrom: dateFromKey(fromDate),
+    rangeTo: dateFromKey(toDate),
     vehicleId: maybeText(input.vehicleId),
     revenueGranularity: normalizeGranularity(input.revenueGranularity),
   };
-}
-
-async function resolveDefaultReportsDateRange(db: Queryable): Promise<{ dateFrom: string; dateTo: string }> {
-  const todayDate = dateOnlyUtc(new Date()) ?? new Date();
-  const dateTo = dateFromKey(todayDate);
-  const minRangeRow = await db.query(
-    "select coalesce(least(" +
-      "coalesce((select min(created_at::date) from bookings), current_date), " +
-      "coalesce((select min(created_at::date) from payments where deleted_at is null), current_date)" +
-      "), current_date)::text as earliest_date",
-  );
-  const earliest = maybeText((minRangeRow.rows[0] as { earliest_date?: string } | undefined)?.earliest_date);
-  const dateFrom = isDateOnlyText(earliest) ? earliest : dateTo;
-  return { dateFrom, dateTo };
 }
 
 function buildVehicleFilterClause(vehicleId: string, values: unknown[], prefix = "b.vehicle_id") {
@@ -555,7 +589,12 @@ function buildVehicleFilterClause(vehicleId: string, values: unknown[], prefix =
 }
 
 async function buildRevenueReport(db: Queryable, filters: ReportsFilters): Promise<RevenueReport> {
-  const paymentValues: unknown[] = [filters.dateFrom, filters.dateTo, [...PAYMENT_SUCCESS_STATUSES], [...PAYMENT_NET_STATUSES]];
+  const paymentValues: unknown[] = [
+    filters.rangeFrom,
+    filters.rangeTo,
+    [...PAYMENT_SUCCESS_STATUSES],
+    [...PAYMENT_NET_STATUSES],
+  ];
   const paymentVehicleClause = buildVehicleFilterClause(filters.vehicleId, paymentValues, "b.vehicle_id");
   const paymentBucketSql = bucketExpression("p.created_at", filters.revenueGranularity);
 
@@ -573,30 +612,7 @@ async function buildRevenueReport(db: Queryable, filters: ReportsFilters): Promi
       "group by 1 order by 1",
     paymentValues,
   );
-
-  const fallbackValues: unknown[] = [filters.dateFrom, filters.dateTo];
-  const fallbackVehicleClause = buildVehicleFilterClause(filters.vehicleId, fallbackValues, "b.vehicle_id");
-  const fallbackStatusIndex = fallbackValues.length + 1;
-  fallbackValues.push([...PAYMENT_NET_STATUSES]);
-  const fallbackBucketSql = bucketExpression("b.created_at", filters.revenueGranularity);
-
-  const fallbackRows = await db.query(
-    "select " +
-      fallbackBucketSql +
-      " as bucket_start, " +
-      "count(*)::int as fallback_booking_count, " +
-      `coalesce(sum(${TOTAL_SQL}), 0)::numeric as fallback_revenue ` +
-      "from bookings b join vehicles v on v.id = b.vehicle_id " +
-      "where b.status in ('CONFIRMED','RETURNED','PICKED_UP') and b.created_at::date between $1 and $2 " +
-      fallbackVehicleClause +
-      "and not exists( " +
-      `  select 1 from payments p where p.booking_id = b.id and p.deleted_at is null and p.status = any($${fallbackStatusIndex}::text[])` +
-      ") " +
-      "group by 1 order by 1",
-    fallbackValues,
-  );
-
-  const buckets = buildBucketSeries(filters.dateFrom, filters.dateTo, filters.revenueGranularity);
+  const buckets = buildBucketSeries(filters.rangeFrom, filters.rangeTo, filters.revenueGranularity);
   const rowsByBucket = new Map<string, RevenuePoint>();
 
   for (const bucket of buckets) {
@@ -607,8 +623,6 @@ async function buildRevenueReport(db: Queryable, filters: ReportsFilters): Promi
       refunds: 0,
       netRevenue: 0,
       paymentCount: 0,
-      fallbackBookingCount: 0,
-      fallbackRevenue: 0,
     });
   }
 
@@ -628,8 +642,6 @@ async function buildRevenueReport(db: Queryable, filters: ReportsFilters): Promi
         refunds: 0,
         netRevenue: 0,
         paymentCount: 0,
-        fallbackBookingCount: 0,
-        fallbackRevenue: 0,
       });
     }
     const current = rowsByBucket.get(bucket)!;
@@ -637,31 +649,6 @@ async function buildRevenueReport(db: Queryable, filters: ReportsFilters): Promi
     current.grossRevenue += asNumber(row.gross_revenue);
     current.refunds += asNumber(row.refunds);
     current.netRevenue += asNumber(row.net_revenue);
-  }
-
-  for (const row of fallbackRows.rows as Array<{
-    bucket_start: string | Date;
-    fallback_booking_count: number;
-    fallback_revenue: number;
-  }>) {
-    const bucket = dateFromKey(row.bucket_start);
-    if (!rowsByBucket.has(bucket)) {
-      rowsByBucket.set(bucket, {
-        periodStart: bucket,
-        periodLabel: bucketLabel(bucket, filters.revenueGranularity),
-        grossRevenue: 0,
-        refunds: 0,
-        netRevenue: 0,
-        paymentCount: 0,
-        fallbackBookingCount: 0,
-        fallbackRevenue: 0,
-      });
-    }
-    const current = rowsByBucket.get(bucket)!;
-    current.fallbackBookingCount += asNumber(row.fallback_booking_count);
-    current.fallbackRevenue += asNumber(row.fallback_revenue);
-    current.grossRevenue += asNumber(row.fallback_revenue);
-    current.netRevenue += asNumber(row.fallback_revenue);
   }
 
   const points = Array.from(rowsByBucket.values()).sort((a, b) =>
@@ -680,7 +667,7 @@ async function buildVehicleProfitabilityReport(
   db: Queryable,
   filters: ReportsFilters,
 ): Promise<VehicleProfitabilityReport> {
-  const range = buildRange(filters.dateFrom, filters.dateTo);
+  const range = buildRange(filters.rangeFrom, filters.rangeTo);
   if (!range) {
     throw new Error("Unable to normalize reports date range.");
   }
@@ -711,7 +698,7 @@ async function buildVehicleProfitabilityReport(
     bookingValues,
   );
 
-  const maintenanceValues: unknown[] = [filters.dateFrom, filters.dateTo];
+  const maintenanceValues: unknown[] = [filters.rangeFrom, filters.rangeTo];
   const maintenanceVehicleClause = buildVehicleFilterClause(
     filters.vehicleId,
     maintenanceValues,
@@ -725,6 +712,7 @@ async function buildVehicleProfitabilityReport(
         }>;
       }
     | { rows: [] } = { rows: [] };
+  let includesMaintenanceData = true;
   try {
     maintenanceRows = await db.query(
       "select m.vehicle_id, " +
@@ -744,21 +732,23 @@ async function buildVehicleProfitabilityReport(
   } catch (error) {
     const code = (error as { code?: string } | null)?.code;
     if (code !== "42P01") throw error;
+    includesMaintenanceData = false;
     maintenanceRows = { rows: [] };
   }
 
   const vehicleValues: unknown[] = [];
   const filteredVehicleClause = buildVehicleFilterClause(filters.vehicleId, vehicleValues, "v.id");
   const vehicles = await db.query(
-    "select v.id, v.make, v.model from vehicles v where v.status <> 'INACTIVE' " +
+    "select v.id, v.make, v.model, v.status from vehicles v where true " +
       filteredVehicleClause +
       "order by v.make, v.model",
     vehicleValues,
   );
 
   const vehicleLabelById = new Map<string, string>();
-  for (const row of vehicles.rows as Array<{ id: string; make: string; model: string }>) {
-    vehicleLabelById.set(row.id, `${row.make} ${row.model}`.trim());
+  for (const row of vehicles.rows as Array<{ id: string; make: string; model: string; status?: string }>) {
+    const suffix = String(row.status ?? "").toUpperCase() === "INACTIVE" ? " (Inactive)" : "";
+    vehicleLabelById.set(row.id, `${row.make} ${row.model}`.trim() + suffix);
   }
 
   const bookingsByVehicle = new Map<
@@ -833,23 +823,24 @@ async function buildVehicleProfitabilityReport(
     },
   );
 
-  return { totals, rows };
+  return { totals, includesMaintenanceData, rows };
 }
 
 function buildAgingReceivablesReport(
   outstandingBalances: OutstandingBalancesReport,
+  snapshotDate: string,
 ): AgingReceivablesReport {
-  const today = dateOnlyUtc(new Date()) ?? new Date();
-  const utcToday = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+  const snapshot =
+    dateOnlyUtc(`${snapshotDate}T00:00:00Z`) ?? startOfUtcDay(dateOnlyUtc(new Date()) ?? new Date());
   const dayMs = 1000 * 60 * 60 * 24;
 
   const rows: AgingReceivablesRow[] = outstandingBalances.rows
     .map((row) => {
-      const returnDate = dateOnlyUtc(`${row.returnDate}T00:00:00Z`) ?? dateOnlyUtc(row.returnDate);
+      const dueDate = dateOnlyUtc(`${row.pickupDate}T00:00:00Z`) ?? dateOnlyUtc(row.pickupDate);
       const daysPastDue =
-        returnDate === null
+        dueDate === null
           ? 0
-          : Math.max(0, Math.floor((utcToday.getTime() - returnDate.getTime()) / dayMs));
+          : Math.max(0, Math.floor((snapshot.getTime() - dueDate.getTime()) / dayMs));
       const bucket = agingBucketForDaysPastDue(daysPastDue);
       return {
         bookingId: row.bookingId,
@@ -909,11 +900,8 @@ async function buildCustomerCohortReport(
   db: Queryable,
   filters: ReportsFilters,
 ): Promise<CustomerCohortReport> {
-  const values: unknown[] = [filters.dateFrom, filters.dateTo];
+  const values: unknown[] = [filters.rangeFrom, filters.rangeTo];
   const scopedVehicleClause = buildVehicleFilterClause(filters.vehicleId, values, "b.vehicle_id");
-  const firstBookingVehicleClause = filters.vehicleId
-    ? `and b.vehicle_id = $${values.length} `
-    : "";
 
   const cohortRows = await db.query(
     "with scoped_bookings as (" +
@@ -930,7 +918,6 @@ async function buildCustomerCohortReport(
       "  from bookings b " +
       "  where b.status not in ('CANCELLED','OVERRIDDEN') " +
       "    and coalesce(b.pricing_json->>'overridden_by_booking_id', '') = '' " +
-      firstBookingVehicleClause +
       "  group by b.customer_id" +
       ") " +
       "select date_trunc('month', f.first_booking_date)::date as cohort_month, " +
@@ -957,7 +944,6 @@ async function buildCustomerCohortReport(
       "  from bookings b " +
       "  where b.status not in ('CANCELLED','OVERRIDDEN') " +
       "    and coalesce(b.pricing_json->>'overridden_by_booking_id', '') = '' " +
-      firstBookingVehicleClause +
       "  group by b.customer_id" +
       ") " +
       "select " +
@@ -1008,7 +994,7 @@ async function buildLocationPerformanceReport(
   db: Queryable,
   filters: ReportsFilters,
 ): Promise<LocationPerformanceReport> {
-  const values: unknown[] = [filters.dateFrom, filters.dateTo, [...PAYMENT_NET_STATUSES]];
+  const values: unknown[] = [filters.rangeFrom, filters.rangeTo, [...PAYMENT_NET_STATUSES]];
   const vehicleClause = buildVehicleFilterClause(filters.vehicleId, values, "b.vehicle_id");
 
   const result = await db.query(
@@ -1074,18 +1060,18 @@ async function buildLocationPerformanceReport(
 }
 
 async function buildUtilizationReport(db: Queryable, filters: ReportsFilters): Promise<UtilizationReport> {
-  const rangeDays = overlapDaysInclusive(filters.dateFrom, filters.dateTo, filters.dateFrom, filters.dateTo);
+  const rangeDays = overlapDaysInclusive(filters.rangeFrom, filters.rangeTo, filters.rangeFrom, filters.rangeTo);
   const vehicleValues: unknown[] = [];
   const vehicleClause = buildVehicleFilterClause(filters.vehicleId, vehicleValues, "v.id");
 
   const vehicles = await db.query(
-    "select v.id, v.make, v.model from vehicles v where v.status <> 'INACTIVE' " +
+    "select v.id, v.make, v.model, v.status from vehicles v where true " +
       vehicleClause +
       "order by v.make, v.model",
     vehicleValues,
   );
 
-  const bookedValues: unknown[] = [filters.dateFrom, filters.dateTo];
+  const bookedValues: unknown[] = [filters.rangeFrom, filters.rangeTo];
   const bookedVehicleClause = buildVehicleFilterClause(filters.vehicleId, bookedValues, "b.vehicle_id");
   // Count a day as booked when any part of a booking touches that day boundary.
   const bookedRows = await db.query(
@@ -1104,7 +1090,7 @@ async function buildUtilizationReport(db: Queryable, filters: ReportsFilters): P
 
   let includesBlockouts = true;
   let blockoutRows: { rows: unknown[] } = { rows: [] };
-  const blockoutValues: unknown[] = [filters.dateFrom, filters.dateTo];
+  const blockoutValues: unknown[] = [filters.rangeFrom, filters.rangeTo];
   const blockoutVehicleClause = buildVehicleFilterClause(filters.vehicleId, blockoutValues, "bo.vehicle_id");
   try {
     blockoutRows = await db.query(
@@ -1139,7 +1125,7 @@ async function buildUtilizationReport(db: Queryable, filters: ReportsFilters): P
     blockoutByVehicle.set(row.vehicle_id, asNumber(row.blockout_days));
   }
 
-  const rows: UtilizationRow[] = (vehicles.rows as Array<{ id: string; make: string; model: string }>).map(
+  const rows: UtilizationRow[] = (vehicles.rows as Array<{ id: string; make: string; model: string; status?: string }>).map(
     (vehicle) => {
       const bookedDays = bookedByVehicle.get(vehicle.id) ?? 0;
       const blockoutDays = blockoutByVehicle.get(vehicle.id) ?? 0;
@@ -1149,7 +1135,9 @@ async function buildUtilizationReport(db: Queryable, filters: ReportsFilters): P
 
       return {
         vehicleId: vehicle.id,
-        vehicleLabel: `${vehicle.make} ${vehicle.model}`.trim(),
+        vehicleLabel:
+          `${vehicle.make} ${vehicle.model}`.trim() +
+          (String(vehicle.status ?? "").toUpperCase() === "INACTIVE" ? " (Inactive)" : ""),
         bookedDays,
         blockoutDays,
         availableDays,
@@ -1169,16 +1157,7 @@ async function buildOutstandingBalancesReport(
   db: Queryable,
   filters: ReportsFilters,
 ): Promise<OutstandingBalancesReport> {
-  const range = buildRange(filters.dateFrom, filters.dateTo);
-  if (!range) {
-    throw new Error("Unable to normalize reports date range.");
-  }
-  const bookingRangeWhere = buildBookingRangeWhere({
-    rangeStart: range.rangeStartIso,
-    rangeEnd: range.rangeEndIso,
-    bookingAlias: "b",
-  });
-  const values: unknown[] = [...bookingRangeWhere.values, [...PAYMENT_NET_STATUSES]];
+  const values: unknown[] = [filters.snapshotDate, [...PAYMENT_NET_STATUSES]];
   const vehicleClause = buildVehicleFilterClause(filters.vehicleId, values, "b.vehicle_id");
 
   const rows = await db.query(
@@ -1189,12 +1168,12 @@ async function buildOutstandingBalancesReport(
       "    coalesce(( " +
       "      select sum(p.deposit_amount_cents)::numeric " +
       "      from payments p " +
-      "      where p.booking_id = b.id and p.deleted_at is null and p.status = any($3::text[])" +
+      "      where p.booking_id = b.id and p.deleted_at is null and p.status = any($2::text[]) and p.created_at::date <= $1::date" +
       "    ), 0) as amount_paid " +
       "  from bookings b " +
       "  join customers c on c.id = b.customer_id " +
       "  join vehicles v on v.id = b.vehicle_id " +
-      `  where ${bookingRangeWhere.clause} ` +
+      "  where b.created_at::date <= $1::date " +
       "    and b.status not in ('CANCELLED','OVERRIDDEN') " +
       "    and coalesce(b.pricing_json->>'overridden_by_booking_id', '') = '' " +
       vehicleClause +
@@ -1202,7 +1181,7 @@ async function buildOutstandingBalancesReport(
       "select id, public_id, status, start_date, end_date, pricing_json, customer_name, vehicle_make, vehicle_model, " +
       "  total_amount::numeric as total_amount, amount_paid::numeric as amount_paid, " +
       "  greatest(total_amount - amount_paid, 0)::numeric as balance_due, " +
-      "  (start_date - current_date)::int as days_from_pickup " +
+      "  (start_date - $1::date)::int as days_from_pickup " +
       "from booking_financials " +
       "where greatest(total_amount - amount_paid, 0) > 0 " +
       "order by balance_due desc, start_date asc",
@@ -1261,7 +1240,7 @@ async function buildOutstandingBalancesReport(
 }
 
 async function buildFunnelReport(db: Queryable, filters: ReportsFilters): Promise<FunnelReport> {
-  const values: unknown[] = [filters.dateFrom, filters.dateTo];
+  const values: unknown[] = [filters.rangeFrom, filters.rangeTo];
   const vehicleClause = buildVehicleFilterClause(filters.vehicleId, values, "b.vehicle_id");
 
   const result = await db.query(
@@ -1317,7 +1296,7 @@ async function buildUpcomingPickupsReturnsReport(
   db: Queryable,
   filters: ReportsFilters,
 ): Promise<UpcomingPickupsReturnsReport> {
-  const values: unknown[] = [filters.dateFrom, filters.dateTo, [...PAYMENT_NET_STATUSES]];
+  const values: unknown[] = [filters.rangeFrom, filters.rangeTo, [...PAYMENT_NET_STATUSES]];
   const vehicleClause = buildVehicleFilterClause(filters.vehicleId, values, "b.vehicle_id");
 
   const baseSelect =
@@ -1429,31 +1408,65 @@ async function buildCancellationRefundImpactReport(
   db: Queryable,
   filters: ReportsFilters,
 ): Promise<CancellationRefundImpactReport> {
-  const cancellationValues: unknown[] = [filters.dateFrom, filters.dateTo];
+  const cancellationEventExpr =
+    "case " +
+    "  when upper(b.status) = 'OVERRIDDEN' or coalesce(b.pricing_json->>'overridden_by_booking_id', '') <> '' then " +
+    "    case when coalesce(b.pricing_json->>'overridden_at', '') ~ '^\\d{4}-\\d{2}-\\d{2}T' then (b.pricing_json->>'overridden_at')::timestamptz end " +
+    "  else " +
+    "    coalesce( " +
+    "      case when coalesce(b.pricing_json->>'cancelled_at', '') ~ '^\\d{4}-\\d{2}-\\d{2}T' then (b.pricing_json->>'cancelled_at')::timestamptz end, " +
+    "      cancel_audit.created_at " +
+    "    ) " +
+    "end";
+  const cancellationValues: unknown[] = [filters.rangeFrom, filters.rangeTo];
   const cancellationVehicleClause = buildVehicleFilterClause(filters.vehicleId, cancellationValues, "b.vehicle_id");
 
   const cancellationRows = await db.query(
     "select b.id, b.public_id, b.status, c.full_name as customer_name, v.make as vehicle_make, v.model as vehicle_model, " +
-      "coalesce( " +
-      "  case when coalesce(b.pricing_json->>'cancelled_at', '') ~ '^\\d{4}-\\d{2}-\\d{2}T' then (b.pricing_json->>'cancelled_at')::timestamptz end, " +
-      "  case when coalesce(b.pricing_json->>'overridden_at', '') ~ '^\\d{4}-\\d{2}-\\d{2}T' then (b.pricing_json->>'overridden_at')::timestamptz end, " +
-      "  b.updated_at " +
-      ") as cancelled_at, " +
+      `${cancellationEventExpr} as cancelled_at, ` +
       "coalesce(nullif(b.pricing_json->>'override_reason', ''), nullif(b.pricing_json->>'cancel_reason', ''), '') as cancellation_reason, " +
       "(upper(b.status) = 'OVERRIDDEN' or coalesce(b.pricing_json->>'overridden_by_booking_id', '') <> '') as is_overridden " +
-      "from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id " +
+      "from bookings b " +
+      "join customers c on c.id = b.customer_id " +
+      "join vehicles v on v.id = b.vehicle_id " +
+      "left join lateral (" +
+      "  select a.created_at " +
+      "  from audit_logs a " +
+      "  where a.entity_type = 'booking' and a.entity_id = b.id and a.action in ('BOOKING_CANCELLED','BOOKING_CANCELLED_BY_BLOCKOUT') " +
+      "  order by a.created_at asc " +
+      "  limit 1" +
+      ") cancel_audit on true " +
       "where (upper(b.status) = 'CANCELLED' or upper(b.status) = 'OVERRIDDEN') " +
-      "and coalesce( " +
-      "  case when coalesce(b.pricing_json->>'cancelled_at', '') ~ '^\\d{4}-\\d{2}-\\d{2}T' then (b.pricing_json->>'cancelled_at')::timestamptz end, " +
-      "  case when coalesce(b.pricing_json->>'overridden_at', '') ~ '^\\d{4}-\\d{2}-\\d{2}T' then (b.pricing_json->>'overridden_at')::timestamptz end, " +
-      "  b.updated_at " +
-      ")::date between $1 and $2 " +
+      `and ${cancellationEventExpr} is not null ` +
+      `and ${cancellationEventExpr}::date between $1 and $2 ` +
       cancellationVehicleClause +
       "order by cancelled_at desc",
     cancellationValues,
   );
 
-  const refundListValues: unknown[] = [filters.dateFrom, filters.dateTo];
+  const unknownTimestampValues: unknown[] = [];
+  const unknownTimestampVehicleClause = buildVehicleFilterClause(
+    filters.vehicleId,
+    unknownTimestampValues,
+    "b.vehicle_id",
+  );
+  const unknownTimestampResult = await db.query(
+    "select count(*)::int as excluded_count " +
+      "from bookings b " +
+      "left join lateral (" +
+      "  select a.created_at " +
+      "  from audit_logs a " +
+      "  where a.entity_type = 'booking' and a.entity_id = b.id and a.action in ('BOOKING_CANCELLED','BOOKING_CANCELLED_BY_BLOCKOUT') " +
+      "  order by a.created_at asc " +
+      "  limit 1" +
+      ") cancel_audit on true " +
+      "where (upper(b.status) = 'CANCELLED' or upper(b.status) = 'OVERRIDDEN') " +
+      `and ${cancellationEventExpr} is null ` +
+      unknownTimestampVehicleClause,
+    unknownTimestampValues,
+  );
+
+  const refundListValues: unknown[] = [filters.rangeFrom, filters.rangeTo];
   const refundListVehicleClause = buildVehicleFilterClause(
     filters.vehicleId,
     refundListValues,
@@ -1468,7 +1481,7 @@ async function buildCancellationRefundImpactReport(
     refundListValues,
   );
 
-  const grossNetValues: unknown[] = [filters.dateFrom, filters.dateTo, [...PAYMENT_SUCCESS_STATUSES]];
+  const grossNetValues: unknown[] = [filters.rangeFrom, filters.rangeTo, [...PAYMENT_SUCCESS_STATUSES]];
   const grossNetVehicleClause = buildVehicleFilterClause(
     filters.vehicleId,
     grossNetValues,
@@ -1484,7 +1497,7 @@ async function buildCancellationRefundImpactReport(
     grossNetValues,
   );
 
-  const breakdownBuckets = buildBucketSeries(filters.dateFrom, filters.dateTo, filters.revenueGranularity);
+  const breakdownBuckets = buildBucketSeries(filters.rangeFrom, filters.rangeTo, filters.revenueGranularity);
   const breakdownMap = new Map<string, CancellationBreakdownPoint>();
   for (const bucket of breakdownBuckets) {
     breakdownMap.set(bucket, {
@@ -1497,28 +1510,27 @@ async function buildCancellationRefundImpactReport(
 
   const cancellationBreakdown = await db.query(
     "select " +
-      bucketExpression(
-        "coalesce( " +
-          "case when coalesce(b.pricing_json->>'cancelled_at', '') ~ '^\\d{4}-\\d{2}-\\d{2}T' then (b.pricing_json->>'cancelled_at')::timestamptz end, " +
-          "case when coalesce(b.pricing_json->>'overridden_at', '') ~ '^\\d{4}-\\d{2}-\\d{2}T' then (b.pricing_json->>'overridden_at')::timestamptz end, " +
-          "b.updated_at" +
-          ")",
-        filters.revenueGranularity,
-      ) +
+      bucketExpression(cancellationEventExpr, filters.revenueGranularity) +
       " as bucket_start, count(*)::int as cancellations " +
       "from bookings b " +
+      "left join lateral (" +
+      "  select a.created_at " +
+      "  from audit_logs a " +
+      "  where a.entity_type = 'booking' and a.entity_id = b.id and a.action in ('BOOKING_CANCELLED','BOOKING_CANCELLED_BY_BLOCKOUT') " +
+      "  order by a.created_at asc " +
+      "  limit 1" +
+      ") cancel_audit on true " +
       "where (upper(b.status) = 'CANCELLED' or upper(b.status) = 'OVERRIDDEN') " +
-      "and coalesce( " +
-      "  case when coalesce(b.pricing_json->>'cancelled_at', '') ~ '^\\d{4}-\\d{2}-\\d{2}T' then (b.pricing_json->>'cancelled_at')::timestamptz end, " +
-      "  case when coalesce(b.pricing_json->>'overridden_at', '') ~ '^\\d{4}-\\d{2}-\\d{2}T' then (b.pricing_json->>'overridden_at')::timestamptz end, " +
-      "  b.updated_at " +
-      ")::date between $1 and $2 " +
+      `and ${cancellationEventExpr} is not null ` +
+      `and ${cancellationEventExpr}::date between $1 and $2 ` +
       (filters.vehicleId ? "and b.vehicle_id = $3 " : "") +
       "group by 1 order by 1",
-    filters.vehicleId ? [filters.dateFrom, filters.dateTo, filters.vehicleId] : [filters.dateFrom, filters.dateTo],
+    filters.vehicleId
+      ? [filters.rangeFrom, filters.rangeTo, filters.vehicleId]
+      : [filters.rangeFrom, filters.rangeTo],
   );
 
-  const refundBreakdownValues: unknown[] = [filters.dateFrom, filters.dateTo];
+  const refundBreakdownValues: unknown[] = [filters.rangeFrom, filters.rangeTo];
   const refundBreakdownVehicleClause = buildVehicleFilterClause(filters.vehicleId, refundBreakdownValues, "b.vehicle_id");
   const refundBreakdown = await db.query(
     "select " +
@@ -1562,6 +1574,9 @@ async function buildCancellationRefundImpactReport(
     gross_payments?: number;
     refund_total?: number;
   };
+  const excludedUnknownTimestampCount = asNumber(
+    (unknownTimestampResult.rows[0] as { excluded_count?: number } | undefined)?.excluded_count,
+  );
 
   const mappedCancellations: CancellationRow[] = (cancellationRows.rows as Array<{
     id: string;
@@ -1622,6 +1637,7 @@ async function buildCancellationRefundImpactReport(
     ),
     cancellations: mappedCancellations,
     refunds: mappedRefunds,
+    excludedUnknownTimestampCount,
   };
 }
 
@@ -1630,20 +1646,7 @@ export async function getAdminReportsPayload(
   options: { db?: Queryable } = {},
 ): Promise<AdminReportsPayload> {
   const db = getQueryable(options.db);
-  const hasDateFrom = isDateOnlyText(filtersInput.dateFrom);
-  const hasDateTo = isDateOnlyText(filtersInput.dateTo);
-  let resolvedFiltersInput = filtersInput;
-
-  if (!hasDateFrom || !hasDateTo) {
-    const defaults = await resolveDefaultReportsDateRange(db);
-    resolvedFiltersInput = {
-      ...filtersInput,
-      dateFrom: hasDateFrom ? filtersInput.dateFrom : defaults.dateFrom,
-      dateTo: hasDateTo ? filtersInput.dateTo : defaults.dateTo,
-    };
-  }
-
-  const filters = normalizeReportsFilters(resolvedFiltersInput);
+  const filters = normalizeReportsFilters(filtersInput);
 
   const [
     revenue,
@@ -1667,11 +1670,83 @@ export async function getAdminReportsPayload(
       buildUpcomingPickupsReturnsReport(db, filters),
       buildCancellationRefundImpactReport(db, filters),
     ]);
-  const agingReceivables = buildAgingReceivablesReport(outstandingBalances);
+  const agingReceivables = buildAgingReceivablesReport(outstandingBalances, filters.snapshotDate);
+  const sectionMeta: AdminReportsSectionMeta = {
+    revenue: {
+      mode: "historical",
+      dateBasisLabel: "By payment date",
+      supportsExport: true,
+      warnings: [],
+    },
+    vehicleProfitability: {
+      mode: "historical",
+      dateBasisLabel: "By booking overlap",
+      supportsExport: true,
+      warnings: vehicleProfitability.includesMaintenanceData
+        ? []
+        : ["Maintenance records table not found. Maintenance costs are excluded from this section."],
+    },
+    utilization: {
+      mode: "historical",
+      dateBasisLabel: "By booking overlap",
+      supportsExport: true,
+      warnings: utilization.includesBlockouts
+        ? []
+        : ["Blockouts table not found. Utilization is based on booked days only."],
+    },
+    outstandingBalances: {
+      mode: "operational",
+      dateBasisLabel: "As of snapshot date",
+      supportsExport: true,
+      warnings: [],
+    },
+    agingReceivables: {
+      mode: "operational",
+      dateBasisLabel: "Aged from pickup due date as of snapshot date",
+      supportsExport: true,
+      warnings: [],
+    },
+    customerCohort: {
+      mode: "historical",
+      dateBasisLabel: "By booking created date",
+      supportsExport: true,
+      warnings: [],
+    },
+    locationPerformance: {
+      mode: "historical",
+      dateBasisLabel: "By pickup date",
+      supportsExport: true,
+      warnings: [],
+    },
+    funnel: {
+      mode: "historical",
+      dateBasisLabel: "By booking created date",
+      supportsExport: true,
+      warnings: [],
+    },
+    upcoming: {
+      mode: "operational",
+      dateBasisLabel: "By pickup and return date",
+      supportsExport: true,
+      warnings: [],
+    },
+    cancellationRefundImpact: {
+      mode: "historical",
+      dateBasisLabel: "Cancellations by canonical event date; refunds by payment date",
+      supportsExport: true,
+      warnings:
+        cancellationRefundImpact.excludedUnknownTimestampCount > 0
+          ? [
+              `${cancellationRefundImpact.excludedUnknownTimestampCount} cancellation or override record(s) were excluded because no canonical event timestamp was found.`,
+            ]
+          : [],
+    },
+  };
 
   return {
     filters,
     generatedAt: new Date().toISOString(),
+    sectionMeta,
     revenue,
     vehicleProfitability,
     utilization,
@@ -1860,8 +1935,9 @@ export function isCsvExportReportKey(value: unknown): value is CsvExportReportKe
 
 export function buildReportsFilterQueryString(filters: ReportsFilters) {
   const params = new URLSearchParams();
-  params.set("dateFrom", filters.dateFrom);
-  params.set("dateTo", filters.dateTo);
+  params.set("snapshotDate", filters.snapshotDate);
+  params.set("rangeFrom", filters.rangeFrom);
+  params.set("rangeTo", filters.rangeTo);
   if (filters.vehicleId) params.set("vehicleId", filters.vehicleId);
   params.set("revenueGranularity", filters.revenueGranularity);
   return params.toString();

@@ -149,10 +149,28 @@ export function latestReminderRunsByEventType(rows: ReminderRunRow[]) {
   return latest;
 }
 
+export function recentReminderRunsFromRows(rows: ReminderRunRow[], limit = 10) {
+  const safeLimit = Math.max(1, Math.floor(limit));
+  return rows
+    .map(parseReminderRunRow)
+    .filter((row): row is ReminderRunRecord => Boolean(row))
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+    .slice(0, safeLimit);
+}
+
 export async function loadLatestReminderRuns() {
   const result = await dbQuery<ReminderRunRow>(
     "select created_at, details_json from audit_logs where action = $1 and entity_type = 'cron_run' and coalesce(details_json->>'event_type', '') = any($2::text[]) order by created_at desc limit 400",
     [CRON_RUN_AUDIT_ACTION, [...REMINDER_EVENT_TYPES]],
   );
   return latestReminderRunsByEventType(result.rows);
+}
+
+export async function loadRecentReminderRuns(limit = 10) {
+  const safeLimit = Math.max(1, Math.floor(limit));
+  const result = await dbQuery<ReminderRunRow>(
+    "select created_at, details_json from audit_logs where action = $1 and entity_type = 'cron_run' and coalesce(details_json->>'event_type', '') = any($2::text[]) order by created_at desc limit $3::int",
+    [CRON_RUN_AUDIT_ACTION, [...REMINDER_EVENT_TYPES], safeLimit],
+  );
+  return recentReminderRunsFromRows(result.rows, safeLimit);
 }
