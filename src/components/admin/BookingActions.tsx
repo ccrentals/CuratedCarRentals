@@ -371,10 +371,11 @@ export function BookingActions({
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div data-testid="booking-actions-panel" className="flex flex-col gap-4">
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <button
           type="button"
+          data-testid="booking-actions-tab-booking"
           onClick={() => setActivePanel("booking")}
           className={activePanel === "booking" ? activeTabClass : inactiveTabClass}
           aria-pressed={activePanel === "booking"}
@@ -383,6 +384,7 @@ export function BookingActions({
         </button>
         <button
           type="button"
+          data-testid="booking-actions-tab-email"
           onClick={() => setActivePanel("email")}
           className={activePanel === "email" ? activeTabClass : inactiveTabClass}
           aria-pressed={activePanel === "email"}
@@ -391,6 +393,7 @@ export function BookingActions({
         </button>
         <button
           type="button"
+          data-testid="booking-actions-tab-pricing"
           onClick={() => setActivePanel("pricing")}
           className={activePanel === "pricing" ? activeTabClass : inactiveTabClass}
           aria-pressed={activePanel === "pricing"}
@@ -400,6 +403,7 @@ export function BookingActions({
         {bookingChangesContent ? (
           <button
             type="button"
+            data-testid="booking-actions-tab-changes"
             onClick={() => setActivePanel("changes")}
             className={activePanel === "changes" ? activeTabClass : inactiveTabClass}
             aria-pressed={activePanel === "changes"}
@@ -410,6 +414,7 @@ export function BookingActions({
         {inspectionContent ? (
           <button
             type="button"
+            data-testid="booking-actions-tab-inspection"
             onClick={() => setActivePanel("inspection")}
             className={activePanel === "inspection" ? activeTabClass : inactiveTabClass}
             aria-pressed={activePanel === "inspection"}
@@ -424,11 +429,15 @@ export function BookingActions({
       ) : activePanel === "inspection" && inspectionContent ? (
         <div>{inspectionContent}</div>
       ) : (
-        <div className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-3">
+        <div
+          data-testid={`booking-actions-panel-${activePanel}`}
+          className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-3"
+        >
           {activePanel === "booking" ? (
             <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:flex lg:flex-wrap lg:items-center">
               <button
                 type="button"
+                data-testid="booking-action-confirm"
                 onClick={() => runAction("confirm")}
                 disabled={loadingKey === "confirm" || !canConfirm}
                 className={actionButtonBaseClass}
@@ -437,6 +446,7 @@ export function BookingActions({
               </button>
               <button
                 type="button"
+                data-testid="booking-action-pickup"
                 onClick={() => runAction("pickup")}
                 disabled={loadingKey === "pickup" || !canPickup}
                 title={
@@ -454,6 +464,7 @@ export function BookingActions({
               </button>
               <button
                 type="button"
+                data-testid="booking-action-complete"
                 onClick={() => runAction("complete")}
                 disabled={loadingKey === "complete" || !canComplete}
                 className={actionButtonBaseClass}
@@ -462,6 +473,7 @@ export function BookingActions({
               </button>
               <button
                 type="button"
+                data-testid="booking-action-deposit"
                 onClick={() => runAction("deposit")}
                 disabled={loadingKey === "deposit" || Boolean(isDepositPaid) || Boolean(isPaidInFull)}
                 title={
@@ -473,6 +485,7 @@ export function BookingActions({
               </button>
               <button
                 type="button"
+                data-testid="booking-action-full"
                 onClick={() => runAction("full")}
                 disabled={loadingKey === "full" || Boolean(isPaidInFull)}
                 title={isPaidInFull ? "Already fully paid" : undefined}
@@ -482,6 +495,7 @@ export function BookingActions({
               </button>
               <button
                 type="button"
+                data-testid="booking-action-cancel"
                 onClick={() => runAction("cancel")}
                 disabled={loadingKey === "cancel" || !canCancel}
                 title={
@@ -498,6 +512,7 @@ export function BookingActions({
               {canArchive ? (
                 <button
                   type="button"
+                  data-testid="booking-action-archive"
                   onClick={() => runAction("archive")}
                   disabled={loadingKey === "archive"}
                   className={actionButtonBaseClass}
@@ -625,8 +640,16 @@ export function BookingActions({
         </div>
       )}
 
-      {message ? <p className="text-xs font-semibold text-[var(--ccr-text)]">{message}</p> : null}
-      {error ? <p className="text-xs text-red-600">{error}</p> : null}
+      {message ? (
+        <p data-testid="booking-actions-message" className="text-xs font-semibold text-[var(--ccr-text)]">
+          {message}
+        </p>
+      ) : null}
+      {error ? (
+        <p data-testid="booking-actions-error" className="text-xs text-red-600">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }

@@ -96,12 +96,20 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   reactCompiler: true,
 
-  // Allow Next dev to serve /_next assets when using a custom local hostname (ccr.test).
+  // Allow Next dev to serve /_next assets when using local Playwright/dev origins.
   allowedDevOrigins: [
     "http://ccr.test:3000",
+    "http://ccr.test:4173",
     "http://localhost:3000",
+    "http://localhost:4173",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:4173",
     "https://ccr.test:3000",
+    "https://ccr.test:4173",
     "https://localhost:3000",
+    "https://localhost:4173",
+    "https://127.0.0.1:3000",
+    "https://127.0.0.1:4173",
   ],
 
   async headers() {

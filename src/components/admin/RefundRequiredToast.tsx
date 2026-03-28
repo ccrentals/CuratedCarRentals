@@ -15,7 +15,7 @@ export function RefundRequiredToast({ refundRequired }: { refundRequired: boolea
   if (!open) return null;
 
   return (
-    <div className="fixed right-4 top-4 z-50 w-full max-w-sm">
+    <div data-testid="booking-refund-required-toast" className="fixed right-4 top-4 z-50 w-full max-w-sm">
       <div className={refundRequiredStyles.toastCard}>
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -26,6 +26,7 @@ export function RefundRequiredToast({ refundRequired }: { refundRequired: boolea
           </div>
           <button
             type="button"
+            data-testid="booking-refund-required-dismiss"
             aria-label="Dismiss notification"
             onClick={() => setOpen(false)}
             className={refundRequiredStyles.toastCloseButton}

@@ -264,7 +264,13 @@ export function AdminBookingsTable({
           </thead>
           <tbody>
             {rows.map((booking) => (
-              <tr key={booking.id} className="border-b border-[var(--ccr-border)] last:border-b-0">
+              <tr
+                key={booking.id}
+                data-testid="booking-row"
+                data-booking-id={booking.id}
+                data-booking-public-id={booking.publicId}
+                className="border-b border-[var(--ccr-border)] last:border-b-0"
+              >
                 <td className="px-4 py-3 font-mono text-xs text-[var(--ccr-text)]">
                   <Link
                     href={`/admin/bookings/${booking.id}`}
@@ -316,6 +322,7 @@ export function AdminBookingsTable({
                 <td className="px-4 py-3">
                   <div className="flex w-full items-center gap-2">
                     <span
+                      data-testid="booking-row-status"
                       className={`${STATUS_PILL_BASE_CLASS} ${statusPillToneClass(booking.status, booking.derivedPhase)}`}
                     >
                       {bookingPhaseLabel(booking)}
@@ -376,7 +383,11 @@ export function AdminBookingsTable({
                   </details>
                 </td>
                 <td className="px-4 py-3">
-                  <Link href={`/admin/bookings/${booking.id}`} className="text-sm font-semibold text-[var(--ccr-text)]">
+                  <Link
+                    href={`/admin/bookings/${booking.id}`}
+                    data-testid="booking-row-view"
+                    className="text-sm font-semibold text-[var(--ccr-text)]"
+                  >
                     View
                   </Link>
                 </td>

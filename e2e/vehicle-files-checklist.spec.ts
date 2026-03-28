@@ -1,127 +1,13 @@
-import { createHmac } from "node:crypto";
-import fs from "node:fs";
-import path from "node:path";
-
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
-import { config as loadEnv } from "dotenv";
-import pg from "pg";
+import { authenticateAdmin } from "./support/adminAuth";
 
-loadEnv({ path: ".env.local", quiet: true });
-loadEnv({ quiet: true });
-
-const { Client } = pg;
-
-const BASE_URL = process.env.E2E_BASE_URL ?? "http://127.0.0.1:4173";
-const ADMIN_IDENTIFIER =
-  process.env.E2E_ADMIN_IDENTIFIER ?? process.env.E2E_ADMIN_EMAIL ?? process.env.E2E_ADMIN_USER ?? "";
-const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? process.env.E2E_ADMIN_PASS ?? "";
-const ADMIN_SESSION_SECRET = process.env.ADMIN_SESSION_SECRET ?? "";
-const DATABASE_URL = process.env.DATABASE_URL ?? "";
-const E2E_ADMIN_USER_ID = process.env.E2E_ADMIN_USER_ID ?? "";
-const FIXTURES_PATH = path.join(process.cwd(), ".artifacts", "e2e-fixtures.json");
 const VEHICLE_ID = "993c77cd-6e86-4354-990f-93e6cd402c48";
-
-type FixtureFileShape = {
-  adminUser?: { id?: string | null };
-};
 
 type BrowserApiResult<T> = {
   status: number;
   body: T;
 };
 
-let cachedActorIdPromise: Promise<string | null> | null = null;
-
-function createSessionToken(userId: string, role: string) {
-  const issuedAt = Math.floor(Date.now() / 1000);
-  const expiresAt = issuedAt + 60 * 20;
-  const payload = JSON.stringify({ sub: userId, role, exp: expiresAt, iat: issuedAt });
-  const encoded = Buffer.from(payload).toString("base64url");
-  const signature = createHmac("sha256", ADMIN_SESSION_SECRET).update(encoded).digest("base64url");
-  return `${encoded}.${signature}`;
-}
-
-async function signInWithForm(page: Page) {
-  await page.goto("/admin/login", { waitUntil: "networkidle" });
-  await page.getByLabel("Email or username").fill(ADMIN_IDENTIFIER);
-  await page.getByLabel("Password").fill(ADMIN_PASSWORD);
-  await page.getByRole("button", { name: "Sign In" }).click();
-  await page.waitForURL(
-    (url) => {
-      const route = url.pathname;
-      return route.startsWith("/admin") && route !== "/admin/login";
-    },
-    { timeout: 20_000 },
-  );
-}
-
-function readActorIdFromFixtures() {
-  if (!fs.existsSync(FIXTURES_PATH)) return null;
-  try {
-    const raw = fs.readFileSync(FIXTURES_PATH, "utf8");
-    const parsed = JSON.parse(raw) as FixtureFileShape;
-    const actorId = parsed.adminUser?.id?.trim();
-    return actorId ? actorId : null;
-  } catch {
-    return null;
-  }
-}
-
-async function resolveActorId() {
-  if (cachedActorIdPromise) return cachedActorIdPromise;
-
-  cachedActorIdPromise = (async () => {
-    const envActorId = E2E_ADMIN_USER_ID.trim();
-    if (envActorId) return envActorId;
-
-    const fixtureActorId = readActorIdFromFixtures();
-    if (fixtureActorId) return fixtureActorId;
-
-    if (!DATABASE_URL) return null;
-
-    const client = new Client({ connectionString: DATABASE_URL });
-    try {
-      await client.connect();
-      const result = await client.query<{ id: string }>(
-        "select id from users where role in ('ADMIN', 'DEVELOPER') order by created_at asc limit 1",
-      );
-      return result.rows[0]?.id ?? null;
-    } finally {
-      await client.end().catch(() => undefined);
-    }
-  })();
-
-  return cachedActorIdPromise;
-}
-
-async function authenticateAdmin(page: Page) {
-  if (ADMIN_SESSION_SECRET) {
-    const actorId = await resolveActorId();
-    if (actorId) {
-      const token = createSessionToken(actorId, "ADMIN");
-      await page.context().addCookies([
-        {
-          name: "ccr_admin_session",
-          value: token,
-          url: BASE_URL,
-          httpOnly: true,
-          sameSite: "Lax",
-        },
-      ]);
-      await page.goto("/admin", { waitUntil: "networkidle" });
-      const route = new URL(page.url()).pathname;
-      if (route.startsWith("/admin") && route !== "/admin/login") {
-        return;
-      }
-    }
-  }
-
-  test.skip(
-    !ADMIN_IDENTIFIER || !ADMIN_PASSWORD,
-    "Set ADMIN_SESSION_SECRET with a resolvable admin actor id, or provide E2E admin login credentials.",
-  );
-  await signInWithForm(page);
-}
 
 async function browserPost<T>(
   page: Page,
@@ -273,8 +159,8 @@ async function browserPatch<T>(
   );
 }
 
-test.describe("@tour vehicle files and checklist integration", () => {
-  test("@tour desktop checklist attachment state follows linked file lifecycle", async ({
+test.describe("@nightly @tour vehicle files and checklist integration", () => {
+  test("@nightly @tour desktop checklist attachment state follows linked file lifecycle", async ({
     page,
   }, testInfo: TestInfo) => {
     test.setTimeout(150_000);
@@ -585,7 +471,7 @@ test.describe("@tour vehicle files and checklist integration", () => {
     }
   });
 
-  test("@tour desktop checklist can pretarget the files uploader", async ({
+  test("@nightly @tour desktop checklist can pretarget the files uploader", async ({
     page,
   }, testInfo: TestInfo) => {
     test.setTimeout(150_000);
@@ -715,7 +601,7 @@ test.describe("@tour vehicle files and checklist integration", () => {
     }
   });
 
-  test("@tour desktop checklist items can be edited in place", async ({ page }, testInfo: TestInfo) => {
+  test("@nightly @tour desktop checklist items can be edited in place", async ({ page }, testInfo: TestInfo) => {
     test.setTimeout(150_000);
     test.skip(testInfo.project.name !== "desktop", "Desktop-only verification for stable selectors.");
 
@@ -777,7 +663,7 @@ test.describe("@tour vehicle files and checklist integration", () => {
     }
   });
 
-  test("@tour desktop renamed template items keep expiry requirements", async ({
+  test("@nightly @tour desktop renamed template items keep expiry requirements", async ({
     page,
   }, testInfo: TestInfo) => {
     test.setTimeout(150_000);
@@ -942,7 +828,7 @@ test.describe("@tour vehicle files and checklist integration", () => {
     }
   });
 
-  test("@tour desktop legacy checklist items can regain template warnings", async ({
+  test("@nightly @tour desktop legacy checklist items can regain template warnings", async ({
     page,
   }, testInfo: TestInfo) => {
     test.setTimeout(150_000);
@@ -1100,7 +986,7 @@ test.describe("@tour vehicle files and checklist integration", () => {
     }
   });
 
-  test("@tour desktop bulk repair can persist matched legacy template links", async ({
+  test("@nightly @tour desktop bulk repair can persist matched legacy template links", async ({
     page,
   }, testInfo: TestInfo) => {
     test.setTimeout(150_000);
@@ -1261,7 +1147,7 @@ test.describe("@tour vehicle files and checklist integration", () => {
     }
   });
 
-  test("@tour desktop checklist items can reapply template defaults", async ({
+  test("@nightly @tour desktop checklist items can reapply template defaults", async ({
     page,
   }, testInfo: TestInfo) => {
     test.setTimeout(150_000);
@@ -1405,7 +1291,7 @@ test.describe("@tour vehicle files and checklist integration", () => {
     }
   });
 
-  test("@tour desktop checklist surfaces attention states", async ({ page }, testInfo: TestInfo) => {
+  test("@nightly @tour desktop checklist surfaces attention states", async ({ page }, testInfo: TestInfo) => {
     test.setTimeout(150_000);
     test.skip(testInfo.project.name !== "desktop", "Desktop-only verification for stable selectors.");
 

@@ -153,7 +153,10 @@ export function ManualPaymentForm({
   }
 
   return (
-    <div className="mt-4 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
+    <div
+      data-testid="booking-manual-payment-form"
+      className="mt-4 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4"
+    >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-sm font-semibold text-[var(--ccr-text)]">Add Manual Payment</p>
@@ -177,6 +180,7 @@ export function ManualPaymentForm({
       <label className="mt-3 block text-xs text-[var(--ccr-muted)]">
         Method
         <select
+          data-testid="booking-manual-payment-method-select"
           value={methodChoice}
           onChange={(event) => {
             const next = event.target.value as MethodValue | "";
@@ -195,9 +199,15 @@ export function ManualPaymentForm({
       </label>
 
       {message ? (
-        <p className="mt-2 text-sm font-semibold text-[var(--ccr-text)]">{message}</p>
+        <p data-testid="booking-manual-payment-message" className="mt-2 text-sm font-semibold text-[var(--ccr-text)]">
+          {message}
+        </p>
       ) : null}
-      {error && !drawerOpen ? <p className="mt-2 text-xs text-red-600">{error}</p> : null}
+      {error && !drawerOpen ? (
+        <p data-testid="booking-manual-payment-error" className="mt-2 text-xs text-red-600">
+          {error}
+        </p>
+      ) : null}
 
       <div className={`fixed inset-0 z-50 ${drawerOpen ? "" : "pointer-events-none"}`}>
         <div
@@ -205,6 +215,7 @@ export function ManualPaymentForm({
           onClick={closeDrawer}
         />
         <div
+          data-testid="booking-manual-payment-drawer"
           className={`absolute right-0 top-0 h-full w-full max-w-md border-l border-[var(--ccr-border)] bg-[var(--ccr-surface)] shadow-2xl transition-transform duration-200 ease-out ${
             drawerOpen ? "translate-x-0" : "translate-x-full"
           }`}
@@ -236,6 +247,7 @@ export function ManualPaymentForm({
                 <label className="text-xs text-[var(--ccr-muted)]">
                   Method
                   <select
+                    data-testid="booking-manual-payment-method"
                     value={method}
                     onChange={(event) => setMethod(event.target.value as MethodValue)}
                     className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
@@ -251,6 +263,7 @@ export function ManualPaymentForm({
                 <label className="text-xs text-[var(--ccr-muted)]">
                   Amount paid (JMD)
                   <input
+                    data-testid="booking-manual-payment-amount"
                     value={amount}
                     onChange={(event) => setAmount(event.target.value)}
                     type="number"
@@ -264,6 +277,7 @@ export function ManualPaymentForm({
                 <label className="text-xs text-[var(--ccr-muted)]">
                   Payment date/time
                   <input
+                    data-testid="booking-manual-payment-paid-at"
                     value={paidAt}
                     onChange={(event) => setPaidAt(event.target.value)}
                     type="datetime-local"
@@ -275,6 +289,7 @@ export function ManualPaymentForm({
                 <label className="text-xs text-[var(--ccr-muted)]">
                   Reference / receipt # (optional)
                   <input
+                    data-testid="booking-manual-payment-reference"
                     value={reference}
                     onChange={(event) => setReference(event.target.value)}
                     type="text"
@@ -285,6 +300,7 @@ export function ManualPaymentForm({
                 <label className="text-xs text-[var(--ccr-muted)]">
                   Notes (optional)
                   <textarea
+                    data-testid="booking-manual-payment-note"
                     value={note}
                     onChange={(event) => setNote(event.target.value)}
                     rows={3}
@@ -292,12 +308,17 @@ export function ManualPaymentForm({
                   />
                 </label>
 
-                {error ? <p className="text-xs text-red-600">{error}</p> : null}
+                {error ? (
+                  <p data-testid="booking-manual-payment-drawer-error" className="text-xs text-red-600">
+                    {error}
+                  </p>
+                ) : null}
               </div>
 
               <div className="mt-6 flex gap-3">
                 <button
                   type="submit"
+                  data-testid="booking-manual-payment-save"
                   disabled={loading}
                   className={buttonStyles({ variant: "primary", size: "md" })}
                 >
@@ -305,6 +326,7 @@ export function ManualPaymentForm({
                 </button>
                 <button
                   type="button"
+                  data-testid="booking-manual-payment-cancel"
                   onClick={closeDrawer}
                   className={buttonStyles({ variant: "secondary", size: "md" })}
                 >

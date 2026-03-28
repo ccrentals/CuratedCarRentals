@@ -1,16 +1,6 @@
-import { createHmac, randomUUID } from "node:crypto";
-
 import { expect, test, type Locator, type Page, type TestInfo } from "@playwright/test";
-import { config as loadEnv } from "dotenv";
 
-loadEnv({ path: ".env.local", quiet: true });
-loadEnv({ quiet: true });
-
-const BASE_URL = process.env.E2E_BASE_URL ?? "http://127.0.0.1:4173";
-const ADMIN_IDENTIFIER =
-  process.env.E2E_ADMIN_IDENTIFIER ?? process.env.E2E_ADMIN_EMAIL ?? process.env.E2E_ADMIN_USER ?? "";
-const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? process.env.E2E_ADMIN_PASS ?? "";
-const ADMIN_SESSION_SECRET = process.env.ADMIN_SESSION_SECRET ?? "";
+import { authenticateAdmin } from "./support/adminAuth";
 
 async function isVisible(locator: Locator) {
   try {
@@ -18,59 +8,6 @@ async function isVisible(locator: Locator) {
   } catch {
     return false;
   }
-}
-
-function createSessionToken(userId: string, role: string) {
-  const issuedAt = Math.floor(Date.now() / 1000);
-  const expiresAt = issuedAt + 60 * 20;
-  const payload = JSON.stringify({ sub: userId, role, exp: expiresAt, iat: issuedAt });
-  const encoded = Buffer.from(payload).toString("base64url");
-  const signature = createHmac("sha256", ADMIN_SESSION_SECRET).update(encoded).digest("base64url");
-  return `${encoded}.${signature}`;
-}
-
-async function signIn(page: Page) {
-  if (ADMIN_SESSION_SECRET) {
-    const token = createSessionToken(randomUUID(), "ADMIN");
-    await page.context().addCookies([
-      {
-        name: "ccr_admin_session",
-        value: token,
-        url: BASE_URL,
-        httpOnly: true,
-        sameSite: "Lax",
-      },
-    ]);
-    await page.goto("/admin", { waitUntil: "networkidle" });
-    const path = new URL(page.url()).pathname;
-    if (path.startsWith("/admin") && path !== "/admin/login") {
-      return;
-    }
-    if (!ADMIN_IDENTIFIER || !ADMIN_PASSWORD) {
-      test.skip(
-        true,
-        "Admin cookie auth was rejected and no E2E admin login credentials were provided.",
-      );
-    }
-  }
-
-  test.skip(
-    !ADMIN_IDENTIFIER || !ADMIN_PASSWORD,
-    "Set ADMIN_SESSION_SECRET or E2E admin login credentials.",
-  );
-
-  await page.goto("/admin/login", { waitUntil: "networkidle" });
-  await page.getByLabel("Email or username").fill(ADMIN_IDENTIFIER);
-  await page.getByLabel("Password").fill(ADMIN_PASSWORD);
-  await page.getByRole("button", { name: "Sign In" }).click();
-
-  await page.waitForURL(
-    (url) => {
-      const path = url.pathname;
-      return path.startsWith("/admin") && path !== "/admin/login";
-    },
-    { timeout: 20_000 },
-  );
 }
 
 async function openQuotesList(page: Page) {
@@ -136,8 +73,8 @@ function skipIfNoDesktop(testInfo: TestInfo) {
   test.skip(testInfo.project.name !== "desktop", "Desktop-only sort icon assertion.");
 }
 
-test("quotes list page loads", async ({ page }) => {
-  await signIn(page);
+test("@nightly quotes list page loads", async ({ page }) => {
+  await authenticateAdmin(page, { allowRandomActor: true });
   await openQuotesList(page);
 
   const tableVisible = await isVisible(page.getByRole("table").first());
@@ -148,8 +85,8 @@ test("quotes list page loads", async ({ page }) => {
   expect(tableVisible || mobileCardVisible || emptyVisible || missingVisible).toBe(true);
 });
 
-test("create quote flow opens and navigates to detail when options are available", async ({ page }) => {
-  await signIn(page);
+test("@nightly create quote flow opens and navigates to detail when options are available", async ({ page }) => {
+  await authenticateAdmin(page, { allowRandomActor: true });
   await openQuotesList(page);
 
   const missingVisible = await isVisible(page.getByText("Quotes tables are not installed.").first());
@@ -158,10 +95,10 @@ test("create quote flow opens and navigates to detail when options are available
   await maybeCreateQuoteFromModal(page);
 });
 
-test("quotes list uses centralized sorting controls and toggles URL sort params", async ({ page }, testInfo) => {
+test("@nightly quotes list uses centralized sorting controls and toggles URL sort params", async ({ page }, testInfo) => {
   skipIfNoDesktop(testInfo);
 
-  await signIn(page);
+  await authenticateAdmin(page, { allowRandomActor: true });
   await openQuotesList(page);
 
   const missingVisible = await isVisible(page.getByText("Quotes tables are not installed.").first());

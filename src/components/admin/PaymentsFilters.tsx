@@ -55,10 +55,11 @@ export function PaymentsFilters({ initialQuery }: PaymentsFiltersProps) {
   }, [query, searchParams, updateParams]);
 
   return (
-    <div className="mt-4 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
+    <div data-testid="payments-filters" className="mt-4 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
       <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
         Search
         <input
+          data-testid="payments-filter-search"
           name="q"
           value={query}
           onChange={(event) => setQuery(event.target.value)}

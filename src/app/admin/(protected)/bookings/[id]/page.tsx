@@ -590,6 +590,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
             {bookingPublicId}
           </span>
           <span
+            data-testid="booking-status-badge"
             className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${statusBadge(
               displayStatus,
             )}`}
@@ -759,7 +760,10 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
 
       <BookingIncidentsCard incidents={bookingIncidents} />
 
-      <section className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm">
+      <section
+        data-testid="booking-charges-summary"
+        className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm"
+      >
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-lg font-bold text-[var(--ccr-text)]">Charges Summary</h2>
           <div className="flex flex-wrap items-center gap-2">
@@ -769,7 +773,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
               </span>
             ) : null}
             {refundRequired ? (
-              <span className={refundRequiredStyles.badge}>
+              <span data-testid="booking-summary-refund-required" className={refundRequiredStyles.badge}>
                 Refund required
               </span>
             ) : null}
@@ -783,11 +787,15 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
             </div>
             <div className="flex items-center justify-between">
               <span>Paid to date</span>
-              <span className="font-semibold text-[var(--ccr-text)]">{formatJmd(paidToDate)}</span>
+              <span data-testid="booking-summary-paid-to-date" className="font-semibold text-[var(--ccr-text)]">
+                {formatJmd(paidToDate)}
+              </span>
             </div>
             <div className="flex items-center justify-between">
               <span>Total of Booking</span>
-              <span className="font-semibold text-[var(--ccr-text)]">{formatJmd(totalBeforePromo)}</span>
+              <span data-testid="booking-summary-total" className="font-semibold text-[var(--ccr-text)]">
+                {formatJmd(totalBeforePromo)}
+              </span>
             </div>
             <div className="flex items-center justify-between">
               <span>Insurance selected</span>
@@ -801,7 +809,9 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
             </div>
             <div className="flex items-center justify-between">
               <span>Payment status</span>
-              <span className="font-semibold text-[var(--ccr-text)]">{summary.paymentStatus.replace(/_/g, " ")}</span>
+              <span data-testid="booking-summary-payment-status" className="font-semibold text-[var(--ccr-text)]">
+                {summary.paymentStatus.replace(/_/g, " ")}
+              </span>
             </div>
           </div>
           <div className="space-y-3 border-t border-[var(--ccr-border)] pt-5 md:border-l md:border-t-0 md:pl-6 md:pt-0">
@@ -833,17 +843,23 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
             </div>
             <div className="flex items-center justify-between">
               <span>Balance due</span>
-              <span className="font-semibold text-[var(--ccr-text)]">{formatJmd(balanceDue)}</span>
+              <span data-testid="booking-summary-balance-due" className="font-semibold text-[var(--ccr-text)]">
+                {formatJmd(balanceDue)}
+              </span>
             </div>
           </div>
         </div>
       </section>
 
-      <section className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm">
+      <section
+        data-testid="booking-payments-section"
+        className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm"
+      >
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-lg font-bold text-[var(--ccr-text)]">Payments</h2>
           <Link
             href={`/admin/payments?bookingId=${booking.id}`}
+            data-testid="booking-view-in-payments"
             className="text-sm font-semibold text-[var(--ccr-text)]"
           >
             View in Payments
@@ -879,6 +895,9 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
                   return (
                     <tr
                       key={payment.id}
+                      data-testid="booking-payment-row"
+                      data-payment-id={payment.id}
+                      data-payment-public-id={payment.public_id}
                       className={`border-b border-[var(--ccr-border)] last:border-b-0 ${
                         payment.deleted_at ? "bg-[var(--ccr-surface-soft)]" : ""
                       }`}
@@ -890,7 +909,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
                       >
                         {payment.public_id}
                       </td>
-                      <td className="px-3 py-2 text-[var(--ccr-text)]">
+                      <td data-testid="booking-payment-method" className="px-3 py-2 text-[var(--ccr-text)]">
                         <div className="flex items-center gap-2">
                           <span className="whitespace-nowrap">
                             {payment.provider === "MANUAL"
@@ -916,7 +935,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
                           ) : null}
                         </div>
                       </td>
-                      <td className="px-3 py-2 text-[var(--ccr-text)]">
+                      <td data-testid="booking-payment-status" className="px-3 py-2 text-[var(--ccr-text)]">
                         {formatPaymentStatus(payment.status, {
                           paymentType:
                             typeof payment.metadata_json?.payment_type === "string"
@@ -924,7 +943,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
                               : null,
                         })}
                       </td>
-                      <td className="px-3 py-2 text-[var(--ccr-text)]">
+                      <td data-testid="booking-payment-amount" className="px-3 py-2 text-[var(--ccr-text)]">
                         {formatJmd(payment.deposit_amount_cents)}
                       </td>
                       <td className="px-3 py-2 text-[var(--ccr-muted)]">

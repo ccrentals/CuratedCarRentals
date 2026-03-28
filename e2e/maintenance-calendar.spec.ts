@@ -1,79 +1,14 @@
-import { createHmac, randomUUID } from "node:crypto";
+import { expect, test } from "@playwright/test";
 
-import { expect, test, type Page } from "@playwright/test";
-import { config as loadEnv } from "dotenv";
-
-loadEnv({ path: ".env.local", quiet: true });
-loadEnv({ quiet: true });
-
-const BASE_URL = process.env.E2E_BASE_URL ?? "http://127.0.0.1:4173";
-const ADMIN_IDENTIFIER =
-  process.env.E2E_ADMIN_IDENTIFIER ?? process.env.E2E_ADMIN_EMAIL ?? process.env.E2E_ADMIN_USER ?? "";
-const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? process.env.E2E_ADMIN_PASS ?? "";
-const ADMIN_SESSION_SECRET = process.env.ADMIN_SESSION_SECRET ?? "";
-
-function createSessionToken(userId: string, role: string) {
-  const issuedAt = Math.floor(Date.now() / 1000);
-  const expiresAt = issuedAt + 60 * 20;
-  const payload = JSON.stringify({ sub: userId, role, exp: expiresAt, iat: issuedAt });
-  const encoded = Buffer.from(payload).toString("base64url");
-  const signature = createHmac("sha256", ADMIN_SESSION_SECRET).update(encoded).digest("base64url");
-  return `${encoded}.${signature}`;
-}
-
-async function signInWithForm(page: Page) {
-  await page.goto("/admin/login", { waitUntil: "networkidle" });
-  await page.getByLabel("Email or username").fill(ADMIN_IDENTIFIER);
-  await page.getByLabel("Password").fill(ADMIN_PASSWORD);
-  await page.getByRole("button", { name: "Sign In" }).click();
-  await page.waitForURL(
-    (url) => {
-      const path = url.pathname;
-      return path.startsWith("/admin") && path !== "/admin/login";
-    },
-    { timeout: 20_000 },
-  );
-}
-
-async function authenticateAdmin(page: Page) {
-  if (ADMIN_SESSION_SECRET) {
-    const token = createSessionToken(randomUUID(), "ADMIN");
-    await page.context().addCookies([
-      {
-        name: "ccr_admin_session",
-        value: token,
-        url: BASE_URL,
-        httpOnly: true,
-        sameSite: "Lax",
-      },
-    ]);
-    await page.goto("/admin", { waitUntil: "networkidle" });
-    const path = new URL(page.url()).pathname;
-    if (path.startsWith("/admin") && path !== "/admin/login") {
-      return;
-    }
-    if (!ADMIN_IDENTIFIER || !ADMIN_PASSWORD) {
-      test.skip(
-        true,
-        "Admin cookie auth was rejected and no E2E admin login credentials were provided.",
-      );
-    }
-  }
-
-  test.skip(
-    !ADMIN_IDENTIFIER || !ADMIN_PASSWORD,
-    "Set ADMIN_SESSION_SECRET or E2E admin login credentials.",
-  );
-  await signInWithForm(page);
-}
+import { authenticateAdmin } from "./support/adminAuth";
 
 function formatDate(value: Date) {
   const pad = (input: number) => String(input).padStart(2, "0");
   return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`;
 }
 
-test("maintenance lifecycle syncs blockouts and persists across reload", async ({ page }) => {
-  await authenticateAdmin(page);
+test("@nightly maintenance lifecycle syncs blockouts and persists across reload", async ({ page }) => {
+  await authenticateAdmin(page, { allowRandomActor: true });
   await page.goto("/admin/vehicles", { waitUntil: "networkidle" });
 
   const mobileVehicleLinks = page.locator('[data-testid="vehicle-mobile-view"]:visible');

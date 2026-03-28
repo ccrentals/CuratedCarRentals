@@ -121,7 +121,10 @@ export default function BookingFilters({ canAdmin }: { canAdmin?: boolean }) {
   }, []);
 
   return (
-    <div className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
+    <div
+      data-testid="bookings-filters"
+      className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4"
+    >
       <div className="flex flex-wrap items-start gap-3">
         <div className="grid w-full grid-cols-3 gap-2 sm:flex sm:min-w-0 sm:flex-1 sm:flex-nowrap sm:items-center sm:overflow-x-auto sm:px-2 sm:py-1 sm:scroll-pl-2 sm:scroll-pr-2">
           {STATUS_OPTIONS.map((option) => {
@@ -129,6 +132,7 @@ export default function BookingFilters({ canAdmin }: { canAdmin?: boolean }) {
             return (
               <button
                 key={option.value}
+                data-testid={`bookings-filter-status-${option.value}`}
                 type="button"
                 onClick={() => {
                   setStatus(option.value);
@@ -161,6 +165,7 @@ export default function BookingFilters({ canAdmin }: { canAdmin?: boolean }) {
         {activeFilters ? (
           <button
             type="button"
+            data-testid="bookings-filter-clear"
             onClick={() => {
               setStatus("all");
               setQuery("");
@@ -186,6 +191,7 @@ export default function BookingFilters({ canAdmin }: { canAdmin?: boolean }) {
             Search
           </label>
           <input
+            data-testid="bookings-filter-search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search name, email, phone, booking ID"
@@ -264,6 +270,7 @@ export default function BookingFilters({ canAdmin }: { canAdmin?: boolean }) {
           </div>
           <label className="flex items-center gap-2 text-xs font-semibold text-[var(--ccr-text)]">
             <input
+              data-testid="bookings-filter-archived"
               type="checkbox"
               checked={showArchived}
               onChange={(event) => {

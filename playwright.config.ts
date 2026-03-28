@@ -1,7 +1,8 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const baseURL = process.env.E2E_BASE_URL ?? "http://127.0.0.1:4173";
+const baseURL = process.env.E2E_BASE_URL ?? "http://localhost:4173";
 const isCI = !!process.env.CI;
+const isListMode = process.argv.includes("--list");
 
 export default defineConfig({
   testDir: "./e2e",
@@ -17,10 +18,12 @@ export default defineConfig({
   retries: isCI ? 2 : 0,
   workers: isCI ? 2 : undefined,
 
-  reporter: [
-    ["list"],
-    ["html", { open: "never", outputFolder: ".artifacts/playwright-report" }],
-  ],
+  reporter: isListMode
+    ? [["list"]]
+    : [
+        ["list"],
+        ["html", { open: "never", outputFolder: ".artifacts/playwright-report" }],
+      ],
 
   use: {
     baseURL,

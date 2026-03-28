@@ -1,0 +1,75 @@
+name: E2E Nightly
+
+on:
+  schedule:
+    - cron: "0 9 * * *"
+  workflow_dispatch:
+
+jobs:
+  nightly:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Validate required E2E secrets
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ADMIN_SESSION_SECRET: ${{ secrets.ADMIN_SESSION_SECRET }}
+        run: |
+          if [ -z "$DATABASE_URL" ] || [ -z "$ADMIN_SESSION_SECRET" ]; then
+            echo "DATABASE_URL and ADMIN_SESSION_SECRET are required for nightly E2E runs."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run nightly lane
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ADMIN_SESSION_SECRET: ${{ secrets.ADMIN_SESSION_SECRET }}
+          CSRF_SECRET: e2e-csrf-secret
+          SITE_URL: http://localhost:4173
+          NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY: e2e-public-key
+          TURNSTILE_DEV_BYPASS: "1"
+          NEXT_PUBLIC_TURNSTILE_DEV_BYPASS: "1"
+          WIPAY_ENV: sandbox
+          WIPAY_FEE_STRUCTURE: merchant_absorb
+          WIPAY_ORIGIN: ccr-e2e
+          WIPAY_ACCOUNT_NUMBER: "123456789"
+          WIPAY_API_KEY: e2e-api-key
+          RESEND_API_KEY: ""
+          RESEND_FROM: ""
+          PDFMONKEY_API_KEY: ""
+          PDFMONKEY_TEMPLATE_ID: ""
+          PDFMONKEY_RENTAL_AGREEMENT_TEMPLATE_ID: ""
+        run: npm run e2e:nightly
+
+      - name: Cleanup seeded data
+        if: always()
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: npm run e2e:clean
+
+      - name: Upload Playwright artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-nightly-artifacts
+          path: |
+            .artifacts/playwright-report
+            .artifacts/test-results
+          if-no-files-found: ignore

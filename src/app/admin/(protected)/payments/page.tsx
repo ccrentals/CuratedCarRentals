@@ -211,7 +211,7 @@ export default async function AdminPaymentsPage({
   };
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-6 py-10">
+    <div data-testid="payments-page" className="mx-auto w-full max-w-6xl px-6 py-10">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Admin</p>
@@ -237,6 +237,7 @@ export default async function AdminPaymentsPage({
         <div className="flex flex-wrap items-center gap-2">
           <Link
             href={exportHref}
+            data-testid="payments-export-csv"
             prefetch={false}
             className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
           >
@@ -245,6 +246,7 @@ export default async function AdminPaymentsPage({
           {q || bookingId || normalizedType ? (
             <Link
               href="/admin/payments"
+              data-testid="payments-clear-filter"
               className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
             >
               Clear filter
@@ -270,6 +272,7 @@ export default async function AdminPaymentsPage({
             <Link
               key={filter.label}
               href={filterParams(filter.value)}
+              data-testid={`payments-filter-type-${filter.value || "all"}`}
               className={`rounded-full px-4 py-1 text-xs font-semibold ${
                 active
                   ? "bg-[var(--ccr-primary)] text-white"
@@ -384,7 +387,7 @@ export default async function AdminPaymentsPage({
 
       <PaymentsFilters initialQuery={q} />
 
-      <div className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)]">
+      <div data-testid="payments-table" className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)]">
         {payments.rows.length === 0 ? (
           <div className="px-6 py-10 text-center text-sm text-[var(--ccr-muted)]">
             No payments yet.
@@ -400,7 +403,13 @@ export default async function AdminPaymentsPage({
                 const providerLabel = displayProvider(payment.provider, payment.metadata_json);
                 const bookingHref = `/admin/bookings/${payment.booking_id}`;
                 return (
-                  <article key={`mobile-${payment.id}`} className="space-y-3 px-4 py-4">
+                  <article
+                    key={`mobile-${payment.id}`}
+                    data-testid="payments-row"
+                    data-payment-id={payment.id}
+                    data-payment-public-id={payment.public_id}
+                    className="space-y-3 px-4 py-4"
+                  >
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <Link
                         href={bookingHref}
@@ -484,7 +493,13 @@ export default async function AdminPaymentsPage({
                     const providerLabel = displayProvider(payment.provider, payment.metadata_json);
                     const bookingHref = `/admin/bookings/${payment.booking_id}`;
                     return (
-                      <tr key={payment.id} className="border-b border-[var(--ccr-border)] last:border-b-0">
+                      <tr
+                        key={payment.id}
+                        data-testid="payments-row"
+                        data-payment-id={payment.id}
+                        data-payment-public-id={payment.public_id}
+                        className="border-b border-[var(--ccr-border)] last:border-b-0"
+                      >
                         <td className="px-4 py-3 font-mono text-xs text-[var(--ccr-text)]">
                           <Link
                             href={bookingHref}

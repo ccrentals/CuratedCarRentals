@@ -46,6 +46,13 @@ type E2EFixtures = {
   document: {
     id: string | null;
   };
+  bookings: {
+    unpaidDeposit: BookingFixtureRef;
+    partialBalance: BookingFixtureRef;
+    fullyPaid: BookingFixtureRef;
+    refundRequired: BookingFixtureRef;
+    refundableWipay: BookingFixtureRef;
+  };
   promoCodes: {
     active: PromoFixtureRef;
     scheduled: PromoFixtureRef;
@@ -64,6 +71,34 @@ type PromoFixtureRef = {
   id: string;
   publicId: string;
   code: string;
+};
+
+type PaymentFixtureRef = {
+  id: string;
+  publicId: string;
+  amountCents: number;
+  provider: "MANUAL" | "WIPAY";
+  status: "DEPOSIT_PAID" | "REFUNDED";
+  paymentType: string | null;
+};
+
+type BookingFixtureRef = {
+  id: string;
+  publicId: string;
+  status: string;
+  totalCents: number;
+  depositCents: number;
+  paymentOption: string;
+  paymentStatus: string;
+  paidToDate: number;
+  balanceDue: number;
+  payments: {
+    deposit?: PaymentFixtureRef;
+    manual?: PaymentFixtureRef;
+    balance?: PaymentFixtureRef;
+    refund?: PaymentFixtureRef;
+    wipay?: PaymentFixtureRef;
+  };
 };
 
 const ARTIFACTS_DIR = path.join(process.cwd(), ".artifacts");
@@ -121,6 +156,60 @@ function addDays(base: Date, days: number) {
 
 function addMinutes(base: Date, minutes: number) {
   return new Date(base.getTime() + minutes * 60_000);
+}
+
+function buildPricingSnapshot(input: {
+  dailyRateCents: number;
+  days: number;
+  depositCents: number;
+  paidToDate?: number;
+  paymentOption?: "DEPOSIT" | "FULL" | "CUSTOM" | "NONE";
+  promoCode?: string | null;
+  promoDiscountCents?: number;
+  insuranceSelected?: boolean;
+  insurancePricePerDayCents?: number;
+}) {
+  const paymentOption = input.paymentOption ?? "DEPOSIT";
+  const paidToDate = Math.max(0, Number(input.paidToDate ?? 0));
+  const insuranceSelected = input.insuranceSelected === true;
+  const insurancePricePerDayCents = insuranceSelected
+    ? Math.max(0, Number(input.insurancePricePerDayCents ?? 0))
+    : 0;
+  const insuranceTotalCents = insuranceSelected
+    ? insurancePricePerDayCents * input.days
+    : 0;
+  const baseTotalCents = input.dailyRateCents * input.days;
+  const subtotalCents = baseTotalCents + insuranceTotalCents;
+  const promoDiscountCents = Math.max(0, Number(input.promoDiscountCents ?? 0));
+  const totalCents = Math.max(0, subtotalCents - promoDiscountCents);
+  const balanceDueCents = Math.max(0, totalCents - paidToDate);
+  const paymentStatus =
+    balanceDueCents === 0 && totalCents > 0
+      ? "PAID_IN_FULL"
+      : paidToDate > 0
+        ? "DEPOSIT_PAID"
+        : paymentOption === "NONE"
+          ? "DUE_ON_PICKUP"
+          : "UNPAID";
+
+  return {
+    daily_rate_cents: input.dailyRateCents,
+    base_total_cents: baseTotalCents,
+    subtotal_cents: subtotalCents,
+    total_cents: totalCents,
+    deposit_cents: input.depositCents,
+    deposit_required_cents: input.depositCents,
+    amount_paid: paidToDate,
+    paid_to_date: paidToDate,
+    balance_due: balanceDueCents,
+    payment_status: paymentStatus,
+    payment_option_selected: paymentOption,
+    promo_code: input.promoCode ?? null,
+    promo_discount_cents: promoDiscountCents,
+    insurance_selected: insuranceSelected,
+    insurance_price_per_day_cents: insurancePricePerDayCents,
+    insurance_total_cents: insuranceTotalCents,
+  };
 }
 
 async function insertPromoCode(
@@ -213,6 +302,7 @@ async function insertPromoBooking(
     vehicleId: string;
     customerId: string;
     pickupLocation: string;
+    dropoffLocation?: string | null;
     startDate: string;
     endDate: string;
     status: string;
@@ -227,12 +317,13 @@ async function insertPromoBooking(
        start_date,
        end_date,
        pickup_location,
+       dropoff_location,
        status,
        pricing_json,
        created_at,
        updated_at
      )
-     values ($1::uuid, $2::uuid, $3::date, $4::date, $5, $6, $7::jsonb, $8::timestamptz, $8::timestamptz)
+     values ($1::uuid, $2::uuid, $3::date, $4::date, $5, $6, $7, $8::jsonb, $9::timestamptz, $9::timestamptz)
      returning id, public_id`,
     [
       input.vehicleId,
@@ -240,6 +331,7 @@ async function insertPromoBooking(
       input.startDate,
       input.endDate,
       input.pickupLocation,
+      input.dropoffLocation ?? null,
       input.status,
       JSON.stringify(input.pricingJson),
       input.createdAt,
@@ -264,7 +356,7 @@ async function insertPayment(
     createdAt: string;
   },
 ) {
-  await client.query(
+  const result = await client.query(
     `insert into payments (
        booking_id,
        provider,
@@ -276,7 +368,8 @@ async function insertPayment(
        created_at,
        updated_at
      )
-     values ($1::uuid, $2, $3, 'JMD', $4, $5, $6::jsonb, $7::timestamptz, $7::timestamptz)`,
+     values ($1::uuid, $2, $3, 'JMD', $4, $5, $6::jsonb, $7::timestamptz, $7::timestamptz)
+     returning id, public_id`,
     [
       input.bookingId,
       input.provider,
@@ -287,6 +380,39 @@ async function insertPayment(
       input.createdAt,
     ],
   );
+
+  return {
+    id: String(result.rows[0]?.id ?? ""),
+    publicId: String(result.rows[0]?.public_id ?? ""),
+    amountCents: input.amountCents,
+    provider: input.provider,
+    status: input.status,
+    paymentType:
+      typeof input.metadata?.payment_type === "string" ? input.metadata.payment_type : null,
+  } satisfies PaymentFixtureRef;
+}
+
+function buildBookingFixtureRef(input: {
+  booking: { id: string; publicId: string };
+  status: string;
+  pricingJson: Record<string, unknown>;
+  paidToDate: number;
+  payments?: BookingFixtureRef["payments"];
+}) {
+  return {
+    id: input.booking.id,
+    publicId: input.booking.publicId,
+    status: input.status,
+    totalCents: Number(input.pricingJson.total_cents ?? 0),
+    depositCents: Number(
+      input.pricingJson.deposit_required_cents ?? input.pricingJson.deposit_cents ?? 0,
+    ),
+    paymentOption: String(input.pricingJson.payment_option_selected ?? "DEPOSIT"),
+    paymentStatus: String(input.pricingJson.payment_status ?? "UNPAID"),
+    paidToDate: input.paidToDate,
+    balanceDue: Math.max(0, Number(input.pricingJson.total_cents ?? 0) - input.paidToDate),
+    payments: input.payments ?? {},
+  } satisfies BookingFixtureRef;
 }
 
 async function insertPromoRedemption(
@@ -740,6 +866,175 @@ async function main() {
       documentId = docResult.rows[0].id;
     }
 
+    const bookingFixtureBaseCreatedAt = addDays(now, -8);
+    const bookingFixtureDepositCents = 12000;
+    const bookingFixtureDailyRateCents = 12000;
+    const bookingFixtureDays = 4;
+
+    const unpaidDepositPricing = buildPricingSnapshot({
+      dailyRateCents: bookingFixtureDailyRateCents,
+      days: bookingFixtureDays,
+      depositCents: bookingFixtureDepositCents,
+      paidToDate: 0,
+      paymentOption: "DEPOSIT",
+    });
+    const unpaidDepositBooking = await insertPromoBooking(client, {
+      vehicleId,
+      customerId: customerResult.rows[0].id,
+      pickupLocation: pickupLabel,
+      dropoffLocation: dropoffLabel,
+      startDate: toDateOnly(addDays(now, 7)),
+      endDate: toDateOnly(addDays(now, 10)),
+      status: "PENDING_PAYMENT",
+      pricingJson: unpaidDepositPricing,
+      createdAt: addMinutes(bookingFixtureBaseCreatedAt, 0).toISOString(),
+    });
+
+    const partialBalancePricing = buildPricingSnapshot({
+      dailyRateCents: bookingFixtureDailyRateCents,
+      days: bookingFixtureDays,
+      depositCents: bookingFixtureDepositCents,
+      paidToDate: bookingFixtureDepositCents,
+      paymentOption: "DEPOSIT",
+    });
+    const partialBalanceBooking = await insertPromoBooking(client, {
+      vehicleId,
+      customerId: customerResult.rows[0].id,
+      pickupLocation: pickupLabel,
+      dropoffLocation: dropoffLabel,
+      startDate: toDateOnly(addDays(now, 12)),
+      endDate: toDateOnly(addDays(now, 15)),
+      status: "CONFIRMED",
+      pricingJson: partialBalancePricing,
+      createdAt: addMinutes(bookingFixtureBaseCreatedAt, 10).toISOString(),
+    });
+    const partialBalanceDepositPayment = await insertPayment(client, {
+      bookingId: partialBalanceBooking.id,
+      provider: "MANUAL",
+      amountCents: bookingFixtureDepositCents,
+      status: "DEPOSIT_PAID",
+      providerRef: `E2E_PARTIAL_DEPOSIT_${runId}`,
+      metadata: {
+        source: "e2e_seed",
+        payment_type: "deposit",
+        method: "ADMIN",
+        method_label: "Manual / Admin",
+      },
+      createdAt: addMinutes(bookingFixtureBaseCreatedAt, 11).toISOString(),
+    });
+
+    const fullyPaidPricing = buildPricingSnapshot({
+      dailyRateCents: bookingFixtureDailyRateCents,
+      days: bookingFixtureDays,
+      depositCents: bookingFixtureDepositCents,
+      paidToDate: bookingFixtureDailyRateCents * bookingFixtureDays,
+      paymentOption: "FULL",
+    });
+    const fullyPaidBooking = await insertPromoBooking(client, {
+      vehicleId,
+      customerId: customerResult.rows[0].id,
+      pickupLocation: pickupLabel,
+      dropoffLocation: dropoffLabel,
+      startDate: toDateOnly(addDays(now, 18)),
+      endDate: toDateOnly(addDays(now, 21)),
+      status: "CONFIRMED",
+      pricingJson: fullyPaidPricing,
+      createdAt: addMinutes(bookingFixtureBaseCreatedAt, 20).toISOString(),
+    });
+    const fullyPaidDepositPayment = await insertPayment(client, {
+      bookingId: fullyPaidBooking.id,
+      provider: "MANUAL",
+      amountCents: bookingFixtureDepositCents,
+      status: "DEPOSIT_PAID",
+      providerRef: `E2E_FULL_DEPOSIT_${runId}`,
+      metadata: {
+        source: "e2e_seed",
+        payment_type: "deposit",
+        method: "ADMIN",
+        method_label: "Manual / Admin",
+      },
+      createdAt: addMinutes(bookingFixtureBaseCreatedAt, 21).toISOString(),
+    });
+    const fullyPaidBalancePayment = await insertPayment(client, {
+      bookingId: fullyPaidBooking.id,
+      provider: "MANUAL",
+      amountCents: Math.max(0, fullyPaidPricing.total_cents - bookingFixtureDepositCents),
+      status: "DEPOSIT_PAID",
+      providerRef: `E2E_FULL_BALANCE_${runId}`,
+      metadata: {
+        source: "e2e_seed",
+        payment_type: "balance",
+        method: "ADMIN",
+        method_label: "Manual / Admin",
+      },
+      createdAt: addMinutes(bookingFixtureBaseCreatedAt, 22).toISOString(),
+    });
+
+    const refundRequiredPricing = buildPricingSnapshot({
+      dailyRateCents: bookingFixtureDailyRateCents,
+      days: bookingFixtureDays,
+      depositCents: bookingFixtureDepositCents,
+      paidToDate: bookingFixtureDepositCents,
+      paymentOption: "DEPOSIT",
+    });
+    const refundRequiredBooking = await insertPromoBooking(client, {
+      vehicleId,
+      customerId: customerResult.rows[0].id,
+      pickupLocation: pickupLabel,
+      dropoffLocation: dropoffLabel,
+      startDate: toDateOnly(addDays(now, 24)),
+      endDate: toDateOnly(addDays(now, 27)),
+      status: "CANCELLED",
+      pricingJson: refundRequiredPricing,
+      createdAt: addMinutes(bookingFixtureBaseCreatedAt, 30).toISOString(),
+    });
+    const refundRequiredDepositPayment = await insertPayment(client, {
+      bookingId: refundRequiredBooking.id,
+      provider: "MANUAL",
+      amountCents: bookingFixtureDepositCents,
+      status: "DEPOSIT_PAID",
+      providerRef: `E2E_REFUND_REQUIRED_${runId}`,
+      metadata: {
+        source: "e2e_seed",
+        payment_type: "deposit",
+        method: "BANK_TRANSFER",
+        method_label: "Bank Transfer",
+      },
+      createdAt: addMinutes(bookingFixtureBaseCreatedAt, 31).toISOString(),
+    });
+
+    const refundableWipayPricing = buildPricingSnapshot({
+      dailyRateCents: bookingFixtureDailyRateCents,
+      days: bookingFixtureDays,
+      depositCents: bookingFixtureDepositCents,
+      paidToDate: bookingFixtureDepositCents,
+      paymentOption: "DEPOSIT",
+    });
+    const refundableWipayBooking = await insertPromoBooking(client, {
+      vehicleId,
+      customerId: customerResult.rows[0].id,
+      pickupLocation: pickupLabel,
+      dropoffLocation: dropoffLabel,
+      startDate: toDateOnly(addDays(now, 30)),
+      endDate: toDateOnly(addDays(now, 33)),
+      status: "CONFIRMED",
+      pricingJson: refundableWipayPricing,
+      createdAt: addMinutes(bookingFixtureBaseCreatedAt, 40).toISOString(),
+    });
+    const refundableWipayPayment = await insertPayment(client, {
+      bookingId: refundableWipayBooking.id,
+      provider: "WIPAY",
+      amountCents: bookingFixtureDepositCents,
+      status: "DEPOSIT_PAID",
+      providerRef: `E2E_WIPAY_REFUND_${runId}`,
+      metadata: {
+        source: "e2e_seed",
+        payment_type: "deposit",
+        order_id: `ORDER_${runId}`,
+      },
+      createdAt: addMinutes(bookingFixtureBaseCreatedAt, 41).toISOString(),
+    });
+
     const promoSuffix = runId.slice(-4).toUpperCase();
     const promoCreatedBase = new Date(now);
     promoCreatedBase.setSeconds(0, 0);
@@ -999,6 +1294,51 @@ async function main() {
       document: {
         id: documentId,
       },
+      bookings: {
+        unpaidDeposit: buildBookingFixtureRef({
+          booking: unpaidDepositBooking,
+          status: "PENDING_PAYMENT",
+          pricingJson: unpaidDepositPricing,
+          paidToDate: 0,
+        }),
+        partialBalance: buildBookingFixtureRef({
+          booking: partialBalanceBooking,
+          status: "CONFIRMED",
+          pricingJson: partialBalancePricing,
+          paidToDate: bookingFixtureDepositCents,
+          payments: {
+            deposit: partialBalanceDepositPayment,
+          },
+        }),
+        fullyPaid: buildBookingFixtureRef({
+          booking: fullyPaidBooking,
+          status: "CONFIRMED",
+          pricingJson: fullyPaidPricing,
+          paidToDate: Number(fullyPaidPricing.total_cents ?? 0),
+          payments: {
+            deposit: fullyPaidDepositPayment,
+            balance: fullyPaidBalancePayment,
+          },
+        }),
+        refundRequired: buildBookingFixtureRef({
+          booking: refundRequiredBooking,
+          status: "CANCELLED",
+          pricingJson: refundRequiredPricing,
+          paidToDate: bookingFixtureDepositCents,
+          payments: {
+            deposit: refundRequiredDepositPayment,
+          },
+        }),
+        refundableWipay: buildBookingFixtureRef({
+          booking: refundableWipayBooking,
+          status: "CONFIRMED",
+          pricingJson: refundableWipayPricing,
+          paidToDate: bookingFixtureDepositCents,
+          payments: {
+            wipay: refundableWipayPayment,
+          },
+        }),
+      },
       promoCodes: {
         active: activePromo,
         scheduled: scheduledPromo,
@@ -1024,6 +1364,11 @@ async function main() {
           vehicleId: fixtures.vehicle.id,
           maintenanceRecordId: fixtures.maintenance.recordId,
           depreciationProfileId: fixtures.depreciationProfile.id,
+          unpaidDepositBookingId: fixtures.bookings.unpaidDeposit.id,
+          partialBalanceBookingId: fixtures.bookings.partialBalance.id,
+          fullyPaidBookingId: fixtures.bookings.fullyPaid.id,
+          refundRequiredBookingId: fixtures.bookings.refundRequired.id,
+          refundableWipayBookingId: fixtures.bookings.refundableWipay.id,
           promoLimitReachedId: fixtures.promoCodes.limitReached.id,
           promoReconstructedId: fixtures.promoCodes.reconstructedHistory.id,
           fixturesPath: FIXTURES_PATH,

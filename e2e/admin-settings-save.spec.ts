@@ -1,121 +1,6 @@
-import { createHmac } from "node:crypto";
-import fs from "node:fs";
-import path from "node:path";
+import { expect, test } from "@playwright/test";
 
-import { expect, test, type Page } from "@playwright/test";
-import { config as loadEnv } from "dotenv";
-import pg from "pg";
-
-loadEnv({ path: ".env.local", quiet: true });
-loadEnv({ quiet: true });
-
-const { Client } = pg;
-
-const BASE_URL = process.env.E2E_BASE_URL ?? "http://127.0.0.1:4173";
-const ADMIN_IDENTIFIER =
-  process.env.E2E_ADMIN_IDENTIFIER ?? process.env.E2E_ADMIN_EMAIL ?? process.env.E2E_ADMIN_USER ?? "";
-const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? process.env.E2E_ADMIN_PASS ?? "";
-const ADMIN_SESSION_SECRET = process.env.ADMIN_SESSION_SECRET ?? "";
-const DATABASE_URL = process.env.DATABASE_URL ?? "";
-const E2E_ADMIN_USER_ID = process.env.E2E_ADMIN_USER_ID ?? "";
-const FIXTURES_PATH = path.join(process.cwd(), ".artifacts", "e2e-fixtures.json");
-
-type FixtureFileShape = {
-  adminUser?: { id?: string | null };
-};
-
-let cachedActorIdPromise: Promise<string | null> | null = null;
-
-function createSessionToken(userId: string, role: string) {
-  const issuedAt = Math.floor(Date.now() / 1000);
-  const expiresAt = issuedAt + 60 * 20;
-  const payload = JSON.stringify({ sub: userId, role, exp: expiresAt, iat: issuedAt });
-  const encoded = Buffer.from(payload).toString("base64url");
-  const signature = createHmac("sha256", ADMIN_SESSION_SECRET).update(encoded).digest("base64url");
-  return `${encoded}.${signature}`;
-}
-
-function readActorIdFromFixtures() {
-  if (!fs.existsSync(FIXTURES_PATH)) return null;
-  try {
-    const raw = fs.readFileSync(FIXTURES_PATH, "utf8");
-    const parsed = JSON.parse(raw) as FixtureFileShape;
-    const actorId = parsed.adminUser?.id?.trim();
-    return actorId ? actorId : null;
-  } catch {
-    return null;
-  }
-}
-
-async function resolveActorId() {
-  if (cachedActorIdPromise) return cachedActorIdPromise;
-
-  cachedActorIdPromise = (async () => {
-    const envActorId = E2E_ADMIN_USER_ID.trim();
-    if (envActorId) return envActorId;
-
-    const fixtureActorId = readActorIdFromFixtures();
-    if (fixtureActorId) return fixtureActorId;
-
-    if (!DATABASE_URL) return null;
-
-    const client = new Client({ connectionString: DATABASE_URL });
-    try {
-      await client.connect();
-      const result = await client.query<{ id: string }>(
-        "select id from users where role in ('ADMIN', 'DEVELOPER') order by created_at asc limit 1",
-      );
-      return result.rows[0]?.id ?? null;
-    } finally {
-      await client.end().catch(() => undefined);
-    }
-  })();
-
-  return cachedActorIdPromise;
-}
-
-async function signInWithForm(page: Page) {
-  await page.goto("/admin/login", { waitUntil: "networkidle" });
-  await page.getByLabel("Email or username").fill(ADMIN_IDENTIFIER);
-  await page.getByLabel("Password").fill(ADMIN_PASSWORD);
-  await page.getByRole("button", { name: "Sign In" }).click();
-  await page.waitForURL(
-    (url) => {
-      const route = url.pathname;
-      return route.startsWith("/admin") && route !== "/admin/login";
-    },
-    { timeout: 20_000 },
-  );
-}
-
-async function authenticateAdmin(page: Page) {
-  if (ADMIN_SESSION_SECRET) {
-    const actorId = await resolveActorId();
-    if (actorId) {
-      const token = createSessionToken(actorId, "ADMIN");
-      await page.context().addCookies([
-        {
-          name: "ccr_admin_session",
-          value: token,
-          url: BASE_URL,
-          httpOnly: true,
-          sameSite: "Lax",
-        },
-      ]);
-      await page.goto("/admin", { waitUntil: "networkidle" });
-      const route = new URL(page.url()).pathname;
-      if (route.startsWith("/admin") && route !== "/admin/login") {
-        return;
-      }
-    }
-  }
-
-  test.skip(
-    !ADMIN_IDENTIFIER || !ADMIN_PASSWORD,
-    "Set ADMIN_SESSION_SECRET with a resolvable admin actor id, or provide E2E admin login credentials.",
-  );
-  await signInWithForm(page);
-}
+import { authenticateAdmin } from "./support/adminAuth";
 
 async function updateNotificationRecipientsViaApi(page: Page, value: string) {
   await page.evaluate(async (nextValue) => {
@@ -194,10 +79,10 @@ async function restoreNotificationRecipients(page: Page, value: string) {
   await updateNotificationRecipientsViaApi(page, value);
 }
 
-test.describe("@tour admin settings save hardening", () => {
+test.describe("@nightly @tour admin settings save hardening", () => {
   test.describe.configure({ mode: "serial" });
 
-  test("@tour desktop notifications settings warn before losing unsaved changes", async ({
+  test("@nightly @tour desktop notifications settings warn before losing unsaved changes", async ({
     page,
   }, testInfo) => {
     test.setTimeout(120_000);
@@ -236,7 +121,7 @@ test.describe("@tour admin settings save hardening", () => {
     await expect(page).toHaveURL(/tab=general/);
   });
 
-  test("@tour desktop notifications settings rehydrate normalized values and show validation errors", async ({
+  test("@nightly @tour desktop notifications settings rehydrate normalized values and show validation errors", async ({
     page,
   }, testInfo) => {
     test.setTimeout(120_000);
@@ -275,7 +160,7 @@ test.describe("@tour admin settings save hardening", () => {
     }
   });
 
-  test("@tour desktop notifications settings show conflict guidance and reload latest server values", async ({
+  test("@nightly @tour desktop notifications settings show conflict guidance and reload latest server values", async ({
     page,
   }, testInfo) => {
     test.setTimeout(120_000);
@@ -307,7 +192,7 @@ test.describe("@tour admin settings save hardening", () => {
     }
   });
 
-  test("@tour desktop settings only load maintenance service types when the maintenance tab opens", async ({
+  test("@nightly @tour desktop settings only load maintenance service types when the maintenance tab opens", async ({
     page,
   }, testInfo) => {
     test.setTimeout(120_000);
@@ -333,7 +218,7 @@ test.describe("@tour admin settings save hardening", () => {
     expect(serviceTypeRequests.length).toBeGreaterThan(0);
   });
 
-  test("@tour desktop maintenance service types can recover from a fetch failure", async ({
+  test("@nightly @tour desktop maintenance service types can recover from a fetch failure", async ({
     page,
   }, testInfo) => {
     test.setTimeout(120_000);

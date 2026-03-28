@@ -1,0 +1,93 @@
+name: E2E Smoke
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/e2e-smoke.yml"
+      - "e2e/**"
+      - "scripts/e2e-*.ts"
+      - "src/app/admin/**"
+      - "src/components/admin/**"
+      - "src/lib/**"
+      - "package.json"
+      - "package-lock.json"
+      - "playwright.config.ts"
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Check required E2E secrets
+        id: e2e-env
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ADMIN_SESSION_SECRET: ${{ secrets.ADMIN_SESSION_SECRET }}
+        run: |
+          if [ -n "$DATABASE_URL" ] && [ -n "$ADMIN_SESSION_SECRET" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skip notice
+        if: steps.e2e-env.outputs.ready != 'true'
+        run: |
+          echo "Skipping E2E smoke because DATABASE_URL or ADMIN_SESSION_SECRET is not configured."
+
+      - name: Install dependencies
+        if: steps.e2e-env.outputs.ready == 'true'
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        if: steps.e2e-env.outputs.ready == 'true'
+        run: npx playwright install --with-deps chromium
+
+      - name: Run smoke lane
+        if: steps.e2e-env.outputs.ready == 'true'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ADMIN_SESSION_SECRET: ${{ secrets.ADMIN_SESSION_SECRET }}
+          CSRF_SECRET: e2e-csrf-secret
+          SITE_URL: http://localhost:4173
+          NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY: e2e-public-key
+          TURNSTILE_DEV_BYPASS: "1"
+          NEXT_PUBLIC_TURNSTILE_DEV_BYPASS: "1"
+          WIPAY_ENV: sandbox
+          WIPAY_FEE_STRUCTURE: merchant_absorb
+          WIPAY_ORIGIN: ccr-e2e
+          WIPAY_ACCOUNT_NUMBER: "123456789"
+          WIPAY_API_KEY: e2e-api-key
+          RESEND_API_KEY: ""
+          RESEND_FROM: ""
+          PDFMONKEY_API_KEY: ""
+          PDFMONKEY_TEMPLATE_ID: ""
+          PDFMONKEY_RENTAL_AGREEMENT_TEMPLATE_ID: ""
+        run: npm run e2e:smoke
+
+      - name: Cleanup seeded data
+        if: always() && steps.e2e-env.outputs.ready == 'true'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: npm run e2e:clean
+
+      - name: Upload Playwright artifacts
+        if: always() && steps.e2e-env.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-smoke-artifacts
+          path: |
+            .artifacts/playwright-report
+            .artifacts/test-results
+          if-no-files-found: ignore

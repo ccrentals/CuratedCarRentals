@@ -140,10 +140,11 @@ export function PaymentRowActions({
   if (!showManualActions && !showRefundAction) return null;
 
   return (
-    <div className="flex items-center justify-end gap-2">
+    <div data-testid="payment-row-actions" className="flex items-center justify-end gap-2">
       {showManualActions ? (
         <button
           type="button"
+          data-testid={isDeleted ? "payment-row-action-restore" : "payment-row-action-delete"}
           onClick={() => {
             setError(null);
             setReason("");
@@ -164,6 +165,7 @@ export function PaymentRowActions({
       {showRefundAction ? (
         <button
           type="button"
+          data-testid="payment-row-action-refund"
           onClick={() => {
             if (refunded) return;
             setError(null);
@@ -188,7 +190,10 @@ export function PaymentRowActions({
               setError(null);
             }}
           />
-          <div className="relative w-full max-w-md rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-5 shadow-2xl">
+          <div
+            data-testid="payment-row-action-dialog"
+            className="relative w-full max-w-md rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-5 shadow-2xl"
+          >
             <h3 className="text-lg font-bold text-[var(--ccr-text)]">
               {mode === "delete"
                 ? "Cancel manual payment"
@@ -208,6 +213,7 @@ export function PaymentRowActions({
               <label className="mt-4 block text-xs text-[var(--ccr-muted)]">
                 Reason (required)
                 <textarea
+                  data-testid="payment-row-action-reason"
                   value={reason}
                   onChange={(event) => setReason(event.target.value)}
                   rows={3}
@@ -218,6 +224,7 @@ export function PaymentRowActions({
               <label className="mt-4 block text-xs text-[var(--ccr-muted)]">
                 {requireRestoreReason ? "Reason (required)" : "Reason (optional)"}
                 <textarea
+                  data-testid="payment-row-action-note"
                   value={note}
                   onChange={(event) => setNote(event.target.value)}
                   rows={3}
@@ -235,6 +242,7 @@ export function PaymentRowActions({
                 <label className="block text-xs text-[var(--ccr-muted)]">
                   Reason (required)
                   <textarea
+                    data-testid="payment-row-action-reason"
                     value={reason}
                     onChange={(event) => setReason(event.target.value)}
                     rows={3}
@@ -244,11 +252,16 @@ export function PaymentRowActions({
               </div>
             )}
 
-            {error ? <p className="mt-3 text-xs text-red-300">{error}</p> : null}
+            {error ? (
+              <p data-testid="payment-row-action-error" className="mt-3 text-xs text-red-300">
+                {error}
+              </p>
+            ) : null}
 
             <div className="mt-5 flex items-center justify-end gap-2">
               <button
                 type="button"
+                data-testid="payment-row-action-cancel"
                 onClick={() => {
                   if (loading) return;
                   setMode(null);
@@ -260,6 +273,7 @@ export function PaymentRowActions({
               </button>
               <button
                 type="button"
+                data-testid="payment-row-action-confirm"
                 onClick={() => (mode === "refund" ? submitRefund() : submit(mode))}
                 disabled={loading}
                 className={
