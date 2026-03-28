@@ -24,6 +24,7 @@ test-results/
 .playwright-cli/
 coverage/
 e2e/responsive-screenshots.spec.ts-snapshots/
+output/
 **/*.mp4
 **/*.webm
 **/*.zip

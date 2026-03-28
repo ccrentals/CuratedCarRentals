@@ -14,6 +14,10 @@ import {
   hashBookingAccessToken,
   hashBookingSubmissionKey,
 } from "@/lib/bookings/privateAccess";
+import {
+  parseSafePrivateBookingImageDataUrl,
+  MAX_BOOKING_PRIVATE_IMAGE_BYTES,
+} from "@/lib/bookings/privateFiles";
 import { normalizePromoInputCode } from "@/lib/promos";
 import {
   computeBookingPricingFromStoredSnapshot,
@@ -56,12 +60,6 @@ function parseOptionalDate(value: unknown) {
   const normalized = normalizeText(value);
   if (!normalized) return null;
   return isISODate(normalized) ? normalized : null;
-}
-
-function parseDataUrlMimeType(value: string) {
-  const match = value.match(/^data:([^;,]+)?(;base64)?,/i);
-  if (!match) return null;
-  return match[1] || "application/octet-stream";
 }
 
 export async function POST(request: Request) {
@@ -129,9 +127,13 @@ export async function POST(request: Request) {
     normalizeText(body?.legalIdImageUploadToken) || normalizeText(body?.legalIdImageUrl);
   const driversLicenseDataUrl = normalizeText(body?.driversLicenseDataUrl);
   const driversLicenseFileId = extractUploadcareFileId(legalIdImageReference);
-  const driversLicenseMimeType = parseDataUrlMimeType(driversLicenseDataUrl);
-  const hasDriversLicenseDataUrl = Boolean(driversLicenseMimeType);
-  const signatureMimeType = parseDataUrlMimeType(signatureDataUrl);
+  const parsedDriversLicenseImage = driversLicenseDataUrl
+    ? parseSafePrivateBookingImageDataUrl(driversLicenseDataUrl)
+    : null;
+  const parsedSignatureImage = signatureDataUrl
+    ? parseSafePrivateBookingImageDataUrl(signatureDataUrl)
+    : null;
+  const hasDriversLicenseDataUrl = Boolean(parsedDriversLicenseImage);
 
   if (!UUID_REGEX.test(vehicleId)) {
     return NextResponse.json({ error: "Invalid vehicleId" }, { status: 400 });
@@ -163,8 +165,28 @@ export async function POST(request: Request) {
   if (hasDriversLicenseNumber && !isNonEmptyString(legalIdNumber, 4)) {
     return NextResponse.json({ error: "Valid legalIdNumber is required" }, { status: 400 });
   }
-  if (!signatureDataUrl || !signatureMimeType) {
+  if (!signatureDataUrl) {
     return NextResponse.json({ error: "Signature is required" }, { status: 400 });
+  }
+  if (!parsedSignatureImage) {
+    return NextResponse.json(
+      {
+        error: `Signature must be a supported image under ${Math.floor(
+          MAX_BOOKING_PRIVATE_IMAGE_BYTES / (1024 * 1024),
+        )} MB.`,
+      },
+      { status: 400 },
+    );
+  }
+  if (driversLicenseDataUrl && !parsedDriversLicenseImage) {
+    return NextResponse.json(
+      {
+        error: `Driver's license upload must be a supported image under ${Math.floor(
+          MAX_BOOKING_PRIVATE_IMAGE_BYTES / (1024 * 1024),
+        )} MB.`,
+      },
+      { status: 400 },
+    );
   }
   if (pickupLocationId && !UUID_REGEX.test(pickupLocationId)) {
     return NextResponse.json({ error: "Invalid pickupLocationId" }, { status: 400 });
@@ -463,8 +485,8 @@ export async function POST(request: Request) {
         "insert into booking_private_files (booking_id, document_type, storage_provider, storage_key, mime_type, metadata_json) values ($1, 'DRIVERS_LICENSE', 'DATA_URL', $2, $3, $4::jsonb)",
         [
           bookingInsert.rows[0].id,
-          driversLicenseDataUrl,
-          driversLicenseMimeType || "image/*",
+          parsedDriversLicenseImage?.normalizedDataUrl,
+          parsedDriversLicenseImage?.mimeType || "image/jpeg",
           JSON.stringify({
             source: "public_booking_wizard",
             fallback: "inline_data_url",
@@ -474,7 +496,7 @@ export async function POST(request: Request) {
       );
     } else if (driversLicenseFileId) {
       await client.query(
-        "insert into booking_private_files (booking_id, document_type, storage_provider, storage_key, mime_type, metadata_json) values ($1, 'DRIVERS_LICENSE', 'UPLOADCARE_FILE_ID', $2, 'image/*', $3::jsonb)",
+        "insert into booking_private_files (booking_id, document_type, storage_provider, storage_key, mime_type, metadata_json) values ($1, 'DRIVERS_LICENSE', 'UPLOADCARE_FILE_ID', $2, null, $3::jsonb)",
         [
           bookingInsert.rows[0].id,
           driversLicenseFileId,
@@ -491,8 +513,8 @@ export async function POST(request: Request) {
         "insert into booking_private_files (booking_id, document_type, storage_provider, storage_key, mime_type, metadata_json) values ($1, 'SIGNATURE', 'DATA_URL', $2, $3, $4::jsonb)",
         [
           bookingInsert.rows[0].id,
-          signatureDataUrl,
-          signatureMimeType || "image/png",
+          parsedSignatureImage.normalizedDataUrl,
+          parsedSignatureImage.mimeType,
           JSON.stringify({
             source: "public_booking_wizard",
             capturedAt: new Date().toISOString(),

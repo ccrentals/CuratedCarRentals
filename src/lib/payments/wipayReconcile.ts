@@ -72,20 +72,46 @@ function mergeMetadata(existing: Record<string, unknown> | null, incoming: Recor
   };
 }
 
-function buildTotalCandidates(totalDecimal: string, rawTotal?: string) {
-  const candidates = new Set<string>();
-  if (totalDecimal) candidates.add(totalDecimal);
-  if (rawTotal) candidates.add(rawTotal);
+function normalizeDecimalAmount(value: string | undefined) {
+  if (!value) return "";
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return "";
+  return parsed.toFixed(2);
+}
 
-  if (rawTotal) {
-    const numeric = Number(rawTotal);
-    if (Number.isFinite(numeric)) {
-      candidates.add(numeric.toFixed(2));
-      candidates.add(String(numeric));
-    }
+function normalizeStatus(value: string | undefined) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase();
+}
+
+function isLocalSandboxHashCompatibilityMode() {
+  if ((process.env.WIPAY_ENV ?? "").trim().toLowerCase() !== "sandbox") return false;
+
+  const siteUrl = process.env.SITE_URL?.trim();
+  if (!siteUrl) return false;
+
+  try {
+    const hostname = new URL(siteUrl).hostname.toLowerCase();
+    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+  } catch {
+    return false;
   }
+}
 
-  return Array.from(candidates).filter((value) => value.length > 0);
+function isSuccessfulWiPayStatus(status: string) {
+  return status === "success" || status === "successful";
+}
+
+function isFailedWiPayStatus(status: string) {
+  return (
+    status === "fail" ||
+    status === "failed" ||
+    status === "cancelled" ||
+    status === "canceled" ||
+    status === "declined" ||
+    status === "error"
+  );
 }
 
 async function markLostBookingEmailSent(
@@ -110,7 +136,7 @@ export async function reconcileWiPayPayment(
     ...DEFAULT_RECONCILE_DEPENDENCIES,
     ...dependencyOverrides,
   };
-  const statusNormalized = input.status.toLowerCase();
+  const statusNormalized = normalizeStatus(input.status);
 
   const paymentResult = await deps.dbQuery<{
     id: string;
@@ -137,13 +163,74 @@ export async function reconcileWiPayPayment(
       ? String((metadata as Record<string, unknown>).payment_type)
       : "deposit";
 
+  const apiKey = (process.env.WIPAY_API_KEY ?? "").trim();
+  const normalizedReportedTotal = normalizeDecimalAmount(input.total);
+  const normalizedStoredTotal = normalizeDecimalAmount(totalDecimal);
+  const providedHash = String(input.hash ?? "").toLowerCase().trim();
+  const reportedCurrency = String(input.currency ?? "").trim().toUpperCase();
+  const responseMessage = String(input.message ?? "").trim();
+
+  if (isFailedWiPayStatus(statusNormalized)) {
+    if (payment.status !== "DEPOSIT_PAID") {
+      await deps.dbQuery(
+        "update payments set status = 'FAILED', metadata_json = $1, updated_at = now() where id = $2",
+        [
+          mergeMetadata(metadata, {
+            ...input,
+            status: input.status,
+            hash_total_used: normalizedStoredTotal || null,
+            hash_verified: false,
+          }),
+          payment.id,
+        ],
+      );
+    }
+    return { ok: false, reason: "failed_status" };
+  }
+
+  if (
+    !input.transactionId ||
+    !providedHash ||
+    !normalizedStoredTotal ||
+    !apiKey
+  ) {
+    return { ok: false, reason: "bad_hash" };
+  }
+
+  if (reportedCurrency && reportedCurrency !== "JMD") {
+    return { ok: false, reason: "bad_hash" };
+  }
+
+  const expectedHash = computeHash(input.transactionId, normalizedStoredTotal, apiKey).toLowerCase();
+  const localSandboxSuccessCompatibility =
+    expectedHash !== providedHash &&
+    isLocalSandboxHashCompatibilityMode() &&
+    isSuccessfulWiPayStatus(statusNormalized) &&
+    Boolean(normalizedReportedTotal) &&
+    Boolean(input.orderId) &&
+    input.transactionId.includes(input.orderId) &&
+    /^\[1-/i.test(responseMessage);
+
+  if (expectedHash !== providedHash && !localSandboxSuccessCompatibility) {
+    return { ok: false, reason: "bad_hash" };
+  }
+
   if (payment.status === "DEPOSIT_PAID") {
-    if (input.transactionId && payment.provider_transaction_id !== input.transactionId) {
+    if (payment.provider_transaction_id && payment.provider_transaction_id !== input.transactionId) {
+      return { ok: false, reason: "bad_hash" };
+    }
+    if (!payment.provider_transaction_id) {
       await deps.dbQuery(
         "update payments set provider_transaction_id = $1, metadata_json = $2, updated_at = now() where id = $3",
         [
           input.transactionId,
-          mergeMetadata(metadata, { ...input, status: input.status }),
+          mergeMetadata(metadata, {
+            ...input,
+            status: input.status,
+            hash_total_used: normalizedStoredTotal,
+            hash_verified: !localSandboxSuccessCompatibility,
+            hash_compatibility_mode: localSandboxSuccessCompatibility ? "local_sandbox_success" : null,
+          }),
           payment.id,
         ],
       );
@@ -152,56 +239,21 @@ export async function reconcileWiPayPayment(
     return { ok: true, bookingId: payment.booking_id };
   }
 
-  if (statusNormalized !== "success") {
+  if (!isSuccessfulWiPayStatus(statusNormalized)) {
     await deps.dbQuery(
       "update payments set status = 'FAILED', metadata_json = $1, updated_at = now() where id = $2",
-      [mergeMetadata(metadata, { ...input, status: input.status }), payment.id],
+      [
+        mergeMetadata(metadata, {
+          ...input,
+          status: input.status,
+          hash_total_used: normalizedStoredTotal,
+          hash_verified: !localSandboxSuccessCompatibility,
+          hash_compatibility_mode: localSandboxSuccessCompatibility ? "local_sandbox_success" : null,
+        }),
+        payment.id,
+      ],
     );
     return { ok: false, reason: "failed_status" };
-  }
-
-  if (!input.transactionId || !input.hash || !totalDecimal) {
-    await deps.dbQuery(
-      "update payments set status = 'FAILED', metadata_json = $1, updated_at = now() where id = $2",
-      [mergeMetadata(metadata, { ...input, status: input.status }), payment.id],
-    );
-    return { ok: false, reason: "bad_hash" };
-  }
-
-  const apiKey = process.env.WIPAY_API_KEY ?? "";
-  const totalsToTry = buildTotalCandidates(totalDecimal, input.total);
-  const providedHash = String(input.hash).toLowerCase();
-  let hashMatchedTotal = "";
-  let hashVerified = true;
-
-  for (const candidate of totalsToTry) {
-    const expectedHash = computeHash(input.transactionId, candidate, apiKey).toLowerCase();
-    if (expectedHash === providedHash) {
-      hashMatchedTotal = candidate;
-      break;
-    }
-  }
-
-  if (!hashMatchedTotal) {
-    const sandboxMode = (process.env.WIPAY_ENV ?? "").toLowerCase() === "sandbox";
-    if (sandboxMode) {
-      hashVerified = false;
-      hashMatchedTotal = totalDecimal || input.total || "";
-    } else {
-      await deps.dbQuery(
-        "update payments set status = 'FAILED', metadata_json = $1, updated_at = now() where id = $2",
-        [
-          mergeMetadata(metadata, {
-            ...input,
-            status: input.status,
-            hash_expected_total: totalDecimal,
-            hash_attempted_totals: totalsToTry,
-          }),
-          payment.id,
-        ],
-      );
-      return { ok: false, reason: "bad_hash" };
-    }
   }
 
   const pool = deps.getDbPool();
@@ -217,8 +269,9 @@ export async function reconcileWiPayPayment(
         mergeMetadata(metadata, {
           ...input,
           status: input.status,
-          hash_total_used: hashMatchedTotal,
-          hash_verified: hashVerified,
+          hash_total_used: normalizedStoredTotal,
+          hash_verified: !localSandboxSuccessCompatibility,
+          hash_compatibility_mode: localSandboxSuccessCompatibility ? "local_sandbox_success" : null,
         }),
         payment.id,
       ],

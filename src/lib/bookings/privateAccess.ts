@@ -1,28 +1,19 @@
 import { createHash, randomUUID } from "node:crypto";
 
-function privateAccessSecret() {
-  return (
-    process.env.BOOKING_PRIVATE_FILE_SECRET ||
-    process.env.CSRF_SECRET ||
-    process.env.ADMIN_SESSION_SECRET ||
-    "ccr-booking-private-access"
-  );
+function sha256(value: string) {
+  return createHash("sha256").update(value).digest("hex");
 }
 
 export function createBookingAccessToken(seed?: string) {
   const normalizedSeed = typeof seed === "string" ? seed.trim() : "";
   if (normalizedSeed) {
-    return createHash("sha256")
-      .update(`booking-access:${normalizedSeed}:${privateAccessSecret()}`)
-      .digest("hex");
+    return sha256(`booking-access:${normalizedSeed}`);
   }
   return `${randomUUID()}${randomUUID().replace(/-/g, "").slice(0, 12)}`;
 }
 
 export function hashBookingAccessToken(token: string) {
-  return createHash("sha256")
-    .update(`${token}:${privateAccessSecret()}`)
-    .digest("hex");
+  return sha256(`booking-token:${token}`);
 }
 
 export function bookingAccessCookieName(bookingId: string) {
@@ -30,9 +21,7 @@ export function bookingAccessCookieName(bookingId: string) {
 }
 
 export function hashBookingSubmissionKey(value: string) {
-  return createHash("sha256")
-    .update(`booking-submit:${value.trim()}:${privateAccessSecret()}`)
-    .digest("hex");
+  return sha256(`booking-submit:${value.trim()}`);
 }
 
 export function readBookingAccessTokenFromCookieHeader(cookieHeader: string, bookingId: string) {

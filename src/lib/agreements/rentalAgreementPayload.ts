@@ -1,6 +1,10 @@
 import { dbQuery } from "@/lib/db";
 import { resolveStoredRegionCountry } from "@/lib/jamaicaParishes";
 import {
+  parseSafePrivateBookingImageDataUrl,
+  resolveSafePrivateBookingResponseMimeType,
+} from "@/lib/bookings/privateFiles";
+import {
   computeBookingPricingFromStoredSnapshot,
   fetchNetPaidToDate,
 } from "@/lib/payments/pricing";
@@ -128,28 +132,6 @@ function buildCustomerAddress(booking: BookingRow) {
   return parts.join(", ");
 }
 
-function toSignatureDataUrl(
-  storageKey: string,
-): { mimeType: string; dataUrl: string } | null {
-  const match = storageKey.match(/^data:([^;,]+)?(;base64)?,(.*)$/i);
-  if (!match) return null;
-  const mimeType = normalizeText(match[1]) || "image/png";
-  const isBase64 = Boolean(match[2]);
-  const payload = match[3] ?? "";
-  try {
-    const bytes = isBase64
-      ? Buffer.from(payload, "base64")
-      : Buffer.from(decodeURIComponent(payload), "utf-8");
-    if (bytes.length < 1) return null;
-    return {
-      mimeType,
-      dataUrl: `data:${mimeType};base64,${bytes.toString("base64")}`,
-    };
-  } catch {
-    return null;
-  }
-}
-
 function isBalanceReducingPayment(payment: PaymentRow) {
   const amount = Number(payment.deposit_amount_cents || 0);
   if (!Number.isFinite(amount) || amount <= 0) return false;
@@ -253,9 +235,9 @@ async function loadSignature(
   }
 
   if (storageProvider === "DATA_URL") {
-    const parsed = toSignatureDataUrl(storageKey);
+    const parsed = parseSafePrivateBookingImageDataUrl(storageKey);
     return {
-      signatureDataUrl: parsed?.dataUrl ?? null,
+      signatureDataUrl: parsed?.normalizedDataUrl ?? null,
       signedAt,
     };
   }
@@ -274,10 +256,13 @@ async function loadSignature(
     if (bytes.length < 1) {
       return { signatureDataUrl: null as string | null, signedAt };
     }
-    const mimeType =
-      normalizeText(signature.mime_type) ||
-      normalizeText(upstream.headers.get("content-type")) ||
-      "image/png";
+    const mimeType = resolveSafePrivateBookingResponseMimeType(
+      signature.mime_type,
+      upstream.headers.get("content-type"),
+    );
+    if (!mimeType) {
+      return { signatureDataUrl: null as string | null, signedAt };
+    }
     return {
       signatureDataUrl: `data:${mimeType};base64,${bytes.toString("base64")}`,
       signedAt,

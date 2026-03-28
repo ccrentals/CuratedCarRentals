@@ -51,6 +51,10 @@ function runtimeCoreOk(env: EnvValidation) {
   return missing.length === 0 && env.core.invalid.length === 0;
 }
 
+function runtimePublicRecoveryOk(env: EnvValidation) {
+  return env.publicRecovery.missing.length === 0 && env.publicRecovery.invalid.length === 0;
+}
+
 function strictOk(section: { missing: string[]; invalid: string[] }) {
   return section.missing.length === 0 && section.invalid.length === 0;
 }
@@ -318,9 +322,10 @@ export async function getHealthSnapshot(): Promise<HealthSnapshot> {
     netlifyCheck,
   ]);
 
-  const ok = runtimeCoreOk(env) && db.ok && promoLedger.ok;
+  const ok = runtimeCoreOk(env) && runtimePublicRecoveryOk(env) && db.ok && promoLedger.ok;
   const goLiveReady =
     strictOk(env.core) &&
+    strictOk(env.publicRecovery) &&
     strictOk(env.payments) &&
     strictOk(env.email) &&
     strictOk(env.invoices) &&

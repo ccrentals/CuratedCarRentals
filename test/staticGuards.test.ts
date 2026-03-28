@@ -30,6 +30,18 @@ test("Idempotency: WiPay webhook uses webhook_events insert gate and short-circu
   assert.match(code, /duplicate/i);
 });
 
+test("WiPay callbacks use canonical SITE_URL rather than request-origin fallbacks", () => {
+  const returnRoute = read("src/app/api/payments/wipay/return/route.ts");
+  const paymentStart = read("src/lib/payments/publicPaymentStart.ts");
+
+  assert.match(returnRoute, /getCanonicalSiteUrl\(/);
+  assert.doesNotMatch(returnRoute, /request\.url\)\.origin/);
+  assert.doesNotMatch(returnRoute, /SITE_URL\s*\?\?\s*url\.origin/);
+
+  assert.match(paymentStart, /buildCanonicalSiteUrl\(\"\/api\/payments\/wipay\/return\"\)/);
+  assert.doesNotMatch(paymentStart, /request\.url\)\.origin/);
+});
+
 test("Pricing SSoT: quote preview and booking create use the shared quote snapshot builder", () => {
   const files = [
     "src/app/api/public/pricing/quote/route.ts",
@@ -185,4 +197,49 @@ test("Turnstile coverage: protected public submit routes call shared verifier", 
     assert.match(code, /verifyTurnstileToken\(/);
     assert.match(code, /extractTurnstileToken\(/);
   }
+});
+
+test("Returning-customer OTP uses dedicated secret only", () => {
+  const helper = read("src/lib/security/returningCustomerOtp.ts");
+  assert.match(helper, /RETURNING_CUSTOMER_OTP_SECRET_MISSING/);
+  assert.doesNotMatch(helper, /CSRF_SECRET/);
+  assert.doesNotMatch(helper, /ADMIN_SESSION_SECRET/);
+
+  const startRoute = read("src/app/api/public/returning-customer/start/route.ts");
+  const verifyRoute = read("src/app/api/public/returning-customer/verify/route.ts");
+
+  assert.match(startRoute, /hashReturningCustomerOtp\(/);
+  assert.match(verifyRoute, /hashReturningCustomerOtp\(/);
+  assert.doesNotMatch(startRoute, /CSRF_SECRET|ADMIN_SESSION_SECRET|ccr-returning-customer/);
+  assert.doesNotMatch(verifyRoute, /CSRF_SECRET|ADMIN_SESSION_SECRET|ccr-returning-customer/);
+});
+
+test("Booking access token flow is independent from private-file env secrets", () => {
+  const helper = read("src/lib/bookings/privateAccess.ts");
+  const bookingRoute = read("src/app/api/public/bookings/route.ts");
+
+  assert.doesNotMatch(helper, /BOOKING_PRIVATE_FILE_SECRET|BOOKING_PRIVATE_FILE_SECRET_MISSING/);
+  assert.doesNotMatch(bookingRoute, /Booking access is temporarily unavailable/);
+  assert.match(bookingRoute, /createBookingAccessToken\(submissionKey\)/);
+  assert.match(bookingRoute, /hashBookingSubmissionKey\(submissionKey\)/);
+});
+
+test("Booking emails use public references and keep overriding booking details out of customer notices", () => {
+  const email = read("src/lib/notifications/email.ts");
+
+  assert.match(email, /resolveBookingReference\(input\.bookingId\)/);
+  assert.match(email, /resolveBookingReferences\(\[\s*input\.bookingId,\s*input\.overriddenByBookingId,\s*\]\)/);
+  assert.doesNotMatch(email, /View Paid Booking/);
+  assert.doesNotMatch(email, /input\.overriddenByBookingId\.slice\(0,\s*8\)/);
+});
+
+test("Critical booking emails do not require PDF attachments to send", () => {
+  const email = read("src/lib/notifications/email.ts");
+
+  assert.match(email, /buildOptionalInvoiceEmailAttachment/);
+  assert.match(email, /buildOptionalRentalAgreementEmailAttachment/);
+  assert.doesNotMatch(email, /buildRequiredInvoiceAttachment/);
+  assert.doesNotMatch(email, /buildRequiredRentalAgreementAttachment/);
+  assert.match(email, /invoice attachment is temporarily unavailable/i);
+  assert.match(email, /rental agreement attachment is temporarily unavailable/i);
 });

@@ -539,7 +539,7 @@ test("admin invoice document route exposes internal metadata without email", asy
       params: Promise.resolve({ id: "11111111-1111-4111-8111-111111111111" }),
     },
     {
-      requireStaff: async () => authorizedStaffResult(),
+      requireAdminAccess: async () => authorizedStaffResult(),
       loadInvoicePayload: async () => ({
         bookingId: "11111111-1111-4111-8111-111111111111",
         payload: { booking: { id: "11111111-1111-4111-8111-111111111111" } },
@@ -587,7 +587,7 @@ test("admin invoice document route also supports explicit Gotenberg provider", a
       params: Promise.resolve({ id: "11111111-1111-4111-8111-111111111111" }),
     },
     {
-      requireStaff: async () => authorizedStaffResult(),
+      requireAdminAccess: async () => authorizedStaffResult(),
       loadInvoicePayload: async () => ({
         bookingId: "11111111-1111-4111-8111-111111111111",
         payload: { booking: { id: "11111111-1111-4111-8111-111111111111" } },
@@ -627,7 +627,7 @@ test("admin invoice document route rejects invalid provider values", async () =>
       params: Promise.resolve({ id: "11111111-1111-4111-8111-111111111111" }),
     },
     {
-      requireStaff: async () => authorizedStaffResult(),
+      requireAdminAccess: async () => authorizedStaffResult(),
       loadInvoicePayload: async () => null,
       generateInvoice: async () => {
         throw new Error("generateInvoice should not run for invalid provider");
@@ -647,7 +647,7 @@ test("admin invoice document route returns structured provider errors instead of
       params: Promise.resolve({ id: "11111111-1111-4111-8111-111111111111" }),
     },
     {
-      requireStaff: async () => authorizedStaffResult(),
+      requireAdminAccess: async () => authorizedStaffResult(),
       loadInvoicePayload: async () => ({
         bookingId: "11111111-1111-4111-8111-111111111111",
         payload: { booking: { id: "11111111-1111-4111-8111-111111111111" } },
@@ -694,7 +694,7 @@ test("admin agreement document route exposes internal metadata without email", a
       params: Promise.resolve({ id: "11111111-1111-4111-8111-111111111111" }),
     },
     {
-      requireStaff: async () => authorizedStaffResult(),
+      requireAdminAccess: async () => authorizedStaffResult(),
       loadAgreementPayload: async () => ({
         bookingId: "11111111-1111-4111-8111-111111111111",
         bookingPublicId: "BK000334",
@@ -751,7 +751,7 @@ test("admin agreement document route defaults to Gotenberg", async () => {
       params: Promise.resolve({ id: "11111111-1111-4111-8111-111111111111" }),
     },
     {
-      requireStaff: async () => authorizedStaffResult(),
+      requireAdminAccess: async () => authorizedStaffResult(),
       loadAgreementPayload: async () => ({
         bookingId: "11111111-1111-4111-8111-111111111111",
         bookingPublicId: "BK000334",
@@ -798,7 +798,7 @@ test("admin agreement document route rejects invalid provider values", async () 
       params: Promise.resolve({ id: "11111111-1111-4111-8111-111111111111" }),
     },
     {
-      requireStaff: async () => authorizedStaffResult(),
+      requireAdminAccess: async () => authorizedStaffResult(),
       loadAgreementPayload: async () => null,
       generateAgreement: async () => {
         throw new Error("generateAgreement should not run for invalid provider");

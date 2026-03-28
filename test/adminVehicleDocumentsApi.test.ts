@@ -240,7 +240,7 @@ test("admin vehicle documents API: POST rejects checklist folder mismatch", asyn
   assert.match(String(body.error), /folder must match/i);
 });
 
-test("admin vehicle documents API: POST preserves signed delivery URL references", async () => {
+test("admin vehicle documents API: POST stores opaque Uploadcare id for signed delivery URLs", async () => {
   let capturedInput: Record<string, unknown> | null = null;
   const signedUrl = `https://ucarecdn.com/${FILE_ID}/-/preview/?token=test-token`;
 
@@ -301,8 +301,47 @@ test("admin vehicle documents API: POST preserves signed delivery URL references
   assert.equal(response.status, 200);
   assert.ok(capturedInput);
   const saved = capturedInput as { storageKey?: unknown; storageProvider?: unknown };
-  assert.equal(saved.storageKey, signedUrl);
+  assert.equal(saved.storageKey, FILE_ID);
   assert.equal(saved.storageProvider, "UPLOADCARE_FILE_ID");
+});
+
+test("admin vehicle documents API: POST rejects external URLs that only look like Uploadcare refs", async () => {
+  const response = await handleAdminVehicleDocumentsPost(
+    new Request(`http://localhost/api/admin/vehicles/${VEHICLE_ID}/documents`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-csrf-token": "token",
+      },
+      body: JSON.stringify({
+        folder: "Paperwork",
+        title: "Unsafe external document",
+        document_type: "Registration Card",
+        uploadcare_file_id: `https://attacker.example/${FILE_ID}/`,
+        storage_provider: "UPLOADCARE_FILE_ID",
+        csrfToken: "token",
+      }),
+    }),
+    { params: Promise.resolve({ id: VEHICLE_ID }) },
+    {
+      getSession: async () => ({
+        userId: "admin-user-id",
+        role: "ADMIN",
+        issuedAt: Date.now(),
+        expiresAt: Date.now() + 60_000,
+      }),
+      requireCsrfCheck: async () => true,
+      listDocuments: async () => [],
+      createDocument: async () => {
+        throw new Error("unreachable");
+      },
+    },
+  );
+
+  assert.equal(response.status, 400);
+  const body = (await response.json()) as { ok?: boolean; error?: string };
+  assert.equal(body.ok, false);
+  assert.match(String(body.error), /invalid upload reference/i);
 });
 
 test("admin vehicle documents API: download endpoint requires auth", async () => {
@@ -354,6 +393,45 @@ test("admin vehicle documents API: download rejects html placeholder responses",
     const payload = (await response.json()) as { ok?: boolean; error?: string };
     assert.equal(payload.ok, false);
     assert.match(String(payload.error), /Unable to load file from storage/i);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test("admin vehicle documents API: download rejects untrusted external storage URLs", async () => {
+  const originalFetch = global.fetch;
+  let fetchCalled = false;
+  global.fetch = (async () => {
+    fetchCalled = true;
+    throw new Error("should not fetch untrusted host");
+  }) as typeof fetch;
+
+  try {
+    const response = await handleAdminVehicleDocumentDownload(
+      new Request(`http://localhost/api/admin/vehicles/${VEHICLE_ID}/documents/${DOC_ID}/download`),
+      { params: Promise.resolve({ id: VEHICLE_ID, docId: DOC_ID }) },
+      {
+        getSession: async () => ({
+          userId: "admin-user-id",
+          role: "ADMIN",
+          issuedAt: Date.now(),
+          expiresAt: Date.now() + 60_000,
+        }),
+        getDocument: async () => ({
+          id: DOC_ID,
+          title: "Unsafe.png",
+          storage_provider: "UPLOADCARE_FILE_ID",
+          storage_key: `https://evilucarecdn.com/${FILE_ID}/`,
+          mime_type: "image/png",
+        }),
+      },
+    );
+
+    assert.equal(response.status, 500);
+    const payload = (await response.json()) as { ok?: boolean; error?: string };
+    assert.equal(payload.ok, false);
+    assert.match(String(payload.error), /invalid storage key/i);
+    assert.equal(fetchCalled, false);
   } finally {
     global.fetch = originalFetch;
   }

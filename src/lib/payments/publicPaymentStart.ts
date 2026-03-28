@@ -10,7 +10,7 @@ import {
   readPaymentOption,
 } from "@/lib/payments/pricing";
 import { isVehicleUnavailableEntitlementBased } from "@/lib/availability/entitlement";
-import { buildRequestParams, requestHostedPageUrl } from "@/lib/wipay";
+import { buildCanonicalSiteUrl, buildRequestParams, getCanonicalSiteUrl, requestHostedPageUrl } from "@/lib/wipay";
 
 const ACTIVE_PAYMENT_WINDOW_MS = 30 * 60 * 1000;
 const PENDING_PAYMENT_WINDOW_MS = 2 * 60 * 1000;
@@ -117,6 +117,7 @@ function validateEnvironment() {
     "WIPAY_API_KEY",
     "WIPAY_ENV",
     "WIPAY_FEE_STRUCTURE",
+    "SITE_URL",
   ];
   for (const key of requiredEnv) {
     if (!process.env[key]) {
@@ -134,6 +135,15 @@ function validateEnvironment() {
   if (!["sandbox", "live"].includes(process.env.WIPAY_ENV ?? "")) {
     logWarn("public_wipay_start_invalid_env", { env: process.env.WIPAY_ENV });
     return jsonError(400, "env_invalid", "Invalid WIPAY_ENV", { env: process.env.WIPAY_ENV });
+  }
+
+  try {
+    getCanonicalSiteUrl();
+  } catch (error) {
+    logWarn("public_wipay_start_invalid_site_url", {
+      message: error instanceof Error ? error.message : "Invalid SITE_URL",
+    });
+    return jsonError(400, "env_invalid", "Invalid SITE_URL");
   }
 
   return null;
@@ -461,8 +471,7 @@ export async function startPublicWipayPayment({
 
     await client.query("commit");
 
-    const origin = process.env.SITE_URL ?? new URL(request.url).origin;
-    const responseUrl = `${origin}/api/payments/wipay/return`;
+    const responseUrl = buildCanonicalSiteUrl("/api/payments/wipay/return");
     const params = buildRequestParams({
       orderId,
       amountDecimal: startDetails.totalDecimal,

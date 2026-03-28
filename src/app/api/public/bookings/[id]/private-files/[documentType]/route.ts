@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 
 import { hasPublicBookingAccessForRequest } from "@/lib/bookings/publicAccess";
+import {
+  parseSafePrivateBookingImageDataUrl,
+  resolveSafePrivateBookingResponseMimeType,
+  sanitizePrivateBookingFileName,
+} from "@/lib/bookings/privateFiles";
 import { dbQuery } from "@/lib/db";
 import { logError } from "@/lib/log";
 import { buildUploadcareCdnUrl, extractUploadcareFileId } from "@/lib/uploads/uploadcare";
@@ -29,22 +34,6 @@ function jsonNoStore(payload: Record<string, unknown>, status: number) {
       "cache-control": "no-store",
     },
   });
-}
-
-function decodeDataUrl(dataUrl: string) {
-  const match = dataUrl.match(/^data:([^;,]+)?(;base64)?,(.*)$/i);
-  if (!match) return null;
-  const mimeType = match[1] || "application/octet-stream";
-  const isBase64 = Boolean(match[2]);
-  const payload = match[3] ?? "";
-  try {
-    const bytes = isBase64
-      ? Buffer.from(payload, "base64")
-      : Buffer.from(decodeURIComponent(payload), "utf-8");
-    return { mimeType, bytes };
-  } catch {
-    return null;
-  }
 }
 
 async function authorizeBookingFileRead(request: Request, bookingId: string) {
@@ -84,18 +73,22 @@ export async function GET(
 
     const isDataUrl = file.storage_provider.toUpperCase() === "DATA_URL";
     if (isDataUrl) {
-      // Legacy fallback only. New uploads store opaque provider file IDs.
-      const decoded = decodeDataUrl(file.storage_key);
-      if (!decoded) {
-        return jsonNoStore({ error: "Unable to read file data." }, 500);
+      const parsed = parseSafePrivateBookingImageDataUrl(file.storage_key);
+      if (!parsed) {
+        return jsonNoStore({ error: "Unable to load a safe file from storage." }, 500);
       }
 
-      return new NextResponse(decoded.bytes, {
+      return new NextResponse(parsed.bytes, {
         status: 200,
         headers: {
-          "content-type": file.mime_type || decoded.mimeType,
+          "content-type": parsed.mimeType,
           "cache-control": "private, max-age=0, no-store",
-          "content-disposition": `inline; filename="${file.original_file_name || `${documentType.toLowerCase()}.png`}"`,
+          "content-disposition": `inline; filename="${sanitizePrivateBookingFileName(
+            documentType,
+            file.original_file_name,
+            parsed.mimeType,
+          )}"`,
+          "x-content-type-options": "nosniff",
         },
       });
     }
@@ -117,14 +110,25 @@ export async function GET(
     if (!upstream.ok || !upstream.body) {
       return jsonNoStore({ error: "Unable to load file from storage." }, 502);
     }
+    const safeMimeType = resolveSafePrivateBookingResponseMimeType(
+      file.mime_type,
+      upstream.headers.get("content-type"),
+    );
+    if (!safeMimeType) {
+      return jsonNoStore({ error: "Unable to load a safe file from storage." }, 502);
+    }
 
     return new NextResponse(upstream.body, {
       status: 200,
       headers: {
-        "content-type":
-          file.mime_type || upstream.headers.get("content-type") || "application/octet-stream",
+        "content-type": safeMimeType,
         "cache-control": "private, max-age=0, no-store",
-        "content-disposition": `inline; filename="${file.original_file_name || `${documentType.toLowerCase()}.jpg`}"`,
+        "content-disposition": `inline; filename="${sanitizePrivateBookingFileName(
+          documentType,
+          file.original_file_name,
+          safeMimeType,
+        )}"`,
+        "x-content-type-options": "nosniff",
       },
     });
   } catch (error) {

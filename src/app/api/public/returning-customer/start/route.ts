@@ -1,10 +1,11 @@
-import { createHash, randomInt, randomUUID } from "node:crypto";
+import { randomInt, randomUUID } from "node:crypto";
 
 import { NextResponse } from "next/server";
 
 import { writeAuditLog } from "@/lib/audit";
 import { dbQuery } from "@/lib/db";
 import { logWarn } from "@/lib/log";
+import { hashReturningCustomerOtp } from "@/lib/security/returningCustomerOtp";
 import {
   categorizeTurnstileFailure,
   extractTurnstileToken,
@@ -39,15 +40,6 @@ function genericFailure() {
     },
     { status: 400 },
   );
-}
-
-function hashOtp(token: string, otpCode: string) {
-  const secret =
-    process.env.RETURNING_CUSTOMER_OTP_SECRET ||
-    process.env.CSRF_SECRET ||
-    process.env.ADMIN_SESSION_SECRET ||
-    "ccr-returning-customer";
-  return createHash("sha256").update(`${token}:${otpCode}:${secret}`).digest("hex");
 }
 
 async function hitRateLimit(ip: string, sessionKey: string) {
@@ -143,10 +135,11 @@ export async function POST(request: Request) {
 
   const customer = customerResult.rows[0] ?? null;
   const challengeToken = randomUUID();
+  const otpSecretConfigured = Boolean(process.env.RETURNING_CUSTOMER_OTP_SECRET?.trim());
 
-  if (customer?.id && customer.email?.trim()) {
+  if (customer?.id && customer.email?.trim() && otpSecretConfigured) {
     const otpCode = String(randomInt(100000, 999999));
-    const otpHash = hashOtp(challengeToken, otpCode);
+    const otpHash = hashReturningCustomerOtp(challengeToken, otpCode);
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
     const emailSent = await sendOtpEmail(customer.email.trim(), otpCode).catch(() => false);
 

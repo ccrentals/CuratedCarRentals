@@ -1,11 +1,13 @@
-import { createHash } from "node:crypto";
-
 import { NextResponse } from "next/server";
 
 import { writeAuditLog } from "@/lib/audit";
 import { dbQuery } from "@/lib/db";
 import { resolveStoredRegionCountry } from "@/lib/jamaicaParishes";
 import { logWarn } from "@/lib/log";
+import {
+  hashReturningCustomerOtp,
+  isReturningCustomerOtpConfigured,
+} from "@/lib/security/returningCustomerOtp";
 import {
   categorizeTurnstileFailure,
   extractTurnstileToken,
@@ -59,15 +61,6 @@ function genericFailure() {
 function normalizeDateOnly(value: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return "";
   return value;
-}
-
-function hashOtp(token: string, otpCode: string) {
-  const secret =
-    process.env.RETURNING_CUSTOMER_OTP_SECRET ||
-    process.env.CSRF_SECRET ||
-    process.env.ADMIN_SESSION_SECRET ||
-    "ccr-returning-customer";
-  return createHash("sha256").update(`${token}:${otpCode}:${secret}`).digest("hex");
 }
 
 function getEffectiveLastName(customer: CustomerRow) {
@@ -166,7 +159,7 @@ export async function POST(request: Request) {
   let verified = false;
   let verifiedBy: "OTP_EMAIL" | "MATCH_LAST_NAME_DOB" | null = null;
 
-  if (challengeToken && otpCode) {
+  if (challengeToken && otpCode && isReturningCustomerOtpConfigured()) {
     const otpResult = await dbQuery<OtpAuditRow>(
       "select id, details_json from audit_logs where action = 'RETURNING_CUSTOMER_OTP_ISSUED' and entity_type = 'customer' and entity_id = $1 order by created_at desc limit 1",
       [customer.id],
@@ -182,7 +175,7 @@ export async function POST(request: Request) {
     const alreadyUsed = Boolean(otpDetails.used === true);
     const expectedHash =
       typeof otpDetails.otpHash === "string" ? otpDetails.otpHash : "";
-    const providedHash = hashOtp(challengeToken, otpCode);
+    const providedHash = hashReturningCustomerOtp(challengeToken, otpCode);
 
     if (tokenMatches && notExpired && !alreadyUsed && expectedHash === providedHash) {
       verified = true;

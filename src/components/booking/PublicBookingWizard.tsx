@@ -427,15 +427,50 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     console.debug(`[booking-wizard] ${label}`, detail);
   }, []);
 
+  const resetQuoteRefresh = useCallback(
+    (reason: "missing_prerequisites" | "vehicle_unresolved" | "invalid_datetime") => {
+      latestQuoteKeyRef.current = "";
+      lastQuoteSuccessKeyRef.current = "";
+      if (inFlightQuoteRef.current) {
+        inFlightQuoteRef.current.controller.abort();
+        inFlightQuoteRef.current = null;
+      }
+      setPricingState((previous) => ({
+        status: "idle",
+        current: null,
+        lastGood: previous.lastGood,
+        error: null,
+      }));
+      debugWizardRequest("quote:reset", { reason });
+    },
+    [debugWizardRequest],
+  );
+
+  const createClientSubmissionKey = useCallback(() => {
+    if (typeof window === "undefined") {
+      return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    }
+
+    const cryptoApi = window.crypto;
+    if (typeof cryptoApi?.randomUUID === "function") {
+      return cryptoApi.randomUUID();
+    }
+
+    if (typeof cryptoApi?.getRandomValues === "function") {
+      const bytes = new Uint8Array(16);
+      cryptoApi.getRandomValues(bytes);
+      return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+    }
+
+    return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  }, []);
+
   const getBookingSubmissionKey = useCallback(() => {
     if (!bookingSubmissionKeyRef.current) {
-      bookingSubmissionKeyRef.current =
-        typeof window !== "undefined" && typeof window.crypto?.randomUUID === "function"
-          ? window.crypto.randomUUID()
-          : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      bookingSubmissionKeyRef.current = createClientSubmissionKey();
     }
     return bookingSubmissionKeyRef.current;
-  }, []);
+  }, [createClientSubmissionKey]);
 
   useEffect(() => {
     return () => {
@@ -1174,35 +1209,19 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
   useEffect(() => {
     if (!hydrated) return;
     if (!hasSelectedVehicleId || !datesValid) {
-      latestQuoteKeyRef.current = "";
-      lastQuoteSuccessKeyRef.current = "";
-      if (inFlightQuoteRef.current) {
-        inFlightQuoteRef.current.controller.abort();
-        inFlightQuoteRef.current = null;
-      }
-      setPricingState((previous) => ({
-        status: "idle",
-        current: null,
-        lastGood: previous.lastGood,
-        error: null,
-      }));
-      debugWizardRequest("quote:reset", { reason: "missing_prerequisites" });
+      resetQuoteRefresh("missing_prerequisites");
       return;
     }
 
-    if (!hasResolvedVehicle) return;
+    if (!hasResolvedVehicle) {
+      resetQuoteRefresh("vehicle_unresolved");
+      return;
+    }
 
     const pickup = combineDateTime(pickupDate, pickupTime);
     const dropoff = combineDateTime(dropoffDate, dropoffTime);
     if (!pickup || !dropoff) {
-      latestQuoteKeyRef.current = "";
-      setPricingState((previous) => ({
-        status: "idle",
-        current: null,
-        lastGood: previous.lastGood,
-        error: null,
-      }));
-      debugWizardRequest("quote:reset", { reason: "invalid_datetime" });
+      resetQuoteRefresh("invalid_datetime");
       return;
     }
 
@@ -1311,7 +1330,9 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
 
     return () => {
       if (inFlightQuoteRef.current?.key === quoteKey) {
-        inFlightQuoteRef.current.controller.abort();
+        const activeQuote = inFlightQuoteRef.current;
+        inFlightQuoteRef.current = null;
+        activeQuote.controller.abort();
       }
     };
   }, [
@@ -1332,8 +1353,8 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     paymentOption,
     pickupDate,
     pickupTime,
+    resetQuoteRefresh,
     selectedVehicleId,
-    step,
   ]);
 
   useEffect(() => {

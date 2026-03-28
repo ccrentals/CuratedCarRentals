@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { clerkClient } from "@clerk/nextjs/server";
 
-import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
+import { requireAdminAccess } from "@/lib/auth/adminGuards";
 import { hashPassword } from "@/lib/auth/password";
 import { writeAuditLog } from "@/lib/audit";
 import { dbQuery } from "@/lib/db";
@@ -15,7 +15,7 @@ function isUndefinedColumn(error: unknown, column: string) {
 }
 
 export type PasswordUpdateDeps = {
-  requireAuth: typeof requireStaffOrAdminRole;
+  requireAuth: typeof requireAdminAccess;
   requireCsrfCheck: typeof requireCsrf;
   getClerk: typeof clerkClient;
   hashPasswordFn: typeof hashPassword;
@@ -47,7 +47,7 @@ async function updateLegacyPasswordState(input: { userId: string; passwordHash: 
 }
 
 const defaultDeps: PasswordUpdateDeps = {
-  requireAuth: requireStaffOrAdminRole,
+  requireAuth: requireAdminAccess,
   requireCsrfCheck: requireCsrf,
   getClerk: clerkClient,
   hashPasswordFn: hashPassword,

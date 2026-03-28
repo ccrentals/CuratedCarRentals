@@ -3,10 +3,11 @@ import test from "node:test";
 
 import type { getDbPool } from "@/lib/db";
 import { reconcileWiPayPayment } from "@/lib/payments/wipayReconcile";
+import { computeHash } from "@/lib/wipay";
 
 test("reconcileWiPayPayment: payment email is deduped across replayed callbacks", async () => {
-  const originalWipayEnv = process.env.WIPAY_ENV;
-  process.env.WIPAY_ENV = "sandbox";
+  const originalWipayApiKey = process.env.WIPAY_API_KEY;
+  process.env.WIPAY_API_KEY = "test-wipay-key";
 
   const state = {
     sendCalls: 0,
@@ -21,7 +22,7 @@ test("reconcileWiPayPayment: payment email is deduped across replayed callbacks"
     transactionId: "txn-dedupe-1",
     status: "SUCCESS",
     total: "10.00",
-    hash: "ignored-in-sandbox",
+    hash: computeHash("txn-dedupe-1", "10.00", "test-wipay-key"),
     source: "webhook" as const,
   };
 
@@ -66,6 +67,14 @@ test("reconcileWiPayPayment: payment email is deduped across replayed callbacks"
 
           if (text.startsWith("update payments set status = 'DEPOSIT_PAID'")) {
             return { rowCount: 1, rows: [] };
+          }
+
+          if (
+            text.startsWith(
+              "update payments set status = 'FAILED', metadata_json = jsonb_set(coalesce(metadata_json, '{}'::jsonb), '{superseded_by_payment_id}'",
+            )
+          ) {
+            return { rowCount: 0, rows: [] };
           }
 
           if (text.startsWith("select b.id, b.start_date, b.end_date, b.status")) {
@@ -155,10 +164,10 @@ test("reconcileWiPayPayment: payment email is deduped across replayed callbacks"
     assert.equal(state.failedMarks, 0);
     assert.equal(state.receiptMarkerUpdates, 2);
   } finally {
-    if (originalWipayEnv === undefined) {
-      delete process.env.WIPAY_ENV;
+    if (originalWipayApiKey === undefined) {
+      delete process.env.WIPAY_API_KEY;
     } else {
-      process.env.WIPAY_ENV = originalWipayEnv;
+      process.env.WIPAY_API_KEY = originalWipayApiKey;
     }
   }
 });

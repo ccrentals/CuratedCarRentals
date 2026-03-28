@@ -21,6 +21,7 @@ function isValidUrl(value: string | undefined) {
 
 export type EnvValidation = {
   core: { missing: string[]; invalid: string[] };
+  publicRecovery: { missing: string[]; invalid: string[] };
   payments: { missing: string[]; invalid: string[] };
   email: { missing: string[]; invalid: string[] };
   invoices: { missing: string[]; invalid: string[] };
@@ -76,6 +77,9 @@ export function validateEnv(): EnvValidation {
   const emailMissing = missingKeys(["RESEND_API_KEY", "RESEND_FROM"]);
   const emailInvalid: string[] = [];
 
+  const publicRecoveryMissing = missingKeys(["RETURNING_CUSTOMER_OTP_SECRET"]);
+  const publicRecoveryInvalid: string[] = [];
+
   const invoicesMissing: string[] = [];
   const invoicesInvalid: string[] = [];
   const invoiceProviderRaw = (process.env.INVOICE_PDF_PROVIDER ?? "pdfmonkey")
@@ -108,6 +112,7 @@ export function validateEnv(): EnvValidation {
 
   return {
     core: { missing: [...coreMissing, ...csrfMissing], invalid: coreInvalid },
+    publicRecovery: { missing: publicRecoveryMissing, invalid: publicRecoveryInvalid },
     payments: { missing: paymentsMissing, invalid: paymentsInvalid },
     email: { missing: emailMissing, invalid: emailInvalid },
     invoices: { missing: invoicesMissing, invalid: invoicesInvalid },

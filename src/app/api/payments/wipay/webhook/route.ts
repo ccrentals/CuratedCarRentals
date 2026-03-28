@@ -18,6 +18,13 @@ function pick(body: Record<string, unknown>, keys: string[]) {
   return "";
 }
 
+function mapFailureStatus(reason: Awaited<ReturnType<typeof reconcileWiPayPayment>>["reason"]) {
+  if (reason === "bad_hash") return 400;
+  if (reason === "failed_status" || reason === "overlap") return 409;
+  if (reason === "not_found") return 404;
+  return 500;
+}
+
 export async function POST(request: Request) {
   const body = parseJsonObject(await request.json().catch(() => null));
   if (!body) {
@@ -69,7 +76,10 @@ export async function POST(request: Request) {
   });
 
   if (!result.ok) {
-    return NextResponse.json({ ok: false, reason: result.reason ?? "failed" });
+    return NextResponse.json(
+      { ok: false, reason: result.reason ?? "failed" },
+      { status: mapFailureStatus(result.reason) },
+    );
   }
 
   return NextResponse.json({ ok: true, bookingId: result.bookingId });
