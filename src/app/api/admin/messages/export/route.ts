@@ -1,4 +1,4 @@
-import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
+import { requireAdminAccess } from "@/lib/auth/adminGuards";
 import { getSessionFromRequest, type AdminSession } from "@/lib/auth/session";
 import {
   fetchAdminMessageExportRows,
@@ -35,7 +35,7 @@ export async function handleAdminMessagesExportGet(
   request: Request,
   deps: AdminMessagesExportRouteDeps = DEFAULT_DEPS,
 ) {
-  const auth = await requireStaffOrAdminRole({
+  const auth = await requireAdminAccess({
     getSession: deps.getSession,
     responseFormat: "text",
   });

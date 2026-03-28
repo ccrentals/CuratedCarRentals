@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
+import { requireAdminAccess } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery } from "@/lib/db";
 import { isNonEmptyString, parseIntSafe, parseMoneyToCents, parseImageUrls } from "@/lib/validators";
@@ -108,7 +108,7 @@ export async function handleAdminVehiclesGet(
   request: Request,
   deps: AdminVehiclesGetDeps = DEFAULT_GET_DEPS,
 ) {
-  const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
+  const auth = await requireAdminAccess({ getSession: deps.getSession });
   if (!auth.ok) return auth.response;
 
   const includeDeleted = new URL(request.url).searchParams.get("includeDeleted") === "1";
@@ -121,7 +121,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const auth = await requireStaffOrAdminRole();
+  const auth = await requireAdminAccess();
   if (!auth.ok) return auth.response;
 
   const contentType = request.headers.get("content-type") ?? "";

@@ -1,7 +1,7 @@
 import { QuoteDetailClient } from "@/components/admin/quotes/QuoteDetailClient";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery } from "@/lib/db";
-import { isStaffRole } from "@/lib/auth/roles";
+import { canAccessAdmin } from "@/lib/auth/roles";
 
 type QuoteEventRow = {
   id: string;
@@ -25,7 +25,7 @@ export default async function AdminQuoteDetailPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const session = await getSessionFromRequest();
-  const canManage = isStaffRole(session?.role);
+  const canManage = canAccessAdmin(session?.role);
 
   if (!canManage) {
     return (

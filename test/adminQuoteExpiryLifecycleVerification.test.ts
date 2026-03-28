@@ -12,9 +12,9 @@ import { fetchAdminQuotesPage, updateAdminQuote } from "@/lib/quotes/adminQuotes
 loadEnv({ path: ".env.local" });
 loadEnv();
 
-function adminSession() {
+function adminSession(userId = "91c7c89a-9f07-4d59-b79b-f92d55f0cf8b") {
   return {
-    userId: "91c7c89a-9f07-4d59-b79b-f92d55f0cf8b",
+    userId,
     role: "ADMIN",
     expiresAt: Date.now() + 60_000,
     issuedAt: Date.now(),
@@ -26,10 +26,11 @@ async function insertTestQuote(input: {
   expiresAt: string;
   runTag: string;
   suffix: string;
+  vehicleId?: string | null;
 }) {
   const email = `${input.runTag}-${input.suffix}@example.com`;
   const result = await dbQuery<{ id: string }>(
-    "insert into quotes (status, expires_at, customer_full_name, customer_email, start_at, end_at, pickup_location_text, dropoff_location_text, vehicle_label, pricing_json, base_total_cents, insurance_total_cents, discount_total_cents, subtotal_cents, total_cents, deposit_required_cents, amount_due_cents, insurance_enabled, tags) values ($1, $2::timestamptz, $3, $4, $5::timestamptz, $6::timestamptz, $7, $8, $9, $10::jsonb, $11, $12, $13, $14, $15, $16, $17, $18, $19::text[]) returning id",
+    "insert into quotes (status, expires_at, customer_full_name, customer_email, start_at, end_at, pickup_location_text, dropoff_location_text, vehicle_id, vehicle_label, pricing_json, base_total_cents, insurance_total_cents, discount_total_cents, subtotal_cents, total_cents, deposit_required_cents, amount_due_cents, insurance_enabled, tags) values ($1, $2::timestamptz, $3, $4, $5::timestamptz, $6::timestamptz, $7, $8, $9::uuid, $10, $11::jsonb, $12, $13, $14, $15, $16, $17, $18, $19, $20::text[]) returning id",
     [
       input.status,
       input.expiresAt,
@@ -39,6 +40,7 @@ async function insertTestQuote(input: {
       "2031-01-03T10:00:00.000Z",
       "Montego Bay Airport",
       "Montego Bay Airport",
+      input.vehicleId ?? null,
       `Batch A Vehicle ${input.runTag}`,
       JSON.stringify({
         total_cents: 24000,
@@ -58,6 +60,22 @@ async function insertTestQuote(input: {
     ],
   );
   return result.rows[0].id;
+}
+
+async function loadAnyVehicleId() {
+  const result = await dbQuery<{ id: string }>(
+    "select id from vehicles where deleted_at is null order by created_at asc limit 1",
+    [],
+  );
+  return result.rows[0]?.id ?? null;
+}
+
+async function loadAnyActorUserId() {
+  const result = await dbQuery<{ id: string }>(
+    "select id from users order by created_at asc limit 1",
+    [],
+  );
+  return result.rows[0]?.id ?? null;
 }
 
 async function deleteQuotes(ids: string[]) {
@@ -137,10 +155,18 @@ test("derived expiry list filter: SENT excludes past-expired quote while EXPIRED
   }
 });
 
-test("PATCH on effectively expired quote is rejected with clear error", async (t) => {
+test("PATCH on effectively expired quote can be reactivated when expiry is moved forward", async (t) => {
   requireDatabaseOrSkip(t);
   const ids: string[] = [];
   const runTag = `quote-expired-patch-${randomUUID().slice(0, 8)}`;
+  const vehicleId = await loadAnyVehicleId();
+  const adminUserId = await loadAnyActorUserId();
+  if (!vehicleId) {
+    t.skip("No vehicle rows available; skipping DB-backed quote expiry patch verification.");
+  }
+  if (!adminUserId) {
+    t.skip("No admin user rows available; skipping DB-backed quote expiry patch verification.");
+  }
 
   try {
     const quoteId = await insertTestQuote({
@@ -148,6 +174,7 @@ test("PATCH on effectively expired quote is rejected with clear error", async (t
       expiresAt: "2020-01-01T00:00:00.000Z",
       runTag,
       suffix: "patch",
+      vehicleId,
     });
     ids.push(quoteId);
 
@@ -158,23 +185,26 @@ test("PATCH on effectively expired quote is rejected with clear error", async (t
         body: JSON.stringify({
           csrfToken: "token",
           status: "ACCEPTED",
+          expiresAt: "2035-01-01T00:00:00.000Z",
         }),
       }),
       { params: Promise.resolve({ id: quoteId }) },
       {
-        getSession: async () => adminSession(),
+        getSession: async () => adminSession(adminUserId),
         requireCsrfCheck: async () => true,
         getQuote: async () => null,
         patchQuote: updateAdminQuote,
       },
     );
 
-    assert.ok(response.status === 400 || response.status === 409);
-    const payload = (await response.json()) as { ok: boolean; code?: string; error?: string };
-    assert.equal(payload.ok, false);
-    assert.ok(payload.code === "INVALID_STATUS_TRANSITION" || payload.code === "QUOTE_EXPIRED");
-    assert.equal(typeof payload.error, "string");
-    assert.ok((payload.error ?? "").trim().length > 0);
+    assert.equal(response.status, 200);
+    const payload = (await response.json()) as {
+      ok: boolean;
+      item?: { status: string; expiresAt: string | null };
+    };
+    assert.equal(payload.ok, true);
+    assert.equal(payload.item?.status, "ACCEPTED");
+    assert.equal(payload.item?.expiresAt, "2035-01-01T00:00:00.000Z");
   } finally {
     await deleteQuotes(ids);
   }

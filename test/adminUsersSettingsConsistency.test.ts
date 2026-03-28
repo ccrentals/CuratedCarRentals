@@ -18,7 +18,7 @@ test("Settings API GET requires admin role only", () => {
   const code = read("src/app/api/admin/settings/route.ts");
   assert.match(code, /requireAdmin\?: \(\) => Promise<RequireAdminRoleResult>;/);
   assert.match(code, /deps\.requireAdmin \?\? requireAdminRole/);
-  assert.doesNotMatch(code, /requireStaffOrAdminRole/);
+  assert.doesNotMatch(code, /requireAdminAccess/);
 });
 
 test("User mutation route prevents removing last active privileged account", () => {

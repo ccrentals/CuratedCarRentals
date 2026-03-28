@@ -184,6 +184,15 @@ export type PromoValidationFailure = {
 
 export type PromoValidationResult = PromoValidationSuccess | PromoValidationFailure;
 
+export type UpsertPromoRedemptionInput = {
+  promoId: string;
+  bookingId: string;
+  customerId?: string | null;
+  customerEmail?: string | null;
+  discountAmountCents: number;
+  client?: Queryable;
+};
+
 function normalizeApplyScope(value: unknown): PromoApplyScope {
   const normalized = String(value ?? "")
     .trim()
@@ -479,6 +488,31 @@ export async function validatePromoForBooking(
     subtotalCents: subtotal,
     totalAfterDiscountCents: Math.max(0, subtotal - discountAmount),
   };
+}
+
+export async function upsertPromoRedemption(input: UpsertPromoRedemptionInput) {
+  const db = getQueryable(input.client);
+  const promoId = normalizeNullableString(input.promoId);
+  const bookingId = normalizeNullableString(input.bookingId);
+  if (!promoId || !bookingId) {
+    throw new Error("Promo and booking ids are required.");
+  }
+
+  await db.query("delete from promo_redemptions where booking_id = $1 and promo_code_id <> $2", [
+    bookingId,
+    promoId,
+  ]);
+
+  await db.query(
+    "insert into promo_redemptions (promo_code_id, booking_id, customer_id, customer_email, discount_amount_cents) values ($1, $2, $3, $4, $5) on conflict (promo_code_id, booking_id) do update set customer_id = excluded.customer_id, customer_email = excluded.customer_email, discount_amount_cents = excluded.discount_amount_cents",
+    [
+      promoId,
+      bookingId,
+      normalizeNullableString(input.customerId),
+      normalizeNullableString(input.customerEmail)?.toLowerCase() ?? null,
+      normalizePromoDiscountAmount(input.discountAmountCents),
+    ],
+  );
 }
 
 async function resolveBookingPromoId(

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
+import { requireAdminAccess } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery } from "@/lib/db";
 import { computeNextDue } from "@/lib/maintenance/due";
@@ -198,7 +198,7 @@ export async function handleVehicleMaintenanceSchedulePatch(
   context: RouteContext,
   deps: RouteDeps = DEFAULT_DEPS,
 ) {
-  const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
+  const auth = await requireAdminAccess({ getSession: deps.getSession });
   if (!auth.ok) return auth.response;
 
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
@@ -248,7 +248,7 @@ export async function handleVehicleMaintenanceScheduleDelete(
   context: RouteContext,
   deps: RouteDeps = DEFAULT_DEPS,
 ) {
-  const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
+  const auth = await requireAdminAccess({ getSession: deps.getSession });
   if (!auth.ok) return auth.response;
 
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;

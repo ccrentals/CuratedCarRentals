@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { loadAdminSettings } from "@/lib/adminSettings";
-import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
+import { requireAdminAccess } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery } from "@/lib/db";
 import { requireCsrf } from "@/lib/security/csrf";
@@ -840,7 +840,7 @@ export async function handleVehicleMaintenanceGet(
   context: RouteContext,
   deps: VehicleMaintenanceRouteDeps = DEFAULT_DEPS,
 ) {
-  const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
+  const auth = await requireAdminAccess({ getSession: deps.getSession });
   if (!auth.ok) return auth.response;
 
   const { id } = await context.params;
@@ -902,7 +902,7 @@ export async function handleVehicleMaintenancePost(
   context: RouteContext,
   deps: VehicleMaintenanceRouteDeps = DEFAULT_DEPS,
 ) {
-  const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
+  const auth = await requireAdminAccess({ getSession: deps.getSession });
   if (!auth.ok) return auth.response;
   const session = auth.session;
 

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { isAdminRole, isStaffRole } from "@/lib/auth/roles";
+import { isAdminRole, canAccessAdmin } from "@/lib/auth/roles";
 
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { TableDateTime } from "@/components/shared/TableDateTime";
@@ -137,7 +137,7 @@ export default async function AdminCustomersPage({
 }) {
   const session = await getSessionFromRequest();
   const isAdmin = isAdminRole(session?.role);
-  const isStaff = isStaffRole(session?.role);
+  const isStaff = canAccessAdmin(session?.role);
 
   if (!isStaff) {
     return (

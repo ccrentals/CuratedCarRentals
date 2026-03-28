@@ -212,7 +212,7 @@ export function Header() {
       <header className="site-header sticky top-0 z-30 border-b border-[var(--ccr-border)] bg-[var(--ccr-bg)]/88 backdrop-blur-xl">
         <Container
           className={cn(
-            "lg:hidden",
+            "lg:hidden px-4 sm:px-5",
             "flex items-center justify-between gap-3 transition-all duration-300 ease-out",
             isCompact ? "py-3" : "py-4",
           )}
@@ -271,48 +271,66 @@ export function Header() {
             </Link>
           </div>
 
-          <Button
-            href="/book"
-            className="shrink-0 whitespace-nowrap bg-[var(--ccr-accent-strong)] px-4 py-2.5 text-sm text-white hover:bg-[var(--ccr-accent)]"
-          >
-            Book Now
-          </Button>
+          <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+            <ThemeToggle
+              controlId="site-theme-toggle-toolbar-compact"
+              showLabel={false}
+              className="hidden min-[520px]:inline-flex whitespace-nowrap px-3 py-2 text-sm"
+            />
+            <Link
+              href="/admin/auth"
+              className="hidden min-[980px]:inline-flex min-h-10 items-center rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-muted)] transition hover:bg-[var(--ccr-surface-soft)] hover:text-[var(--ccr-text)]"
+              aria-label="Admin sign in"
+            >
+              Admin
+            </Link>
+            <Button
+              href="/book"
+              className="shrink-0 whitespace-nowrap bg-[var(--ccr-accent-strong)] px-4 py-2.5 text-sm text-white hover:bg-[var(--ccr-accent)]"
+            >
+              Book Now
+            </Button>
+          </div>
         </Container>
 
         <div
           className={cn(
             "hidden lg:block",
             "transition-all duration-300 ease-out",
-            isCompact ? "lg:py-3.5" : "lg:py-5",
+            isCompact ? "py-3.5" : "py-4.5",
           )}
         >
-          <div className="mx-auto grid w-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-6 px-6 lg:px-8 xl:gap-8 xl:px-10 2xl:px-12">
-            <div className="flex min-w-0 items-center justify-self-start">
+          <div className="mx-auto grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2.5 px-4 lg:px-4 xl:px-5 2xl:px-8">
+            <div className="-ml-2 flex min-w-0 shrink-0 items-center justify-self-start">
               <Link
                 href="/"
-                className="inline-flex min-w-0 items-center gap-5 xl:gap-6 text-[var(--ccr-text)]"
+                className="inline-flex min-w-0 items-center gap-2.5 text-[var(--ccr-text)] xl:gap-3.5"
                 aria-label="Go to homepage"
               >
                 <SiteLogo
-                  size={isCompact ? 54 : 68}
+                  size={isCompact ? 44 : 50}
                   className={cn(
                     "shrink-0 transition-all duration-300",
-                    isCompact ? "h-[54px] w-[54px] xl:h-[58px] xl:w-[58px]" : "h-[64px] w-[64px] xl:h-[72px] xl:w-[72px]",
+                    isCompact
+                      ? "h-[44px] w-[44px] xl:h-[46px] xl:w-[46px]"
+                      : "h-[48px] w-[48px] xl:h-[52px] xl:w-[52px] 2xl:h-[56px] 2xl:w-[56px]",
                   )}
                 />
                 <span className="min-w-0">
                   <span
                     className={cn(
                       "block truncate font-semibold tracking-tight text-[var(--ccr-text)] transition-all duration-300",
-                      isCompact ? "text-lg xl:text-xl" : "text-xl xl:text-2xl",
+                      isCompact
+                        ? "text-[0.98rem] xl:text-[1.05rem]"
+                        : "text-[1.05rem] xl:text-[1.18rem] 2xl:text-[1.35rem]",
                     )}
                   >
-                    <span className="ccr-wordmark-curated">Curated</span> Car Rentals
+                      <span className="ccr-wordmark-curated">Curated</span> Car Rentals
                   </span>
                   <span
                     className={cn(
-                      "block truncate text-[11px] uppercase tracking-[0.3em] text-[var(--ccr-muted)] transition-all duration-300",
-                      isCompact ? "max-h-0 opacity-0" : "max-h-6 opacity-100",
+                      "hidden truncate text-[10px] uppercase tracking-[0.24em] text-[var(--ccr-muted)] transition-all duration-300 2xl:block 2xl:tracking-[0.26em]",
+                      isCompact ? "max-h-0 opacity-0" : "2xl:max-h-6 2xl:opacity-100",
                     )}
                   >
                     {siteContent.tagline}
@@ -321,7 +339,7 @@ export function Header() {
               </Link>
             </div>
 
-            <nav className="flex items-center justify-center gap-5 text-base font-medium text-[var(--ccr-muted)] xl:gap-8 xl:text-[17px]">
+            <nav className="flex min-w-0 items-center justify-center gap-2 overflow-hidden px-1 text-[13px] font-semibold text-[var(--ccr-muted)] xl:gap-3 xl:px-2 xl:text-sm 2xl:gap-4 2xl:text-[18px]">
               {navLinks.map((item) => {
                 const isActive = pathname === item.href;
                 return (
@@ -329,7 +347,7 @@ export function Header() {
                     key={item.href}
                     href={item.href}
                     className={cn(
-                      "whitespace-nowrap transition hover:text-[var(--ccr-text)]",
+                      "shrink-0 whitespace-nowrap transition hover:text-[var(--ccr-text)]",
                       isActive && "text-[var(--ccr-text)]",
                     )}
                     aria-current={isActive ? "page" : undefined}
@@ -340,22 +358,22 @@ export function Header() {
               })}
             </nav>
 
-            <div className="flex items-center justify-self-end gap-3">
+            <div className="flex shrink-0 items-center justify-self-end gap-2">
               <ThemeToggle
                 controlId="site-theme-toggle-toolbar"
                 showLabel={false}
-                className="whitespace-nowrap px-4 py-2.5 text-sm"
+                className="whitespace-nowrap gap-1.5 px-2.5 py-2 text-xs [&>span:first-child]:min-w-0"
               />
               <Link
                 href="/admin/auth"
-                className="inline-flex min-h-11 items-center rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-5 py-2.5 text-sm font-semibold text-[var(--ccr-muted)] transition hover:bg-[var(--ccr-surface-soft)] hover:text-[var(--ccr-text)]"
+                className="inline-flex min-h-10 items-center rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-[13px] font-semibold text-[var(--ccr-muted)] transition hover:bg-[var(--ccr-surface-soft)] hover:text-[var(--ccr-text)] xl:px-3.5 xl:text-sm"
                 aria-label="Admin sign in"
               >
                 Admin
               </Link>
               <Button
                 href="/book"
-                className="whitespace-nowrap bg-[var(--ccr-accent-strong)] px-5 py-2.5 text-sm text-white hover:bg-[var(--ccr-accent)]"
+                className="whitespace-nowrap bg-[var(--ccr-accent-strong)] px-3 py-2 text-[13px] text-white hover:bg-[var(--ccr-accent)] xl:px-3.5 xl:text-sm"
               >
                 Book Now
               </Button>

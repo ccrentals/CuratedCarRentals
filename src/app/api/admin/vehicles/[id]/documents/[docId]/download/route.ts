@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
+import { requireAdminAccess } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery } from "@/lib/db";
 import {
@@ -62,7 +62,7 @@ export async function handleAdminVehicleDocumentDownload(
   context: VehicleDocumentDownloadRouteContext,
   deps: AdminVehicleDocumentDownloadRouteDeps = DEFAULT_DEPS,
 ) {
-  const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
+  const auth = await requireAdminAccess({ getSession: deps.getSession });
   if (!auth.ok) {
     const status = auth.reason === "unauthorized" ? 401 : 403;
     const error = auth.reason === "unauthorized" ? "Unauthorized" : "Forbidden";

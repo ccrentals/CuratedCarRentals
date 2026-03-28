@@ -1,5 +1,5 @@
 import { getSessionFromRequest } from "@/lib/auth/session";
-import { isStaffRole } from "@/lib/auth/roles";
+import { canAccessAdmin } from "@/lib/auth/roles";
 import { redirect } from "next/navigation";
 
 export default async function AdminQuotePrintPage({
@@ -10,7 +10,7 @@ export default async function AdminQuotePrintPage({
   const session = await getSessionFromRequest();
   const { id } = await params;
 
-  if (!isStaffRole(session?.role)) {
+  if (!canAccessAdmin(session?.role)) {
     return (
       <div className="mx-auto w-full max-w-4xl px-4 py-10 sm:px-6 lg:px-8">
         <h1 className="text-2xl font-bold text-[var(--ccr-text)]">Quote print</h1>

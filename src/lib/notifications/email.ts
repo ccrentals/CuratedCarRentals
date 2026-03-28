@@ -56,10 +56,6 @@ type SendEmailResult = {
   providerMessageId?: string | null;
 };
 
-function emailFailure(error: string): SendEmailResult {
-  return { ok: false, skipped: false, error };
-}
-
 async function sendResendEmail({
   to,
   subject,
@@ -160,6 +156,11 @@ type InvoiceNumberRow = {
   invoice_number: string;
 };
 
+type BookingReferenceRow = {
+  id: string;
+  public_id: string | null;
+};
+
 type InvoicePaymentContextRow = {
   provider: string;
   status: string;
@@ -170,6 +171,53 @@ type InvoicePaymentContextRow = {
 
 function normalizeText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function fallbackBookingReference(bookingId: string) {
+  return bookingId.slice(0, 8);
+}
+
+async function resolveBookingReferences(bookingIds: string[]) {
+  const uniqueIds = Array.from(
+    new Set(
+      bookingIds
+        .map((value) => normalizeText(value))
+        .filter(Boolean),
+    ),
+  );
+  const references = new Map<string, string>();
+
+  if (uniqueIds.length === 0) {
+    return references;
+  }
+
+  try {
+    const result = await dbQuery<BookingReferenceRow>(
+      "select id, public_id from bookings where id = any($1::uuid[])",
+      [uniqueIds],
+    );
+
+    for (const row of result.rows) {
+      references.set(row.id, normalizeText(row.public_id) || fallbackBookingReference(row.id));
+    }
+  } catch (error) {
+    logWarn("booking_reference_lookup_failed", {
+      bookingIds: uniqueIds,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  for (const bookingId of uniqueIds) {
+    if (!references.has(bookingId)) {
+      references.set(bookingId, fallbackBookingReference(bookingId));
+    }
+  }
+
+  return references;
+}
+
+async function resolveBookingReference(bookingId: string) {
+  return (await resolveBookingReferences([bookingId])).get(bookingId) || fallbackBookingReference(bookingId);
 }
 
 function readMoneyFromPricing(
@@ -356,7 +404,7 @@ async function buildInvoiceAttachment(input: {
     const context = await loadInvoiceContext(input.bookingId);
     const invoiceNumber = normalizeText(input.invoiceNumber) || (await allocateInvoiceNumber());
     const displayBookingId =
-      normalizeText(input.bookingPublicId) || context.bookingPublicId || input.bookingId.slice(0, 8);
+      normalizeText(input.bookingPublicId) || context.bookingPublicId || fallbackBookingReference(input.bookingId);
     const address = normalizeText(input.customerAddress) || context.customerAddress;
     const payments = input.payments.length ? input.payments : context.payments;
     const promoCode = normalizeText(input.promoCode) || context.promoCode || null;
@@ -414,20 +462,6 @@ async function buildInvoiceAttachment(input: {
 
 type InvoiceAttachmentInput = Parameters<typeof buildInvoiceAttachment>[0];
 
-async function buildRequiredInvoiceAttachment(input: InvoiceAttachmentInput) {
-  const attachments = await buildInvoiceAttachment(input);
-  if (!attachments || attachments.length === 0) {
-    return {
-      ok: false as const,
-      error: "Invoice PDF is currently unavailable. Please retry shortly.",
-    };
-  }
-  return {
-    ok: true as const,
-    attachments,
-  };
-}
-
 async function buildRentalAgreementAttachment(input: {
   bookingId: string;
   bookingPublicId?: string | null;
@@ -465,19 +499,53 @@ async function buildRentalAgreementAttachment(input: {
 
 type RentalAgreementAttachmentInput = Parameters<typeof buildRentalAgreementAttachment>[0];
 
-async function buildRequiredRentalAgreementAttachment(
-  input: RentalAgreementAttachmentInput,
+async function buildOptionalInvoiceEmailAttachment(
+  input: InvoiceAttachmentInput,
+  emailType: string,
 ) {
-  const attachments = await buildRentalAgreementAttachment(input);
-  if (!attachments || attachments.length === 0) {
+  const attachments = await buildInvoiceAttachment(input);
+  if (attachments && attachments.length > 0) {
     return {
-      ok: false as const,
-      error: "Rental agreement PDF is currently unavailable. Please retry shortly.",
+      attachments,
+      noticeHtml:
+        '<p style="font-size:12px; color:#64748b;">The attached invoice includes your live payment ledger.</p>',
     };
   }
+
+  logWarn("invoice_email_attachment_unavailable", {
+    bookingId: input.bookingId,
+    emailType,
+  });
+
   return {
-    ok: true as const,
-    attachments,
+    attachments: undefined,
+    noticeHtml:
+      '<p style="font-size:12px; color:#64748b;">Your invoice attachment is temporarily unavailable, but your booking and payment details are still available online.</p>',
+  };
+}
+
+async function buildOptionalRentalAgreementEmailAttachment(
+  input: RentalAgreementAttachmentInput,
+  emailType: string,
+) {
+  const attachments = await buildRentalAgreementAttachment(input);
+  if (attachments && attachments.length > 0) {
+    return {
+      attachments,
+      noticeHtml:
+        '<p style="font-size:12px; color:#64748b;">The attached rental agreement includes your booking terms.</p>',
+    };
+  }
+
+  logWarn("rental_agreement_email_attachment_unavailable", {
+    bookingId: input.bookingId,
+    emailType,
+  });
+
+  return {
+    attachments: undefined,
+    noticeHtml:
+      '<p style="font-size:12px; color:#64748b;">Your rental agreement attachment is temporarily unavailable, but your booking details are still available online.</p>',
   };
 }
 
@@ -516,7 +584,7 @@ async function resolveEmailFinancialSummary(
 ): Promise<EmailFinancialSummary> {
   const context = await loadInvoiceContext(input.bookingId).catch(() => null);
   const bookingReference =
-    normalizeText(context?.bookingPublicId) || input.bookingId.slice(0, 8);
+    normalizeText(context?.bookingPublicId) || fallbackBookingReference(input.bookingId);
   const promoCode = normalizeText(input.promoCode) || context?.promoCode || null;
   const promoDiscount =
     readOptionalMoney(input.promoDiscount) ?? context?.promoDiscount ?? 0;
@@ -623,36 +691,40 @@ export async function sendBookingCreatedEmail(input: {
     </div>
   `;
 
-  const agreementAttachment = await buildRequiredRentalAgreementAttachment({
-    bookingId: input.bookingId,
-    bookingPublicId: summary.bookingReference,
-    bookingStatus: "PENDING_PAYMENT",
-    startDate: input.startDate,
-    endDate: input.endDate,
-    pickupLocation: input.pickupLocation,
-    returnLocation: input.pickupLocation,
-    customerName: input.customerName,
-    customerEmail: input.customerEmail,
-    customerPhone: "",
-    vehicleMake: input.vehicleLabel,
-    vehicleModel: "",
-    vehicleYear: 0,
-    dailyRate: input.dailyRate,
-    total: summary.totalAfterDiscount,
-    deposit: summary.depositRequired,
-    paidToDate: summary.paidToDate,
-    balanceDue: summary.balanceDue,
-    paymentMethod: "Not specified",
-  });
+  const agreementAttachment = await buildOptionalRentalAgreementEmailAttachment(
+    {
+      bookingId: input.bookingId,
+      bookingPublicId: summary.bookingReference,
+      bookingStatus: "PENDING_PAYMENT",
+      startDate: input.startDate,
+      endDate: input.endDate,
+      pickupLocation: input.pickupLocation,
+      returnLocation: input.pickupLocation,
+      customerName: input.customerName,
+      customerEmail: input.customerEmail,
+      customerPhone: "",
+      vehicleMake: input.vehicleLabel,
+      vehicleModel: "",
+      vehicleYear: 0,
+      dailyRate: input.dailyRate,
+      total: summary.totalAfterDiscount,
+      deposit: summary.depositRequired,
+      paidToDate: summary.paidToDate,
+      balanceDue: summary.balanceDue,
+      paymentMethod: "Not specified",
+    },
+    "booking_created",
+  );
 
-  if (!agreementAttachment.ok) {
-    return emailFailure(agreementAttachment.error);
-  }
+  const htmlWithAttachmentNotice = html.replace(
+    '<p style="font-size:12px; color:#64748b;">The attached rental agreement includes your booking terms.</p>',
+    agreementAttachment.noticeHtml,
+  );
 
   return sendResendEmail({
     to: input.customerEmail,
     subject: "Your booking is ready — deposit required",
-    html,
+    html: htmlWithAttachmentNotice,
     attachments: agreementAttachment.attachments,
   });
 }
@@ -705,38 +777,42 @@ export async function sendDepositReceiptEmail(input: {
     </div>
   `;
 
-  const invoiceAttachment = await buildRequiredInvoiceAttachment({
-    bookingId: input.bookingId,
-    bookingPublicId: summary.bookingReference,
-    bookingStatus: "CONFIRMED",
-    startDate: input.startDate,
-    endDate: input.endDate,
-    pickupLocation: input.pickupLocation,
-    customerName: input.customerName,
-    customerEmail: input.customerEmail,
-    customerPhone: "",
-    vehicleMake: input.vehicleLabel,
-    vehicleModel: "",
-    vehicleYear: 0,
-    dailyRate: input.dailyRate,
-    deposit: summary.depositRequired,
-    insuranceTotal: summary.insuranceTotal,
-    promoCode: summary.promoCode,
-    promoDiscount: summary.promoDiscount,
-    total: summary.subtotal,
-    paidToDate: summary.paidToDate,
-    balanceDue: summary.balanceDue,
-    payments: [],
-  });
+  const invoiceAttachment = await buildOptionalInvoiceEmailAttachment(
+    {
+      bookingId: input.bookingId,
+      bookingPublicId: summary.bookingReference,
+      bookingStatus: "CONFIRMED",
+      startDate: input.startDate,
+      endDate: input.endDate,
+      pickupLocation: input.pickupLocation,
+      customerName: input.customerName,
+      customerEmail: input.customerEmail,
+      customerPhone: "",
+      vehicleMake: input.vehicleLabel,
+      vehicleModel: "",
+      vehicleYear: 0,
+      dailyRate: input.dailyRate,
+      deposit: summary.depositRequired,
+      insuranceTotal: summary.insuranceTotal,
+      promoCode: summary.promoCode,
+      promoDiscount: summary.promoDiscount,
+      total: summary.subtotal,
+      paidToDate: summary.paidToDate,
+      balanceDue: summary.balanceDue,
+      payments: [],
+    },
+    "deposit_receipt",
+  );
 
-  if (!invoiceAttachment.ok) {
-    return emailFailure(invoiceAttachment.error);
-  }
+  const htmlWithAttachmentNotice = html.replace(
+    '<p style="font-size:12px; color:#64748b;">The attached invoice includes your live payment ledger.</p>',
+    invoiceAttachment.noticeHtml,
+  );
 
   return sendResendEmail({
     to: input.customerEmail,
     subject: "Deposit received — booking confirmed",
-    html,
+    html: htmlWithAttachmentNotice,
     attachments: invoiceAttachment.attachments,
   });
 }
@@ -807,38 +883,42 @@ export async function sendPaymentUpdateEmail(input: {
     </div>
   `;
 
-  const invoiceAttachment = await buildRequiredInvoiceAttachment({
-    bookingId: input.bookingId,
-    bookingPublicId: summary.bookingReference,
-    bookingStatus: "CONFIRMED",
-    startDate: input.startDate,
-    endDate: input.endDate,
-    pickupLocation: input.pickupLocation,
-    customerName: input.customerName,
-    customerEmail: input.customerEmail,
-    customerPhone: "",
-    vehicleMake: input.vehicleLabel,
-    vehicleModel: "",
-    vehicleYear: 0,
-    dailyRate: input.dailyRate,
-    deposit: summary.depositRequired,
-    insuranceTotal: summary.insuranceTotal,
-    promoCode: summary.promoCode,
-    promoDiscount: summary.promoDiscount,
-    total: summary.subtotal,
-    paidToDate: summary.paidToDate,
-    balanceDue: summary.balanceDue,
-    payments: [],
-  });
+  const invoiceAttachment = await buildOptionalInvoiceEmailAttachment(
+    {
+      bookingId: input.bookingId,
+      bookingPublicId: summary.bookingReference,
+      bookingStatus: "CONFIRMED",
+      startDate: input.startDate,
+      endDate: input.endDate,
+      pickupLocation: input.pickupLocation,
+      customerName: input.customerName,
+      customerEmail: input.customerEmail,
+      customerPhone: "",
+      vehicleMake: input.vehicleLabel,
+      vehicleModel: "",
+      vehicleYear: 0,
+      dailyRate: input.dailyRate,
+      deposit: summary.depositRequired,
+      insuranceTotal: summary.insuranceTotal,
+      promoCode: summary.promoCode,
+      promoDiscount: summary.promoDiscount,
+      total: summary.subtotal,
+      paidToDate: summary.paidToDate,
+      balanceDue: summary.balanceDue,
+      payments: [],
+    },
+    "payment_update",
+  );
 
-  if (!invoiceAttachment.ok) {
-    return emailFailure(invoiceAttachment.error);
-  }
+  const htmlWithAttachmentNotice = html.replace(
+    '<p style="font-size:12px; color:#64748b;">The attached invoice includes your live payment ledger.</p>',
+    invoiceAttachment.noticeHtml,
+  );
 
   return sendResendEmail({
     to: input.customerEmail,
     subject: "Payment update — balance outstanding",
-    html,
+    html: htmlWithAttachmentNotice,
     attachments: invoiceAttachment.attachments,
   });
 }
@@ -907,38 +987,42 @@ export async function sendPaymentCompleteEmail(input: {
     </div>
   `;
 
-  const invoiceAttachment = await buildRequiredInvoiceAttachment({
-    bookingId: input.bookingId,
-    bookingPublicId: summary.bookingReference,
-    bookingStatus: "CONFIRMED",
-    startDate: input.startDate,
-    endDate: input.endDate,
-    pickupLocation: input.pickupLocation,
-    customerName: input.customerName,
-    customerEmail: input.customerEmail,
-    customerPhone: "",
-    vehicleMake: input.vehicleLabel,
-    vehicleModel: "",
-    vehicleYear: 0,
-    dailyRate: input.dailyRate,
-    deposit: summary.depositRequired,
-    insuranceTotal: summary.insuranceTotal,
-    promoCode: summary.promoCode,
-    promoDiscount: summary.promoDiscount,
-    total: summary.subtotal,
-    paidToDate: summary.paidToDate,
-    balanceDue: summary.balanceDue,
-    payments: [],
-  });
+  const invoiceAttachment = await buildOptionalInvoiceEmailAttachment(
+    {
+      bookingId: input.bookingId,
+      bookingPublicId: summary.bookingReference,
+      bookingStatus: "CONFIRMED",
+      startDate: input.startDate,
+      endDate: input.endDate,
+      pickupLocation: input.pickupLocation,
+      customerName: input.customerName,
+      customerEmail: input.customerEmail,
+      customerPhone: "",
+      vehicleMake: input.vehicleLabel,
+      vehicleModel: "",
+      vehicleYear: 0,
+      dailyRate: input.dailyRate,
+      deposit: summary.depositRequired,
+      insuranceTotal: summary.insuranceTotal,
+      promoCode: summary.promoCode,
+      promoDiscount: summary.promoDiscount,
+      total: summary.subtotal,
+      paidToDate: summary.paidToDate,
+      balanceDue: summary.balanceDue,
+      payments: [],
+    },
+    "payment_complete",
+  );
 
-  if (!invoiceAttachment.ok) {
-    return emailFailure(invoiceAttachment.error);
-  }
+  const htmlWithAttachmentNotice = html.replace(
+    '<p style="font-size:12px; color:#64748b;">The attached invoice includes your live payment ledger.</p>',
+    invoiceAttachment.noticeHtml,
+  );
 
   return sendResendEmail({
     to: input.customerEmail,
     subject: "Payment complete — booking paid in full",
-    html,
+    html: htmlWithAttachmentNotice,
     attachments: invoiceAttachment.attachments,
   });
 }
@@ -954,13 +1038,14 @@ export async function sendBalanceDueReminderEmail(input: {
   balanceDue: number;
 }) {
   const balanceLink = `${baseUrl()}/bookings/${input.bookingId}/balance`;
+  const bookingReference = await resolveBookingReference(input.bookingId);
 
   const html = `
     <div style="font-family: Arial, sans-serif; color: #0f172a;">
       <h2>Balance due before pickup</h2>
       <p>Hi ${input.customerName},</p>
       <p>Your pickup date is today and a balance is still outstanding.</p>
-      <p><strong>Booking reference:</strong> ${input.bookingId.slice(0, 8)}</p>
+      <p><strong>Booking reference:</strong> ${bookingReference}</p>
       <p><strong>Vehicle:</strong> ${input.vehicleLabel}</p>
       <p><strong>Dates:</strong> ${formatDateOnly(input.startDate)} → ${formatDateOnly(input.endDate)}</p>
       <p><strong>Pickup location:</strong> ${input.pickupLocation}</p>
@@ -993,13 +1078,14 @@ export async function sendDropoffReminderEmail(input: {
 }) {
   const bookingLink = `${baseUrl()}/bookings/${input.bookingId}`;
   const balanceLink = `${baseUrl()}/bookings/${input.bookingId}/balance`;
+  const bookingReference = await resolveBookingReference(input.bookingId);
 
   const html = `
     <div style="font-family: Arial, sans-serif; color: #0f172a;">
       <h2>Dropoff reminder</h2>
       <p>Hi ${input.customerName},</p>
       <p>Today is your dropoff date and there is still a balance outstanding.</p>
-      <p><strong>Booking reference:</strong> ${input.bookingId.slice(0, 8)}</p>
+      <p><strong>Booking reference:</strong> ${bookingReference}</p>
       <p><strong>Vehicle:</strong> ${input.vehicleLabel}</p>
       <p><strong>Dates:</strong> ${formatDateOnly(input.startDate)} → ${formatDateOnly(input.endDate)}</p>
       <p><strong>Pickup location:</strong> ${input.pickupLocation}</p>
@@ -1033,13 +1119,14 @@ export async function sendLateDropoffAlertEmail(input: {
 }) {
   const bookingLink = `${baseUrl()}/bookings/${input.bookingId}`;
   const balanceLink = `${baseUrl()}/bookings/${input.bookingId}/balance`;
+  const bookingReference = await resolveBookingReference(input.bookingId);
 
   const html = `
     <div style="font-family: Arial, sans-serif; color: #0f172a;">
       <h2>Late dropoff notice</h2>
       <p>Hi ${input.customerName},</p>
       <p>Your scheduled dropoff date has passed and a balance is still outstanding.</p>
-      <p><strong>Booking reference:</strong> ${input.bookingId.slice(0, 8)}</p>
+      <p><strong>Booking reference:</strong> ${bookingReference}</p>
       <p><strong>Vehicle:</strong> ${input.vehicleLabel}</p>
       <p><strong>Dates:</strong> ${formatDateOnly(input.startDate)} → ${formatDateOnly(input.endDate)}</p>
       <p><strong>Pickup location:</strong> ${input.pickupLocation}</p>
@@ -1079,6 +1166,7 @@ export async function sendBookingCancelledByBlockoutEmail(input: {
   const bookingLink = isInternal
     ? `${baseUrl()}/admin/bookings/${input.bookingId}`
     : `${baseUrl()}/bookings/${input.bookingId}`;
+  const bookingReference = await resolveBookingReference(input.bookingId);
   const greeting = isInternal ? "Operations update" : `Hi ${input.customerName},`;
   const intro = isInternal
     ? "A booking was cancelled automatically because a vehicle blockout now supersedes it."
@@ -1090,7 +1178,7 @@ export async function sendBookingCancelledByBlockoutEmail(input: {
       <h2>${isInternal ? "[Internal] Booking cancelled by blockout" : "Booking cancellation notice"}</h2>
       <p>${greeting}</p>
       <p>${intro}</p>
-      <p><strong>Booking reference:</strong> ${input.bookingId.slice(0, 8)}</p>
+      <p><strong>Booking reference:</strong> ${bookingReference}</p>
       <p><strong>Customer:</strong> ${input.customerName} (${input.customerEmail})</p>
       <p><strong>Vehicle:</strong> ${input.vehicleLabel}</p>
       <p><strong>Dates:</strong> ${formatDateOnly(input.startDate)} → ${formatDateOnly(input.endDate)}</p>
@@ -1111,7 +1199,7 @@ export async function sendBookingCancelledByBlockoutEmail(input: {
   return sendResendEmail({
     to: input.recipientEmail,
     subject: isInternal
-      ? `[Internal] Blockout cancellation — ${input.bookingId.slice(0, 8)}`
+      ? `[Internal] Blockout cancellation — ${bookingReference}`
       : "Booking cancelled due to vehicle unavailability",
     html,
   });
@@ -1130,12 +1218,19 @@ export async function sendBookingOverriddenByPaidBookingEmail(input: {
   overriddenByBookingId: string;
 }) {
   const isInternal = input.recipientType === "internal";
+  const bookingReferences = await resolveBookingReferences([
+    input.bookingId,
+    input.overriddenByBookingId,
+  ]);
+  const bookingReference =
+    bookingReferences.get(input.bookingId) || fallbackBookingReference(input.bookingId);
+  const overriddenByBookingReference =
+    bookingReferences.get(input.overriddenByBookingId) ||
+    fallbackBookingReference(input.overriddenByBookingId);
   const bookingLink = isInternal
     ? `${baseUrl()}/admin/bookings/${input.bookingId}`
     : `${baseUrl()}/bookings/${input.bookingId}`;
-  const overridingBookingLink = isInternal
-    ? `${baseUrl()}/admin/bookings/${input.overriddenByBookingId}`
-    : `${baseUrl()}/bookings/${input.overriddenByBookingId}`;
+  const overridingBookingLink = `${baseUrl()}/admin/bookings/${input.overriddenByBookingId}`;
 
   const greeting = isInternal ? "Operations update" : `Hi ${input.customerName},`;
   const intro = isInternal
@@ -1147,20 +1242,26 @@ export async function sendBookingOverriddenByPaidBookingEmail(input: {
       <h2>${isInternal ? "[Internal] Booking overridden by paid booking" : "Booking cancellation notice"}</h2>
       <p>${greeting}</p>
       <p>${intro}</p>
-      <p><strong>Booking reference:</strong> ${input.bookingId.slice(0, 8)}</p>
+      <p><strong>Booking reference:</strong> ${bookingReference}</p>
       <p><strong>Customer:</strong> ${input.customerName} (${input.customerEmail})</p>
       <p><strong>Vehicle:</strong> ${input.vehicleLabel}</p>
       <p><strong>Dates:</strong> ${formatDateOnly(input.startDate)} → ${formatDateOnly(input.endDate)}</p>
       <p><strong>Pickup location:</strong> ${input.pickupLocation}</p>
       <hr />
-      <p><strong>Overridden by booking:</strong> ${input.overriddenByBookingId.slice(0, 8)}</p>
+      ${
+        isInternal
+          ? `<p><strong>Overridden by booking:</strong> ${overriddenByBookingReference}</p>`
+          : ""
+      }
       <p style="margin-top: 16px;">
         <a href="${bookingLink}" style="background:#1f2d4d; color:#fff; padding:10px 16px; border-radius:8px; text-decoration:none;">${
           isInternal ? "Open Overridden Booking" : "View Booking"
         }</a>
-        <a href="${overridingBookingLink}" style="margin-left:12px; color:#1f2d4d; text-decoration:underline;">${
-          isInternal ? "Open Paid Booking" : "View Paid Booking"
-        }</a>
+        ${
+          isInternal
+            ? `<a href="${overridingBookingLink}" style="margin-left:12px; color:#1f2d4d; text-decoration:underline;">Open Paid Booking</a>`
+            : ""
+        }
       </p>
       ${isInternal ? "" : policyHtml()}
       <p style="font-size:12px; color:#64748b;">${isInternal ? "This is an internal operations alert." : "Need help? Reply to this email."}</p>
@@ -1170,7 +1271,7 @@ export async function sendBookingOverriddenByPaidBookingEmail(input: {
   return sendResendEmail({
     to: input.recipientEmail,
     subject: isInternal
-      ? `[Internal] Booking overridden — ${input.bookingId.slice(0, 8)}`
+      ? `[Internal] Booking overridden — ${bookingReference}`
       : "Booking cancelled — vehicle reserved by another paid booking",
     html,
   });
@@ -1223,6 +1324,7 @@ export async function sendBookingNoteEmail(input: {
 }) {
   const bookingLink = `${baseUrl()}/admin/bookings/${input.bookingId}`;
   const notePrefix = input.recipientType === "internal" ? "[Internal] " : "";
+  const bookingReference = await resolveBookingReference(input.bookingId);
   const scheduleLine = input.scheduledFor
     ? `<p><strong>Scheduled send:</strong> ${formatDateTime(input.scheduledFor)}</p>`
     : "";
@@ -1230,7 +1332,7 @@ export async function sendBookingNoteEmail(input: {
   const html = `
     <div style="font-family: Arial, sans-serif; color: #0f172a;">
       <h2>${notePrefix}Booking note update</h2>
-      <p><strong>Booking reference:</strong> ${input.bookingId.slice(0, 8)}</p>
+      <p><strong>Booking reference:</strong> ${bookingReference}</p>
       <p><strong>Customer:</strong> ${input.customerName} (${input.customerEmail})</p>
       <p><strong>Vehicle:</strong> ${input.vehicleLabel}</p>
       <p><strong>Dates:</strong> ${formatDateOnly(input.startDate)} → ${formatDateOnly(input.endDate)}</p>
@@ -1254,7 +1356,7 @@ export async function sendBookingNoteEmail(input: {
 
   return sendResendEmail({
     to: input.recipientEmail,
-    subject: `${notePrefix}Booking note — ${input.bookingId.slice(0, 8)}`,
+    subject: `${notePrefix}Booking note — ${bookingReference}`,
     html,
   });
 }
@@ -1271,13 +1373,14 @@ export async function sendPickupReminderEmail(input: {
 }) {
   const bookingLink = `${baseUrl()}/bookings/${input.bookingId}`;
   const balanceLink = `${baseUrl()}/bookings/${input.bookingId}/balance`;
+  const bookingReference = await resolveBookingReference(input.bookingId);
 
   const html = `
     <div style="font-family: Arial, sans-serif; color: #0f172a;">
       <h2>Pickup reminder</h2>
       <p>Hi ${input.customerName},</p>
       <p>This is a reminder for your upcoming pickup.</p>
-      <p><strong>Booking reference:</strong> ${input.bookingId.slice(0, 8)}</p>
+      <p><strong>Booking reference:</strong> ${bookingReference}</p>
       <p><strong>Vehicle:</strong> ${input.vehicleLabel}</p>
       <p><strong>Dates:</strong> ${formatDateOnly(input.startDate)} → ${formatDateOnly(input.endDate)}</p>
       <p><strong>Pickup location:</strong> ${input.pickupLocation}</p>

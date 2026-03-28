@@ -230,8 +230,8 @@ function normalizeRulesRow(vehicleId: string, row: VehiclePricingRulesRow | null
   return {
     id: row.id,
     vehicleId,
-    baseDailyRateCents: null,
-    baseDepositCents: null,
+    baseDailyRateCents: normalizeOptionalMoney(row.base_daily_rate_cents),
+    baseDepositCents: normalizeOptionalMoney(row.base_deposit_cents),
     weekendDailyRateCents: normalizeOptionalMoney(row.weekend_daily_rate_cents),
     dateRangeOverrides: parseDateRangeOverrides(row.date_range_overrides_json),
     deliveryEnabled: Boolean(row.delivery_enabled),
@@ -427,7 +427,10 @@ function resolveDailyRateForDate(
   profile: VehiclePricingProfile,
 ): { dailyRateCents: number; source: "base" | "weekend" | "date_override" } {
   const rules = profile.rules;
-  const baseDaily = profile.defaultDailyRateCents;
+  const baseDaily =
+    rules.isActive && rules.baseDailyRateCents !== null
+      ? rules.baseDailyRateCents
+      : profile.defaultDailyRateCents;
 
   if (rules.isActive) {
     let matchedOverride: VehiclePricingDateRangeOverride | null = null;
@@ -461,7 +464,7 @@ function resolveDeposit(profile: VehiclePricingProfile, startDateKey: string) {
   }
 
   if (overrideDeposit !== null) return overrideDeposit;
-  return profile.defaultDepositCents;
+  return rules.baseDepositCents ?? profile.defaultDepositCents;
 }
 
 function resolveDeliveryFee(input: {

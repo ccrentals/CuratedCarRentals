@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  requireAdminAccess,
   requireAdminRole,
-  requireStaffOrAdminRole,
   resolveAdminActor,
 } from "@/lib/auth/adminGuards";
 import type { AdminSession } from "@/lib/auth/session";
@@ -23,7 +23,7 @@ function makeSession(
 }
 
 test("admin guards: unauthenticated requests are rejected", async () => {
-  const result = await requireStaffOrAdminRole({ getSession: async () => null });
+  const result = await requireAdminAccess({ getSession: async () => null });
   assert.equal(result.ok, false);
   if (!result.ok) {
     assert.equal(result.reason, "unauthorized");
@@ -31,8 +31,8 @@ test("admin guards: unauthenticated requests are rejected", async () => {
   }
 });
 
-test("admin guards: non-staff role is forbidden", async () => {
-  const result = await requireStaffOrAdminRole({
+test("admin guards: non-admin role is forbidden", async () => {
+  const result = await requireAdminAccess({
     getSession: async () => makeSession("CUSTOMER"),
   });
   assert.equal(result.ok, false);
@@ -42,9 +42,9 @@ test("admin guards: non-staff role is forbidden", async () => {
   }
 });
 
-test("admin guards: Clerk-bridge non-staff role is forbidden with actor context", async () => {
+test("admin guards: Clerk-bridge non-admin role is forbidden with actor context", async () => {
   const result = await resolveAdminActor({
-    requirement: "staff",
+    requirement: "admin",
     getSession: async () => makeSession("CUSTOMER", "clerk"),
   });
   assert.equal(result.ok, false);
@@ -55,14 +55,14 @@ test("admin guards: Clerk-bridge non-staff role is forbidden with actor context"
   }
 });
 
-test("admin guards: staff role passes staff guard but not admin guard", async () => {
-  const staffResult = await requireStaffOrAdminRole({
+test("admin guards: user role is forbidden for admin access", async () => {
+  const accessResult = await requireAdminAccess({
     getSession: async () => makeSession("USER"),
   });
-  assert.equal(staffResult.ok, true);
-  if (staffResult.ok) {
-    assert.equal(staffResult.actor.appRole, "USER");
-    assert.equal(staffResult.actor.authSource, "legacy");
+  assert.equal(accessResult.ok, false);
+  if (!accessResult.ok) {
+    assert.equal(accessResult.reason, "forbidden");
+    assert.equal(accessResult.response.status, 403);
   }
 
   const adminResult = await requireAdminRole({
@@ -88,7 +88,7 @@ test("admin guards: admin role passes admin guard", async () => {
 
 test("admin guards: clerk bridge actor context is normalized", async () => {
   const result = await resolveAdminActor({
-    requirement: "staff",
+    requirement: "admin",
     getSession: async () => makeSession("DEVELOPER", "clerk"),
   });
 
@@ -114,7 +114,7 @@ test("admin guards: text response format is supported", async () => {
 });
 
 test("admin guards: json unauthorized and forbidden payloads are consistent", async () => {
-  const unauthorized = await requireStaffOrAdminRole({ getSession: async () => null });
+  const unauthorized = await requireAdminAccess({ getSession: async () => null });
   assert.equal(unauthorized.ok, false);
   if (!unauthorized.ok) {
     assert.equal(unauthorized.response.status, 401);

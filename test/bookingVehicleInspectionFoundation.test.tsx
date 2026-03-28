@@ -429,6 +429,55 @@ test("booking vehicle inspection image helper: stores upload metadata with booki
   assert.equal(metadata.category, "ODOMETER");
 });
 
+test("booking vehicle inspection image helper: rejects external URLs that only mimic Uploadcare refs", async () => {
+  await assert.rejects(
+    () =>
+      createBookingVehicleInspectionImages(
+        BOOKING_ID,
+        {
+          inspectionId: PICKUP_INSPECTION_ID,
+          inspectionType: "PICKUP",
+          category: "ODOMETER",
+          uploadedByUserId: "admin-user-id",
+          files: [
+            {
+              storageProvider: "UPLOADCARE_FILE_ID",
+              storageKey: "https://attacker.example/f5a4c5f0-1234-4d1d-9ef5-000000000111/",
+              mimeType: "image/png",
+            },
+          ],
+        },
+        {
+          query: async <T = unknown>(text: string) => {
+            if (text.includes("from bookings b") && text.includes("join booking_vehicle_inspections i")) {
+              return {
+                rows: [
+                  {
+                    booking_id: BOOKING_ID,
+                    booking_public_id: "BK000334",
+                    inspection_id: PICKUP_INSPECTION_ID,
+                    inspection_type: "PICKUP",
+                  },
+                ] as T[],
+                rowCount: 1,
+              };
+            }
+
+            if (text.includes("select max(sort_order)::int")) {
+              return {
+                rows: [{ max_sort_order: 0 }] as T[],
+                rowCount: 1,
+              };
+            }
+
+            throw new Error(`Unexpected query: ${text}`);
+          },
+        },
+      ),
+    /INVALID_IMAGE_STORAGE_REFERENCE/,
+  );
+});
+
 test("booking vehicle inspection image helper: archives inspection images", async () => {
   const archived = await archiveBookingVehicleInspectionImage(
     BOOKING_ID,
@@ -1540,7 +1589,7 @@ test("booking vehicle inspection route: GET requires auth", async () => {
     new Request(`http://localhost/api/admin/bookings/${BOOKING_ID}/inspections`),
     { params: Promise.resolve({ id: BOOKING_ID }) },
     {
-      requireStaff: async () =>
+      requireAdminAccess: async () =>
         ({
           ok: false,
           reason: "unauthorized",
@@ -1557,7 +1606,7 @@ test("booking vehicle inspection route: GET returns pickup and return summaries"
     new Request(`http://localhost/api/admin/bookings/${BOOKING_ID}/inspections`),
     { params: Promise.resolve({ id: BOOKING_ID }) },
     {
-      requireStaff: async () => authorizedStaffResult(),
+      requireAdminAccess: async () => authorizedStaffResult(),
       loadInspections: async () => sampleInspectionSet(),
     },
   );
@@ -1591,7 +1640,7 @@ test("booking vehicle inspection image route: upload saves images with category 
     }),
     { params: Promise.resolve({ id: BOOKING_ID }) },
     {
-      requireStaff: async () => authorizedStaffResult(),
+      requireAdminAccess: async () => authorizedStaffResult(),
       requireCsrfCheck: async () => true,
       getBookingStatus: async () => "CONFIRMED",
       loadInspections: async () => sampleInspectionSet(),
@@ -1630,7 +1679,7 @@ test("booking vehicle inspection image route: locked inspections reject image ch
     }),
     { params: Promise.resolve({ id: BOOKING_ID }) },
     {
-      requireStaff: async () => authorizedStaffResult(),
+      requireAdminAccess: async () => authorizedStaffResult(),
       requireCsrfCheck: async () => true,
       getBookingStatus: async () => "PICKED_UP",
     },
@@ -1657,7 +1706,7 @@ test("booking vehicle inspection image route: delete archives image and returns 
     ),
     { params: Promise.resolve({ id: BOOKING_ID, imageId: PICKUP_IMAGE_ID }) },
     {
-      requireStaff: async () => authorizedStaffResult(),
+      requireAdminAccess: async () => authorizedStaffResult(),
       requireCsrfCheck: async () => true,
       getBookingStatus: async () => "CONFIRMED",
       loadInspections: async () =>
@@ -1805,7 +1854,7 @@ test("booking vehicle inspection route: odometer correction is admin-only", asyn
     }),
     { params: Promise.resolve({ id: BOOKING_ID }) },
     {
-      requireStaff: async () => authorizedUserResult(),
+      requireAdminAccess: async () => authorizedUserResult(),
       requireCsrfCheck: async () => true,
     },
   );
@@ -1831,7 +1880,7 @@ test("booking vehicle inspection route: odometer correction requires a reason", 
     }),
     { params: Promise.resolve({ id: BOOKING_ID }) },
     {
-      requireStaff: async () => authorizedStaffResult(),
+      requireAdminAccess: async () => authorizedStaffResult(),
       requireCsrfCheck: async () => true,
     },
   );
@@ -1859,7 +1908,7 @@ test("booking vehicle inspection route: odometer correction writes audit and ret
     }),
     { params: Promise.resolve({ id: BOOKING_ID }) },
     {
-      requireStaff: async () => authorizedStaffResult(),
+      requireAdminAccess: async () => authorizedStaffResult(),
       requireCsrfCheck: async () => true,
       correctInspectionOdometer: async () => ({
         ok: true,
@@ -1939,7 +1988,7 @@ test("booking vehicle inspection route: invalid odometer correction values are r
     }),
     { params: Promise.resolve({ id: BOOKING_ID }) },
     {
-      requireStaff: async () => authorizedStaffResult(),
+      requireAdminAccess: async () => authorizedStaffResult(),
       requireCsrfCheck: async () => true,
     },
   );
@@ -1983,7 +2032,7 @@ test("booking vehicle inspection route: PUT upserts draft inspection foundation 
     }),
     { params: Promise.resolve({ id: BOOKING_ID }) },
     {
-      requireStaff: async () => authorizedStaffResult(),
+      requireAdminAccess: async () => authorizedStaffResult(),
       requireCsrfCheck: async () => true,
       getBookingStatus: async () => "CONFIRMED",
       saveInspection: async (bookingId, input) => {
@@ -2069,7 +2118,7 @@ test("booking vehicle inspection route: draft save does not update vehicle odome
     }),
     { params: Promise.resolve({ id: BOOKING_ID }) },
     {
-      requireStaff: async () => authorizedStaffResult(),
+      requireAdminAccess: async () => authorizedStaffResult(),
       requireCsrfCheck: async () => true,
       getBookingStatus: async () => "CONFIRMED",
       loadInspections: async () =>
@@ -2123,7 +2172,7 @@ test("booking vehicle inspection route: completing pickup inspection requires od
     }),
     { params: Promise.resolve({ id: BOOKING_ID }) },
     {
-      requireStaff: async () => authorizedStaffResult(),
+      requireAdminAccess: async () => authorizedStaffResult(),
       requireCsrfCheck: async () => true,
       getBookingStatus: async () => "CONFIRMED",
     },
@@ -2155,7 +2204,7 @@ test("booking vehicle inspection route: completion works and returns completed s
     }),
     { params: Promise.resolve({ id: BOOKING_ID }) },
     {
-      requireStaff: async () => authorizedStaffResult(),
+      requireAdminAccess: async () => authorizedStaffResult(),
       requireCsrfCheck: async () => true,
       getBookingStatus: async () => "CONFIRMED",
       loadInspections: async () => {
@@ -2242,7 +2291,7 @@ test("booking vehicle inspection route: completion blocks odometer rollback agai
     }),
     { params: Promise.resolve({ id: BOOKING_ID }) },
     {
-      requireStaff: async () => authorizedStaffResult(),
+      requireAdminAccess: async () => authorizedStaffResult(),
       requireCsrfCheck: async () => true,
       getBookingStatus: async () => "CONFIRMED",
       loadInspections: async () =>
@@ -2276,7 +2325,7 @@ test("booking vehicle inspection route: pickup inspection is locked after pickup
     }),
     { params: Promise.resolve({ id: BOOKING_ID }) },
     {
-      requireStaff: async () => authorizedStaffResult(),
+      requireAdminAccess: async () => authorizedStaffResult(),
       requireCsrfCheck: async () => true,
       getBookingStatus: async () => "PICKED_UP",
     },
@@ -2321,7 +2370,7 @@ test("booking vehicle inspection route: return draft save works after pickup", a
     }),
     { params: Promise.resolve({ id: BOOKING_ID }) },
     {
-      requireStaff: async () => authorizedStaffResult(),
+      requireAdminAccess: async () => authorizedStaffResult(),
       requireCsrfCheck: async () => true,
       getBookingStatus: async () => "PICKED_UP",
       saveInspection: async (bookingId, input) => {
@@ -2400,7 +2449,7 @@ test("booking vehicle inspection route: return draft save does not update vehicl
     }),
     { params: Promise.resolve({ id: BOOKING_ID }) },
     {
-      requireStaff: async () => authorizedStaffResult(),
+      requireAdminAccess: async () => authorizedStaffResult(),
       requireCsrfCheck: async () => true,
       getBookingStatus: async () => "PICKED_UP",
       loadInspections: async () =>
@@ -2458,7 +2507,7 @@ test("booking vehicle inspection route: completing return inspection requires od
     }),
     { params: Promise.resolve({ id: BOOKING_ID }) },
     {
-      requireStaff: async () => authorizedStaffResult(),
+      requireAdminAccess: async () => authorizedStaffResult(),
       requireCsrfCheck: async () => true,
       getBookingStatus: async () => "PICKED_UP",
     },
@@ -2488,7 +2537,7 @@ test("booking vehicle inspection route: completing a damage inspection requires 
     }),
     { params: Promise.resolve({ id: BOOKING_ID }) },
     {
-      requireStaff: async () => authorizedStaffResult(),
+      requireAdminAccess: async () => authorizedStaffResult(),
       requireCsrfCheck: async () => true,
       getBookingStatus: async () => "PICKED_UP",
       loadInspections: async () =>
@@ -2540,7 +2589,7 @@ test("booking vehicle inspection route: return completion works and returns comp
     }),
     { params: Promise.resolve({ id: BOOKING_ID }) },
     {
-      requireStaff: async () => authorizedStaffResult(),
+      requireAdminAccess: async () => authorizedStaffResult(),
       requireCsrfCheck: async () => true,
       getBookingStatus: async () => "PICKED_UP",
       loadInspections: async () => {
@@ -2641,7 +2690,7 @@ test("booking vehicle inspection route: return completion blocks odometer rollba
     }),
     { params: Promise.resolve({ id: BOOKING_ID }) },
     {
-      requireStaff: async () => authorizedStaffResult(),
+      requireAdminAccess: async () => authorizedStaffResult(),
       requireCsrfCheck: async () => true,
       getBookingStatus: async () => "PICKED_UP",
       loadInspections: async () =>
@@ -2679,7 +2728,7 @@ test("booking vehicle inspection route: return inspection remains unavailable be
     }),
     { params: Promise.resolve({ id: BOOKING_ID }) },
     {
-      requireStaff: async () => authorizedStaffResult(),
+      requireAdminAccess: async () => authorizedStaffResult(),
       requireCsrfCheck: async () => true,
       getBookingStatus: async () => "CONFIRMED",
     },
@@ -2704,7 +2753,7 @@ test("booking vehicle inspection route: return inspection is locked after bookin
     }),
     { params: Promise.resolve({ id: BOOKING_ID }) },
     {
-      requireStaff: async () => authorizedStaffResult(),
+      requireAdminAccess: async () => authorizedStaffResult(),
       requireCsrfCheck: async () => true,
       getBookingStatus: async () => "RETURNED",
     },

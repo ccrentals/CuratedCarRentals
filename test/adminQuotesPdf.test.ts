@@ -241,7 +241,7 @@ test("admin quote document route returns metadata for native provider without em
     new Request("http://localhost/api/admin/quotes/c3ad4e53-f14f-4ac9-98fd-f4bacf1ec3d2/pdf-document"),
     { params: Promise.resolve({ id: quote.id }) },
     {
-      requireStaff: async () => ({
+      requireAdminAccess: async () => ({
         ok: true,
         actor: { userId: "admin-user-id", role: "ADMIN", appRole: "ADMIN", authSource: "legacy" },
         session: { userId: "admin-user-id", role: "ADMIN" },
@@ -276,7 +276,7 @@ test("admin quote document route honors PDFMonkey override safely", async () => 
     new Request(`http://localhost/api/admin/quotes/${quote.id}/pdf-document?provider=pdfmonkey`),
     { params: Promise.resolve({ id: quote.id }) },
     {
-      requireStaff: async () => ({
+      requireAdminAccess: async () => ({
         ok: true,
         actor: { userId: "admin-user-id", role: "ADMIN", appRole: "ADMIN", authSource: "legacy" },
         session: { userId: "admin-user-id", role: "ADMIN" },
@@ -310,7 +310,7 @@ test("admin quote document route rejects invalid provider values", async () => {
     new Request("http://localhost/api/admin/quotes/c3ad4e53-f14f-4ac9-98fd-f4bacf1ec3d2/pdf-document?provider=wat"),
     { params: Promise.resolve({ id: "c3ad4e53-f14f-4ac9-98fd-f4bacf1ec3d2" }) },
     {
-      requireStaff: async () => ({
+      requireAdminAccess: async () => ({
         ok: true,
         actor: { userId: "admin-user-id", role: "ADMIN", appRole: "ADMIN", authSource: "legacy" },
         session: { userId: "admin-user-id", role: "ADMIN" },

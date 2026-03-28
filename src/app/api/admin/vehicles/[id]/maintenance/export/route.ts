@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { handleVehicleMaintenanceGet } from "@/app/api/admin/vehicles/[id]/maintenance/route";
-import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
+import { requireAdminAccess } from "@/lib/auth/adminGuards";
 import { getSessionFromRequest } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
@@ -55,7 +55,7 @@ function formatMoney(cents: number | null | undefined) {
 
 const DEFAULT_DEPS: VehicleMaintenanceExportRouteDeps = {
   authorize: async () => {
-    const auth = await requireStaffOrAdminRole({ getSession: () => getSessionFromRequest() });
+    const auth = await requireAdminAccess({ getSession: () => getSessionFromRequest() });
     return auth.ok ? null : auth.response;
   },
   fetchPage: (request, context) => handleVehicleMaintenanceGet(request, context),

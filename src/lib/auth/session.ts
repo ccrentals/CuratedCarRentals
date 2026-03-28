@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { auth, currentUser } from "@clerk/nextjs/server";
 
-import { isStaffRole } from "@/lib/auth/roles";
+import { canAccessAdmin } from "@/lib/auth/roles";
 import { dbQuery } from "@/lib/db";
 import { logWarn } from "@/lib/log";
 import { isClerkEnabled, shouldEnforceClerkOnAdminRoutes } from "@/lib/security/clerk";
@@ -22,12 +22,12 @@ export type AdminSession = {
   clerkUserId?: string;
 };
 
-export type ClerkBridgeMode = "staff-only" | "any-local-user";
+export type ClerkBridgeMode = "admin-only" | "any-local-user";
 
 export type GetSessionFromRequestOptions = {
   /**
-   * `staff-only` keeps pre-cutover semantics and only returns bridge sessions for staff roles.
-   * `any-local-user` allows non-staff bridge sessions to propagate so admin guards can return 403.
+   * `admin-only` keeps admin-route semantics and only returns bridge sessions for admin-capable roles.
+   * `any-local-user` allows non-admin bridge sessions to propagate so admin guards can return 403.
    */
   clerkBridgeMode?: ClerkBridgeMode;
 };
@@ -184,7 +184,7 @@ async function getSessionFromClerkBridge(
   if (!isClerkAdminBridgeEnabled()) {
     return null;
   }
-  const bridgeMode = options.clerkBridgeMode ?? "staff-only";
+  const bridgeMode = options.clerkBridgeMode ?? "admin-only";
 
   const authState = await auth().catch(() => null);
   if (!authState?.userId || authState.sessionStatus !== "active") {
@@ -225,7 +225,7 @@ async function getSessionFromClerkBridge(
     }
 
     const mappedUser = mappedUserResult.user;
-    if (!isStaffRole(mappedUser.role)) {
+    if (!canAccessAdmin(mappedUser.role)) {
       logWarn("auth.session.clerkBridgeRoleDenied", {
         clerkUserId,
         localUserId: mappedUser.id,

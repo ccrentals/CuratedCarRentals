@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
+import { requireAdminAccess } from "@/lib/auth/adminGuards";
 import { hashPassword } from "@/lib/auth/password";
 import { dbQuery } from "@/lib/db";
 import { isNonEmptyString } from "@/lib/validators";
@@ -16,7 +16,7 @@ function isUndefinedColumn(error: unknown, column: string) {
 export async function POST(request: Request) {
   // Legacy first-login password reset flow for cookie-auth admins.
   // Retire after full Clerk admin cutover and verified inactivity.
-  const auth = await requireStaffOrAdminRole();
+  const auth = await requireAdminAccess();
   if (!auth.ok) return auth.response;
   const session = auth.session;
 

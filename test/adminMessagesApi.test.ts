@@ -58,7 +58,7 @@ test("admin messages API: list requires auth", async () => {
   assert.equal(response.status, 401);
 });
 
-test("admin messages API: non-staff role is forbidden", async () => {
+test("admin messages API: non-admin role is forbidden", async () => {
   const response = await handleAdminMessagesListGet(
     new Request("http://localhost/api/admin/messages"),
     {
@@ -81,7 +81,7 @@ test("admin messages API: non-staff role is forbidden", async () => {
   assert.equal(response.status, 403);
 });
 
-test("admin messages API: staff role can access admin list", async () => {
+test("admin messages API: user role is forbidden from admin list", async () => {
   const response = await handleAdminMessagesListGet(
     new Request("http://localhost/api/admin/messages"),
     {
@@ -101,7 +101,7 @@ test("admin messages API: staff role can access admin list", async () => {
     },
   );
 
-  assert.equal(response.status, 200);
+  assert.equal(response.status, 403);
 });
 
 test("admin messages API: list returns items", async () => {
@@ -353,7 +353,7 @@ test("admin messages API: bulk endpoint updates statuses", async () => {
   ]);
 });
 
-test("admin messages API: permanent delete allows staff for trashed rows", async () => {
+test("admin messages API: permanent delete allows admin for trashed rows", async () => {
   const response = await handleAdminMessagePatch(
     new Request("http://localhost/api/admin/messages/msg-1", {
       method: "PATCH",
@@ -366,7 +366,7 @@ test("admin messages API: permanent delete allows staff for trashed rows", async
     {
       getSession: async () => ({
         userId: "91c7c89a-9f07-4d59-b79b-f92d55f0cf8b",
-        role: "USER",
+        role: "ADMIN",
         expiresAt: 999999999,
         issuedAt: 999999000,
       }),
@@ -428,7 +428,7 @@ test("admin messages API: bulk permanent delete rejects non-trashed rows", async
   assert.equal(response.status, 400);
 });
 
-test("admin messages API: bulk permanent delete allows staff", async () => {
+test("admin messages API: bulk permanent delete allows admin", async () => {
   const auditEntityIds: string[] = [];
 
   const response = await handleAdminMessagesBulkPost(
@@ -447,7 +447,7 @@ test("admin messages API: bulk permanent delete allows staff", async () => {
     {
       getSession: async () => ({
         userId: "91c7c89a-9f07-4d59-b79b-f92d55f0cf8b",
-        role: "USER",
+        role: "ADMIN",
         expiresAt: 999999999,
         issuedAt: 999999000,
       }),

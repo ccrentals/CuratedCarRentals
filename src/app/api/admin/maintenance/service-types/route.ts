@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { requireAdminRole, requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
+import { requireAdminRole, requireAdminAccess } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery } from "@/lib/db";
 import {
@@ -93,7 +93,7 @@ export async function handleMaintenanceServiceTypesGet(
   _request: Request,
   deps: RouteDeps = DEFAULT_DEPS,
 ) {
-  const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
+  const auth = await requireAdminAccess({ getSession: deps.getSession });
   if (!auth.ok) return auth.response;
 
   try {

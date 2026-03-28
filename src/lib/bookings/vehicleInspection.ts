@@ -890,7 +890,7 @@ export async function createBookingVehicleInspectionImages(
 
     const rawStorageKey = normalizeText(file.storageKey);
     const normalizedStorageKey =
-      extractUploadcareDeliveryUrl(rawStorageKey) ?? extractUploadcareFileId(rawStorageKey);
+      extractUploadcareFileId(rawStorageKey) ?? extractUploadcareDeliveryUrl(rawStorageKey);
     if (!normalizedStorageKey) {
       throw new Error("INVALID_IMAGE_STORAGE_REFERENCE");
     }

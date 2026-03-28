@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { requireAdminRole, requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
+import { requireAdminRole, requireAdminAccess } from "@/lib/auth/adminGuards";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { fetchAdminBookingsPage } from "@/lib/bookings/adminBookingsList";
 import {
@@ -40,7 +40,7 @@ export async function handleAdminBookingsGet(
   request: Request,
   deps: AdminBookingsGetRouteDeps = DEFAULT_BOOKINGS_GET_DEPS,
 ) {
-  const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
+  const auth = await requireAdminAccess({ getSession: deps.getSession });
   if (!auth.ok) return auth.response;
 
   const { searchParams } = new URL(request.url);

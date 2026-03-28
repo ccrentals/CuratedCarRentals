@@ -1,4 +1,4 @@
-import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
+import { requireAdminAccess } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import {
   DEPRECIATION_REPORT_SORT_COLUMNS,
@@ -62,7 +62,7 @@ export async function handleAdminDepreciationExportGet(
   request: Request,
   deps: ExportDeps = DEFAULT_DEPS,
 ) {
-  const auth = await requireStaffOrAdminRole({
+  const auth = await requireAdminAccess({
     getSession: deps.getSession,
     responseFormat: "text",
   });

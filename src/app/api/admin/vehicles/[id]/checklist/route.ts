@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
+import { requireAdminAccess } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import { loadAdminSettings } from "@/lib/adminSettings";
 import { dbQuery } from "@/lib/db";
@@ -235,7 +235,7 @@ export async function handleAdminVehicleChecklistGet(
   context: ChecklistRouteContext,
   deps: AdminVehicleChecklistRouteDeps = DEFAULT_DEPS,
 ) {
-  const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
+  const auth = await requireAdminAccess({ getSession: deps.getSession });
   if (!auth.ok) return auth.response;
 
   const { id } = await context.params;
@@ -262,7 +262,7 @@ export async function handleAdminVehicleChecklistPost(
   context: ChecklistRouteContext,
   deps: AdminVehicleChecklistRouteDeps = DEFAULT_DEPS,
 ) {
-  const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
+  const auth = await requireAdminAccess({ getSession: deps.getSession });
   if (!auth.ok) return auth.response;
 
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;

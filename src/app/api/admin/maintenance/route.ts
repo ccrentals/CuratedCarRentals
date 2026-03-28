@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
+import { requireAdminAccess } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import { normalizeMaintenanceSearchTerm } from "@/lib/maintenance/normalize";
 import {
@@ -75,7 +75,7 @@ const DEFAULT_DEPS: Deps = {
 };
 
 export async function handleAdminMaintenanceGet(request: Request, deps: Deps = DEFAULT_DEPS) {
-  const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
+  const auth = await requireAdminAccess({ getSession: deps.getSession });
   if (!auth.ok) return auth.response;
 
   const { searchParams } = new URL(request.url);

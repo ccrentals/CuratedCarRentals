@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
+import { requireAdminAccess } from "@/lib/auth/adminGuards";
 import { hasRequiredAdminAccess } from "@/lib/auth/roles";
 import { writeAuditLog } from "@/lib/audit";
 import {
@@ -27,7 +27,7 @@ const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export type AdminBookingInspectionRouteDeps = {
-  requireStaff: typeof requireStaffOrAdminRole;
+  requireAdminAccess: typeof requireAdminAccess;
   requireCsrfCheck: (request: Request, bodyToken?: string | null) => Promise<boolean>;
   getBookingStatus: (bookingId: string) => Promise<string | null>;
   loadInspections: typeof loadBookingVehicleInspectionSummaries;
@@ -39,7 +39,7 @@ export type AdminBookingInspectionRouteDeps = {
 };
 
 const DEFAULT_DEPS: AdminBookingInspectionRouteDeps = {
-  requireStaff: requireStaffOrAdminRole,
+  requireAdminAccess: requireAdminAccess,
   requireCsrfCheck: (request, bodyToken) => requireCsrf(request, bodyToken),
   getBookingStatus: async (bookingId) => {
     const result = await dbQuery<{ status: string }>(
@@ -169,7 +169,7 @@ export async function handleAdminBookingInspectionsGet(
   deps: Partial<AdminBookingInspectionRouteDeps> = {},
 ) {
   const resolvedDeps = { ...DEFAULT_DEPS, ...deps };
-  const auth = await resolvedDeps.requireStaff();
+  const auth = await resolvedDeps.requireAdminAccess();
   if (!auth.ok) return auth.response;
 
   const { id } = await params;
@@ -208,7 +208,7 @@ export async function handleAdminBookingInspectionsPut(
   deps: Partial<AdminBookingInspectionRouteDeps> = {},
 ) {
   const resolvedDeps = { ...DEFAULT_DEPS, ...deps };
-  const auth = await resolvedDeps.requireStaff();
+  const auth = await resolvedDeps.requireAdminAccess();
   if (!auth.ok) return auth.response;
 
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;

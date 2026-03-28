@@ -101,7 +101,7 @@ export default async function AdminVehicleDetailPage({
 }) {
   const { vehicleId } = await params;
   const query = await searchParams;
-  const access = await resolveAdminActor({ requirement: "staff" });
+  const access = await resolveAdminActor({ requirement: "admin" });
   const canManageCommercial =
     access.ok && (access.actor.appRole === "ADMIN" || access.actor.appRole === "DEVELOPER");
 

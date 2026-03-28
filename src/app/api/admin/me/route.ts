@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
+import { requireAdminAccess } from "@/lib/auth/adminGuards";
 import { dbQuery } from "@/lib/db";
 import { logError } from "@/lib/log";
 import { requireCsrf } from "@/lib/security/csrf";
@@ -43,7 +43,7 @@ function parseThemePreference(content: unknown): AppTheme | null {
 }
 
 export async function GET() {
-  const auth = await requireStaffOrAdminRole();
+  const auth = await requireAdminAccess();
   if (!auth.ok) return auth.response;
   const session = auth.session;
 
@@ -112,7 +112,7 @@ export async function GET() {
 }
 
 export async function PATCH(request: Request) {
-  const auth = await requireStaffOrAdminRole();
+  const auth = await requireAdminAccess();
   if (!auth.ok) return auth.response;
   const session = auth.session;
 

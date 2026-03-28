@@ -5,16 +5,13 @@ import { DeveloperChecklistEditor } from "@/components/admin/DeveloperChecklistE
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery } from "@/lib/db";
 import { normalizeDeveloperChecklistDocument } from "@/lib/developerChecklist";
+import { DOCUMENTATION_SECTION_CHILDREN } from "@/lib/documentation/catalog";
 
 const DOC_KEY = "developer_checklist";
 
 const DOCUMENTATION_LINKS = [
   { href: "/admin/documentation", label: "Documentation Home" },
-  { href: "/admin/documentation/prd", label: "PRD / Specification" },
-  { href: "/admin/documentation/design", label: "Design Documentation" },
-  { href: "/admin/documentation/integrations", label: "Integrations & Documents" },
-  { href: "/admin/documentation/technical", label: "Technical Documentation" },
-  { href: "/admin/documentation/operations", label: "Operational Documentation" },
+  ...DOCUMENTATION_SECTION_CHILDREN,
   { href: "/admin/developer/access", label: "Role Capability Matrix" },
 ];
 

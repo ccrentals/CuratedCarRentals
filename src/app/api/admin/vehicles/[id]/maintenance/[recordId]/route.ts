@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { loadAdminSettings } from "@/lib/adminSettings";
-import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
+import { requireAdminAccess } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery } from "@/lib/db";
 import { requireCsrf } from "@/lib/security/csrf";
@@ -654,7 +654,7 @@ export async function handleVehicleMaintenanceRecordGet(
   context: RouteContext,
   deps: VehicleMaintenanceRecordRouteDeps = DEFAULT_DEPS,
 ) {
-  const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
+  const auth = await requireAdminAccess({ getSession: deps.getSession });
   if (!auth.ok) return auth.response;
 
   const { id, recordId } = await context.params;
@@ -694,7 +694,7 @@ export async function handleVehicleMaintenanceRecordPatch(
   context: RouteContext,
   deps: VehicleMaintenanceRecordRouteDeps = DEFAULT_DEPS,
 ) {
-  const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
+  const auth = await requireAdminAccess({ getSession: deps.getSession });
   if (!auth.ok) return auth.response;
   const session = auth.session;
 
@@ -928,7 +928,7 @@ export async function handleVehicleMaintenanceRecordDelete(
   context: RouteContext,
   deps: VehicleMaintenanceRecordRouteDeps = DEFAULT_DEPS,
 ) {
-  const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
+  const auth = await requireAdminAccess({ getSession: deps.getSession });
   if (!auth.ok) return auth.response;
 
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;

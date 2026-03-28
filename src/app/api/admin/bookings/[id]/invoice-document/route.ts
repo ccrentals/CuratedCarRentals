@@ -1,19 +1,19 @@
 import { NextResponse } from "next/server";
 
-import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
+import { requireAdminAccess } from "@/lib/auth/adminGuards";
 import { loadAdminBookingInvoicePayload } from "@/lib/invoices/adminInvoicePayload";
 import { hashInvoicePayload } from "@/lib/invoices/ledger";
 import { logError, redactText } from "@/lib/log";
 import { generateInvoicePdf, type InvoicePdfProvider } from "@/lib/pdfmonkey";
 
 export type AdminInvoiceDocumentRouteDeps = {
-  requireStaff: typeof requireStaffOrAdminRole;
+  requireAdminAccess: typeof requireAdminAccess;
   loadInvoicePayload: typeof loadAdminBookingInvoicePayload;
   generateInvoice: typeof generateInvoicePdf;
 };
 
 const DEFAULT_DEPS: AdminInvoiceDocumentRouteDeps = {
-  requireStaff: requireStaffOrAdminRole,
+  requireAdminAccess: requireAdminAccess,
   loadInvoicePayload: loadAdminBookingInvoicePayload,
   generateInvoice: generateInvoicePdf,
 };
@@ -43,7 +43,7 @@ export async function handleAdminBookingInvoiceDocumentGet(
   deps: Partial<AdminInvoiceDocumentRouteDeps> = {},
 ) {
   const resolvedDeps = { ...DEFAULT_DEPS, ...deps };
-  const auth = await resolvedDeps.requireStaff();
+  const auth = await resolvedDeps.requireAdminAccess();
   if (!auth.ok) return auth.response;
 
   const url = new URL(request.url);

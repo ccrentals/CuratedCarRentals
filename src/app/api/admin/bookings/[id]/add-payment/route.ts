@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
+import { requireAdminAccess } from "@/lib/auth/adminGuards";
 import { getDbPool } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
 import { requireCsrf } from "@/lib/security/csrf";
@@ -28,7 +28,7 @@ type AddPaymentRouteContext = {
 };
 
 export type AdminBookingAddPaymentRouteDeps = {
-  requireStaff: typeof requireStaffOrAdminRole;
+  requireAdminAccess: typeof requireAdminAccess;
   requireCsrfCheck: typeof requireCsrf;
   getPool: typeof getDbPool;
   maybeEntitle: typeof maybeEntitleBookingAfterPayment;
@@ -42,7 +42,7 @@ export type AdminBookingAddPaymentRouteDeps = {
 };
 
 const DEFAULT_ADD_PAYMENT_DEPS: AdminBookingAddPaymentRouteDeps = {
-  requireStaff: requireStaffOrAdminRole,
+  requireAdminAccess: requireAdminAccess,
   requireCsrfCheck: requireCsrf,
   getPool: getDbPool,
   maybeEntitle: maybeEntitleBookingAfterPayment,
@@ -60,7 +60,7 @@ export async function handleAdminBookingAddPaymentPost(
   { params }: AddPaymentRouteContext,
   deps: AdminBookingAddPaymentRouteDeps = DEFAULT_ADD_PAYMENT_DEPS,
 ) {
-  const auth = await deps.requireStaff();
+  const auth = await deps.requireAdminAccess();
   if (!auth.ok) return auth.response;
   const { actor } = auth;
 

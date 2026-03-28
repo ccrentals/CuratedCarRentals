@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
+import { requireAdminAccess } from "@/lib/auth/adminGuards";
 import { dbQuery } from "@/lib/db";
 import { logError } from "@/lib/log";
 import { requireCsrf } from "@/lib/security/csrf";
@@ -23,7 +23,7 @@ type ImageItemRouteContext = {
 };
 
 export type AdminBookingInspectionImageRouteDeps = {
-  requireStaff: typeof requireStaffOrAdminRole;
+  requireAdminAccess: typeof requireAdminAccess;
   requireCsrfCheck: (request: Request, bodyToken?: string | null) => Promise<boolean>;
   getBookingStatus: (bookingId: string) => Promise<string | null>;
   loadInspections: typeof loadBookingVehicleInspectionSummaries;
@@ -31,7 +31,7 @@ export type AdminBookingInspectionImageRouteDeps = {
 };
 
 const DEFAULT_DEPS: AdminBookingInspectionImageRouteDeps = {
-  requireStaff: requireStaffOrAdminRole,
+  requireAdminAccess: requireAdminAccess,
   requireCsrfCheck: (request, bodyToken) => requireCsrf(request, bodyToken),
   getBookingStatus: async (bookingId) => {
     const result = await dbQuery<{ status: string }>(
@@ -82,7 +82,7 @@ export async function handleAdminBookingInspectionImageDelete(
   deps: Partial<AdminBookingInspectionImageRouteDeps> = {},
 ) {
   const resolvedDeps = { ...DEFAULT_DEPS, ...deps };
-  const auth = await resolvedDeps.requireStaff();
+  const auth = await resolvedDeps.requireAdminAccess();
   if (!auth.ok) return auth.response;
 
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;

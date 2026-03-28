@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
+import { requireAdminAccess } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery, getDbPool } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
@@ -173,7 +173,7 @@ export async function GET(
   request: Request,
   { params }: VehicleRouteContext,
 ) {
-  const auth = await requireStaffOrAdminRole();
+  const auth = await requireAdminAccess();
   if (!auth.ok) return auth.response;
 
   const { id } = await params;
@@ -193,7 +193,7 @@ export async function PATCH(
   request: Request,
   { params }: VehicleRouteContext,
 ) {
-  const auth = await requireStaffOrAdminRole();
+  const auth = await requireAdminAccess();
   if (!auth.ok) return auth.response;
   const { actor } = auth;
 
@@ -422,7 +422,7 @@ export async function handleAdminVehicleDelete(
   context: VehicleRouteContext,
   deps: AdminVehicleDeleteDeps = DEFAULT_DELETE_DEPS,
 ) {
-  const auth = await requireStaffOrAdminRole({ getSession: deps.getSession });
+  const auth = await requireAdminAccess({ getSession: deps.getSession });
   if (!auth.ok) return auth.response;
   const { actor } = auth;
 

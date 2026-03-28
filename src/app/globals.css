@@ -467,7 +467,7 @@ input.promo-date-time-input {
 }
 
 input.promo-date-time-input.date-icon-edge {
-  padding-right: 2rem;
+  padding-right: 2.75rem;
 }
 
 [data-theme="dark"] input.promo-date-time-input,
@@ -486,7 +486,8 @@ input.promo-date-time-input::-webkit-calendar-picker-indicator {
 
 input.promo-date-time-input.date-icon-edge::-webkit-calendar-picker-indicator {
   margin-left: 0.5rem;
-  margin-right: -0.75rem;
+  margin-right: -0.95rem;
+  transform: translateX(0.15rem);
 }
 
 [data-theme="dark"] input.promo-date-time-input::-webkit-calendar-picker-indicator,

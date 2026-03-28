@@ -10,10 +10,8 @@
 export const APP_ROLES = ["ADMIN", "USER", "DEVELOPER"] as const;
 export type AppRole = (typeof APP_ROLES)[number];
 
-export const STAFF_ROLES = APP_ROLES;
 export const ADMIN_ROLES: readonly AppRole[] = ["ADMIN", "DEVELOPER"] as const;
-
-export type AdminAccessRequirement = "staff" | "admin" | "developer";
+export type AdminAccessRequirement = "admin" | "developer";
 
 export function normalizeRole(role: string | null | undefined) {
   return String(role ?? "")
@@ -26,13 +24,9 @@ export function parseAppRole(role: string | null | undefined): AppRole | null {
   return APP_ROLES.includes(normalized as AppRole) ? (normalized as AppRole) : null;
 }
 
-export function isStaffRole(role: string | null | undefined) {
-  return parseAppRole(role) !== null;
-}
-
 export function isAdminRole(role: string | null | undefined) {
   const normalized = parseAppRole(role);
-  return normalized === "ADMIN" || normalized === "DEVELOPER";
+  return normalized !== null && ADMIN_ROLES.includes(normalized);
 }
 
 export function isDeveloperRole(role: string | null | undefined) {
@@ -40,24 +34,17 @@ export function isDeveloperRole(role: string | null | undefined) {
 }
 
 export function canAccessAdmin(role: string | null | undefined) {
-  return isStaffRole(role);
+  return isAdminRole(role);
 }
 
-/**
- * Current model allows all staff roles to perform operational admin writes.
- * Endpoint-specific guards can still require stronger roles (`admin` or `developer`).
- */
 export function canPerformAdminWrite(role: string | null | undefined) {
-  return isStaffRole(role);
+  return canAccessAdmin(role);
 }
 
 export function hasRequiredAdminAccess(
   role: string | null | undefined,
   requirement: AdminAccessRequirement,
 ) {
-  if (requirement === "staff") {
-    return canAccessAdmin(role);
-  }
   if (requirement === "admin") {
     return isAdminRole(role);
   }

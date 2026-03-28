@@ -67,8 +67,8 @@ export function toAdminActor(session: AdminSession): AdminActor {
 }
 
 export async function resolveAdminActor({
-  requirement = "staff",
-  // Use `any-local-user` so non-staff Clerk-mapped users get a proper 403 instead of 401.
+  requirement = "admin",
+  // Use `any-local-user` so non-admin Clerk-mapped users get a proper 403 instead of 401.
   getSession = () => getSessionFromRequest({ clerkBridgeMode: "any-local-user" }),
 }: Pick<RequireAdminGuardOptions, "requirement" | "getSession"> = {}): Promise<ResolveAdminActorResult> {
   const session = await getSession();
@@ -99,10 +99,10 @@ export async function requireAdminApiSession(
   };
 }
 
-export async function requireStaffOrAdminRole(
+export async function requireAdminAccess(
   options: Omit<RequireAdminGuardOptions, "requirement"> = {},
 ) {
-  return requireAdminApiSession({ ...options, requirement: "staff" });
+  return requireAdminApiSession({ ...options, requirement: "admin" });
 }
 
 export async function requireAdminRole(

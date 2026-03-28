@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
+import { requireAdminAccess } from "@/lib/auth/adminGuards";
 import { logError, redactText } from "@/lib/log";
 import {
   generateQuotePdfDocument,
@@ -10,13 +10,13 @@ import {
 import { isQuoteOpsMissingTableError } from "@/lib/quotes/quoteOps";
 
 export type AdminQuoteDocumentRouteDeps = {
-  requireStaff: typeof requireStaffOrAdminRole;
+  requireAdminAccess: typeof requireAdminAccess;
   loadQuotePayload: typeof loadQuotePdfPayload;
   generateQuoteDocument: typeof generateQuotePdfDocument;
 };
 
 const DEFAULT_DEPS: AdminQuoteDocumentRouteDeps = {
-  requireStaff: requireStaffOrAdminRole,
+  requireAdminAccess: requireAdminAccess,
   loadQuotePayload: loadQuotePdfPayload,
   generateQuoteDocument: generateQuotePdfDocument,
 };
@@ -47,7 +47,7 @@ export async function handleAdminQuoteDocumentGet(
   deps: Partial<AdminQuoteDocumentRouteDeps> = {},
 ) {
   const resolvedDeps = { ...DEFAULT_DEPS, ...deps };
-  const auth = await resolvedDeps.requireStaff();
+  const auth = await resolvedDeps.requireAdminAccess();
   if (!auth.ok) return auth.response;
 
   const url = new URL(request.url);

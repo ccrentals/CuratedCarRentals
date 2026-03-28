@@ -5,6 +5,7 @@ import { maybeEntitleBookingAfterPayment } from "@/lib/availability/entitlement"
 import type { getDbPool } from "@/lib/db";
 import type { Queryable } from "@/lib/payments/pricing";
 import { reconcileWiPayPayment } from "@/lib/payments/wipayReconcile";
+import { computeHash } from "@/lib/wipay";
 
 type MockResponse = {
   rows: unknown[];
@@ -100,8 +101,8 @@ test("maybeEntitleBookingAfterPayment: winner query uses deterministic entitleme
 });
 
 test("reconcileWiPayPayment: replay paths dedupe loser emails", async () => {
-  const originalWipayEnv = process.env.WIPAY_ENV;
-  process.env.WIPAY_ENV = "sandbox";
+  const originalWipayApiKey = process.env.WIPAY_API_KEY;
+  process.env.WIPAY_API_KEY = "test-wipay-key";
 
   const state = {
     lostEmailMarked: false,
@@ -114,7 +115,7 @@ test("reconcileWiPayPayment: replay paths dedupe loser emails", async () => {
     transactionId: "txn-1",
     status: "SUCCESS",
     total: "10.00",
-    hash: "ignored-in-sandbox",
+    hash: computeHash("txn-1", "10.00", "test-wipay-key"),
     source: "webhook" as const,
   };
 
@@ -165,6 +166,14 @@ test("reconcileWiPayPayment: replay paths dedupe loser emails", async () => {
 
           if (text.startsWith("update payments set status = 'DEPOSIT_PAID'")) {
             return { rowCount: 1, rows: [] };
+          }
+
+          if (
+            text.startsWith(
+              "update payments set status = 'FAILED', metadata_json = jsonb_set(coalesce(metadata_json, '{}'::jsonb), '{superseded_by_payment_id}'",
+            )
+          ) {
+            return { rowCount: 0, rows: [] };
           }
 
           if (text.startsWith("select b.id, b.start_date, b.end_date, b.status")) {
@@ -256,10 +265,10 @@ test("reconcileWiPayPayment: replay paths dedupe loser emails", async () => {
     assert.equal(state.overrideEmailCalls, 2, "expected customer+internal loser notifications exactly once");
     assert.equal(state.commits, 2);
   } finally {
-    if (originalWipayEnv === undefined) {
-      delete process.env.WIPAY_ENV;
+    if (originalWipayApiKey === undefined) {
+      delete process.env.WIPAY_API_KEY;
     } else {
-      process.env.WIPAY_ENV = originalWipayEnv;
+      process.env.WIPAY_API_KEY = originalWipayApiKey;
     }
   }
 });

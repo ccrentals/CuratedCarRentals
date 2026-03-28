@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { writeAuditLog } from "@/lib/audit";
 import { loadAdminSettings } from "@/lib/adminSettings";
-import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
+import { requireAdminAccess } from "@/lib/auth/adminGuards";
 import { dbQuery, getDbPool } from "@/lib/db";
 import { logError } from "@/lib/log";
 import {
@@ -25,7 +25,7 @@ function parseDate(value: string) {
 }
 
 export async function GET(request: Request) {
-  const auth = await requireStaffOrAdminRole();
+  const auth = await requireAdminAccess();
   if (!auth.ok) return auth.response;
   const { actor } = auth;
 
@@ -84,7 +84,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const auth = await requireStaffOrAdminRole();
+  const auth = await requireAdminAccess();
   if (!auth.ok) return auth.response;
   const { actor } = auth;
 

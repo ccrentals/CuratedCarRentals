@@ -460,7 +460,7 @@ test("admin add payment API: payment succeeds even when post-commit audit and em
 
   let maybeEntitleOptions: Record<string, unknown> | null = null;
   const deps: AdminBookingAddPaymentRouteDeps = {
-    requireStaff: async () =>
+    requireAdminAccess: async () =>
       ({
         ok: true,
         actor: {
@@ -478,7 +478,7 @@ test("admin add payment API: payment succeeds even when post-commit audit and em
           issuedAt: 999999000,
           expiresAt: 999999999,
         },
-      }) as Awaited<ReturnType<AdminBookingAddPaymentRouteDeps["requireStaff"]>>,
+      }) as Awaited<ReturnType<AdminBookingAddPaymentRouteDeps["requireAdminAccess"]>>,
     requireCsrfCheck: async () => true,
     getPool: () =>
       ({

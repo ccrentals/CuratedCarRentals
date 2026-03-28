@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { requireStaffOrAdminRole } from "@/lib/auth/adminGuards";
+import { requireAdminAccess } from "@/lib/auth/adminGuards";
 import { loadBookingRentalAgreementPayload } from "@/lib/agreements/rentalAgreementPayload";
 import { logError, redactText } from "@/lib/log";
 import {
@@ -9,13 +9,13 @@ import {
 } from "@/lib/pdfmonkey";
 
 export type AdminAgreementDocumentRouteDeps = {
-  requireStaff: typeof requireStaffOrAdminRole;
+  requireAdminAccess: typeof requireAdminAccess;
   loadAgreementPayload: typeof loadBookingRentalAgreementPayload;
   generateAgreement: typeof generateRentalAgreementPdf;
 };
 
 const DEFAULT_DEPS: AdminAgreementDocumentRouteDeps = {
-  requireStaff: requireStaffOrAdminRole,
+  requireAdminAccess: requireAdminAccess,
   loadAgreementPayload: loadBookingRentalAgreementPayload,
   generateAgreement: generateRentalAgreementPdf,
 };
@@ -46,7 +46,7 @@ export async function handleAdminBookingAgreementDocumentGet(
   deps: Partial<AdminAgreementDocumentRouteDeps> = {},
 ) {
   const resolvedDeps = { ...DEFAULT_DEPS, ...deps };
-  const auth = await resolvedDeps.requireStaff();
+  const auth = await resolvedDeps.requireAdminAccess();
   if (!auth.ok) return auth.response;
 
   const url = new URL(request.url);
