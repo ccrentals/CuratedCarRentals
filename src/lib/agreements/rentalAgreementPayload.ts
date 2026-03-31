@@ -1,6 +1,10 @@
 import { dbQuery } from "@/lib/db";
 import { resolveStoredRegionCountry } from "@/lib/jamaicaParishes";
 import {
+  formatBookingLocationDisplayText,
+  readBookingLocationDetails,
+} from "@/lib/bookings/bookingLocations";
+import {
   parseSafePrivateBookingImageDataUrl,
   resolveSafePrivateBookingResponseMimeType,
 } from "@/lib/bookings/privateFiles";
@@ -293,6 +297,10 @@ export async function loadBookingRentalAgreementPayload(
       .find((value) => normalizeText(value).length > 0) ?? "Not specified";
   const signature = await (deps.loadSignature ?? loadSignature)(booking.id, { query, fetchFn });
   const pricing = booking.pricing_json ?? {};
+  const bookingLocationDetails = readBookingLocationDetails(pricing, {
+    pickupLabel: normalizeText(booking.pickup_location),
+    dropoffLabel: normalizeText(booking.dropoff_location),
+  });
   const netPaidToDate = await fetchNetPaid(booking.id);
   const summary = computeBookingPricingFromStoredSnapshot({
     bookingId: booking.id,
@@ -310,8 +318,13 @@ export async function loadBookingRentalAgreementPayload(
     bookingStatus: booking.status,
     startDate: toDateString(booking.start_date),
     endDate: toDateString(booking.end_date),
-    pickupLocation: booking.pickup_location,
-    returnLocation: normalizeText(booking.dropoff_location) || booking.pickup_location,
+    pickupLocation:
+      formatBookingLocationDisplayText(bookingLocationDetails.pickup) ||
+      normalizeText(booking.pickup_location),
+    returnLocation:
+      formatBookingLocationDisplayText(bookingLocationDetails.dropoff) ||
+      normalizeText(booking.dropoff_location) ||
+      normalizeText(booking.pickup_location),
     customerName: booking.customer_name,
     customerEmail: booking.customer_email,
     customerPhone: booking.customer_phone,

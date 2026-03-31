@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Great_Vibes, Playfair_Display } from "next/font/google";
 
 import { BreakpointOverlay } from "@/components/dev/BreakpointOverlay";
 import { OptionalClerkProvider } from "@/components/security/OptionalClerkProvider";
@@ -18,6 +18,18 @@ const geistSans = Geist({
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+});
+
+const playfairDisplay = Playfair_Display({
+  variable: "--font-playfair-display",
+  subsets: ["latin"],
+  weight: ["600", "700", "800"],
+});
+
+const greatVibes = Great_Vibes({
+  variable: "--font-great-vibes",
+  subsets: ["latin"],
+  weight: "400",
 });
 
 export const metadata: Metadata = {
@@ -103,7 +115,7 @@ html[data-theme="forest"], html[data-theme="forest"] body {
         />
       </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-[var(--ccr-bg)] text-[var(--ccr-text)]`}
+        className={`${geistSans.variable} ${geistMono.variable} ${playfairDisplay.variable} ${greatVibes.variable} antialiased bg-[var(--ccr-bg)] text-[var(--ccr-text)]`}
       >
         <OptionalClerkProvider>
           <div className="flex min-h-screen flex-col">

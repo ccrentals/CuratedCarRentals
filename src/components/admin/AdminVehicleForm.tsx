@@ -85,14 +85,28 @@ export function AdminVehicleForm() {
           className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-[var(--ccr-text)]"
         >
           <option value="AVAILABLE">AVAILABLE</option>
+          <option value="UNAVAILABLE">UNAVAILABLE</option>
           <option value="RESERVED">RESERVED</option>
           <option value="RENTED">RENTED</option>
           <option value="MAINTENANCE">MAINTENANCE</option>
-          <option value="INACTIVE">INACTIVE</option>
+        </select>
+      </label>
+      <label className="text-sm text-[var(--ccr-muted)]">
+        Visibility
+        <select
+          name="public_visible"
+          defaultValue="false"
+          className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-[var(--ccr-text)]"
+        >
+          <option value="false">Private</option>
+          <option value="true">Public</option>
         </select>
       </label>
       <div className="md:col-span-2">
-        <UploadcareImagesInput name="image_urls_json" />
+        <UploadcareImagesInput
+          name="image_urls_json"
+          helperText="Uploads stay in our Uploadcare account and are saved under the vehicle gallery naming convention after you save."
+        />
       </div>
       <div className="md:col-span-2">
         <button

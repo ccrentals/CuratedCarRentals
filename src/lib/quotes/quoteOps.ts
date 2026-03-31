@@ -1,5 +1,12 @@
 import { siteContent } from "@/data/content";
 import { isVehicleUnavailableWithAvailabilityRules } from "@/lib/bookings/availabilityRules";
+import {
+  appendBookingLocationNote,
+  formatBookingLocationDisplayText,
+  readBookingLocationDetails,
+  type BookingLocationDetails,
+  type BookingLocationDetailsEntry,
+} from "@/lib/bookings/bookingLocations";
 import { writeAuditLog } from "@/lib/audit";
 import { CustomerBlockedError, upsertCustomerForBooking } from "@/lib/customers";
 import { dbQuery, getDbPool } from "@/lib/db";
@@ -75,6 +82,7 @@ export type QuoteOpsQuote = {
   dropoffLocationId: string | null;
   pickupLocationText: string;
   dropoffLocationText: string;
+  bookingLocationDetails: BookingLocationDetails;
   vehicleId: string | null;
   vehicleLabel: string;
   vehicleClass: string | null;
@@ -206,6 +214,13 @@ function escapeHtml(value: string) {
 
 function mapQuoteRow(row: QuoteRow): QuoteOpsQuote {
   const status = resolveEffectiveQuoteStatus(row.status, row.expires_at);
+  const pricingJson = row.pricing_json ?? {};
+  const bookingLocationDetails = readBookingLocationDetails(pricingJson, {
+    pickupLabel: normalizeText(row.pickup_location_text),
+    dropoffLabel: normalizeText(row.dropoff_location_text),
+    pickupLocationId: normalizeNullableText(row.pickup_location_id),
+    dropoffLocationId: normalizeNullableText(row.dropoff_location_id),
+  });
   return {
     id: row.id,
     publicId: normalizeNullableText(row.public_id),
@@ -222,10 +237,11 @@ function mapQuoteRow(row: QuoteRow): QuoteOpsQuote {
     dropoffLocationId: normalizeNullableText(row.dropoff_location_id),
     pickupLocationText: normalizeText(row.pickup_location_text),
     dropoffLocationText: normalizeText(row.dropoff_location_text),
+    bookingLocationDetails,
     vehicleId: normalizeNullableText(row.vehicle_id),
     vehicleLabel: normalizeText(row.vehicle_label),
     vehicleClass: normalizeNullableText(row.vehicle_class),
-    pricingJson: row.pricing_json ?? {},
+    pricingJson,
     baseTotalCents: normalizeInt(row.base_total_cents),
     insuranceTotalCents: normalizeInt(row.insurance_total_cents),
     discountTotalCents: normalizeInt(row.discount_total_cents),
@@ -246,6 +262,15 @@ function mapQuoteRow(row: QuoteRow): QuoteOpsQuote {
     lastEmailedTo: normalizeNullableText(row.last_emailed_to),
     convertedBookingId: normalizeNullableText(row.converted_booking_id),
   };
+}
+
+function formatLocationLines(entry: BookingLocationDetailsEntry) {
+  const details = formatBookingLocationDisplayText(entry, { separator: " | " });
+  return details || entry.label || "—";
+}
+
+function formatLocationHtml(entry: BookingLocationDetailsEntry) {
+  return escapeHtml(formatLocationLines(entry)).replace(/\n/g, "<br />");
 }
 
 export async function fetchQuoteByIdForOps(
@@ -343,8 +368,8 @@ export function buildQuoteEmailContent(input: {
       <p>Thanks for choosing ${escapeHtml(siteContent.brand)}. Your quote summary is below.</p>
       <p><strong>Quote ID:</strong> ${escapeHtml(displayQuoteId)}</p>
       <p><strong>Vehicle:</strong> ${escapeHtml(input.quote.vehicleLabel || "—")}</p>
-      <p><strong>Pickup:</strong> ${escapeHtml(formatDateTime(input.quote.startAt))} (${escapeHtml(input.quote.pickupLocationText || "—")})</p>
-      <p><strong>Dropoff:</strong> ${escapeHtml(formatDateTime(input.quote.endAt))} (${escapeHtml(input.quote.dropoffLocationText || "—")})</p>
+      <p><strong>Pickup:</strong> ${escapeHtml(formatDateTime(input.quote.startAt))}<br />${formatLocationHtml(input.quote.bookingLocationDetails.pickup)}</p>
+      <p><strong>Dropoff:</strong> ${escapeHtml(formatDateTime(input.quote.endAt))}<br />${formatLocationHtml(input.quote.bookingLocationDetails.dropoff)}</p>
       <hr />
       <p><strong>Total:</strong> ${escapeHtml(formatAmount(input.quote.totalCents))}</p>
       <p><strong>Deposit required:</strong> ${escapeHtml(formatAmount(input.quote.depositRequiredCents))}</p>
@@ -614,7 +639,12 @@ export function buildQuotePdfBuffer(quote: QuoteOpsQuote) {
     commands,
     x: 340,
     y: 713,
-    lines: [...wrapPdfLine(`Pickup: ${quote.pickupLocationText || "—"}`, 37)],
+    lines: [
+      ...wrapPdfLine(
+        `Pickup: ${formatLocationLines(quote.bookingLocationDetails.pickup)}`,
+        37,
+      ),
+    ],
     font: "F1",
     fontSize: 10,
     color: mutedText,
@@ -637,10 +667,10 @@ export function buildQuotePdfBuffer(quote: QuoteOpsQuote) {
     ...wrapPdfLine(`Phone: ${quote.customerPhone || "—"}`, 34),
     "",
     ...wrapPdfLine(`Pickup: ${formatDateTime(quote.startAt)}`, 34),
-    ...wrapPdfLine(`${quote.pickupLocationText || "—"}`, 34),
+    ...wrapPdfLine(formatLocationLines(quote.bookingLocationDetails.pickup), 34),
     "",
     ...wrapPdfLine(`Dropoff: ${formatDateTime(quote.endAt)}`, 34),
-    ...wrapPdfLine(`${quote.dropoffLocationText || "—"}`, 34),
+    ...wrapPdfLine(formatLocationLines(quote.bookingLocationDetails.dropoff), 34),
   ];
 
   pushPdfText({
@@ -948,7 +978,7 @@ export async function convertQuoteToBooking(input: {
     const deliveryFeeCents = normalizeInt((pricingSnapshot.pricingJson ?? {})["delivery_fee_cents"]);
     const extraFeesCents = normalizeInt((pricingSnapshot.pricingJson ?? {})["extra_fees_cents"]);
 
-    const bookingPricingJson = {
+    const bookingPricingBase = {
       ...pricingSnapshot.pricingJson,
       customer_name_snapshot: quote.customerFullName,
       customer_email_snapshot: quote.customerEmail,
@@ -978,6 +1008,10 @@ export async function convertQuoteToBooking(input: {
       quote_id: quote.id,
       quote_rack_price_cents: pricingSnapshot.rackPriceCents,
     };
+    const bookingPricingJson = appendBookingLocationNote(
+      bookingPricingBase,
+      quote.bookingLocationDetails,
+    );
 
     const bookingInsert = await client.query(
       "insert into bookings (vehicle_id, customer_id, start_date, end_date, pickup_location, status, pricing_json, pickup_location_id, dropoff_location_id, dropoff_location, pickup_location_text_snapshot, dropoff_location_text_snapshot, start_at, end_at, insurance_selected, insurance_plan_id, insurance_price_per_day_cents, insurance_total_cents, payment_option) values ($1::uuid, $2::uuid, $3::date, $4::date, $5, 'PENDING_PAYMENT', $6::jsonb, $7::uuid, $8::uuid, $9, $10, $11, $12::timestamptz, $13::timestamptz, $14, $15::uuid, $16, $17, $18) returning id, status",

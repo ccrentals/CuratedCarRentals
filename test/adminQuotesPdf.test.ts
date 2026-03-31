@@ -22,6 +22,57 @@ function adminSession() {
   };
 }
 
+function sampleBookingLocationDetails() {
+  return {
+    pickup: {
+      type: "AIRPORT",
+      typeKey: "AIRPORT",
+      label: "Norman Manley Airport",
+      locationId: null,
+      values: {
+        flight_arrival_date: "2026-03-10",
+        flight_arrival_time: "09:30",
+        flight_number: "BW101",
+        airline: "Caribbean Airlines",
+      },
+      fieldLabels: {
+        flight_arrival_date: "Flight Arrival Date",
+        flight_arrival_time: "Flight Arrival Time",
+        flight_number: "Flight Number",
+        airline: "Airline",
+      },
+      address: null,
+      flightDate: "2026-03-10",
+      flightTime: "09:30",
+      flightNumber: "BW101",
+      airline: "Caribbean Airlines",
+    },
+    dropoff: {
+      type: "AIRPORT",
+      typeKey: "AIRPORT",
+      label: "Norman Manley Airport",
+      locationId: null,
+      values: {
+        flight_departure_date: "2026-03-12",
+        flight_departure_time: "13:00",
+        flight_number: "BW102",
+        airline: "Caribbean Airlines",
+      },
+      fieldLabels: {
+        flight_departure_date: "Flight Departure Date",
+        flight_departure_time: "Flight Departure Time",
+        flight_number: "Flight Number",
+        airline: "Airline",
+      },
+      address: null,
+      flightDate: "2026-03-12",
+      flightTime: "13:00",
+      flightNumber: "BW102",
+      airline: "Caribbean Airlines",
+    },
+  };
+}
+
 function sampleQuote(): QuoteOpsQuote {
   return {
     id: "c3ad4e53-f14f-4ac9-98fd-f4bacf1ec3d2",
@@ -37,8 +88,9 @@ function sampleQuote(): QuoteOpsQuote {
     endAt: "2026-03-12T10:00:00.000Z",
     pickupLocationId: null,
     dropoffLocationId: null,
-    pickupLocationText: "Montego Bay Airport",
-    dropoffLocationText: "Montego Bay Airport",
+    pickupLocationText: "Norman Manley Airport",
+    dropoffLocationText: "Norman Manley Airport",
+    bookingLocationDetails: sampleBookingLocationDetails(),
     vehicleId: "6f11f0cf-cedf-4db3-a5fd-64bfe7fded1e",
     vehicleLabel: "Nissan X-Trail",
     vehicleClass: "SUV",
@@ -104,7 +156,14 @@ test("quote PDF payload builder normalizes display fields for provider reuse", (
 
   assert.equal(payload.displayQuoteId, "QU000123");
   assert.equal(payload.customer.fullName, "Damian Thompson");
-  assert.equal(payload.rental.pickupLocationText, "Montego Bay Airport");
+  assert.equal(payload.rental.pickupLocationText, "Norman Manley Airport");
+  assert.deepEqual(payload.rental.pickupLocationLines, [
+    "Norman Manley Airport",
+    "Flight Arrival Date: 2026-03-10",
+    "Flight Arrival Time: 09:30",
+    "Flight Number: BW101",
+    "Airline: Caribbean Airlines",
+  ]);
   assert.equal(payload.vehicle.className, "SUV");
   assert.equal(payload.display.promoCode, "SAVE10");
   assert.match(payload.pricing.displayBaseTotal, /24,000\.00/);

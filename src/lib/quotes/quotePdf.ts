@@ -1,4 +1,5 @@
 import { siteContent } from "@/data/content";
+import { getBookingLocationDetailLines } from "@/lib/bookings/bookingLocations";
 import {
   buildQuotePdfBuffer,
   fetchQuoteByIdForOps,
@@ -83,6 +84,8 @@ export type QuotePdfPayload = {
     endAt: string;
     pickupLocationText: string;
     dropoffLocationText: string;
+    pickupLocationLines: string[];
+    dropoffLocationLines: string[];
     displayPickupAt: string;
     displayDropoffAt: string;
   };
@@ -286,6 +289,14 @@ export function resolveQuotePdfProvider(
 export function buildQuotePdfPayload(quote: QuoteOpsQuote): QuotePdfPayload {
   const displayQuoteId = quote.publicId || quote.id.slice(0, 8);
   const promoCode = quote.promoCode || "—";
+  const pickupLocationLines = [
+    quote.bookingLocationDetails.pickup.label || quote.pickupLocationText || "—",
+    ...getBookingLocationDetailLines(quote.bookingLocationDetails.pickup),
+  ];
+  const dropoffLocationLines = [
+    quote.bookingLocationDetails.dropoff.label || quote.dropoffLocationText || "—",
+    ...getBookingLocationDetailLines(quote.bookingLocationDetails.dropoff),
+  ];
   const pricingRows: QuotePdfSummaryRow[] = [
     { label: "Rental subtotal", value: formatAmount(quote.baseTotalCents) },
     { label: "Insurance total", value: formatAmount(quote.insuranceTotalCents) },
@@ -316,6 +327,8 @@ export function buildQuotePdfPayload(quote: QuoteOpsQuote): QuotePdfPayload {
       endAt: quote.endAt,
       pickupLocationText: quote.pickupLocationText || "—",
       dropoffLocationText: quote.dropoffLocationText || "—",
+      pickupLocationLines,
+      dropoffLocationLines,
       displayPickupAt: formatDateTime(quote.startAt),
       displayDropoffAt: formatDateTime(quote.endAt),
     },
@@ -346,7 +359,7 @@ export function buildQuotePdfPayload(quote: QuoteOpsQuote): QuotePdfPayload {
       promoCode,
       brand: siteContent.brand,
       contactLine: `${siteContent.email} | ${siteContent.phone}`,
-      pickupLocation: quote.pickupLocationText || "—",
+      pickupLocation: pickupLocationLines[0] || "—",
       reservationNotice:
         "This is a quote. Vehicle is not reserved until deposit/payment is received.",
     },
@@ -413,8 +426,56 @@ export function buildPdfMonkeyQuoteTemplateSampleData() {
     endAt: "2026-03-12T10:00:00.000Z",
     pickupLocationId: null,
     dropoffLocationId: null,
-    pickupLocationText: "Montego Bay Airport",
-    dropoffLocationText: "Montego Bay Airport",
+    pickupLocationText: "Norman Manley Airport",
+    dropoffLocationText: "Norman Manley Airport",
+    bookingLocationDetails: {
+      pickup: {
+        type: "AIRPORT",
+        typeKey: "AIRPORT",
+        label: "Norman Manley Airport",
+        locationId: null,
+        values: {
+          flight_arrival_date: "2026-03-10",
+          flight_arrival_time: "09:30",
+          flight_number: "BW101",
+          airline: "Caribbean Airlines",
+        },
+        fieldLabels: {
+          flight_arrival_date: "Flight Arrival Date",
+          flight_arrival_time: "Flight Arrival Time",
+          flight_number: "Flight Number",
+          airline: "Airline",
+        },
+        address: null,
+        flightDate: "2026-03-10",
+        flightTime: "09:30",
+        flightNumber: "BW101",
+        airline: "Caribbean Airlines",
+      },
+      dropoff: {
+        type: "AIRPORT",
+        typeKey: "AIRPORT",
+        label: "Norman Manley Airport",
+        locationId: null,
+        values: {
+          flight_departure_date: "2026-03-12",
+          flight_departure_time: "13:00",
+          flight_number: "BW102",
+          airline: "Caribbean Airlines",
+        },
+        fieldLabels: {
+          flight_departure_date: "Flight Departure Date",
+          flight_departure_time: "Flight Departure Time",
+          flight_number: "Flight Number",
+          airline: "Airline",
+        },
+        address: null,
+        flightDate: "2026-03-12",
+        flightTime: "13:00",
+        flightNumber: "BW102",
+        airline: "Caribbean Airlines",
+      },
+    },
     vehicleId: "6f11f0cf-cedf-4db3-a5fd-64bfe7fded1e",
     vehicleLabel: "Nissan X-Trail",
     vehicleClass: "SUV",
@@ -581,10 +642,14 @@ export function renderPdfMonkeyQuoteTemplateBody() {
         <p class="line">Phone: {{ customer.phone }}</p>
         <p class="line">&nbsp;</p>
         <p class="line">Pickup: {{ rental.displayPickupAt }}</p>
-        <p class="line">{{ rental.pickupLocationText }}</p>
+        {%- for line in rental.pickupLocationLines -%}
+          <p class="line">{{ line }}</p>
+        {%- endfor -%}
         <p class="line">&nbsp;</p>
         <p class="line">Dropoff: {{ rental.displayDropoffAt }}</p>
-        <p class="line">{{ rental.dropoffLocationText }}</p>
+        {%- for line in rental.dropoffLocationLines -%}
+          <p class="line">{{ line }}</p>
+        {%- endfor -%}
       </div>
 
       <div class="card">

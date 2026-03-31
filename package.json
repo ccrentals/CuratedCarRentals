@@ -9,6 +9,8 @@
     "migrate": "node scripts/migrate.js",
     "rebuild:promo-ledger-history": "tsx scripts/rebuild-promo-ledger-history.ts",
     "seed:public-vehicles": "tsx scripts/seed-public-vehicles.ts",
+    "customer:reset:dry": "tsx scripts/customer-reset.ts",
+    "customer:reset": "CUSTOMER_RESET_CONFIRM=LOCAL_ONLY tsx scripts/customer-reset.ts --apply",
     "e2e:seed": "mkdir -p .artifacts && tsx scripts/e2e-seed.ts",
     "e2e:clean": "tsx scripts/e2e-clean.ts",
     "e2e:reset": "tsx scripts/e2e-reset.ts",

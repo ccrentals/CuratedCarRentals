@@ -18,6 +18,16 @@ import { logError } from "@/lib/log";
 import { CustomerBlockedError, upsertCustomerForBooking } from "@/lib/customers";
 import { normalizePromoInputCode, validatePromoForBooking } from "@/lib/promos";
 import { writeAuditLog } from "@/lib/audit";
+import {
+  appendBookingLocationNote,
+  inferBookingLocationType,
+} from "@/lib/bookings/bookingLocations";
+import { listActiveBookingLocationConfigs } from "@/lib/bookings/bookingLocationConfigStore";
+import {
+  buildBookingLocationSelectionPayload,
+  normalizeBookingLocationFieldValuesInput,
+  validateBookingLocationSelection,
+} from "@/lib/bookings/locationConfigRuntime";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -109,7 +119,37 @@ export async function handleAdminBookingsPost(
   const phone = body?.phone;
   const startDate = body?.startDate;
   const endDate = body?.endDate;
-  const pickupLocation = body?.pickupLocation;
+  const pickupLocationInput =
+    typeof body?.pickupLocation === "string" ? body.pickupLocation.trim() : "";
+  const dropoffLocationInput =
+    typeof body?.dropoffLocation === "string" && body.dropoffLocation.trim()
+      ? body.dropoffLocation.trim()
+      : pickupLocationInput;
+  const pickupLocationId = typeof body?.pickupLocationId === "string" ? body.pickupLocationId.trim() : "";
+  const dropoffLocationId = typeof body?.dropoffLocationId === "string" ? body.dropoffLocationId.trim() : "";
+  const pickupLocationType =
+    inferBookingLocationType({
+      locationType: body?.pickupLocationType,
+      label: body?.pickupLocationTextSnapshot ?? pickupLocationInput,
+    }) ?? "OFFICE";
+  const dropoffLocationType =
+    inferBookingLocationType({
+      locationType: body?.dropoffLocationType,
+      label:
+        body?.dropoffLocationTextSnapshot ?? dropoffLocationInput ?? pickupLocationInput,
+    }) ?? pickupLocationType;
+  const bookingLocationDetailsRaw =
+    body?.bookingLocationDetails && typeof body.bookingLocationDetails === "object"
+      ? (body.bookingLocationDetails as Record<string, unknown>)
+      : null;
+  const pickupLocationDetailsRaw =
+    bookingLocationDetailsRaw?.pickup && typeof bookingLocationDetailsRaw.pickup === "object"
+      ? (bookingLocationDetailsRaw.pickup as Record<string, unknown>)
+      : null;
+  const dropoffLocationDetailsRaw =
+    bookingLocationDetailsRaw?.dropoff && typeof bookingLocationDetailsRaw.dropoff === "object"
+      ? (bookingLocationDetailsRaw.dropoff as Record<string, unknown>)
+      : null;
   const customerId = body?.customerId;
   const promoCodeRaw = body?.promoCode;
 
@@ -131,8 +171,11 @@ export async function handleAdminBookingsPost(
   if (!isISODate(startDate) || !isISODate(endDate)) {
     return NextResponse.json({ error: "Invalid dates" }, { status: 400 });
   }
-  if (!isNonEmptyString(pickupLocation, 3)) {
-    return NextResponse.json({ error: "Invalid pickupLocation" }, { status: 400 });
+  if (pickupLocationId && !UUID_REGEX.test(pickupLocationId)) {
+    return NextResponse.json({ error: "Invalid pickupLocationId" }, { status: 400 });
+  }
+  if (dropoffLocationId && !UUID_REGEX.test(dropoffLocationId)) {
+    return NextResponse.json({ error: "Invalid dropoffLocationId" }, { status: 400 });
   }
 
   const start = dateOnlyUtc(startDate);
@@ -153,6 +196,94 @@ export async function handleAdminBookingsPost(
   if (days <= 0) {
     return NextResponse.json({ error: "Invalid rental duration" }, { status: 400 });
   }
+
+  const bookingLocationConfigs = await listActiveBookingLocationConfigs(deps.getPool());
+  const locationSelection = buildBookingLocationSelectionPayload({
+    configs: bookingLocationConfigs,
+    pickupTypeKey: pickupLocationType,
+    dropoffTypeKey: dropoffLocationType,
+    pickupLocationId: pickupLocationId || null,
+    dropoffLocationId: dropoffLocationId || null,
+    pickupValues: normalizeBookingLocationFieldValuesInput(pickupLocationDetailsRaw?.values, {
+      address:
+        pickupLocationType === "CUSTOM_ADDRESS"
+          ? (typeof body?.pickupLocationTextSnapshot === "string" && body.pickupLocationTextSnapshot.trim()) ||
+            pickupLocationInput ||
+            null
+          : typeof pickupLocationDetailsRaw?.address === "string"
+            ? pickupLocationDetailsRaw.address.trim()
+            : null,
+      flight_date:
+        pickupLocationType === "AIRPORT" && typeof pickupLocationDetailsRaw?.flightDate === "string"
+          ? pickupLocationDetailsRaw.flightDate
+          : startDate,
+      flight_time:
+        pickupLocationType === "AIRPORT" && typeof pickupLocationDetailsRaw?.flightTime === "string"
+          ? pickupLocationDetailsRaw.flightTime
+          : "11:00",
+      flight_number:
+        pickupLocationType === "AIRPORT" && typeof pickupLocationDetailsRaw?.flightNumber === "string"
+          ? pickupLocationDetailsRaw.flightNumber
+          : null,
+      airline:
+        pickupLocationType === "AIRPORT" && typeof pickupLocationDetailsRaw?.airline === "string"
+          ? pickupLocationDetailsRaw.airline
+          : null,
+    }),
+    dropoffValues: normalizeBookingLocationFieldValuesInput(dropoffLocationDetailsRaw?.values, {
+      address:
+        dropoffLocationType === "CUSTOM_ADDRESS"
+          ? (typeof body?.dropoffLocationTextSnapshot === "string" && body.dropoffLocationTextSnapshot.trim()) ||
+            dropoffLocationInput ||
+            null
+          : typeof dropoffLocationDetailsRaw?.address === "string"
+            ? dropoffLocationDetailsRaw.address.trim()
+            : null,
+      flight_date:
+        dropoffLocationType === "AIRPORT" && typeof dropoffLocationDetailsRaw?.flightDate === "string"
+          ? dropoffLocationDetailsRaw.flightDate
+          : endDate,
+      flight_time:
+        dropoffLocationType === "AIRPORT" && typeof dropoffLocationDetailsRaw?.flightTime === "string"
+          ? dropoffLocationDetailsRaw.flightTime
+          : "11:00",
+      flight_number:
+        dropoffLocationType === "AIRPORT" && typeof dropoffLocationDetailsRaw?.flightNumber === "string"
+          ? dropoffLocationDetailsRaw.flightNumber
+          : null,
+      airline:
+        dropoffLocationType === "AIRPORT" && typeof dropoffLocationDetailsRaw?.airline === "string"
+          ? dropoffLocationDetailsRaw.airline
+          : null,
+    }),
+    context: {
+      pickupDate: String(startDate),
+      pickupTime: "11:00",
+      dropoffDate: String(endDate),
+      dropoffTime: "11:00",
+    },
+  });
+  const pickupLocationError = validateBookingLocationSelection(
+    locationSelection.pickupConfig,
+    "pickup",
+    locationSelection.pickupValues,
+  );
+  if (pickupLocationError) {
+    return NextResponse.json({ error: pickupLocationError }, { status: 400 });
+  }
+  const dropoffLocationError = validateBookingLocationSelection(
+    locationSelection.dropoffConfig,
+    "dropoff",
+    locationSelection.dropoffValues,
+  );
+  if (dropoffLocationError) {
+    return NextResponse.json({ error: dropoffLocationError }, { status: 400 });
+  }
+  const pickupLocationTextSnapshot = locationSelection.pickupLocationTextSnapshot;
+  const dropoffLocationTextSnapshot = locationSelection.dropoffLocationTextSnapshot;
+  const pickupLocation = pickupLocationTextSnapshot;
+  const dropoffLocation = dropoffLocationTextSnapshot;
+  const bookingLocationDetails = locationSelection.details;
 
   const pool = deps.getPool();
   const client = await pool.connect();
@@ -246,7 +377,7 @@ export async function handleAdminBookingsPost(
     });
     const totalAmount = pricingPreview?.totalCents ?? Math.max(0, subtotalAmount - promoDiscount);
 
-    const pricing = {
+    const pricingBase = {
       daily_rate_cents: dailyRate,
       deposit_cents: depositAmount,
       days: pricingPreview?.days ?? days,
@@ -265,10 +396,23 @@ export async function handleAdminBookingsPost(
       payment_option_selected: "DEPOSIT",
       currency: pricingPreview?.currency ?? "JMD",
     };
+    const pricing = appendBookingLocationNote(pricingBase, bookingLocationDetails);
 
     const bookingInsert = await client.query(
-      "insert into bookings (vehicle_id, customer_id, start_date, end_date, pickup_location, status, pricing_json) values ($1, $2, $3, $4, $5, 'PENDING_PAYMENT', $6) returning id, status",
-      [vehicleId, customerUpsert.customerId, startDate, endDate, String(pickupLocation).trim(), pricing],
+      "insert into bookings (vehicle_id, customer_id, start_date, end_date, pickup_location, dropoff_location, pickup_location_id, dropoff_location_id, pickup_location_text_snapshot, dropoff_location_text_snapshot, status, pricing_json) values ($1, $2, $3, $4, $5, $6, $7::uuid, $8::uuid, $9, $10, 'PENDING_PAYMENT', $11) returning id, status",
+      [
+        vehicleId,
+        customerUpsert.customerId,
+        startDate,
+        endDate,
+        String(pickupLocation).trim(),
+        String(dropoffLocation).trim(),
+        pickupLocationId || null,
+        dropoffLocationId || null,
+        pickupLocationTextSnapshot,
+        dropoffLocationTextSnapshot,
+        pricing,
+      ],
     );
 
     await client.query("commit");
@@ -286,6 +430,8 @@ export async function handleAdminBookingsPost(
           vehicle_id: vehicleId,
           start_date: String(startDate),
           end_date: String(endDate),
+          pickup_location_type: pickupLocationType,
+          dropoff_location_type: dropoffLocationType,
           promo_code: promoCode || null,
           promo_discount_cents: promoDiscount,
         },
@@ -305,11 +451,11 @@ export async function handleAdminBookingsPost(
         customerEmail: normalizedEmail,
         customerName: String(fullName).trim(),
         vehicleLabel: `${vehicle.year} ${vehicle.make} ${vehicle.model}`.trim(),
-        startDate: String(startDate),
-        endDate: String(endDate),
-        pickupLocation: String(pickupLocation).trim(),
-        dailyRate,
-        deposit: depositAmount,
+          startDate: String(startDate),
+          endDate: String(endDate),
+          pickupLocation: pickupLocationTextSnapshot,
+          dailyRate,
+          deposit: depositAmount,
         promoCode: promoCode || null,
         promoDiscount,
       });

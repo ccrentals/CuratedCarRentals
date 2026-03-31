@@ -1,5 +1,17 @@
 import { readSortFromSearchParams, type SortDir } from "@/components/admin/tableSort";
 import { isVehicleUnavailableWithAvailabilityRules } from "@/lib/bookings/availabilityRules";
+import {
+  inferBookingLocationType,
+  readBookingLocationDetails,
+  type BookingLocationConfig,
+  type BookingLocationFieldValueMap,
+} from "@/lib/bookings/bookingLocations";
+import { listActiveBookingLocationConfigs } from "@/lib/bookings/bookingLocationConfigStore";
+import {
+  buildBookingLocationSelectionPayload,
+  normalizeBookingLocationFieldValuesInput,
+  validateBookingLocationSelection,
+} from "@/lib/bookings/locationConfigRuntime";
 import { dbQuery, getDbPool } from "@/lib/db";
 import {
   getQuoteStatusTransitionError,
@@ -163,6 +175,11 @@ export type CreateAdminQuoteInput = {
   dropoffLocationId?: string | null;
   pickupLocationText: string;
   dropoffLocationText: string;
+  pickupLocationType?: string | null;
+  dropoffLocationType?: string | null;
+  pickupLocationTextSnapshot?: string | null;
+  dropoffLocationTextSnapshot?: string | null;
+  bookingLocationDetails?: Record<string, unknown> | null;
   vehicleId: string;
   insuranceEnabled?: boolean;
   insurancePlanId?: string | null;
@@ -194,6 +211,11 @@ export type UpdateAdminQuoteInput = {
   dropoffLocationId?: string | null;
   pickupLocationText?: string;
   dropoffLocationText?: string;
+  pickupLocationType?: string | null;
+  dropoffLocationType?: string | null;
+  pickupLocationTextSnapshot?: string | null;
+  dropoffLocationTextSnapshot?: string | null;
+  bookingLocationDetails?: Record<string, unknown> | null;
   insuranceEnabled?: boolean;
   insurancePlanId?: string | null;
   promoCode?: string | null;
@@ -603,14 +625,6 @@ function requireValidCreateInput(input: CreateAdminQuoteInput) {
     throw new AdminQuoteError("INVALID_CUSTOMER_EMAIL", "Customer email is invalid.", 400);
   }
 
-  if (!isNonEmptyString(input.pickupLocationText, 2)) {
-    throw new AdminQuoteError("INVALID_PICKUP_LOCATION", "Pickup location is required.", 400);
-  }
-
-  if (!isNonEmptyString(input.dropoffLocationText, 2)) {
-    throw new AdminQuoteError("INVALID_DROPOFF_LOCATION", "Dropoff location is required.", 400);
-  }
-
   if (!UUID_REGEX.test(input.vehicleId)) {
     throw new AdminQuoteError("INVALID_VEHICLE_ID", "Vehicle id is invalid.", 400);
   }
@@ -686,6 +700,105 @@ function readPricingText(pricing: unknown, key: string, fallback: string | null 
   return value ?? fallback;
 }
 
+function buildLocationDefaultsFromDate(date: Date) {
+  const iso = date.toISOString();
+  return {
+    date: iso.slice(0, 10),
+    time: iso.slice(11, 16),
+  };
+}
+
+function readLocationDetailsObject(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+async function buildQuoteLocationSelection(input: {
+  client: Queryable;
+  startAt: Date;
+  endAt: Date;
+  pickupLocationId?: string | null;
+  dropoffLocationId?: string | null;
+  pickupLocationText?: string | null;
+  dropoffLocationText?: string | null;
+  pickupLocationType?: string | null;
+  dropoffLocationType?: string | null;
+  bookingLocationDetails?: Record<string, unknown> | null;
+  existingPricingJson?: Record<string, unknown> | null;
+}) {
+  const configs = await listActiveBookingLocationConfigs(input.client);
+  const pickupDefaults = buildLocationDefaultsFromDate(input.startAt);
+  const dropoffDefaults = buildLocationDefaultsFromDate(input.endAt);
+  const currentDetails = readBookingLocationDetails(input.existingPricingJson ?? {}, {
+    pickupLabel: input.pickupLocationText ?? null,
+    dropoffLabel: input.dropoffLocationText ?? null,
+    pickupLocationId: input.pickupLocationId ?? null,
+    dropoffLocationId: input.dropoffLocationId ?? null,
+  });
+  const rawDetails = readLocationDetailsObject(input.bookingLocationDetails);
+  const pickupRaw = readLocationDetailsObject(rawDetails?.pickup);
+  const dropoffRaw = readLocationDetailsObject(rawDetails?.dropoff);
+
+  const pickupTypeKey =
+    normalizeText(input.pickupLocationType).toUpperCase() ||
+    currentDetails.pickup.typeKey ||
+    inferBookingLocationType({ label: input.pickupLocationText ?? null }) ||
+    "OFFICE";
+  const dropoffTypeKey =
+    normalizeText(input.dropoffLocationType).toUpperCase() ||
+    currentDetails.dropoff.typeKey ||
+    inferBookingLocationType({ label: input.dropoffLocationText ?? null }) ||
+    pickupTypeKey;
+
+  const locationSelection = buildBookingLocationSelectionPayload({
+    configs,
+    pickupTypeKey,
+    dropoffTypeKey,
+    pickupLocationId: normalizeUuidOrNull(input.pickupLocationId) ?? currentDetails.pickup.locationId,
+    dropoffLocationId: normalizeUuidOrNull(input.dropoffLocationId) ?? currentDetails.dropoff.locationId,
+    pickupValues: normalizeBookingLocationFieldValuesInput(pickupRaw?.values, {
+      ...currentDetails.pickup.values,
+      address:
+        pickupTypeKey === "CUSTOM_ADDRESS"
+          ? normalizeText(input.pickupLocationText) || currentDetails.pickup.values.address || null
+          : currentDetails.pickup.values.address ?? null,
+    }),
+    dropoffValues: normalizeBookingLocationFieldValuesInput(dropoffRaw?.values, {
+      ...currentDetails.dropoff.values,
+      address:
+        dropoffTypeKey === "CUSTOM_ADDRESS"
+          ? normalizeText(input.dropoffLocationText) || currentDetails.dropoff.values.address || null
+          : currentDetails.dropoff.values.address ?? null,
+    }),
+    context: {
+      pickupDate: pickupDefaults.date,
+      pickupTime: pickupDefaults.time,
+      dropoffDate: dropoffDefaults.date,
+      dropoffTime: dropoffDefaults.time,
+    },
+  });
+
+  const pickupError = validateBookingLocationSelection(
+    locationSelection.pickupConfig,
+    "pickup",
+    locationSelection.pickupValues,
+  );
+  if (pickupError) {
+    throw new AdminQuoteError("INVALID_PICKUP_LOCATION", pickupError, 400);
+  }
+
+  const dropoffError = validateBookingLocationSelection(
+    locationSelection.dropoffConfig,
+    "dropoff",
+    locationSelection.dropoffValues,
+  );
+  if (dropoffError) {
+    throw new AdminQuoteError("INVALID_DROPOFF_LOCATION", dropoffError, 400);
+  }
+
+  return locationSelection;
+}
+
 export async function createAdminQuote(input: CreateAdminQuoteInput) {
   requireValidCreateInput(input);
 
@@ -716,6 +829,21 @@ export async function createAdminQuote(input: CreateAdminQuoteInput) {
   try {
     await client.query("begin");
 
+    const locationSelection = await buildQuoteLocationSelection({
+      client,
+      startAt,
+      endAt,
+      pickupLocationId: input.pickupLocationId ?? null,
+      dropoffLocationId: input.dropoffLocationId ?? null,
+      pickupLocationText:
+        input.pickupLocationTextSnapshot ?? input.pickupLocationText ?? null,
+      dropoffLocationText:
+        input.dropoffLocationTextSnapshot ?? input.dropoffLocationText ?? null,
+      pickupLocationType: input.pickupLocationType ?? null,
+      dropoffLocationType: input.dropoffLocationType ?? null,
+      bookingLocationDetails: input.bookingLocationDetails ?? null,
+    });
+
     await ensureVehicleAvailability({
       vehicleId: input.vehicleId,
       startAt,
@@ -745,6 +873,10 @@ export async function createAdminQuote(input: CreateAdminQuoteInput) {
     }
 
     const pricing = normalizePricingSummary(pricingSnapshot);
+    const nextPricingJson = {
+      ...(pricing.pricing_json ?? {}),
+      booking_location_details: locationSelection.details,
+    };
 
     const insertResult = await client.query(
       "insert into quotes (status, expires_at, customer_full_name, customer_email, customer_phone, start_at, end_at, pickup_location_id, dropoff_location_id, pickup_location_text, dropoff_location_text, vehicle_id, vehicle_label, vehicle_class, pricing_json, base_total_cents, insurance_total_cents, discount_total_cents, subtotal_cents, total_cents, deposit_required_cents, amount_due_cents, promo_code, insurance_plan_id, insurance_enabled, tags, comments, commission_partner_name, client_pays_at_partner, rack_price_cents, created_by_admin_user_id) values ('DRAFT', $1::timestamptz, $2, $3, $4, $5::timestamptz, $6::timestamptz, $7::uuid, $8::uuid, $9, $10, $11::uuid, $12, $13, $14::jsonb, $15, $16, $17, $18, $19, $20, $21, $22, $23::uuid, $24, $25::text[], $26, $27, $28, $29, $30::uuid) returning id, public_id, created_at, updated_at, status, expires_at, customer_full_name, customer_email, customer_phone, start_at, end_at, pickup_location_id, dropoff_location_id, pickup_location_text, dropoff_location_text, vehicle_id, vehicle_label, vehicle_class, pricing_json, base_total_cents, insurance_total_cents, discount_total_cents, subtotal_cents, total_cents, deposit_required_cents, amount_due_cents, promo_code, insurance_plan_id, insurance_enabled, tags, comments, commission_partner_name, client_pays_at_partner, rack_price_cents, created_by_admin_user_id, last_emailed_at, last_emailed_to, converted_booking_id",
@@ -755,14 +887,14 @@ export async function createAdminQuote(input: CreateAdminQuoteInput) {
         customerPhone,
         startAt.toISOString(),
         endAt.toISOString(),
-        pickupLocationId,
-        dropoffLocationId,
-        normalizeText(input.pickupLocationText),
-        normalizeText(input.dropoffLocationText),
+        locationSelection.pickupConfig?.id ?? normalizeUuidOrNull(input.pickupLocationId),
+        locationSelection.dropoffConfig?.id ?? normalizeUuidOrNull(input.dropoffLocationId),
+        locationSelection.pickupLocationTextSnapshot,
+        locationSelection.dropoffLocationTextSnapshot,
         input.vehicleId,
         pricing.vehicle_label,
         pricing.vehicle_class,
-        JSON.stringify(pricing.pricing_json),
+        JSON.stringify(nextPricingJson),
         pricing.base_total_cents,
         pricing.insurance_total_cents,
         pricing.discount_total_cents,
@@ -879,30 +1011,35 @@ export async function updateAdminQuote(input: UpdateAdminQuoteInput) {
     }
 
     const nextCustomerEmail = normalizeText(existing.customer_email).toLowerCase();
-    const nextPickupLocationId =
-      input.pickupLocationId !== undefined
-        ? normalizeUuidOrNull(input.pickupLocationId)
-        : normalizeUuidOrNull(existing.pickup_location_id);
-    const nextDropoffLocationId =
-      input.dropoffLocationId !== undefined
-        ? normalizeUuidOrNull(input.dropoffLocationId)
-        : normalizeUuidOrNull(existing.dropoff_location_id);
-
-    const nextPickupLocationText =
-      input.pickupLocationText !== undefined
-        ? normalizeText(input.pickupLocationText)
-        : normalizeText(existing.pickup_location_text);
-    const nextDropoffLocationText =
-      input.dropoffLocationText !== undefined
-        ? normalizeText(input.dropoffLocationText)
-        : normalizeText(existing.dropoff_location_text);
-
-    if (!nextPickupLocationText) {
-      throw new AdminQuoteError("INVALID_PICKUP_LOCATION", "Pickup location is required.", 400);
-    }
-    if (!nextDropoffLocationText) {
-      throw new AdminQuoteError("INVALID_DROPOFF_LOCATION", "Dropoff location is required.", 400);
-    }
+    const locationSelection = await buildQuoteLocationSelection({
+      client,
+      startAt: nextStartAt,
+      endAt: nextEndAt,
+      pickupLocationId:
+        input.pickupLocationId !== undefined
+          ? input.pickupLocationId
+          : normalizeUuidOrNull(existing.pickup_location_id),
+      dropoffLocationId:
+        input.dropoffLocationId !== undefined
+          ? input.dropoffLocationId
+          : normalizeUuidOrNull(existing.dropoff_location_id),
+      pickupLocationText:
+        input.pickupLocationTextSnapshot ??
+        input.pickupLocationText ??
+        normalizeText(existing.pickup_location_text),
+      dropoffLocationText:
+        input.dropoffLocationTextSnapshot ??
+        input.dropoffLocationText ??
+        normalizeText(existing.dropoff_location_text),
+      pickupLocationType: input.pickupLocationType ?? null,
+      dropoffLocationType: input.dropoffLocationType ?? null,
+      bookingLocationDetails: input.bookingLocationDetails ?? null,
+      existingPricingJson: existing.pricing_json,
+    });
+    const nextPickupLocationId = locationSelection.pickupConfig?.id ?? normalizeUuidOrNull(existing.pickup_location_id);
+    const nextDropoffLocationId = locationSelection.dropoffConfig?.id ?? normalizeUuidOrNull(existing.dropoff_location_id);
+    const nextPickupLocationText = locationSelection.pickupLocationTextSnapshot;
+    const nextDropoffLocationText = locationSelection.dropoffLocationTextSnapshot;
 
     const nextExpiresAt =
       input.expiresAt !== undefined
@@ -979,7 +1116,10 @@ export async function updateAdminQuote(input: UpdateAdminQuoteInput) {
       }
 
       const summary = normalizePricingSummary(pricingSnapshot);
-      pricingJson = summary.pricing_json;
+      pricingJson = {
+        ...(summary.pricing_json ?? {}),
+        booking_location_details: locationSelection.details,
+      };
       baseTotalCents = summary.base_total_cents;
       insuranceTotalCents = summary.insurance_total_cents;
       discountTotalCents = summary.discount_total_cents;
@@ -995,6 +1135,11 @@ export async function updateAdminQuote(input: UpdateAdminQuoteInput) {
       vehicleLabel = normalizeText(summary.vehicle_label);
       vehicleClass = normalizeNullableText(summary.vehicle_class);
       rackPriceCents = summary.rack_price_cents == null ? null : Number(summary.rack_price_cents);
+    } else {
+      pricingJson = {
+        ...(pricingJson ?? {}),
+        booking_location_details: locationSelection.details,
+      };
     }
 
     const updateResult = await client.query(

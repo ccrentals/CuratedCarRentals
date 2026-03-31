@@ -15,6 +15,16 @@ import {
   hashBookingSubmissionKey,
 } from "@/lib/bookings/privateAccess";
 import {
+  appendBookingLocationNote,
+  inferBookingLocationType,
+} from "@/lib/bookings/bookingLocations";
+import { listActiveBookingLocationConfigs } from "@/lib/bookings/bookingLocationConfigStore";
+import {
+  buildBookingLocationSelectionPayload,
+  normalizeBookingLocationFieldValuesInput,
+  validateBookingLocationSelection,
+} from "@/lib/bookings/locationConfigRuntime";
+import {
   parseSafePrivateBookingImageDataUrl,
   MAX_BOOKING_PRIVATE_IMAGE_BYTES,
 } from "@/lib/bookings/privateFiles";
@@ -88,25 +98,40 @@ export async function POST(request: Request) {
   const phoneInput = normalizeText(body?.phone);
   const startDate = normalizeText(body?.startDate);
   const endDate = normalizeText(body?.endDate);
-  const pickupLocation = normalizeText(body?.pickupLocation);
-  const dropoffLocation = normalizeText(body?.dropoffLocation) || pickupLocation;
+  const pickupLocationInput = normalizeText(body?.pickupLocation);
+  const dropoffLocationInput = normalizeText(body?.dropoffLocation) || pickupLocationInput;
   const pickupTime = normalizeTime(body?.pickupTime, "11:00");
   const dropoffTime = normalizeTime(body?.dropoffTime, "11:00");
-  const pickupLocationTextSnapshot =
-    normalizeText(body?.pickupLocationTextSnapshot) || pickupLocation;
-  const dropoffLocationTextSnapshot =
-    normalizeText(body?.dropoffLocationTextSnapshot) || dropoffLocation;
   const customerId = normalizeText(body?.customerId);
   const pickupLocationId = normalizeText(body?.pickupLocationId);
   const dropoffLocationId = normalizeText(body?.dropoffLocationId);
+  const pickupLocationType =
+    inferBookingLocationType({
+      locationType: body?.pickupLocationType,
+      label: body?.pickupLocationTextSnapshot ?? pickupLocationInput,
+    }) ?? "OFFICE";
+  const dropoffLocationType =
+    inferBookingLocationType({
+      locationType: body?.dropoffLocationType,
+      label:
+        body?.dropoffLocationTextSnapshot ?? dropoffLocationInput ?? pickupLocationInput,
+    }) ?? pickupLocationType;
+  const bookingLocationDetailsRaw =
+    body?.bookingLocationDetails && typeof body.bookingLocationDetails === "object"
+      ? (body.bookingLocationDetails as Record<string, unknown>)
+      : null;
+  const pickupLocationDetailsRaw =
+    bookingLocationDetailsRaw?.pickup && typeof bookingLocationDetailsRaw.pickup === "object"
+      ? (bookingLocationDetailsRaw.pickup as Record<string, unknown>)
+      : null;
+  const dropoffLocationDetailsRaw =
+    bookingLocationDetailsRaw?.dropoff && typeof bookingLocationDetailsRaw.dropoff === "object"
+      ? (bookingLocationDetailsRaw.dropoff as Record<string, unknown>)
+      : null;
   const insuranceSelected = body?.insuranceSelected === true;
   const insurancePricePerDayCents = Math.max(0, parseAmount(body?.insurancePricePerDayCents) ?? 0);
   const insurancePlanId = normalizeText(body?.insurancePlanId);
   const couponCode = normalizePromoInputCode(normalizeText(body?.couponCode));
-  const deliverySelected = body?.deliverySelected === true;
-  const deliveryZoneLabel =
-    normalizeText(body?.deliveryZoneLabel) ||
-    [pickupLocationTextSnapshot, dropoffLocationTextSnapshot].filter(Boolean).join(" → ");
   const paymentOptionInput = parsePaymentOptionInput(body?.paymentOption);
   const paymentOption = paymentOptionInput ?? "DEPOSIT";
   const customPaymentAmountCents = parseAmount(body?.customPaymentAmountCents);
@@ -152,12 +177,6 @@ export async function POST(request: Request) {
   }
   if (!isISODate(startDate) || !isISODate(endDate)) {
     return NextResponse.json({ error: "Invalid dates" }, { status: 400 });
-  }
-  if (!isNonEmptyString(pickupLocation, 3)) {
-    return NextResponse.json({ error: "Invalid pickupLocation" }, { status: 400 });
-  }
-  if (!isNonEmptyString(dropoffLocation, 3)) {
-    return NextResponse.json({ error: "Invalid dropoffLocation" }, { status: 400 });
   }
   if (hasDriversLicenseNumber && !legalIdType) {
     return NextResponse.json({ error: "Valid legalIdType is required" }, { status: 400 });
@@ -240,6 +259,92 @@ export async function POST(request: Request) {
   const bookingAccessTokenHash = hashBookingAccessToken(bookingAccessToken);
 
   const pool = getDbPool();
+  const bookingLocationConfigs = await listActiveBookingLocationConfigs(pool);
+  const locationSelection = buildBookingLocationSelectionPayload({
+    configs: bookingLocationConfigs,
+    pickupTypeKey: pickupLocationType,
+    dropoffTypeKey: dropoffLocationType,
+    pickupLocationId: pickupLocationId || null,
+    dropoffLocationId: dropoffLocationId || null,
+    pickupValues: normalizeBookingLocationFieldValuesInput(pickupLocationDetailsRaw?.values, {
+      address:
+        pickupLocationType === "CUSTOM_ADDRESS"
+          ? normalizeText(body?.pickupLocationTextSnapshot) || pickupLocationInput || null
+          : normalizeText(pickupLocationDetailsRaw?.address) || null,
+      flight_date:
+        pickupLocationType === "AIRPORT"
+          ? parseOptionalDate(pickupLocationDetailsRaw?.flightDate) ?? startDate
+          : null,
+      flight_time:
+        pickupLocationType === "AIRPORT"
+          ? normalizeTime(pickupLocationDetailsRaw?.flightTime, pickupTime)
+          : null,
+      flight_number:
+        pickupLocationType === "AIRPORT"
+          ? normalizeText(pickupLocationDetailsRaw?.flightNumber) || null
+          : null,
+      airline:
+        pickupLocationType === "AIRPORT"
+          ? normalizeText(pickupLocationDetailsRaw?.airline) || null
+          : null,
+    }),
+    dropoffValues: normalizeBookingLocationFieldValuesInput(dropoffLocationDetailsRaw?.values, {
+      address:
+        dropoffLocationType === "CUSTOM_ADDRESS"
+          ? normalizeText(body?.dropoffLocationTextSnapshot) || dropoffLocationInput || null
+          : normalizeText(dropoffLocationDetailsRaw?.address) || null,
+      flight_date:
+        dropoffLocationType === "AIRPORT"
+          ? parseOptionalDate(dropoffLocationDetailsRaw?.flightDate) ?? endDate
+          : null,
+      flight_time:
+        dropoffLocationType === "AIRPORT"
+          ? normalizeTime(dropoffLocationDetailsRaw?.flightTime, dropoffTime)
+          : null,
+      flight_number:
+        dropoffLocationType === "AIRPORT"
+          ? normalizeText(dropoffLocationDetailsRaw?.flightNumber) || null
+          : null,
+      airline:
+        dropoffLocationType === "AIRPORT"
+          ? normalizeText(dropoffLocationDetailsRaw?.airline) || null
+          : null,
+    }),
+    context: {
+      pickupDate: startDate,
+      pickupTime,
+      dropoffDate: endDate,
+      dropoffTime,
+    },
+  });
+  const pickupLocationError = validateBookingLocationSelection(
+    locationSelection.pickupConfig,
+    "pickup",
+    locationSelection.pickupValues,
+  );
+  if (pickupLocationError) {
+    return NextResponse.json({ error: pickupLocationError }, { status: 400 });
+  }
+  const dropoffLocationError = validateBookingLocationSelection(
+    locationSelection.dropoffConfig,
+    "dropoff",
+    locationSelection.dropoffValues,
+  );
+  if (dropoffLocationError) {
+    return NextResponse.json({ error: dropoffLocationError }, { status: 400 });
+  }
+  const pickupLocationTextSnapshot = locationSelection.pickupLocationTextSnapshot;
+  const dropoffLocationTextSnapshot = locationSelection.dropoffLocationTextSnapshot;
+  const pickupLocation = pickupLocationTextSnapshot;
+  const dropoffLocation = dropoffLocationTextSnapshot;
+  const bookingLocationDetails = locationSelection.details;
+  const deliverySelected =
+    body?.deliverySelected === true ||
+    locationSelection.pickupValues.address !== null ||
+    locationSelection.dropoffValues.address !== null;
+  const deliveryZoneLabel =
+    normalizeText(body?.deliveryZoneLabel) ||
+    [pickupLocationTextSnapshot, dropoffLocationTextSnapshot].filter(Boolean).join(" → ");
   const client = await pool.connect();
 
   try {
@@ -262,7 +367,7 @@ export async function POST(request: Request) {
     }
 
     const vehicleResult = await client.query(
-      "select id, make, model, year from vehicles where id = $1 and status <> 'INACTIVE'",
+      "select id, make, model, year from vehicles where id = $1 and upper(coalesce(status, '')) not in ('INACTIVE', 'UNAVAILABLE', 'MAINTENANCE')",
       [vehicleId],
     );
 
@@ -422,7 +527,7 @@ export async function POST(request: Request) {
       ? new Date().toISOString()
       : null;
 
-    const pricing = {
+    const pricingBase = {
       ...quoteSnapshot.pricingJson,
       days: pricingSummary.days,
       customer_name_snapshot: fullName,
@@ -448,6 +553,7 @@ export async function POST(request: Request) {
       private_access_token_hash: bookingAccessTokenHash,
       currency: String(quoteSnapshot.pricingJson.currency ?? "JMD"),
     };
+    const pricing = appendBookingLocationNote(pricingBase, bookingLocationDetails);
 
     const bookingInsert = await client.query(
       "insert into bookings (vehicle_id, customer_id, start_date, end_date, start_at, end_at, pickup_time, dropoff_time, pickup_location, dropoff_location, pickup_location_id, dropoff_location_id, pickup_location_text_snapshot, dropoff_location_text_snapshot, insurance_selected, insurance_plan_id, insurance_price_per_day_cents, insurance_total_cents, payment_option, custom_payment_amount_cents, drivers_license_number, drivers_license_expiration_date, drivers_license_uploaded_at, signature_signed_at, status, pricing_json) values ($1, $2, $3, $4, $5, $6, $7::time, $8::time, $9, $10, $11::uuid, $12::uuid, $13, $14, $15, $16::uuid, $17, $18, $19, $20, $21, $22::date, $23, $24, 'PENDING_PAYMENT', $25) returning id, status",

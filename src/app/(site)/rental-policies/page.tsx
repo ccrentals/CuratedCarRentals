@@ -1,6 +1,4 @@
-import { PublicCtaBand } from "@/components/site/PublicCtaBand";
-import { PublicPageIntro } from "@/components/site/PublicPageIntro";
-import { PublicSection } from "@/components/site/PublicSection";
+import { Container } from "@/components/site/Container";
 import {
   rentalPolicyDeposit,
   rentalPolicyRequirements,
@@ -10,108 +8,102 @@ import {
 export default function RentalPoliciesPage() {
   return (
     <>
-      <PublicPageIntro
-        eyebrow="Rental Guidance"
-        title="Rental Policies"
-        description="You can check available bookings, dates, and pricing directly on our website."
-        primaryAction={{ href: "/book", label: "Book Now" }}
-        secondaryAction={{ href: "/fleet", label: "Explore Fleet" }}
-      />
+      <section className="bg-[var(--ccr-surface-soft)]/65 py-14 md:py-20">
+        <Container>
+          <h1 className="font-display text-4xl font-bold text-[var(--ccr-text)] md:text-5xl">
+            Rental Policies
+          </h1>
+          <p className="mt-4 max-w-3xl text-lg leading-8 text-[var(--ccr-muted)]">
+            You can check available bookings, dates, and pricing directly on our website.
+          </p>
+        </Container>
+      </section>
 
-      <PublicSection
-        eyebrow="Requirements"
-        title="Clear booking expectations before you reserve."
-        description="These core requirements help keep pickup straightforward and the reservation process predictable."
-      >
-        <div className="grid gap-5 lg:grid-cols-2">
-          <article className="rounded-[1.9rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-[0_18px_56px_rgba(15,23,42,0.07)]">
-            <h2 className="text-2xl font-semibold tracking-tight text-[var(--ccr-text)]">Two Forms of ID Required</h2>
-            <ul className="mt-5 space-y-4">
-              {rentalPolicyRequirements.map((item) => (
-                <li key={item} className="flex gap-3 text-sm leading-7 text-[var(--ccr-muted)]">
-                  <span className="mt-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--ccr-surface-soft)] text-[var(--ccr-text)]">
-                    ✓
-                  </span>
-                  <span>{item}</span>
-                </li>
-              ))}
-            </ul>
-          </article>
+      <section className="bg-white py-16 md:py-24">
+        <Container>
+          <div className="mx-auto max-w-4xl space-y-8">
+            <article className="rounded-[1.9rem] bg-[var(--ccr-surface-soft)]/65 p-8">
+              <h2 className="font-display text-2xl font-bold text-[var(--ccr-text)]">
+                Two Forms of ID Required
+              </h2>
+              <ul className="mt-6 space-y-4">
+                {rentalPolicyRequirements.map((item) => (
+                  <li key={item} className="flex gap-3 text-base leading-7 text-[var(--ccr-muted)]">
+                    <span className="mt-1 text-green-600">✓</span>
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </article>
 
-          <article className="rounded-[1.9rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-[0_18px_56px_rgba(15,23,42,0.07)]">
-            <h2 className="text-2xl font-semibold tracking-tight text-[var(--ccr-text)]">Security Deposit</h2>
-            <ul className="mt-5 space-y-4">
-              {rentalPolicyDeposit.map((item) => (
-                <li key={item} className="flex gap-3 text-sm leading-7 text-[var(--ccr-muted)]">
-                  <span className="mt-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--ccr-surface-soft)] text-[var(--ccr-text)]">
-                    ✓
-                  </span>
-                  <span>{item}</span>
-                </li>
-              ))}
-            </ul>
-          </article>
-        </div>
-      </PublicSection>
+            <article className="rounded-[1.9rem] bg-[var(--ccr-surface-soft)]/65 p-8">
+              <h2 className="font-display text-2xl font-bold text-[var(--ccr-text)]">
+                Security Deposit
+              </h2>
+              <ul className="mt-6 space-y-4">
+                {rentalPolicyDeposit.map((item) => (
+                  <li key={item} className="flex gap-3 text-base leading-7 text-[var(--ccr-muted)]">
+                    <span className="mt-1 text-green-600">✓</span>
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </article>
 
-      <PublicSection
-        eyebrow="Reservation Notice"
-        title="Online booking lets you review live dates, prices, and reservation options."
-        description={reservationOptions.intro}
-        className="bg-[var(--ccr-surface)]/55"
-      >
-        <div className="grid gap-5 xl:grid-cols-[1fr_1fr_0.9fr]">
-          <article className="rounded-[1.9rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-[0_18px_56px_rgba(15,23,42,0.07)]">
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--ccr-accent-strong)]">
-              Paid Reservation
-            </p>
-            <ul className="mt-5 space-y-4">
-              {reservationOptions.paid.map((item) => (
-                <li key={item} className="flex gap-3 text-sm leading-7 text-[var(--ccr-muted)]">
-                  <span className="mt-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--ccr-surface-soft)] text-[var(--ccr-text)]">
-                    ✓
-                  </span>
-                  <span>{item}</span>
-                </li>
-              ))}
-            </ul>
-          </article>
+            <article className="rounded-[1.9rem] border border-amber-200 bg-amber-50 p-8">
+              <h2 className="font-display text-2xl font-bold text-[var(--ccr-text)]">
+                📢 Online Booking &amp; Reservation Notice
+              </h2>
+              <p className="mt-5 text-base leading-7 text-[var(--ccr-muted)]">
+                {reservationOptions.intro}
+              </p>
 
-          <article className="rounded-[1.9rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-[0_18px_56px_rgba(15,23,42,0.07)]">
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--ccr-accent-strong)]">
-              Non-Paid Reservation
-            </p>
-            <ul className="mt-5 space-y-4">
-              {reservationOptions.unpaid.map((item) => (
-                <li key={item} className="flex gap-3 text-sm leading-7 text-[var(--ccr-muted)]">
-                  <span className="mt-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--ccr-surface-soft)] text-[var(--ccr-text)]">
-                    •
-                  </span>
-                  <span>{item}</span>
-                </li>
-              ))}
-            </ul>
-          </article>
+              <h3 className="mt-8 text-xl font-semibold text-[var(--ccr-text)]">
+                Reservation Options ✨
+              </h3>
 
-          <article className="rounded-[1.9rem] border border-[var(--ccr-border)] bg-[var(--ccr-primary)] p-6 text-white shadow-[0_18px_56px_rgba(15,23,42,0.14)]">
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--ccr-accent)]">
-              Airport Pickup Policy
-            </p>
-            <p className="mt-4 text-base leading-7 text-white/80">{reservationOptions.airportPickupNote}</p>
-            <p className="mt-6 rounded-[1.5rem] bg-white/8 p-4 text-sm leading-7 text-white/76">
-              {reservationOptions.recommendation}
-            </p>
-          </article>
-        </div>
-      </PublicSection>
+              <div className="mt-6 space-y-6">
+                <article className="rounded-[1.5rem] border border-green-200 bg-white p-6">
+                  <h4 className="text-lg font-semibold text-green-700">✅ Paid Reservation</h4>
+                  <ul className="mt-4 space-y-3">
+                    {reservationOptions.paid.map((item) => (
+                      <li key={item} className="flex gap-3 text-base leading-7 text-[var(--ccr-muted)]">
+                        <span className="mt-1 text-green-600">✓</span>
+                        <span>{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </article>
 
-      <PublicCtaBand
-        eyebrow="Ready to Reserve?"
-        title="Check the live fleet, review the dates, and place your reservation online."
-        description="Booking online is the easiest way to see current availability, vehicle choices, and pricing before you travel."
-        primaryAction={{ href: "/book", label: "Book Now" }}
-        secondaryAction={{ href: "/fleet", label: "Explore Fleet" }}
-      />
+                <article className="rounded-[1.5rem] border border-amber-200 bg-white p-6">
+                  <h4 className="text-lg font-semibold text-amber-700">⚠️ Non-Paid Reservation</h4>
+                  <ul className="mt-4 space-y-3">
+                    {reservationOptions.unpaid.map((item) => (
+                      <li key={item} className="flex gap-3 text-base leading-7 text-[var(--ccr-muted)]">
+                        <span className="mt-1 text-amber-500">•</span>
+                        <span>{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </article>
+
+                <article className="rounded-[1.5rem] border border-blue-200 bg-blue-50 p-6">
+                  <h4 className="text-lg font-semibold text-blue-800">✈️ Airport Pickup Policy</h4>
+                  <p className="mt-3 text-base font-medium leading-7 text-blue-800">
+                    Airport pickup is provided <strong>ONLY</strong> with a <strong>PAID reservation</strong>.
+                  </p>
+                </article>
+
+                <article className="rounded-[1.5rem] border border-green-300 bg-green-100 p-6 text-center">
+                  <p className="text-base font-medium leading-7 text-green-800">
+                    💡 To avoid inconvenience, we <strong>strongly recommend</strong> making a paid reservation to guarantee your booking.
+                  </p>
+                </article>
+              </div>
+            </article>
+          </div>
+        </Container>
+      </section>
     </>
   );
 }

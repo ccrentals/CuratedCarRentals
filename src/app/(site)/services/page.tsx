@@ -1,74 +1,73 @@
-import { PublicCtaBand } from "@/components/site/PublicCtaBand";
-import { PublicPageIntro } from "@/components/site/PublicPageIntro";
-import { PublicSection } from "@/components/site/PublicSection";
-import { PublicStoryBlock } from "@/components/site/PublicStoryBlock";
-import { Button } from "@/components/ui/Button";
-import { services } from "@/data/services";
+import Image from "next/image";
 
-const serviceImages = [
-  "/cars/real/toyota-corolla-2020-1.jpg",
-  "/cars/real/nissan-xtrail-1.jpg",
-  "/cars/real/honda-fit-2020-3.jpg",
-  "/cars/real/toyota-yaris-2020-2.jpg",
-  "/cars/real/toyota-corolla-2020-3.jpg",
-];
+import { Container } from "@/components/site/Container";
+import { services } from "@/data/services";
 
 export default function ServicesPage() {
   return (
     <>
-      <PublicPageIntro
-        eyebrow="Services"
-        title="Our Services"
-        description="At Curated Car Rentals, we offer more than just vehicles. Discover our premium services designed to make your Jamaican journey exceptional."
-        primaryAction={{ href: "/book", label: "Book Now" }}
-        secondaryAction={{ href: "/fleet", label: "Explore Fleet" }}
-      >
-        <div className="flex flex-wrap gap-2">
-          {services.map((service) => (
-            <a
-              key={service.id}
-              href={`#${service.id}`}
-              className="rounded-full border border-white/15 bg-white/6 px-4 py-2 text-sm font-medium text-white/78 transition hover:bg-white/10 hover:text-white"
-            >
-              {service.title}
-            </a>
-          ))}
-        </div>
-      </PublicPageIntro>
+      <section className="bg-[var(--ccr-surface-soft)]/65 py-14 md:py-20">
+        <Container>
+          <h1 className="font-display text-4xl font-bold text-[var(--ccr-text)] md:text-5xl">
+            Our Services
+          </h1>
+          <p className="mt-4 max-w-3xl text-lg leading-8 text-[var(--ccr-muted)]">
+            At Curated Car Rentals, we offer more than just vehicles. Discover our premium services designed to make your Jamaican journey exceptional.
+          </p>
 
-      <PublicSection className="pt-12 md:pt-16">
-        <div className="space-y-16 md:space-y-24">
-          {services.map((service, index) => (
-            <div key={service.id} id={service.id} className="scroll-mt-32">
-              <PublicStoryBlock
-                eyebrow="Premium Service"
-                title={service.title}
-                paragraphs={[service.description, service.detail]}
-                imageSrc={serviceImages[index % serviceImages.length]}
-                imageAlt={service.title}
-                reverse={index % 2 === 1}
+          <div className="mt-8 flex flex-wrap gap-3">
+            {services.map((service) => (
+              <a
+                key={service.id}
+                href={`#${service.id}`}
+                className="rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-medium text-[var(--ccr-text)] transition hover:bg-[var(--ccr-surface-soft)]"
               >
-                <div className="flex flex-wrap gap-3">
-                  <Button href="/book" className="bg-[var(--ccr-accent-strong)] text-white hover:bg-[var(--ccr-accent)]">
-                    Book This Service
-                  </Button>
-                  <Button href="/contact" variant="outline">
-                    Ask a Question
-                  </Button>
-                </div>
-              </PublicStoryBlock>
-            </div>
-          ))}
-        </div>
-      </PublicSection>
+                {service.title}
+              </a>
+            ))}
+          </div>
+        </Container>
+      </section>
 
-      <PublicCtaBand
-        eyebrow="Planning Made Simple"
-        title="Need help choosing the right service for your stay?"
-        description="From airport pickup to longer rentals, our team can guide you toward the setup that best fits your itinerary."
-        primaryAction={{ href: "/contact", label: "Contact Us" }}
-        secondaryAction={{ href: "/book", label: "Book Now" }}
-      />
+      <section className="bg-white py-16 md:py-24">
+        <Container>
+          <div className="space-y-20">
+            {services.map((service, index) => (
+              <article
+                key={service.id}
+                id={service.id}
+                className="grid gap-10 lg:grid-cols-[0.92fr_1.08fr] lg:items-center"
+              >
+                <div className={index % 2 === 1 ? "lg:order-2" : undefined}>
+                  <div className="relative h-[24rem] overflow-hidden rounded-[2rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] shadow-[0_24px_80px_rgba(15,23,42,0.08)] md:h-[28rem]">
+                    <Image
+                      src={service.imageSrc}
+                      alt={service.imageAlt}
+                      fill
+                      sizes="(min-width: 1024px) 42vw, 100vw"
+                      className="object-cover"
+                    />
+                  </div>
+                </div>
+
+                <div className={index % 2 === 1 ? "lg:order-1" : undefined}>
+                  <h2 className="font-display text-4xl font-bold text-[var(--ccr-text)] md:text-5xl">
+                    {service.title}
+                  </h2>
+                  <p className="mt-5 text-lg leading-8 text-[var(--ccr-muted)]">{service.description}</p>
+
+                  <a
+                    href="/contact"
+                    className="mt-8 inline-flex min-h-12 items-center justify-center rounded-full bg-[#2ea9f4] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#48b9fa]"
+                  >
+                    Book This Service
+                  </a>
+                </div>
+              </article>
+            ))}
+          </div>
+        </Container>
+      </section>
     </>
   );
 }

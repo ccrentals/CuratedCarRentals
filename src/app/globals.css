@@ -402,8 +402,16 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
   overflow-x: clip;
+}
+
+.font-display {
+  font-family: var(--font-playfair-display), Georgia, serif;
+}
+
+.font-script {
+  font-family: var(--font-great-vibes), "Brush Script MT", "Segoe Script", cursive;
 }
 
 .scrollbar-hidden {
@@ -542,10 +550,10 @@ input.booking-edit-date-input::-webkit-calendar-picker-indicator {
 }
 
 .ccr-wordmark-curated {
-  font-family: "Brush Script MT", "Segoe Script", "Snell Roundhand", cursive;
-  font-style: italic;
-  font-weight: 700;
-  font-size: 150%;
+  font-family: var(--font-great-vibes), "Brush Script MT", "Segoe Script", cursive;
+  font-style: normal;
+  font-weight: 400;
+  font-size: 170%;
   letter-spacing: 0.01em;
 }
 

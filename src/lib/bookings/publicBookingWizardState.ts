@@ -31,8 +31,39 @@ export type PricingLifecycleState<T> = {
   error: string | null;
 };
 
+export type VehicleRefreshComparable = {
+  id: string;
+  name?: string;
+  make?: string;
+  model?: string;
+  year?: number;
+  daily_rate_cents?: number;
+  deposit_cents?: number;
+  images?: string[];
+  category?: string;
+  seats?: number;
+  doors?: number;
+  transmission?: string;
+  bags?: number;
+  fuelPolicy?: string;
+  mileagePolicy?: string;
+  airConditioning?: boolean;
+  hybrid?: boolean;
+  drivetrain?: string;
+  description?: string;
+};
+
+export type VehicleRefreshState<T extends VehicleRefreshComparable> = {
+  vehicleOptions: T[];
+  inventoryChanged: boolean;
+  vehicleSelectionUnavailable: boolean;
+  refreshWarning: string | null;
+};
+
 export const DRAFT_RESTORE_SECURITY_NOTICE =
   "Draft restored. For security, please re-sign your signature before continuing.";
+export const VEHICLE_REFRESH_FAILURE_MESSAGE =
+  "Live availability could not be refreshed. Showing the last confirmed vehicle list.";
 
 function normalizeText(value: unknown) {
   if (typeof value !== "string") return "";
@@ -129,4 +160,58 @@ export function pricingIsLoadingWithoutSnapshot<T>(state: PricingLifecycleState<
 
 export function pricingIsUpdatingWithSnapshot<T>(state: PricingLifecycleState<T>) {
   return state.status === "loading" && state.lastGood !== null;
+}
+
+export function createVehicleRefreshSignature<T extends VehicleRefreshComparable>(vehicles: T[]) {
+  return JSON.stringify(
+    vehicles.map((vehicle) => ({
+      id: normalizeText(vehicle.id),
+      name: normalizeText(vehicle.name),
+      make: normalizeText(vehicle.make),
+      model: normalizeText(vehicle.model),
+      year: Number(vehicle.year ?? 0),
+      dailyRateCents: Number(vehicle.daily_rate_cents ?? 0),
+      depositCents: Number(vehicle.deposit_cents ?? 0),
+      images: Array.isArray(vehicle.images)
+        ? vehicle.images
+            .filter((value): value is string => typeof value === "string")
+            .map((value) => normalizeText(value))
+            .filter(Boolean)
+        : [],
+      category: normalizeText(vehicle.category),
+      seats: Number(vehicle.seats ?? 0),
+      doors: Number(vehicle.doors ?? 0),
+      transmission: normalizeText(vehicle.transmission),
+      bags: Number(vehicle.bags ?? 0),
+      fuelPolicy: normalizeText(vehicle.fuelPolicy),
+      mileagePolicy: normalizeText(vehicle.mileagePolicy),
+      airConditioning: vehicle.airConditioning === true,
+      hybrid: vehicle.hybrid === true,
+      drivetrain: normalizeText(vehicle.drivetrain),
+      description: normalizeText(vehicle.description),
+    })),
+  );
+}
+
+export function reconcileVehicleRefreshState<T extends VehicleRefreshComparable>(params: {
+  previousVehicles: T[];
+  nextVehicles: T[] | null;
+  selectedVehicleId: string;
+  failureMessage?: string | null;
+}): VehicleRefreshState<T> {
+  const selectedVehicleId = normalizeText(params.selectedVehicleId);
+  const vehicleOptions = params.nextVehicles ?? params.previousVehicles;
+  const inventoryChanged =
+    params.nextVehicles === null
+      ? false
+      : createVehicleRefreshSignature(params.previousVehicles) !==
+        createVehicleRefreshSignature(params.nextVehicles);
+
+  return {
+    vehicleOptions,
+    inventoryChanged,
+    vehicleSelectionUnavailable:
+      selectedVehicleId.length > 0 && !vehicleOptions.some((vehicle) => normalizeText(vehicle.id) === selectedVehicleId),
+    refreshWarning: params.nextVehicles === null ? params.failureMessage ?? null : null,
+  };
 }

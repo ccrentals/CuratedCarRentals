@@ -1,12 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { InlineDateTimeRange } from "@/components/shared/InlineDateTimeRange";
 import { buttonStyles } from "@/components/ui/Button";
 import { siteContent } from "@/data/content";
+import {
+  getBookingLocationDetailLines,
+  readBookingLocationDetails,
+} from "@/lib/bookings/bookingLocations";
 import { formatJmd } from "@/lib/money";
 import { quoteStatusLabel, shortQuoteId } from "@/lib/quotes/quoteUi";
 
@@ -21,10 +25,13 @@ type QuoteDetailItem = {
   customerPhone: string | null;
   startAt: string;
   endAt: string;
+  pickupLocationId: string | null;
+  dropoffLocationId: string | null;
   pickupLocationText: string;
   dropoffLocationText: string;
   vehicleLabel: string;
   vehicleClass: string | null;
+  pricingJson: Record<string, unknown>;
   baseTotalCents: number;
   insuranceTotalCents: number;
   discountTotalCents: number;
@@ -46,6 +53,15 @@ export function QuotePrintClient({ quoteId }: { quoteId: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [item, setItem] = useState<QuoteDetailItem | null>(null);
+  const bookingLocationDetails = useMemo(() => {
+    if (!item) return null;
+    return readBookingLocationDetails(item.pricingJson, {
+      pickupLabel: item.pickupLocationText,
+      dropoffLabel: item.dropoffLocationText,
+      pickupLocationId: item.pickupLocationId,
+      dropoffLocationId: item.dropoffLocationId,
+    });
+  }, [item]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -119,8 +135,40 @@ export function QuotePrintClient({ quoteId }: { quoteId: string }) {
             <section>
               <h2 className="text-sm font-bold uppercase tracking-wide text-[var(--ccr-muted)]">Reservation</h2>
               <p className="mt-2 text-sm"><InlineDateTimeRange startLabel={item.startAt} endLabel={item.endAt} /></p>
-              <p className="mt-2 text-sm text-[var(--ccr-muted)]">Pickup: {item.pickupLocationText}</p>
-              <p className="text-sm text-[var(--ccr-muted)]">Dropoff: {item.dropoffLocationText}</p>
+              <div className="mt-2 grid gap-3 sm:grid-cols-2">
+                <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)]/50 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--ccr-muted)]">
+                    Pickup
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-[var(--ccr-text)]">
+                    {bookingLocationDetails?.pickup.label ?? item.pickupLocationText}
+                  </p>
+                  {(bookingLocationDetails
+                    ? getBookingLocationDetailLines(bookingLocationDetails.pickup)
+                    : []
+                  ).map((line) => (
+                    <p key={`pickup-${line}`} className="mt-1 text-xs text-[var(--ccr-muted)]">
+                      {line}
+                    </p>
+                  ))}
+                </div>
+                <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)]/50 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--ccr-muted)]">
+                    Dropoff
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-[var(--ccr-text)]">
+                    {bookingLocationDetails?.dropoff.label ?? item.dropoffLocationText}
+                  </p>
+                  {(bookingLocationDetails
+                    ? getBookingLocationDetailLines(bookingLocationDetails.dropoff)
+                    : []
+                  ).map((line) => (
+                    <p key={`dropoff-${line}`} className="mt-1 text-xs text-[var(--ccr-muted)]">
+                      {line}
+                    </p>
+                  ))}
+                </div>
+              </div>
               <p className="text-sm text-[var(--ccr-muted)]">Vehicle: {item.vehicleLabel}{item.vehicleClass ? ` (${item.vehicleClass})` : ""}</p>
             </section>
 

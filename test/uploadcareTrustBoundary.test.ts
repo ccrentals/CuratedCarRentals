@@ -5,6 +5,7 @@ import {
   buildUploadcareCdnUrl,
   extractUploadcareDeliveryUrl,
   extractUploadcareFileId,
+  resolveUploadcareCdnUrl,
 } from "@/lib/uploads/uploadcare";
 
 const FILE_ID = "7f6b5a4a-84f9-4e57-8be4-7b4b2cbf76ad";
@@ -29,6 +30,35 @@ test("uploadcare helper: buildUploadcareCdnUrl ignores untrusted CDN base hosts"
 
   try {
     assert.equal(buildUploadcareCdnUrl(FILE_ID), `https://ucarecdn.com/${FILE_ID}/`);
+  } finally {
+    if (previous === undefined) {
+      delete process.env.UPLOADCARE_CDN_BASE_URL;
+    } else {
+      process.env.UPLOADCARE_CDN_BASE_URL = previous;
+    }
+  }
+});
+
+test("uploadcare helper: resolveUploadcareCdnUrl discovers a trusted project subdomain", async () => {
+  const previous = process.env.UPLOADCARE_CDN_BASE_URL;
+  delete process.env.UPLOADCARE_CDN_BASE_URL;
+
+  try {
+    const url = await resolveUploadcareCdnUrl(FILE_ID, {
+      publicKey: "public-key",
+      fetchFn: async () =>
+        new Response(
+          JSON.stringify({
+            cdn_url: "https://project-files.ucarecd.net/test-group~1/",
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+    });
+
+    assert.equal(url, `https://project-files.ucarecd.net/${FILE_ID}/`);
   } finally {
     if (previous === undefined) {
       delete process.env.UPLOADCARE_CDN_BASE_URL;

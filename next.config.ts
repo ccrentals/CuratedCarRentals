@@ -20,12 +20,19 @@ const TURNSTILE_DOMAINS = [
 const UPLOADCARE_DOMAINS = [
   // Uploadcare widget script and CDN files used by admin/public uploads.
   "https://ucarecdn.com",
+  "https://ucarecd.net",
+  "https://*.ucarecd.net",
   "https://upload.uploadcare.com",
 ];
 
 const WIPAY_DOMAINS = [
   // WiPay hosted payment pages (redirect/form targets).
   "https://jm.wipayfinancial.com",
+];
+
+const CUSTOMER_SITE_DOMAINS = [
+  // Remote marketing/fleet assets mirrored from the live customer site.
+  "https://curatedcarrentals.com",
 ];
 
 function buildCsp() {
@@ -55,7 +62,7 @@ function buildCsp() {
     `script-src ${scriptSrc.join(" ")}`,
     `style-src 'self' 'unsafe-inline'`,
     `font-src 'self' data:`,
-    `img-src 'self' data: blob: ${[...CLERK_DOMAINS, ...UPLOADCARE_DOMAINS].join(" ")}`,
+    `img-src 'self' data: blob: ${[...CLERK_DOMAINS, ...UPLOADCARE_DOMAINS, ...CUSTOMER_SITE_DOMAINS].join(" ")}`,
     `connect-src ${connectSrc.join(" ")}`,
     `frame-src 'self' ${[...CLERK_DOMAINS, ...TURNSTILE_DOMAINS, ...WIPAY_DOMAINS].join(" ")}`,
     `worker-src 'self' blob:`,
@@ -119,6 +126,26 @@ const nextConfig: NextConfig = {
         headers: SECURITY_HEADERS,
       },
     ];
+  },
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "ucarecdn.com",
+      },
+      {
+        protocol: "https",
+        hostname: "ucarecd.net",
+      },
+      {
+        protocol: "https",
+        hostname: "**.ucarecd.net",
+      },
+      {
+        protocol: "https",
+        hostname: "curatedcarrentals.com",
+      },
+    ],
   },
 };
 

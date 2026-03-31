@@ -5,10 +5,24 @@ import { useRouter } from "next/navigation";
 
 import { buttonStyles } from "@/components/ui/Button";
 import {
+  buildBookingLocationConfigs,
+  type BookingLocationConfig,
+  type BookingLocationFieldSchema,
+  type BookingLocationFieldValueMap,
+} from "@/lib/bookings/bookingLocations";
+import {
   isAdminCreateBookingDateRangeValid,
   suggestAdminCreateBookingEndDate,
   suggestAdminCreateBookingPaymentAmount,
 } from "@/lib/bookings/adminCreateBookingDates";
+import {
+  buildBookingLocationSelectionPayload,
+  coerceBookingLocationFieldValues,
+  getBookingLocationConfigByType,
+  getBookingLocationConfigsForSide,
+  getBookingLocationFieldSchemaForSide,
+  validateBookingLocationSelection,
+} from "@/lib/bookings/locationConfigRuntime";
 import { formatJmd } from "@/lib/money";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
@@ -20,14 +34,6 @@ type VehicleOption = {
   model: string;
   dailyRateCents: number;
   depositCents: number;
-};
-
-type LocationOption = {
-  id: string;
-  label: string;
-  allow_pickup: boolean;
-  allow_dropoff: boolean;
-  is_active?: boolean;
 };
 
 type PricingPreview = {
@@ -75,6 +81,8 @@ function toDateTimeLocalValue(date: Date) {
   return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
 }
 
+const DEFAULT_BOOKING_LOCATIONS = buildBookingLocationConfigs();
+
 export function AdminCreateBookingModal({
   initialOpen = false,
   clearOpenHref,
@@ -87,7 +95,11 @@ export function AdminCreateBookingModal({
   const [startDate, setStartDate] = useState(initialStartDate);
   const [endDate, setEndDate] = useState(initialEndDate);
   const [endDateManuallyEdited, setEndDateManuallyEdited] = useState(false);
-  const [pickupLocationId, setPickupLocationId] = useState("");
+  const [pickupLocationTypeKey, setPickupLocationTypeKey] = useState("OFFICE");
+  const [dropoffLocationTypeKey, setDropoffLocationTypeKey] = useState("OFFICE");
+  const [pickupLocationValues, setPickupLocationValues] = useState<BookingLocationFieldValueMap>({});
+  const [dropoffLocationValues, setDropoffLocationValues] = useState<BookingLocationFieldValueMap>({});
+  const [dropoffLocationManuallyEdited, setDropoffLocationManuallyEdited] = useState(false);
   const [vehicleId, setVehicleId] = useState("");
   const [fullName, setFullName] = useState(initialCustomer?.fullName ?? "");
   const [email, setEmail] = useState(initialCustomer?.email ?? "");
@@ -101,7 +113,7 @@ export function AdminCreateBookingModal({
   const [paymentReference, setPaymentReference] = useState("");
   const [paymentNote, setPaymentNote] = useState("");
 
-  const [locations, setLocations] = useState<LocationOption[]>([]);
+  const [locations, setLocations] = useState<BookingLocationConfig[]>(DEFAULT_BOOKING_LOCATIONS);
   const [locationsLoading, setLocationsLoading] = useState(false);
   const [locationsError, setLocationsError] = useState<string | null>(null);
   const [availableVehicles, setAvailableVehicles] = useState<VehicleOption[]>([]);
@@ -121,12 +133,42 @@ export function AdminCreateBookingModal({
     [endDate, startDate],
   );
   const pickupLocations = useMemo(
-    () => locations.filter((location) => location.allow_pickup && location.is_active !== false),
+    () => getBookingLocationConfigsForSide(locations, "pickup").filter((location) => location.isActive),
+    [locations],
+  );
+  const dropoffLocations = useMemo(
+    () => getBookingLocationConfigsForSide(locations, "dropoff").filter((location) => location.isActive),
     [locations],
   );
   const selectedPickupLocation = useMemo(
-    () => pickupLocations.find((location) => location.id === pickupLocationId) ?? null,
-    [pickupLocationId, pickupLocations],
+    () =>
+      getBookingLocationConfigByType(pickupLocations, pickupLocationTypeKey, "pickup") ??
+      DEFAULT_BOOKING_LOCATIONS[0] ??
+      null,
+    [pickupLocationTypeKey, pickupLocations],
+  );
+  const selectedDropoffLocation = useMemo(
+    () =>
+      getBookingLocationConfigByType(dropoffLocations, dropoffLocationTypeKey, "dropoff") ??
+      selectedPickupLocation,
+    [dropoffLocationTypeKey, dropoffLocations, selectedPickupLocation],
+  );
+  const pickupFieldSchema = useMemo(
+    () => getBookingLocationFieldSchemaForSide(selectedPickupLocation, "pickup"),
+    [selectedPickupLocation],
+  );
+  const dropoffFieldSchema = useMemo(
+    () => getBookingLocationFieldSchemaForSide(selectedDropoffLocation, "dropoff"),
+    [selectedDropoffLocation],
+  );
+  const locationDefaultsContext = useMemo(
+    () => ({
+      pickupDate: startDate,
+      pickupTime: "11:00",
+      dropoffDate: endDate,
+      dropoffTime: "11:00",
+    }),
+    [endDate, startDate],
   );
   const suggestedPaymentAmount = useMemo(
     () => suggestAdminCreateBookingPaymentAmount(preview?.depositRequiredCents),
@@ -207,24 +249,123 @@ export function AdminCreateBookingModal({
 
         if (cancelled) return;
         const nextLocations = Array.isArray(payload.locations)
-          ? payload.locations.filter(
-              (value): value is LocationOption =>
-                Boolean(value) &&
-                typeof value === "object" &&
-                typeof (value as { id?: unknown }).id === "string" &&
-                typeof (value as { label?: unknown }).label === "string",
-            )
+          ? payload.locations
+              .map((value) => {
+                if (!value || typeof value !== "object") return null;
+                const location = value as {
+                  id?: unknown;
+                  label?: unknown;
+                  location_type_key?: unknown;
+                  pickup_label?: unknown;
+                  dropoff_label?: unknown;
+                  location_type?: unknown;
+                  allow_pickup?: unknown;
+                  allow_dropoff?: unknown;
+                  applies_to_pickup?: unknown;
+                  applies_to_dropoff?: unknown;
+                  field_schema?: unknown;
+                  is_active?: unknown;
+                  db_backed?: unknown;
+                  sort_order?: unknown;
+                };
+                const locationTypeKey =
+                  (typeof location.location_type_key === "string" && location.location_type_key.trim()) ||
+                  (typeof location.location_type === "string" && location.location_type.trim()) ||
+                  "";
+                if (!locationTypeKey) return null;
+                const fallback =
+                  DEFAULT_BOOKING_LOCATIONS.find(
+                    (item) => item.locationTypeKey === locationTypeKey,
+                  ) ?? null;
+                return {
+                  id: typeof location.id === "string" && location.id.trim() ? location.id.trim() : null,
+                  locationType: locationTypeKey,
+                  locationTypeKey,
+                  label:
+                    typeof location.label === "string" && location.label.trim()
+                      ? location.label.trim()
+                      : fallback?.label ?? locationTypeKey,
+                  pickupLabel:
+                    typeof location.pickup_label === "string" && location.pickup_label.trim()
+                      ? location.pickup_label.trim()
+                      : fallback?.pickupLabel ?? locationTypeKey,
+                  dropoffLabel:
+                    typeof location.dropoff_label === "string" && location.dropoff_label.trim()
+                      ? location.dropoff_label.trim()
+                      : fallback?.dropoffLabel ?? locationTypeKey,
+                  allowPickup: location.allow_pickup !== false,
+                  allowDropoff: location.allow_dropoff !== false,
+                  appliesToPickup: location.applies_to_pickup !== false,
+                  appliesToDropoff: location.applies_to_dropoff !== false,
+                  isActive: location.is_active !== false,
+                  sortOrder:
+                    typeof location.sort_order === "number"
+                      ? Math.round(location.sort_order)
+                      : fallback?.sortOrder ?? 0,
+                  fieldSchema: Array.isArray(location.field_schema)
+                    ? location.field_schema
+                        .map((field) => {
+                          if (!field || typeof field !== "object") return null;
+                          const record = field as {
+                            key?: unknown;
+                            label?: unknown;
+                            input_type?: unknown;
+                            required?: unknown;
+                            applies_to?: unknown;
+                            default_source?: unknown;
+                          };
+                          if (
+                            typeof record.key !== "string" ||
+                            typeof record.label !== "string" ||
+                            (record.input_type !== "text" &&
+                              record.input_type !== "date" &&
+                              record.input_type !== "time") ||
+                            (record.applies_to !== "pickup" &&
+                              record.applies_to !== "dropoff" &&
+                              record.applies_to !== "both")
+                          ) {
+                            return null;
+                          }
+                          return {
+                            key: record.key,
+                            label: record.label,
+                            inputType: record.input_type,
+                            required: record.required === true,
+                            appliesTo: record.applies_to,
+                            defaultSource:
+                              record.default_source === "pickup_date" ||
+                              record.default_source === "pickup_time" ||
+                              record.default_source === "dropoff_date" ||
+                              record.default_source === "dropoff_time"
+                                ? record.default_source
+                                : null,
+                          } satisfies BookingLocationFieldSchema;
+                        })
+                        .filter((field): field is BookingLocationFieldSchema => field !== null)
+                    : fallback?.fieldSchema ?? [],
+                  dbBacked: location.db_backed === true || (typeof location.id === "string" && location.id.trim().length > 0),
+                } satisfies BookingLocationConfig;
+              })
+              .filter((location): location is BookingLocationConfig => location !== null)
+              .sort((left, right) => left.sortOrder - right.sortOrder)
           : [];
-        setLocations(nextLocations);
-        setPickupLocationId((current) =>
-          current && nextLocations.some((location) => location.id === current)
+        const canonicalLocations = nextLocations.length > 0 ? nextLocations : DEFAULT_BOOKING_LOCATIONS;
+        setLocations(canonicalLocations);
+        setPickupLocationTypeKey((current) =>
+          canonicalLocations.some((location) => location.locationTypeKey === current)
             ? current
-            : (nextLocations.find((location) => location.allow_pickup && location.is_active !== false)?.id ?? ""),
+            : (canonicalLocations.find((location) => location.allowPickup)?.locationTypeKey ?? "OFFICE"),
+        );
+        setDropoffLocationTypeKey((current) =>
+          canonicalLocations.some((location) => location.locationTypeKey === current)
+            ? current
+            : (canonicalLocations.find((location) => location.allowDropoff)?.locationTypeKey ?? "OFFICE"),
         );
       } catch (requestError) {
         if (cancelled) return;
-        setLocations([]);
-        setPickupLocationId("");
+        setLocations(DEFAULT_BOOKING_LOCATIONS);
+        setPickupLocationTypeKey("OFFICE");
+        setDropoffLocationTypeKey("OFFICE");
         setLocationsError(
           requestError instanceof Error ? requestError.message : "Unable to load pickup locations.",
         );
@@ -370,6 +511,54 @@ export function AdminCreateBookingModal({
     }
   }, [paymentAmountManuallyEdited, preview, recordPaymentNow, suggestedPaymentAmount]);
 
+  useEffect(() => {
+    setPickupLocationValues((current) =>
+      coerceBookingLocationFieldValues(
+        selectedPickupLocation,
+        "pickup",
+        current,
+        locationDefaultsContext,
+      ),
+    );
+  }, [locationDefaultsContext, selectedPickupLocation]);
+
+  useEffect(() => {
+    if (dropoffLocationManuallyEdited) {
+      setDropoffLocationValues((current) =>
+        coerceBookingLocationFieldValues(
+          selectedDropoffLocation,
+          "dropoff",
+          current,
+          locationDefaultsContext,
+        ),
+      );
+      return;
+    }
+
+    const nextTypeKey =
+      selectedPickupLocation && dropoffLocations.some((location) => location.locationTypeKey === selectedPickupLocation.locationTypeKey)
+        ? selectedPickupLocation.locationTypeKey
+        : (dropoffLocations[0]?.locationTypeKey ?? selectedPickupLocation?.locationTypeKey ?? "OFFICE");
+    setDropoffLocationTypeKey(nextTypeKey);
+    setDropoffLocationValues(
+      coerceBookingLocationFieldValues(
+        getBookingLocationConfigByType(dropoffLocations, nextTypeKey, "dropoff"),
+        "dropoff",
+        selectedPickupLocation?.locationTypeKey === nextTypeKey && pickupLocationValues.address
+          ? { address: pickupLocationValues.address }
+          : {},
+        locationDefaultsContext,
+      ),
+    );
+  }, [
+    dropoffLocationManuallyEdited,
+    dropoffLocations,
+    locationDefaultsContext,
+    pickupLocationValues.address,
+    selectedDropoffLocation,
+    selectedPickupLocation,
+  ]);
+
   function handleStartDateChange(nextStartDate: string) {
     setStartDate(nextStartDate);
     const suggestedEndDate = suggestAdminCreateBookingEndDate(nextStartDate);
@@ -384,6 +573,49 @@ export function AdminCreateBookingModal({
   function handleEndDateChange(nextEndDate: string) {
     setEndDate(nextEndDate);
     setEndDateManuallyEdited(true);
+  }
+
+  function handlePickupLocationChange(nextTypeKey: string) {
+    setPickupLocationTypeKey(nextTypeKey);
+    setPickupLocationValues(
+      coerceBookingLocationFieldValues(
+        getBookingLocationConfigByType(pickupLocations, nextTypeKey, "pickup"),
+        "pickup",
+        pickupLocationValues,
+        locationDefaultsContext,
+      ),
+    );
+  }
+
+  function handleDropoffLocationChange(nextTypeKey: string) {
+    setDropoffLocationTypeKey(nextTypeKey);
+    setDropoffLocationManuallyEdited(true);
+    setDropoffLocationValues(
+      coerceBookingLocationFieldValues(
+        getBookingLocationConfigByType(dropoffLocations, nextTypeKey, "dropoff"),
+        "dropoff",
+        dropoffLocationValues,
+        locationDefaultsContext,
+      ),
+    );
+  }
+
+  function handleMatchPickup() {
+    const nextTypeKey =
+      selectedPickupLocation?.locationTypeKey &&
+      dropoffLocations.some((location) => location.locationTypeKey === selectedPickupLocation.locationTypeKey)
+        ? selectedPickupLocation.locationTypeKey
+        : (dropoffLocations[0]?.locationTypeKey ?? "OFFICE");
+    setDropoffLocationManuallyEdited(false);
+    setDropoffLocationTypeKey(nextTypeKey);
+    setDropoffLocationValues(
+      coerceBookingLocationFieldValues(
+        getBookingLocationConfigByType(dropoffLocations, nextTypeKey, "dropoff"),
+        "dropoff",
+        pickupLocationValues.address ? { address: pickupLocationValues.address } : {},
+        locationDefaultsContext,
+      ),
+    );
   }
 
   function handleRecordPaymentNowChange(checked: boolean) {
@@ -408,6 +640,21 @@ export function AdminCreateBookingModal({
     setPaymentAmountManuallyEdited(true);
   }
 
+  function updatePickupLocationValue(fieldKey: string, value: string) {
+    setPickupLocationValues((current) => ({
+      ...current,
+      [fieldKey]: value,
+    }));
+  }
+
+  function updateDropoffLocationValue(fieldKey: string, value: string) {
+    setDropoffLocationManuallyEdited(true);
+    setDropoffLocationValues((current) => ({
+      ...current,
+      [fieldKey]: value,
+    }));
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (loading) return;
@@ -418,6 +665,38 @@ export function AdminCreateBookingModal({
     setCreatedBookingId(null);
 
     const csrfToken = await ensureCsrfToken();
+    const pickupLocationError = validateBookingLocationSelection(
+      selectedPickupLocation,
+      "pickup",
+      pickupLocationValues,
+    );
+    if (pickupLocationError) {
+      setError(pickupLocationError);
+      setLoading(false);
+      return;
+    }
+
+    const dropoffLocationError = validateBookingLocationSelection(
+      selectedDropoffLocation,
+      "dropoff",
+      dropoffLocationValues,
+    );
+    if (dropoffLocationError) {
+      setError(dropoffLocationError);
+      setLoading(false);
+      return;
+    }
+
+    const locationSelection = buildBookingLocationSelectionPayload({
+      configs: locations,
+      pickupTypeKey: pickupLocationTypeKey,
+      dropoffTypeKey: dropoffLocationTypeKey,
+      pickupLocationId: selectedPickupLocation?.id ?? null,
+      dropoffLocationId: selectedDropoffLocation?.id ?? null,
+      pickupValues: pickupLocationValues,
+      dropoffValues: dropoffLocationValues,
+      context: locationDefaultsContext,
+    });
 
     const response = await fetch("/api/admin/bookings", {
       method: "POST",
@@ -433,7 +712,15 @@ export function AdminCreateBookingModal({
         phone,
         startDate,
         endDate,
-        pickupLocation: selectedPickupLocation?.label ?? "",
+        pickupLocation: locationSelection.pickupLocationTextSnapshot,
+        dropoffLocation: locationSelection.dropoffLocationTextSnapshot,
+        pickupLocationType: locationSelection.pickupConfig?.locationTypeKey ?? pickupLocationTypeKey,
+        dropoffLocationType: locationSelection.dropoffConfig?.locationTypeKey ?? dropoffLocationTypeKey,
+        pickupLocationId: locationSelection.pickupConfig?.id ?? null,
+        dropoffLocationId: locationSelection.dropoffConfig?.id ?? null,
+        pickupLocationTextSnapshot: locationSelection.pickupLocationTextSnapshot,
+        dropoffLocationTextSnapshot: locationSelection.dropoffLocationTextSnapshot,
+        bookingLocationDetails: locationSelection.details,
       }),
     });
 
@@ -564,25 +851,112 @@ export function AdminCreateBookingModal({
                 </section>
 
                 <section className="grid gap-3 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3">
-                  <label className="text-xs text-[var(--ccr-muted)]">
-                    Pickup location
-                    <select
-                      value={pickupLocationId}
-                      onChange={(event) => setPickupLocationId(event.target.value)}
-                      required
-                      disabled={locationsLoading || pickupLocations.length === 0}
-                      className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-sm text-[var(--ccr-text)] disabled:opacity-60"
-                    >
-                      <option value="">
-                        {locationsLoading ? "Loading pickup locations..." : "Select pickup location"}
-                      </option>
-                      {pickupLocations.map((location) => (
-                        <option key={location.id} value={location.id}>
-                          {location.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="text-xs text-[var(--ccr-muted)]">
+                      Pickup location
+                      <select
+                        value={pickupLocationTypeKey}
+                        onChange={(event) => {
+                          handlePickupLocationChange(event.target.value);
+                        }}
+                        required
+                        disabled={locationsLoading || pickupLocations.length === 0}
+                        className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-sm text-[var(--ccr-text)] disabled:opacity-60"
+                      >
+                        {pickupLocations.map((location) => (
+                          <option key={location.locationTypeKey} value={location.locationTypeKey}>
+                            {location.pickupLabel}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <div>
+                      <div className="flex items-center justify-between gap-2">
+                        <label className="text-xs text-[var(--ccr-muted)]">
+                          Return location
+                        </label>
+                        {dropoffLocationManuallyEdited ? (
+                          <button
+                            type="button"
+                            onClick={handleMatchPickup}
+                            className={buttonStyles({ variant: "ghost", size: "sm" })}
+                          >
+                            Match pickup
+                          </button>
+                        ) : null}
+                      </div>
+                      <select
+                        value={dropoffLocationTypeKey}
+                        onChange={(event) => handleDropoffLocationChange(event.target.value)}
+                        required
+                        disabled={locationsLoading || dropoffLocations.length === 0}
+                        className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-sm text-[var(--ccr-text)] disabled:opacity-60"
+                      >
+                        {dropoffLocations.map((location) => (
+                          <option key={location.locationTypeKey} value={location.locationTypeKey}>
+                            {location.dropoffLabel}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {pickupFieldSchema.length > 0 || dropoffFieldSchema.length > 0 ? (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="space-y-3">
+                        {pickupFieldSchema.map((field) => (
+                          <label
+                            key={`pickup-${field.appliesTo}-${field.key}-${field.label}`}
+                            className="block text-xs text-[var(--ccr-muted)]"
+                          >
+                            {field.label}
+                            <input
+                              value={pickupLocationValues[field.key] ?? ""}
+                              onChange={(event) =>
+                                updatePickupLocationValue(field.key, event.target.value)
+                              }
+                              type={field.inputType}
+                              placeholder={field.inputType === "text" ? "Enter a value" : undefined}
+                              className={`mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-sm text-[var(--ccr-text)] ${
+                                field.inputType === "date"
+                                  ? "promo-date-time-input date-icon-edge"
+                                  : field.inputType === "time"
+                                    ? "promo-date-time-input"
+                                    : ""
+                              }`}
+                            />
+                          </label>
+                        ))}
+                      </div>
+
+                      <div className="space-y-3">
+                        {dropoffFieldSchema.map((field) => (
+                          <label
+                            key={`dropoff-${field.appliesTo}-${field.key}-${field.label}`}
+                            className="block text-xs text-[var(--ccr-muted)]"
+                          >
+                            {field.label}
+                            <input
+                              value={dropoffLocationValues[field.key] ?? ""}
+                              onChange={(event) =>
+                                updateDropoffLocationValue(field.key, event.target.value)
+                              }
+                              type={field.inputType}
+                              placeholder={field.inputType === "text" ? "Enter a value" : undefined}
+                              className={`mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-sm text-[var(--ccr-text)] ${
+                                field.inputType === "date"
+                                  ? "promo-date-time-input date-icon-edge"
+                                  : field.inputType === "time"
+                                    ? "promo-date-time-input"
+                                    : ""
+                              }`}
+                            />
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                   {locationsError ? <p className="text-xs text-red-600">{locationsError}</p> : null}
                 </section>
 

@@ -9,6 +9,8 @@ import { UploadcareImagesInput } from "@/components/admin/UploadcareImagesInput"
 import { buttonStyles } from "@/components/ui/Button";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
+const VEHICLE_SAVE_TIMEOUT_MS = 15000;
+
 type VehicleDetail = {
   id: string;
   public_id: string;
@@ -20,6 +22,7 @@ type VehicleDetail = {
   deposit_cents?: number;
   status: string;
   image_urls_json?: string[];
+  public_visible: boolean;
 };
 
 type VehicleProfile = {
@@ -59,6 +62,7 @@ type OverviewFormState = {
   dailyRate: string;
   deposit: string;
   status: "available" | "unavailable" | "maintenance";
+  visibility: "private" | "public";
   images: string[];
   vin: string;
   licensePlate: string;
@@ -107,7 +111,7 @@ function derivedStatusLabel(status: VehicleDetailFormProps["initialDerivedStatus
 
 function buildFormState(vehicle: VehicleDetail, profile: VehicleProfile | null): OverviewFormState {
   const status =
-    vehicle.status === "INACTIVE"
+    vehicle.status === "UNAVAILABLE" || vehicle.status === "INACTIVE"
       ? "unavailable"
       : vehicle.status === "MAINTENANCE"
         ? "maintenance"
@@ -117,6 +121,7 @@ function buildFormState(vehicle: VehicleDetail, profile: VehicleProfile | null):
     dailyRate: String(vehicle.daily_rate_cents ?? ""),
     deposit: String(vehicle.deposit_cents ?? ""),
     status,
+    visibility: vehicle.public_visible ? "public" : "private",
     images: vehicle.image_urls_json ?? [],
     vin: profile?.vin ?? "",
     licensePlate: profile?.license_plate ?? "",
@@ -194,6 +199,10 @@ export function VehicleDetailForm({
     setSaving(true);
     setMessage(null);
     setError(null);
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => {
+      controller.abort();
+    }, VEHICLE_SAVE_TIMEOUT_MS);
 
     try {
       const csrfToken = await ensureCsrfToken();
@@ -203,11 +212,13 @@ export function VehicleDetailForm({
           "Content-Type": "application/json",
           "x-csrf-token": csrfToken ?? "",
         },
+        signal: controller.signal,
         body: JSON.stringify({
           daily_rate: Number(form.dailyRate),
           deposit: form.deposit,
           image_urls_json: form.images,
           status: form.status,
+          public_visible: form.visibility === "public",
           seat_count: form.seatCount.trim() ? Number(form.seatCount) : null,
           profile: {
             vin: form.vin,
@@ -243,7 +254,14 @@ export function VehicleDetailForm({
       setForm(nextBaseline);
       setIsEditing(false);
       setMessage("Vehicle profile changes saved.");
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        setError("Vehicle save timed out. Please try again.");
+        return;
+      }
+      setError(error instanceof Error ? error.message : "Failed to update vehicle profile.");
     } finally {
+      window.clearTimeout(timeoutId);
       setSaving(false);
     }
   }
@@ -483,6 +501,24 @@ export function VehicleDetailForm({
             <option value="maintenance">Maintenance</option>
           </select>
         </label>
+        <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+          Visibility
+          <select
+            value={form.visibility}
+            disabled={!isEditing}
+            onChange={(event) =>
+              setForm((current) => ({
+                ...current,
+                visibility: event.target.value as OverviewFormState["visibility"],
+              }))
+            }
+            className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)] disabled:cursor-default disabled:opacity-80"
+            data-testid="vehicle-visibility-select"
+          >
+            <option value="private">Private</option>
+            <option value="public">Public</option>
+          </select>
+        </label>
       </div>
 
       <div className="mt-6 border-t border-[var(--ccr-border)] pt-5">
@@ -670,7 +706,7 @@ export function VehicleDetailForm({
           value={form.images}
           onChange={(nextImages) => setForm((current) => ({ ...current, images: nextImages }))}
           label="Vehicle Images"
-          helperText="Upload photos that will appear on the fleet cards."
+          helperText="Upload photos that stay in our Uploadcare account and are tracked under this vehicle's gallery naming convention when you save."
           displayMode="carousel"
           disabled={!isEditing}
           actionSlot={

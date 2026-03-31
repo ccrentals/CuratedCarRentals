@@ -6,16 +6,18 @@ import { dbQuery, getDbPool } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
 import { requireCsrf } from "@/lib/security/csrf";
 import { parseMoneyToCents, parseImageUrls } from "@/lib/validators";
+import { buildVehicleGalleryEntries } from "@/lib/vehicles/gallery";
 
 const STATUS_MAP: Record<string, string> = {
   available: "AVAILABLE",
-  unavailable: "INACTIVE",
+  unavailable: "UNAVAILABLE",
   maintenance: "MAINTENANCE",
   available_now: "AVAILABLE",
 };
 
 const ALLOWED_STATUSES = new Set([
   "AVAILABLE",
+  "UNAVAILABLE",
   "INACTIVE",
   "MAINTENANCE",
   "RESERVED",
@@ -26,6 +28,11 @@ const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type VehicleRouteContext = { params: Promise<{ id: string }> };
+type AdminAccessResult = Awaited<ReturnType<typeof requireAdminAccess>>;
+type VehicleMutationClient = {
+  query: (text: string, values?: unknown[]) => Promise<{ rowCount?: number | null; rows: Record<string, unknown>[] }>;
+  release: () => void;
+};
 type VehicleProfilePatchInput = {
   vin: string | null;
   license_plate: string | null;
@@ -51,6 +58,13 @@ type AdminVehicleDeleteDeps = {
   countBlockingBookings: (vehicleId: string) => Promise<number>;
   softDeleteVehicle: (vehicleId: string) => Promise<boolean>;
   writeDeleteAudit: (input: { userId: string; vehicleId: string }) => Promise<void>;
+};
+
+type AdminVehiclePatchDeps = {
+  authorize: () => Promise<AdminAccessResult>;
+  requireCsrfCheck: (request: Request, bodyToken?: string | null) => Promise<boolean>;
+  connect: () => Promise<VehicleMutationClient>;
+  writeAudit: typeof writeAuditLog;
 };
 
 const DEFAULT_DELETE_DEPS: AdminVehicleDeleteDeps = {
@@ -93,6 +107,13 @@ const DEFAULT_DELETE_DEPS: AdminVehicleDeleteDeps = {
   },
 };
 
+const DEFAULT_PATCH_DEPS: AdminVehiclePatchDeps = {
+  authorize: () => requireAdminAccess(),
+  requireCsrfCheck: (request, bodyToken) => requireCsrf(request, bodyToken),
+  connect: async () => getDbPool().connect(),
+  writeAudit: writeAuditLog,
+};
+
 function normalizeSeatCount(value: unknown): number | null | typeof INVALID_SEAT_COUNT {
   if (value === undefined) return null;
   if (value === null || value === "") return null;
@@ -105,6 +126,11 @@ function normalizeSeatCount(value: unknown): number | null | typeof INVALID_SEAT
 function normalizeText(value: unknown) {
   if (typeof value !== "string") return "";
   return value.trim();
+}
+
+function toObject(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return value as Record<string, unknown>;
 }
 
 function normalizeNullableText(value: unknown, max = 255) {
@@ -189,17 +215,18 @@ export async function GET(
   return NextResponse.json({ vehicle: vehicleResult.rows[0] });
 }
 
-export async function PATCH(
+export async function handleAdminVehiclePatch(
   request: Request,
   { params }: VehicleRouteContext,
+  deps: AdminVehiclePatchDeps = DEFAULT_PATCH_DEPS,
 ) {
-  const auth = await requireAdminAccess();
+  const auth = await deps.authorize();
   if (!auth.ok) return auth.response;
   const { actor } = auth;
 
   const { id } = await params;
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
-  if (!(await requireCsrf(request, (body?.csrfToken as string | null | undefined) ?? null))) {
+  if (!(await deps.requireCsrfCheck(request, (body?.csrfToken as string | null | undefined) ?? null))) {
     return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
   }
   const profilePatch = parseProfilePatch(body);
@@ -223,9 +250,10 @@ export async function PATCH(
   const statusRaw = typeof body?.status === "string" ? body.status : undefined;
   const seatCountRaw = body?.seat_count ?? body?.seatCount ?? profilePatch?.seat_count;
   const imageUrls = parseImageUrls(body?.image_urls_json);
+  const publicVisibleRaw = body?.public_visible;
 
   const updates: string[] = [];
-  const values: Array<string | number | string[] | null> = [];
+  const values: Array<string | number | null> = [];
   let index = 1;
   const auditFields: string[] = [];
 
@@ -252,8 +280,8 @@ export async function PATCH(
   }
 
   if (imageUrls.length > 0 || body?.image_urls_json !== undefined) {
-    updates.push(`image_urls_json = $${index}`);
-    values.push(imageUrls);
+    updates.push(`image_urls_json = $${index}::jsonb`);
+    values.push(JSON.stringify(imageUrls));
     auditFields.push("image_urls_json");
     index += 1;
   }
@@ -305,19 +333,72 @@ export async function PATCH(
     return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });
   }
 
-  const db = getDbPool();
-  const client = await db.connect();
+  const client = await deps.connect();
   let vehicle: Record<string, unknown> | null = null;
 
   try {
     await client.query("begin");
     const lockedVehicle = (await client.query(
-      "select id from vehicles where id = $1::uuid for update",
+      "select id, public_id, make, model, year, features_json, image_urls_json from vehicles where id = $1::uuid for update",
       [id],
-    )) as { rowCount: number; rows: Array<{ id: string }> };
+    )) as {
+      rowCount: number;
+      rows: Array<{
+        id: string;
+        public_id: string;
+        make: string;
+        model: string;
+        year: number;
+        features_json: unknown;
+        image_urls_json: unknown;
+      }>;
+    };
     if (lockedVehicle.rowCount === 0) {
       await client.query("rollback");
       return NextResponse.json({ error: "Vehicle not found" }, { status: 404 });
+    }
+    const currentVehicle = lockedVehicle.rows[0];
+    const currentFeatures = toObject(currentVehicle.features_json);
+    const currentSlug = normalizeText(currentFeatures.slug) || `${currentVehicle.make}-${currentVehicle.model}-${currentVehicle.year}`;
+
+    if (imageUrls.length > 0 || body?.image_urls_json !== undefined || publicVisibleRaw !== undefined) {
+      const galleryImages = buildVehicleGalleryEntries({
+        imageUrls:
+          imageUrls.length > 0 || body?.image_urls_json !== undefined
+            ? imageUrls
+            : Array.isArray(currentVehicle.image_urls_json)
+              ? currentVehicle.image_urls_json.filter((value): value is string => typeof value === "string")
+              : [],
+        vehiclePublicId: currentVehicle.public_id,
+        slug: currentSlug
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, "")
+          .slice(0, 80),
+        existingGallery: currentFeatures.gallery_images,
+      });
+      const currentPublicVisible = (() => {
+        const value = currentFeatures.public_visible;
+        if (typeof value === "boolean") return value;
+        if (typeof value === "string") return ["true", "1", "yes", "y"].includes(value.trim().toLowerCase());
+        return false;
+      })();
+      const nextPublicVisible =
+        publicVisibleRaw === undefined
+          ? currentPublicVisible
+          : typeof publicVisibleRaw === "boolean"
+            ? publicVisibleRaw
+            : ["true", "1", "yes", "y"].includes(String(publicVisibleRaw).trim().toLowerCase());
+      updates.push(`features_json = $${index}::jsonb`);
+      values.push(
+        JSON.stringify({
+          ...currentFeatures,
+          public_visible: nextPublicVisible,
+          gallery_images: galleryImages,
+        }),
+      );
+      auditFields.push("features_json");
+      index += 1;
     }
 
     if (updates.length > 0) {
@@ -406,15 +487,30 @@ export async function PATCH(
     client.release();
   }
 
-  await writeAuditLog({
-    userId: actor.userId,
-    action: "VEHICLE_UPDATE",
-    entityType: "vehicle",
-    entityId: id,
-    details: { fields: auditFields },
-  });
+  try {
+    await deps.writeAudit({
+      userId: actor.userId,
+      action: "VEHICLE_UPDATE",
+      entityType: "vehicle",
+      entityId: id,
+      details: { fields: auditFields },
+    });
+  } catch (error) {
+    console.warn("vehicle.update.audit_failed", {
+      vehicleId: id,
+      userId: actor.userId,
+      error: error instanceof Error ? error.message : "unknown_error",
+    });
+  }
 
   return NextResponse.json({ vehicle });
+}
+
+export async function PATCH(
+  request: Request,
+  context: VehicleRouteContext,
+) {
+  return handleAdminVehiclePatch(request, context);
 }
 
 export async function handleAdminVehicleDelete(

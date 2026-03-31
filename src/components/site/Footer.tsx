@@ -4,24 +4,29 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { Container } from "@/components/site/Container";
+import { SiteLogo } from "@/components/site/SiteLogo";
 import { siteContent } from "@/data/content";
 import { services } from "@/data/services";
 import { isStandaloneAuthRoute } from "@/lib/security/clerk";
 
-const exploreLinks = [
+const quickLinks = [
   { href: "/", label: "Home" },
-  { href: "/fleet", label: "Fleet" },
+  { href: "/fleet", label: "Our Fleet" },
   { href: "/services", label: "Services" },
   { href: "/tourist-destinations", label: "Tourist Destinations" },
-  { href: "/about", label: "About" },
+  { href: "/about", label: "About Us" },
+  { href: "/contact", label: "Contact" },
+  { href: "/book", label: "Book Now" },
 ];
 
-const planLinks = [
-  { href: "/rental-policies", label: "Rental Policies" },
-  { href: "/driving-in-jamaica", label: "Driving in Jamaica" },
-  { href: "/book", label: "Book" },
-  { href: "/contact", label: "Contact" },
+const socialLinks = [
+  { href: "https://facebook.com", label: "Facebook", icon: FacebookIcon },
+  { href: "https://instagram.com", label: "Instagram", icon: InstagramIcon },
+  { href: "https://twitter.com", label: "Twitter", icon: TwitterIcon },
+  { href: "https://youtube.com", label: "YouTube", icon: YouTubeIcon },
 ];
+
+const legalFooterItems = ["Privacy Policy", "Terms & Conditions", "FAQ"] as const;
 
 export function Footer() {
   const pathname = usePathname();
@@ -30,44 +35,44 @@ export function Footer() {
   }
 
   return (
-    <footer className="site-footer mt-20 border-t border-[var(--ccr-border)] bg-[var(--ccr-primary)] text-white">
-      <Container className="py-14 md:py-20">
-        <div className="flex flex-col gap-8 border-b border-white/10 pb-10 md:flex-row md:items-end md:justify-between">
-          <div className="max-w-2xl">
-            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-[var(--ccr-accent)]">
-              Curated Car Rentals
-            </p>
-            <h2 className="mt-4 text-3xl font-semibold tracking-tight md:text-4xl">
-              Premium vehicle hire, local support, and a smoother start to every Jamaica trip.
-            </h2>
-            <p className="mt-4 max-w-xl text-sm leading-7 text-white/70 md:text-base">
+    <footer className="site-footer bg-[#070b12] text-white">
+      <Container className="max-w-[86rem] px-6 py-16 sm:px-8 lg:px-10">
+        <div className="grid gap-10 border-b border-white/10 pb-12 md:grid-cols-2 xl:grid-cols-[1.2fr_0.9fr_0.9fr_1.05fr]">
+          <div>
+            <div className="flex items-start gap-3">
+              <SiteLogo size={64} className="h-14 w-14 shrink-0 text-white" />
+              <h2 className="font-display text-[1.9rem] font-bold text-white sm:text-[2.1rem]">
+                Curated Car Rentals
+              </h2>
+            </div>
+            <p className="mt-4 max-w-md text-base leading-7 text-white/68">
               {siteContent.brandDescription}
             </p>
+
+            <div className="mt-6 flex flex-wrap gap-3">
+              {socialLinks.map((item) => {
+                const Icon = item.icon;
+
+                return (
+                  <a
+                    key={item.label}
+                    href={item.href}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/12 bg-white/6 text-white/78 transition hover:border-white/24 hover:bg-white/10 hover:text-white"
+                    aria-label={item.label}
+                  >
+                    <Icon className="h-4 w-4" />
+                  </a>
+                );
+              })}
+            </div>
           </div>
 
-          <div className="flex flex-wrap gap-3">
-            <Link
-              href="/fleet"
-              className="inline-flex min-h-11 items-center justify-center rounded-full border border-white/15 bg-white/6 px-5 py-2 text-sm font-semibold text-white transition hover:bg-white/12"
-            >
-              Explore Fleet
-            </Link>
-            <Link
-              href="/book"
-              className="inline-flex min-h-11 items-center justify-center rounded-full border border-transparent bg-[var(--ccr-accent)] px-5 py-2 text-sm font-semibold text-[var(--ccr-primary)] transition hover:bg-[#ffd588]"
-            >
-              Book Now
-            </Link>
-          </div>
-        </div>
-
-        <div className="grid gap-10 pt-10 md:grid-cols-2 xl:grid-cols-[1.25fr_0.9fr_0.9fr_1.25fr]">
           <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.22em] text-[var(--ccr-accent)]">
-              Explore
-            </p>
-            <ul className="mt-4 space-y-3 text-sm text-white/72">
-              {exploreLinks.map((link) => (
+            <h3 className="font-display text-2xl font-bold text-white">Quick Links</h3>
+            <ul className="mt-5 space-y-3 text-[15px] text-white/72">
+              {quickLinks.map((link) => (
                 <li key={link.href}>
                   <Link href={link.href} className="transition hover:text-white">
                     {link.label}
@@ -78,25 +83,8 @@ export function Footer() {
           </div>
 
           <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.22em] text-[var(--ccr-accent)]">
-              Plan Your Trip
-            </p>
-            <ul className="mt-4 space-y-3 text-sm text-white/72">
-              {planLinks.map((link) => (
-                <li key={link.href}>
-                  <Link href={link.href} className="transition hover:text-white">
-                    {link.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.22em] text-[var(--ccr-accent)]">
-              Services
-            </p>
-            <ul className="mt-4 space-y-3 text-sm text-white/72">
+            <h3 className="font-display text-2xl font-bold text-white">Our Services</h3>
+            <ul className="mt-5 space-y-3 text-[15px] text-white/72">
               {services.map((service) => (
                 <li key={service.id}>
                   <Link href={`/services#${service.id}`} className="transition hover:text-white">
@@ -108,37 +96,154 @@ export function Footer() {
           </div>
 
           <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.22em] text-[var(--ccr-accent)]">
-              Contact
-            </p>
-            <div className="mt-4 space-y-3 text-sm leading-7 text-white/72">
-              <p>{siteContent.addressLines.join(", ")}</p>
+            <h3 className="font-display text-2xl font-bold text-white">Contact Us</h3>
+            <ul className="mt-5 space-y-4 text-[15px] text-white/72">
+              <li className="flex gap-3">
+                <span className="mt-1 text-white/48">
+                  <LocationIcon className="h-4 w-4" />
+                </span>
+                <span>
+                  <span className="block">{siteContent.addressLines[0]}</span>
+                  <span className="block">{siteContent.addressLines[1]}</span>
+                </span>
+              </li>
               {siteContent.phones.map((phone) => (
-                <p key={phone.href}>
+                <li key={phone.href} className="flex gap-3">
+                  <span className="mt-1 text-white/48">
+                    <PhoneIcon className="h-4 w-4" />
+                  </span>
                   <a href={phone.href} className="transition hover:text-white">
                     {phone.label}
                   </a>
-                </p>
+                </li>
               ))}
-              <p>
-                <a href={`mailto:${siteContent.email}`} className="transition hover:text-white">
-                  {siteContent.email}
-                </a>
-              </p>
-              <p>
+              <li className="flex gap-3">
+                <span className="mt-1 text-white/48">
+                  <MessageIcon className="h-4 w-4" />
+                </span>
                 <a href={siteContent.whatsapp.href} className="transition hover:text-white">
                   WhatsApp: {siteContent.whatsapp.label}
                 </a>
-              </p>
-            </div>
+              </li>
+              <li className="flex gap-3">
+                <span className="mt-1 text-white/48">
+                  <MailIcon className="h-4 w-4" />
+                </span>
+                <a href={`mailto:${siteContent.email}`} className="transition hover:text-white">
+                  {siteContent.email}
+                </a>
+              </li>
+            </ul>
           </div>
         </div>
 
-        <div className="mt-12 border-t border-white/10 pt-6 text-sm text-white/58 md:flex md:items-center md:justify-between">
-          <p>© {new Date().getFullYear()} {siteContent.brand}. All rights reserved.</p>
-          <p className="mt-3 md:mt-0">{siteContent.tagline}</p>
+        <div className="flex flex-col gap-4 pt-6 text-sm text-white/56 md:flex-row md:items-center md:justify-between">
+          <p>© {new Date().getFullYear()} Curated Car Rentals. All rights reserved.</p>
+          <div className="flex flex-wrap gap-x-5 gap-y-2">
+            {legalFooterItems.map((item) => (
+              <button
+                key={item}
+                type="button"
+                className="border-0 bg-transparent p-0 text-left transition hover:text-white focus:outline-none focus-visible:text-white"
+                aria-disabled="true"
+              >
+                {item}
+              </button>
+            ))}
+          </div>
         </div>
       </Container>
     </footer>
+  );
+}
+
+function FacebookIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <path
+        d="M14 9h3V5h-3c-2.761 0-5 2.239-5 5v3H6v4h3v6h4v-6h3.2l.8-4H13v-3c0-.552.448-1 1-1Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
+function InstagramIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <rect x="3" y="3" width="18" height="18" rx="5" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="17.5" cy="6.5" r="1" fill="currentColor" />
+    </svg>
+  );
+}
+
+function TwitterIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <path
+        d="M18.901 5H21l-4.586 5.241L21.81 19h-4.225l-3.31-4.334L10.48 19H8.38l4.904-5.602L8 5h4.333l2.992 3.92L18.901 5Zm-1.481 12.708h1.17L11.697 6.223h-1.255l6.978 11.485Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
+function YouTubeIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <path
+        d="M21.582 7.197a2.971 2.971 0 0 0-2.09-2.104C17.647 4.6 12 4.6 12 4.6s-5.647 0-7.492.493A2.971 2.971 0 0 0 2.418 7.2C1.924 9.056 1.924 12 1.924 12s0 2.944.494 4.803a2.971 2.971 0 0 0 2.09 2.104c1.845.493 7.492.493 7.492.493s5.647 0 7.492-.493a2.971 2.971 0 0 0 2.09-2.104c.494-1.859.494-4.803.494-4.803s0-2.944-.494-4.803ZM9.9 15.1V8.9l5.2 3.1-5.2 3.1Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
+function LocationIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <path
+        d="M12 21s6-5.586 6-11a6 6 0 1 0-12 0c0 5.414 6 11 6 11Z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+      />
+      <circle cx="12" cy="10" r="2.5" stroke="currentColor" strokeWidth="1.8" />
+    </svg>
+  );
+}
+
+function PhoneIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <path
+        d="M5.5 4.5h3l1.5 4-2 1.5c1.02 2.066 2.685 3.731 4.75 4.75l1.5-2 4 1.5v3a1.5 1.5 0 0 1-1.5 1.5C10.82 19.75 4.25 13.18 4.25 5.75A1.5 1.5 0 0 1 5.75 4.25Z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function MessageIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <path
+        d="M20 11.5A8.5 8.5 0 0 1 7.2 18.9L3 20l1.1-4.2A8.5 8.5 0 1 1 20 11.5Z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function MailIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <rect x="3" y="5" width="18" height="14" rx="2" stroke="currentColor" strokeWidth="1.8" />
+      <path d="m5 7 7 6 7-6" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+    </svg>
   );
 }

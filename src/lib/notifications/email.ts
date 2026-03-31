@@ -5,6 +5,10 @@ import {
   generateRentalAgreementPdf,
 } from "@/lib/pdfmonkey";
 import { loadBookingRentalAgreementPayload } from "@/lib/agreements/rentalAgreementPayload";
+import {
+  formatBookingLocationDisplayText,
+  readBookingLocationDetails,
+} from "@/lib/bookings/bookingLocations";
 import { logError, logWarn, redactText } from "@/lib/log";
 import { readInsurancePricingFields, readPromoPricingFields } from "@/lib/payments/pricing";
 import { dbQuery } from "@/lib/db";
@@ -143,6 +147,8 @@ const PAYMENT_STATUS_REDUCES_BALANCE = new Set([
 
 type InvoiceContextRow = {
   public_id: string | null;
+  pickup_location: string | null;
+  dropoff_location: string | null;
   pricing_json: Record<string, unknown> | null;
   customer_address: string | null;
   customer_street: string | null;
@@ -297,14 +303,14 @@ async function loadInvoiceContext(bookingId: string) {
   const contextResult = await (async () => {
     try {
       return await dbQuery<InvoiceContextRow>(
-        "select b.public_id, b.pricing_json, c.address as customer_address, c.street as customer_street, c.street2 as customer_street2, c.city as customer_city, c.state as customer_state, c.country as customer_country from bookings b join customers c on c.id = b.customer_id where b.id = $1",
+        "select b.public_id, b.pickup_location, b.dropoff_location, b.pricing_json, c.address as customer_address, c.street as customer_street, c.street2 as customer_street2, c.city as customer_city, c.state as customer_state, c.country as customer_country from bookings b join customers c on c.id = b.customer_id where b.id = $1",
         [bookingId],
       );
     } catch (error) {
       const code = (error as { code?: string } | null)?.code;
       if (code === "42703") {
         return await dbQuery<InvoiceContextRow>(
-          "select b.public_id, b.pricing_json, c.address as customer_address, null::text as customer_street, null::text as customer_street2, null::text as customer_city, null::text as customer_state, null::text as customer_country from bookings b join customers c on c.id = b.customer_id where b.id = $1",
+          "select b.public_id, b.pickup_location, b.dropoff_location, b.pricing_json, c.address as customer_address, null::text as customer_street, null::text as customer_street2, null::text as customer_city, null::text as customer_state, null::text as customer_country from bookings b join customers c on c.id = b.customer_id where b.id = $1",
           [bookingId],
         );
       }
@@ -326,6 +332,17 @@ async function loadInvoiceContext(bookingId: string) {
   const balanceDueAmount = readMoneyFromPricing(pricing, ["balance_due"]);
   const customerAddress = buildCustomerAddress(bookingRow);
   const bookingPublicId = normalizeText(bookingRow?.public_id);
+  const bookingLocationDetails = readBookingLocationDetails(pricing, {
+    pickupLabel: normalizeText(bookingRow?.pickup_location),
+    dropoffLabel: normalizeText(bookingRow?.dropoff_location),
+  });
+  const pickupLocationDisplay =
+    formatBookingLocationDisplayText(bookingLocationDetails.pickup) ||
+    normalizeText(bookingRow?.pickup_location);
+  const dropoffLocationDisplay =
+    formatBookingLocationDisplayText(bookingLocationDetails.dropoff) ||
+    normalizeText(bookingRow?.dropoff_location) ||
+    pickupLocationDisplay;
 
   const paymentsResult = await (async () => {
     try {
@@ -371,6 +388,8 @@ async function loadInvoiceContext(bookingId: string) {
     depositAmount,
     paidToDateAmount,
     balanceDueAmount,
+    pickupLocationDisplay,
+    dropoffLocationDisplay,
     payments,
   };
 }
@@ -406,6 +425,7 @@ async function buildInvoiceAttachment(input: {
     const displayBookingId =
       normalizeText(input.bookingPublicId) || context.bookingPublicId || fallbackBookingReference(input.bookingId);
     const address = normalizeText(input.customerAddress) || context.customerAddress;
+    const pickupLocation = normalizeText(context.pickupLocationDisplay) || normalizeText(input.pickupLocation);
     const payments = input.payments.length ? input.payments : context.payments;
     const promoCode = normalizeText(input.promoCode) || context.promoCode || null;
     const promoDiscountInput = Number(input.promoDiscount);
@@ -439,6 +459,7 @@ async function buildInvoiceAttachment(input: {
       bookingId: input.bookingId,
       bookingPublicId: displayBookingId,
       invoiceNumber,
+      pickupLocation,
       customerAddress: address,
       baseTotal: baseTotalAmount,
       total: subtotalAmount,
@@ -560,6 +581,8 @@ type EmailFinancialSummary = {
   depositRequired: number;
   paidToDate: number;
   balanceDue: number;
+  pickupLocationDisplay: string;
+  dropoffLocationDisplay: string;
 };
 
 type EmailFinancialSummaryInput = {
@@ -605,6 +628,8 @@ async function resolveEmailFinancialSummary(
     context?.balanceDueAmount ??
     Math.max(0, totalAfterDiscount - paidToDate);
   const baseTotal = Math.max(0, subtotal - insuranceTotal);
+  const pickupLocationDisplay = context?.pickupLocationDisplay || "";
+  const dropoffLocationDisplay = context?.dropoffLocationDisplay || pickupLocationDisplay;
 
   return {
     bookingReference,
@@ -617,7 +642,22 @@ async function resolveEmailFinancialSummary(
     depositRequired,
     paidToDate,
     balanceDue,
+    pickupLocationDisplay,
+    dropoffLocationDisplay,
   };
+}
+
+function renderEmailLocationSection(input: {
+  pickupLocation: string;
+  dropoffLocation?: string | null;
+}) {
+  const pickupLocation = normalizeText(input.pickupLocation);
+  const dropoffLocation = normalizeText(input.dropoffLocation);
+  const lines = [`<p><strong>Pickup location:</strong> ${pickupLocation || "Not specified"}</p>`];
+  if (dropoffLocation && dropoffLocation !== pickupLocation) {
+    lines.push(`<p><strong>Dropoff location:</strong> ${dropoffLocation}</p>`);
+  }
+  return lines.join("\n");
 }
 
 function renderEmailChargeSummary(
@@ -669,6 +709,8 @@ export async function sendBookingCreatedEmail(input: {
   });
   const bookingLink = `${baseUrl()}/bookings/${input.bookingId}`;
   const paymentStatusLabel = summary.balanceDue > 0 ? "Payment incomplete" : "Paid in full";
+  const pickupLocationDisplay = summary.pickupLocationDisplay || input.pickupLocation;
+  const dropoffLocationDisplay = summary.dropoffLocationDisplay || input.pickupLocation;
 
   const html = `
     <div style="font-family: Arial, sans-serif; color: #0f172a;">
@@ -678,7 +720,10 @@ export async function sendBookingCreatedEmail(input: {
       <p><strong>Booking reference:</strong> ${summary.bookingReference}</p>
       <p><strong>Vehicle:</strong> ${input.vehicleLabel}</p>
       <p><strong>Dates:</strong> ${formatDateOnly(input.startDate)} → ${formatDateOnly(input.endDate)} (${days} days)</p>
-      <p><strong>Pickup location:</strong> ${input.pickupLocation}</p>
+      ${renderEmailLocationSection({
+        pickupLocation: pickupLocationDisplay,
+        dropoffLocation: dropoffLocationDisplay,
+      })}
       <hr />
       ${renderEmailChargeSummary(summary, { depositLabel: "Deposit online", balanceLabel: "Balance on pickup" })}
       <p><strong>Payment status:</strong> ${paymentStatusLabel}</p>
@@ -698,8 +743,8 @@ export async function sendBookingCreatedEmail(input: {
       bookingStatus: "PENDING_PAYMENT",
       startDate: input.startDate,
       endDate: input.endDate,
-      pickupLocation: input.pickupLocation,
-      returnLocation: input.pickupLocation,
+      pickupLocation: pickupLocationDisplay,
+      returnLocation: dropoffLocationDisplay,
       customerName: input.customerName,
       customerEmail: input.customerEmail,
       customerPhone: "",
@@ -754,6 +799,8 @@ export async function sendDepositReceiptEmail(input: {
   const bookingLink = `${baseUrl()}/bookings/${input.bookingId}`;
   const invoiceLink = `${baseUrl()}/bookings/${input.bookingId}/invoice`;
   const paymentStatusLabel = summary.balanceDue > 0 ? "Payment incomplete" : "Paid in full";
+  const pickupLocationDisplay = summary.pickupLocationDisplay || input.pickupLocation;
+  const dropoffLocationDisplay = summary.dropoffLocationDisplay || input.pickupLocation;
 
   const html = `
     <div style="font-family: Arial, sans-serif; color: #0f172a;">
@@ -763,7 +810,10 @@ export async function sendDepositReceiptEmail(input: {
       <p><strong>Booking reference:</strong> ${summary.bookingReference}</p>
       <p><strong>Vehicle:</strong> ${input.vehicleLabel}</p>
       <p><strong>Dates:</strong> ${formatDateOnly(input.startDate)} → ${formatDateOnly(input.endDate)} (${days} days)</p>
-      <p><strong>Pickup location:</strong> ${input.pickupLocation}</p>
+      ${renderEmailLocationSection({
+        pickupLocation: pickupLocationDisplay,
+        dropoffLocation: dropoffLocationDisplay,
+      })}
       <hr />
       ${renderEmailChargeSummary(summary, { depositLabel: "Deposit paid", balanceLabel: "Balance on pickup" })}
       <p><strong>Payment status:</strong> ${paymentStatusLabel}</p>
@@ -784,7 +834,7 @@ export async function sendDepositReceiptEmail(input: {
       bookingStatus: "CONFIRMED",
       startDate: input.startDate,
       endDate: input.endDate,
-      pickupLocation: input.pickupLocation,
+      pickupLocation: pickupLocationDisplay,
       customerName: input.customerName,
       customerEmail: input.customerEmail,
       customerPhone: "",
@@ -846,6 +896,8 @@ export async function sendPaymentUpdateEmail(input: {
     balanceDue: input.balanceDue,
   });
   const paymentStatusLabel = summary.balanceDue > 0 ? "Payment incomplete" : "Paid in full";
+  const pickupLocationDisplay = summary.pickupLocationDisplay || input.pickupLocation;
+  const dropoffLocationDisplay = summary.dropoffLocationDisplay || input.pickupLocation;
 
   const html = `
     <div style="font-family: Arial, sans-serif; color: #0f172a;">
@@ -868,7 +920,10 @@ export async function sendPaymentUpdateEmail(input: {
       <p><strong>Booking reference:</strong> ${summary.bookingReference}</p>
       <p><strong>Vehicle:</strong> ${input.vehicleLabel}</p>
       <p><strong>Dates:</strong> ${formatDateOnly(input.startDate)} → ${formatDateOnly(input.endDate)}</p>
-      <p><strong>Pickup location:</strong> ${input.pickupLocation}</p>
+      ${renderEmailLocationSection({
+        pickupLocation: pickupLocationDisplay,
+        dropoffLocation: dropoffLocationDisplay,
+      })}
       <hr />
       ${renderEmailChargeSummary(summary, { depositLabel: "Deposit required", balanceLabel: "Balance outstanding" })}
       <p><strong>Payment status:</strong> ${paymentStatusLabel}</p>
@@ -890,7 +945,7 @@ export async function sendPaymentUpdateEmail(input: {
       bookingStatus: "CONFIRMED",
       startDate: input.startDate,
       endDate: input.endDate,
-      pickupLocation: input.pickupLocation,
+      pickupLocation: pickupLocationDisplay,
       customerName: input.customerName,
       customerEmail: input.customerEmail,
       customerPhone: "",
@@ -951,6 +1006,8 @@ export async function sendPaymentCompleteEmail(input: {
     balanceDue: input.balanceDue,
   });
   const paymentStatusLabel = summary.balanceDue > 0 ? "Payment incomplete" : "Paid in full";
+  const pickupLocationDisplay = summary.pickupLocationDisplay || input.pickupLocation;
+  const dropoffLocationDisplay = summary.dropoffLocationDisplay || input.pickupLocation;
 
   const html = `
     <div style="font-family: Arial, sans-serif; color: #0f172a;">
@@ -973,7 +1030,10 @@ export async function sendPaymentCompleteEmail(input: {
       <p><strong>Booking reference:</strong> ${summary.bookingReference}</p>
       <p><strong>Vehicle:</strong> ${input.vehicleLabel}</p>
       <p><strong>Dates:</strong> ${formatDateOnly(input.startDate)} → ${formatDateOnly(input.endDate)}</p>
-      <p><strong>Pickup location:</strong> ${input.pickupLocation}</p>
+      ${renderEmailLocationSection({
+        pickupLocation: pickupLocationDisplay,
+        dropoffLocation: dropoffLocationDisplay,
+      })}
       <hr />
       ${renderEmailChargeSummary(summary, { depositLabel: "Deposit required", balanceLabel: "Balance outstanding" })}
       <p><strong>Payment status:</strong> ${paymentStatusLabel}</p>
@@ -994,7 +1054,7 @@ export async function sendPaymentCompleteEmail(input: {
       bookingStatus: "CONFIRMED",
       startDate: input.startDate,
       endDate: input.endDate,
-      pickupLocation: input.pickupLocation,
+      pickupLocation: pickupLocationDisplay,
       customerName: input.customerName,
       customerEmail: input.customerEmail,
       customerPhone: "",
@@ -1039,6 +1099,10 @@ export async function sendBalanceDueReminderEmail(input: {
 }) {
   const balanceLink = `${baseUrl()}/bookings/${input.bookingId}/balance`;
   const bookingReference = await resolveBookingReference(input.bookingId);
+  const summary = await resolveEmailFinancialSummary({
+    bookingId: input.bookingId,
+    balanceDue: input.balanceDue,
+  });
 
   const html = `
     <div style="font-family: Arial, sans-serif; color: #0f172a;">
@@ -1048,7 +1112,10 @@ export async function sendBalanceDueReminderEmail(input: {
       <p><strong>Booking reference:</strong> ${bookingReference}</p>
       <p><strong>Vehicle:</strong> ${input.vehicleLabel}</p>
       <p><strong>Dates:</strong> ${formatDateOnly(input.startDate)} → ${formatDateOnly(input.endDate)}</p>
-      <p><strong>Pickup location:</strong> ${input.pickupLocation}</p>
+      ${renderEmailLocationSection({
+        pickupLocation: summary.pickupLocationDisplay || input.pickupLocation,
+        dropoffLocation: summary.dropoffLocationDisplay || input.pickupLocation,
+      })}
       <hr />
       <p><strong>Balance due:</strong> ${formatAmount(input.balanceDue)}</p>
       <p style="margin-top: 16px;">
@@ -1079,6 +1146,10 @@ export async function sendDropoffReminderEmail(input: {
   const bookingLink = `${baseUrl()}/bookings/${input.bookingId}`;
   const balanceLink = `${baseUrl()}/bookings/${input.bookingId}/balance`;
   const bookingReference = await resolveBookingReference(input.bookingId);
+  const summary = await resolveEmailFinancialSummary({
+    bookingId: input.bookingId,
+    balanceDue: input.balanceDue,
+  });
 
   const html = `
     <div style="font-family: Arial, sans-serif; color: #0f172a;">
@@ -1088,7 +1159,10 @@ export async function sendDropoffReminderEmail(input: {
       <p><strong>Booking reference:</strong> ${bookingReference}</p>
       <p><strong>Vehicle:</strong> ${input.vehicleLabel}</p>
       <p><strong>Dates:</strong> ${formatDateOnly(input.startDate)} → ${formatDateOnly(input.endDate)}</p>
-      <p><strong>Pickup location:</strong> ${input.pickupLocation}</p>
+      ${renderEmailLocationSection({
+        pickupLocation: summary.pickupLocationDisplay || input.pickupLocation,
+        dropoffLocation: summary.dropoffLocationDisplay || input.pickupLocation,
+      })}
       <hr />
       <p><strong>Balance due:</strong> ${formatAmount(input.balanceDue)}</p>
       <p style="margin-top: 16px;">
@@ -1120,6 +1194,10 @@ export async function sendLateDropoffAlertEmail(input: {
   const bookingLink = `${baseUrl()}/bookings/${input.bookingId}`;
   const balanceLink = `${baseUrl()}/bookings/${input.bookingId}/balance`;
   const bookingReference = await resolveBookingReference(input.bookingId);
+  const summary = await resolveEmailFinancialSummary({
+    bookingId: input.bookingId,
+    balanceDue: input.balanceDue,
+  });
 
   const html = `
     <div style="font-family: Arial, sans-serif; color: #0f172a;">
@@ -1129,7 +1207,10 @@ export async function sendLateDropoffAlertEmail(input: {
       <p><strong>Booking reference:</strong> ${bookingReference}</p>
       <p><strong>Vehicle:</strong> ${input.vehicleLabel}</p>
       <p><strong>Dates:</strong> ${formatDateOnly(input.startDate)} → ${formatDateOnly(input.endDate)}</p>
-      <p><strong>Pickup location:</strong> ${input.pickupLocation}</p>
+      ${renderEmailLocationSection({
+        pickupLocation: summary.pickupLocationDisplay || input.pickupLocation,
+        dropoffLocation: summary.dropoffLocationDisplay || input.pickupLocation,
+      })}
       <hr />
       <p><strong>Balance due:</strong> ${formatAmount(input.balanceDue)}</p>
       <p style="margin-top: 16px;">
@@ -1374,6 +1455,10 @@ export async function sendPickupReminderEmail(input: {
   const bookingLink = `${baseUrl()}/bookings/${input.bookingId}`;
   const balanceLink = `${baseUrl()}/bookings/${input.bookingId}/balance`;
   const bookingReference = await resolveBookingReference(input.bookingId);
+  const summary = await resolveEmailFinancialSummary({
+    bookingId: input.bookingId,
+    balanceDue: input.balanceDue,
+  });
 
   const html = `
     <div style="font-family: Arial, sans-serif; color: #0f172a;">
@@ -1383,7 +1468,10 @@ export async function sendPickupReminderEmail(input: {
       <p><strong>Booking reference:</strong> ${bookingReference}</p>
       <p><strong>Vehicle:</strong> ${input.vehicleLabel}</p>
       <p><strong>Dates:</strong> ${formatDateOnly(input.startDate)} → ${formatDateOnly(input.endDate)}</p>
-      <p><strong>Pickup location:</strong> ${input.pickupLocation}</p>
+      ${renderEmailLocationSection({
+        pickupLocation: summary.pickupLocationDisplay || input.pickupLocation,
+        dropoffLocation: summary.dropoffLocationDisplay || input.pickupLocation,
+      })}
       <hr />
       <p><strong>Outstanding balance:</strong> ${formatAmount(input.balanceDue)}</p>
       <p style="margin-top: 16px;">

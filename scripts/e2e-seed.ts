@@ -642,29 +642,41 @@ async function main() {
     const pickupLocationResult = await client.query(
       `insert into booking_locations (
          label,
+         location_type_key,
+         display_label_pickup,
+         display_label_dropoff,
          allow_pickup,
          allow_dropoff,
+         applies_to_pickup,
+         applies_to_dropoff,
          is_active,
          sort_order,
+         field_schema_json,
          created_by
        )
-       values ($1, true, false, true, 10, $2::uuid)
+       values ($1, $2, $1, $1, true, false, true, false, true, 10, '[]'::jsonb, $3::uuid)
        returning id`,
-      [pickupLabel, adminUserId],
+      [pickupLabel, `E2E_PICKUP_${runId.toUpperCase()}`, adminUserId],
     );
 
     const dropoffLocationResult = await client.query(
       `insert into booking_locations (
          label,
+         location_type_key,
+         display_label_pickup,
+         display_label_dropoff,
          allow_pickup,
          allow_dropoff,
+         applies_to_pickup,
+         applies_to_dropoff,
          is_active,
          sort_order,
+         field_schema_json,
          created_by
        )
-       values ($1, false, true, true, 11, $2::uuid)
+       values ($1, $2, $1, $1, false, true, false, true, true, 11, '[]'::jsonb, $3::uuid)
        returning id`,
-      [dropoffLabel, adminUserId],
+      [dropoffLabel, `E2E_DROPOFF_${runId.toUpperCase()}`, adminUserId],
     );
 
     const customerResult = await client.query(

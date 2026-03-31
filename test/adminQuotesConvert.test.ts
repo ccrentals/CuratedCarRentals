@@ -13,6 +13,49 @@ function adminSession() {
   };
 }
 
+function bookingLocationDetails() {
+  return {
+    pickup: {
+      type: "AIRPORT",
+      typeKey: "AIRPORT",
+      label: "Norman Manley Airport",
+      locationId: null,
+      values: {
+        flight_arrival_date: "2026-03-10",
+        flight_arrival_time: "09:30",
+      },
+      fieldLabels: {
+        flight_arrival_date: "Flight Arrival Date",
+        flight_arrival_time: "Flight Arrival Time",
+      },
+      address: null,
+      flightDate: "2026-03-10",
+      flightTime: "09:30",
+      flightNumber: null,
+      airline: null,
+    },
+    dropoff: {
+      type: "AIRPORT",
+      typeKey: "AIRPORT",
+      label: "Norman Manley Airport",
+      locationId: null,
+      values: {
+        flight_departure_date: "2026-03-12",
+        flight_departure_time: "13:00",
+      },
+      fieldLabels: {
+        flight_departure_date: "Flight Departure Date",
+        flight_departure_time: "Flight Departure Time",
+      },
+      address: null,
+      flightDate: "2026-03-12",
+      flightTime: "13:00",
+      flightNumber: null,
+      airline: null,
+    },
+  };
+}
+
 test("admin quotes convert API: converts quote and returns booking id", async () => {
   const response = await handleAdminQuoteConvertPost(
     new Request("http://localhost/api/admin/quotes/c3ad4e53-f14f-4ac9-98fd-f4bacf1ec3d2/convert-to-booking", {
@@ -38,8 +81,9 @@ test("admin quotes convert API: converts quote and returns booking id", async ()
         endAt: "2026-03-12T10:00:00.000Z",
         pickupLocationId: null,
         dropoffLocationId: null,
-        pickupLocationText: "Montego Bay Airport",
-        dropoffLocationText: "Montego Bay Airport",
+        pickupLocationText: "Norman Manley Airport",
+        dropoffLocationText: "Norman Manley Airport",
+        bookingLocationDetails: bookingLocationDetails(),
         vehicleId: "6f11f0cf-cedf-4db3-a5fd-64bfe7fded1e",
         vehicleLabel: "Nissan X-Trail",
         vehicleClass: "SUV",
@@ -108,8 +152,9 @@ test("admin quotes convert API: blocks conversion when vehicle availability fail
         endAt: "2026-03-12T10:00:00.000Z",
         pickupLocationId: null,
         dropoffLocationId: null,
-        pickupLocationText: "Montego Bay Airport",
-        dropoffLocationText: "Montego Bay Airport",
+        pickupLocationText: "Norman Manley Airport",
+        dropoffLocationText: "Norman Manley Airport",
+        bookingLocationDetails: bookingLocationDetails(),
         vehicleId: "6f11f0cf-cedf-4db3-a5fd-64bfe7fded1e",
         vehicleLabel: "Nissan X-Trail",
         vehicleClass: "SUV",
@@ -177,8 +222,9 @@ test("admin quotes convert API: blocks expired quote before conversion", async (
         endAt: "2026-03-12T10:00:00.000Z",
         pickupLocationId: null,
         dropoffLocationId: null,
-        pickupLocationText: "Montego Bay Airport",
-        dropoffLocationText: "Montego Bay Airport",
+        pickupLocationText: "Norman Manley Airport",
+        dropoffLocationText: "Norman Manley Airport",
+        bookingLocationDetails: bookingLocationDetails(),
         vehicleId: "6f11f0cf-cedf-4db3-a5fd-64bfe7fded1e",
         vehicleLabel: "Nissan X-Trail",
         vehicleClass: "SUV",

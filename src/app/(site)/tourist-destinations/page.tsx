@@ -1,61 +1,60 @@
-import { PublicCtaBand } from "@/components/site/PublicCtaBand";
-import { PublicPageIntro } from "@/components/site/PublicPageIntro";
-import { PublicSection } from "@/components/site/PublicSection";
+import Image from "next/image";
+
+import { Container } from "@/components/site/Container";
 import { destinations } from "@/data/content";
 
 export default function TouristDestinationsPage() {
   return (
     <>
-      <PublicPageIntro
-        eyebrow="Explore Jamaica"
-        title="Tourist Destinations"
-        description="Discover Jamaica's most breathtaking locations, from pristine beaches to historic landmarks."
-        primaryAction={{ href: "/fleet", label: "Explore Fleet" }}
-        secondaryAction={{ href: "/book", label: "Book Now" }}
-      >
-        <div className="flex flex-wrap gap-2">
-          {destinations.slice(0, 4).map((destination) => (
-            <span
-              key={destination.name}
-              className="rounded-full border border-white/15 bg-white/6 px-4 py-2 text-sm font-medium text-white/78"
-            >
-              {destination.location}
-            </span>
-          ))}
-        </div>
-      </PublicPageIntro>
+      <section className="bg-[var(--ccr-surface-soft)]/65 py-14 md:py-20">
+        <Container>
+          <h1 className="font-display text-4xl font-bold text-[var(--ccr-text)] md:text-5xl">
+            Tourist Destinations
+          </h1>
+          <p className="mt-4 max-w-3xl text-lg leading-8 text-[var(--ccr-muted)]">
+            Discover Jamaica&apos;s most breathtaking locations, from pristine beaches to historic landmarks.
+          </p>
+        </Container>
+      </section>
 
-      <PublicSection
-        eyebrow="Plan the Route"
-        title="From waterfalls and beaches to mountain drives and historic stops."
-        description="Use the fleet to build a route that suits your trip, whether you want scenic day drives, family stops, or a relaxed coastal itinerary."
-      >
-        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-          {destinations.map((destination, index) => (
-            <article
-              key={destination.name}
-              className="flex h-full flex-col rounded-[1.8rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-[0_18px_56px_rgba(15,23,42,0.07)]"
-            >
-              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--ccr-accent-strong)]">
-                {String(index + 1).padStart(2, "0")}
-              </p>
-              <h2 className="mt-4 text-2xl font-semibold tracking-tight text-[var(--ccr-text)]">
-                {destination.name}
-              </h2>
-              <p className="mt-2 text-sm font-medium text-[var(--ccr-muted)]">{destination.location}</p>
-              <p className="mt-4 text-sm leading-7 text-[var(--ccr-muted)]">{destination.description}</p>
-            </article>
-          ))}
-        </div>
-      </PublicSection>
+      <section className="bg-white py-16 md:py-24">
+        <Container>
+          <div className="mb-10 rounded-[2rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)]/55 p-6 md:p-8">
+            <h2 className="font-display text-2xl font-bold text-[var(--ccr-text)]">
+              Plan your island route
+            </h2>
+            <p className="mt-3 max-w-3xl text-base leading-7 text-[var(--ccr-muted)]">
+              Explore the destinations below and use the fleet to build a route that fits your stay, whether you want scenic day drives, beach stops, mountain views, or historic tours.
+            </p>
+          </div>
 
-      <PublicCtaBand
-        eyebrow="Ready to Explore"
-        title="Choose a vehicle that makes island driving feel effortless."
-        description="Browse the fleet, plan your stops, and reserve the car that gives you the right balance of space, comfort, and confidence."
-        primaryAction={{ href: "/fleet", label: "View Fleet" }}
-        secondaryAction={{ href: "/book", label: "Book Now" }}
-      />
+          <div className="grid gap-8 md:grid-cols-2">
+            {destinations.map((destination) => (
+              <article
+                key={destination.name}
+                className="overflow-hidden rounded-[1.9rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] shadow-[0_18px_56px_rgba(15,23,42,0.07)]"
+              >
+                <div className="relative h-64">
+                  <Image
+                    src={destination.imageSrc}
+                    alt={destination.name}
+                    fill
+                    sizes="(min-width: 768px) 50vw, 100vw"
+                    className="object-cover"
+                  />
+                </div>
+                <div className="p-6">
+                  <h2 className="font-display text-2xl font-bold text-[var(--ccr-text)]">
+                    {destination.name}
+                  </h2>
+                  <p className="mt-2 text-sm font-medium text-[var(--ccr-muted)]">{destination.location}</p>
+                  <p className="mt-4 text-base leading-8 text-[var(--ccr-muted)]">{destination.description}</p>
+                </div>
+              </article>
+            ))}
+          </div>
+        </Container>
+      </section>
     </>
   );
 }

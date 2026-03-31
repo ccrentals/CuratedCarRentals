@@ -10,6 +10,16 @@ import {
   isNonBlockingPricing,
   readBookingOverrideInfo,
 } from "@/lib/bookings/holds";
+import {
+  appendBookingLocationNote,
+  readBookingLocationDetails,
+} from "@/lib/bookings/bookingLocations";
+import { listActiveBookingLocationConfigs } from "@/lib/bookings/bookingLocationConfigStore";
+import {
+  buildBookingLocationSelectionPayload,
+  normalizeBookingLocationFieldValuesInput,
+  validateBookingLocationSelection,
+} from "@/lib/bookings/locationConfigRuntime";
 import { hasCompletedBookingVehicleInspection } from "@/lib/bookings/vehicleInspection";
 import { isVehicleUnavailableEntitlementBased } from "@/lib/availability/entitlement";
 import {
@@ -49,6 +59,19 @@ function normalizeDateInput(value: unknown): string | null {
   const trimmed = value.trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return null;
   return trimmed;
+}
+
+function normalizeTimeInput(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!/^\d{2}:\d{2}(?::\d{2})?$/.test(trimmed)) return null;
+  return trimmed.slice(0, 5);
+}
+
+function buildDateTimeIso(date: string, time: string) {
+  const parsed = new Date(`${date}T${time}:00-05:00`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString();
 }
 
 function asObject(value: unknown): Record<string, unknown> | null {
@@ -589,10 +612,30 @@ export async function PATCH(
   if (action === "update_details") {
     const startDate = normalizeDateInput(body?.startDate);
     const endDate = normalizeDateInput(body?.endDate);
-    const pickupLocation = typeof body?.pickupLocation === "string" ? body.pickupLocation.trim() : "";
+    const pickupTime = normalizeTimeInput(body?.pickupTime) ?? "11:00";
+    const dropoffTime = normalizeTimeInput(body?.dropoffTime) ?? "11:00";
     const customerName = typeof body?.customerName === "string" ? body.customerName.trim() : "";
     const customerEmail = typeof body?.customerEmail === "string" ? body.customerEmail.trim() : "";
     const customerPhone = typeof body?.customerPhone === "string" ? body.customerPhone.trim() : "";
+    const bookingLocationDetailsRaw = asObject(body?.bookingLocationDetails);
+    const pickupLocationDetailsRaw = asObject(bookingLocationDetailsRaw?.pickup);
+    const dropoffLocationDetailsRaw = asObject(bookingLocationDetailsRaw?.dropoff);
+    const pickupLocationType =
+      typeof body?.pickupLocationType === "string" && body.pickupLocationType.trim()
+        ? body.pickupLocationType.trim().toUpperCase()
+        : "OFFICE";
+    const dropoffLocationType =
+      typeof body?.dropoffLocationType === "string" && body.dropoffLocationType.trim()
+        ? body.dropoffLocationType.trim().toUpperCase()
+        : pickupLocationType;
+    const pickupLocationId =
+      typeof body?.pickupLocationId === "string" && body.pickupLocationId.trim()
+        ? body.pickupLocationId.trim()
+        : null;
+    const dropoffLocationId =
+      typeof body?.dropoffLocationId === "string" && body.dropoffLocationId.trim()
+        ? body.dropoffLocationId.trim()
+        : null;
 
     if (!startDate || !endDate) {
       return NextResponse.json({ error: "Valid start and end dates are required" }, { status: 400 });
@@ -600,10 +643,6 @@ export async function PATCH(
 
     if (endDate <= startDate) {
       return NextResponse.json({ error: "End date must be after start date" }, { status: 400 });
-    }
-
-    if (!pickupLocation) {
-      return NextResponse.json({ error: "Pickup location is required" }, { status: 400 });
     }
 
     if (!customerName) {
@@ -618,13 +657,20 @@ export async function PATCH(
       return NextResponse.json({ error: "Customer phone is required" }, { status: 400 });
     }
 
+    if (pickupLocationId && !/^[0-9a-f-]{36}$/i.test(pickupLocationId)) {
+      return NextResponse.json({ error: "Invalid pickup location" }, { status: 400 });
+    }
+    if (dropoffLocationId && !/^[0-9a-f-]{36}$/i.test(dropoffLocationId)) {
+      return NextResponse.json({ error: "Invalid dropoff location" }, { status: 400 });
+    }
+
     const pool = getDbPool();
     const client = await pool.connect();
     try {
       await client.query("begin");
 
       const bookingResult = await client.query(
-        "select b.id, b.customer_id, b.vehicle_id, b.status, b.start_date, b.end_date, b.pickup_location, b.pricing_json, v.daily_rate_cents, v.deposit_cents, c.full_name as customer_name, c.email as customer_email, c.phone as customer_phone from bookings b join vehicles v on v.id = b.vehicle_id join customers c on c.id = b.customer_id where b.id = $1 for update",
+        "select b.id, b.customer_id, b.vehicle_id, b.status, b.start_date, b.end_date, b.pickup_time::text as pickup_time, b.dropoff_time::text as dropoff_time, b.pickup_location, b.dropoff_location, b.pickup_location_id, b.dropoff_location_id, b.pickup_location_text_snapshot, b.dropoff_location_text_snapshot, b.pricing_json, v.daily_rate_cents, v.deposit_cents, c.full_name as customer_name, c.email as customer_email, c.phone as customer_phone from bookings b join vehicles v on v.id = b.vehicle_id join customers c on c.id = b.customer_id where b.id = $1 for update",
         [id],
       );
 
@@ -640,7 +686,14 @@ export async function PATCH(
         status: string;
         start_date: string;
         end_date: string;
+        pickup_time: string | null;
+        dropoff_time: string | null;
         pickup_location: string;
+        dropoff_location: string | null;
+        pickup_location_id: string | null;
+        dropoff_location_id: string | null;
+        pickup_location_text_snapshot: string | null;
+        dropoff_location_text_snapshot: string | null;
         pricing_json: Record<string, unknown> | null;
         daily_rate_cents: number;
         deposit_cents: number;
@@ -654,6 +707,67 @@ export async function PATCH(
           { error: "Cancelled or returned bookings cannot be updated" },
           { status: 400 },
         );
+      }
+
+      const startAtIso = buildDateTimeIso(startDate, pickupTime);
+      const endAtIso = buildDateTimeIso(endDate, dropoffTime);
+      if (!startAtIso || !endAtIso) {
+        await client.query("rollback");
+        return NextResponse.json({ error: "Valid pickup and dropoff times are required" }, { status: 400 });
+      }
+
+      const currentPricing = booking.pricing_json ?? {};
+      const currentLocationDetails = readBookingLocationDetails(currentPricing, {
+        pickupLabel:
+          booking.pickup_location_text_snapshot || booking.pickup_location,
+        dropoffLabel:
+          booking.dropoff_location_text_snapshot ||
+          booking.dropoff_location ||
+          booking.pickup_location,
+        pickupLocationId: booking.pickup_location_id,
+        dropoffLocationId: booking.dropoff_location_id,
+      });
+      const bookingLocationConfigs = await listActiveBookingLocationConfigs(client);
+      const locationSelection = buildBookingLocationSelectionPayload({
+        configs: bookingLocationConfigs,
+        pickupTypeKey: pickupLocationType || currentLocationDetails.pickup.typeKey,
+        dropoffTypeKey: dropoffLocationType || currentLocationDetails.dropoff.typeKey,
+        pickupLocationId: pickupLocationId ?? booking.pickup_location_id,
+        dropoffLocationId: dropoffLocationId ?? booking.dropoff_location_id,
+        pickupValues: normalizeBookingLocationFieldValuesInput(
+          pickupLocationDetailsRaw?.values,
+          currentLocationDetails.pickup.values,
+        ),
+        dropoffValues: normalizeBookingLocationFieldValuesInput(
+          dropoffLocationDetailsRaw?.values,
+          currentLocationDetails.dropoff.values,
+        ),
+        context: {
+          pickupDate: startDate,
+          pickupTime,
+          dropoffDate: endDate,
+          dropoffTime,
+        },
+      });
+
+      const pickupLocationError = validateBookingLocationSelection(
+        locationSelection.pickupConfig,
+        "pickup",
+        locationSelection.pickupValues,
+      );
+      if (pickupLocationError) {
+        await client.query("rollback");
+        return NextResponse.json({ error: pickupLocationError }, { status: 400 });
+      }
+
+      const dropoffLocationError = validateBookingLocationSelection(
+        locationSelection.dropoffConfig,
+        "dropoff",
+        locationSelection.dropoffValues,
+      );
+      if (dropoffLocationError) {
+        await client.query("rollback");
+        return NextResponse.json({ error: dropoffLocationError }, { status: 400 });
       }
 
       const availabilityWindow = buildWindowFromDates(startDate, endDate);
@@ -678,7 +792,6 @@ export async function PATCH(
         );
       }
 
-      const currentPricing = booking.pricing_json ?? {};
       const dailyRate = Number(currentPricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
       const deposit = Number(currentPricing.deposit_cents ?? booking.deposit_cents ?? 0);
       const paymentOption = readPaymentOption(currentPricing);
@@ -720,11 +833,13 @@ export async function PATCH(
         promoDiscount: validatedPromo.promoDiscount,
       });
 
-      const nextPricing = {
+      const nextLocationDetails = locationSelection.details;
+      const nextPricingBase = {
         ...currentPricing,
         customer_name_snapshot: customerName,
         customer_email_snapshot: customerEmail,
         customer_phone_snapshot: customerPhone,
+        booking_location_details: nextLocationDetails,
         days: pricingSummary.days,
         daily_rate_cents: pricingSummary.dailyRate,
         deposit_cents: pricingSummary.deposit,
@@ -741,6 +856,11 @@ export async function PATCH(
         payment_option_selected: pricingSummary.paymentOption,
         refund_required: pricingSummary.refundRequired,
       };
+      const locationDetailsChanged =
+        JSON.stringify(currentLocationDetails) !== JSON.stringify(nextLocationDetails);
+      const nextPricing = locationDetailsChanged
+        ? appendBookingLocationNote(nextPricingBase, nextLocationDetails)
+        : nextPricingBase;
 
       await client.query(
         "update customers set full_name = case when nullif(trim(coalesce(full_name, '')), '') is null then $2 else full_name end, email = $3, phone = $4 where id = $1",
@@ -748,8 +868,23 @@ export async function PATCH(
       );
 
       await client.query(
-        "update bookings set start_date = $2, end_date = $3, pickup_location = $4, pricing_json = $5, updated_at = now() where id = $1",
-        [booking.id, startDate, endDate, pickupLocation, nextPricing],
+        "update bookings set start_date = $2, end_date = $3, pickup_time = $4::time, dropoff_time = $5::time, start_at = $6::timestamptz, end_at = $7::timestamptz, pickup_location = $8, dropoff_location = $9, pickup_location_id = $10::uuid, dropoff_location_id = $11::uuid, pickup_location_text_snapshot = $12, dropoff_location_text_snapshot = $13, pricing_json = $14::jsonb, updated_at = now() where id = $1",
+        [
+          booking.id,
+          startDate,
+          endDate,
+          pickupTime,
+          dropoffTime,
+          startAtIso,
+          endAtIso,
+          locationSelection.pickupLocationTextSnapshot,
+          locationSelection.dropoffLocationTextSnapshot,
+          locationSelection.pickupConfig?.id ?? booking.pickup_location_id,
+          locationSelection.dropoffConfig?.id ?? booking.dropoff_location_id,
+          locationSelection.pickupLocationTextSnapshot,
+          locationSelection.dropoffLocationTextSnapshot,
+          JSON.stringify(nextPricing),
+        ],
       );
       await syncPromoRedemptionStateForBooking(booking.id, {
         client,
@@ -766,13 +901,23 @@ export async function PATCH(
         details: {
           previous_start_date: booking.start_date,
           previous_end_date: booking.end_date,
-          previous_pickup_location: booking.pickup_location,
+          previous_pickup_time: booking.pickup_time,
+          previous_dropoff_time: booking.dropoff_time,
+          previous_pickup_location:
+            booking.pickup_location_text_snapshot || booking.pickup_location,
+          previous_dropoff_location:
+            booking.dropoff_location_text_snapshot ||
+            booking.dropoff_location ||
+            booking.pickup_location,
           previous_customer_name: booking.customer_name,
           previous_customer_email: booking.customer_email,
           previous_customer_phone: booking.customer_phone,
           next_start_date: startDate,
           next_end_date: endDate,
-          next_pickup_location: pickupLocation,
+          next_pickup_time: pickupTime,
+          next_dropoff_time: dropoffTime,
+          next_pickup_location: locationSelection.pickupLocationTextSnapshot,
+          next_dropoff_location: locationSelection.dropoffLocationTextSnapshot,
           next_customer_name: customerName,
           next_customer_email: customerEmail,
           next_customer_phone: customerPhone,

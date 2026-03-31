@@ -899,8 +899,14 @@ create index if not exists contact_messages_created_idx on contact_messages(crea
 create table if not exists booking_locations (
   id uuid primary key default gen_random_uuid(),
   label text not null,
+  location_type_key text not null,
+  display_label_pickup text not null,
+  display_label_dropoff text not null,
   allow_pickup boolean not null default true,
   allow_dropoff boolean not null default true,
+  applies_to_pickup boolean not null default true,
+  applies_to_dropoff boolean not null default true,
+  field_schema_json jsonb not null default '[]'::jsonb,
   is_active boolean not null default true,
   sort_order int not null default 0,
   created_by uuid references users(id) on delete set null,
@@ -912,8 +918,12 @@ create table if not exists booking_locations (
 
 create unique index if not exists booking_locations_label_lower_unique_idx
   on booking_locations(lower(label));
+create unique index if not exists booking_locations_location_type_key_unique_idx
+  on booking_locations(location_type_key);
 create index if not exists booking_locations_active_sort_idx
   on booking_locations(is_active, sort_order, label);
+create index if not exists booking_locations_active_sort_type_idx
+  on booking_locations(is_active, sort_order, location_type_key);
 
 create table if not exists insurance_plans (
   id uuid primary key default gen_random_uuid(),

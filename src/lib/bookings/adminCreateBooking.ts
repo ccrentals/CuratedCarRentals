@@ -35,7 +35,7 @@ export type AdminCreateBookingPricingPreview = {
 
 export function adminCreateBookingVehicleWhereSql(alias?: string) {
   const prefix = alias && alias.trim().length > 0 ? `${alias.trim()}.` : "";
-  return `${prefix}deleted_at is null and ${prefix}status <> 'INACTIVE'`;
+  return `${prefix}deleted_at is null and upper(coalesce(${prefix}status, '')) not in ('INACTIVE', 'UNAVAILABLE', 'MAINTENANCE')`;
 }
 
 function getQueryable(client?: Queryable) {

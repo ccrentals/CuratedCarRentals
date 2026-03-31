@@ -10,6 +10,23 @@ import { PublicPageIntro } from "@/components/site/PublicPageIntro";
 import { siteContent } from "@/data/content";
 import { clearBookingDraft } from "@/lib/bookings/draft";
 import {
+  buildBookingLocationConfigs,
+  type BookingLocationConfig,
+  type BookingLocationFieldSchema,
+  type BookingLocationFieldValueMap,
+} from "@/lib/bookings/bookingLocations";
+import {
+  buildBookingLocationSelectionPayload,
+  coerceBookingLocationFieldValues,
+  getBookingLocationConfigByType,
+  getBookingLocationConfigsForSide,
+  getBookingLocationFieldSchemaForSide,
+  getBookingLocationSnapshotText,
+  validateBookingLocationSelection,
+} from "@/lib/bookings/locationConfigRuntime";
+import {
+  reconcileVehicleRefreshState,
+  VEHICLE_REFRESH_FAILURE_MESSAGE,
   createPricingLifecycleState,
   displayPricingSnapshot,
   draftRestoreSecurityState,
@@ -32,13 +49,6 @@ import { formatJmd } from "@/lib/money";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 import { cn } from "@/lib/utils";
 import { isEmail, isNonEmptyString } from "@/lib/validators";
-
-type LocationOption = {
-  id: string;
-  label: string;
-  allowPickup: boolean;
-  allowDropoff: boolean;
-};
 
 type PublicVehicle = {
   id: string;
@@ -126,10 +136,25 @@ type BookingCreateResponse = {
 
 type PublicLocationsResponse = {
   locations?: Array<{
-    id?: string;
+    id?: string | null;
     label?: string;
+    location_type_key?: string;
+    pickup_label?: string;
+    dropoff_label?: string;
+    location_type?: string;
     allow_pickup?: boolean;
     allow_dropoff?: boolean;
+    applies_to_pickup?: boolean;
+    applies_to_dropoff?: boolean;
+    field_schema?: Array<{
+      key?: string;
+      label?: string;
+      input_type?: string;
+      required?: boolean;
+      applies_to?: string;
+      default_source?: string | null;
+    }>;
+    sort_order?: number;
   }>;
 };
 
@@ -150,8 +175,19 @@ type BookingWizardDraft = {
   dropoffTime?: string;
   pickupLocationId?: string;
   dropoffLocationId?: string;
+  pickupLocationValues?: BookingLocationFieldValueMap;
+  dropoffLocationValues?: BookingLocationFieldValueMap;
   pickupCustomAddress?: string;
   dropoffCustomAddress?: string;
+  pickupFlightDate?: string;
+  pickupFlightTime?: string;
+  pickupFlightNumber?: string;
+  pickupAirline?: string;
+  dropoffFlightDate?: string;
+  dropoffFlightTime?: string;
+  dropoffFlightNumber?: string;
+  dropoffAirline?: string;
+  dropoffLocationManuallyEdited?: boolean;
   selectedVehicleId?: string;
   insuranceSelected?: boolean;
   couponCode?: string;
@@ -186,10 +222,9 @@ const STEPS: Array<{ step: WizardStep; title: string }> = [
 ];
 const CHECKOUT_STEP = { step: 7, title: "WiPay" } as const;
 
-const CUSTOM_PICKUP_ID = "__CUSTOM_PICKUP__";
-const CUSTOM_DROPOFF_ID = "__CUSTOM_DROPOFF__";
 const WIZARD_DRAFT_STORAGE_KEY = "ccr_booking_wizard_draft_v1";
 const WIZARD_DEBUG_ENABLED = process.env.NEXT_PUBLIC_WIZARD_DEBUG === "1";
+const BACKGROUND_VEHICLE_REFRESH_INTERVAL_MS = 15000;
 
 const bookingFieldClassName =
   "mt-2 w-full rounded-[1.1rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-3 text-sm text-[var(--ccr-text)] shadow-sm shadow-black/5 outline-none ring-[var(--ccr-accent)] transition focus:ring-2";
@@ -204,20 +239,7 @@ const bookingOutlineButtonClassName =
 const bookingResetButtonClassName =
   "rounded-[1rem] border border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)] px-4 py-2.5 text-sm font-semibold text-[var(--ccr-accent)] transition hover:bg-[var(--ccr-accent)] hover:text-[var(--ccr-primary)] disabled:opacity-40";
 
-const DEFAULT_LOCATIONS: LocationOption[] = [
-  {
-    id: "HQ",
-    label: "168 1/2 Old Hope Road, Kingston Jamaica",
-    allowPickup: true,
-    allowDropoff: true,
-  },
-  {
-    id: "NORMAN_MANLEY_AIRPORT",
-    label: "Norman Manley Airport",
-    allowPickup: true,
-    allowDropoff: true,
-  },
-];
+const DEFAULT_LOCATIONS: BookingLocationConfig[] = buildBookingLocationConfigs();
 
 function pad(value: number) {
   return String(value).padStart(2, "0");
@@ -244,6 +266,35 @@ function combineDateTime(date: string, time: string) {
 
 function normalizeText(value: string) {
   return value.trim();
+}
+
+function hasLocationFieldProgress(values: BookingLocationFieldValueMap | undefined) {
+  if (!values || typeof values !== "object") return false;
+  return Object.values(values).some((value) => normalizeText(value ?? "").length > 0);
+}
+
+function syncLocationFieldDefaults(input: {
+  fields: BookingLocationFieldSchema[];
+  currentValues: BookingLocationFieldValueMap;
+  defaultSource:
+    | "pickup_date"
+    | "pickup_time"
+    | "dropoff_date"
+    | "dropoff_time";
+  previousValue: string;
+  nextValue: string;
+}) {
+  const nextValues = { ...input.currentValues };
+
+  for (const field of input.fields) {
+    if (field.defaultSource !== input.defaultSource) continue;
+    const currentValue = normalizeText(nextValues[field.key] ?? "");
+    if (!currentValue || currentValue === input.previousValue) {
+      nextValues[field.key] = input.nextValue;
+    }
+  }
+
+  return nextValues;
 }
 
 function displayVehicleName(vehicle: PublicVehicle) {
@@ -288,6 +339,8 @@ function draftContainsMeaningfulProgress(draft: BookingWizardDraft) {
   const step = parseWizardStep(draft.step);
   if (step > 1) return true;
   if (normalizeText(draft.selectedVehicleId ?? "").length > 0) return true;
+  if (hasLocationFieldProgress(draft.pickupLocationValues)) return true;
+  if (hasLocationFieldProgress(draft.dropoffLocationValues)) return true;
   if (normalizeText(draft.pickupCustomAddress ?? "").length > 0) return true;
   if (normalizeText(draft.dropoffCustomAddress ?? "").length > 0) return true;
   if (draft.insuranceSelected === true) return true;
@@ -335,17 +388,23 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
   const [dropoffDate, setDropoffDate] = useState(() => initialDropoffDateRef.current);
   const [dropoffTime, setDropoffTime] = useState("11:00");
 
-  const [locationOptions, setLocationOptions] = useState<LocationOption[]>(DEFAULT_LOCATIONS);
+  const [locationOptions, setLocationOptions] = useState<BookingLocationConfig[]>(DEFAULT_LOCATIONS);
   const [locationsLoading, setLocationsLoading] = useState(false);
-  const [pickupLocationId, setPickupLocationId] = useState(DEFAULT_LOCATIONS[0]?.id ?? "");
-  const [dropoffLocationId, setDropoffLocationId] = useState(DEFAULT_LOCATIONS[0]?.id ?? "");
-  const [pickupCustomAddress, setPickupCustomAddress] = useState("");
-  const [dropoffCustomAddress, setDropoffCustomAddress] = useState("");
+  const [pickupLocationId, setPickupLocationId] = useState(
+    DEFAULT_LOCATIONS[0]?.locationTypeKey ?? "OFFICE",
+  );
+  const [dropoffLocationId, setDropoffLocationId] = useState(
+    DEFAULT_LOCATIONS[0]?.locationTypeKey ?? "OFFICE",
+  );
+  const [pickupLocationValues, setPickupLocationValues] = useState<BookingLocationFieldValueMap>({});
+  const [dropoffLocationValues, setDropoffLocationValues] = useState<BookingLocationFieldValueMap>({});
+  const [dropoffLocationManuallyEdited, setDropoffLocationManuallyEdited] = useState(false);
 
   const [vehicleOptions, setVehicleOptions] = useState<PublicVehicle[]>([]);
   const [vehicleLoading, setVehicleLoading] = useState(false);
   const [selectedVehicleId, setSelectedVehicleId] = useState("");
   const [vehicleSelectionUnavailable, setVehicleSelectionUnavailable] = useState(false);
+  const [vehicleRefreshWarning, setVehicleRefreshWarning] = useState<string | null>(null);
 
   const [insuranceSelected, setInsuranceSelected] = useState(false);
   const [insuranceEnabled, setInsuranceEnabled] = useState(false);
@@ -551,13 +610,53 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
       setPickupTime(restoredSelections.pickupTime);
       setDropoffDate(restoredSelections.dropoffDate);
       setDropoffTime(restoredSelections.dropoffTime);
-      setPickupLocationId(restoredSelections.pickupLocationId);
-      setDropoffLocationId(restoredSelections.dropoffLocationId);
+      setPickupLocationId(
+        typeof restoredSelections.pickupLocationId === "string" &&
+          restoredSelections.pickupLocationId.trim()
+          ? restoredSelections.pickupLocationId.trim().toUpperCase()
+          : "OFFICE",
+      );
+      setDropoffLocationId(
+        typeof restoredSelections.dropoffLocationId === "string" &&
+          restoredSelections.dropoffLocationId.trim()
+          ? restoredSelections.dropoffLocationId.trim().toUpperCase()
+          : "OFFICE",
+      );
       setSelectedVehicleId(restoredSelections.selectedVehicleId);
       setInsuranceSelected(restoredSelections.insuranceSelected);
       setPaymentOption(restoredSelections.paymentOption);
-      if (typeof draft.pickupCustomAddress === "string") setPickupCustomAddress(draft.pickupCustomAddress);
-      if (typeof draft.dropoffCustomAddress === "string") setDropoffCustomAddress(draft.dropoffCustomAddress);
+      if (draft.pickupLocationValues && typeof draft.pickupLocationValues === "object") {
+        setPickupLocationValues(draft.pickupLocationValues);
+      } else {
+        setPickupLocationValues({
+          address: typeof draft.pickupCustomAddress === "string" ? draft.pickupCustomAddress : null,
+          flight_date:
+            typeof draft.pickupFlightDate === "string" ? draft.pickupFlightDate : null,
+          flight_time:
+            typeof draft.pickupFlightTime === "string" ? draft.pickupFlightTime : null,
+          flight_number:
+            typeof draft.pickupFlightNumber === "string" ? draft.pickupFlightNumber : null,
+          airline: typeof draft.pickupAirline === "string" ? draft.pickupAirline : null,
+        });
+      }
+      if (draft.dropoffLocationValues && typeof draft.dropoffLocationValues === "object") {
+        setDropoffLocationValues(draft.dropoffLocationValues);
+      } else {
+        setDropoffLocationValues({
+          address:
+            typeof draft.dropoffCustomAddress === "string" ? draft.dropoffCustomAddress : null,
+          flight_date:
+            typeof draft.dropoffFlightDate === "string" ? draft.dropoffFlightDate : null,
+          flight_time:
+            typeof draft.dropoffFlightTime === "string" ? draft.dropoffFlightTime : null,
+          flight_number:
+            typeof draft.dropoffFlightNumber === "string" ? draft.dropoffFlightNumber : null,
+          airline: typeof draft.dropoffAirline === "string" ? draft.dropoffAirline : null,
+        });
+      }
+      if (typeof draft.dropoffLocationManuallyEdited === "boolean") {
+        setDropoffLocationManuallyEdited(draft.dropoffLocationManuallyEdited);
+      }
       if (typeof draft.couponCode === "string") setCouponCode(draft.couponCode);
       if (typeof draft.couponAppliedCode === "string" || draft.couponAppliedCode === null) {
         setCouponAppliedCode(draft.couponAppliedCode ?? null);
@@ -633,8 +732,9 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
       dropoffTime,
       pickupLocationId,
       dropoffLocationId,
-      pickupCustomAddress,
-      dropoffCustomAddress,
+      pickupLocationValues,
+      dropoffLocationValues,
+      dropoffLocationManuallyEdited,
       selectedVehicleId,
       insuranceSelected,
       couponCode,
@@ -664,8 +764,8 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
       pickupTime !== "11:00" ||
       dropoffDate !== initialDropoffDateRef.current ||
       dropoffTime !== "11:00" ||
-      normalizeText(pickupCustomAddress).length > 0 ||
-      normalizeText(dropoffCustomAddress).length > 0 ||
+      Object.values(pickupLocationValues).some((value) => normalizeText(value ?? "").length > 0) ||
+      Object.values(dropoffLocationValues).some((value) => normalizeText(value ?? "").length > 0) ||
       normalizeText(selectedVehicleId).length > 0 ||
       insuranceSelected ||
       normalizeText(couponCode).length > 0 ||
@@ -699,9 +799,10 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     customPaymentAmount,
     driversLicenseExpirationDate,
     driversLicenseNumber,
-    dropoffCustomAddress,
     dropoffDate,
     dropoffLocationId,
+    dropoffLocationManuallyEdited,
+    dropoffLocationValues,
     dropoffTime,
     emailAddress,
     firstName,
@@ -710,9 +811,9 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     paymentOption,
     parish,
     phoneNumber,
-    pickupCustomAddress,
     pickupDate,
     pickupLocationId,
+    pickupLocationValues,
     pickupTime,
     selectedVehicleId,
     step,
@@ -724,23 +825,43 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
   ]);
 
   const pickupOptions = useMemo(
-    () => [
-      ...locationOptions.filter((location) => location.allowPickup),
-      { id: CUSTOM_PICKUP_ID, label: "Pick up Address", allowPickup: true, allowDropoff: false },
-    ],
+    () => getBookingLocationConfigsForSide(locationOptions, "pickup").filter((location) => location.isActive),
     [locationOptions],
   );
   const dropoffOptions = useMemo(
-    () => [
-      ...locationOptions.filter((location) => location.allowDropoff),
-      {
-        id: CUSTOM_DROPOFF_ID,
-        label: "Return Address",
-        allowPickup: false,
-        allowDropoff: true,
-      },
-    ],
+    () => getBookingLocationConfigsForSide(locationOptions, "dropoff").filter((location) => location.isActive),
     [locationOptions],
+  );
+  const pickupLocationConfig = useMemo(
+    () =>
+      getBookingLocationConfigByType(pickupOptions, pickupLocationId, "pickup") ??
+      getBookingLocationConfigByType(DEFAULT_LOCATIONS, pickupLocationId, "pickup") ??
+      DEFAULT_LOCATIONS[0],
+    [pickupLocationId, pickupOptions],
+  );
+  const dropoffLocationConfig = useMemo(
+    () =>
+      getBookingLocationConfigByType(dropoffOptions, dropoffLocationId, "dropoff") ??
+      getBookingLocationConfigByType(DEFAULT_LOCATIONS, dropoffLocationId, "dropoff") ??
+      DEFAULT_LOCATIONS[0],
+    [dropoffLocationId, dropoffOptions],
+  );
+  const pickupFieldSchema = useMemo(
+    () => getBookingLocationFieldSchemaForSide(pickupLocationConfig, "pickup"),
+    [pickupLocationConfig],
+  );
+  const dropoffFieldSchema = useMemo(
+    () => getBookingLocationFieldSchemaForSide(dropoffLocationConfig, "dropoff"),
+    [dropoffLocationConfig],
+  );
+  const locationDefaultsContext = useMemo(
+    () => ({
+      pickupDate,
+      pickupTime,
+      dropoffDate,
+      dropoffTime,
+    }),
+    [dropoffDate, dropoffTime, pickupDate, pickupTime],
   );
 
   const selectedVehicle = useMemo(
@@ -834,21 +955,25 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
   const dropoffAt = combineDateTime(dropoffDate, dropoffTime);
   const datesValid = pickupAt !== null && dropoffAt !== null && dropoffAt > pickupAt;
 
-  const pickupLocationText = useMemo(() => {
-    if (pickupLocationId === CUSTOM_PICKUP_ID) return normalizeText(pickupCustomAddress);
-    return pickupOptions.find((location) => location.id === pickupLocationId)?.label ?? "";
-  }, [pickupCustomAddress, pickupLocationId, pickupOptions]);
+  const pickupLocationText = useMemo(
+    () => getBookingLocationSnapshotText(pickupLocationConfig, "pickup", pickupLocationValues),
+    [pickupLocationConfig, pickupLocationValues],
+  );
 
-  const dropoffLocationText = useMemo(() => {
-    if (dropoffLocationId === CUSTOM_DROPOFF_ID) return normalizeText(dropoffCustomAddress);
-    return dropoffOptions.find((location) => location.id === dropoffLocationId)?.label ?? "";
-  }, [dropoffCustomAddress, dropoffLocationId, dropoffOptions]);
+  const dropoffLocationText = useMemo(
+    () => getBookingLocationSnapshotText(dropoffLocationConfig, "dropoff", dropoffLocationValues),
+    [dropoffLocationConfig, dropoffLocationValues],
+  );
   const deliverySelected =
-    pickupLocationId === CUSTOM_PICKUP_ID || dropoffLocationId === CUSTOM_DROPOFF_ID;
+    pickupFieldSchema.some((field) => field.key === "address") ||
+    dropoffFieldSchema.some((field) => field.key === "address");
   const deliveryZoneLabel = [pickupLocationText, dropoffLocationText].filter(Boolean).join(" → ");
 
   const loadAvailableVehicles = useCallback(
-    async (options?: { reason?: "effect" | "revalidate" | "select"; force?: boolean }) => {
+    async (options?: {
+      reason?: "effect" | "revalidate" | "select" | "background";
+      force?: boolean;
+    }) => {
       const reason = options?.reason ?? "effect";
       if (!pickupDate || !dropoffDate || !datesValid) {
         latestVehiclesRequestIdRef.current = 0;
@@ -860,6 +985,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
         }
         setVehicleOptions([]);
         setVehicleSelectionUnavailable(false);
+        setVehicleRefreshWarning(null);
         debugWizardRequest("vehicles:reset", { reason });
         return [];
       }
@@ -994,7 +1120,6 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
           }));
 
         let nextSelectedVehicleId = selectedVehicleIdRef.current;
-        let nextVehicleUnavailable = false;
 
         const pendingPreselect = preselectedVehicleIdRef.current;
         if (pendingPreselect && nextSelectedVehicleId && nextSelectedVehicleId === pendingPreselect) {
@@ -1010,13 +1135,6 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
             setErrorMessage("Requested vehicle is unavailable for the selected pickup/dropoff window.");
           }
           preselectedVehicleIdRef.current = "";
-        }
-
-        if (
-          nextSelectedVehicleId &&
-          !mapped.some((vehicle) => vehicle.id === nextSelectedVehicleId)
-        ) {
-          nextVehicleUnavailable = true;
         }
 
         if (latestVehiclesKeyRef.current !== vehiclesKey) {
@@ -1039,10 +1157,19 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
           return mapped;
         }
 
+        const refreshState = reconcileVehicleRefreshState({
+          previousVehicles: vehicleOptionsRef.current,
+          nextVehicles: mapped,
+          selectedVehicleId: nextSelectedVehicleId,
+        });
+
         lastVehiclesSuccessKeyRef.current = vehiclesKey;
-        setVehicleOptions(mapped);
-        setVehicleSelectionUnavailable(nextVehicleUnavailable);
+        if (refreshState.inventoryChanged) {
+          setVehicleOptions(refreshState.vehicleOptions);
+        }
+        setVehicleSelectionUnavailable(refreshState.vehicleSelectionUnavailable);
         setSelectedVehicleId(nextSelectedVehicleId);
+        setVehicleRefreshWarning(null);
         debugWizardRequest("vehicles:success", {
           key: vehiclesKey,
           reason,
@@ -1097,39 +1224,94 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
           throw new Error("Unable to load locations.");
         }
 
-        const parsedLocations = Array.isArray(data.locations)
+        const parsedLocations: BookingLocationConfig[] = Array.isArray(data.locations)
           ? data.locations
-              .filter(
-                (location): location is {
-                  id: string;
-                  label: string;
-                  allow_pickup?: boolean;
-                  allow_dropoff?: boolean;
-                } =>
-                  typeof location.id === "string" &&
-                  typeof location.label === "string" &&
-                  location.label.trim().length > 0,
-              )
-              .map((location) => ({
-                id: location.id,
-                label: location.label.trim(),
-                allowPickup: location.allow_pickup !== false,
-                allowDropoff: location.allow_dropoff !== false,
-              }))
+              .reduce<BookingLocationConfig[]>((accumulator, location) => {
+                const locationTypeKey =
+                  (typeof location.location_type_key === "string" && location.location_type_key.trim()) ||
+                  (typeof location.location_type === "string" && location.location_type.trim()) ||
+                  "";
+                if (!locationTypeKey) return accumulator;
+                const fallback =
+                  DEFAULT_LOCATIONS.find(
+                    (item) => item.locationTypeKey === locationTypeKey,
+                  ) ?? null;
+                accumulator.push({
+                  id: typeof location.id === "string" && location.id.trim() ? location.id.trim() : null,
+                  locationType: locationTypeKey,
+                  locationTypeKey,
+                  label:
+                    typeof location.label === "string" && location.label.trim()
+                      ? location.label.trim()
+                      : fallback?.label ?? locationTypeKey,
+                  pickupLabel:
+                    typeof location.pickup_label === "string" && location.pickup_label.trim()
+                      ? location.pickup_label.trim()
+                      : fallback?.pickupLabel ?? locationTypeKey,
+                  dropoffLabel:
+                    typeof location.dropoff_label === "string" && location.dropoff_label.trim()
+                      ? location.dropoff_label.trim()
+                      : fallback?.dropoffLabel ?? locationTypeKey,
+                  allowPickup: location.allow_pickup !== false,
+                  allowDropoff: location.allow_dropoff !== false,
+                  appliesToPickup: location.applies_to_pickup !== false,
+                  appliesToDropoff: location.applies_to_dropoff !== false,
+                  isActive: true,
+                  sortOrder: typeof location.sort_order === "number" ? location.sort_order : fallback?.sortOrder ?? 0,
+                  fieldSchema: Array.isArray(location.field_schema)
+                    ? location.field_schema
+                        .map((field) => {
+                          if (
+                            typeof field?.key !== "string" ||
+                            typeof field?.label !== "string" ||
+                            (field.input_type !== "text" &&
+                              field.input_type !== "date" &&
+                              field.input_type !== "time") ||
+                            (field.applies_to !== "pickup" &&
+                              field.applies_to !== "dropoff" &&
+                              field.applies_to !== "both")
+                          ) {
+                            return null;
+                          }
+                          return {
+                            key: field.key,
+                            label: field.label,
+                            inputType: field.input_type,
+                            required: field.required === true,
+                            appliesTo: field.applies_to,
+                            defaultSource:
+                              field.default_source === "pickup_date" ||
+                              field.default_source === "pickup_time" ||
+                              field.default_source === "dropoff_date" ||
+                              field.default_source === "dropoff_time"
+                                ? field.default_source
+                                : null,
+                          } satisfies BookingLocationFieldSchema;
+                        })
+                        .filter((field): field is BookingLocationFieldSchema => field !== null)
+                    : fallback?.fieldSchema ?? [],
+                  dbBacked:
+                    typeof location.id === "string" && location.id.trim().length > 0,
+                });
+                return accumulator;
+              }, [])
+              .sort((left, right) => left.sortOrder - right.sortOrder)
           : [];
 
         const next = parsedLocations.length > 0 ? parsedLocations : DEFAULT_LOCATIONS;
         if (cancelled) return;
         setLocationOptions(next);
 
-        setPickupLocationId((current) => {
-          if (current === CUSTOM_PICKUP_ID) return current;
-          return next.some((location) => location.id === current) ? current : (next[0]?.id ?? "");
-        });
-        setDropoffLocationId((current) => {
-          if (current === CUSTOM_DROPOFF_ID) return current;
-          return next.some((location) => location.id === current) ? current : (next[0]?.id ?? "");
-        });
+        setPickupLocationId((current) =>
+          next.some((location) => location.locationTypeKey === current)
+            ? current
+            : (next.find((location) => location.allowPickup)?.locationTypeKey ?? "OFFICE"),
+        );
+        setDropoffLocationId((current) =>
+          next.some((location) => location.locationTypeKey === current)
+            ? current
+            : (next.find((location) => location.allowDropoff)?.locationTypeKey ?? "OFFICE"),
+        );
       } catch {
         if (cancelled) return;
         setLocationOptions(DEFAULT_LOCATIONS);
@@ -1143,6 +1325,52 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    setPickupLocationValues((current) =>
+      coerceBookingLocationFieldValues(
+        pickupLocationConfig,
+        "pickup",
+        current,
+        locationDefaultsContext,
+      ),
+    );
+  }, [locationDefaultsContext, pickupLocationConfig]);
+
+  useEffect(() => {
+    if (dropoffLocationManuallyEdited) {
+      setDropoffLocationValues((current) =>
+        coerceBookingLocationFieldValues(
+          dropoffLocationConfig,
+          "dropoff",
+          current,
+          locationDefaultsContext,
+        ),
+      );
+      return;
+    }
+
+    const nextTypeKey =
+      pickupLocationConfig && dropoffOptions.some((location) => location.locationTypeKey === pickupLocationConfig.locationTypeKey)
+        ? pickupLocationConfig.locationTypeKey
+        : (dropoffOptions[0]?.locationTypeKey ?? pickupLocationConfig?.locationTypeKey ?? "OFFICE");
+    setDropoffLocationId(nextTypeKey);
+    setDropoffLocationValues(
+      coerceBookingLocationFieldValues(
+        getBookingLocationConfigByType(dropoffOptions, nextTypeKey, "dropoff"),
+        "dropoff",
+        pickupLocationValues.address ? { address: pickupLocationValues.address } : {},
+        locationDefaultsContext,
+      ),
+    );
+  }, [
+    dropoffLocationConfig,
+    dropoffLocationManuallyEdited,
+    dropoffOptions,
+    locationDefaultsContext,
+    pickupLocationConfig,
+    pickupLocationValues.address,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1446,6 +1674,52 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     };
   }, [datesValid, dropoffDate, hydrated, loadAvailableVehicles, pickupDate]);
 
+  const refreshAvailableVehiclesInBackground = useCallback(async () => {
+    if (!hydrated || !datesValid) return;
+
+    try {
+      await loadAvailableVehicles({ reason: "background", force: true });
+    } catch {
+      const refreshState = reconcileVehicleRefreshState({
+        previousVehicles: vehicleOptionsRef.current,
+        nextVehicles: null,
+        selectedVehicleId: selectedVehicleIdRef.current,
+        failureMessage: VEHICLE_REFRESH_FAILURE_MESSAGE,
+      });
+      setVehicleRefreshWarning(refreshState.refreshWarning);
+      setVehicleSelectionUnavailable(refreshState.vehicleSelectionUnavailable);
+    }
+  }, [datesValid, hydrated, loadAvailableVehicles]);
+
+  useEffect(() => {
+    if (!hydrated || !datesValid) return;
+    if (step !== 2 && step !== 6) return;
+
+    let active = true;
+    const runRefresh = () => {
+      if (!active) return;
+      void refreshAvailableVehiclesInBackground();
+    };
+    const handleWindowFocus = () => {
+      runRefresh();
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible") return;
+      runRefresh();
+    };
+
+    const intervalId = window.setInterval(runRefresh, BACKGROUND_VEHICLE_REFRESH_INTERVAL_MS);
+    window.addEventListener("focus", handleWindowFocus);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", handleWindowFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [datesValid, hydrated, refreshAvailableVehiclesInBackground, step]);
+
   const setupSignatureCanvas = useCallback(
     (preserveDrawing: boolean) => {
       const canvas = signatureCanvasRef.current;
@@ -1537,6 +1811,148 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     setStatusMessage(null);
   }
 
+  function updatePickupLocationValue(fieldKey: string, value: string) {
+    setPickupLocationValues((current) => ({
+      ...current,
+      [fieldKey]: value,
+    }));
+  }
+
+  function updateDropoffLocationValue(fieldKey: string, value: string) {
+    setDropoffLocationManuallyEdited(true);
+    setDropoffLocationValues((current) => ({
+      ...current,
+      [fieldKey]: value,
+    }));
+  }
+
+  function handlePickupDateChange(nextPickupDate: string) {
+    const previousPickupDate = pickupDate;
+    const nextDropoffDate = addDaysToDateInput(nextPickupDate, 2);
+    const previousDropoffDate = dropoffDate;
+    setPickupDate(nextPickupDate);
+    setDropoffDate(nextDropoffDate);
+    setPickupLocationValues((current) =>
+      syncLocationFieldDefaults({
+        fields: pickupFieldSchema,
+        currentValues: current,
+        defaultSource: "pickup_date",
+        previousValue: previousPickupDate,
+        nextValue: nextPickupDate,
+      }),
+    );
+    setDropoffLocationValues((current) =>
+      syncLocationFieldDefaults({
+        fields: dropoffFieldSchema,
+        currentValues: current,
+        defaultSource: "dropoff_date",
+        previousValue: previousDropoffDate,
+        nextValue: nextDropoffDate,
+      }),
+    );
+  }
+
+  function handlePickupTimeChange(nextPickupTime: string) {
+    const previousPickupTime = pickupTime;
+    setPickupTime(nextPickupTime);
+    setPickupLocationValues((current) =>
+      syncLocationFieldDefaults({
+        fields: pickupFieldSchema,
+        currentValues: current,
+        defaultSource: "pickup_time",
+        previousValue: previousPickupTime,
+        nextValue: nextPickupTime,
+      }),
+    );
+  }
+
+  function handleDropoffDateChange(nextDropoffDate: string) {
+    const previousDropoffDate = dropoffDate;
+    setDropoffDate(nextDropoffDate);
+    setDropoffLocationValues((current) =>
+      syncLocationFieldDefaults({
+        fields: dropoffFieldSchema,
+        currentValues: current,
+        defaultSource: "dropoff_date",
+        previousValue: previousDropoffDate,
+        nextValue: nextDropoffDate,
+      }),
+    );
+  }
+
+  function handleDropoffTimeChange(nextDropoffTime: string) {
+    const previousDropoffTime = dropoffTime;
+    setDropoffTime(nextDropoffTime);
+    setDropoffLocationValues((current) =>
+      syncLocationFieldDefaults({
+        fields: dropoffFieldSchema,
+        currentValues: current,
+        defaultSource: "dropoff_time",
+        previousValue: previousDropoffTime,
+        nextValue: nextDropoffTime,
+      }),
+    );
+  }
+
+  function applyPickupLocationChange(nextTypeKey: string) {
+    resetMessages();
+    setPickupLocationId(nextTypeKey);
+    setPickupLocationValues((current) =>
+      coerceBookingLocationFieldValues(
+        getBookingLocationConfigByType(pickupOptions, nextTypeKey, "pickup"),
+        "pickup",
+        current,
+        locationDefaultsContext,
+      ),
+    );
+    if (!dropoffLocationManuallyEdited) {
+      const nextDropoffTypeKey =
+        dropoffOptions.some((location) => location.locationTypeKey === nextTypeKey)
+          ? nextTypeKey
+          : (dropoffOptions[0]?.locationTypeKey ?? nextTypeKey);
+      setDropoffLocationId(nextDropoffTypeKey);
+      setDropoffLocationValues(
+        coerceBookingLocationFieldValues(
+          getBookingLocationConfigByType(dropoffOptions, nextDropoffTypeKey, "dropoff"),
+          "dropoff",
+          pickupLocationValues.address ? { address: pickupLocationValues.address } : {},
+          locationDefaultsContext,
+        ),
+      );
+    }
+  }
+
+  function applyDropoffLocationChange(nextTypeKey: string) {
+    resetMessages();
+    setDropoffLocationId(nextTypeKey);
+    setDropoffLocationManuallyEdited(true);
+    setDropoffLocationValues((current) =>
+      coerceBookingLocationFieldValues(
+        getBookingLocationConfigByType(dropoffOptions, nextTypeKey, "dropoff"),
+        "dropoff",
+        current,
+        locationDefaultsContext,
+      ),
+    );
+  }
+
+  function handleMatchPickupLocation() {
+    const nextDropoffTypeKey =
+      pickupLocationConfig && dropoffOptions.some((location) => location.locationTypeKey === pickupLocationConfig.locationTypeKey)
+        ? pickupLocationConfig.locationTypeKey
+        : (dropoffOptions[0]?.locationTypeKey ?? pickupLocationConfig?.locationTypeKey ?? "OFFICE");
+    setDropoffLocationManuallyEdited(false);
+    setDropoffLocationId(nextDropoffTypeKey);
+    setDropoffLocationValues(
+      coerceBookingLocationFieldValues(
+        getBookingLocationConfigByType(dropoffOptions, nextDropoffTypeKey, "dropoff"),
+        "dropoff",
+        pickupLocationValues.address ? { address: pickupLocationValues.address } : {},
+        locationDefaultsContext,
+      ),
+    );
+  }
+
   function clearSelectedVehicleSelection(
     options?: {
       message?: string;
@@ -1549,6 +1965,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     destroyVehicleLightbox();
     setSelectedVehicleId("");
     setVehicleSelectionUnavailable(false);
+    setVehicleRefreshWarning(null);
     if (shouldClearVehicleOptions) setVehicleOptions([]);
     setInsuranceSelected(false);
     setInsuranceEnabled(false);
@@ -1573,7 +1990,12 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     }
   }
 
-  const step1Complete = datesValid && Boolean(pickupLocationText) && Boolean(dropoffLocationText);
+  const step1Complete =
+    datesValid &&
+    Boolean(pickupLocationText) &&
+    Boolean(dropoffLocationText) &&
+    !validateBookingLocationSelection(pickupLocationConfig, "pickup", pickupLocationValues) &&
+    !validateBookingLocationSelection(dropoffLocationConfig, "dropoff", dropoffLocationValues);
   const step2Complete = step1Complete && hasResolvedVehicle;
   const step3Complete = step2Complete;
   const step4Complete =
@@ -1637,6 +2059,24 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
       }
       if (!dropoffLocationText) {
         setErrorMessage("Select a dropoff location.");
+        return false;
+      }
+      const pickupLocationError = validateBookingLocationSelection(
+        pickupLocationConfig,
+        "pickup",
+        pickupLocationValues,
+      );
+      if (pickupLocationError) {
+        setErrorMessage(pickupLocationError);
+        return false;
+      }
+      const dropoffLocationError = validateBookingLocationSelection(
+        dropoffLocationConfig,
+        "dropoff",
+        dropoffLocationValues,
+      );
+      if (dropoffLocationError) {
+        setErrorMessage(dropoffLocationError);
         return false;
       }
     }
@@ -1724,6 +2164,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
 
   async function handleVehicleSelect(vehicleId: string) {
     resetMessages();
+    setVehicleRefreshWarning(null);
     setVehicleLoading(true);
     const available = await revalidateSelectedVehicleAvailability(vehicleId);
     if (available) {
@@ -1803,9 +2244,11 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     const defaultDropoffDate = dateInputForOffset(2);
     initialPickupDateRef.current = defaultPickupDate;
     initialDropoffDateRef.current = defaultDropoffDate;
-    const defaultPickupLocation = locationOptions.find((location) => location.allowPickup)?.id ?? "";
+    const defaultPickupLocation =
+      getBookingLocationConfigsForSide(locationOptions, "pickup")[0]?.locationTypeKey ?? "OFFICE";
     const defaultDropoffLocation =
-      locationOptions.find((location) => location.allowDropoff)?.id ?? defaultPickupLocation;
+      getBookingLocationConfigsForSide(locationOptions, "dropoff")[0]?.locationTypeKey ??
+      defaultPickupLocation;
 
     setStep(1);
     setMaxStepCompleted(1);
@@ -1815,8 +2258,37 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     setDropoffTime("11:00");
     setPickupLocationId(defaultPickupLocation);
     setDropoffLocationId(defaultDropoffLocation);
-    setPickupCustomAddress("");
-    setDropoffCustomAddress("");
+    setPickupLocationValues(
+      buildBookingLocationSelectionPayload({
+        configs: locationOptions,
+        pickupTypeKey: defaultPickupLocation,
+        dropoffTypeKey: defaultDropoffLocation,
+        pickupValues: {},
+        dropoffValues: {},
+        context: {
+          pickupDate: defaultPickupDate,
+          pickupTime: "11:00",
+          dropoffDate: defaultDropoffDate,
+          dropoffTime: "11:00",
+        },
+      }).pickupValues,
+    );
+    setDropoffLocationValues(
+      buildBookingLocationSelectionPayload({
+        configs: locationOptions,
+        pickupTypeKey: defaultPickupLocation,
+        dropoffTypeKey: defaultDropoffLocation,
+        pickupValues: {},
+        dropoffValues: {},
+        context: {
+          pickupDate: defaultPickupDate,
+          pickupTime: "11:00",
+          dropoffDate: defaultDropoffDate,
+          dropoffTime: "11:00",
+        },
+      }).dropoffValues,
+    );
+    setDropoffLocationManuallyEdited(false);
 
     setSelectedVehicleId("");
     setVehicleSelectionUnavailable(false);
@@ -2176,29 +2648,42 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
       const fullName = `${normalizeText(firstName)} ${normalizeText(lastName)}`.trim();
       const submissionKey = getBookingSubmissionKey();
       const normalizedCustomAmount =
-              paymentOption === "CUSTOM" ? Math.max(1, Math.round(customPaymentNumber)) : null;
+        paymentOption === "CUSTOM" ? Math.max(1, Math.round(customPaymentNumber)) : null;
+      const locationSelection = buildBookingLocationSelectionPayload({
+        configs: locationOptions,
+        pickupTypeKey: pickupLocationId,
+        dropoffTypeKey: dropoffLocationId,
+        pickupLocationId: pickupLocationConfig?.id ?? null,
+        dropoffLocationId: dropoffLocationConfig?.id ?? null,
+        pickupValues: pickupLocationValues,
+        dropoffValues: dropoffLocationValues,
+        context: locationDefaultsContext,
+      });
 
       const bookingResponse = await fetch("/api/public/bookings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-              vehicleId: selectedVehicleId,
-              submissionKey,
-              turnstileToken,
-              customerId,
-              fullName,
-              email: normalizeText(emailAddress),
+          vehicleId: selectedVehicleId,
+          submissionKey,
+          turnstileToken,
+          customerId,
+          fullName,
+          email: normalizeText(emailAddress),
           phone: normalizeText(phoneNumber),
           startDate: pickupDate,
           endDate: dropoffDate,
-          pickupLocation: pickupLocationText,
-          dropoffLocation: dropoffLocationText,
-          pickupLocationId: pickupLocationId === CUSTOM_PICKUP_ID ? null : pickupLocationId,
-          dropoffLocationId: dropoffLocationId === CUSTOM_DROPOFF_ID ? null : dropoffLocationId,
+          pickupLocation: locationSelection.pickupLocationTextSnapshot,
+          dropoffLocation: locationSelection.dropoffLocationTextSnapshot,
+          pickupLocationType: pickupLocationId,
+          dropoffLocationType: dropoffLocationId,
+          pickupLocationId: locationSelection.pickupConfig?.id ?? null,
+          dropoffLocationId: locationSelection.dropoffConfig?.id ?? null,
           pickupTime,
           dropoffTime,
-          pickupLocationTextSnapshot: pickupLocationText,
-          dropoffLocationTextSnapshot: dropoffLocationText,
+          pickupLocationTextSnapshot: locationSelection.pickupLocationTextSnapshot,
+          dropoffLocationTextSnapshot: locationSelection.dropoffLocationTextSnapshot,
+          bookingLocationDetails: locationSelection.details,
           insuranceSelected: insuranceEnabled && insuranceSelected,
           insurancePlanId,
           couponCode: couponAppliedCode,
@@ -2529,11 +3014,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                         type="date"
                         value={pickupDate}
                         min={dateInputForOffset(0)}
-                        onChange={(event) => {
-                          const nextPickupDate = event.target.value;
-                          setPickupDate(nextPickupDate);
-                          setDropoffDate(addDaysToDateInput(nextPickupDate, 2));
-                        }}
+                        onChange={(event) => handlePickupDateChange(event.target.value)}
                         className={bookingSoftFieldClassName}
                       />
                     </label>
@@ -2542,7 +3023,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                       <input
                         type="time"
                         value={pickupTime}
-                        onChange={(event) => setPickupTime(event.target.value)}
+                        onChange={(event) => handlePickupTimeChange(event.target.value)}
                         className={bookingSoftFieldClassName}
                       />
                     </label>
@@ -2552,7 +3033,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                         type="date"
                         value={dropoffDate}
                         min={pickupDate}
-                        onChange={(event) => setDropoffDate(event.target.value)}
+                        onChange={(event) => handleDropoffDateChange(event.target.value)}
                         className={bookingSoftFieldClassName}
                       />
                     </label>
@@ -2561,7 +3042,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                       <input
                         type="time"
                         value={dropoffTime}
-                        onChange={(event) => setDropoffTime(event.target.value)}
+                        onChange={(event) => handleDropoffTimeChange(event.target.value)}
                         className={bookingSoftFieldClassName}
                       />
                     </label>
@@ -2572,56 +3053,104 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                       <span className="text-sm font-semibold text-[var(--ccr-muted)]">Pickup Location</span>
                       <select
                         value={pickupLocationId}
-                        onChange={(event) => setPickupLocationId(event.target.value)}
+                        onChange={(event) => applyPickupLocationChange(event.target.value)}
                         disabled={locationsLoading}
                         className={bookingSoftFieldClassName}
                       >
                         {pickupOptions.map((location) => (
-                          <option key={location.id} value={location.id}>
-                            {location.label}
+                          <option key={location.locationTypeKey} value={location.locationTypeKey}>
+                            {location.pickupLabel}
                           </option>
                         ))}
                       </select>
                     </label>
-                    <label className="block">
-                      <span className="text-sm font-semibold text-[var(--ccr-muted)]">Dropoff Location</span>
+                    <div>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-semibold text-[var(--ccr-muted)]">
+                          Dropoff Location
+                        </span>
+                        {dropoffLocationManuallyEdited ? (
+                          <button
+                            type="button"
+                            onClick={handleMatchPickupLocation}
+                            className={bookingOutlineButtonClassName}
+                          >
+                            Match pickup
+                          </button>
+                        ) : null}
+                      </div>
                       <select
                         value={dropoffLocationId}
-                        onChange={(event) => setDropoffLocationId(event.target.value)}
+                        onChange={(event) => applyDropoffLocationChange(event.target.value)}
                         disabled={locationsLoading}
                         className={bookingSoftFieldClassName}
                       >
                         {dropoffOptions.map((location) => (
-                          <option key={location.id} value={location.id}>
-                            {location.label}
+                          <option key={location.locationTypeKey} value={location.locationTypeKey}>
+                            {location.dropoffLabel}
                           </option>
                         ))}
                       </select>
-                    </label>
+                    </div>
                   </div>
 
-                  {pickupLocationId === CUSTOM_PICKUP_ID ? (
-                    <label className="mt-4 block">
-                      <span className="text-sm font-semibold text-[var(--ccr-muted)]">Pick up Address</span>
-                      <input
-                        value={pickupCustomAddress}
-                        onChange={(event) => setPickupCustomAddress(event.target.value)}
-                        placeholder="Enter your pickup address"
-                        className={bookingSoftFieldClassName}
-                      />
-                    </label>
-                  ) : null}
-                  {dropoffLocationId === CUSTOM_DROPOFF_ID ? (
-                    <label className="mt-4 block">
-                      <span className="text-sm font-semibold text-[var(--ccr-muted)]">Return Address</span>
-                      <input
-                        value={dropoffCustomAddress}
-                        onChange={(event) => setDropoffCustomAddress(event.target.value)}
-                        placeholder="Enter your return address"
-                        className={bookingSoftFieldClassName}
-                      />
-                    </label>
-                  ) : null}
+                  <div className="mt-4 grid gap-4 md:grid-cols-2">
+                    <div className="space-y-4">
+                      {pickupFieldSchema.map((field) => (
+                        <label
+                          key={`pickup-${field.appliesTo}-${field.key}-${field.label}`}
+                          className="block"
+                        >
+                          <span className="text-sm font-semibold text-[var(--ccr-muted)]">
+                            {field.label}
+                          </span>
+                          <input
+                            type={field.inputType}
+                            value={pickupLocationValues[field.key] ?? ""}
+                            onChange={(event) =>
+                              updatePickupLocationValue(field.key, event.target.value)
+                            }
+                            placeholder={field.inputType === "text" ? "Enter a value" : undefined}
+                            className={`${bookingSoftFieldClassName} ${
+                              field.inputType === "date"
+                                ? "promo-date-time-input date-icon-edge"
+                                : field.inputType === "time"
+                                  ? "promo-date-time-input"
+                                  : ""
+                            }`}
+                          />
+                        </label>
+                      ))}
+                    </div>
+
+                    <div className="space-y-4">
+                      {dropoffFieldSchema.map((field) => (
+                        <label
+                          key={`dropoff-${field.appliesTo}-${field.key}-${field.label}`}
+                          className="block"
+                        >
+                          <span className="text-sm font-semibold text-[var(--ccr-muted)]">
+                            {field.label}
+                          </span>
+                          <input
+                            type={field.inputType}
+                            value={dropoffLocationValues[field.key] ?? ""}
+                            onChange={(event) =>
+                              updateDropoffLocationValue(field.key, event.target.value)
+                            }
+                            placeholder={field.inputType === "text" ? "Enter a value" : undefined}
+                            className={`${bookingSoftFieldClassName} ${
+                              field.inputType === "date"
+                                ? "promo-date-time-input date-icon-edge"
+                                : field.inputType === "time"
+                                  ? "promo-date-time-input"
+                                  : ""
+                            }`}
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  </div>
                 </section>
               ) : null}
 
@@ -2634,6 +3163,14 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                   {unavailableVehicleWarning ? (
                     <div className="mt-4 rounded-xl border border-[var(--ccr-clerk-danger-border)] bg-[var(--ccr-clerk-danger-bg)] px-4 py-3 text-sm text-[var(--ccr-clerk-danger-text)]">
                       {unavailableVehicleWarning}
+                    </div>
+                  ) : null}
+                  {vehicleRefreshWarning ? (
+                    <div
+                      className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+                      data-testid="booking-step2-refresh-warning"
+                    >
+                      {vehicleRefreshWarning}
                     </div>
                   ) : null}
                   {hasSelectedVehicleId ? (
@@ -3044,6 +3581,14 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                       data-testid="booking-step6-pricing-warning"
                     >
                       {step6PricingWarning}
+                    </div>
+                  ) : null}
+                  {vehicleRefreshWarning ? (
+                    <div
+                      className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+                      data-testid="booking-step6-refresh-warning"
+                    >
+                      {vehicleRefreshWarning}
                     </div>
                   ) : null}
 

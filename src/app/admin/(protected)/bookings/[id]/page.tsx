@@ -29,6 +29,10 @@ import { formatBookingStatusLabel } from "@/lib/bookings/formatBookingStatusLabe
 import { refundRequiredStyles } from "@/lib/refundRequiredStyles";
 import { isEntitledBooking } from "@/lib/availability/entitlement";
 import {
+  getBookingLocationAdminBadgeLabel,
+  readBookingLocationDetails,
+} from "@/lib/bookings/bookingLocations";
+import {
   createEmptyBookingVehicleInspectionSummaries,
   isBookingVehicleInspectionMissingTableError,
   loadBookingVehicleInspectionSummaries,
@@ -190,6 +194,19 @@ function formatTimeNoSeconds(value: string | null | undefined) {
   const normalized = String(value ?? "").trim();
   if (!normalized) return "";
   return normalized.replace(/:(\d{2})(?:\.\d+)?$/, "");
+}
+
+function readStructuredLocationLines(entry: {
+  values: Record<string, string | null>;
+  fieldLabels: Record<string, string>;
+}) {
+  return Object.entries(entry.values)
+    .filter(([, value]) => typeof value === "string" && value.trim().length > 0)
+    .map(([key, value]) => ({
+      key,
+      label: entry.fieldLabels[key] ?? key,
+      value: value as string,
+    }));
 }
 
 export default async function AdminBookingDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -402,9 +419,25 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
   const dropoffDateTimeLabel = booking.end_at
     ? fmtDateNoSeconds(booking.end_at)
     : `${fmtDateOnly(booking.end_date)}, ${formatTimeNoSeconds(booking.dropoff_time) || "12:00 AM"}`;
+  const pickupTimeValue =
+    formatTimeNoSeconds(booking.pickup_time) ||
+    (booking.start_at ? String(booking.start_at).slice(11, 16) : "11:00");
+  const dropoffTimeValue =
+    formatTimeNoSeconds(booking.dropoff_time) ||
+    (booking.end_at ? String(booking.end_at).slice(11, 16) : "11:00");
   const pickupLocationSnapshot = booking.pickup_location_text_snapshot || booking.pickup_location;
   const dropoffLocationSnapshot =
     booking.dropoff_location_text_snapshot || booking.dropoff_location || booking.pickup_location;
+  const bookingLocationDetails = readBookingLocationDetails(pricing, {
+    pickupLabel: pickupLocationSnapshot,
+    dropoffLabel: dropoffLocationSnapshot,
+    pickupLocationId: null,
+    dropoffLocationId: null,
+  });
+  const pickupLocationLines = readStructuredLocationLines(bookingLocationDetails.pickup);
+  const dropoffLocationLines = readStructuredLocationLines(bookingLocationDetails.dropoff);
+  const pickupLocationBadge = getBookingLocationAdminBadgeLabel(bookingLocationDetails.pickup.type);
+  const dropoffLocationBadge = getBookingLocationAdminBadgeLabel(bookingLocationDetails.dropoff.type);
   const customPaymentAmount = Number(
     pricing.custom_payment_amount_cents ?? booking.custom_payment_amount_cents ?? 0,
   );
@@ -597,6 +630,18 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
           >
             {displayStatus.replace(/_/g, " ")}
           </span>
+          <span
+            data-testid="booking-pickup-type-badge"
+            className="inline-flex items-center rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-xs font-semibold uppercase tracking-wide text-[var(--ccr-text)]"
+          >
+            Pickup: {pickupLocationBadge}
+          </span>
+          <span
+            data-testid="booking-dropoff-type-badge"
+            className="inline-flex items-center rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-xs font-semibold uppercase tracking-wide text-[var(--ccr-text)]"
+          >
+            Dropoff: {dropoffLocationBadge}
+          </span>
           {isNonBlocking ? <InfoTooltipIcon message="UNPAID - Not holding vehicle" /> : null}
           {overrideInfo.isOverridden ? (
             <span className="inline-flex items-center rounded-full border border-[var(--ccr-status-danger-border)] bg-[var(--ccr-status-danger-bg)] px-3 py-1 text-xs font-semibold uppercase tracking-wide text-[var(--ccr-status-danger-text)]">
@@ -624,10 +669,15 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
                 bookingId={booking.id}
                 startDate={booking.start_date}
                 endDate={booking.end_date}
-                pickupLocation={booking.pickup_location}
+                pickupTime={pickupTimeValue}
+                dropoffTime={dropoffTimeValue}
                 customerName={customerNameSnapshot}
                 customerEmail={customerEmailSnapshot}
                 customerPhone={customerPhoneSnapshot}
+                pickupLocationTypeKey={bookingLocationDetails.pickup.typeKey}
+                dropoffLocationTypeKey={bookingLocationDetails.dropoff.typeKey}
+                pickupLocationValues={bookingLocationDetails.pickup.values}
+                dropoffLocationValues={bookingLocationDetails.dropoff.values}
                 disabled={["RETURNED", "CANCELLED"].includes(booking.status.toUpperCase())}
               />
             }
@@ -704,6 +754,36 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
               <div className="min-w-0">
                 <dt className="text-xs uppercase tracking-wide">Dropoff Location Snapshot</dt>
                 <dd className="font-semibold text-[var(--ccr-text)]">{dropoffLocationSnapshot}</dd>
+              </div>
+              <div className="min-w-0 md:col-span-2">
+                <dt className="text-xs uppercase tracking-wide">Structured Location Details</dt>
+                <dd
+                  data-testid="booking-location-details-block"
+                  className="mt-2 grid gap-4 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-4 md:grid-cols-2"
+                >
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                      Pickup
+                    </p>
+                    <p className="font-semibold text-[var(--ccr-text)]">{bookingLocationDetails.pickup.label}</p>
+                    {pickupLocationLines.map((line) => (
+                      <p key={`pickup-${line.key}`} className="text-[var(--ccr-muted)]">
+                        {line.label}: {line.value}
+                      </p>
+                    ))}
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                      Dropoff
+                    </p>
+                    <p className="font-semibold text-[var(--ccr-text)]">{bookingLocationDetails.dropoff.label}</p>
+                    {dropoffLocationLines.map((line) => (
+                      <p key={`dropoff-${line.key}`} className="text-[var(--ccr-muted)]">
+                        {line.label}: {line.value}
+                      </p>
+                    ))}
+                  </div>
+                </dd>
               </div>
             </div>
           </dl>

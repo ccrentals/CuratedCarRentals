@@ -8,6 +8,11 @@ import { QuoteEmailModal } from "@/components/admin/quotes/QuoteEmailModal";
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { InlineDateTimeRange } from "@/components/shared/InlineDateTimeRange";
 import { buttonStyles } from "@/components/ui/Button";
+import {
+  getBookingLocationAdminBadgeLabel,
+  getBookingLocationDetailLines,
+  readBookingLocationDetails,
+} from "@/lib/bookings/bookingLocations";
 import { formatJmd } from "@/lib/money";
 import {
   formatQuoteActivityActorLabel,
@@ -113,6 +118,16 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
   const [clientPaysAtPartner, setClientPaysAtPartner] = useState(false);
   const [rackPriceInput, setRackPriceInput] = useState("");
   const [activityPage, setActivityPage] = useState(1);
+
+  const bookingLocationDetails = useMemo(() => {
+    if (!item) return null;
+    return readBookingLocationDetails(item.pricingJson, {
+      pickupLabel: item.pickupLocationText,
+      dropoffLabel: item.dropoffLocationText,
+      pickupLocationId: item.pickupLocationId,
+      dropoffLocationId: item.dropoffLocationId,
+    });
+  }, [item]);
 
   const eventRows = useMemo(() => initialEvents, [initialEvents]);
   const activityTotalPages = Math.max(1, Math.ceil(eventRows.length / ACTIVITY_ROWS_PER_PAGE));
@@ -281,6 +296,16 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
             <span className={`${QUOTE_STATUS_PILL_BASE_CLASS} ${quoteStatusPillToneClass(item.status)}`}>
               {quoteStatusLabel(item.status)}
             </span>
+            {bookingLocationDetails ? (
+              <>
+                <span className={`${QUOTE_STATUS_PILL_BASE_CLASS} bg-[var(--ccr-surface-soft)] text-[var(--ccr-text)]`}>
+                  Pickup: {getBookingLocationAdminBadgeLabel(bookingLocationDetails.pickup.typeKey)}
+                </span>
+                <span className={`${QUOTE_STATUS_PILL_BASE_CLASS} bg-[var(--ccr-surface-soft)] text-[var(--ccr-text)]`}>
+                  Dropoff: {getBookingLocationAdminBadgeLabel(bookingLocationDetails.dropoff.typeKey)}
+                </span>
+              </>
+            ) : null}
           </div>
           <p className="mt-1 text-sm text-[var(--ccr-muted)]">Manage quote status, metadata, pricing snapshot, and actions.</p>
         </div>
@@ -415,8 +440,30 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
           <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-[var(--ccr-text)]">
             <InlineDateTimeRange startLabel={item.startAt} endLabel={item.endAt} />
           </div>
-          <p className="mt-2 text-sm text-[var(--ccr-muted)]">Pickup: {item.pickupLocationText}</p>
-          <p className="text-sm text-[var(--ccr-muted)]">Dropoff: {item.dropoffLocationText}</p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Pickup</p>
+              <p className="mt-1 text-sm font-semibold text-[var(--ccr-text)]">
+                {bookingLocationDetails?.pickup.label ?? item.pickupLocationText}
+              </p>
+              {(bookingLocationDetails ? getBookingLocationDetailLines(bookingLocationDetails.pickup) : []).map((line) => (
+                <p key={`pickup-${line}`} className="mt-1 text-sm text-[var(--ccr-muted)]">
+                  {line}
+                </p>
+              ))}
+            </div>
+            <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Dropoff</p>
+              <p className="mt-1 text-sm font-semibold text-[var(--ccr-text)]">
+                {bookingLocationDetails?.dropoff.label ?? item.dropoffLocationText}
+              </p>
+              {(bookingLocationDetails ? getBookingLocationDetailLines(bookingLocationDetails.dropoff) : []).map((line) => (
+                <p key={`dropoff-${line}`} className="mt-1 text-sm text-[var(--ccr-muted)]">
+                  {line}
+                </p>
+              ))}
+            </div>
+          </div>
         </div>
       </section>
 
@@ -625,18 +672,28 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
           void loadQuote();
           router.refresh();
         }}
-        target={{
-          id: item.id,
-          publicId: item.publicId,
-          customerFullName: item.customerFullName,
-          customerEmail: item.customerEmail,
-          startAt: item.startAt,
-          endAt: item.endAt,
-          pickupLocationText: item.pickupLocationText,
-          dropoffLocationText: item.dropoffLocationText,
-          vehicleLabel: item.vehicleLabel,
-          totalCents: item.totalCents,
-          depositRequiredCents: item.depositRequiredCents,
+          target={{
+            id: item.id,
+            publicId: item.publicId,
+            customerFullName: item.customerFullName,
+            customerEmail: item.customerEmail,
+            startAt: item.startAt,
+            endAt: item.endAt,
+            pickupLocationText: bookingLocationDetails
+              ? [
+                  bookingLocationDetails.pickup.label,
+                  ...getBookingLocationDetailLines(bookingLocationDetails.pickup),
+                ].join(" | ")
+              : item.pickupLocationText,
+            dropoffLocationText: bookingLocationDetails
+              ? [
+                  bookingLocationDetails.dropoff.label,
+                  ...getBookingLocationDetailLines(bookingLocationDetails.dropoff),
+                ].join(" | ")
+              : item.dropoffLocationText,
+            vehicleLabel: item.vehicleLabel,
+            totalCents: item.totalCents,
+            depositRequiredCents: item.depositRequiredCents,
           amountDueCents: item.amountDueCents,
           expiresAt: item.expiresAt,
         }}

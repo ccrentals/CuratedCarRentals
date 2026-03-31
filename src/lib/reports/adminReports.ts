@@ -18,6 +18,9 @@ export type ReportsFilterInput = {
   dateFrom?: string | null;
   dateTo?: string | null;
   vehicleId?: string | null;
+  pickupLocationType?: string | null;
+  dropoffLocationType?: string | null;
+  locationLabel?: string | null;
   revenueGranularity?: string | null;
 };
 
@@ -26,6 +29,9 @@ export type ReportsFilters = {
   rangeFrom: string;
   rangeTo: string;
   vehicleId: string;
+  pickupLocationType: string;
+  dropoffLocationType: string;
+  locationLabel: string;
   revenueGranularity: ReportGranularity;
 };
 
@@ -264,6 +270,10 @@ export type CustomerCohortReport = {
 
 export type LocationPerformanceRow = {
   locationLabel: string;
+  pickupLabel: string;
+  dropoffLabel: string;
+  pickupType: string;
+  dropoffType: string;
   bookingCount: number;
   revenue: number;
   amountPaid: number;
@@ -315,6 +325,14 @@ const NUMERIC_PATTERN = "^-?[0-9]+(\\.[0-9]+)?$";
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const PAYMENT_SUCCESS_STATUSES = ["DEPOSIT_PAID", "SUCCESS"] as const;
 const PAYMENT_NET_STATUSES = ["DEPOSIT_PAID", "SUCCESS", "REFUNDED"] as const;
+const PICKUP_LOCATION_TYPE_SQL =
+  "upper(coalesce(nullif(b.pricing_json->'booking_location_details'->'pickup'->>'typeKey', ''), nullif(b.pricing_json->'booking_location_details'->'pickup'->>'type', ''), 'UNKNOWN'))";
+const DROPOFF_LOCATION_TYPE_SQL =
+  "upper(coalesce(nullif(b.pricing_json->'booking_location_details'->'dropoff'->>'typeKey', ''), nullif(b.pricing_json->'booking_location_details'->'dropoff'->>'type', ''), 'UNKNOWN'))";
+const PICKUP_LOCATION_LABEL_SQL =
+  "coalesce(nullif(b.pricing_json->'booking_location_details'->'pickup'->>'label', ''), nullif(trim(b.pickup_location_text_snapshot), ''), nullif(trim(b.pickup_location), ''), 'Unknown')";
+const DROPOFF_LOCATION_LABEL_SQL =
+  `coalesce(nullif(b.pricing_json->'booking_location_details'->'dropoff'->>'label', ''), nullif(trim(b.dropoff_location_text_snapshot), ''), nullif(trim(b.dropoff_location), ''), ${PICKUP_LOCATION_LABEL_SQL})`;
 
 /**
  * Canonical booking amount source for reports:
@@ -578,6 +596,9 @@ export function normalizeReportsFilters(input: ReportsFilterInput): ReportsFilte
     rangeFrom: dateFromKey(fromDate),
     rangeTo: dateFromKey(toDate),
     vehicleId: maybeText(input.vehicleId),
+    pickupLocationType: maybeText(input.pickupLocationType).toUpperCase(),
+    dropoffLocationType: maybeText(input.dropoffLocationType).toUpperCase(),
+    locationLabel: maybeText(input.locationLabel),
     revenueGranularity: normalizeGranularity(input.revenueGranularity),
   };
 }
@@ -586,6 +607,24 @@ function buildVehicleFilterClause(vehicleId: string, values: unknown[], prefix =
   if (!vehicleId) return "";
   values.push(vehicleId);
   return ` and ${prefix} = $${values.length} `;
+}
+
+function buildLocationFilterClause(filters: ReportsFilters, values: unknown[]) {
+  let clause = "";
+  if (filters.pickupLocationType) {
+    values.push(filters.pickupLocationType);
+    clause += ` and ${PICKUP_LOCATION_TYPE_SQL} = $${values.length} `;
+  }
+  if (filters.dropoffLocationType) {
+    values.push(filters.dropoffLocationType);
+    clause += ` and ${DROPOFF_LOCATION_TYPE_SQL} = $${values.length} `;
+  }
+  if (filters.locationLabel) {
+    values.push(filters.locationLabel);
+    clause +=
+      ` and (${PICKUP_LOCATION_LABEL_SQL} = $${values.length} or ${DROPOFF_LOCATION_LABEL_SQL} = $${values.length}) `;
+  }
+  return clause;
 }
 
 async function buildRevenueReport(db: Queryable, filters: ReportsFilters): Promise<RevenueReport> {
@@ -996,10 +1035,15 @@ async function buildLocationPerformanceReport(
 ): Promise<LocationPerformanceReport> {
   const values: unknown[] = [filters.rangeFrom, filters.rangeTo, [...PAYMENT_NET_STATUSES]];
   const vehicleClause = buildVehicleFilterClause(filters.vehicleId, values, "b.vehicle_id");
+  const locationClause = buildLocationFilterClause(filters, values);
 
   const result = await db.query(
     "select " +
-      "coalesce(nullif(trim(b.pickup_location), ''), 'Unknown') as location_label, " +
+      `${PICKUP_LOCATION_LABEL_SQL} as location_label, ` +
+      `${PICKUP_LOCATION_LABEL_SQL} as pickup_label, ` +
+      `${DROPOFF_LOCATION_LABEL_SQL} as dropoff_label, ` +
+      `${PICKUP_LOCATION_TYPE_SQL} as pickup_type, ` +
+      `${DROPOFF_LOCATION_TYPE_SQL} as dropoff_type, ` +
       "count(*) filter (where upper(b.status) not in ('CANCELLED','OVERRIDDEN'))::int as booking_count, " +
       `coalesce(sum(case when upper(b.status) not in ('CANCELLED','OVERRIDDEN') then ${TOTAL_SQL} else 0 end), 0)::numeric as revenue, ` +
       "coalesce(sum(case when upper(b.status) not in ('CANCELLED','OVERRIDDEN') then (" +
@@ -1011,13 +1055,18 @@ async function buildLocationPerformanceReport(
       "join vehicles v on v.id = b.vehicle_id " +
       "where b.start_date between $1 and $2 " +
       vehicleClause +
-      "group by 1 " +
-      "order by 1",
+      locationClause +
+      "group by 1, 2, 3, 4, 5 " +
+      "order by 1, 3",
     values,
   );
 
   const rows: LocationPerformanceRow[] = (result.rows as Array<{
     location_label: string;
+    pickup_label: string;
+    dropoff_label: string;
+    pickup_type: string;
+    dropoff_type: string;
     booking_count: number;
     revenue: number;
     amount_paid: number;
@@ -1027,6 +1076,10 @@ async function buildLocationPerformanceReport(
     const amountPaid = asNumber(row.amount_paid);
     return {
       locationLabel: maybeText(row.location_label) || "Unknown",
+      pickupLabel: maybeText(row.pickup_label) || "Unknown",
+      dropoffLabel: maybeText(row.dropoff_label) || maybeText(row.pickup_label) || "Unknown",
+      pickupType: maybeText(row.pickup_type) || "UNKNOWN",
+      dropoffType: maybeText(row.dropoff_type) || "UNKNOWN",
       bookingCount: asNumber(row.booking_count),
       revenue,
       amountPaid,
@@ -1939,6 +1992,9 @@ export function buildReportsFilterQueryString(filters: ReportsFilters) {
   params.set("rangeFrom", filters.rangeFrom);
   params.set("rangeTo", filters.rangeTo);
   if (filters.vehicleId) params.set("vehicleId", filters.vehicleId);
+  if (filters.pickupLocationType) params.set("pickupLocationType", filters.pickupLocationType);
+  if (filters.dropoffLocationType) params.set("dropoffLocationType", filters.dropoffLocationType);
+  if (filters.locationLabel) params.set("locationLabel", filters.locationLabel);
   params.set("revenueGranularity", filters.revenueGranularity);
   return params.toString();
 }

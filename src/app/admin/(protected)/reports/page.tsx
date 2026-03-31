@@ -650,6 +650,9 @@ export default async function AdminReportsPage({
     rangeFrom: readQueryValue(params, "rangeFrom"),
     rangeTo: readQueryValue(params, "rangeTo"),
     vehicleId: readQueryValue(params, "vehicleId"),
+    pickupLocationType: readQueryValue(params, "pickupLocationType"),
+    dropoffLocationType: readQueryValue(params, "dropoffLocationType"),
+    locationLabel: readQueryValue(params, "locationLabel"),
     revenueGranularity: readQueryValue(params, "revenueGranularity"),
   });
 
@@ -1335,7 +1338,7 @@ export default async function AdminReportsPage({
         {reportsPreviewFlagsEnabled && previewMissingMaintenance ? (
           <input type="hidden" name="previewMissingMaintenance" value="1" />
         ) : null}
-        <div className="grid grid-cols-2 gap-3 max-[359px]:grid-cols-1 md:grid-cols-[1fr_1fr_1fr_1.5fr_140px_auto_auto] md:gap-4">
+        <div className="grid grid-cols-2 gap-3 max-[359px]:grid-cols-1 md:grid-cols-[1fr_1fr_1fr_1.2fr_180px_180px_140px_auto_auto] md:gap-4">
           <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
             Snapshot Date
             <input
@@ -1378,6 +1381,42 @@ export default async function AdminReportsPage({
                 </option>
               ))}
             </select>
+          </label>
+          <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+            Pickup Type
+            <select
+              name="pickupLocationType"
+              defaultValue={filters.pickupLocationType}
+              className="mt-2 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+            >
+              <option value="">All pickup types</option>
+              <option value="OFFICE">Old Hope Road</option>
+              <option value="AIRPORT">Airport</option>
+              <option value="CUSTOM_ADDRESS">Custom address</option>
+            </select>
+          </label>
+          <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+            Dropoff Type
+            <select
+              name="dropoffLocationType"
+              defaultValue={filters.dropoffLocationType}
+              className="mt-2 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+            >
+              <option value="">All dropoff types</option>
+              <option value="OFFICE">Old Hope Road</option>
+              <option value="AIRPORT">Airport</option>
+              <option value="CUSTOM_ADDRESS">Custom address</option>
+            </select>
+          </label>
+          <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+            Location Label
+            <input
+              type="text"
+              name="locationLabel"
+              defaultValue={filters.locationLabel}
+              placeholder="Filter by pickup or dropoff label"
+              className="mt-2 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+            />
           </label>
           <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
             Rows
@@ -2654,7 +2693,17 @@ export default async function AdminReportsPage({
                                   key={`location-${row.locationLabel}`}
                                   className="border-b border-[var(--ccr-border)] last:border-b-0"
                                 >
-                                  <td className="px-3 py-2 text-[var(--ccr-text)]">{row.locationLabel}</td>
+                                  <td className="px-3 py-2 text-[var(--ccr-muted)]">
+                                    <div className="space-y-1">
+                                      <p className="font-medium text-[var(--ccr-text)]">{row.pickupLabel}</p>
+                                      <p className="text-xs">
+                                        Pickup: {row.pickupType} · Dropoff: {row.dropoffType}
+                                      </p>
+                                      {row.dropoffLabel !== row.pickupLabel ? (
+                                        <p className="text-xs">Dropoff label: {row.dropoffLabel}</p>
+                                      ) : null}
+                                    </div>
+                                  </td>
                                   <td className="px-3 py-2 text-[var(--ccr-text)]">{row.bookingCount}</td>
                                   <td className="px-3 py-2 text-[var(--ccr-text)]">{formatJmd(row.revenue)}</td>
                                   <td className="px-3 py-2 text-[var(--ccr-text)]">{formatJmd(row.amountPaid)}</td>

@@ -7,7 +7,7 @@ import { PublicSection } from "@/components/site/PublicSection";
 import { Container } from "@/components/site/Container";
 import { Button } from "@/components/ui/Button";
 import { siteContent } from "@/data/content";
-import { formatJmd } from "@/lib/money";
+import { formatJmd, formatPublicJmd } from "@/lib/money";
 import { getPublicVehicleByIdentifier } from "@/lib/publicVehicles";
 
 export const dynamic = "force-dynamic";
@@ -39,6 +39,7 @@ export default async function FleetVehicleDetailPage({
     { label: "Hybrid", value: vehicle.hybrid ? "Yes" : "No" },
     { label: "Category", value: vehicle.category },
   ];
+  const headlineMeta = [vehicle.category, String(vehicle.year)].filter(Boolean).join(" • ");
 
   return (
     <div className="pb-6">
@@ -88,9 +89,7 @@ export default async function FleetVehicleDetailPage({
             </div>
 
             <div className="xl:sticky xl:top-24">
-              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--ccr-accent)]">
-                {vehicle.category} • {vehicle.year}
-              </p>
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--ccr-accent)]">{headlineMeta}</p>
               <h1 className="mt-4 text-4xl font-semibold tracking-tight md:text-5xl">{vehicle.name}</h1>
               <p className="mt-5 max-w-xl text-base leading-7 text-white/76">{vehicle.description}</p>
 
@@ -112,7 +111,7 @@ export default async function FleetVehicleDetailPage({
                 </p>
                 <div className="mt-4 flex items-end justify-between gap-4">
                   <div>
-                    <p className="text-3xl font-semibold">{formatJmd(vehicle.pricePerDay)}</p>
+                    <p className="text-3xl font-semibold">{formatPublicJmd(vehicle.pricePerDay)}</p>
                     <p className="mt-1 text-sm text-white/68">per day</p>
                   </div>
                   {vehicle.deposit_cents > 0 ? (

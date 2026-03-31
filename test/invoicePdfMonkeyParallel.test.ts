@@ -285,6 +285,34 @@ test("shared rental agreement payload loader normalizes booking, payment, and si
         dropoff_location: null,
         status: "CONFIRMED",
         pricing_json: {
+          booking_location_details: {
+            pickup: {
+              typeKey: "AIRPORT",
+              label: "Norman Manley Airport",
+              values: {
+                flight_arrival_date: "2026-03-15",
+                flight_arrival_time: "08:45",
+                flight_number: "BW101",
+                airline: "Caribbean Airlines",
+              },
+              fieldLabels: {
+                flight_arrival_date: "Flight Arrival Date",
+                flight_arrival_time: "Flight Arrival Time",
+                flight_number: "Flight Number",
+                airline: "Airline",
+              },
+            },
+            dropoff: {
+              typeKey: "CUSTOM_ADDRESS",
+              label: "Return Address",
+              values: {
+                return_address: "1 Test Lane, Kingston",
+              },
+              fieldLabels: {
+                return_address: "Return Address",
+              },
+            },
+          },
           daily_rate_cents: 6200,
           deposit_cents: 1860,
           base_total_cents: 18600,
@@ -333,6 +361,9 @@ test("shared rental agreement payload loader normalizes booking, payment, and si
   assert.equal(result?.payload.charges.payment_method, "Cash");
   assert.equal(result?.payload.charges.paid_to_date, 1860);
   assert.equal(result?.payload.charges.balance_due, 16740);
+  assert.match(String(result?.payload.booking.pickup_location ?? ""), /Norman Manley Airport/);
+  assert.match(String(result?.payload.booking.pickup_location ?? ""), /Flight Number: BW101/);
+  assert.match(String(result?.payload.booking.return_location ?? ""), /Return Address/);
 });
 
 test("shared rental agreement payload loader remains safe when signature is missing", async () => {
@@ -348,6 +379,20 @@ test("shared rental agreement payload loader remains safe when signature is miss
         dropoff_location: "166 old hope road",
         status: "PENDING_PAYMENT",
         pricing_json: {
+          booking_location_details: {
+            pickup: {
+              typeKey: "OFFICE",
+              label: "168 1/2 Old Hope Road, Kingston Jamaica",
+              values: {},
+              fieldLabels: {},
+            },
+            dropoff: {
+              typeKey: "OFFICE",
+              label: "168 1/2 Old Hope Road, Kingston Jamaica",
+              values: {},
+              fieldLabels: {},
+            },
+          },
           daily_rate_cents: 6200,
           deposit_cents: 1860,
           total_cents: 18600,

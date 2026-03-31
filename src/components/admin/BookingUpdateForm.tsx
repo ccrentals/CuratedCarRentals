@@ -1,21 +1,68 @@
 "use client";
 
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
 import { buttonStyles } from "@/components/ui/Button";
+import {
+  buildBookingLocationConfigs,
+  type BookingLocationConfig,
+  type BookingLocationFieldSchema,
+  type BookingLocationFieldValueMap,
+} from "@/lib/bookings/bookingLocations";
+import {
+  buildBookingLocationSelectionPayload,
+  coerceBookingLocationFieldValues,
+  getBookingLocationConfigByType,
+  getBookingLocationConfigsForSide,
+  getBookingLocationFieldSchemaForSide,
+  normalizeBookingLocationFieldValuesInput,
+  validateBookingLocationSelection,
+} from "@/lib/bookings/locationConfigRuntime";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
 type BookingUpdateFormProps = {
   bookingId: string;
   startDate: string | Date;
   endDate: string | Date;
-  pickupLocation: string;
+  pickupTime: string | null;
+  dropoffTime: string | null;
   customerName: string;
   customerEmail: string;
   customerPhone: string;
+  pickupLocationTypeKey: string;
+  dropoffLocationTypeKey: string;
+  pickupLocationValues: BookingLocationFieldValueMap;
+  dropoffLocationValues: BookingLocationFieldValueMap;
   disabled?: boolean;
 };
+
+type BookingLocationApiField = {
+  key?: unknown;
+  label?: unknown;
+  input_type?: unknown;
+  required?: unknown;
+  applies_to?: unknown;
+  default_source?: unknown;
+};
+
+type BookingLocationApiRow = {
+  id?: unknown;
+  label?: unknown;
+  location_type_key?: unknown;
+  pickup_label?: unknown;
+  dropoff_label?: unknown;
+  allow_pickup?: unknown;
+  allow_dropoff?: unknown;
+  applies_to_pickup?: unknown;
+  applies_to_dropoff?: unknown;
+  is_active?: unknown;
+  sort_order?: unknown;
+  field_schema?: unknown;
+  db_backed?: unknown;
+};
+
+const DEFAULT_BOOKING_LOCATIONS = buildBookingLocationConfigs();
 
 function toDateInputValue(value: string | Date) {
   if (value instanceof Date) {
@@ -31,14 +78,169 @@ function toDateInputValue(value: string | Date) {
   return parsed.toISOString().slice(0, 10);
 }
 
+function toTimeInputValue(value: string | null | undefined) {
+  const normalized = String(value ?? "").trim();
+  if (!normalized) return "11:00";
+  const match = normalized.match(/^(\d{2}:\d{2})/);
+  return match?.[1] ?? "11:00";
+}
+
+function isFieldInputType(value: unknown): value is BookingLocationFieldSchema["inputType"] {
+  return value === "text" || value === "date" || value === "time";
+}
+
+function isFieldAppliesTo(value: unknown): value is BookingLocationFieldSchema["appliesTo"] {
+  return value === "pickup" || value === "dropoff" || value === "both";
+}
+
+function isFieldDefaultSource(
+  value: unknown,
+): value is BookingLocationFieldSchema["defaultSource"] {
+  return (
+    value === null ||
+    value === "pickup_date" ||
+    value === "pickup_time" ||
+    value === "dropoff_date" ||
+    value === "dropoff_time"
+  );
+}
+
+function normalizeFieldSchema(value: unknown) {
+  if (!Array.isArray(value)) return [] as BookingLocationFieldSchema[];
+
+  return value
+    .map((entry) => {
+      const field = entry as BookingLocationApiField;
+      const key = typeof field.key === "string" ? field.key.trim() : "";
+      const label = typeof field.label === "string" ? field.label.trim() : "";
+      const inputType = field.input_type;
+      const appliesTo = field.applies_to;
+      const defaultSource = field.default_source ?? null;
+
+      if (!key || !label || !isFieldInputType(inputType) || !isFieldAppliesTo(appliesTo)) {
+        return null;
+      }
+
+      return {
+        key,
+        label,
+        inputType,
+        required: field.required === true,
+        appliesTo,
+        defaultSource: isFieldDefaultSource(defaultSource) ? defaultSource : null,
+      } satisfies BookingLocationFieldSchema;
+    })
+    .filter((field): field is BookingLocationFieldSchema => field !== null);
+}
+
+function mapApiLocations(rows: unknown[]) {
+  const configs = rows
+    .map((row) => {
+      const location = row as BookingLocationApiRow;
+      const typeKey =
+        typeof location.location_type_key === "string" ? location.location_type_key.trim() : "";
+      const label = typeof location.label === "string" ? location.label.trim() : "";
+      const pickupLabel =
+        typeof location.pickup_label === "string" ? location.pickup_label.trim() : label;
+      const dropoffLabel =
+        typeof location.dropoff_label === "string" ? location.dropoff_label.trim() : label;
+
+      if (!typeKey || !label) return null;
+
+      return {
+        id: typeof location.id === "string" ? location.id.trim() : null,
+        locationType: typeKey,
+        locationTypeKey: typeKey,
+        label,
+        pickupLabel,
+        dropoffLabel,
+        allowPickup: location.allow_pickup !== false,
+        allowDropoff: location.allow_dropoff !== false,
+        appliesToPickup: location.applies_to_pickup !== false,
+        appliesToDropoff: location.applies_to_dropoff !== false,
+        isActive: location.is_active !== false,
+        sortOrder:
+          typeof location.sort_order === "number" && Number.isFinite(location.sort_order)
+            ? location.sort_order
+            : 0,
+        fieldSchema: normalizeFieldSchema(location.field_schema),
+        dbBacked: location.db_backed === true,
+      } satisfies BookingLocationConfig;
+    })
+    .filter((config): config is BookingLocationConfig => config !== null)
+    .sort((left, right) => left.sortOrder - right.sortOrder);
+
+  return configs.length > 0 ? configs : DEFAULT_BOOKING_LOCATIONS;
+}
+
+function valuesDiffer(left: BookingLocationFieldValueMap, right: BookingLocationFieldValueMap) {
+  const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+  for (const key of keys) {
+    if ((left[key] ?? null) !== (right[key] ?? null)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function renderLocationFieldInput(input: {
+  field: BookingLocationFieldSchema;
+  value: string | null;
+  onChange: (value: string) => void;
+}) {
+  const { field, value, onChange } = input;
+  const commonClassName =
+    "mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]";
+
+  if (field.inputType === "date") {
+    return (
+      <input
+        type="date"
+        value={value ?? ""}
+        onChange={(event) => onChange(event.target.value)}
+        required={field.required}
+        className={commonClassName}
+      />
+    );
+  }
+
+  if (field.inputType === "time") {
+    return (
+      <input
+        type="time"
+        value={value ?? ""}
+        onChange={(event) => onChange(event.target.value)}
+        required={field.required}
+        className={commonClassName}
+      />
+    );
+  }
+
+  return (
+    <input
+      type="text"
+      value={value ?? ""}
+      onChange={(event) => onChange(event.target.value)}
+      required={field.required}
+      placeholder={field.label}
+      className={commonClassName}
+    />
+  );
+}
+
 export function BookingUpdateForm({
   bookingId,
   startDate,
   endDate,
-  pickupLocation,
+  pickupTime,
+  dropoffTime,
   customerName,
   customerEmail,
   customerPhone,
+  pickupLocationTypeKey,
+  dropoffLocationTypeKey,
+  pickupLocationValues,
+  dropoffLocationValues,
   disabled,
 }: BookingUpdateFormProps) {
   const router = useRouter();
@@ -49,20 +251,182 @@ export function BookingUpdateForm({
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
+  const [locations, setLocations] = useState<BookingLocationConfig[]>(DEFAULT_BOOKING_LOCATIONS);
+  const [locationsLoading, setLocationsLoading] = useState(false);
+  const [locationsError, setLocationsError] = useState<string | null>(null);
+
   const [nextStartDate, setNextStartDate] = useState(toDateInputValue(startDate));
   const [nextEndDate, setNextEndDate] = useState(toDateInputValue(endDate));
-  const [nextPickupLocation, setNextPickupLocation] = useState(pickupLocation);
+  const [nextPickupTime, setNextPickupTime] = useState(toTimeInputValue(pickupTime));
+  const [nextDropoffTime, setNextDropoffTime] = useState(toTimeInputValue(dropoffTime));
   const [nextCustomerName, setNextCustomerName] = useState(customerName);
   const [nextCustomerEmail, setNextCustomerEmail] = useState(customerEmail);
   const [nextCustomerPhone, setNextCustomerPhone] = useState(customerPhone);
+  const [nextPickupLocationTypeKey, setNextPickupLocationTypeKey] = useState(pickupLocationTypeKey);
+  const [nextDropoffLocationTypeKey, setNextDropoffLocationTypeKey] = useState(dropoffLocationTypeKey);
+  const [nextPickupLocationValues, setNextPickupLocationValues] = useState<BookingLocationFieldValueMap>(
+    normalizeBookingLocationFieldValuesInput(pickupLocationValues),
+  );
+  const [nextDropoffLocationValues, setNextDropoffLocationValues] = useState<BookingLocationFieldValueMap>(
+    normalizeBookingLocationFieldValuesInput(dropoffLocationValues),
+  );
+  const [dropoffLocationManuallyEdited, setDropoffLocationManuallyEdited] = useState(
+    pickupLocationTypeKey !== dropoffLocationTypeKey ||
+      valuesDiffer(
+        normalizeBookingLocationFieldValuesInput(pickupLocationValues),
+        normalizeBookingLocationFieldValuesInput(dropoffLocationValues),
+      ),
+  );
+
+  const pickupLocations = useMemo(
+    () => getBookingLocationConfigsForSide(locations, "pickup").filter((location) => location.isActive),
+    [locations],
+  );
+  const dropoffLocations = useMemo(
+    () => getBookingLocationConfigsForSide(locations, "dropoff").filter((location) => location.isActive),
+    [locations],
+  );
+  const selectedPickupLocation = useMemo(
+    () =>
+      getBookingLocationConfigByType(pickupLocations, nextPickupLocationTypeKey, "pickup") ??
+      pickupLocations[0] ??
+      DEFAULT_BOOKING_LOCATIONS[0] ??
+      null,
+    [nextPickupLocationTypeKey, pickupLocations],
+  );
+  const selectedDropoffLocation = useMemo(
+    () =>
+      getBookingLocationConfigByType(dropoffLocations, nextDropoffLocationTypeKey, "dropoff") ??
+      selectedPickupLocation,
+    [dropoffLocations, nextDropoffLocationTypeKey, selectedPickupLocation],
+  );
+  const pickupFieldSchema = useMemo(
+    () => getBookingLocationFieldSchemaForSide(selectedPickupLocation, "pickup"),
+    [selectedPickupLocation],
+  );
+  const dropoffFieldSchema = useMemo(
+    () => getBookingLocationFieldSchemaForSide(selectedDropoffLocation, "dropoff"),
+    [selectedDropoffLocation],
+  );
+  const locationDefaultsContext = useMemo(
+    () => ({
+      pickupDate: nextStartDate,
+      pickupTime: nextPickupTime || "11:00",
+      dropoffDate: nextEndDate,
+      dropoffTime: nextDropoffTime || "11:00",
+    }),
+    [nextDropoffTime, nextEndDate, nextPickupTime, nextStartDate],
+  );
+
+  useEffect(() => {
+    if (!open) return;
+
+    let cancelled = false;
+
+    async function loadLocations() {
+      setLocationsLoading(true);
+      setLocationsError(null);
+
+      try {
+        const response = await fetch("/api/admin/booking-locations", { cache: "no-store" });
+        const payload = (await response.json().catch(() => ({}))) as {
+          locations?: unknown[];
+          error?: string;
+        };
+        if (!response.ok) {
+          throw new Error(payload.error ?? "Unable to load booking locations.");
+        }
+
+        if (cancelled) return;
+        setLocations(mapApiLocations(Array.isArray(payload.locations) ? payload.locations : []));
+      } catch (requestError) {
+        if (cancelled) return;
+        setLocations(DEFAULT_BOOKING_LOCATIONS);
+        setLocationsError(
+          requestError instanceof Error ? requestError.message : "Unable to load booking locations.",
+        );
+      } finally {
+        if (!cancelled) {
+          setLocationsLoading(false);
+        }
+      }
+    }
+
+    void loadLocations();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
+  useEffect(() => {
+    setNextPickupLocationValues((current) =>
+      coerceBookingLocationFieldValues(
+        selectedPickupLocation,
+        "pickup",
+        current,
+        locationDefaultsContext,
+      ),
+    );
+  }, [locationDefaultsContext, selectedPickupLocation]);
+
+  useEffect(() => {
+    if (dropoffLocationManuallyEdited) {
+      setNextDropoffLocationValues((current) =>
+        coerceBookingLocationFieldValues(
+          selectedDropoffLocation,
+          "dropoff",
+          current,
+          locationDefaultsContext,
+        ),
+      );
+      return;
+    }
+
+    const nextTypeKey =
+      selectedPickupLocation &&
+      dropoffLocations.some((location) => location.locationTypeKey === selectedPickupLocation.locationTypeKey)
+        ? selectedPickupLocation.locationTypeKey
+        : (dropoffLocations[0]?.locationTypeKey ?? selectedPickupLocation?.locationTypeKey ?? "OFFICE");
+
+    setNextDropoffLocationTypeKey(nextTypeKey);
+    setNextDropoffLocationValues(
+      coerceBookingLocationFieldValues(
+        getBookingLocationConfigByType(dropoffLocations, nextTypeKey, "dropoff"),
+        "dropoff",
+        nextTypeKey === "CUSTOM_ADDRESS" && nextPickupLocationValues.address
+          ? { address: nextPickupLocationValues.address }
+          : {},
+        locationDefaultsContext,
+      ),
+    );
+  }, [
+    dropoffLocationManuallyEdited,
+    dropoffLocations,
+    locationDefaultsContext,
+    nextPickupLocationValues.address,
+    selectedDropoffLocation,
+    selectedPickupLocation,
+  ]);
 
   function openPanel() {
+    const normalizedPickupValues = normalizeBookingLocationFieldValuesInput(pickupLocationValues);
+    const normalizedDropoffValues = normalizeBookingLocationFieldValuesInput(dropoffLocationValues);
     setNextStartDate(toDateInputValue(startDate));
     setNextEndDate(toDateInputValue(endDate));
-    setNextPickupLocation(pickupLocation);
+    setNextPickupTime(toTimeInputValue(pickupTime));
+    setNextDropoffTime(toTimeInputValue(dropoffTime));
     setNextCustomerName(customerName);
     setNextCustomerEmail(customerEmail);
     setNextCustomerPhone(customerPhone);
+    setNextPickupLocationTypeKey(pickupLocationTypeKey);
+    setNextDropoffLocationTypeKey(dropoffLocationTypeKey);
+    setNextPickupLocationValues(normalizedPickupValues);
+    setNextDropoffLocationValues(normalizedDropoffValues);
+    setDropoffLocationManuallyEdited(
+      pickupLocationTypeKey !== dropoffLocationTypeKey ||
+        valuesDiffer(normalizedPickupValues, normalizedDropoffValues),
+    );
     setError(null);
     setMessage(null);
     setOpen(true);
@@ -71,17 +435,14 @@ export function BookingUpdateForm({
   function openNativePicker(ref: React.RefObject<HTMLInputElement | null>) {
     const input = ref.current;
     if (!input) return;
-
-    const pickerInput = input as HTMLInputElement & {
-      showPicker?: () => void;
-    };
+    const pickerInput = input as HTMLInputElement & { showPicker?: () => void };
 
     if (typeof pickerInput.showPicker === "function") {
       try {
         pickerInput.showPicker();
         return;
       } catch {
-        // Fallback below for browsers or states where showPicker is blocked.
+        // Fallback below.
       }
     }
 
@@ -89,42 +450,130 @@ export function BookingUpdateForm({
     input.click();
   }
 
+  function handlePickupLocationChange(nextTypeKey: string) {
+    setNextPickupLocationTypeKey(nextTypeKey);
+    setNextPickupLocationValues((current) =>
+      coerceBookingLocationFieldValues(
+        getBookingLocationConfigByType(pickupLocations, nextTypeKey, "pickup"),
+        "pickup",
+        current,
+        locationDefaultsContext,
+      ),
+    );
+  }
+
+  function handleDropoffLocationChange(nextTypeKey: string) {
+    setNextDropoffLocationTypeKey(nextTypeKey);
+    setDropoffLocationManuallyEdited(true);
+    setNextDropoffLocationValues((current) =>
+      coerceBookingLocationFieldValues(
+        getBookingLocationConfigByType(dropoffLocations, nextTypeKey, "dropoff"),
+        "dropoff",
+        current,
+        locationDefaultsContext,
+      ),
+    );
+  }
+
+  function handleMatchPickup() {
+    const nextTypeKey =
+      selectedPickupLocation &&
+      dropoffLocations.some((location) => location.locationTypeKey === selectedPickupLocation.locationTypeKey)
+        ? selectedPickupLocation.locationTypeKey
+        : (dropoffLocations[0]?.locationTypeKey ?? "OFFICE");
+    setDropoffLocationManuallyEdited(false);
+    setNextDropoffLocationTypeKey(nextTypeKey);
+    setNextDropoffLocationValues(
+      coerceBookingLocationFieldValues(
+        getBookingLocationConfigByType(dropoffLocations, nextTypeKey, "dropoff"),
+        "dropoff",
+        nextPickupLocationValues.address ? { address: nextPickupLocationValues.address } : {},
+        locationDefaultsContext,
+      ),
+    );
+  }
+
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (loading || disabled) return;
+
+    const pickupLocationError = validateBookingLocationSelection(
+      selectedPickupLocation,
+      "pickup",
+      nextPickupLocationValues,
+    );
+    if (pickupLocationError) {
+      setError(pickupLocationError);
+      return;
+    }
+
+    const dropoffLocationError = validateBookingLocationSelection(
+      selectedDropoffLocation,
+      "dropoff",
+      nextDropoffLocationValues,
+    );
+    if (dropoffLocationError) {
+      setError(dropoffLocationError);
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setMessage(null);
 
-    const csrfToken = await ensureCsrfToken();
-    const response = await fetch(`/api/admin/bookings/${bookingId}`, {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-        "x-csrf-token": csrfToken ?? "",
-      },
-      body: JSON.stringify({
-        action: "update_details",
-        startDate: nextStartDate,
-        endDate: nextEndDate,
-        pickupLocation: nextPickupLocation,
-        customerName: nextCustomerName,
-        customerEmail: nextCustomerEmail,
-        customerPhone: nextCustomerPhone,
-      }),
-    });
+    try {
+      const csrfToken = await ensureCsrfToken();
+      const locationSelection = buildBookingLocationSelectionPayload({
+        configs: locations,
+        pickupTypeKey: nextPickupLocationTypeKey,
+        dropoffTypeKey: nextDropoffLocationTypeKey,
+        pickupLocationId: selectedPickupLocation?.id ?? null,
+        dropoffLocationId: selectedDropoffLocation?.id ?? null,
+        pickupValues: nextPickupLocationValues,
+        dropoffValues: nextDropoffLocationValues,
+        context: locationDefaultsContext,
+      });
 
-    const data = (await response.json().catch(() => ({}))) as { error?: string; message?: string };
-    setLoading(false);
+      const response = await fetch(`/api/admin/bookings/${bookingId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "x-csrf-token": csrfToken ?? "",
+        },
+        body: JSON.stringify({
+          action: "update_details",
+          startDate: nextStartDate,
+          endDate: nextEndDate,
+          pickupTime: nextPickupTime,
+          dropoffTime: nextDropoffTime,
+          customerName: nextCustomerName,
+          customerEmail: nextCustomerEmail,
+          customerPhone: nextCustomerPhone,
+          pickupLocationType: locationSelection.pickupConfig?.locationTypeKey ?? nextPickupLocationTypeKey,
+          dropoffLocationType: locationSelection.dropoffConfig?.locationTypeKey ?? nextDropoffLocationTypeKey,
+          pickupLocationId: locationSelection.pickupConfig?.id ?? null,
+          dropoffLocationId: locationSelection.dropoffConfig?.id ?? null,
+          pickupLocationTextSnapshot: locationSelection.pickupLocationTextSnapshot,
+          dropoffLocationTextSnapshot: locationSelection.dropoffLocationTextSnapshot,
+          bookingLocationDetails: locationSelection.details,
+          csrfToken,
+        }),
+      });
 
-    if (!response.ok) {
-      setError(data.error ?? "Unable to update booking");
-      return;
+      const data = (await response.json().catch(() => ({}))) as { error?: string; message?: string };
+      if (!response.ok) {
+        setError(data.error ?? "Unable to update booking");
+        return;
+      }
+
+      setMessage(data.message ?? "Booking updated.");
+      setOpen(false);
+      router.refresh();
+    } catch {
+      setError("Unable to update booking");
+    } finally {
+      setLoading(false);
     }
-
-    setMessage(data.message ?? "Booking updated.");
-    setOpen(false);
-    router.refresh();
   }
 
   return (
@@ -135,7 +584,7 @@ export function BookingUpdateForm({
             Booking changes
           </p>
           <h3 className="text-sm font-semibold text-[var(--ccr-text)]">
-            Update or extend booking dates and customer info
+            Update dates, customer info, and location details
           </h3>
         </div>
         <button
@@ -152,8 +601,10 @@ export function BookingUpdateForm({
         </button>
       </div>
 
+      {locationsError ? <p className="mt-3 text-xs text-red-500">{locationsError}</p> : null}
+
       {open ? (
-        <form className="mt-4 grid gap-3 md:grid-cols-2" onSubmit={onSubmit}>
+        <form className="mt-4 grid gap-4 md:grid-cols-2" onSubmit={onSubmit}>
           <label className="text-xs text-[var(--ccr-muted)]">
             Start date
             <div className="relative mt-1">
@@ -189,6 +640,17 @@ export function BookingUpdateForm({
                 </svg>
               </button>
             </div>
+          </label>
+
+          <label className="text-xs text-[var(--ccr-muted)]">
+            Pickup time
+            <input
+              type="time"
+              value={nextPickupTime}
+              onChange={(event) => setNextPickupTime(event.target.value)}
+              required
+              className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+            />
           </label>
 
           <label className="text-xs text-[var(--ccr-muted)]">
@@ -229,16 +691,101 @@ export function BookingUpdateForm({
             </div>
           </label>
 
-          <label className="text-xs text-[var(--ccr-muted)] md:col-span-2">
-            Pickup location
+          <label className="text-xs text-[var(--ccr-muted)]">
+            Dropoff time
             <input
-              type="text"
-              value={nextPickupLocation}
-              onChange={(event) => setNextPickupLocation(event.target.value)}
+              type="time"
+              value={nextDropoffTime}
+              onChange={(event) => setNextDropoffTime(event.target.value)}
               required
               className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
             />
           </label>
+
+          <div className="space-y-3 md:col-span-2">
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="text-xs text-[var(--ccr-muted)]">
+                Pickup location
+                <select
+                  value={nextPickupLocationTypeKey}
+                  onChange={(event) => handlePickupLocationChange(event.target.value)}
+                  disabled={locationsLoading}
+                  className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+                >
+                  {pickupLocations.map((location) => (
+                    <option key={`pickup-${location.locationTypeKey}`} value={location.locationTypeKey}>
+                      {location.pickupLabel}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <div>
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <label className="text-xs text-[var(--ccr-muted)]">Dropoff location</label>
+                  <button
+                    type="button"
+                    onClick={handleMatchPickup}
+                    className="text-xs font-semibold text-[var(--ccr-primary)] underline-offset-2 hover:underline"
+                  >
+                    Match pickup
+                  </button>
+                </div>
+                <select
+                  value={nextDropoffLocationTypeKey}
+                  onChange={(event) => handleDropoffLocationChange(event.target.value)}
+                  disabled={locationsLoading}
+                  className="w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+                >
+                  {dropoffLocations.map((location) => (
+                    <option key={`dropoff-${location.locationTypeKey}`} value={location.locationTypeKey}>
+                      {location.dropoffLabel}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {pickupFieldSchema.length > 0 || dropoffFieldSchema.length > 0 ? (
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-3">
+                  {pickupFieldSchema.map((field) => (
+                    <label key={`pickup-${field.key}`} className="block text-xs text-[var(--ccr-muted)]">
+                      {field.label}
+                      {renderLocationFieldInput({
+                        field,
+                        value: nextPickupLocationValues[field.key] ?? null,
+                        onChange: (value) =>
+                          setNextPickupLocationValues((current) => ({
+                            ...current,
+                            [field.key]: value,
+                          })),
+                      })}
+                    </label>
+                  ))}
+                </div>
+
+                <div className="space-y-3">
+                  {dropoffFieldSchema.map((field) => (
+                    <label key={`dropoff-${field.key}`} className="block text-xs text-[var(--ccr-muted)]">
+                      {field.label}
+                      {renderLocationFieldInput({
+                        field,
+                        value: nextDropoffLocationValues[field.key] ?? null,
+                        onChange: (value) => {
+                          setDropoffLocationManuallyEdited(true);
+                          setNextDropoffLocationValues((current) => ({
+                            ...current,
+                            [field.key]: value,
+                          }));
+                        },
+                      })}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
 
           <label className="text-xs text-[var(--ccr-muted)]">
             Customer name
@@ -265,7 +812,7 @@ export function BookingUpdateForm({
           <label className="text-xs text-[var(--ccr-muted)] md:col-span-2">
             Customer phone
             <input
-              type="text"
+              type="tel"
               value={nextCustomerPhone}
               onChange={(event) => setNextCustomerPhone(event.target.value)}
               required
@@ -273,10 +820,10 @@ export function BookingUpdateForm({
             />
           </label>
 
-          <div className="md:col-span-2 flex items-center gap-2">
+          <div className="md:col-span-2 flex flex-wrap items-center gap-2">
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || disabled}
               className={buttonStyles({
                 variant: "primary",
                 size: "sm",
@@ -285,24 +832,11 @@ export function BookingUpdateForm({
             >
               {loading ? "Saving..." : "Save changes"}
             </button>
-            <button
-              type="button"
-              disabled={loading}
-              onClick={() => setOpen(false)}
-              className={buttonStyles({
-                variant: "secondary",
-                size: "sm",
-                className: "rounded-lg",
-              })}
-            >
-              Cancel
-            </button>
+            {message ? <span className="text-xs text-emerald-600">{message}</span> : null}
+            {error ? <span className="text-xs text-red-500">{error}</span> : null}
           </div>
         </form>
       ) : null}
-
-      {message ? <p className="mt-3 text-xs font-semibold text-[var(--ccr-text)]">{message}</p> : null}
-      {error ? <p className="mt-3 text-xs text-red-400">{error}</p> : null}
     </section>
   );
 }

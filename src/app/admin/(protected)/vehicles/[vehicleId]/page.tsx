@@ -36,6 +36,7 @@ type VehicleDetail = {
   deposit_cents: number;
   status: string;
   image_urls_json: string[] | null;
+  public_visible: boolean;
 };
 
 type VehicleProfileRow = {
@@ -126,7 +127,20 @@ export default async function AdminVehicleDetailPage({
       : null;
 
   const vehicleResult = await dbQuery<VehicleDetail>(
-    "select id, public_id, make, model, year, seat_count, daily_rate_cents, deposit_cents, status, image_urls_json from vehicles where id = $1::uuid",
+    `select
+       id,
+       public_id,
+       make,
+       model,
+       year,
+       seat_count,
+       daily_rate_cents,
+       deposit_cents,
+       status,
+       image_urls_json,
+       lower(coalesce(features_json->>'public_visible', 'false')) in ('true','1','yes') as public_visible
+     from vehicles
+     where id = $1::uuid`,
     [vehicleId],
   );
 

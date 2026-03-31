@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import test from "node:test";
+import type { TestContext } from "node:test";
+
+import { config as loadEnv } from "dotenv";
 
 import {
   handleAdminBookingsPost,
@@ -20,7 +24,18 @@ import {
   handleAdminBookingAddPaymentPost,
   type AdminBookingAddPaymentRouteDeps,
 } from "@/app/api/admin/bookings/[id]/add-payment/route";
+import { dbQuery } from "@/lib/db";
 import type { Queryable } from "@/lib/payments/pricing";
+import { getPublicVehicles } from "@/lib/publicVehicles";
+
+loadEnv({ path: ".env.local" });
+loadEnv();
+
+function requireDatabaseOrSkip(t: TestContext) {
+  if (!process.env.DATABASE_URL) {
+    t.skip("DATABASE_URL is not set; skipping DB-backed admin create-booking visibility test.");
+  }
+}
 
 type MockResponse = {
   rows: unknown[];
@@ -132,6 +147,86 @@ test("admin create booking helper: omits vehicles blocked by entitled overlappin
   assert.ok(calls[0]?.text.includes("deleted_at is null"));
 });
 
+test("admin create booking helper includes active private vehicles while public listings exclude them", async (t) => {
+  requireDatabaseOrSkip(t);
+
+  const runTag = `admin-private-${randomUUID().slice(0, 8)}`;
+  let vehicleId: string | null = null;
+
+  try {
+    const insertResult = await dbQuery<{ id: string }>(
+      `insert into vehicles (
+         make, model, year, seat_count, daily_rate_cents, deposit_cents, status, image_urls_json, features_json
+       ) values ($1, $2, $3, $4, $5, $6, 'AVAILABLE', $7::jsonb, $8::jsonb)
+       returning id`,
+      [
+        "Admin Private",
+        runTag,
+        2026,
+        5,
+        8400,
+        8000,
+        JSON.stringify([]),
+        JSON.stringify({ slug: `admin-private-${runTag}`, public_visible: false }),
+      ],
+    );
+    vehicleId = insertResult.rows[0]?.id ?? null;
+
+    const adminVehicles = await listAdminCreateBookingAvailableVehicles("2030-01-10", "2030-01-12");
+    const publicVehicles = await getPublicVehicles();
+
+    assert.equal(adminVehicles.some((vehicle) => vehicle.id === vehicleId), true);
+    assert.equal(publicVehicles.some((vehicle) => vehicle.id === vehicleId), false);
+  } finally {
+    if (vehicleId) {
+      await dbQuery("delete from vehicles where id = $1::uuid", [vehicleId]);
+    }
+  }
+});
+
+test("admin create booking helper excludes unavailable, maintenance, and inactive vehicles", async (t) => {
+  requireDatabaseOrSkip(t);
+
+  const runTag = `admin-status-${randomUUID().slice(0, 8)}`;
+  const ids: string[] = [];
+
+  try {
+    for (const [make, status] of [
+      ["Admin Unavailable", "UNAVAILABLE"],
+      ["Admin Maintenance", "MAINTENANCE"],
+      ["Admin Inactive", "INACTIVE"],
+    ] as const) {
+      const result = await dbQuery<{ id: string }>(
+        `insert into vehicles (
+           make, model, year, seat_count, daily_rate_cents, deposit_cents, status, image_urls_json, features_json
+         ) values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb)
+         returning id`,
+        [
+          make,
+          runTag,
+          2026,
+          5,
+          8400,
+          8000,
+          status,
+          JSON.stringify([]),
+          JSON.stringify({ slug: `${make.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${runTag}`, public_visible: true }),
+        ],
+      );
+      ids.push(result.rows[0].id);
+    }
+
+    const adminVehicles = await listAdminCreateBookingAvailableVehicles("2030-01-10", "2030-01-12");
+    for (const id of ids) {
+      assert.equal(adminVehicles.some((vehicle) => vehicle.id === id), false);
+    }
+  } finally {
+    if (ids.length > 0) {
+      await dbQuery("delete from vehicles where id = any($1::uuid[])", [ids]);
+    }
+  }
+});
+
 test("admin create booking helper: preview ignores soft-deleted vehicles", async () => {
   const { db, calls } = createMockDb([{ rows: [], rowCount: 0 }]);
 
@@ -226,7 +321,8 @@ test("admin bookings API: submit still rejects unavailable vehicles after UI pre
         phone: "+18765550144",
         startDate: "2099-04-10",
         endDate: "2099-04-12",
-        pickupLocation: "Montego Bay Airport",
+        pickupLocation: "Norman Manley Airport",
+        dropoffLocation: "Norman Manley Airport",
       }),
     }),
     deps,
@@ -306,7 +402,8 @@ test("admin bookings API: submit rejects soft-deleted vehicles even if posted di
         phone: "+18765550144",
         startDate: "2099-04-10",
         endDate: "2099-04-12",
-        pickupLocation: "Montego Bay Airport",
+        pickupLocation: "Norman Manley Airport",
+        dropoffLocation: "Norman Manley Airport",
       }),
     }),
     deps,
@@ -403,7 +500,8 @@ test("admin bookings API: create still succeeds when audit logging fails after c
         phone: "+18765550144",
         startDate: "2099-04-10",
         endDate: "2099-04-12",
-        pickupLocation: "Montego Bay Airport",
+        pickupLocation: "Norman Manley Airport",
+        dropoffLocation: "Norman Manley Airport",
       }),
     }),
     deps,
@@ -413,6 +511,140 @@ test("admin bookings API: create still succeeds when audit logging fails after c
   const payload = await response.json();
   assert.equal(payload.bookingId, "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
   assert.ok(queries.includes("commit"));
+});
+
+test("admin bookings API: persists structured pickup and dropoff location details", async () => {
+  let insertParams: unknown[] | undefined;
+  const client = {
+    async query(text: string, params?: unknown[]) {
+      if (text === "begin" || text === "commit") return { rowCount: 0, rows: [] };
+      if (text.includes("select id, year, make, model, daily_rate_cents, deposit_cents")) {
+        return {
+          rowCount: 1,
+          rows: [
+            {
+              id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              year: 2026,
+              make: "Toyota",
+              model: "Corolla",
+              daily_rate_cents: 12000,
+              deposit_cents: 25000,
+            },
+          ],
+        };
+      }
+      if (text.includes("insert into bookings")) {
+        insertParams = params;
+        return {
+          rowCount: 1,
+          rows: [{ id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", status: "PENDING_PAYMENT" }],
+        };
+      }
+      throw new Error(`Unexpected query: ${text} ${JSON.stringify(params ?? [])}`);
+    },
+    release() {
+      return undefined;
+    },
+  };
+
+  const deps: AdminBookingsPostRouteDeps = {
+    requireAdmin: async () =>
+      ({
+        ok: true,
+        actor: {
+          userId: "91c7c89a-9f07-4d59-b79b-f92d55f0cf8b",
+          role: "ADMIN",
+          appRole: "ADMIN",
+          authSource: "legacy",
+          clerkUserId: null,
+          issuedAt: 999999000,
+          expiresAt: 999999999,
+        },
+        session: {
+          userId: "91c7c89a-9f07-4d59-b79b-f92d55f0cf8b",
+          role: "ADMIN",
+          issuedAt: 999999000,
+          expiresAt: 999999999,
+        },
+      }) as Awaited<ReturnType<AdminBookingsPostRouteDeps["requireAdmin"]>>,
+    requireCsrfToken: async () => true,
+    getPool: () =>
+      ({
+        connect: async () => client,
+      }) as ReturnType<AdminBookingsPostRouteDeps["getPool"]>,
+    isVehicleUnavailable: async () => false,
+    upsertCustomer: async () => ({
+      customerId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      created: true,
+    }),
+    validatePromo: async () => ({ ok: true, discountAmountCents: 0, promoId: null }),
+    writeAudit: async () => undefined,
+    sendCreatedEmail: async () => undefined,
+    log: () => undefined,
+  };
+
+  const response = await handleAdminBookingsPost(
+    new Request("http://localhost/api/admin/bookings", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-csrf-token": "token",
+      },
+      body: JSON.stringify({
+        vehicleId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        fullName: "Admin Booking Tester",
+        email: "admin-booking@example.com",
+        phone: "+18765550144",
+        startDate: "2099-04-10",
+        endDate: "2099-04-12",
+        pickupLocation: "Norman Manley Airport",
+        dropoffLocation: "Return Address entered",
+        pickupLocationType: "AIRPORT",
+        dropoffLocationType: "CUSTOM_ADDRESS",
+        pickupLocationId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        pickupLocationTextSnapshot: "Norman Manley Airport",
+        dropoffLocationTextSnapshot: "Return Address entered",
+        bookingLocationDetails: {
+          pickup: {
+            type: "AIRPORT",
+            label: "Norman Manley Airport",
+            flightDate: "2099-04-10",
+            flightTime: "09:15",
+            flightNumber: "JM201",
+            airline: "Caribbean Air",
+            locationId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+          },
+          dropoff: {
+            type: "CUSTOM_ADDRESS",
+            label: "Return Address",
+            address: "Return Address entered",
+          },
+        },
+      }),
+    }),
+    deps,
+  );
+
+  assert.equal(response.status, 200);
+  assert.ok(insertParams);
+  assert.equal(insertParams?.[4], "Norman Manley Airport");
+  assert.equal(insertParams?.[5], "Return Address entered");
+  assert.equal(insertParams?.[6], "dddddddd-dddd-4ddd-8ddd-dddddddddddd");
+  assert.equal(insertParams?.[7], null);
+  assert.equal(insertParams?.[8], "Norman Manley Airport");
+  assert.equal(insertParams?.[9], "Return Address entered");
+
+  const pricing = insertParams?.[10] as Record<string, unknown>;
+  const details = pricing.booking_location_details as {
+    pickup: Record<string, unknown>;
+    dropoff: Record<string, unknown>;
+  };
+  const notes = pricing.admin_notes as Array<{ message?: string }>;
+  assert.equal(details.pickup.type, "AIRPORT");
+  assert.equal(details.pickup.flightNumber, "JM201");
+  assert.equal(details.dropoff.type, "CUSTOM_ADDRESS");
+  assert.equal(details.dropoff.address, "Return Address entered");
+  assert.match(String(notes[0]?.message ?? ""), /Booking location details/i);
 });
 
 test("admin add payment API: payment succeeds even when post-commit audit and emails fail", async () => {

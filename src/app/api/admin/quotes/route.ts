@@ -102,6 +102,13 @@ export async function handleAdminQuotesPost(
       dropoffLocationId: body?.dropoff_location_id ?? body?.dropoffLocationId,
       pickupLocationText: body?.pickup_location_text ?? body?.pickupLocationText,
       dropoffLocationText: body?.dropoff_location_text ?? body?.dropoffLocationText,
+      pickupLocationType: body?.pickup_location_type ?? body?.pickupLocationType,
+      dropoffLocationType: body?.dropoff_location_type ?? body?.dropoffLocationType,
+      pickupLocationTextSnapshot:
+        body?.pickup_location_text_snapshot ?? body?.pickupLocationTextSnapshot,
+      dropoffLocationTextSnapshot:
+        body?.dropoff_location_text_snapshot ?? body?.dropoffLocationTextSnapshot,
+      bookingLocationDetails: body?.booking_location_details ?? body?.bookingLocationDetails,
       vehicleId: body?.vehicle_id ?? body?.vehicleId,
       insuranceEnabled: body?.insurance_enabled ?? body?.insuranceEnabled,
       insurancePlanId: body?.insurance_plan_id ?? body?.insurancePlanId,

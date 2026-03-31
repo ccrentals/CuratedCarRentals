@@ -10,6 +10,9 @@ const mockPayload: AdminReportsPayload = {
     rangeFrom: "2026-02-01",
     rangeTo: "2026-02-28",
     vehicleId: "",
+    pickupLocationType: "",
+    dropoffLocationType: "",
+    locationLabel: "",
     revenueGranularity: "day",
   },
   generatedAt: "2026-02-14T15:00:00.000Z",
@@ -209,6 +212,10 @@ const mockPayload: AdminReportsPayload = {
     rows: [
       {
         locationLabel: "Kingston",
+        pickupLabel: "168 1/2 Old Hope Road, Kingston Jamaica",
+        dropoffLabel: "Norman Manley Airport",
+        pickupType: "OFFICE",
+        dropoffType: "AIRPORT",
         bookingCount: 2,
         revenue: 1000,
         amountPaid: 750,

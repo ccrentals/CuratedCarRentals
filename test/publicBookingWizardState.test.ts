@@ -2,10 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  createVehicleRefreshSignature,
   createPricingLifecycleState,
   displayPricingSnapshot,
   draftRestoreSecurityState,
+  reconcileVehicleRefreshState,
   restoreSelectionFieldsFromDraft,
+  VEHICLE_REFRESH_FAILURE_MESSAGE,
   startPricingLifecycleRefresh,
   resolvePricingLifecycleSuccess,
   type WizardSelectionFields,
@@ -70,4 +73,76 @@ test("pricing refresh keeps last good snapshot and avoids fallback-to-zero behav
 
   const initial = createPricingLifecycleState<{ total: number }>();
   assert.equal(displayPricingSnapshot(initial), null);
+});
+
+test("vehicle refresh stays visually stable when the available inventory is unchanged", () => {
+  const previousVehicles = [
+    {
+      id: "vehicle-1",
+      name: "Subaru Impreza Sport",
+      daily_rate_cents: 7200,
+      deposit_cents: 7000,
+      images: ["https://ucarecdn.com/a/"],
+    },
+    {
+      id: "vehicle-2",
+      name: "Nissan X-Trail",
+      daily_rate_cents: 9800,
+      deposit_cents: 10000,
+      images: ["https://ucarecdn.com/b/"],
+    },
+  ];
+
+  const nextVehicles = previousVehicles.map((vehicle) => ({ ...vehicle }));
+  const result = reconcileVehicleRefreshState({
+    previousVehicles,
+    nextVehicles,
+    selectedVehicleId: "vehicle-1",
+  });
+
+  assert.equal(createVehicleRefreshSignature(previousVehicles), createVehicleRefreshSignature(nextVehicles));
+  assert.equal(result.inventoryChanged, false);
+  assert.equal(result.vehicleSelectionUnavailable, false);
+  assert.equal(result.refreshWarning, null);
+});
+
+test("vehicle refresh marks the selected vehicle unavailable while keeping remaining cars visible", () => {
+  const previousVehicles = [
+    { id: "vehicle-1", name: "2020 Daihatsu Mira ES" },
+    { id: "vehicle-2", name: "BMW 530i" },
+    { id: "vehicle-3", name: "Nissan X-Trail" },
+  ];
+  const nextVehicles = previousVehicles.slice(1);
+
+  const result = reconcileVehicleRefreshState({
+    previousVehicles,
+    nextVehicles,
+    selectedVehicleId: "vehicle-1",
+  });
+
+  assert.equal(result.inventoryChanged, true);
+  assert.equal(result.vehicleSelectionUnavailable, true);
+  assert.deepEqual(
+    result.vehicleOptions.map((vehicle) => vehicle.id),
+    ["vehicle-2", "vehicle-3"],
+  );
+});
+
+test("vehicle refresh failure preserves the last good list and exposes a non-blocking warning", () => {
+  const previousVehicles = [
+    { id: "vehicle-2", name: "BMW 530i" },
+    { id: "vehicle-3", name: "Nissan X-Trail" },
+  ];
+
+  const result = reconcileVehicleRefreshState({
+    previousVehicles,
+    nextVehicles: null,
+    selectedVehicleId: "vehicle-2",
+    failureMessage: VEHICLE_REFRESH_FAILURE_MESSAGE,
+  });
+
+  assert.equal(result.inventoryChanged, false);
+  assert.equal(result.vehicleSelectionUnavailable, false);
+  assert.equal(result.refreshWarning, VEHICLE_REFRESH_FAILURE_MESSAGE);
+  assert.deepEqual(result.vehicleOptions, previousVehicles);
 });

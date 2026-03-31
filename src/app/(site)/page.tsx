@@ -1,18 +1,15 @@
-import Link from "next/link";
+import Image from "next/image";
 
 import { HomeFeaturedCollection } from "@/components/sections/HomeFeaturedCollection";
-import { PublicCtaBand } from "@/components/site/PublicCtaBand";
-import { PublicSection } from "@/components/site/PublicSection";
-import { PublicStoryBlock } from "@/components/site/PublicStoryBlock";
+import { HomeBookingSection } from "@/components/site/HomeBookingSection";
+import { HomeContactSection } from "@/components/site/HomeContactSection";
 import { Container } from "@/components/site/Container";
 import { Button } from "@/components/ui/Button";
 import {
   aboutFeatures,
-  reassuranceItems,
   siteContent,
   testimonials,
 } from "@/data/content";
-import { services } from "@/data/services";
 import { getPublicVehicles } from "@/lib/publicVehicles";
 
 export const dynamic = "force-dynamic";
@@ -21,197 +18,191 @@ export default async function HomePage() {
   const vehicles = await getPublicVehicles();
   const explicitlyFeaturedVehicles = vehicles.filter((vehicle) => vehicle.featured);
   const fallbackVehicles = vehicles.filter((vehicle) => !vehicle.featured);
-  const featuredVehicles = [...explicitlyFeaturedVehicles, ...fallbackVehicles].slice(0, 5);
+  const featuredVehicles = [...explicitlyFeaturedVehicles, ...fallbackVehicles].slice(0, 3);
 
   return (
-    <div className="pb-6">
-      <section
-        className="relative overflow-hidden border-b border-[var(--ccr-border)] text-white"
-        style={{
-          backgroundImage:
-            "linear-gradient(110deg, rgba(6,10,18,0.88), rgba(10,16,28,0.56)), url('/cars/real/nissan-xtrail-2.jpg')",
-          backgroundSize: "cover",
-          backgroundPosition: "center",
-        }}
-      >
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.16),transparent_34%),radial-gradient(circle_at_bottom_right,rgba(255,207,109,0.18),transparent_28%)]" />
-        <Container className="relative py-16 md:py-24 lg:py-28">
-          <div className="grid gap-10 lg:grid-cols-[1.08fr_0.92fr] lg:items-end">
-            <div className="max-w-3xl">
-              <p className="text-xs font-semibold uppercase tracking-[0.26em] text-[var(--ccr-accent)]">
-                {siteContent.location}
-              </p>
-              <h1 className="mt-4 text-4xl font-semibold tracking-tight text-white md:text-6xl">
-                {siteContent.heroHeadline}
-              </h1>
-              <p className="mt-5 max-w-2xl text-base leading-7 text-white/80 md:text-lg">
-                {siteContent.heroDescription}
-              </p>
+    <>
+      <section className="relative overflow-hidden bg-[#0a1323] text-white">
+        <div className="absolute inset-0">
+          <Image
+            src="/live-site/home/hero-tropical-car.jpg"
+            alt="Modern car driving down a palm tree lined coastal road in Jamaica"
+            fill
+            priority
+            sizes="100vw"
+            className="object-cover"
+          />
+          <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(15,74,78,0.4),rgba(22,54,96,0.28),rgba(234,114,66,0.22))]" />
+        </div>
 
-              <div className="mt-8 flex flex-wrap gap-3">
-                <Button href="/fleet" className="bg-[var(--ccr-accent)] text-[var(--ccr-primary)] hover:bg-[#ffd588]">
-                  Explore Our Fleet
-                </Button>
-                <Button
-                  href="/book"
-                  variant="outline"
-                  className="border-white/20 bg-white/6 text-white hover:bg-white/12"
-                >
-                  Book Your Vehicle
-                </Button>
+        <Container className="relative flex min-h-[calc(100svh-5.5rem)] items-center py-16 md:py-20 lg:min-h-[calc(100svh-6rem)]">
+          <div className="max-w-3xl">
+            <div className="inline-flex items-center rounded-full bg-[rgba(39,117,95,0.82)] px-4 py-2 text-sm font-medium text-white shadow-[0_18px_34px_rgba(0,0,0,0.18)] backdrop-blur-sm">
+              <span className="mr-2">🌴</span> Kingston, Jamaica
+            </div>
+
+            <h1 className="mt-6 max-w-3xl text-4xl font-semibold leading-tight text-white md:text-5xl lg:text-6xl">
+              {siteContent.heroHeadline}
+            </h1>
+            <p className="mt-6 max-w-2xl text-lg leading-8 text-white/90">
+              {siteContent.heroDescription}
+            </p>
+
+            <div className="mt-8 flex flex-col gap-4 sm:flex-row">
+              <Button
+                href="/book"
+                className="rounded-full bg-[#ea7242] px-6 py-3 text-white shadow-lg hover:bg-[#ef8257]"
+              >
+                Book Your Vehicle
+              </Button>
+              <Button
+                href="/fleet"
+                variant="outline"
+                className="rounded-full border-white/18 bg-[var(--ccr-primary)]/88 px-6 py-3 text-[var(--ccr-on-primary)] hover:bg-[var(--ccr-primary)]"
+              >
+                Explore Our Fleet
+              </Button>
+            </div>
+          </div>
+        </Container>
+      </section>
+
+      <section className="border-b border-[var(--ccr-border)] bg-[#f7e0b0] py-4 text-center">
+        <Container>
+          <p className="text-sm font-medium text-[#4c3b16] md:text-base">
+            🌺 Our Simple Pricing includes all fees and taxes - No Surprises!{" "}
+            <span className="text-[#7a6230]">(*optional insurance is extra)</span>
+          </p>
+        </Container>
+      </section>
+
+      <HomeFeaturedCollection featuredVehicles={featuredVehicles} vehicleCount={vehicles.length} />
+
+      <section className="relative overflow-hidden bg-[linear-gradient(180deg,var(--ccr-bg),var(--ccr-surface))] py-16 md:py-24">
+        <Container>
+          <div className="grid gap-10 lg:grid-cols-[0.92fr_1.08fr] lg:items-center">
+            <div className="overflow-hidden rounded-[2rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] shadow-[0_24px_80px_rgba(15,23,42,0.08)]">
+              <div className="relative h-[24rem] md:h-[30rem]">
+                <Image
+                  src="/live-site/home/discover-jamaica.png"
+                  alt="Exploring Jamaica with Curated Car Rentals"
+                  fill
+                  sizes="(min-width: 1024px) 42vw, 100vw"
+                  className="object-cover"
+                />
               </div>
-
-              <div className="mt-10 grid gap-3 sm:grid-cols-3">
-                {aboutFeatures.slice(0, 3).map((feature) => (
-                  <div
-                    key={feature.title}
-                    className="rounded-[1.5rem] border border-white/10 bg-white/8 px-4 py-4 backdrop-blur-sm"
-                  >
-                    <p className="text-sm font-semibold text-white">{feature.title}</p>
-                    <p className="mt-2 text-sm leading-6 text-white/68">{feature.description}</p>
-                  </div>
-                ))}
+              <div className="border-t border-[var(--ccr-border)] p-6">
+                <h3 className="font-display text-2xl font-bold text-[var(--ccr-text)]">
+                  Discover Jamaica
+                </h3>
+                <p className="mt-3 text-base leading-7 text-[var(--ccr-muted)]">
+                  From Kingston&apos;s vibrant streets to stunning coastal drives, our vehicles are your passport to Jamaica&apos;s wonders.
+                </p>
               </div>
             </div>
 
-            <div className="grid gap-4">
-              <article className="rounded-[2rem] border border-white/12 bg-[rgba(10,16,28,0.68)] p-6 shadow-[0_24px_80px_rgba(0,0,0,0.25)] backdrop-blur-sm">
-                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--ccr-accent)]">
-                  Transparent travel
-                </p>
-                <p className="mt-4 text-2xl font-semibold leading-tight text-white">
-                  {siteContent.heroPricingNote}
-                </p>
-                <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                  {reassuranceItems.slice(0, 2).map((item) => (
-                    <div key={item.title} className="rounded-[1.4rem] border border-white/10 bg-white/6 p-4">
-                      <p className="text-sm font-semibold text-white">{item.title}</p>
-                      <p className="mt-2 text-sm leading-6 text-white/68">{item.description}</p>
-                    </div>
-                  ))}
-                </div>
-              </article>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--ccr-accent-strong)]">
+                About Us
+              </p>
+              <h2 className="mt-4 font-display text-4xl font-bold text-[var(--ccr-text)] md:text-5xl">
+                {siteContent.aboutHeading}
+              </h2>
+              <p className="mt-5 text-lg leading-8 text-[var(--ccr-muted)]">
+                {siteContent.aboutDescription}
+              </p>
+              <p className="mt-4 text-lg leading-8 text-[var(--ccr-muted)]">
+                {siteContent.aboutSupport}
+              </p>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <article className="rounded-[1.7rem] border border-white/12 bg-[rgba(10,16,28,0.62)] p-5 backdrop-blur-sm">
-                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--ccr-accent)]">
-                    Contact
-                  </p>
-                  <p className="mt-3 text-lg font-semibold text-white">{siteContent.phones[0]?.label}</p>
-                  <p className="mt-1 text-sm text-white/68">{siteContent.email}</p>
-                </article>
-
-                <article className="rounded-[1.7rem] border border-white/12 bg-[rgba(10,16,28,0.62)] p-5 backdrop-blur-sm">
-                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--ccr-accent)]">
-                    Curated collection
-                  </p>
-                  <p className="mt-3 text-lg font-semibold text-white">
-                    {vehicles.length} vehicles currently published
-                  </p>
-                  <p className="mt-1 text-sm text-white/68">
-                    Browse the live fleet and book the vehicle that matches your route, pace, and travel plans.
-                  </p>
-                </article>
+              <div className="mt-8 grid gap-4 md:grid-cols-2">
+                {aboutFeatures.map((feature) => (
+                  <article
+                    key={feature.title}
+                    className="rounded-[1.4rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-5 shadow-[0_14px_36px_rgba(15,23,42,0.05)]"
+                  >
+                    <h3 className="text-lg font-semibold text-[var(--ccr-text)]">{feature.title}</h3>
+                    <p className="mt-2 text-sm leading-7 text-[var(--ccr-muted)]">{feature.description}</p>
+                  </article>
+                ))}
               </div>
             </div>
           </div>
         </Container>
       </section>
 
-      <div className="border-b border-[var(--ccr-border)] bg-[var(--ccr-surface)]">
-        <Container className="py-4">
-          <p className="text-sm font-medium text-[var(--ccr-text)]">
-            <span className="font-semibold text-[var(--ccr-accent-strong)]">Simple pricing</span>{" "}
-            includes all fees and taxes. Optional insurance remains separate when selected.
-          </p>
-        </Container>
-      </div>
+      <HomeBookingSection />
 
-      <HomeFeaturedCollection featuredVehicles={featuredVehicles} vehicleCount={vehicles.length} />
+      <section className="relative overflow-hidden bg-[linear-gradient(135deg,var(--ccr-primary-soft),var(--ccr-primary))] py-16 text-[var(--ccr-on-primary)] md:py-24">
+        <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-16">
+          <svg
+            viewBox="0 0 1440 120"
+            preserveAspectRatio="none"
+            className="h-full w-full"
+            role="presentation"
+          >
+            <path
+              d="M0 30C132 52 262 58 386 54C522 50 638 20 776 24C944 29 1084 70 1230 74C1314 76 1386 68 1440 58V0H0V30Z"
+              fill="var(--ccr-surface-soft)"
+              opacity="0.22"
+            />
+            <path
+              d="M0 54C122 50 222 74 342 82C478 92 620 62 758 64C922 66 1040 96 1198 100C1284 102 1364 94 1440 82V120H0V54Z"
+              fill="var(--ccr-accent)"
+              opacity="0.1"
+            />
+          </svg>
+        </div>
+        <Container>
+          <div className="mx-auto max-w-3xl text-center">
+            <h2 className="font-display text-4xl font-bold text-[var(--ccr-on-primary)] md:text-5xl">
+              What Our Customers Say
+            </h2>
+            <p className="mt-4 text-lg leading-8 text-[var(--ccr-on-primary-muted)]">
+              Discover why travelers choose Curated Car Rentals for their Jamaican adventures.
+            </p>
+          </div>
 
-      <PublicSection className="bg-[var(--ccr-surface)]/55">
-        <PublicStoryBlock
-          eyebrow="About Us"
-          title={siteContent.aboutHeading}
-          paragraphs={[siteContent.aboutDescription, siteContent.aboutSupport]}
-          imageSrc="/cars/real/honda-fit-2020-2.jpg"
-          imageAlt="Curated Car Rentals vehicle prepared for Kingston travel"
-        >
-          <div className="grid gap-4 sm:grid-cols-2">
-            {aboutFeatures.map((feature) => (
+          <div className="mt-12 grid gap-6 lg:grid-cols-3">
+            {testimonials.map((testimonial) => (
               <article
-                key={feature.title}
-                className="rounded-[1.5rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4"
+                key={testimonial.name}
+                className="rounded-[2rem] border border-white/12 bg-white/8 p-6 shadow-[0_24px_80px_rgba(0,0,0,0.16)] backdrop-blur-sm"
               >
-                <p className="text-base font-semibold text-[var(--ccr-text)]">{feature.title}</p>
-                <p className="mt-2 text-sm leading-6 text-[var(--ccr-muted)]">{feature.description}</p>
+                <div className="flex items-center gap-4">
+                  <div className="relative h-16 w-16 overflow-hidden rounded-full border-2 border-white/12">
+                    <Image
+                      src={testimonial.avatar}
+                      alt={testimonial.name}
+                      fill
+                      sizes="64px"
+                      className="object-cover"
+                    />
+                  </div>
+                  <div className="flex gap-1 text-[#f5d277]" aria-hidden="true">
+                    <span>★</span>
+                    <span>★</span>
+                    <span>★</span>
+                    <span>★</span>
+                    <span>★</span>
+                  </div>
+                </div>
+
+                <p className="mt-5 text-lg leading-8 text-white/88">
+                  &quot;{testimonial.quote}&quot;
+                </p>
+
+                <div className="mt-6">
+                  <h3 className="text-lg font-semibold text-white">{testimonial.name}</h3>
+                  <p className="text-sm text-white/66">{testimonial.location}</p>
+                </div>
               </article>
             ))}
           </div>
-        </PublicStoryBlock>
-      </PublicSection>
+        </Container>
+      </section>
 
-      <PublicSection
-        eyebrow="Services"
-        title="Support that goes beyond handing over the keys."
-        description="Curated Car Rentals offers premium services designed to make your Jamaican journey feel easy from arrival to return."
-      >
-        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-5">
-          {services.map((service) => (
-            <article
-              key={service.id}
-              className="flex h-full flex-col rounded-[1.7rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-5 shadow-[0_18px_56px_rgba(15,23,42,0.07)]"
-            >
-              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--ccr-accent-strong)]">
-                {service.title}
-              </p>
-              <p className="mt-4 text-sm leading-7 text-[var(--ccr-muted)]">{service.description}</p>
-              <Link
-                href={`/services#${service.id}`}
-                className="mt-auto pt-6 text-sm font-semibold text-[var(--ccr-text)] transition hover:text-[var(--ccr-accent-strong)]"
-              >
-                Learn more
-              </Link>
-            </article>
-          ))}
-        </div>
-      </PublicSection>
-
-      <PublicSection
-        eyebrow="Customer Experience"
-        title="What Our Customers Say"
-        description="Discover why travelers choose Curated Car Rentals for their Jamaican adventures."
-      >
-        <div className="grid gap-6 lg:grid-cols-3">
-          {testimonials.map((testimonial) => (
-            <article
-              key={testimonial.name}
-              className="rounded-[1.8rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-[0_18px_56px_rgba(15,23,42,0.07)]"
-            >
-              <div className="flex gap-1 text-[var(--ccr-accent)]" aria-hidden="true">
-                <span>★</span>
-                <span>★</span>
-                <span>★</span>
-                <span>★</span>
-                <span>★</span>
-              </div>
-              <p className="mt-4 text-base leading-7 text-[var(--ccr-muted)]">“{testimonial.quote}”</p>
-              <div className="mt-6">
-                <p className="font-semibold text-[var(--ccr-text)]">{testimonial.name}</p>
-                <p className="text-sm text-[var(--ccr-muted)]">{testimonial.location}</p>
-              </div>
-            </article>
-          ))}
-        </div>
-      </PublicSection>
-
-      <PublicCtaBand
-        eyebrow="Book Your Vehicle"
-        title="Ready to start planning your Jamaica drive?"
-        description="Browse the live fleet, review the rental policies, and reserve the vehicle that fits your stay."
-        primaryAction={{ href: "/book", label: "Book Your Vehicle" }}
-        secondaryAction={{ href: "/fleet", label: "Explore Fleet" }}
-      />
-    </div>
+      <HomeContactSection />
+    </>
   );
 }

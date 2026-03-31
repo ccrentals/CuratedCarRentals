@@ -213,7 +213,7 @@ function mapRowToPublicVehicle(row: VehicleRow): PublicVehicle | null {
 
 export async function getPublicVehicles(): Promise<PublicVehicle[]> {
   const result = await dbQuery<VehicleRow>(
-    "select id, make, model, year, seat_count, daily_rate_cents, deposit_cents, status, created_at, features_json, image_urls_json from vehicles where deleted_at is null and status <> 'INACTIVE' and lower(coalesce(features_json->>'public_visible', 'false')) in ('true','1','yes') order by case when (features_json->>'public_order') ~ '^[0-9]+$' then (features_json->>'public_order')::int else 9999 end asc, created_at desc",
+    "select id, make, model, year, seat_count, daily_rate_cents, deposit_cents, status, created_at, features_json, image_urls_json from vehicles where deleted_at is null and upper(coalesce(status, '')) not in ('INACTIVE', 'UNAVAILABLE', 'MAINTENANCE') and lower(coalesce(features_json->>'public_visible', 'false')) in ('true','1','yes') order by case when (features_json->>'public_order') ~ '^[0-9]+$' then (features_json->>'public_order')::int else 9999 end asc, created_at desc",
   );
 
   const mapped: Array<PublicVehicle | null> = result.rows.map((row: VehicleRow) =>
@@ -260,7 +260,7 @@ export async function getPublicVehicleByIdentifier(identifier: string): Promise<
   if (!normalized) return null;
 
   const result = await dbQuery<VehicleRow>(
-    "select id, make, model, year, seat_count, daily_rate_cents, deposit_cents, status, created_at, features_json, image_urls_json from vehicles where deleted_at is null and status <> 'INACTIVE' and lower(coalesce(features_json->>'public_visible', 'false')) in ('true','1','yes') and (id::text = $1 or features_json->>'slug' = $1 or features_json->>'legacy_id' = $1) order by created_at desc limit 1",
+    "select id, make, model, year, seat_count, daily_rate_cents, deposit_cents, status, created_at, features_json, image_urls_json from vehicles where deleted_at is null and upper(coalesce(status, '')) not in ('INACTIVE', 'UNAVAILABLE', 'MAINTENANCE') and lower(coalesce(features_json->>'public_visible', 'false')) in ('true','1','yes') and (id::text = $1 or features_json->>'slug' = $1 or features_json->>'legacy_id' = $1) order by created_at desc limit 1",
     [normalized],
   );
 

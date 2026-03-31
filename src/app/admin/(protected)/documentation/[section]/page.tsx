@@ -1451,6 +1451,37 @@ Uploads (Uploadcare)
 Cron
 - CRON_SECRET`}</CodeBlock>
             </details>
+            <details className="mt-3 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-4 py-3">
+              <summary className="cursor-pointer text-sm font-semibold text-[var(--ccr-text)]">
+                Local real-testing reset
+              </summary>
+              <div className="mt-3 space-y-3 text-sm text-[var(--ccr-muted)]">
+                <p>
+                  Use <code>npm run customer:reset</code> only from the local workspace when you need a clean
+                  customer-aligned testing baseline. The reset keeps admin users, customer profiles, and
+                  settings, but clears business-history/demo data and reboots the public fleet + booking
+                  locations from the current customer-site setup.
+                </p>
+                <ul className="list-disc space-y-2 pl-5">
+                  <li>
+                    Current source of truth for the reboot: the live customer fleet and the four live booking
+                    locations.
+                  </li>
+                  <li>
+                    Vehicle publishing workflow: new vehicles start private and must be explicitly switched to
+                    public before they appear on the fleet page or public booking flow.
+                  </li>
+                  <li>
+                    Vehicle gallery ownership: customer fleet images and future vehicle-gallery uploads should
+                    remain under our Uploadcare account using the vehicle gallery naming convention.
+                  </li>
+                  <li>
+                    Phase two: stricter blocking of E2E/demo seed scripts against this environment is planned,
+                    but not enforced in this phase.
+                  </li>
+                </ul>
+              </div>
+            </details>
           </>
         ),
       },

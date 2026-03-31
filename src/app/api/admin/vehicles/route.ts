@@ -2,11 +2,12 @@ import { NextResponse } from "next/server";
 
 import { requireAdminAccess } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
-import { dbQuery } from "@/lib/db";
+import { dbQuery, getDbPool } from "@/lib/db";
 import { isNonEmptyString, parseIntSafe, parseMoneyToCents, parseImageUrls } from "@/lib/validators";
 import { requireCsrf } from "@/lib/security/csrf";
+import { buildVehicleGalleryEntries } from "@/lib/vehicles/gallery";
 
-const allowedStatuses = ["AVAILABLE", "RESERVED", "RENTED", "MAINTENANCE", "INACTIVE"];
+const allowedStatuses = ["AVAILABLE", "UNAVAILABLE", "RESERVED", "RENTED", "MAINTENANCE", "INACTIVE"];
 const INVALID_SEAT_COUNT = Symbol("INVALID_SEAT_COUNT");
 
 function validateStatus(value: unknown) {
@@ -90,6 +91,18 @@ type AdminVehiclesGetDeps = {
   >;
 };
 
+type AdminAccessResult = Awaited<ReturnType<typeof requireAdminAccess>>;
+type VehicleMutationClient = {
+  query: (text: string, values?: unknown[]) => Promise<{ rows: Record<string, unknown>[] }>;
+  release: () => void;
+};
+
+type AdminVehiclePostDeps = {
+  authorize: () => Promise<AdminAccessResult>;
+  requireCsrfCheck: (request: Request, bodyToken?: string | null) => Promise<boolean>;
+  connect: () => Promise<VehicleMutationClient>;
+};
+
 const DEFAULT_GET_DEPS: AdminVehiclesGetDeps = {
   getSession: () => getSessionFromRequest(),
   listVehicles: async ({ includeDeleted }) => {
@@ -102,6 +115,12 @@ const DEFAULT_GET_DEPS: AdminVehiclesGetDeps = {
     );
     return result.rows;
   },
+};
+
+const DEFAULT_POST_DEPS: AdminVehiclePostDeps = {
+  authorize: () => requireAdminAccess(),
+  requireCsrfCheck: (request, bodyToken) => requireCsrf(request, bodyToken),
+  connect: async () => getDbPool().connect(),
 };
 
 export async function handleAdminVehiclesGet(
@@ -120,8 +139,11 @@ export async function GET(request: Request) {
   return handleAdminVehiclesGet(request);
 }
 
-export async function POST(request: Request) {
-  const auth = await requireAdminAccess();
+export async function handleAdminVehiclePost(
+  request: Request,
+  deps: AdminVehiclePostDeps = DEFAULT_POST_DEPS,
+) {
+  const auth = await deps.authorize();
   if (!auth.ok) return auth.response;
 
   const contentType = request.headers.get("content-type") ?? "";
@@ -136,7 +158,7 @@ export async function POST(request: Request) {
     });
   }
 
-  if (!(await requireCsrf(request, (body?.csrfToken as string) ?? null))) {
+  if (!(await deps.requireCsrfCheck(request, (body?.csrfToken as string) ?? null))) {
     return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
   }
 
@@ -196,23 +218,65 @@ export async function POST(request: Request) {
       `Reliable ${year} ${vehicleName} rental option for Jamaica travel.`,
     ),
     featured: toBooleanValue(parsedFeatures.featured, false),
-    public_visible: toBooleanValue(parsedFeatures.public_visible, true),
+    public_visible: toBooleanValue(body.public_visible ?? parsedFeatures.public_visible, false),
+    gallery_images: [],
   };
 
-  const result = await dbQuery(
-    "insert into vehicles (make, model, year, seat_count, daily_rate_cents, deposit_cents, status, image_urls_json, features_json) values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning id, public_id, make, model, year, seat_count, daily_rate_cents, deposit_cents, status, created_at",
-    [
-      makeValue,
-      modelValue,
-      year,
-      seatCount,
-      dailyRate,
-      deposit,
-      status,
-      imageUrls,
-      features,
-    ],
-  );
+  const client = await deps.connect();
 
-  return NextResponse.json({ vehicle: result.rows[0] }, { status: 201 });
+  try {
+    await client.query("begin");
+    const insert = (await client.query(
+      "insert into vehicles (make, model, year, seat_count, daily_rate_cents, deposit_cents, status, image_urls_json, features_json) values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb) returning id, public_id, make, model, year, seat_count, daily_rate_cents, deposit_cents, status, created_at",
+      [
+        makeValue,
+        modelValue,
+        year,
+        seatCount,
+        dailyRate,
+        deposit,
+        status,
+        JSON.stringify(imageUrls),
+        JSON.stringify(features),
+      ],
+    )) as {
+      rows: Array<{
+        id: string;
+        public_id: string;
+        make: string;
+        model: string;
+        year: number;
+        seat_count: number | null;
+        daily_rate_cents: number;
+        deposit_cents: number;
+        status: string;
+        created_at: string;
+      }>;
+    };
+    const created = insert.rows[0];
+    const nextFeatures = {
+      ...features,
+      gallery_images: buildVehicleGalleryEntries({
+        imageUrls,
+        vehiclePublicId: created.public_id,
+        slug: features.slug,
+      }),
+    };
+
+    await client.query("update vehicles set features_json = $1::jsonb where id = $2::uuid", [
+      JSON.stringify(nextFeatures),
+      created.id,
+    ]);
+    await client.query("commit");
+    return NextResponse.json({ vehicle: created }, { status: 201 });
+  } catch {
+    await client.query("rollback");
+    return NextResponse.json({ error: "Failed to create vehicle." }, { status: 500 });
+  } finally {
+    client.release();
+  }
+}
+
+export async function POST(request: Request) {
+  return handleAdminVehiclePost(request);
 }
