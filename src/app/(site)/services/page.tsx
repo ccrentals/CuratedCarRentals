@@ -6,7 +6,7 @@ import { services } from "@/data/services";
 export default function ServicesPage() {
   return (
     <>
-      <section className="bg-[var(--ccr-surface-soft)]/65 py-14 md:py-20">
+      <section className="bg-[var(--ccr-surface-soft)]/65 py-14 md:py-20 min-[1160px]:pt-44">
         <Container>
           <h1 className="font-display text-4xl font-bold text-[var(--ccr-text)] md:text-5xl">
             Our Services
@@ -51,10 +51,10 @@ export default function ServicesPage() {
                 </div>
 
                 <div className={index % 2 === 1 ? "lg:order-1" : undefined}>
-                  <h2 className="font-display text-4xl font-bold text-[var(--ccr-text)] md:text-5xl">
+                  <h2 className="font-display text-4xl font-bold text-[var(--ccr-light-surface-text)] md:text-5xl">
                     {service.title}
                   </h2>
-                  <p className="mt-5 text-lg leading-8 text-[var(--ccr-muted)]">{service.description}</p>
+                  <p className="mt-5 text-lg leading-8 text-[var(--ccr-light-surface-muted)]">{service.description}</p>
 
                   <a
                     href="/contact"

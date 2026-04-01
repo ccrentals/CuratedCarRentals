@@ -22,6 +22,12 @@ const navLinks = [
   { href: "/contact", label: "Contact" },
 ];
 
+function isDesktopNavItemActive(pathname: string | null | undefined, href: string) {
+  if (!pathname) return false;
+  if (href === "/") return pathname === "/";
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
 export function Header() {
   const pathname = usePathname();
   const isAdminRoute = pathname?.startsWith("/admin") ?? false;
@@ -171,11 +177,11 @@ export function Header() {
 
       <header
         className={cn(
-          "site-header sticky top-0 z-40 border-b border-white/10 bg-[#05080e] text-white transition-shadow duration-200",
+          "site-header sticky top-0 z-40 border-b border-white/10 bg-[#05080e] text-white transition-shadow duration-200 min-[1160px]:fixed min-[1160px]:inset-x-0 min-[1160px]:top-0",
           isScrolled && "shadow-[0_16px_40px_rgba(0,0,0,0.28)]",
         )}
       >
-        <Container className="flex h-22 items-center justify-between gap-4 py-4 lg:h-24 lg:max-w-[86rem] lg:px-8">
+        <Container className="flex h-22 items-center justify-between gap-4 py-4 lg:h-24 lg:max-w-[86rem] lg:px-8 min-[1160px]:grid min-[1160px]:grid-cols-[auto_minmax(0,1fr)_auto] min-[1160px]:justify-normal min-[1160px]:gap-x-7">
           <div className="flex min-w-0 items-center gap-3 lg:gap-4">
             <button
               type="button"
@@ -215,19 +221,21 @@ export function Header() {
             </Link>
           </div>
 
-          <div className="hidden min-[1160px]:flex min-w-0 flex-1 items-center justify-center px-6">
+          <div className="hidden min-[1160px]:flex min-w-0 items-center justify-center px-6 min-[1160px]:justify-self-center">
             <nav aria-label="Primary" className="min-w-0">
               <ul className="flex items-center gap-7 text-[0.97rem] font-medium text-white/82">
                 {navLinks.map((item) => {
-                  const isActive = pathname === item.href;
+                  const isActive = isDesktopNavItemActive(pathname, item.href);
 
                   return (
                     <li key={item.href}>
                       <Link
                         href={item.href}
                         className={cn(
-                          "whitespace-nowrap transition hover:text-white",
-                          isActive && "text-white",
+                          "whitespace-nowrap transition-colors duration-150",
+                          isActive
+                            ? "text-[var(--ccr-accent-strong)]"
+                            : "text-white/82 hover:text-[var(--ccr-accent)]",
                         )}
                         aria-current={isActive ? "page" : undefined}
                       >
@@ -240,7 +248,7 @@ export function Header() {
             </nav>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 min-[1160px]:ml-1">
             <ThemeToggle
               controlId="site-theme-toggle-header"
               variant="inverse"

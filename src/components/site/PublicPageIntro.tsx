@@ -37,7 +37,7 @@ export function PublicPageIntro({
   return (
     <section className={cn("relative overflow-hidden border-b border-[var(--ccr-border)] bg-[var(--ccr-primary)] text-white", className)}>
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.16),transparent_42%),radial-gradient(circle_at_bottom_right,rgba(255,207,109,0.18),transparent_38%)]" />
-      <Container className="relative py-16 md:py-24">
+      <Container className="relative py-16 md:py-24 min-[1160px]:pt-48">
         <div className={cn("max-w-3xl", centered && "mx-auto text-center")}>
           {eyebrow ? (
             <p className="text-xs font-semibold uppercase tracking-[0.26em] text-[var(--ccr-accent)]">

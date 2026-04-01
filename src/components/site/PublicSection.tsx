@@ -31,12 +31,12 @@ export function PublicSection({
               </p>
             ) : null}
             {title ? (
-              <h2 className="mt-3 text-3xl font-semibold tracking-tight text-[var(--ccr-text)] md:text-5xl">
+              <h2 className="mt-3 text-3xl font-semibold tracking-tight text-[var(--ccr-light-surface-text)] md:text-5xl">
                 {title}
               </h2>
             ) : null}
             {description ? (
-              <p className="mt-4 text-base leading-7 text-[var(--ccr-muted)] md:text-lg">{description}</p>
+              <p className="mt-4 text-base leading-7 text-[var(--ccr-light-surface-muted)] md:text-lg">{description}</p>
             ) : null}
           </div>
         ) : null}

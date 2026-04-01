@@ -542,6 +542,12 @@ const DOCS: Record<string, DocSection> = {
         title: "Booking Flow Diagram",
         content: (
           <>
+            <p className="mb-3 text-sm text-[var(--ccr-muted)]">
+              Rollout note: the booking-location builder and config-driven booking, quote, and public
+              location flows require <code>044_booking_location_config.sql</code> before promotion to
+              staging or production. Apply the migration first, then smoke-test
+              <code> /api/public/locations</code>, <code>/admin/settings</code>, and the booking edit flow.
+            </p>
             <DiagramFrame
               title="Customer booking + deposit (high level)"
               description="Shows “deposit due now” flow and how return + webhook reconciliation work."

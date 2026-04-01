@@ -22,7 +22,10 @@ import {
   appendBookingLocationNote,
   inferBookingLocationType,
 } from "@/lib/bookings/bookingLocations";
-import { listActiveBookingLocationConfigs } from "@/lib/bookings/bookingLocationConfigStore";
+import {
+  listActiveBookingLocationConfigs,
+  toBookingLocationConfigSchemaError,
+} from "@/lib/bookings/bookingLocationConfigStore";
 import {
   buildBookingLocationSelectionPayload,
   normalizeBookingLocationFieldValuesInput,
@@ -197,7 +200,19 @@ export async function handleAdminBookingsPost(
     return NextResponse.json({ error: "Invalid rental duration" }, { status: 400 });
   }
 
-  const bookingLocationConfigs = await listActiveBookingLocationConfigs(deps.getPool());
+  let bookingLocationConfigs;
+  try {
+    bookingLocationConfigs = await listActiveBookingLocationConfigs(deps.getPool());
+  } catch (error) {
+    const schemaError = toBookingLocationConfigSchemaError(error);
+    if (schemaError) {
+      return NextResponse.json(
+        { error: schemaError.message, code: schemaError.code },
+        { status: schemaError.status },
+      );
+    }
+    throw error;
+  }
   const locationSelection = buildBookingLocationSelectionPayload({
     configs: bookingLocationConfigs,
     pickupTypeKey: pickupLocationType,

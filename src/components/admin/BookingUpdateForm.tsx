@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { startTransition, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
 import { buttonStyles } from "@/components/ui/Button";
@@ -19,6 +19,7 @@ import {
   normalizeBookingLocationFieldValuesInput,
   validateBookingLocationSelection,
 } from "@/lib/bookings/locationConfigRuntime";
+import type { AdminBookingDetailViewModel } from "@/lib/bookings/adminBookingDetailView";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
 type BookingUpdateFormProps = {
@@ -35,6 +36,7 @@ type BookingUpdateFormProps = {
   pickupLocationValues: BookingLocationFieldValueMap;
   dropoffLocationValues: BookingLocationFieldValueMap;
   disabled?: boolean;
+  onBookingUpdated?: (updatedBookingDetail: AdminBookingDetailViewModel) => void;
 };
 
 type BookingLocationApiField = {
@@ -242,6 +244,7 @@ export function BookingUpdateForm({
   pickupLocationValues,
   dropoffLocationValues,
   disabled,
+  onBookingUpdated,
 }: BookingUpdateFormProps) {
   const router = useRouter();
   const startDateRef = useRef<HTMLInputElement | null>(null);
@@ -560,15 +563,27 @@ export function BookingUpdateForm({
         }),
       });
 
-      const data = (await response.json().catch(() => ({}))) as { error?: string; message?: string };
+      const data = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        message?: string;
+        bookingDetail?: AdminBookingDetailViewModel;
+      };
       if (!response.ok) {
         setError(data.error ?? "Unable to update booking");
         return;
       }
 
-      setMessage(data.message ?? "Booking updated.");
+      if (!data.bookingDetail) {
+        setError("Booking updated, but the refreshed booking details were missing.");
+        return;
+      }
+
       setOpen(false);
-      router.refresh();
+      setMessage(data.message ?? "Booking updated.");
+      onBookingUpdated?.(data.bookingDetail);
+      startTransition(() => {
+        router.refresh();
+      });
     } catch {
       setError("Unable to update booking");
     } finally {

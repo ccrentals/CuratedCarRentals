@@ -6,7 +6,7 @@ import { destinations } from "@/data/content";
 export default function TouristDestinationsPage() {
   return (
     <>
-      <section className="bg-[var(--ccr-surface-soft)]/65 py-14 md:py-20">
+      <section className="bg-[var(--ccr-surface-soft)]/65 py-14 md:py-20 min-[1160px]:pt-44">
         <Container>
           <h1 className="font-display text-4xl font-bold text-[var(--ccr-text)] md:text-5xl">
             Tourist Destinations

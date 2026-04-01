@@ -4,9 +4,11 @@ import {
   inferBookingLocationType,
   readBookingLocationDetails,
   type BookingLocationConfig,
-  type BookingLocationFieldValueMap,
 } from "@/lib/bookings/bookingLocations";
-import { listActiveBookingLocationConfigs } from "@/lib/bookings/bookingLocationConfigStore";
+import {
+  listActiveBookingLocationConfigs,
+  toBookingLocationConfigSchemaError,
+} from "@/lib/bookings/bookingLocationConfigStore";
 import {
   buildBookingLocationSelectionPayload,
   normalizeBookingLocationFieldValuesInput,
@@ -726,7 +728,16 @@ async function buildQuoteLocationSelection(input: {
   bookingLocationDetails?: Record<string, unknown> | null;
   existingPricingJson?: Record<string, unknown> | null;
 }) {
-  const configs = await listActiveBookingLocationConfigs(input.client);
+  let configs: BookingLocationConfig[];
+  try {
+    configs = await listActiveBookingLocationConfigs(input.client);
+  } catch (error) {
+    const schemaError = toBookingLocationConfigSchemaError(error);
+    if (schemaError) {
+      throw new AdminQuoteError(schemaError.code, schemaError.message, schemaError.status);
+    }
+    throw error;
+  }
   const pickupDefaults = buildLocationDefaultsFromDate(input.startAt);
   const dropoffDefaults = buildLocationDefaultsFromDate(input.endAt);
   const currentDetails = readBookingLocationDetails(input.existingPricingJson ?? {}, {
@@ -814,8 +825,6 @@ export async function createAdminQuote(input: CreateAdminQuoteInput) {
 
   const email = normalizeText(input.customerEmail).toLowerCase();
   const customerPhone = normalizeNullableText(input.customerPhone);
-  const pickupLocationId = normalizeUuidOrNull(input.pickupLocationId);
-  const dropoffLocationId = normalizeUuidOrNull(input.dropoffLocationId);
   const tags = normalizeTags(input.tags);
   const comments = normalizeNullableText(input.comments);
   const expiresAt = normalizeExpiresAt(input.expiresAt);

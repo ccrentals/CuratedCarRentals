@@ -11,7 +11,7 @@ type AdminNote = {
   note_id?: string;
   message: string;
   created_at?: string;
-  user_id?: string;
+  user_id?: string | null;
   email_target?: "none" | "customer" | "internal" | "both";
   email_send_mode?: "immediate" | "scheduled" | string | null;
   email_scheduled_for?: string | null;

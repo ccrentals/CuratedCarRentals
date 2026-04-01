@@ -7,7 +7,7 @@ import { aboutFeatures, siteContent } from "@/data/content";
 export default function AboutPage() {
   return (
     <>
-      <section className="bg-[var(--ccr-surface-soft)]/65 py-14 md:py-20">
+      <section className="bg-[var(--ccr-surface-soft)]/65 py-14 md:py-20 min-[1160px]:pt-44">
         <Container>
           <Link
             href="/"
@@ -53,13 +53,13 @@ export default function AboutPage() {
               <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--ccr-accent-strong)]">
                 About Us
               </p>
-              <h2 className="mt-4 font-display text-4xl font-bold text-[var(--ccr-text)] md:text-5xl">
+              <h2 className="mt-4 font-display text-4xl font-bold text-[var(--ccr-light-surface-text)] md:text-5xl">
                 {siteContent.aboutHeading}
               </h2>
-              <p className="mt-5 text-lg leading-8 text-[var(--ccr-muted)]">
+              <p className="mt-5 text-lg leading-8 text-[var(--ccr-light-surface-muted)]">
                 {siteContent.aboutDescription}
               </p>
-              <p className="mt-4 text-lg leading-8 text-[var(--ccr-muted)]">
+              <p className="mt-4 text-lg leading-8 text-[var(--ccr-light-surface-muted)]">
                 {siteContent.aboutSupport}
               </p>
 

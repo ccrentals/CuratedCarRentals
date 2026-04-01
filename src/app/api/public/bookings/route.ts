@@ -19,6 +19,7 @@ import {
   inferBookingLocationType,
 } from "@/lib/bookings/bookingLocations";
 import { listActiveBookingLocationConfigs } from "@/lib/bookings/bookingLocationConfigStore";
+import { toBookingLocationConfigSchemaError } from "@/lib/bookings/bookingLocationConfigStore";
 import {
   buildBookingLocationSelectionPayload,
   normalizeBookingLocationFieldValuesInput,
@@ -259,7 +260,19 @@ export async function POST(request: Request) {
   const bookingAccessTokenHash = hashBookingAccessToken(bookingAccessToken);
 
   const pool = getDbPool();
-  const bookingLocationConfigs = await listActiveBookingLocationConfigs(pool);
+  let bookingLocationConfigs;
+  try {
+    bookingLocationConfigs = await listActiveBookingLocationConfigs(pool);
+  } catch (error) {
+    const schemaError = toBookingLocationConfigSchemaError(error);
+    if (schemaError) {
+      return NextResponse.json(
+        { error: schemaError.message, code: schemaError.code },
+        { status: schemaError.status },
+      );
+    }
+    throw error;
+  }
   const locationSelection = buildBookingLocationSelectionPayload({
     configs: bookingLocationConfigs,
     pickupTypeKey: pickupLocationType,

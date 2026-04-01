@@ -35,7 +35,7 @@ export default async function HomePage() {
           <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(15,74,78,0.4),rgba(22,54,96,0.28),rgba(234,114,66,0.22))]" />
         </div>
 
-        <Container className="relative flex min-h-[calc(100svh-5.5rem)] items-center py-16 md:py-20 lg:min-h-[calc(100svh-6rem)]">
+        <Container className="relative flex min-h-[calc(100svh-5.5rem)] items-center py-16 md:py-20 min-[1160px]:pt-44 lg:min-h-[calc(100svh-6rem)]">
           <div className="max-w-3xl">
             <div className="inline-flex items-center rounded-full bg-[rgba(39,117,95,0.82)] px-4 py-2 text-sm font-medium text-white shadow-[0_18px_34px_rgba(0,0,0,0.18)] backdrop-blur-sm">
               <span className="mr-2">🌴</span> Kingston, Jamaica

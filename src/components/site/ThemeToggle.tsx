@@ -167,6 +167,10 @@ export function ThemeToggle({
   }, [open]);
 
   const selectedLabel = THEME_LABELS[theme];
+  const menuClassName =
+    variant === "inverse"
+      ? "overflow-hidden rounded-xl border border-white/15 bg-[var(--ccr-primary)] shadow-2xl"
+      : "overflow-hidden rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] shadow-2xl";
 
   return (
     <div ref={rootRef} className="relative inline-flex items-center gap-2">
@@ -220,15 +224,20 @@ export function ThemeToggle({
             <div
               ref={menuRef}
               style={menuStyle}
-              className={cn(
-                "overflow-hidden rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] shadow-2xl",
-                variant === "inverse" && "bg-[var(--ccr-primary)]",
-              )}
+              className={menuClassName}
               role="listbox"
               aria-label="Theme options"
             >
               {APP_THEMES.map((item) => {
                 const selected = item === theme;
+                const optionClassName =
+                  variant === "inverse"
+                    ? selected
+                      ? "bg-[var(--ccr-on-primary)] text-[var(--ccr-primary)]"
+                      : "text-[var(--ccr-on-primary)] hover:bg-white/10"
+                    : selected
+                      ? "bg-[var(--ccr-accent)] text-white"
+                      : "text-[var(--ccr-text)] hover:bg-[var(--ccr-surface-soft)]";
                 return (
                   <button
                     key={item}
@@ -243,13 +252,7 @@ export function ThemeToggle({
                     }}
                     className={cn(
                       "flex w-full items-center justify-between px-3 py-2 text-left text-sm font-semibold transition-colors",
-                      selected
-                        ? "bg-[var(--ccr-accent)] text-white"
-                        : "text-[var(--ccr-text)] hover:bg-[var(--ccr-surface-soft)]",
-                      variant === "inverse" &&
-                        (selected
-                          ? "bg-white text-[var(--ccr-primary)]"
-                          : "text-white hover:bg-white/10"),
+                      optionClassName,
                     )}
                   >
                     <span>{THEME_LABELS[item]}</span>

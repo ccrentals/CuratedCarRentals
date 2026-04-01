@@ -2,23 +2,15 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { dbQuery } from "@/lib/db";
-import { BookingActions } from "@/components/admin/BookingActions";
+import { AdminBookingDetailClient } from "@/components/admin/AdminBookingDetailClient";
 import { BookingIncidentsCard } from "@/components/admin/BookingIncidentsCard";
 import { BookingVehicleInspectionPanel } from "@/components/admin/BookingVehicleInspectionPanel";
-import { BookingNotes } from "@/components/admin/BookingNotes";
-import { InfoTooltipIcon } from "@/components/admin/InfoTooltipIcon";
-import { BookingUpdateForm } from "@/components/admin/BookingUpdateForm";
-import { ManualPaymentForm } from "@/components/admin/ManualPaymentForm";
-import { PaymentRowActions } from "@/components/admin/PaymentRowActions";
 import { RefundRequiredToast } from "@/components/admin/RefundRequiredToast";
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { InlineDateTimeRange } from "@/components/shared/InlineDateTimeRange";
-import { TableDateTime } from "@/components/shared/TableDateTime";
 import { loadAdminSettings } from "@/lib/adminSettings";
 import { getSessionFromRequest } from "@/lib/auth/session";
-import { fmtDate, fmtDateNoSeconds, fmtDateOnly } from "@/lib/dateFormat";
-import { formatJmd } from "@/lib/money";
-import { formatPaymentStatus } from "@/lib/payments/formatPaymentStatus";
+import { fmtDate } from "@/lib/dateFormat";
 import {
   computeBookingPricingFromStoredSnapshot,
   fetchNetPaidToDate,
@@ -26,12 +18,13 @@ import {
 } from "@/lib/payments/pricing";
 import { readBookingOverrideInfo } from "@/lib/bookings/holds";
 import { formatBookingStatusLabel } from "@/lib/bookings/formatBookingStatusLabel";
-import { refundRequiredStyles } from "@/lib/refundRequiredStyles";
 import { isEntitledBooking } from "@/lib/availability/entitlement";
+import { readBookingLocationDetails } from "@/lib/bookings/bookingLocations";
 import {
-  getBookingLocationAdminBadgeLabel,
-  readBookingLocationDetails,
-} from "@/lib/bookings/bookingLocations";
+  buildAdminBookingDateTimeLabel,
+  buildAdminBookingDetailView,
+  buildAdminBookingNotes,
+} from "@/lib/bookings/adminBookingDetailView";
 import {
   createEmptyBookingVehicleInspectionSummaries,
   isBookingVehicleInspectionMissingTableError,
@@ -156,57 +149,6 @@ function isUndefinedColumn(error: unknown, column: string) {
 
 function isAnyUndefinedColumn(error: unknown, columns: string[]) {
   return columns.some((column) => isUndefinedColumn(error, column));
-}
-
-function statusBadge(status: string) {
-  const normalized = status.toUpperCase();
-  const styles: Record<string, string> = {
-    PENDING_PAYMENT:
-      "border border-[var(--ccr-status-accent-border)] bg-[var(--ccr-status-accent-bg)] text-[var(--ccr-status-accent-text)]",
-    BOOKED:
-      "border border-[var(--ccr-status-accent-border)] bg-[var(--ccr-status-accent-bg)] text-[var(--ccr-status-accent-text)]",
-    CONFIRMED:
-      "border border-[var(--ccr-status-success-border)] bg-[var(--ccr-status-success-bg)] text-[var(--ccr-status-success-text)]",
-    PICKED_UP:
-      "border border-[var(--ccr-status-info-border)] bg-[var(--ccr-status-info-bg)] text-[var(--ccr-status-info-text)]",
-    RETURNED:
-      "border border-[var(--ccr-status-neutral-border)] bg-[var(--ccr-status-neutral-bg)] text-[var(--ccr-status-neutral-text)]",
-    CANCELLED:
-      "border border-[var(--ccr-status-danger-border)] bg-[var(--ccr-status-danger-bg)] text-[var(--ccr-status-danger-text)]",
-  };
-  return (
-    styles[normalized] ??
-    "border border-[var(--ccr-status-neutral-border)] bg-[var(--ccr-status-neutral-bg)] text-[var(--ccr-status-neutral-text)]"
-  );
-}
-
-function readPaymentMetadataText(
-  metadata: PaymentRow["metadata_json"],
-  key: string,
-): string | null {
-  const value = metadata?.[key];
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  return trimmed.length ? trimmed : null;
-}
-
-function formatTimeNoSeconds(value: string | null | undefined) {
-  const normalized = String(value ?? "").trim();
-  if (!normalized) return "";
-  return normalized.replace(/:(\d{2})(?:\.\d+)?$/, "");
-}
-
-function readStructuredLocationLines(entry: {
-  values: Record<string, string | null>;
-  fieldLabels: Record<string, string>;
-}) {
-  return Object.entries(entry.values)
-    .filter(([, value]) => typeof value === "string" && value.trim().length > 0)
-    .map(([key, value]) => ({
-      key,
-      label: entry.fieldLabels[key] ?? key,
-      value: value as string,
-    }));
 }
 
 export default async function AdminBookingDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -413,17 +355,21 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
   })
     ? "ENTITLED"
     : "TENTATIVE";
-  const pickupDateTimeLabel = booking.start_at
-    ? fmtDateNoSeconds(booking.start_at)
-    : `${fmtDateOnly(booking.start_date)}, ${formatTimeNoSeconds(booking.pickup_time) || "12:00 AM"}`;
-  const dropoffDateTimeLabel = booking.end_at
-    ? fmtDateNoSeconds(booking.end_at)
-    : `${fmtDateOnly(booking.end_date)}, ${formatTimeNoSeconds(booking.dropoff_time) || "12:00 AM"}`;
+  const pickupDateTimeLabel = buildAdminBookingDateTimeLabel({
+    date: booking.start_date,
+    time: booking.pickup_time,
+    at: booking.start_at,
+  });
+  const dropoffDateTimeLabel = buildAdminBookingDateTimeLabel({
+    date: booking.end_date,
+    time: booking.dropoff_time,
+    at: booking.end_at,
+  });
   const pickupTimeValue =
-    formatTimeNoSeconds(booking.pickup_time) ||
+    String(booking.pickup_time ?? "").trim().replace(/:(\d{2})(?:\.\d+)?$/, "") ||
     (booking.start_at ? String(booking.start_at).slice(11, 16) : "11:00");
   const dropoffTimeValue =
-    formatTimeNoSeconds(booking.dropoff_time) ||
+    String(booking.dropoff_time ?? "").trim().replace(/:(\d{2})(?:\.\d+)?$/, "") ||
     (booking.end_at ? String(booking.end_at).slice(11, 16) : "11:00");
   const pickupLocationSnapshot = booking.pickup_location_text_snapshot || booking.pickup_location;
   const dropoffLocationSnapshot =
@@ -434,10 +380,6 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
     pickupLocationId: null,
     dropoffLocationId: null,
   });
-  const pickupLocationLines = readStructuredLocationLines(bookingLocationDetails.pickup);
-  const dropoffLocationLines = readStructuredLocationLines(bookingLocationDetails.dropoff);
-  const pickupLocationBadge = getBookingLocationAdminBadgeLabel(bookingLocationDetails.pickup.type);
-  const dropoffLocationBadge = getBookingLocationAdminBadgeLabel(bookingLocationDetails.dropoff.type);
   const customPaymentAmount = Number(
     pricing.custom_payment_amount_cents ?? booking.custom_payment_amount_cents ?? 0,
   );
@@ -463,38 +405,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
     : null;
 
   const notesRaw = (pricing as { admin_notes?: AdminNote[] }).admin_notes;
-  const notes = Array.isArray(notesRaw) ? [...notesRaw] : [];
-  const paymentNotes: AdminNote[] = payments.rows.flatMap((payment) => {
-    const reference = readPaymentMetadataText(payment.metadata_json, "reference");
-    const note = readPaymentMetadataText(payment.metadata_json, "note");
-    if (!reference && !note) return [];
-
-    const providerLabel =
-      payment.provider === "MANUAL"
-        ? (payment.metadata_json?.method_label as string | undefined) ??
-          (payment.metadata_json?.method as string | undefined) ??
-          "Manual"
-        : payment.provider;
-
-    const paymentPublicId = String(payment.public_id ?? "").trim() || payment.id;
-    const parts = [`Payment ${paymentPublicId} (${providerLabel})`];
-    if (reference) parts.push(`Ref: ${reference}`);
-    if (note) parts.push(`Note: ${note}`);
-
-    return [
-      {
-        note_id: `payment-${payment.id}`,
-        message: parts.join(" • "),
-        created_at: payment.created_at,
-      },
-    ];
-  });
-  notes.push(...paymentNotes);
-  notes.sort((a, b) => {
-    const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
-    const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
-    return bTime - aTime;
-  });
+  const notes = buildAdminBookingNotes(Array.isArray(notesRaw) ? [...notesRaw] : [], payments.rows);
 
   const refundedOriginalIds = new Set<string>();
   for (const payment of payments.rows) {
@@ -605,6 +516,80 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
         )
       ).rows[0]?.public_id ?? overriddenByBookingId
     : null;
+  const initialDetail = buildAdminBookingDetailView({
+    versionKey: [
+      booking.id,
+      booking.start_date,
+      booking.end_date,
+      pickupTimeValue,
+      dropoffTimeValue,
+      customerNameSnapshot,
+      customerEmailSnapshot,
+      customerPhoneSnapshot,
+      pickupLocationSnapshot,
+      dropoffLocationSnapshot,
+      summary.total,
+      summary.paymentStatus,
+      notes.length,
+    ].join("|"),
+    bookingId: booking.id,
+    bookingPublicId,
+    bookingStatus: booking.status,
+    displayStatus,
+    isNonBlocking,
+    isOverridden: overrideInfo.isOverridden,
+    isPaidInFull,
+    isDepositPaid,
+    vehicleId: booking.vehicle_id,
+    vehicleLabel: `${booking.vehicle_year} ${booking.vehicle_make} ${booking.vehicle_model}`.trim(),
+    initialPromoCode: summary.promoCode,
+    initialInsuranceSelected: summary.insuranceSelected,
+    entitlement: entitlementState,
+    paymentOptionLabel: summary.paymentOption.replace(/_/g, " "),
+    customPaymentAmountCents: summary.paymentOption === "CUSTOM" ? customPaymentAmount : null,
+    cancellationReason: cancellationReasonWhenLost,
+    pickupDateTimeLabel,
+    dropoffDateTimeLabel,
+    pickupLocationSnapshot,
+    dropoffLocationSnapshot,
+    bookingLocationDetails,
+    customerName: customerNameSnapshot,
+    customerEmail: customerEmailSnapshot,
+    customerPhone: customerPhoneSnapshot,
+    driversLicenseNumber: booking.drivers_license_number || booking.customer_legal_id_number,
+    hasDriversLicenseDoc,
+    hasSignatureDoc,
+    days,
+    paidToDate,
+    totalBeforePromo,
+    total,
+    insuranceSelected: summary.insuranceSelected,
+    paymentOption: summary.paymentOption,
+    paymentStatus: summary.paymentStatus,
+    dailyRate: summary.dailyRate,
+    insurancePricePerDay: insurancePricePerDayDisplay,
+    insuranceTotal: insuranceTotalDisplay,
+    promoCode: summary.promoCode,
+    promoTotal: promoTotalDisplay,
+    depositDue,
+    balanceDue,
+    refundRequired,
+    notes,
+    form: {
+      startDate: booking.start_date,
+      endDate: booking.end_date,
+      pickupTime: pickupTimeValue,
+      dropoffTime: dropoffTimeValue,
+      customerName: customerNameSnapshot,
+      customerEmail: customerEmailSnapshot,
+      customerPhone: customerPhoneSnapshot,
+      pickupLocationTypeKey: bookingLocationDetails.pickup.typeKey,
+      dropoffLocationTypeKey: bookingLocationDetails.dropoff.typeKey,
+      pickupLocationValues: bookingLocationDetails.pickup.values,
+      dropoffLocationValues: bookingLocationDetails.dropoff.values,
+      disabled: ["RETURNED", "CANCELLED"].includes(booking.status.toUpperCase()),
+    },
+  });
 
   return (
     <div className="mx-auto w-full max-w-5xl px-6 py-10">
@@ -612,448 +597,27 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
       <Link href="/admin/bookings" className="text-sm font-semibold text-[var(--ccr-text)]">
         Back to bookings
       </Link>
-
-      <div className="mt-3 space-y-3">
-        <div className="flex flex-wrap items-center gap-3 md:gap-4">
-          <span className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Booking</span>
-          <span
-            data-testid="booking-public-id"
-            className="font-mono text-lg font-bold leading-none text-[var(--ccr-text)] md:text-xl"
-          >
-            {bookingPublicId}
-          </span>
-          <span
-            data-testid="booking-status-badge"
-            className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${statusBadge(
-              displayStatus,
-            )}`}
-          >
-            {displayStatus.replace(/_/g, " ")}
-          </span>
-          <span
-            data-testid="booking-pickup-type-badge"
-            className="inline-flex items-center rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-xs font-semibold uppercase tracking-wide text-[var(--ccr-text)]"
-          >
-            Pickup: {pickupLocationBadge}
-          </span>
-          <span
-            data-testid="booking-dropoff-type-badge"
-            className="inline-flex items-center rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-1 text-xs font-semibold uppercase tracking-wide text-[var(--ccr-text)]"
-          >
-            Dropoff: {dropoffLocationBadge}
-          </span>
-          {isNonBlocking ? <InfoTooltipIcon message="UNPAID - Not holding vehicle" /> : null}
-          {overrideInfo.isOverridden ? (
-            <span className="inline-flex items-center rounded-full border border-[var(--ccr-status-danger-border)] bg-[var(--ccr-status-danger-bg)] px-3 py-1 text-xs font-semibold uppercase tracking-wide text-[var(--ccr-status-danger-text)]">
-              OVERRIDDEN
-            </span>
-          ) : null}
-        </div>
-
-        <div className="w-full pt-1">
-          <BookingActions
+      <AdminBookingDetailClient
+        initialDetail={initialDetail}
+        canAdmin={canAdmin}
+        requireRestoreReason={requireRestoreReason}
+        promoOptions={promoOptions}
+        insuranceOption={insuranceOption}
+        inspectionContent={
+          <BookingVehicleInspectionPanel
             bookingId={booking.id}
-            bookingPublicId={bookingPublicId}
             bookingStatus={booking.status}
-            isPaidInFull={isPaidInFull}
-            isDepositPaid={isDepositPaid}
-            canAdmin={canAdmin}
-            vehicleId={booking.vehicle_id}
-            vehicleLabel={`${booking.vehicle_year} ${booking.vehicle_make} ${booking.vehicle_model}`.trim()}
-            promoOptions={promoOptions}
-            insuranceOption={insuranceOption}
-            initialPromoCode={summary.promoCode}
-            initialInsuranceSelected={summary.insuranceSelected}
-            bookingChangesContent={
-              <BookingUpdateForm
-                bookingId={booking.id}
-                startDate={booking.start_date}
-                endDate={booking.end_date}
-                pickupTime={pickupTimeValue}
-                dropoffTime={dropoffTimeValue}
-                customerName={customerNameSnapshot}
-                customerEmail={customerEmailSnapshot}
-                customerPhone={customerPhoneSnapshot}
-                pickupLocationTypeKey={bookingLocationDetails.pickup.typeKey}
-                dropoffLocationTypeKey={bookingLocationDetails.dropoff.typeKey}
-                pickupLocationValues={bookingLocationDetails.pickup.values}
-                dropoffLocationValues={bookingLocationDetails.dropoff.values}
-                disabled={["RETURNED", "CANCELLED"].includes(booking.status.toUpperCase())}
-              />
-            }
-            inspectionContent={
-              <BookingVehicleInspectionPanel
-                bookingId={booking.id}
-                bookingStatus={booking.status}
-                bookingPublicId={bookingPublicId}
-                inspections={vehicleInspections}
-                tablesUnavailable={vehicleInspectionTablesUnavailable}
-                canCorrectOdometer={canAdmin}
-              />
-            }
+            bookingPublicId={bookingPublicId}
+            inspections={vehicleInspections}
+            tablesUnavailable={vehicleInspectionTablesUnavailable}
+            canCorrectOdometer={canAdmin}
           />
-        </div>
-      </div>
-
-      <div className="mt-6 grid gap-6 lg:grid-cols-[1.2fr_1fr]">
-        <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm">
-          <h2 className="text-lg font-bold text-[var(--ccr-text)]">Booking Details</h2>
-          <dl className="mt-4 grid gap-6 text-sm text-[var(--ccr-muted)] md:grid-cols-2">
-            <div className="space-y-3">
-              <div className="min-w-0">
-                <dt className="text-xs uppercase tracking-wide">Status</dt>
-                <dd className="font-semibold text-[var(--ccr-text)]">{displayStatus.replace(/_/g, " ")}</dd>
-              </div>
-              <div className="min-w-0">
-                <dt className="text-xs uppercase tracking-wide">Entitlement</dt>
-                <dd className="font-semibold text-[var(--ccr-text)]">{entitlementState}</dd>
-              </div>
-              <div className="min-w-0">
-                <dt className="text-xs uppercase tracking-wide">Payment Option</dt>
-                <dd className="font-semibold text-[var(--ccr-text)]">
-                  {summary.paymentOption.replace(/_/g, " ")}
-                </dd>
-              </div>
-              {summary.paymentOption === "CUSTOM" ? (
-                <div className="min-w-0">
-                  <dt className="text-xs uppercase tracking-wide">Custom Amount</dt>
-                  <dd className="font-semibold text-[var(--ccr-text)]">{formatJmd(customPaymentAmount)}</dd>
-                </div>
-              ) : null}
-              {cancellationReasonWhenLost ? (
-                <div className="min-w-0">
-                  <dt className="text-xs uppercase tracking-wide">Cancellation Reason</dt>
-                  <dd className="font-semibold text-[var(--ccr-text)]">{cancellationReasonWhenLost}</dd>
-                </div>
-              ) : null}
-              <div className="min-w-0">
-                <dt className="text-xs uppercase tracking-wide">Vehicle</dt>
-                <dd className="font-semibold text-[var(--ccr-text)]">
-                  {booking.vehicle_year} {booking.vehicle_make} {booking.vehicle_model}
-                </dd>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <div className="min-w-0">
-                <dt className="text-xs uppercase tracking-wide">Pickup Date & Time</dt>
-                <dd className="font-semibold text-[var(--ccr-text)]">
-                  <DateTimeInline value={pickupDateTimeLabel} />
-                </dd>
-              </div>
-              <div className="min-w-0">
-                <dt className="text-xs uppercase tracking-wide">Dropoff Date & Time</dt>
-                <dd className="font-semibold text-[var(--ccr-text)]">
-                  <DateTimeInline value={dropoffDateTimeLabel} />
-                </dd>
-              </div>
-              <div className="min-w-0">
-                <dt className="text-xs uppercase tracking-wide">Pickup Location Snapshot</dt>
-                <dd className="font-semibold text-[var(--ccr-text)]">{pickupLocationSnapshot}</dd>
-              </div>
-              <div className="min-w-0">
-                <dt className="text-xs uppercase tracking-wide">Dropoff Location Snapshot</dt>
-                <dd className="font-semibold text-[var(--ccr-text)]">{dropoffLocationSnapshot}</dd>
-              </div>
-              <div className="min-w-0 md:col-span-2">
-                <dt className="text-xs uppercase tracking-wide">Structured Location Details</dt>
-                <dd
-                  data-testid="booking-location-details-block"
-                  className="mt-2 grid gap-4 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-4 md:grid-cols-2"
-                >
-                  <div className="space-y-2">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-                      Pickup
-                    </p>
-                    <p className="font-semibold text-[var(--ccr-text)]">{bookingLocationDetails.pickup.label}</p>
-                    {pickupLocationLines.map((line) => (
-                      <p key={`pickup-${line.key}`} className="text-[var(--ccr-muted)]">
-                        {line.label}: {line.value}
-                      </p>
-                    ))}
-                  </div>
-                  <div className="space-y-2">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-                      Dropoff
-                    </p>
-                    <p className="font-semibold text-[var(--ccr-text)]">{bookingLocationDetails.dropoff.label}</p>
-                    {dropoffLocationLines.map((line) => (
-                      <p key={`dropoff-${line.key}`} className="text-[var(--ccr-muted)]">
-                        {line.label}: {line.value}
-                      </p>
-                    ))}
-                  </div>
-                </dd>
-              </div>
-            </div>
-          </dl>
-        </section>
-
-        <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm">
-          <h2 className="text-lg font-bold text-[var(--ccr-text)]">Customer & Vehicle</h2>
-          <div className="mt-4 space-y-3 text-sm">
-            <div>
-              <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Customer</p>
-              <p className="font-semibold text-[var(--ccr-text)]">{customerNameSnapshot}</p>
-              <p className="text-[var(--ccr-muted)]">{customerEmailSnapshot}</p>
-              <p className="text-[var(--ccr-muted)]">{customerPhoneSnapshot}</p>
-              <p className="mt-2 text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
-                Driver&apos;s License Number
-              </p>
-              <p className="font-semibold text-[var(--ccr-text)]">
-                {booking.drivers_license_number || booking.customer_legal_id_number || "Not provided"}
-              </p>
-              {hasDriversLicenseDoc || hasSignatureDoc ? (
-                <div className="mt-2 flex flex-wrap items-center gap-4 text-xs font-semibold">
-                  {hasDriversLicenseDoc ? (
-                    <a
-                      href={`/admin/bookings/${booking.id}/private-files/DRIVERS_LICENSE`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-[var(--ccr-accent)] transition-colors hover:text-[var(--ccr-text)]"
-                    >
-                      View ID
-                    </a>
-                  ) : null}
-                  {hasSignatureDoc ? (
-                    <a
-                      href={`/admin/bookings/${booking.id}/private-files/SIGNATURE`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-[var(--ccr-accent)] transition-colors hover:text-[var(--ccr-text)]"
-                    >
-                      View Signature
-                    </a>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
-            <div>
-              <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Vehicle</p>
-              <p className="font-semibold text-[var(--ccr-text)]">
-                {booking.vehicle_year} {booking.vehicle_make} {booking.vehicle_model}
-              </p>
-            </div>
-          </div>
-        </section>
-      </div>
-
-      <BookingIncidentsCard incidents={bookingIncidents} />
-
-      <section
-        data-testid="booking-charges-summary"
-        className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm"
+        }
+        payments={payments.rows}
+        refundedOriginalIds={[...refundedOriginalIds]}
       >
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-lg font-bold text-[var(--ccr-text)]">Charges Summary</h2>
-          <div className="flex flex-wrap items-center gap-2">
-            {!isPaidInFull && total > 0 ? (
-              <span className="rounded-full border border-[var(--ccr-accent)]/40 bg-[var(--ccr-accent)]/15 px-3 py-1 text-xs font-semibold text-[var(--ccr-text)]">
-                Payment incomplete
-              </span>
-            ) : null}
-            {refundRequired ? (
-              <span data-testid="booking-summary-refund-required" className={refundRequiredStyles.badge}>
-                Refund required
-              </span>
-            ) : null}
-          </div>
-        </div>
-        <div className="mt-4 grid gap-6 text-sm text-[var(--ccr-muted)] md:grid-cols-2">
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <span>Confirmed Booked Days</span>
-              <span className="font-semibold text-[var(--ccr-text)]">{days}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span>Paid to date</span>
-              <span data-testid="booking-summary-paid-to-date" className="font-semibold text-[var(--ccr-text)]">
-                {formatJmd(paidToDate)}
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span>Total of Booking</span>
-              <span data-testid="booking-summary-total" className="font-semibold text-[var(--ccr-text)]">
-                {formatJmd(totalBeforePromo)}
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span>Insurance selected</span>
-              <span className="font-semibold text-[var(--ccr-text)]">
-                {summary.insuranceSelected ? "Yes" : "No"}
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span>Payment option (stored)</span>
-              <span className="font-semibold text-[var(--ccr-text)]">{summary.paymentOption}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span>Payment status</span>
-              <span data-testid="booking-summary-payment-status" className="font-semibold text-[var(--ccr-text)]">
-                {summary.paymentStatus.replace(/_/g, " ")}
-              </span>
-            </div>
-          </div>
-          <div className="space-y-3 border-t border-[var(--ccr-border)] pt-5 md:border-l md:border-t-0 md:pl-6 md:pt-0">
-            <div className="flex items-center justify-between">
-              <span>Daily Rate</span>
-              <span className="font-semibold text-[var(--ccr-text)]">{formatJmd(summary.dailyRate)}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span>Insurance price/day</span>
-              <span className="font-semibold text-[var(--ccr-text)]">
-                {formatJmd(insurancePricePerDayDisplay)}
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span>Insurance total</span>
-              <span className="font-semibold text-[var(--ccr-text)]">
-                {formatJmd(insuranceTotalDisplay)}
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span>Promo total{summary.promoCode ? ` (${summary.promoCode})` : ""}</span>
-              <span className="font-semibold text-[var(--ccr-text)]">
-                {promoTotalDisplay > 0 ? `-${formatJmd(promoTotalDisplay)}` : formatJmd(0)}
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span>Deposit due</span>
-              <span className="font-semibold text-[var(--ccr-text)]">{formatJmd(depositDue)}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span>Balance due</span>
-              <span data-testid="booking-summary-balance-due" className="font-semibold text-[var(--ccr-text)]">
-                {formatJmd(balanceDue)}
-              </span>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section
-        data-testid="booking-payments-section"
-        className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm"
-      >
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-lg font-bold text-[var(--ccr-text)]">Payments</h2>
-          <Link
-            href={`/admin/payments?bookingId=${booking.id}`}
-            data-testid="booking-view-in-payments"
-            className="text-sm font-semibold text-[var(--ccr-text)]"
-          >
-            View in Payments
-          </Link>
-        </div>
-        <ManualPaymentForm
-          bookingId={booking.id}
-          bookingPublicId={bookingPublicId}
-          total={total}
-          paidToDate={paidToDate}
-          balanceDue={balanceDue}
-        />
-        {payments.rows.length === 0 ? (
-          <p className="mt-3 text-sm text-[var(--ccr-muted)]">No payments recorded yet.</p>
-        ) : (
-          <div className="mt-3 overflow-x-auto">
-            <table className="min-w-full text-left text-sm">
-              <thead className="border-b border-[var(--ccr-border)] text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
-                <tr>
-                  <th className="px-3 py-2">Payment ID</th>
-                  <th className="px-3 py-2">Payment Method</th>
-                  <th className="px-3 py-2">Status</th>
-                  <th className="px-3 py-2">Amount</th>
-                  <th className="px-3 py-2">Created</th>
-                  <th className="px-3 py-2 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {payments.rows.map((payment: PaymentRow) => {
-                  const paymentReference = readPaymentMetadataText(payment.metadata_json, "reference");
-                  const paymentNote = readPaymentMetadataText(payment.metadata_json, "note");
-
-                  return (
-                    <tr
-                      key={payment.id}
-                      data-testid="booking-payment-row"
-                      data-payment-id={payment.id}
-                      data-payment-public-id={payment.public_id}
-                      className={`border-b border-[var(--ccr-border)] last:border-b-0 ${
-                        payment.deleted_at ? "bg-[var(--ccr-surface-soft)]" : ""
-                      }`}
-                      title={payment.deleted_reason ? `Deleted: ${payment.deleted_reason}` : undefined}
-                    >
-                      <td
-                        data-testid="booking-payment-public-id"
-                        className="px-3 py-2 font-mono text-xs text-[var(--ccr-text)]"
-                      >
-                        {payment.public_id}
-                      </td>
-                      <td data-testid="booking-payment-method" className="px-3 py-2 text-[var(--ccr-text)]">
-                        <div className="flex items-center gap-2">
-                          <span className="whitespace-nowrap">
-                            {payment.provider === "MANUAL"
-                              ? (payment.metadata_json?.method_label as string | undefined) ??
-                                (payment.metadata_json?.method as string | undefined) ??
-                                "MANUAL"
-                              : payment.provider}
-                          </span>
-                          {paymentReference || paymentNote ? (
-                            <details className="group relative">
-                              <summary
-                                className="inline-flex h-6 w-6 cursor-pointer list-none items-center justify-center rounded-full border border-[var(--ccr-border)] text-[10px] font-bold leading-none text-[var(--ccr-accent)] transition group-open:rotate-180"
-                                title="View payment note"
-                                aria-label="View payment note"
-                              >
-                                ▾
-                              </summary>
-                              <div className="absolute left-0 top-full z-20 mt-2 w-max max-w-[20rem] rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-2 text-xs text-[var(--ccr-muted)] shadow-sm">
-                                {paymentReference ? <p className="break-words">Ref: {paymentReference}</p> : null}
-                                {paymentNote ? <p className="mt-1 break-words">Note: {paymentNote}</p> : null}
-                              </div>
-                            </details>
-                          ) : null}
-                        </div>
-                      </td>
-                      <td data-testid="booking-payment-status" className="px-3 py-2 text-[var(--ccr-text)]">
-                        {formatPaymentStatus(payment.status, {
-                          paymentType:
-                            typeof payment.metadata_json?.payment_type === "string"
-                              ? String(payment.metadata_json.payment_type)
-                              : null,
-                        })}
-                      </td>
-                      <td data-testid="booking-payment-amount" className="px-3 py-2 text-[var(--ccr-text)]">
-                        {formatJmd(payment.deposit_amount_cents)}
-                      </td>
-                      <td className="px-3 py-2 text-[var(--ccr-muted)]">
-                        <TableDateTime value={payment.created_at} />
-                      </td>
-                      <td className="px-3 py-2">
-                        <PaymentRowActions
-                          paymentId={payment.id}
-                          provider={payment.provider}
-                          status={payment.status}
-                          amount={Number(payment.deposit_amount_cents ?? 0)}
-                          deletedAt={payment.deleted_at}
-                          isRefunded={refundedOriginalIds.has(payment.id)}
-                          canAdmin={canAdmin}
-                          requireRestoreReason={requireRestoreReason}
-                        />
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      <section className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm">
-        <h2 className="text-lg font-bold text-[var(--ccr-text)]">Admin Notes</h2>
-        <BookingNotes bookingId={booking.id} notes={notes} />
-      </section>
+        <BookingIncidentsCard incidents={bookingIncidents} />
+      </AdminBookingDetailClient>
 
       <section className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm">
         <h2 className="text-lg font-bold text-[var(--ccr-text)]">Override info</h2>

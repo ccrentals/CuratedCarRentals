@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requireAdminAccess } from "@/lib/auth/adminGuards";
-import { isAdminRole } from "@/lib/auth/roles";
+import { isAdminRole, isDeveloperRole } from "@/lib/auth/roles";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery, getDbPool } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
@@ -11,17 +11,26 @@ import {
   readBookingOverrideInfo,
 } from "@/lib/bookings/holds";
 import {
+  buildAdminBookingDateTimeLabel,
+  buildAdminBookingDetailView,
+  buildAdminBookingNotes,
+  type AdminBookingNote,
+  type AdminBookingPaymentRow,
+} from "@/lib/bookings/adminBookingDetailView";
+import {
   appendBookingLocationNote,
   readBookingLocationDetails,
 } from "@/lib/bookings/bookingLocations";
-import { listActiveBookingLocationConfigs } from "@/lib/bookings/bookingLocationConfigStore";
+import {
+  listActiveBookingLocationConfigs,
+  toBookingLocationConfigSchemaError,
+} from "@/lib/bookings/bookingLocationConfigStore";
 import {
   buildBookingLocationSelectionPayload,
   normalizeBookingLocationFieldValuesInput,
   validateBookingLocationSelection,
 } from "@/lib/bookings/locationConfigRuntime";
 import { hasCompletedBookingVehicleInspection } from "@/lib/bookings/vehicleInspection";
-import { isVehicleUnavailableEntitlementBased } from "@/lib/availability/entitlement";
 import {
   syncPromoRedemptionStateForBooking,
   validatePromoForBooking,
@@ -30,9 +39,12 @@ import {
   computeBookingPricing,
   computeBookingPricingFromStoredSnapshot,
   fetchNetPaidToDate,
+  isNonBlockingBookingHold,
   readPaymentOption,
   readPromoPricingFields,
 } from "@/lib/payments/pricing";
+import { formatBookingStatusLabel } from "@/lib/bookings/formatBookingStatusLabel";
+import { isEntitledBooking, isVehicleUnavailableEntitlementBased } from "@/lib/availability/entitlement";
 import { requireCsrf } from "@/lib/security/csrf";
 
 function isUndefinedColumn(error: unknown, column: string) {
@@ -609,6 +621,82 @@ export async function PATCH(
     return NextResponse.json({ ok: true });
   }
 
+  if (action === "hard_delete") {
+    if (!isDeveloperRole(session.role)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    const reason = typeof body?.reason === "string" ? body.reason.trim() : "";
+    if (!reason) {
+      return NextResponse.json({ error: "Reason is required" }, { status: 400 });
+    }
+
+    const pool = getDbPool();
+    const client = await pool.connect();
+
+    try {
+      await client.query("begin");
+
+      const bookingResult = (await client.query(
+        "select id, public_id, status, archived_at from bookings where id = $1 for update",
+        [id],
+      )) as {
+        rows: Array<{
+          id: string;
+          public_id: string | null;
+          status: string;
+          archived_at: string | null;
+        }>;
+        rowCount: number;
+      };
+
+      if (bookingResult.rowCount === 0) {
+        await client.query("rollback");
+        return NextResponse.json({ error: "Booking not found" }, { status: 404 });
+      }
+
+      const booking = bookingResult.rows[0];
+      if (!booking.archived_at) {
+        await client.query("rollback");
+        return NextResponse.json(
+          { error: "Only archived bookings can be hard deleted" },
+          { status: 400 },
+        );
+      }
+
+      await client.query(
+        "delete from notification_dispatch_log where entity_type = 'booking' and entity_id = $1",
+        [id],
+      );
+      await client.query(
+        "delete from audit_logs where entity_type = 'booking' and entity_id = $1",
+        [id],
+      );
+      await client.query("delete from bookings where id = $1", [id]);
+
+      await client.query("commit");
+
+      await writeAuditLog({
+        userId: session.userId,
+        action: "BOOKING_HARD_DELETED",
+        entityType: "booking",
+        entityId: id,
+        details: {
+          public_id: booking.public_id,
+          previous_status: booking.status,
+          reason,
+        },
+      });
+
+      return NextResponse.json({ ok: true });
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   if (action === "update_details") {
     const startDate = normalizeDateInput(body?.startDate);
     const endDate = normalizeDateInput(body?.endDate);
@@ -670,7 +758,7 @@ export async function PATCH(
       await client.query("begin");
 
       const bookingResult = await client.query(
-        "select b.id, b.customer_id, b.vehicle_id, b.status, b.start_date, b.end_date, b.pickup_time::text as pickup_time, b.dropoff_time::text as dropoff_time, b.pickup_location, b.dropoff_location, b.pickup_location_id, b.dropoff_location_id, b.pickup_location_text_snapshot, b.dropoff_location_text_snapshot, b.pricing_json, v.daily_rate_cents, v.deposit_cents, c.full_name as customer_name, c.email as customer_email, c.phone as customer_phone from bookings b join vehicles v on v.id = b.vehicle_id join customers c on c.id = b.customer_id where b.id = $1 for update",
+        "select b.id, b.public_id, b.customer_id, b.vehicle_id, b.status, b.start_date, b.end_date, b.start_at, b.end_at, b.pickup_time::text as pickup_time, b.dropoff_time::text as dropoff_time, b.pickup_location, b.dropoff_location, b.pickup_location_id, b.dropoff_location_id, b.pickup_location_text_snapshot, b.dropoff_location_text_snapshot, b.pricing_json, b.drivers_license_number, v.make as vehicle_make, v.model as vehicle_model, v.year as vehicle_year, v.daily_rate_cents, v.deposit_cents, c.full_name as customer_name, c.email as customer_email, c.phone as customer_phone, c.legal_id_number as customer_legal_id_number from bookings b join vehicles v on v.id = b.vehicle_id join customers c on c.id = b.customer_id where b.id = $1 for update",
         [id],
       );
 
@@ -681,11 +769,14 @@ export async function PATCH(
 
       const booking = bookingResult.rows[0] as {
         id: string;
+        public_id: string | null;
         customer_id: string;
         vehicle_id: string;
         status: string;
         start_date: string;
         end_date: string;
+        start_at: string | null;
+        end_at: string | null;
         pickup_time: string | null;
         dropoff_time: string | null;
         pickup_location: string;
@@ -695,11 +786,16 @@ export async function PATCH(
         pickup_location_text_snapshot: string | null;
         dropoff_location_text_snapshot: string | null;
         pricing_json: Record<string, unknown> | null;
+        drivers_license_number: string | null;
+        vehicle_make: string;
+        vehicle_model: string;
+        vehicle_year: number;
         daily_rate_cents: number;
         deposit_cents: number;
         customer_name: string;
         customer_email: string;
         customer_phone: string;
+        customer_legal_id_number: string | null;
       };
       if (["RETURNED", "CANCELLED"].includes(booking.status)) {
         await client.query("rollback");
@@ -891,6 +987,39 @@ export async function PATCH(
         source: "admin_booking_update_details",
       });
 
+      let privateDocs: { rows: Array<{ document_type: string }>; rowCount: number } = {
+        rows: [],
+        rowCount: 0,
+      };
+      try {
+        privateDocs = (await client.query(
+          "select distinct document_type from booking_private_files where booking_id = $1",
+          [booking.id],
+        )) as { rows: Array<{ document_type: string }>; rowCount: number };
+      } catch (privateDocsError) {
+        const code = (privateDocsError as { code?: string } | null)?.code;
+        if (!(code === "42P01" || isUndefinedColumn(privateDocsError, "booking_private_files"))) {
+          throw privateDocsError;
+        }
+      }
+
+      let paymentsResult;
+      try {
+        paymentsResult = await client.query(
+          "select id, public_id, provider, status, deposit_amount_cents, currency, created_at, metadata_json, deleted_at, deleted_reason from payments where booking_id = $1 order by created_at desc",
+          [booking.id],
+        );
+      } catch (paymentsError) {
+        if (isUndefinedColumn(paymentsError, "deleted_at") || isUndefinedColumn(paymentsError, "public_id")) {
+          paymentsResult = await client.query(
+            "select id, id as public_id, provider, status, deposit_amount_cents, currency, created_at, metadata_json from payments where booking_id = $1 order by created_at desc",
+            [booking.id],
+          );
+        } else {
+          throw paymentsError;
+        }
+      }
+
       await client.query("commit");
 
       await writeAuditLog({
@@ -927,12 +1056,145 @@ export async function PATCH(
         },
       });
 
+      const payments = paymentsResult.rows as AdminBookingPaymentRow[];
+      const hasDriversLicenseDoc = privateDocs.rows.some(
+        (row) => row.document_type === "DRIVERS_LICENSE",
+      );
+      const hasSignatureDoc = privateDocs.rows.some((row) => row.document_type === "SIGNATURE");
+      const nextDisplayStatus = formatBookingStatusLabel(
+        booking.status,
+        pricingSummary.paymentStatus,
+      ).toUpperCase();
+      const nextEntitlementState = isEntitledBooking({
+        status: booking.status,
+        paymentStatus: pricingSummary.paymentStatus,
+        paidToDate: pricingSummary.netPaidToDate,
+        depositRequired: pricingSummary.depositRequired,
+      })
+        ? "ENTITLED"
+        : "TENTATIVE";
+      const nextPickupDateTimeLabel = buildAdminBookingDateTimeLabel({
+        date: startDate,
+        time: pickupTime,
+        at: startAtIso,
+      });
+      const nextDropoffDateTimeLabel = buildAdminBookingDateTimeLabel({
+        date: endDate,
+        time: dropoffTime,
+        at: endAtIso,
+      });
+      const nextDepositDue = Math.max(
+        0,
+        Math.max(0, pricingSummary.deposit) - Math.max(0, pricingSummary.netPaidToDate),
+      );
+      const nextIsPaidInFull = pricingSummary.paymentStatus === "PAID_IN_FULL";
+      const nextIsDepositPaid =
+        pricingSummary.deposit > 0
+          ? pricingSummary.netPaidToDate >= pricingSummary.deposit
+          : pricingSummary.netPaidToDate > 0;
+      const nextOverrideInfo = readBookingOverrideInfo(nextPricing);
+      const nextIsNonBlocking =
+        isNonBlockingBookingHold({
+          paymentStatus: pricingSummary.paymentStatus,
+          amountPaid: pricingSummary.netPaidToDate,
+          holdMinimumAmount: pricingSummary.deposit,
+        }) && !["CANCELLED", "RETURNED"].includes(booking.status.toUpperCase());
+      const nextNotes = buildAdminBookingNotes(
+        Array.isArray((nextPricing as { admin_notes?: AdminBookingNote[] }).admin_notes)
+          ? [...((nextPricing as { admin_notes: AdminBookingNote[] }).admin_notes as AdminBookingNote[])]
+          : [],
+        payments,
+      );
+      const nextCustomPaymentAmount = Number(
+        (nextPricing as Record<string, unknown>).custom_payment_amount_cents ?? 0,
+      );
+      const nextInsurancePricePerDay = Number(
+        (nextPricing as Record<string, unknown>).insurance_price_per_day_cents ?? 0,
+      );
+      const nextInsuranceTotal = Number(
+        (nextPricing as Record<string, unknown>).insurance_total_cents ?? 0,
+      );
+      const bookingPublicId = String(booking.public_id ?? "").trim() || booking.id;
+      const vehicleLabel = `${booking.vehicle_year} ${booking.vehicle_make} ${booking.vehicle_model}`.trim();
+      const bookingDetail = buildAdminBookingDetailView({
+        versionKey: `${booking.id}:${Date.now()}`,
+        bookingId: booking.id,
+        bookingPublicId,
+        bookingStatus: booking.status,
+        displayStatus: nextDisplayStatus,
+        isNonBlocking: nextIsNonBlocking,
+        isOverridden: nextOverrideInfo.isOverridden,
+        isPaidInFull: nextIsPaidInFull,
+        isDepositPaid: nextIsDepositPaid,
+        vehicleId: booking.vehicle_id,
+        vehicleLabel,
+        initialPromoCode: pricingSummary.promoCode,
+        initialInsuranceSelected: pricingSummary.insuranceSelected,
+        entitlement: nextEntitlementState,
+        paymentOptionLabel: pricingSummary.paymentOption.replace(/_/g, " "),
+        customPaymentAmountCents:
+          pricingSummary.paymentOption === "CUSTOM" ? nextCustomPaymentAmount : null,
+        cancellationReason: nextOverrideInfo.isOverridden
+          ? nextOverrideInfo.overrideReason || "LOST_TO_FIRST_DEPOSIT"
+          : null,
+        pickupDateTimeLabel: nextPickupDateTimeLabel,
+        dropoffDateTimeLabel: nextDropoffDateTimeLabel,
+        pickupLocationSnapshot: locationSelection.pickupLocationTextSnapshot,
+        dropoffLocationSnapshot: locationSelection.dropoffLocationTextSnapshot,
+        bookingLocationDetails: nextLocationDetails,
+        customerName,
+        customerEmail,
+        customerPhone,
+        driversLicenseNumber:
+          booking.drivers_license_number || booking.customer_legal_id_number,
+        hasDriversLicenseDoc,
+        hasSignatureDoc,
+        days: pricingSummary.days,
+        paidToDate: pricingSummary.netPaidToDate,
+        totalBeforePromo: pricingSummary.subtotal,
+        total: pricingSummary.total,
+        insuranceSelected: pricingSummary.insuranceSelected,
+        paymentOption: pricingSummary.paymentOption,
+        paymentStatus: pricingSummary.paymentStatus,
+        dailyRate: pricingSummary.dailyRate,
+        insurancePricePerDay: nextInsurancePricePerDay,
+        insuranceTotal: nextInsuranceTotal,
+        promoCode: pricingSummary.promoCode,
+        promoTotal: Math.max(0, pricingSummary.promoDiscount),
+        depositDue: nextDepositDue,
+        balanceDue: pricingSummary.balanceDue,
+        refundRequired: pricingSummary.refundRequired,
+        notes: nextNotes,
+        form: {
+          startDate,
+          endDate,
+          pickupTime,
+          dropoffTime,
+          customerName,
+          customerEmail,
+          customerPhone,
+          pickupLocationTypeKey: nextLocationDetails.pickup.typeKey,
+          dropoffLocationTypeKey: nextLocationDetails.dropoff.typeKey,
+          pickupLocationValues: nextLocationDetails.pickup.values,
+          dropoffLocationValues: nextLocationDetails.dropoff.values,
+          disabled: ["RETURNED", "CANCELLED"].includes(booking.status.toUpperCase()),
+        },
+      });
+
       return NextResponse.json({
         ok: true,
         message: "Booking updated and repriced successfully.",
+        bookingDetail,
       });
-    } catch {
+    } catch (error) {
       await client.query("rollback");
+      const schemaError = toBookingLocationConfigSchemaError(error);
+      if (schemaError) {
+        return NextResponse.json(
+          { error: schemaError.message, code: schemaError.code },
+          { status: schemaError.status },
+        );
+      }
       return NextResponse.json({ error: "Failed to update booking details" }, { status: 500 });
     } finally {
       client.release();

@@ -13,6 +13,7 @@ export default function ContactPage() {
   const startedAtRef = useRef<number>(Date.now());
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [message, setMessage] = useState("");
   const [company, setCompany] = useState("");
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
@@ -47,7 +48,7 @@ export default function ContactPage() {
         body: JSON.stringify({
           name,
           email,
-          message,
+          message: phone ? `${message}\n\nPhone Number: ${phone}` : message,
           company,
           startedAt: startedAtRef.current,
           source: "contact_page",
@@ -73,6 +74,7 @@ export default function ContactPage() {
       setSuccess("Message sent successfully. We’ll be in touch shortly.");
       setName("");
       setEmail("");
+      setPhone("");
       setMessage("");
       setCompany("");
       setTurnstileToken(null);
@@ -121,14 +123,14 @@ export default function ContactPage() {
         </div>
       </PublicPageIntro>
 
-      <PublicSection className="pt-12 md:pt-16">
+      <PublicSection className="bg-white pt-12 md:pt-16">
         <div className="grid gap-8 lg:grid-cols-[0.92fr_1.08fr] lg:items-start">
           <div className="space-y-5">
             <article className="rounded-[1.9rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-[0_18px_56px_rgba(15,23,42,0.07)]">
               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--ccr-accent-strong)]">
                 Contact Details
               </p>
-              <div className="mt-5 space-y-4 text-sm leading-7 text-[var(--ccr-muted)]">
+              <div className="mt-5 space-y-4 text-sm leading-7 text-[var(--ccr-text)]">
                 <div>
                   <p className="font-semibold text-[var(--ccr-text)]">Call or WhatsApp</p>
                   <div className="mt-2 space-y-1">
@@ -169,7 +171,7 @@ export default function ContactPage() {
               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--ccr-accent-strong)]">
                 Before You Send
               </p>
-              <div className="mt-4 space-y-4 text-sm leading-7 text-[var(--ccr-muted)]">
+              <div className="mt-4 space-y-4 text-sm leading-7 text-[var(--ccr-text)]">
                 <p>
                   Share your travel dates, pickup area, and the type of vehicle you are considering
                   so our team can guide you quickly.
@@ -233,6 +235,17 @@ export default function ContactPage() {
                   />
                 </label>
               </div>
+
+              <label className="block text-sm text-[var(--ccr-muted)]">
+                Phone Number
+                <input
+                  type="tel"
+                  value={phone}
+                  onChange={(event) => setPhone(event.target.value)}
+                  autoComplete="tel"
+                  className="mt-2 w-full rounded-[1.1rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-4 py-3 text-[var(--ccr-text)] shadow-sm outline-none ring-[var(--ccr-accent)] transition focus:ring-2"
+                />
+              </label>
 
               <label className="block text-sm text-[var(--ccr-muted)]">
                 Message

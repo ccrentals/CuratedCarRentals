@@ -149,10 +149,10 @@ export function HomeContactSection() {
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--ccr-accent-strong)]">
               Get In Touch
             </p>
-            <h2 className="mt-4 font-display text-4xl font-bold text-[var(--ccr-text)] md:text-5xl">
+            <h2 className="mt-4 font-display text-4xl font-bold text-[var(--ccr-light-surface-text)] md:text-5xl">
               {siteContent.contactHeading}
             </h2>
-            <p className="mt-4 text-lg leading-8 text-[var(--ccr-muted)]">
+            <p className="mt-4 text-lg leading-8 text-[var(--ccr-light-surface-muted)]">
               {siteContent.contactDescription}
             </p>
 
@@ -170,7 +170,7 @@ export function HomeContactSection() {
               </label>
 
               <div className="grid gap-6 sm:grid-cols-2">
-                <label className="block text-sm font-medium text-[var(--ccr-text)]">
+                <label className="block text-sm font-medium text-[var(--ccr-light-surface-text)]">
                   First Name *
                   <input
                     type="text"
@@ -182,7 +182,7 @@ export function HomeContactSection() {
                   />
                 </label>
 
-                <label className="block text-sm font-medium text-[var(--ccr-text)]">
+                <label className="block text-sm font-medium text-[var(--ccr-light-surface-text)]">
                   Last Name *
                   <input
                     type="text"
@@ -195,7 +195,7 @@ export function HomeContactSection() {
                 </label>
               </div>
 
-              <label className="block text-sm font-medium text-[var(--ccr-text)]">
+              <label className="block text-sm font-medium text-[var(--ccr-light-surface-text)]">
                 Email Address *
                 <input
                   type="email"
@@ -207,7 +207,7 @@ export function HomeContactSection() {
                 />
               </label>
 
-              <label className="block text-sm font-medium text-[var(--ccr-text)]">
+              <label className="block text-sm font-medium text-[var(--ccr-light-surface-text)]">
                 Phone Number
                 <input
                   type="tel"
@@ -218,7 +218,7 @@ export function HomeContactSection() {
                 />
               </label>
 
-              <label className="block text-sm font-medium text-[var(--ccr-text)]">
+              <label className="block text-sm font-medium text-[var(--ccr-light-surface-text)]">
                 Your Message *
                 <textarea
                   value={message}

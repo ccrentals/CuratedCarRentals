@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { handlePublicLocationsGet } from "@/app/api/public/locations/route";
+import { getBookingLocationConfigMigrationMessage } from "@/lib/bookings/bookingLocationConfigStore";
 
 test("public locations API returns the exact phase-1 location set", async () => {
   const response = await handlePublicLocationsGet({
@@ -55,4 +56,21 @@ test("public locations API returns the exact phase-1 location set", async () => 
       },
     ],
   );
+});
+
+test("public locations API returns a migration-required error when phase-2 booking location columns are missing", async () => {
+  const response = await handlePublicLocationsGet({
+    listLocations: async () => {
+      const error = new Error('column "display_label_pickup" does not exist') as Error & {
+        code?: string;
+      };
+      error.code = "42703";
+      throw error;
+    },
+  });
+
+  assert.equal(response.status, 503);
+  const payload = (await response.json()) as { error: string; code: string };
+  assert.equal(payload.error, getBookingLocationConfigMigrationMessage());
+  assert.equal(payload.code, "BOOKING_LOCATION_CONFIG_MIGRATION_REQUIRED");
 });

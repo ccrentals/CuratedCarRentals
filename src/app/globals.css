@@ -63,6 +63,13 @@
   --ccr-status-accent-bg: #f7efdc;
   --ccr-status-accent-border: #cfa86b;
   --ccr-status-accent-text: #6b4900;
+  --ccr-home-booking-section-bg: rgba(238, 242, 251, 0.55);
+  --ccr-home-booking-text: var(--ccr-text);
+  --ccr-home-booking-muted: var(--ccr-muted);
+  --ccr-home-booking-card-bg: var(--ccr-surface);
+  --ccr-home-booking-card-border: var(--ccr-border);
+  --ccr-light-surface-text: var(--ccr-text);
+  --ccr-light-surface-muted: var(--ccr-muted);
   --background: var(--ccr-bg);
   --foreground: var(--ccr-text);
 }
@@ -128,6 +135,13 @@
   --ccr-status-accent-bg: #4a3a14;
   --ccr-status-accent-border: #b98e3f;
   --ccr-status-accent-text: #ffe3b2;
+  --ccr-home-booking-section-bg: #f7f3ea;
+  --ccr-home-booking-text: #1f2d4d;
+  --ccr-home-booking-muted: #5e6e8d;
+  --ccr-home-booking-card-bg: #fffaf2;
+  --ccr-home-booking-card-border: #dcc9aa;
+  --ccr-light-surface-text: #1a2741;
+  --ccr-light-surface-muted: #4f6386;
   --background: var(--ccr-bg);
   --foreground: var(--ccr-text);
 }
@@ -193,6 +207,13 @@
   --ccr-status-accent-bg: #453511;
   --ccr-status-accent-border: #ae8537;
   --ccr-status-accent-text: #ffe4b4;
+  --ccr-home-booking-section-bg: #f9f4ec;
+  --ccr-home-booking-text: #1f2d4d;
+  --ccr-home-booking-muted: #5e6e8d;
+  --ccr-home-booking-card-bg: #fffaf2;
+  --ccr-home-booking-card-border: #d9c6a6;
+  --ccr-light-surface-text: #1d2b46;
+  --ccr-light-surface-muted: #526887;
   --background: var(--ccr-bg);
   --foreground: var(--ccr-text);
 }
@@ -258,6 +279,13 @@
   --ccr-status-accent-bg: #56431a;
   --ccr-status-accent-border: #c39a56;
   --ccr-status-accent-text: #ffe8c3;
+  --ccr-home-booking-section-bg: #edf4fb;
+  --ccr-home-booking-text: #1f3554;
+  --ccr-home-booking-muted: #5c7290;
+  --ccr-home-booking-card-bg: #fdfefe;
+  --ccr-home-booking-card-border: #cdd8e8;
+  --ccr-light-surface-text: #17324f;
+  --ccr-light-surface-muted: #4f6888;
   --background: var(--ccr-bg);
   --foreground: var(--ccr-text);
 }
@@ -323,6 +351,13 @@
   --ccr-status-accent-bg: #f4e8cf;
   --ccr-status-accent-border: #caa66a;
   --ccr-status-accent-text: #664300;
+  --ccr-home-booking-section-bg: #fffaf0;
+  --ccr-home-booking-text: #2c2216;
+  --ccr-home-booking-muted: #746048;
+  --ccr-home-booking-card-bg: #fffdf8;
+  --ccr-home-booking-card-border: #ddccb7;
+  --ccr-light-surface-text: #2b2218;
+  --ccr-light-surface-muted: #66523c;
   --background: var(--ccr-bg);
   --foreground: var(--ccr-text);
 }
@@ -388,6 +423,13 @@
   --ccr-status-accent-bg: #523f17;
   --ccr-status-accent-border: #be9550;
   --ccr-status-accent-text: #ffe9c2;
+  --ccr-home-booking-section-bg: #eef5ef;
+  --ccr-home-booking-text: #203126;
+  --ccr-home-booking-muted: #5a7264;
+  --ccr-home-booking-card-bg: #fbfdfb;
+  --ccr-home-booking-card-border: #c9d9cf;
+  --ccr-light-surface-text: #1a2c21;
+  --ccr-light-surface-muted: #526b5e;
   --background: var(--ccr-bg);
   --foreground: var(--ccr-text);
 }

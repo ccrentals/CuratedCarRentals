@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { dbQuery } from "@/lib/db";
 import { buildBookingLocationConfigs } from "@/lib/bookings/bookingLocations";
+import { toBookingLocationConfigSchemaError } from "@/lib/bookings/bookingLocationConfigStore";
 import { logError } from "@/lib/log";
 
 type BookingLocationRow = {
@@ -75,6 +76,13 @@ export async function handlePublicLocationsGet(
     }));
     return NextResponse.json({ locations });
   } catch (error) {
+    const schemaError = toBookingLocationConfigSchemaError(error);
+    if (schemaError) {
+      return NextResponse.json(
+        { error: schemaError.message, code: schemaError.code },
+        { status: schemaError.status },
+      );
+    }
     logError("api.public.locations.GET", error);
     return NextResponse.json({ error: "Failed to load locations." }, { status: 500 });
   }

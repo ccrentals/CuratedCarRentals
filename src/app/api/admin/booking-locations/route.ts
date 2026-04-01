@@ -5,6 +5,7 @@ import {
   buildBookingLocationConfigs,
   createCanonicalBookingLocationSeedConfigs,
 } from "@/lib/bookings/bookingLocations";
+import { toBookingLocationConfigSchemaError } from "@/lib/bookings/bookingLocationConfigStore";
 import { dbQuery, getDbPool } from "@/lib/db";
 import { logError } from "@/lib/log";
 import { requireCsrf } from "@/lib/security/csrf";
@@ -191,6 +192,13 @@ export async function GET() {
       locations: result.rows.map((row: BookingLocationRow) => serializeLocation(row)),
     });
   } catch (error) {
+    const schemaError = toBookingLocationConfigSchemaError(error);
+    if (schemaError) {
+      return NextResponse.json(
+        { error: schemaError.message, code: schemaError.code },
+        { status: schemaError.status },
+      );
+    }
     logError("api.admin.booking-locations.GET", error, { userId: actor.userId });
     return NextResponse.json({ error: "Failed to load booking locations." }, { status: 500 });
   }
@@ -394,6 +402,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, location: serializeLocation(saved) });
   } catch (error) {
     await client.query("rollback");
+    const schemaError = toBookingLocationConfigSchemaError(error);
+    if (schemaError) {
+      return NextResponse.json(
+        { error: schemaError.message, code: schemaError.code },
+        { status: schemaError.status },
+      );
+    }
     logError("api.admin.booking-locations.POST", error, { userId: actor.userId });
     return NextResponse.json({ error: "Failed to save booking location." }, { status: 500 });
   } finally {
@@ -426,6 +441,13 @@ export async function DELETE(request: Request) {
     }
     return NextResponse.json({ ok: true });
   } catch (error) {
+    const schemaError = toBookingLocationConfigSchemaError(error);
+    if (schemaError) {
+      return NextResponse.json(
+        { error: schemaError.message, code: schemaError.code },
+        { status: schemaError.status },
+      );
+    }
     logError("api.admin.booking-locations.DELETE", error, { userId: actor.userId, locationId: id });
     return NextResponse.json({ error: "Failed to deactivate booking location." }, { status: 500 });
   }

@@ -170,7 +170,7 @@ export function HomeFeaturedCollection({
       <div className="mt-8 flex justify-center">
         <Link
           href="/fleet"
-          className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--ccr-text)] transition hover:text-[var(--ccr-accent-strong)]"
+          className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--ccr-light-surface-text)] transition hover:text-[var(--ccr-accent-strong)]"
         >
           View our entire fleet
           <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -180,7 +180,7 @@ export function HomeFeaturedCollection({
         </Link>
       </div>
 
-      <p className="mt-4 text-center text-sm text-[var(--ccr-muted)]">
+      <p className="mt-4 text-center text-sm text-[var(--ccr-light-surface-muted)]">
         Showing {collectionVehicles.length} of {vehicleCount} published vehicles.
       </p>
     </PublicSection>

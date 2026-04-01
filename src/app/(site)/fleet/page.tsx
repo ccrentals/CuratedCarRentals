@@ -11,7 +11,7 @@ export default async function FleetPage() {
 
   return (
     <>
-      <section className="border-b border-[var(--ccr-border)] bg-[#f7e0b0] py-4 text-center">
+      <section className="border-b border-[var(--ccr-border)] bg-[#f7e0b0] py-4 text-center min-[1160px]:pt-28">
         <Container>
           <p className="text-sm font-medium text-[#4c3b16] md:text-base">
             Our Simple Pricing includes all fees and taxes - No Surprises!{" "}
@@ -20,7 +20,7 @@ export default async function FleetPage() {
         </Container>
       </section>
 
-      <section className="bg-[var(--ccr-surface-soft)]/65 py-14 md:py-20">
+      <section className="bg-[var(--ccr-surface-soft)]/65 py-14 md:py-20 min-[1160px]:pt-44">
         <Container>
           <Link
             href="/"
