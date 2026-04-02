@@ -36,7 +36,7 @@ export default async function HomePage() {
         </div>
 
         <Container className="relative flex min-h-[calc(100svh-5.5rem)] items-center py-16 md:py-20 min-[1160px]:pt-44 lg:min-h-[calc(100svh-6rem)]">
-          <div className="max-w-3xl">
+          <div className="max-w-3xl min-[1160px]:translate-y-4">
             <div className="inline-flex items-center rounded-full bg-[rgba(39,117,95,0.82)] px-4 py-2 text-sm font-medium text-white shadow-[0_18px_34px_rgba(0,0,0,0.18)] backdrop-blur-sm">
               <span className="mr-2">🌴</span> Kingston, Jamaica
             </div>

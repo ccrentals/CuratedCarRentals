@@ -8,12 +8,14 @@ export default function DrivingInJamaicaPage() {
     <>
       <section className="bg-[var(--ccr-surface-soft)]/65 py-14 md:py-20 min-[1160px]:pt-44">
         <Container>
-          <h1 className="font-display text-4xl font-bold text-[var(--ccr-text)] md:text-5xl">
-            Driving in Jamaica
-          </h1>
-          <p className="mt-4 max-w-3xl text-lg leading-8 text-[var(--ccr-muted)]">
-            Essential information for a safe and enjoyable driving experience on the island.
-          </p>
+          <div className="min-[1160px]:translate-y-4">
+            <h1 className="font-display text-4xl font-bold text-[var(--ccr-text)] md:text-5xl">
+              Driving in Jamaica
+            </h1>
+            <p className="mt-4 max-w-3xl text-lg leading-8 text-[var(--ccr-muted)]">
+              Essential information for a safe and enjoyable driving experience on the island.
+            </p>
+          </div>
         </Container>
       </section>
 

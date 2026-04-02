@@ -8,12 +8,14 @@ export default function ServicesPage() {
     <>
       <section className="bg-[var(--ccr-surface-soft)]/65 py-14 md:py-20 min-[1160px]:pt-44">
         <Container>
-          <h1 className="font-display text-4xl font-bold text-[var(--ccr-text)] md:text-5xl">
-            Our Services
-          </h1>
-          <p className="mt-4 max-w-3xl text-lg leading-8 text-[var(--ccr-muted)]">
-            At Curated Car Rentals, we offer more than just vehicles. Discover our premium services designed to make your Jamaican journey exceptional.
-          </p>
+          <div className="min-[1160px]:translate-y-4">
+            <h1 className="font-display text-4xl font-bold text-[var(--ccr-text)] md:text-5xl">
+              Our Services
+            </h1>
+            <p className="mt-4 max-w-3xl text-lg leading-8 text-[var(--ccr-muted)]">
+              At Curated Car Rentals, we offer more than just vehicles. Discover our premium services designed to make your Jamaican journey exceptional.
+            </p>
+          </div>
 
           <div className="mt-8 flex flex-wrap gap-3">
             {services.map((service) => (

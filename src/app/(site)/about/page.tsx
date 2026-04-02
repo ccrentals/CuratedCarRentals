@@ -9,20 +9,22 @@ export default function AboutPage() {
     <>
       <section className="bg-[var(--ccr-surface-soft)]/65 py-14 md:py-20 min-[1160px]:pt-44">
         <Container>
-          <Link
-            href="/"
-            className="inline-flex items-center gap-2 text-sm font-medium text-[var(--ccr-text)] transition hover:text-[var(--ccr-accent-strong)]"
-          >
-            <span aria-hidden="true">←</span>
-            <span>Back to home</span>
-          </Link>
+          <div className="min-[1160px]:translate-y-4">
+            <Link
+              href="/"
+              className="inline-flex items-center gap-2 text-sm font-medium text-[var(--ccr-text)] transition hover:text-[var(--ccr-accent-strong)]"
+            >
+              <span aria-hidden="true">←</span>
+              <span>Back to home</span>
+            </Link>
 
-          <h1 className="mt-5 font-display text-4xl font-bold text-[var(--ccr-text)] md:text-5xl">
-            About Us
-          </h1>
-          <p className="mt-4 max-w-2xl text-lg leading-8 text-[var(--ccr-muted)]">
-            {siteContent.aboutIntro}
-          </p>
+            <h1 className="mt-5 font-display text-4xl font-bold text-[var(--ccr-text)] md:text-5xl">
+              About Us
+            </h1>
+            <p className="mt-4 max-w-2xl text-lg leading-8 text-[var(--ccr-muted)]">
+              {siteContent.aboutIntro}
+            </p>
+          </div>
         </Container>
       </section>
 
