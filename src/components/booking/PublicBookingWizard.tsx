@@ -2860,14 +2860,14 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
 
   if (!hydrated) {
     return (
-      <div className="bg-[var(--ccr-bg)] pb-16" data-testid="booking-draft-loading">
+      <div className="bg-[var(--ccr-bg)] pb-12 sm:pb-16" data-testid="booking-draft-loading">
         {bookingIntro}
-        <Container className="-mt-8 md:-mt-12">
-          <div className="rounded-[2rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)]/95 p-8 shadow-[0_28px_90px_rgba(15,23,42,0.12)] backdrop-blur-sm">
+        <Container className="-mt-6 sm:-mt-8 md:-mt-12">
+          <div className="rounded-[1.7rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)]/95 p-6 shadow-[0_28px_90px_rgba(15,23,42,0.12)] backdrop-blur-sm sm:rounded-[2rem] sm:p-8">
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--ccr-accent-strong)]">
               Restoring draft
             </p>
-            <h1 className="mt-3 text-3xl font-semibold tracking-tight text-[var(--ccr-text)]">
+            <h1 className="mt-3 text-[1.95rem] font-semibold tracking-tight text-[var(--ccr-text)] sm:text-3xl">
               Loading your booking
             </h1>
             <p className="mt-4 max-w-2xl text-base leading-7 text-[var(--ccr-muted)]">
@@ -2880,17 +2880,17 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
   }
 
   return (
-    <div className="bg-[var(--ccr-bg)] pb-16" data-testid="booking-wizard-hydrated">
+    <div className="bg-[var(--ccr-bg)] pb-12 sm:pb-16" data-testid="booking-wizard-hydrated">
       {bookingIntro}
-      <Container className="-mt-8 md:-mt-12">
-        <div className="overflow-hidden rounded-[2rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)]/96 shadow-[0_32px_110px_rgba(15,23,42,0.14)] backdrop-blur-sm">
-          <div className="border-b border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)]/75 px-4 py-6 md:px-8">
+      <Container className="-mt-6 sm:-mt-8 md:-mt-12">
+        <div className="overflow-hidden rounded-[1.7rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)]/96 shadow-[0_32px_110px_rgba(15,23,42,0.14)] backdrop-blur-sm sm:rounded-[2rem]">
+          <div className="border-b border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)]/75 px-4 py-5 sm:py-6 md:px-8">
             <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
               <div className="max-w-2xl">
                 <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--ccr-accent-strong)]">
                   Guided reservation
                 </p>
-                <h2 className="mt-3 text-3xl font-semibold tracking-tight text-[var(--ccr-text)] md:text-4xl">
+                <h2 className="mt-3 text-[1.95rem] font-semibold tracking-tight text-[var(--ccr-text)] sm:text-3xl md:text-4xl">
                   Complete six steps before secure checkout.
                 </h2>
                 <p className="mt-4 text-base leading-7 text-[var(--ccr-muted)]">
@@ -2927,13 +2927,13 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
               </div>
             </div>
 
-            <ol className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
+            <ol className="mt-6 flex gap-3 overflow-x-auto pb-1 sm:grid sm:grid-cols-3 lg:grid-cols-7">
               {STEPS.map((item) => {
                 const isActive = item.step === step;
                 const isDone = item.step < step;
                 const isUnlocked = item.step <= maxStepCompleted;
                 return (
-                  <li key={item.step}>
+                  <li key={item.step} className="min-w-[9.5rem] shrink-0 sm:min-w-0">
                     <button
                       type="button"
                       onClick={() => jumpToStep(item.step)}
@@ -2956,7 +2956,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                   </li>
                 );
               })}
-              <li>
+              <li className="min-w-[9.5rem] shrink-0 sm:min-w-0">
                 <button
                   type="button"
                   onClick={() => {
@@ -2982,8 +2982,8 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
             </ol>
           </div>
 
-          <div className="grid gap-6 bg-[linear-gradient(180deg,rgba(148,163,184,0.06),transparent)] px-4 py-6 md:px-6 md:py-8 lg:grid-cols-[minmax(0,1fr)_22rem] xl:grid-cols-[minmax(0,1fr)_24rem]">
-            <div className="rounded-[1.75rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)]/96 px-4 py-6 shadow-[0_18px_56px_rgba(15,23,42,0.08)] md:px-6 md:py-7">
+          <div className="grid gap-6 bg-[linear-gradient(180deg,rgba(148,163,184,0.06),transparent)] px-4 py-5 md:px-6 md:py-8 lg:grid-cols-[minmax(0,1fr)_22rem] xl:grid-cols-[minmax(0,1fr)_24rem]">
+            <div className="rounded-[1.5rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)]/96 px-4 py-5 shadow-[0_18px_56px_rgba(15,23,42,0.08)] sm:rounded-[1.75rem] md:px-6 md:py-7">
               <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-[var(--ccr-border)] pb-5">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--ccr-accent-strong)]">
@@ -3259,18 +3259,18 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
 
                   <div className="mt-4 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
                     <p className="text-sm font-semibold text-[var(--ccr-text)]">Coupon Code</p>
-                    <div className="mt-2 flex flex-wrap gap-2">
+                    <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
                       <input
                         value={couponCode}
                         onChange={(event) => setCouponCode(event.target.value.toUpperCase())}
                         placeholder="Enter coupon code"
-                        className="min-w-[220px] flex-1 rounded-xl border border-[var(--ccr-border)] px-3 py-2 text-sm"
+                        className="min-w-0 w-full flex-1 rounded-xl border border-[var(--ccr-border)] px-3 py-2 text-sm sm:min-w-[220px]"
                       />
                       <button
                         type="button"
                         onClick={applyCoupon}
                         disabled={couponBusy}
-                        className="rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-sm font-semibold text-[var(--ccr-on-primary)] disabled:opacity-60"
+                        className="w-full rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-sm font-semibold text-[var(--ccr-on-primary)] disabled:opacity-60 sm:w-auto"
                       >
                         {couponBusy ? "Applying..." : "Apply"}
                       </button>
@@ -3278,7 +3278,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                         <button
                           type="button"
                           onClick={clearCoupon}
-                          className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)]"
+                          className="w-full rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] sm:w-auto"
                         >
                           Remove
                         </button>
@@ -3311,7 +3311,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                         setReturningTurnstileResetKey((value) => value + 1);
                         setShowReturningCustomerModal(true);
                       }}
-                      className="rounded-xl border border-[var(--ccr-accent)] bg-[var(--ccr-accent)]/10 px-4 py-2 text-sm font-semibold text-[var(--ccr-text)]"
+                      className="w-full rounded-xl border border-[var(--ccr-accent)] bg-[var(--ccr-accent)]/10 px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] sm:w-auto"
                     >
                       Returning Customer?
                     </button>
@@ -3441,12 +3441,12 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                         />
                       </label>
                     </div>
-                    <div className="mt-4 flex flex-wrap gap-2">
+                    <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
                       <button
                         type="button"
                         onClick={() => uploadInputRef.current?.click()}
                         disabled={driversLicenseUploading}
-                        className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] disabled:opacity-60"
+                        className="w-full rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] disabled:opacity-60 sm:w-auto"
                       >
                         {driversLicenseUploading ? "Uploading..." : "Upload from phone/computer"}
                       </button>
@@ -3454,7 +3454,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                         type="button"
                         onClick={() => cameraInputRef.current?.click()}
                         disabled={driversLicenseUploading}
-                        className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] disabled:opacity-60"
+                        className="w-full rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] disabled:opacity-60 sm:w-auto"
                       >
                         Take photo
                       </button>
@@ -3669,7 +3669,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                   ) : null}
 
                   <div
-                    className="mt-4 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3"
+                    className="mt-4 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3 sm:p-4"
                     data-testid="booking-security-check"
                   >
                     <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
@@ -3697,7 +3697,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                       type="button"
                       onClick={submitBooking}
                       disabled={continueToPaymentDisabled}
-                      className={bookingPrimaryButtonClassName}
+                      className={cn("w-full justify-center sm:w-auto", bookingPrimaryButtonClassName)}
                       data-testid="booking-continue-payment"
                     >
                       {submitting
@@ -3728,12 +3728,12 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                 </p>
               ) : null}
 
-              <div className="mt-8 flex flex-wrap items-center gap-3 border-t border-[var(--ccr-border)] pt-6">
+              <div className="mt-8 flex flex-col gap-3 border-t border-[var(--ccr-border)] pt-6 sm:flex-row sm:flex-wrap sm:items-center">
                 <button
                   type="button"
                   onClick={() => setShowStartOverConfirm(true)}
                   disabled={submitting}
-                  className={bookingResetButtonClassName}
+                  className={cn("w-full justify-center sm:w-auto", bookingResetButtonClassName)}
                   data-testid="booking-start-over"
                 >
                   Start over
@@ -3742,7 +3742,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                   type="button"
                   onClick={moveToPreviousStep}
                   disabled={step === 1 || submitting}
-                  className={bookingOutlineButtonClassName}
+                  className={cn("w-full justify-center sm:w-auto", bookingOutlineButtonClassName)}
                 >
                   Back
                 </button>
@@ -3751,7 +3751,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                     type="button"
                     onClick={() => void moveToNextStep()}
                     disabled={submitting}
-                    className={bookingPrimaryButtonClassName}
+                    className={cn("w-full justify-center sm:w-auto", bookingPrimaryButtonClassName)}
                   >
                     Next Step
                   </button>
@@ -3760,11 +3760,11 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
             </div>
 
             <aside className="lg:sticky lg:top-24 lg:self-start">
-              <div className="overflow-hidden rounded-[1.75rem] border border-[var(--ccr-border)] bg-[linear-gradient(160deg,var(--ccr-primary),rgba(15,23,42,0.96))] px-4 py-6 text-[var(--ccr-on-primary)] shadow-[0_28px_90px_rgba(15,23,42,0.2)] md:px-6">
+              <div className="overflow-hidden rounded-[1.5rem] border border-[var(--ccr-border)] bg-[linear-gradient(160deg,var(--ccr-primary),rgba(15,23,42,0.96))] px-4 py-5 text-[var(--ccr-on-primary)] shadow-[0_28px_90px_rgba(15,23,42,0.2)] sm:rounded-[1.75rem] md:px-6 md:py-6">
               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--ccr-accent)]">
                 Booking summary
               </p>
-              <h3 className="mt-3 text-2xl font-semibold tracking-tight">Review before checkout</h3>
+              <h3 className="mt-3 text-[1.65rem] font-semibold tracking-tight sm:text-2xl">Review before checkout</h3>
               <p className="mt-3 text-sm leading-6 text-[var(--ccr-on-primary-muted)]">
                 Use these controls to update your itinerary or change the vehicle before final payment.
               </p>

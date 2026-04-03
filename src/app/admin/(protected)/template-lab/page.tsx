@@ -1,5 +1,8 @@
-import { dbQuery } from "@/lib/db";
+import { notFound } from "next/navigation";
+
 import { loadBookingRentalAgreementPayload } from "@/lib/agreements/rentalAgreementPayload";
+import { resolveAdminActor } from "@/lib/auth/adminGuards";
+import { dbQuery } from "@/lib/db";
 import { getInvoiceProvider } from "@/lib/env";
 import { formatJmd } from "@/lib/money";
 import {
@@ -479,6 +482,11 @@ export default async function AdminTemplateLabPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  const access = await resolveAdminActor({ requirement: "developer" });
+  if (!access.ok) {
+    notFound();
+  }
+
   const query = await searchParams;
   const activeTemplate = resolveTemplate(query.template);
   const provider = getInvoiceProvider();
@@ -519,75 +527,73 @@ export default async function AdminTemplateLabPage({
 
       <div className="mt-6">
         <section className="rounded-3xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
-          <>
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-4 py-3">
-                <div>
-                  <p className="text-sm font-semibold text-[var(--ccr-text)]">
-                    {activeLabel} Template Preview
-                  </p>
-                  <p className="text-xs text-[var(--ccr-muted)]">
-                    Source {activePreview?.sourceLabel ?? "booking"}:{" "}
-                    {activePreview?.sourceId
-                      ? `${activePreview.sourcePublicId || activePreview.sourceId.slice(0, 8)} (${activePreview.sourceId.slice(0, 8)})`
-                      : "none"}
-                  </p>
-                </div>
-                <div className="text-right text-xs text-[var(--ccr-muted)]">
-                  <p>
-                    Provider:{" "}
-                    <span className="font-semibold text-[var(--ccr-text)]">{activeProviderLabel}</span>
-                  </p>
-                  <p>
-                    Total:{" "}
-                    <span className="font-semibold text-[var(--ccr-text)]">
-                      {formatJmd(activePreview?.total ?? 0)}
-                    </span>
-                  </p>
-                  <p>
-                    Paid:{" "}
-                    <span className="font-semibold text-[var(--ccr-text)]">
-                      {formatJmd(activePreview?.paidToDate ?? 0)}
-                    </span>
-                  </p>
-                  <p>
-                    Balance:{" "}
-                    <span className="font-semibold text-[var(--ccr-text)]">
-                      {formatJmd(activePreview?.balanceDue ?? 0)}
-                    </span>
-                  </p>
-                </div>
-              </div>
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-4 py-3">
+            <div>
+              <p className="text-sm font-semibold text-[var(--ccr-text)]">
+                {activeLabel} Template Preview
+              </p>
+              <p className="text-xs text-[var(--ccr-muted)]">
+                Source {activePreview?.sourceLabel ?? "booking"}:{" "}
+                {activePreview?.sourceId
+                  ? `${activePreview.sourcePublicId || activePreview.sourceId.slice(0, 8)} (${activePreview.sourceId.slice(0, 8)})`
+                  : "none"}
+              </p>
+            </div>
+            <div className="text-right text-xs text-[var(--ccr-muted)]">
+              <p>
+                Provider:{" "}
+                <span className="font-semibold text-[var(--ccr-text)]">{activeProviderLabel}</span>
+              </p>
+              <p>
+                Total:{" "}
+                <span className="font-semibold text-[var(--ccr-text)]">
+                  {formatJmd(activePreview?.total ?? 0)}
+                </span>
+              </p>
+              <p>
+                Paid:{" "}
+                <span className="font-semibold text-[var(--ccr-text)]">
+                  {formatJmd(activePreview?.paidToDate ?? 0)}
+                </span>
+              </p>
+              <p>
+                Balance:{" "}
+                <span className="font-semibold text-[var(--ccr-text)]">
+                  {formatJmd(activePreview?.balanceDue ?? 0)}
+                </span>
+              </p>
+            </div>
+          </div>
 
-              {activeTemplate === "agreement" ? (
-                <div className="mt-4 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
-                  Rental agreement preview remains pinned to <strong>gotenberg</strong>. Invoice and
-                  receipt preview use the configured invoice provider.
-                </div>
-              ) : null}
+          {activeTemplate === "agreement" ? (
+            <div className="mt-4 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+              Rental agreement preview remains pinned to <strong>gotenberg</strong>. Invoice and
+              receipt preview use the configured invoice provider.
+            </div>
+          ) : null}
 
-              {activePreview?.error ? (
-                <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
-                  {activePreview.error}
-                </div>
-              ) : null}
+          {activePreview?.error ? (
+            <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
+              {activePreview.error}
+            </div>
+          ) : null}
 
-              {activeTemplate === "quote" && activePreview?.sourceId ? (
-                <QuoteTemplatePreviewFrame
-                  quoteId={activePreview.sourceId}
-                  title={`${activeLabel} Template Preview`}
-                />
-              ) : activePreview?.pdfUrl ? (
-                <iframe
-                  title={`${activeLabel} Template Preview`}
-                  src={activePreview.pdfUrl}
-                  className="mt-4 h-[980px] w-full rounded-2xl border border-[var(--ccr-border)] bg-white"
-                />
-              ) : (
-                <div className="mt-4 rounded-2xl border border-dashed border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-4 py-5 text-sm text-[var(--ccr-muted)]">
-                  No {activeLabel.toLowerCase()} preview available yet.
-                </div>
-              )}
-          </>
+          {activeTemplate === "quote" && activePreview?.sourceId ? (
+            <QuoteTemplatePreviewFrame
+              quoteId={activePreview.sourceId}
+              title={`${activeLabel} Template Preview`}
+            />
+          ) : activePreview?.pdfUrl ? (
+            <iframe
+              title={`${activeLabel} Template Preview`}
+              src={activePreview.pdfUrl}
+              className="mt-4 h-[980px] w-full rounded-2xl border border-[var(--ccr-border)] bg-white"
+            />
+          ) : (
+            <div className="mt-4 rounded-2xl border border-dashed border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-4 py-5 text-sm text-[var(--ccr-muted)]">
+              No {activeLabel.toLowerCase()} preview available yet.
+            </div>
+          )}
         </section>
       </div>
     </div>

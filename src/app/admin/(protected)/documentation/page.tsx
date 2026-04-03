@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { isDeveloperRole } from "@/lib/auth/roles";
+import { notFound } from "next/navigation";
 
 import { DocumentationEditor } from "@/components/admin/DocumentationEditor";
 import { DocumentationSectionSearch } from "@/components/admin/DocumentationSectionSearch";
-import { getSessionFromRequest } from "@/lib/auth/session";
+import { resolveAdminActor } from "@/lib/auth/adminGuards";
 import { dbQuery } from "@/lib/db";
 import {
   buildDocumentationSearchEntries,
@@ -21,23 +21,11 @@ export default async function AdminDocumentationPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const session = await getSessionFromRequest();
-  const canDeveloper = isDeveloperRole(session?.role);
-  const params = await searchParams;
-
-  if (!canDeveloper) {
-    return (
-      <div className="mx-auto w-full max-w-5xl px-6 py-10">
-        <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
-          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Admin</p>
-          <h1 className="mt-2 text-2xl font-bold text-[var(--ccr-text)]">Documentation</h1>
-          <p className="mt-2 text-sm text-[var(--ccr-muted)]">
-            Only DEVELOPER users can view administration documentation.
-          </p>
-        </section>
-      </div>
-    );
+  const access = await resolveAdminActor({ requirement: "developer" });
+  if (!access.ok) {
+    notFound();
   }
+  const params = await searchParams;
 
   let doc: DocRow | null = null;
   let tableMissing = false;

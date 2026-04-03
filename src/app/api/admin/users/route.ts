@@ -78,11 +78,13 @@ type ClerkSyncResult =
   | {
       status: "skipped";
       clerkUserId: null;
+      finalUsername: null;
       message: string;
     }
   | {
       status: "created" | "linked_existing";
       clerkUserId: string;
+      finalUsername: string;
       message: string;
       localLinkSaved: boolean;
       localLinkWarning?: string;
@@ -90,6 +92,7 @@ type ClerkSyncResult =
   | {
       status: "failed";
       clerkUserId: null;
+      finalUsername: null;
       message: string;
     };
 
@@ -265,6 +268,7 @@ async function provisionClerkUserForAdminInvite({
     return {
       status: "skipped",
       clerkUserId: null,
+      finalUsername: null,
       message: "Clerk is not configured in this environment.",
     };
   }
@@ -381,6 +385,7 @@ async function provisionClerkUserForAdminInvite({
     return {
       status,
       clerkUserId,
+      finalUsername: finalClerkUsername,
       message:
         status === "created"
           ? "Clerk account created and linked."
@@ -397,6 +402,7 @@ async function provisionClerkUserForAdminInvite({
     return {
       status: "failed",
       clerkUserId: null,
+      finalUsername: null,
       message:
         "Local user created, but Clerk provisioning failed. Create/link this user in Clerk Dashboard and set users.clerk_user_id manually.",
     };
@@ -467,7 +473,7 @@ export async function POST(request: Request) {
   });
   if (!isNonEmptyString(baseUsername, 3)) {
     return NextResponse.json(
-      { error: "Invalid username. Use 3+ characters: letters, numbers, or underscore." },
+      { error: "Invalid username. Use 3+ characters: letters, numbers, underscore, or dash." },
       { status: 400 },
     );
   }
@@ -559,6 +565,27 @@ export async function POST(request: Request) {
       client,
     });
 
+    const returnedUsername =
+      clerkSync.status === "created" || clerkSync.status === "linked_existing"
+        ? clerkSync.finalUsername
+        : usernameFinal;
+
+    if (returnedUsername !== usernameFinal) {
+      try {
+        await client.query("update users set username = $2, updated_at = now() where id = $1", [
+          newUserId,
+          returnedUsername,
+        ]);
+      } catch (error) {
+        logWarn("api.admin.users.usernamePostProvisionSyncFailed", {
+          localUserId: newUserId,
+          localUsername: usernameFinal,
+          clerkUsername: returnedUsername,
+          code: (error as { code?: string } | null)?.code,
+        });
+      }
+    }
+
     await writeAuditLog({
       userId: actor.userId,
       action: "USER_CREATED",
@@ -567,7 +594,7 @@ export async function POST(request: Request) {
       details: {
         role,
         email: emailLower,
-        username: usernameFinal,
+        username: returnedUsername,
         clerkSyncStatus: clerkSync.status,
         clerkUserId: clerkSync.clerkUserId,
       },
@@ -577,7 +604,7 @@ export async function POST(request: Request) {
       buildAdminUserCreateSuccessPayload({
         userId: newUserId,
         userPublicId: newUserPublicId,
-        username: usernameFinal,
+        username: returnedUsername,
         tempPassword,
         tempPasswordExpiresAt: expiresAt.toISOString(),
         clerkSync,

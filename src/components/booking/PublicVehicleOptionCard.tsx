@@ -237,7 +237,7 @@ export function PublicVehicleOptionCard({
         onClick={canOpenGallery ? onImageClick : undefined}
         disabled={!canOpenGallery}
         className={cn(
-          "relative block h-52 w-full overflow-hidden bg-[var(--ccr-surface-soft)]",
+          "relative block h-48 w-full overflow-hidden bg-[var(--ccr-surface-soft)] sm:h-52",
           canOpenGallery ? "cursor-zoom-in" : "cursor-default",
         )}
         aria-label={canOpenGallery ? `Open ${vehicleName} image gallery` : undefined}
@@ -255,11 +255,11 @@ export function PublicVehicleOptionCard({
         ) : null}
       </button>
 
-      <div className="p-4">
-        <h3 className="text-2xl font-bold text-[var(--ccr-text)]">{vehicleName}</h3>
+      <div className="p-4 sm:p-5">
+        <h3 className="text-[1.55rem] font-bold text-[var(--ccr-text)] sm:text-2xl">{vehicleName}</h3>
         <p className="mt-1 text-sm text-[var(--ccr-muted)]">{subtitle || "Vehicle details"}</p>
 
-        <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2.5">
+        <div className="mt-4 grid grid-cols-2 gap-x-3 gap-y-2.5 sm:gap-x-4">
           {specs.map((item) => (
             <div key={`${vehicle.id}-${item.key}`} className="flex items-start gap-1.5">
               <span className="mt-0.5 text-[var(--ccr-muted)]/90">{item.icon}</span>
@@ -273,19 +273,19 @@ export function PublicVehicleOptionCard({
 
         {description ? <p className="mt-4 text-sm text-[var(--ccr-muted)]">{description}</p> : null}
 
-        <div className="mt-4 flex items-center justify-between gap-3">
-          <div>
+        <div className="mt-4 flex flex-col gap-3 min-[430px]:flex-row min-[430px]:items-center min-[430px]:justify-between">
+          <div className="min-w-0">
             <p className="text-sm font-semibold text-[var(--ccr-text)]">{formatMoney(vehicle.daily_rate_cents)} / Day</p>
             <p className="text-xs text-[var(--ccr-muted)]">{rentalDays} day total: {formatMoney(rentalTotal)}</p>
             <p className="text-xs text-[var(--ccr-muted)]">Deposit: {formatMoney(vehicle.deposit_cents)}</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex w-full gap-2 min-[430px]:w-auto">
             <button
               type="button"
               onClick={onSelect}
               disabled={loading}
               className={cn(
-                "rounded-lg border px-3 py-2 text-sm font-semibold",
+                "flex-1 rounded-lg border px-3 py-2 text-sm font-semibold min-[430px]:flex-none",
                 selected
                   ? "border-[var(--ccr-primary)] bg-[var(--ccr-primary)] text-[var(--ccr-on-primary)]"
                   : "border-[var(--ccr-border)] bg-[var(--ccr-surface)] text-[var(--ccr-text)]",
@@ -297,7 +297,7 @@ export function PublicVehicleOptionCard({
               <button
                 type="button"
                 onClick={onDeselect}
-                className="rounded-lg border border-[var(--ccr-clerk-danger-border)] bg-[var(--ccr-surface)] px-3 py-2 text-sm font-semibold text-[var(--ccr-clerk-danger-text)]"
+                className="flex-1 rounded-lg border border-[var(--ccr-clerk-danger-border)] bg-[var(--ccr-surface)] px-3 py-2 text-sm font-semibold text-[var(--ccr-clerk-danger-text)] min-[430px]:flex-none"
               >
                 Remove
               </button>

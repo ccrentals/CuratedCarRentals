@@ -35,30 +35,30 @@ export default async function HomePage() {
           <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(15,74,78,0.4),rgba(22,54,96,0.28),rgba(234,114,66,0.22))]" />
         </div>
 
-        <Container className="relative flex min-h-[calc(100svh-5.5rem)] items-center py-16 md:py-20 min-[1160px]:pt-44 lg:min-h-[calc(100svh-6rem)]">
+        <Container className="relative flex min-h-[calc(100svh-4.9rem)] items-center py-12 sm:py-14 md:py-20 min-[1160px]:pt-44 lg:min-h-[calc(100svh-6rem)]">
           <div className="max-w-3xl min-[1160px]:translate-y-4">
-            <div className="inline-flex items-center rounded-full bg-[rgba(39,117,95,0.82)] px-4 py-2 text-sm font-medium text-white shadow-[0_18px_34px_rgba(0,0,0,0.18)] backdrop-blur-sm">
+            <div className="inline-flex items-center rounded-full bg-[rgba(39,117,95,0.82)] px-3.5 py-2 text-xs font-medium text-white shadow-[0_18px_34px_rgba(0,0,0,0.18)] backdrop-blur-sm sm:px-4 sm:text-sm">
               <span className="mr-2">🌴</span> Kingston, Jamaica
             </div>
 
-            <h1 className="mt-6 max-w-3xl text-4xl font-semibold leading-tight text-white md:text-5xl lg:text-6xl">
+            <h1 className="mt-5 max-w-[34rem] text-[2.45rem] font-semibold leading-[1.02] text-white sm:mt-6 sm:text-[3rem] md:text-5xl lg:text-6xl">
               {siteContent.heroHeadline}
             </h1>
-            <p className="mt-6 max-w-2xl text-lg leading-8 text-white/90">
+            <p className="mt-5 max-w-[32rem] text-base leading-7 text-white/90 sm:mt-6 sm:text-lg sm:leading-8">
               {siteContent.heroDescription}
             </p>
 
-            <div className="mt-8 flex flex-col gap-4 sm:flex-row">
+            <div className="mt-7 flex flex-col gap-3 sm:mt-8 sm:flex-row sm:gap-4">
               <Button
                 href="/book"
-                className="rounded-full bg-[#ea7242] px-6 py-3 text-white shadow-lg hover:bg-[#ef8257]"
+                className="w-full rounded-full bg-[#ea7242] px-6 py-3 text-white shadow-lg hover:bg-[#ef8257] sm:w-auto"
               >
                 Book Your Vehicle
               </Button>
               <Button
                 href="/fleet"
                 variant="outline"
-                className="rounded-full border-white/18 bg-[var(--ccr-primary)]/88 px-6 py-3 text-[var(--ccr-on-primary)] hover:bg-[var(--ccr-primary)]"
+                className="w-full rounded-full !border-white/24 bg-[var(--ccr-primary)]/78 px-6 py-3 !text-white backdrop-blur-[2px] hover:bg-[var(--ccr-primary)]/88 sm:w-auto"
               >
                 Explore Our Fleet
               </Button>
@@ -67,9 +67,9 @@ export default async function HomePage() {
         </Container>
       </section>
 
-      <section className="border-b border-[var(--ccr-border)] bg-[#f7e0b0] py-4 text-center">
+      <section className="border-b border-[var(--ccr-border)] bg-[#f7e0b0] py-3 text-center sm:py-4">
         <Container>
-          <p className="text-sm font-medium text-[#4c3b16] md:text-base">
+          <p className="text-[13px] font-medium leading-6 text-[#4c3b16] sm:text-sm md:text-base">
             🌺 Our Simple Pricing includes all fees and taxes - No Surprises!{" "}
             <span className="text-[#7a6230]">(*optional insurance is extra)</span>
           </p>
@@ -78,11 +78,11 @@ export default async function HomePage() {
 
       <HomeFeaturedCollection featuredVehicles={featuredVehicles} vehicleCount={vehicles.length} />
 
-      <section className="relative overflow-hidden bg-[linear-gradient(180deg,var(--ccr-bg),var(--ccr-surface))] py-16 md:py-24">
+      <section className="relative overflow-hidden bg-[linear-gradient(180deg,var(--ccr-bg),var(--ccr-surface))] py-12 sm:py-14 md:py-24">
         <Container>
-          <div className="grid gap-10 lg:grid-cols-[0.92fr_1.08fr] lg:items-center">
+          <div className="grid gap-8 lg:grid-cols-[0.92fr_1.08fr] lg:items-center lg:gap-10">
             <div className="overflow-hidden rounded-[2rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] shadow-[0_24px_80px_rgba(15,23,42,0.08)]">
-              <div className="relative h-[24rem] md:h-[30rem]">
+              <div className="relative h-[18rem] sm:h-[21rem] md:h-[30rem]">
                 <Image
                   src="/live-site/home/discover-jamaica.png"
                   alt="Exploring Jamaica with Curated Car Rentals"
@@ -91,11 +91,11 @@ export default async function HomePage() {
                   className="object-cover"
                 />
               </div>
-              <div className="border-t border-[var(--ccr-border)] p-6">
-                <h3 className="font-display text-2xl font-bold text-[var(--ccr-text)]">
+              <div className="border-t border-[var(--ccr-border)] p-5 sm:p-6">
+                <h3 className="font-display text-[1.75rem] font-bold text-[var(--ccr-text)] sm:text-2xl">
                   Discover Jamaica
                 </h3>
-                <p className="mt-3 text-base leading-7 text-[var(--ccr-muted)]">
+                <p className="mt-3 text-[0.98rem] leading-7 text-[var(--ccr-muted)] sm:text-base">
                   From Kingston&apos;s vibrant streets to stunning coastal drives, our vehicles are your passport to Jamaica&apos;s wonders.
                 </p>
               </div>
@@ -105,21 +105,21 @@ export default async function HomePage() {
               <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--ccr-accent-strong)]">
                 About Us
               </p>
-              <h2 className="mt-4 font-display text-4xl font-bold text-[var(--ccr-text)] md:text-5xl">
+              <h2 className="mt-4 font-display text-[2rem] font-bold leading-tight text-[var(--ccr-text)] sm:text-[2.4rem] md:text-5xl">
                 {siteContent.aboutHeading}
               </h2>
-              <p className="mt-5 text-lg leading-8 text-[var(--ccr-muted)]">
+              <p className="mt-4 text-base leading-7 text-[var(--ccr-muted)] sm:mt-5 sm:text-lg sm:leading-8">
                 {siteContent.aboutDescription}
               </p>
-              <p className="mt-4 text-lg leading-8 text-[var(--ccr-muted)]">
+              <p className="mt-4 text-base leading-7 text-[var(--ccr-muted)] sm:text-lg sm:leading-8">
                 {siteContent.aboutSupport}
               </p>
 
-              <div className="mt-8 grid gap-4 md:grid-cols-2">
+              <div className="mt-7 grid gap-3 sm:mt-8 sm:gap-4 md:grid-cols-2">
                 {aboutFeatures.map((feature) => (
                   <article
                     key={feature.title}
-                    className="rounded-[1.4rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-5 shadow-[0_14px_36px_rgba(15,23,42,0.05)]"
+                    className="rounded-[1.4rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4 shadow-[0_14px_36px_rgba(15,23,42,0.05)] sm:p-5"
                   >
                     <h3 className="text-lg font-semibold text-[var(--ccr-text)]">{feature.title}</h3>
                     <p className="mt-2 text-sm leading-7 text-[var(--ccr-muted)]">{feature.description}</p>
@@ -133,7 +133,7 @@ export default async function HomePage() {
 
       <HomeBookingSection />
 
-      <section className="relative overflow-hidden bg-[linear-gradient(135deg,var(--ccr-primary-soft),var(--ccr-primary))] py-16 text-[var(--ccr-on-primary)] md:py-24">
+      <section className="relative overflow-hidden bg-[linear-gradient(135deg,var(--ccr-primary-soft),var(--ccr-primary))] py-12 text-[var(--ccr-on-primary)] sm:py-14 md:py-24">
         <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-16">
           <svg
             viewBox="0 0 1440 120"
@@ -155,19 +155,19 @@ export default async function HomePage() {
         </div>
         <Container>
           <div className="mx-auto max-w-3xl text-center">
-            <h2 className="font-display text-4xl font-bold text-[var(--ccr-on-primary)] md:text-5xl">
+            <h2 className="font-display text-[2rem] font-bold leading-tight text-[var(--ccr-on-primary)] sm:text-[2.4rem] md:text-5xl">
               What Our Customers Say
             </h2>
-            <p className="mt-4 text-lg leading-8 text-[var(--ccr-on-primary-muted)]">
+            <p className="mt-4 text-base leading-7 text-[var(--ccr-on-primary-muted)] sm:text-lg sm:leading-8">
               Discover why travelers choose Curated Car Rentals for their Jamaican adventures.
             </p>
           </div>
 
-          <div className="mt-12 grid gap-6 lg:grid-cols-3">
+          <div className="mt-8 grid gap-5 sm:mt-10 sm:gap-6 lg:grid-cols-3">
             {testimonials.map((testimonial) => (
               <article
                 key={testimonial.name}
-                className="rounded-[2rem] border border-white/12 bg-white/8 p-6 shadow-[0_24px_80px_rgba(0,0,0,0.16)] backdrop-blur-sm"
+                className="rounded-[2rem] border border-white/12 bg-white/8 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.16)] backdrop-blur-sm sm:p-6"
               >
                 <div className="flex items-center gap-4">
                   <div className="relative h-16 w-16 overflow-hidden rounded-full border-2 border-white/12">
@@ -188,7 +188,7 @@ export default async function HomePage() {
                   </div>
                 </div>
 
-                <p className="mt-5 text-lg leading-8 text-white/88">
+                <p className="mt-4 text-base leading-7 text-white/88 sm:mt-5 sm:text-lg sm:leading-8">
                   &quot;{testimonial.quote}&quot;
                 </p>
 

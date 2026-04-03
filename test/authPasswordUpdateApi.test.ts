@@ -27,23 +27,12 @@ function makeDeps(overrides: Partial<PasswordUpdateDeps>): PasswordUpdateDeps {
         },
       }) as never,
     requireCsrfCheck: async () => true,
-    getClerk: async () =>
+    syncPassword: async () =>
       ({
-        users: {
-          getUser: async () =>
-            ({
-              publicMetadata: {
-                forcePasswordChange: true,
-                tempPasswordExpiresAt: "2026-03-03T10:00:00.000Z",
-              },
-            }) as never,
-          updateUser: async () => ({} as never),
-        },
-      }) as never,
-    hashPasswordFn: async () => "hashed-password",
-    updateLocalPasswordState: async () => {},
+        ok: true,
+        clerkUserId: "user_clerk_123",
+      }) as const,
     writeAudit: async () => {},
-    nowIso: () => "2026-02-28T12:00:00.000Z",
     ...overrides,
   };
 }
@@ -68,10 +57,15 @@ test("password update endpoint rejects unauthenticated requests", async () => {
   assert.equal(response.status, 401);
 });
 
-test("password update endpoint clears force-change metadata and updates local password", async () => {
-  let updatedClerkUserId: string | null = null;
-  let updatedClerkPayload: Record<string, unknown> | null = null;
-  let localUpdate: { userId: string; passwordHash: string } | null = null;
+test("password update endpoint syncs through the shared Clerk-first service", async () => {
+  let syncInput:
+    | {
+        localUserId: string;
+        clerkUserId: string;
+        password: string;
+      }
+    | null = null;
+  let auditDetails: Record<string, unknown> | null = null;
 
   const response = await handlePasswordUpdate(
     new Request("http://localhost/api/auth/password/update", {
@@ -87,46 +81,65 @@ test("password update endpoint clears force-change metadata and updates local pa
       }),
     }),
     makeDeps({
-      getClerk: async () =>
-        ({
-          users: {
-            getUser: async () =>
-              ({
-                publicMetadata: {
-                  forcePasswordChange: true,
-                  tempPasswordExpiresAt: "2026-03-03T10:00:00.000Z",
-                  localRole: "ADMIN",
-                },
-              }) as never,
-            updateUser: async (id: string, payload: Record<string, unknown>) => {
-              updatedClerkUserId = id;
-              updatedClerkPayload = payload;
-              return {} as never;
-            },
-          },
-        }) as never,
-      updateLocalPasswordState: async (input) => {
-        localUpdate = input;
+      syncPassword: async (input) => {
+        syncInput = input;
+        return {
+          ok: true,
+          clerkUserId: input.clerkUserId,
+        } as const;
+      },
+      writeAudit: async (input) => {
+        auditDetails = input.details ?? null;
       },
     }),
   );
 
   assert.equal(response.status, 200);
-  assert.equal(updatedClerkUserId, "user_clerk_123");
-  assert.equal(updatedClerkPayload?.password, "NewPass123!");
-  assert.equal(
-    (updatedClerkPayload?.publicMetadata as Record<string, unknown>).forcePasswordChange,
-    false,
-  );
-  assert.equal(
-    (updatedClerkPayload?.publicMetadata as Record<string, unknown>).tempPasswordExpiresAt,
-    null,
-  );
-  assert.deepEqual(localUpdate, {
-    userId: "local-admin-1",
-    passwordHash: "hashed-password",
+  assert.deepEqual(syncInput, {
+    localUserId: "local-admin-1",
+    clerkUserId: "user_clerk_123",
+    password: "NewPass123!",
   });
+  assert.equal(auditDetails?.flow, "admin_clerk_force_change_dialog");
+  assert.equal(auditDetails?.clerkUserId, "user_clerk_123");
 
   const body = (await response.json()) as { ok: boolean };
   assert.equal(body.ok, true);
+});
+
+test("password update endpoint surfaces local sync failures after Clerk success", async () => {
+  const response = await handlePasswordUpdate(
+    new Request("http://localhost/api/auth/password/update", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-csrf-token": "token",
+      },
+      body: JSON.stringify({
+        password: "NewPass123!",
+        confirmPassword: "NewPass123!",
+        csrfToken: "token",
+        flow: "clerk_task_reset_password",
+      }),
+    }),
+    makeDeps({
+      syncPassword: async () =>
+        ({
+          ok: false,
+          status: 500,
+          stage: "local",
+          clerkUserId: "user_clerk_123",
+          message:
+            "Password updated in Clerk, but the local legacy password could not be synced. Clerk login will use the new password.",
+        }) as const,
+    }),
+  );
+
+  assert.equal(response.status, 500);
+  const body = (await response.json()) as { error?: string; stage?: string };
+  assert.equal(
+    body.error,
+    "Password updated in Clerk, but the local legacy password could not be synced. Clerk login will use the new password.",
+  );
+  assert.equal(body.stage, "local");
 });

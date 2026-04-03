@@ -14,6 +14,7 @@ import {
 import { dbQuery } from "@/lib/db";
 import { formatJmd } from "@/lib/money";
 import { LoadMorePaginationControls } from "@/components/admin/LoadMorePaginationControls";
+import { RestoreVehicleButton } from "@/components/admin/RestoreVehicleButton";
 import { normalizePageSize, parsePositiveIntParam } from "@/lib/pagination/sharedPagination";
 import {
   matchesVehicleFilter,
@@ -86,6 +87,7 @@ export default async function AdminVehiclesPage({
   const fleetFilter = normalizeVehicleFilter(params.fleet);
   const includeDeleted = typeof params.includeDeleted === "string" && params.includeDeleted === "1";
   const deletedNotice = typeof params.deleted === "string" && params.deleted === "1";
+  const restoredNotice = typeof params.restored === "string" && params.restored === "1";
   const sort = normalizeVehicleSort(queryParams);
   const rowsPerPage = normalizePageSize(typeof params.rows === "string" ? params.rows : undefined);
   const requestedVisible = parsePositiveIntParam(params.visible);
@@ -202,10 +204,22 @@ export default async function AdminVehiclesPage({
       nextParams.delete("includeDeleted");
     }
     nextParams.delete("deleted");
+    nextParams.delete("restored");
+    nextParams.delete("restoreError");
     nextParams.delete("visible");
     const nextQuery = nextParams.toString();
     return nextQuery ? `/admin/vehicles?${nextQuery}` : "/admin/vehicles";
   };
+
+  const restoreReturnTo = (() => {
+    const nextParams = new URLSearchParams(queryParams.toString());
+    nextParams.set("includeDeleted", "1");
+    nextParams.delete("deleted");
+    nextParams.delete("restoreError");
+    nextParams.set("restored", "1");
+    const nextQuery = nextParams.toString();
+    return nextQuery ? `/admin/vehicles?${nextQuery}` : "/admin/vehicles?includeDeleted=1&restored=1";
+  })();
 
   const statusPillTone = (status: DerivedVehicleStatus) => {
     if (status === "AVAILABLE") {
@@ -253,6 +267,11 @@ export default async function AdminVehiclesPage({
       {deletedNotice ? (
         <p className="mt-3 rounded-xl border border-[var(--ccr-status-success-border)] bg-[var(--ccr-status-success-bg)] px-4 py-3 text-sm text-[var(--ccr-status-success-text)]">
           Vehicle archived successfully.
+        </p>
+      ) : null}
+      {restoredNotice ? (
+        <p className="mt-3 rounded-xl border border-[var(--ccr-status-success-border)] bg-[var(--ccr-status-success-bg)] px-4 py-3 text-sm text-[var(--ccr-status-success-text)]">
+          Vehicle restored successfully.
         </p>
       ) : null}
 
@@ -347,6 +366,9 @@ export default async function AdminVehiclesPage({
                     >
                       Calendar
                     </Link>
+                    {includeDeleted ? (
+                      <RestoreVehicleButton vehicleId={vehicle.id} returnTo={restoreReturnTo} />
+                    ) : null}
                   </div>
                 </article>
               ))}
@@ -387,6 +409,7 @@ export default async function AdminVehiclesPage({
                       sort={sort}
                       href={sortHref("created", "desc")}
                     />
+                    {includeDeleted ? <th className="px-4 py-3 text-right">Actions</th> : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -445,6 +468,11 @@ export default async function AdminVehiclesPage({
                           <TableDateTime value={vehicle.created_at} />
                         </Link>
                       </td>
+                      {includeDeleted ? (
+                        <td className="px-4 py-3 text-right">
+                          <RestoreVehicleButton vehicleId={vehicle.id} returnTo={restoreReturnTo} />
+                        </td>
+                      ) : null}
                     </tr>
                   ))}
                 </tbody>

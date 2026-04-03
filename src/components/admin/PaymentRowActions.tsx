@@ -45,7 +45,7 @@ export function PaymentRowActions({
     if (showManualActions) {
       return isDeleted ? "Restore payment" : "Cancel payment";
     }
-    if (showRefundAction) return "Refund/Void payment";
+    if (showRefundAction) return "Record manual refund adjustment";
     return "";
   }, [showManualActions, isDeleted, showRefundAction]);
 
@@ -176,7 +176,7 @@ export function PaymentRowActions({
           title={refunded ? "Already refunded" : title}
           className={buttonStyles({ variant: "secondary", size: "sm" })}
         >
-          Refund/Void
+          Record adjustment
         </button>
       ) : null}
 
@@ -199,14 +199,14 @@ export function PaymentRowActions({
                 ? "Cancel manual payment"
                 : mode === "restore"
                   ? "Restore manual payment"
-                  : "Refund/Void WiPay payment"}
+                  : "Record manual refund adjustment"}
             </h3>
             <p className="mt-1 text-sm text-[var(--ccr-muted)]">
               {mode === "delete"
                 ? "This will cancel the payment entry and roll totals back."
                 : mode === "restore"
                   ? "This will restore the payment and re-apply totals."
-                  : "This records a refund/void in the system and adjusts totals. It does not call WiPay automatically."}
+                  : "This records a manual refund adjustment in the system and adjusts totals. It does not call WiPay automatically."}
             </p>
 
             {mode === "delete" ? (
@@ -235,7 +235,7 @@ export function PaymentRowActions({
               <div className="mt-4 space-y-3">
                 <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3 text-sm text-[var(--ccr-muted)]">
                   <div className="flex items-center justify-between">
-                    <span>Refund amount</span>
+                    <span>Adjustment amount</span>
                     <span className="font-semibold text-[var(--ccr-text)]">{amount.toFixed(2)}</span>
                   </div>
                 </div>
@@ -281,15 +281,15 @@ export function PaymentRowActions({
                     ? buttonStyles({ variant: "danger", size: "sm" })
                     : buttonStyles({ variant: "primary", size: "sm" })
                 }
-              >
-                {loading
-                  ? "Saving..."
-                  : mode === "delete"
-                    ? "Cancel payment"
-                    : mode === "restore"
-                      ? "Restore"
-                      : "Record refund"}
-              </button>
+                >
+                  {loading
+                    ? "Saving..."
+                    : mode === "delete"
+                      ? "Cancel payment"
+                      : mode === "restore"
+                        ? "Restore"
+                        : "Record adjustment"}
+                </button>
             </div>
           </div>
         </div>

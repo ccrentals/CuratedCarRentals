@@ -7,6 +7,8 @@ import { nextSort, normalizeSortDir, type SortDir } from "@/components/admin/tab
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { TableDateTime } from "@/components/shared/TableDateTime";
 import { buttonStyles } from "@/components/ui/Button";
+import { canAccessDeveloperAdminTools } from "@/lib/auth/adminCapabilities";
+import { getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery } from "@/lib/db";
 import { summarizeReminderEvent } from "@/lib/cron/reminderEventSummary";
 import { loadRecentReminderRuns } from "@/lib/cron/reminderRuns";
@@ -115,6 +117,21 @@ export default async function AdminCronPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  const session = await getSessionFromRequest();
+  if (!canAccessDeveloperAdminTools(session?.role)) {
+    return (
+      <div className="mx-auto w-full max-w-5xl px-6 py-10">
+        <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Admin</p>
+          <h1 className="mt-2 text-2xl font-bold text-[var(--ccr-text)]">Cron Status</h1>
+          <p className="mt-2 text-sm text-[var(--ccr-muted)]">
+            Only DEVELOPER users can run cron jobs or inspect reminder diagnostics.
+          </p>
+        </section>
+      </div>
+    );
+  }
+
   const query = await searchParams;
   const cronConfigured = Boolean(process.env.CRON_SECRET);
   const recentRuns = await loadRecentReminderRuns(10);

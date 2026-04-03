@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { DateRangeArrow } from "@/components/shared/DateRangeArrow";
-import { getSessionFromRequest } from "@/lib/auth/session";
+import { resolveAdminActor } from "@/lib/auth/adminGuards";
 import {
   getDocumentationBlockMeta,
   getDocumentationSectionMeta,
@@ -2411,24 +2411,9 @@ export default async function AdminDocumentationSectionPage({
 }: {
   params: Promise<{ section: string }>;
 }) {
-  const session = await getSessionFromRequest();
-  const canDeveloper =
-    String(session?.role ?? "")
-      .trim()
-      .toUpperCase() === "DEVELOPER";
-
-  if (!canDeveloper) {
-    return (
-      <div className="mx-auto w-full max-w-5xl px-6 py-10">
-        <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
-          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Admin</p>
-          <h1 className="mt-2 text-2xl font-bold text-[var(--ccr-text)]">Documentation</h1>
-          <p className="mt-2 text-sm text-[var(--ccr-muted)]">
-            Only DEVELOPER users can view administration documentation.
-          </p>
-        </section>
-      </div>
-    );
+  const access = await resolveAdminActor({ requirement: "developer" });
+  if (!access.ok) {
+    notFound();
   }
 
   const { section } = await params;

@@ -1,10 +1,29 @@
-import { TaskResetPassword } from "@clerk/nextjs";
-
 import { AuthPageShell } from "@/components/security/AuthPageShell";
+import { ClerkTaskResetPasswordForm } from "@/components/security/ClerkTaskResetPasswordForm";
 import { loadPostClerkAdminAuthPath } from "@/lib/auth/adminLoginMethod";
 import { isClerkPublishableKeyConfigured } from "@/lib/security/clerk";
 
-export default async function ResetPasswordTaskPage() {
+function resolveRedirectUrl(
+  value: string | string[] | undefined,
+  fallback: string,
+) {
+  if (typeof value !== "string" || !value.trim()) {
+    return fallback;
+  }
+
+  try {
+    const decoded = decodeURIComponent(value);
+    return decoded.startsWith("/") ? decoded : fallback;
+  } catch {
+    return value.startsWith("/") ? value : fallback;
+  }
+}
+
+export default async function ResetPasswordTaskPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ redirect_url?: string | string[] }>;
+}) {
   if (!isClerkPublishableKeyConfigured()) {
     return (
       <AuthPageShell>
@@ -16,12 +35,16 @@ export default async function ResetPasswordTaskPage() {
     );
   }
 
-  const redirectUrlComplete = await loadPostClerkAdminAuthPath();
+  const [fallbackRedirectUrl, params] = await Promise.all([
+    loadPostClerkAdminAuthPath(),
+    searchParams,
+  ]);
+  const redirectUrlComplete = resolveRedirectUrl(params.redirect_url, fallbackRedirectUrl);
 
   return (
     <AuthPageShell>
       <div className="mx-auto flex max-w-md justify-center">
-        <TaskResetPassword redirectUrlComplete={redirectUrlComplete} />
+        <ClerkTaskResetPasswordForm redirectUrlComplete={redirectUrlComplete} />
       </div>
     </AuthPageShell>
   );

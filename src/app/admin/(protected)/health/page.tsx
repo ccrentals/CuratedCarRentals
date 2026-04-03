@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 
+import { resolveAdminActor } from "@/lib/auth/adminGuards";
 import { getHealthSnapshot } from "@/lib/health";
 
 function Badge({ ok, label }: { ok: boolean; label: string }) {
@@ -46,6 +48,11 @@ function checkLabel(key: keyof Awaited<ReturnType<typeof getHealthSnapshot>>["ch
 }
 
 export default async function AdminHealthPage() {
+  const access = await resolveAdminActor({ requirement: "developer" });
+  if (!access.ok) {
+    notFound();
+  }
+
   const snapshot = await getHealthSnapshot();
   const env = snapshot.env;
 

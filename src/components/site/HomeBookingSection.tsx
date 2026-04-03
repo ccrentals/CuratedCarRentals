@@ -6,24 +6,41 @@ import { siteContent } from "@/data/content";
 
 export function HomeBookingSection() {
   return (
-    <section className="bg-[var(--ccr-home-booking-section-bg)] py-16 md:py-24">
+    <section className="bg-[var(--ccr-home-booking-section-bg)] py-12 sm:py-14 md:py-24">
       <Container>
         <div className="mx-auto max-w-3xl text-center">
-          <h2 className="font-display text-4xl font-bold text-[var(--ccr-home-booking-text)] md:text-5xl">
-            {siteContent.homeBookingTitle}
+          <h2 className="font-display text-[2rem] font-bold leading-tight text-[var(--ccr-home-booking-text)] sm:text-4xl md:text-5xl">
+            <span className="inline-flex flex-wrap items-center justify-center gap-2.5 sm:gap-3">
+              <span
+                aria-hidden="true"
+                className="inline-block h-8 w-8 shrink-0 align-middle sm:h-9 sm:w-9 md:h-10 md:w-10"
+                style={{
+                  backgroundColor: "var(--ccr-accent-strong)",
+                  maskImage: "url('/icons/home-booking-autoshop.png')",
+                  maskRepeat: "no-repeat",
+                  maskSize: "contain",
+                  maskPosition: "center",
+                  WebkitMaskImage: "url('/icons/home-booking-autoshop.png')",
+                  WebkitMaskRepeat: "no-repeat",
+                  WebkitMaskSize: "contain",
+                  WebkitMaskPosition: "center",
+                }}
+              />
+              <span>{siteContent.homeBookingTitle}</span>
+            </span>
           </h2>
-          <p className="mt-4 text-lg leading-8 text-[var(--ccr-home-booking-muted)]">
+          <p className="mt-4 text-base leading-7 text-[var(--ccr-home-booking-muted)] sm:text-lg sm:leading-8">
             {siteContent.homeBookingDescription}
           </p>
         </div>
 
-        <div className="mx-auto mt-12 max-w-5xl rounded-[2rem] border border-[var(--ccr-home-booking-card-border)] bg-[var(--ccr-home-booking-card-bg)] p-8 shadow-[0_24px_80px_rgba(15,23,42,0.08)] md:p-10">
+        <div className="mx-auto mt-8 max-w-5xl rounded-[2rem] border border-[var(--ccr-home-booking-card-border)] bg-[var(--ccr-home-booking-card-bg)] p-5 shadow-[0_24px_80px_rgba(15,23,42,0.08)] sm:mt-10 sm:p-6 md:mt-12 md:p-10">
           <div className="grid gap-8 md:grid-cols-[1fr_auto] md:items-center">
             <div>
               <p className="text-sm font-semibold uppercase tracking-[0.24em] text-[var(--ccr-accent-strong)]">
                 Integrated Booking
               </p>
-              <p className="mt-4 max-w-2xl text-base leading-8 text-[var(--ccr-home-booking-muted)]">
+              <p className="mt-4 max-w-2xl text-[0.98rem] leading-7 text-[var(--ccr-home-booking-muted)] sm:text-base sm:leading-8">
                 Reserve your perfect vehicle using our current booking flow. Vehicle inventory, published pricing, and backend-fed images remain connected to the live system.
               </p>
             </div>
@@ -33,7 +50,7 @@ export function HomeBookingSection() {
               className={buttonStyles({
                 variant: "primary",
                 size: "lg",
-                className: "rounded-full",
+                className: "w-full justify-center rounded-full md:w-auto",
               })}
             >
               Book Your Vehicle

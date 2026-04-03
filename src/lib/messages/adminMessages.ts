@@ -3,6 +3,7 @@ import { dbQuery } from "@/lib/db";
 export const CONTACT_MESSAGE_STATUSES = ["NEW", "READ", "ARCHIVED"] as const;
 export const ADMIN_MESSAGE_SOURCE_OPTIONS = [
   { value: "contact_page", label: "Contact form" },
+  { value: "home_page_contact", label: "Home contact form" },
   { value: "booking_inspection", label: "Vehicle inspection alert" },
   { value: "resend_webhook", label: "Email delivery issue" },
 ] as const;
@@ -397,6 +398,13 @@ function buildPresentationFields(
   const rawEmail = normalizeText(row.email);
 
   if (sourceKey === "contact_page") {
+    return {
+      displayName: rawName || "Unknown sender",
+      displayEmail: rawEmail || "No email provided",
+    };
+  }
+
+  if (sourceKey === "home_page_contact") {
     return {
       displayName: rawName || "Unknown sender",
       displayEmail: rawEmail || "No email provided",

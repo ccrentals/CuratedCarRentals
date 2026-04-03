@@ -959,7 +959,7 @@ export async function PATCH(
         : nextPricingBase;
 
       await client.query(
-        "update customers set full_name = case when nullif(trim(coalesce(full_name, '')), '') is null then $2 else full_name end, email = $3, phone = $4 where id = $1",
+        "update customers set full_name = $2, email = $3, phone = $4 where id = $1",
         [booking.customer_id, customerName, customerEmail, customerPhone],
       );
 
@@ -1421,145 +1421,163 @@ export async function PATCH(
       noteScheduledFor = scheduledDate.toISOString();
     }
 
-    const bookingResult = await dbQuery<{
-      pricing_json: Record<string, unknown> | null;
-      start_date: string;
-      end_date: string;
-      pickup_location: string;
-      customer_name: string;
-      customer_email: string;
-      vehicle_make: string;
-      vehicle_model: string;
-      vehicle_year: number;
-    }>(
-      "select b.pricing_json, b.start_date, b.end_date, b.pickup_location, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model, v.year as vehicle_year from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.id = $1",
-      [id],
-    );
+    const pool = getDbPool();
+    const client = await pool.connect();
 
-    if (bookingResult.rowCount === 0) {
-      return NextResponse.json({ error: "Booking not found" }, { status: 404 });
-    }
+    try {
+      await client.query("begin");
 
-    const pricing = bookingResult.rows[0].pricing_json ?? {};
-    const existingNotes = Array.isArray((pricing as { admin_notes?: unknown }).admin_notes)
-      ? ((pricing as { admin_notes: unknown[] }).admin_notes as unknown[])
-      : [];
+      const bookingResult = (await client.query(
+        "select b.pricing_json, b.start_date, b.end_date, b.pickup_location, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model, v.year as vehicle_year from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.id = $1 for update",
+        [id],
+      )) as {
+        rows: Array<{
+          pricing_json: Record<string, unknown> | null;
+          start_date: string;
+          end_date: string;
+          pickup_location: string;
+          customer_name: string;
+          customer_email: string;
+          vehicle_make: string;
+          vehicle_model: string;
+          vehicle_year: number;
+        }>;
+        rowCount: number;
+      };
 
-    const createdAt = new Date().toISOString();
-    const emailErrors: string[] = [];
-    const sentTargets: ("customer" | "internal")[] = [];
+      if (bookingResult.rowCount === 0) {
+        await client.query("rollback");
+        return NextResponse.json({ error: "Booking not found" }, { status: 404 });
+      }
 
-    const newNote: Record<string, unknown> = {
-      note_id: crypto.randomUUID(),
-      message: note,
-      created_at: createdAt,
-      user_id: session.userId,
-      email_target: noteEmailTarget,
-      email_send_mode: noteSendMode,
-      email_scheduled_for: noteScheduledFor,
-      email_customer_sent_at: null,
-      email_internal_sent_at: null,
-      email_cancelled_at: null,
-      email_cancelled_by: null,
-      email_cancel_reason: null,
-      email_last_error: null,
-    };
+      const booking = bookingResult.rows[0];
+      const pricing = booking.pricing_json ?? {};
+      const existingNotes = Array.isArray((pricing as { admin_notes?: unknown }).admin_notes)
+        ? ((pricing as { admin_notes: unknown[] }).admin_notes as unknown[])
+        : [];
 
-    const booking = bookingResult.rows[0];
-    const vehicleLabel = `${booking.vehicle_year} ${booking.vehicle_make} ${booking.vehicle_model}`.trim();
+      const createdAt = new Date().toISOString();
+      const emailErrors: string[] = [];
+      const sentTargets: ("customer" | "internal")[] = [];
 
-    if (noteEmailTarget !== "none" && noteSendMode === "immediate") {
-      if (noteEmailTarget === "customer" || noteEmailTarget === "both") {
-        try {
-          const customerSend = await sendBookingNoteEmail({
-            bookingId: id,
-            recipientEmail: booking.customer_email,
-            recipientType: "customer",
-            customerName: booking.customer_name,
-            customerEmail: booking.customer_email,
-            vehicleLabel,
-            startDate: booking.start_date,
-            endDate: booking.end_date,
-            pickupLocation: booking.pickup_location,
-            noteMessage: note,
-            sentByUserId: session.userId,
-          });
-          if (customerSend.ok) {
-            newNote.email_customer_sent_at = new Date().toISOString();
-            sentTargets.push("customer");
-          } else {
-            emailErrors.push(customerSend.error ?? "customer delivery failed");
+      const newNote: Record<string, unknown> = {
+        note_id: crypto.randomUUID(),
+        message: note,
+        created_at: createdAt,
+        user_id: session.userId,
+        email_target: noteEmailTarget,
+        email_send_mode: noteSendMode,
+        email_scheduled_for: noteScheduledFor,
+        email_customer_sent_at: null,
+        email_internal_sent_at: null,
+        email_cancelled_at: null,
+        email_cancelled_by: null,
+        email_cancel_reason: null,
+        email_last_error: null,
+      };
+
+      const vehicleLabel = `${booking.vehicle_year} ${booking.vehicle_make} ${booking.vehicle_model}`.trim();
+
+      if (noteEmailTarget !== "none" && noteSendMode === "immediate") {
+        if (noteEmailTarget === "customer" || noteEmailTarget === "both") {
+          try {
+            const customerSend = await sendBookingNoteEmail({
+              bookingId: id,
+              recipientEmail: booking.customer_email,
+              recipientType: "customer",
+              customerName: booking.customer_name,
+              customerEmail: booking.customer_email,
+              vehicleLabel,
+              startDate: booking.start_date,
+              endDate: booking.end_date,
+              pickupLocation: booking.pickup_location,
+              noteMessage: note,
+              sentByUserId: session.userId,
+            });
+            if (customerSend.ok) {
+              newNote.email_customer_sent_at = new Date().toISOString();
+              sentTargets.push("customer");
+            } else {
+              emailErrors.push(customerSend.error ?? "customer delivery failed");
+            }
+          } catch {
+            emailErrors.push("customer delivery failed");
           }
-        } catch {
-          emailErrors.push("customer delivery failed");
+        }
+
+        if (noteEmailTarget === "internal" || noteEmailTarget === "both") {
+          try {
+            const internalSend = await sendBookingNoteEmail({
+              bookingId: id,
+              recipientEmail: getInternalNotesRecipient(),
+              recipientType: "internal",
+              customerName: booking.customer_name,
+              customerEmail: booking.customer_email,
+              vehicleLabel,
+              startDate: booking.start_date,
+              endDate: booking.end_date,
+              pickupLocation: booking.pickup_location,
+              noteMessage: note,
+              sentByUserId: session.userId,
+            });
+            if (internalSend.ok) {
+              newNote.email_internal_sent_at = new Date().toISOString();
+              sentTargets.push("internal");
+            } else {
+              emailErrors.push(internalSend.error ?? "internal delivery failed");
+            }
+          } catch {
+            emailErrors.push("internal delivery failed");
+          }
+        }
+
+        if (emailErrors.length > 0) {
+          newNote.email_last_error = emailErrors.join(" | ").slice(0, 400);
         }
       }
 
-      if (noteEmailTarget === "internal" || noteEmailTarget === "both") {
-        try {
-          const internalSend = await sendBookingNoteEmail({
-            bookingId: id,
-            recipientEmail: getInternalNotesRecipient(),
-            recipientType: "internal",
-            customerName: booking.customer_name,
-            customerEmail: booking.customer_email,
-            vehicleLabel,
-            startDate: booking.start_date,
-            endDate: booking.end_date,
-            pickupLocation: booking.pickup_location,
-            noteMessage: note,
-            sentByUserId: session.userId,
-          });
-          if (internalSend.ok) {
-            newNote.email_internal_sent_at = new Date().toISOString();
-            sentTargets.push("internal");
-          } else {
-            emailErrors.push(internalSend.error ?? "internal delivery failed");
-          }
-        } catch {
-          emailErrors.push("internal delivery failed");
-        }
+      const updatedPricing = { ...pricing, admin_notes: [...existingNotes, newNote] };
+
+      await client.query("update bookings set pricing_json = $1, updated_at = now() where id = $2", [
+        updatedPricing,
+        id,
+      ]);
+
+      await client.query("commit");
+
+      await writeAuditLog({
+        userId: session.userId,
+        action: "BOOKING_NOTE_ADDED",
+        entityType: "booking",
+        entityId: id,
+        details: {
+          length: note.length,
+          note_email_target: noteEmailTarget,
+          note_send_mode: noteSendMode,
+          note_scheduled_for: noteScheduledFor,
+          note_email_sent_targets: sentTargets,
+          note_email_error_count: emailErrors.length,
+        },
+      });
+
+      let message = "Note saved.";
+      if (noteEmailTarget !== "none" && noteSendMode === "scheduled") {
+        message = "Note saved. Email scheduled.";
+      } else if (sentTargets.length > 0 && emailErrors.length === 0) {
+        message = "Note saved. Email sent.";
+      } else if (sentTargets.length > 0 && emailErrors.length > 0) {
+        message = "Note saved. Some emails could not be delivered.";
+      } else if (noteEmailTarget !== "none" && emailErrors.length > 0) {
+        message = "Note saved. Email delivery failed.";
       }
 
-      if (emailErrors.length > 0) {
-        newNote.email_last_error = emailErrors.join(" | ").slice(0, 400);
-      }
+      return NextResponse.json({ ok: true, message });
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
     }
-
-    const updatedPricing = { ...pricing, admin_notes: [...existingNotes, newNote] };
-
-    await dbQuery("update bookings set pricing_json = $1, updated_at = now() where id = $2", [
-      updatedPricing,
-      id,
-    ]);
-
-    await writeAuditLog({
-      userId: session.userId,
-      action: "BOOKING_NOTE_ADDED",
-      entityType: "booking",
-      entityId: id,
-      details: {
-        length: note.length,
-        note_email_target: noteEmailTarget,
-        note_send_mode: noteSendMode,
-        note_scheduled_for: noteScheduledFor,
-        note_email_sent_targets: sentTargets,
-        note_email_error_count: emailErrors.length,
-      },
-    });
-
-    let message = "Note saved.";
-    if (noteEmailTarget !== "none" && noteSendMode === "scheduled") {
-      message = "Note saved. Email scheduled.";
-    } else if (sentTargets.length > 0 && emailErrors.length === 0) {
-      message = "Note saved. Email sent.";
-    } else if (sentTargets.length > 0 && emailErrors.length > 0) {
-      message = "Note saved. Some emails could not be delivered.";
-    } else if (noteEmailTarget !== "none" && emailErrors.length > 0) {
-      message = "Note saved. Email delivery failed.";
-    }
-
-    return NextResponse.json({ ok: true, message });
   }
 
   if (action === "cancel_scheduled_note_email") {
@@ -1578,90 +1596,121 @@ export async function PATCH(
       return NextResponse.json({ error: "Note identifier is required" }, { status: 400 });
     }
 
-    const bookingResult = await dbQuery<{ pricing_json: Record<string, unknown> | null }>(
-      "select pricing_json from bookings where id = $1",
-      [id],
-    );
+    const pool = getDbPool();
+    const client = await pool.connect();
+    let auditNoteId: string | null = null;
+    let auditNoteCreatedAt: string | null = null;
+    let auditNoteEmailTarget: "none" | "customer" | "internal" | "both" = "none";
+    let auditNoteScheduledFor: string | null = null;
 
-    if (bookingResult.rowCount === 0) {
-      return NextResponse.json({ error: "Booking not found" }, { status: 404 });
+    try {
+      await client.query("begin");
+
+      const bookingResult = (await client.query(
+        "select pricing_json from bookings where id = $1 for update",
+        [id],
+      )) as {
+        rows: Array<{ pricing_json: Record<string, unknown> | null }>;
+        rowCount: number;
+      };
+
+      if (bookingResult.rowCount === 0) {
+        await client.query("rollback");
+        return NextResponse.json({ error: "Booking not found" }, { status: 404 });
+      }
+
+      const pricing = bookingResult.rows[0].pricing_json ?? {};
+      const existingNotes = Array.isArray((pricing as { admin_notes?: unknown }).admin_notes)
+        ? ((pricing as { admin_notes: unknown[] }).admin_notes as unknown[])
+        : [];
+
+      let foundIndex = -1;
+      let matchedNote: Record<string, unknown> | null = null;
+
+      for (let index = 0; index < existingNotes.length; index += 1) {
+        const entry = asObject(existingNotes[index]);
+        if (!entry) continue;
+
+        const entryId =
+          typeof entry.note_id === "string" && entry.note_id.trim() ? entry.note_id.trim() : null;
+        const entryCreatedAt =
+          typeof entry.created_at === "string" && entry.created_at.trim()
+            ? entry.created_at.trim()
+            : null;
+        const entryMessage =
+          typeof entry.message === "string" && entry.message.trim() ? entry.message.trim() : null;
+
+        const matchesById = Boolean(noteId && entryId && entryId === noteId);
+        const matchesByCreatedAt =
+          !noteId &&
+          noteCreatedAt &&
+          entryCreatedAt === noteCreatedAt &&
+          (!noteMessage || noteMessage === entryMessage);
+
+        if (!matchesById && !matchesByCreatedAt) continue;
+
+        foundIndex = index;
+        matchedNote = { ...entry };
+        break;
+      }
+
+      if (!matchedNote || foundIndex < 0) {
+        await client.query("rollback");
+        return NextResponse.json({ error: "Scheduled note not found" }, { status: 404 });
+      }
+
+      const target = normalizeNoteTarget(matchedNote.email_target);
+      const sendMode = String(matchedNote.email_send_mode ?? "").toLowerCase();
+      if (target === "none" || sendMode !== "scheduled") {
+        await client.query("rollback");
+        return NextResponse.json({ error: "This note is not scheduled for email." }, { status: 400 });
+      }
+
+      if (typeof matchedNote.email_cancelled_at === "string" && matchedNote.email_cancelled_at.trim()) {
+        await client.query("rollback");
+        return NextResponse.json({ ok: true, message: "Scheduled email already cancelled." });
+      }
+
+      const customerOutstanding =
+        (target === "customer" || target === "both") && !matchedNote.email_customer_sent_at;
+      const internalOutstanding =
+        (target === "internal" || target === "both") && !matchedNote.email_internal_sent_at;
+
+      if (!customerOutstanding && !internalOutstanding) {
+        await client.query("rollback");
+        return NextResponse.json(
+          { error: "Scheduled email has already been sent." },
+          { status: 400 },
+        );
+      }
+
+      const nowIso = new Date().toISOString();
+      matchedNote.email_cancelled_at = nowIso;
+      matchedNote.email_cancelled_by = session.userId;
+      matchedNote.email_cancel_reason = cancelReason;
+      matchedNote.email_last_error = null;
+      auditNoteId = typeof matchedNote.note_id === "string" ? matchedNote.note_id : null;
+      auditNoteCreatedAt = typeof matchedNote.created_at === "string" ? matchedNote.created_at : null;
+      auditNoteEmailTarget = target;
+      auditNoteScheduledFor =
+        typeof matchedNote.email_scheduled_for === "string" ? matchedNote.email_scheduled_for : null;
+
+      const nextNotes = [...existingNotes];
+      nextNotes[foundIndex] = matchedNote;
+      const updatedPricing = { ...pricing, admin_notes: nextNotes };
+
+      await client.query("update bookings set pricing_json = $1, updated_at = now() where id = $2", [
+        updatedPricing,
+        id,
+      ]);
+
+      await client.query("commit");
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
     }
-
-    const pricing = bookingResult.rows[0].pricing_json ?? {};
-    const existingNotes = Array.isArray((pricing as { admin_notes?: unknown }).admin_notes)
-      ? ((pricing as { admin_notes: unknown[] }).admin_notes as unknown[])
-      : [];
-
-    let foundIndex = -1;
-    let matchedNote: Record<string, unknown> | null = null;
-
-    for (let index = 0; index < existingNotes.length; index += 1) {
-      const entry = asObject(existingNotes[index]);
-      if (!entry) continue;
-
-      const entryId =
-        typeof entry.note_id === "string" && entry.note_id.trim() ? entry.note_id.trim() : null;
-      const entryCreatedAt =
-        typeof entry.created_at === "string" && entry.created_at.trim()
-          ? entry.created_at.trim()
-          : null;
-      const entryMessage =
-        typeof entry.message === "string" && entry.message.trim() ? entry.message.trim() : null;
-
-      const matchesById = Boolean(noteId && entryId && entryId === noteId);
-      const matchesByCreatedAt =
-        !noteId &&
-        noteCreatedAt &&
-        entryCreatedAt === noteCreatedAt &&
-        (!noteMessage || noteMessage === entryMessage);
-
-      if (!matchesById && !matchesByCreatedAt) continue;
-
-      foundIndex = index;
-      matchedNote = { ...entry };
-      break;
-    }
-
-    if (!matchedNote || foundIndex < 0) {
-      return NextResponse.json({ error: "Scheduled note not found" }, { status: 404 });
-    }
-
-    const target = normalizeNoteTarget(matchedNote.email_target);
-    const sendMode = String(matchedNote.email_send_mode ?? "").toLowerCase();
-    if (target === "none" || sendMode !== "scheduled") {
-      return NextResponse.json({ error: "This note is not scheduled for email." }, { status: 400 });
-    }
-
-    if (typeof matchedNote.email_cancelled_at === "string" && matchedNote.email_cancelled_at.trim()) {
-      return NextResponse.json({ ok: true, message: "Scheduled email already cancelled." });
-    }
-
-    const customerOutstanding =
-      (target === "customer" || target === "both") && !matchedNote.email_customer_sent_at;
-    const internalOutstanding =
-      (target === "internal" || target === "both") && !matchedNote.email_internal_sent_at;
-
-    if (!customerOutstanding && !internalOutstanding) {
-      return NextResponse.json(
-        { error: "Scheduled email has already been sent." },
-        { status: 400 },
-      );
-    }
-
-    const nowIso = new Date().toISOString();
-    matchedNote.email_cancelled_at = nowIso;
-    matchedNote.email_cancelled_by = session.userId;
-    matchedNote.email_cancel_reason = cancelReason;
-    matchedNote.email_last_error = null;
-
-    const nextNotes = [...existingNotes];
-    nextNotes[foundIndex] = matchedNote;
-    const updatedPricing = { ...pricing, admin_notes: nextNotes };
-
-    await dbQuery("update bookings set pricing_json = $1, updated_at = now() where id = $2", [
-      updatedPricing,
-      id,
-    ]);
 
     await writeAuditLog({
       userId: session.userId,
@@ -1669,10 +1718,10 @@ export async function PATCH(
       entityType: "booking",
       entityId: id,
       details: {
-        note_id: matchedNote.note_id ?? null,
-        note_created_at: matchedNote.created_at ?? null,
-        note_email_target: target,
-        note_scheduled_for: matchedNote.email_scheduled_for ?? null,
+        note_id: auditNoteId,
+        note_created_at: auditNoteCreatedAt,
+        note_email_target: auditNoteEmailTarget,
+        note_scheduled_for: auditNoteScheduledFor,
         reason: cancelReason,
       },
     });

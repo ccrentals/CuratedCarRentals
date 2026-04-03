@@ -60,6 +60,14 @@ type AdminVehicleDeleteDeps = {
   writeDeleteAudit: (input: { userId: string; vehicleId: string }) => Promise<void>;
 };
 
+type AdminVehicleRestoreDeps = {
+  getSession: () => Promise<AdminSession | null>;
+  requireCsrfCheck: (request: Request, bodyToken?: string | null) => Promise<boolean>;
+  findVehicleById: (vehicleId: string) => Promise<{ id: string; deleted_at: string | null } | null>;
+  restoreVehicle: (vehicleId: string) => Promise<boolean>;
+  writeRestoreAudit: (input: { userId: string; vehicleId: string }) => Promise<void>;
+};
+
 type AdminVehiclePatchDeps = {
   authorize: () => Promise<AdminAccessResult>;
   requireCsrfCheck: (request: Request, bodyToken?: string | null) => Promise<boolean>;
@@ -107,12 +115,42 @@ const DEFAULT_DELETE_DEPS: AdminVehicleDeleteDeps = {
   },
 };
 
+const DEFAULT_RESTORE_DEPS: AdminVehicleRestoreDeps = {
+  getSession: () => getSessionFromRequest(),
+  requireCsrfCheck: (request, bodyToken) => requireCsrf(request, bodyToken),
+  findVehicleById: DEFAULT_DELETE_DEPS.findVehicleById,
+  restoreVehicle: async (vehicleId) => {
+    const result = await dbQuery(
+      "update vehicles set deleted_at = null, updated_at = now() where id = $1::uuid and deleted_at is not null returning id",
+      [vehicleId],
+    );
+    return result.rowCount > 0;
+  },
+  writeRestoreAudit: async ({ userId, vehicleId }) => {
+    await writeAuditLog({
+      userId,
+      action: "VEHICLE_RESTORE",
+      entityType: "vehicle",
+      entityId: vehicleId,
+      details: { mode: "restore" },
+    });
+  },
+};
+
 const DEFAULT_PATCH_DEPS: AdminVehiclePatchDeps = {
   authorize: () => requireAdminAccess(),
   requireCsrfCheck: (request, bodyToken) => requireCsrf(request, bodyToken),
   connect: async () => getDbPool().connect(),
   writeAudit: writeAuditLog,
 };
+
+function isRestoreRequest(body: Record<string, unknown> | null) {
+  return normalizeText(body?.action).toLowerCase() === "restore";
+}
+
+async function readJsonBody(request: Request) {
+  return (await request.json().catch(() => null)) as Record<string, unknown> | null;
+}
 
 function normalizeSeatCount(value: unknown): number | null | typeof INVALID_SEAT_COUNT {
   if (value === undefined) return null;
@@ -219,13 +257,14 @@ export async function handleAdminVehiclePatch(
   request: Request,
   { params }: VehicleRouteContext,
   deps: AdminVehiclePatchDeps = DEFAULT_PATCH_DEPS,
+  bodyOverride?: Record<string, unknown> | null,
 ) {
   const auth = await deps.authorize();
   if (!auth.ok) return auth.response;
   const { actor } = auth;
 
   const { id } = await params;
-  const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+  const body = bodyOverride ?? (await readJsonBody(request));
   if (!(await deps.requireCsrfCheck(request, (body?.csrfToken as string | null | undefined) ?? null))) {
     return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
   }
@@ -510,7 +549,48 @@ export async function PATCH(
   request: Request,
   context: VehicleRouteContext,
 ) {
-  return handleAdminVehiclePatch(request, context);
+  const body = await readJsonBody(request);
+  if (isRestoreRequest(body)) {
+    return handleAdminVehicleRestore(request, context, DEFAULT_RESTORE_DEPS, body);
+  }
+  return handleAdminVehiclePatch(request, context, DEFAULT_PATCH_DEPS, body);
+}
+
+export async function handleAdminVehicleRestore(
+  request: Request,
+  context: VehicleRouteContext,
+  deps: AdminVehicleRestoreDeps = DEFAULT_RESTORE_DEPS,
+  bodyOverride?: Record<string, unknown> | null,
+) {
+  const auth = await requireAdminAccess({ getSession: deps.getSession });
+  if (!auth.ok) return auth.response;
+  const { actor } = auth;
+
+  const body = bodyOverride ?? (await readJsonBody(request));
+  if (!(await deps.requireCsrfCheck(request, (body?.csrfToken as string | null | undefined) ?? null))) {
+    return NextResponse.json({ ok: false, error: "Invalid CSRF token" }, { status: 403 });
+  }
+
+  const { id } = await context.params;
+  if (!UUID_REGEX.test(id)) {
+    return NextResponse.json({ ok: false, error: "Invalid vehicle id" }, { status: 400 });
+  }
+
+  const vehicle = await deps.findVehicleById(id);
+  if (!vehicle) {
+    return NextResponse.json({ ok: false, error: "Vehicle not found" }, { status: 404 });
+  }
+  if (!vehicle.deleted_at) {
+    return NextResponse.json({ ok: true, alreadyRestored: true });
+  }
+
+  const restored = await deps.restoreVehicle(id);
+  if (!restored) {
+    return NextResponse.json({ ok: false, error: "Vehicle could not be restored." }, { status: 500 });
+  }
+
+  await deps.writeRestoreAudit({ userId: actor.userId, vehicleId: id });
+  return NextResponse.json({ ok: true });
 }
 
 export async function handleAdminVehicleDelete(

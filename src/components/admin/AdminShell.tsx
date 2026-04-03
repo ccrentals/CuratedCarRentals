@@ -8,6 +8,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ADMIN_ACCENT_RING_CLASS } from "@/components/admin/adminUiClasses";
 import { UserMenu } from "@/components/admin/UserMenu";
 import { buttonStyles } from "@/components/ui/Button";
+import { canAccessAdminPath } from "@/lib/auth/adminCapabilities";
 import { DOCUMENTATION_SECTION_CHILDREN } from "@/lib/documentation/catalog";
 import { useUnreadMessagesCount } from "@/lib/messages/useUnreadMessagesCount";
 
@@ -514,22 +515,13 @@ const NAV_GROUPS: NavGroup[] = [
 
 const NAV_ITEM_BY_HREF = new Map<string, NavItem>(NAV_ITEMS.map((item) => [item.href, item]));
 
-function normalizeRole(role: string | undefined) {
-  return String(role ?? "")
-    .trim()
-    .toUpperCase();
-}
-
-function isAdminRole(role: string | undefined) {
-  const normalized = normalizeRole(role);
-  return normalized === "ADMIN" || normalized === "DEVELOPER";
-}
-
 function getVisibleNavGroups(role: string | undefined) {
-  if (isAdminRole(role)) {
-    return NAV_GROUPS;
-  }
-  return NAV_GROUPS.filter((group) => group.id !== "administration");
+  return NAV_GROUPS
+    .map((group) => ({
+      ...group,
+      itemHrefs: group.itemHrefs.filter((href) => canAccessAdminPath(role, href)),
+    }))
+    .filter((group) => group.itemHrefs.length > 0);
 }
 
 function isActivePath(pathname: string, href: string) {
@@ -558,11 +550,7 @@ function AdminNavLinks({
   onNavigate,
 }: AdminNavLinksProps) {
   const visibleGroups = getVisibleNavGroups(currentRole);
-  const canSeeUsers = isAdminRole(currentRole);
   const visibleItemHrefs = new Set(visibleGroups.flatMap((group) => group.itemHrefs));
-  if (!canSeeUsers) {
-    visibleItemHrefs.delete("/admin/users");
-  }
   const visibleItems = NAV_ITEMS.filter((item) => visibleItemHrefs.has(item.href));
 
   const renderItem = (item: NavItem) => {

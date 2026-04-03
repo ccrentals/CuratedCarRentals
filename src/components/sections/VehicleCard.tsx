@@ -84,7 +84,7 @@ export function VehicleCard({
   if (fleet) {
     return (
       <article className="flex h-full flex-col overflow-hidden rounded-[1.85rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] shadow-[0_18px_56px_rgba(15,23,42,0.08)]">
-        <div className="relative h-72 overflow-hidden bg-[var(--ccr-surface-soft)]">
+        <div className="relative h-64 overflow-hidden bg-[var(--ccr-surface-soft)] sm:h-72">
           <Image
             src={image}
             alt={vehicle.name}
@@ -104,10 +104,10 @@ export function VehicleCard({
           </div>
         </div>
 
-        <div className="flex flex-1 flex-col gap-5 p-6">
+        <div className="flex flex-1 flex-col gap-4 p-5 sm:gap-5 sm:p-6">
           <div>
             <Link href={detailHref} className="block transition hover:text-[var(--ccr-accent-strong)]">
-              <h3 className="min-h-[4.8rem] font-display text-[1.9rem] font-bold leading-[1.15] text-[var(--ccr-text)]">
+              <h3 className="min-h-[4.1rem] font-display text-[1.6rem] font-bold leading-[1.12] text-[var(--ccr-text)] sm:min-h-[4.8rem] sm:text-[1.9rem]">
                 {vehicle.name}
               </h3>
             </Link>
@@ -119,7 +119,7 @@ export function VehicleCard({
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-x-6 gap-y-3 text-[1.05rem] text-[var(--ccr-muted)]">
+          <div className="flex flex-wrap gap-x-4 gap-y-2.5 text-sm text-[var(--ccr-muted)] sm:gap-x-6 sm:gap-y-3 sm:text-[1.05rem]">
             <div className="inline-flex items-center gap-2">
               <span className="text-[var(--ccr-muted)]/90">
                 <PassengersIcon />
@@ -144,7 +144,7 @@ export function VehicleCard({
             Our simple pricing includes all statutory fees and taxes - (only optional Insurance is extra)
           </p>
 
-          <div className="mt-auto flex flex-wrap items-center justify-between gap-3 pt-2">
+          <div className="mt-auto flex flex-col gap-3 pt-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
             <Link
               href={detailHref}
               className="text-sm font-semibold text-[var(--ccr-text)] transition hover:text-[var(--ccr-accent-strong)]"
@@ -152,13 +152,13 @@ export function VehicleCard({
               View details
             </Link>
 
-            {showBookButton ? (
+          {showBookButton ? (
               <Link
                 href={`/book?vehicle=${vehicle.id}`}
                 className={buttonStyles({
                   variant: "primary",
                   size: "lg",
-                  className: "rounded-full",
+                  className: "w-full justify-center rounded-full sm:w-auto",
                 })}
               >
                 Reserve Now
@@ -176,7 +176,7 @@ export function VehicleCard({
         compact ? "h-full" : ""
       }`}
     >
-      <div className={`relative overflow-hidden bg-[var(--ccr-surface-soft)] ${compact ? "h-64" : "h-72"}`}>
+      <div className={`relative overflow-hidden bg-[var(--ccr-surface-soft)] ${compact ? "h-56 sm:h-64" : "h-64 sm:h-72"}`}>
         <Image
           src={image}
           alt={vehicle.name}
@@ -196,22 +196,22 @@ export function VehicleCard({
         </div>
       </div>
 
-      <div className="space-y-5 p-6">
+      <div className="space-y-4 p-5 sm:space-y-5 sm:p-6">
         <div className="flex items-start justify-between gap-4">
           <div>
             <Link href={detailHref} className="transition hover:text-[var(--ccr-accent-strong)]">
-              <h3 className="font-display text-[1.9rem] font-bold leading-tight text-[var(--ccr-text)]">
+              <h3 className="font-display text-[1.6rem] font-bold leading-[1.12] text-[var(--ccr-text)] sm:text-[1.9rem]">
                 {vehicle.name}
               </h3>
             </Link>
             <div className="mt-2 text-sm text-[var(--ccr-muted)]">
-              <span className="text-[2rem] font-semibold leading-none text-[var(--ccr-text)]">{formatPublicJmd(vehicle.pricePerDay)}</span>{" "}
+              <span className="text-[1.7rem] font-semibold leading-none text-[var(--ccr-text)] sm:text-[2rem]">{formatPublicJmd(vehicle.pricePerDay)}</span>{" "}
               per day
             </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-3 text-sm text-[var(--ccr-muted)]">
+        <div className="grid grid-cols-1 gap-2 text-sm text-[var(--ccr-muted)] min-[430px]:grid-cols-3 sm:gap-3">
           <div className="rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-2 text-center">
             {vehicle.seats} Passengers
           </div>
@@ -227,7 +227,7 @@ export function VehicleCard({
           Our simple pricing includes all statutory fees and taxes - (only optional Insurance is extra)
         </p>
 
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
           <Link
             href={detailHref}
             className="text-sm font-semibold text-[var(--ccr-text)] transition hover:text-[var(--ccr-accent-strong)]"
@@ -241,7 +241,7 @@ export function VehicleCard({
               className={buttonStyles({
                 variant: "primary",
                 size: "lg",
-                className: "rounded-full",
+                className: "w-full justify-center rounded-full sm:w-auto",
               })}
             >
               Reserve Now

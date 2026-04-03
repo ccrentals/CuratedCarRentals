@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   buildClerkUsernameCandidates,
+  isClerkSafeUsernameInput,
   isClerkPasswordPolicyError,
   isClerkUsernameError,
   normalizeUsernameForClerk,
@@ -47,4 +48,10 @@ test("clerk error helpers: identify username/password issues", () => {
     }),
     false,
   );
+});
+
+test("isClerkSafeUsernameInput: rejects dot-style usernames and accepts Clerk-safe ones", () => {
+  assert.equal(isClerkSafeUsernameInput("theredo-johnson"), true);
+  assert.equal(isClerkSafeUsernameInput("crentals"), true);
+  assert.equal(isClerkSafeUsernameInput("theredo.johnson"), false);
 });

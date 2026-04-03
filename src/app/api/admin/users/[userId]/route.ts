@@ -10,7 +10,12 @@ import { writeAuditLog } from "@/lib/audit";
 import { hashPassword } from "@/lib/auth/password";
 import { logError } from "@/lib/log";
 import { isEmail, isNonEmptyString } from "@/lib/validators";
-import { buildClerkUsernameCandidates, isClerkUsernameError } from "@/lib/security/clerkUsernames";
+import {
+  buildClerkUsernameCandidates,
+  isClerkSafeUsernameInput,
+  isClerkUsernameError,
+  normalizeUsernameForClerk,
+} from "@/lib/security/clerkUsernames";
 import { isClerkEnabled } from "@/lib/security/clerk";
 
 type QueryResultRow = Record<string, unknown>;
@@ -58,16 +63,6 @@ type ClerkPasswordResetSyncResult = {
 function generateTempPassword() {
   // Short, copy-friendly, URL-safe, and strong enough as a temporary secret.
   return randomBytes(9).toString("base64url"); // ~12 chars
-}
-
-function normalizeUsername(value: string) {
-  const lower = value.trim().toLowerCase();
-  const replaced = lower.replace(/[^a-z0-9._-]+/g, "-");
-  const collapsed = replaced
-    .replace(/-+/g, "-")
-    .replace(/\.+/g, ".")
-    .replace(/^[-_.]+|[-_.]+$/g, "");
-  return collapsed.slice(0, 32);
 }
 
 function isUndefinedColumn(error: unknown, column: string) {
@@ -483,7 +478,7 @@ export async function PATCH(
       const fullName = typeof body?.fullName === "string" ? body.fullName.trim() : "";
       const emailRaw = typeof body?.email === "string" ? body.email.trim() : "";
       const usernameRaw = typeof body?.username === "string" ? body.username.trim() : "";
-      const username = normalizeUsername(usernameRaw);
+      const username = normalizeUsernameForClerk(usernameRaw);
 
       if (!isNonEmptyString(fullName, 2)) {
         await client.query("rollback");
@@ -493,12 +488,11 @@ export async function PATCH(
         await client.query("rollback");
         return NextResponse.json({ error: "A valid email is required." }, { status: 400 });
       }
-      if (!isNonEmptyString(username, 3)) {
+      if (!isNonEmptyString(username, 3) || !isClerkSafeUsernameInput(usernameRaw)) {
         await client.query("rollback");
         return NextResponse.json(
           {
-            error:
-              "Invalid username. Use 3+ characters: letters, numbers, dot, underscore, or dash.",
+            error: "Invalid username. Use 3+ characters: letters, numbers, underscore, or dash.",
           },
           { status: 400 },
         );

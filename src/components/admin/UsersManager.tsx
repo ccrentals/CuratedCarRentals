@@ -23,17 +23,19 @@ type CreateUserResult = {
   tempPasswordExpiresAt: string;
   clerkSync?:
     | {
-        status: "created" | "linked_existing";
-        clerkUserId: string;
-        message: string;
-        localLinkSaved: boolean;
-        localLinkWarning?: string;
-      }
+      status: "created" | "linked_existing";
+      clerkUserId: string;
+      finalUsername: string;
+      message: string;
+      localLinkSaved: boolean;
+      localLinkWarning?: string;
+    }
     | {
-        status: "skipped" | "failed";
-        clerkUserId: null;
-        message: string;
-      };
+      status: "skipped" | "failed";
+      clerkUserId: null;
+      finalUsername: null;
+      message: string;
+    };
 };
 
 type UserRole = "USER" | "ADMIN" | "DEVELOPER";

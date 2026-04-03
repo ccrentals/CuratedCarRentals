@@ -58,12 +58,18 @@ export async function POST(
 
     if (original.provider !== "WIPAY") {
       await client.query("rollback");
-      return NextResponse.json({ error: "Only WIPAY payments can be refunded here" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Only WIPAY payments can be manually adjusted here" },
+        { status: 400 },
+      );
     }
 
     if (original.status !== "DEPOSIT_PAID" || !Number.isFinite(original.deposit_amount_cents) || original.deposit_amount_cents <= 0) {
       await client.query("rollback");
-      return NextResponse.json({ error: "Only successful payments can be refunded" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Only successful payments can be manually adjusted here" },
+        { status: 400 },
+      );
     }
 
     const refundRef = `REFUND_${original.id}`;
@@ -74,7 +80,11 @@ export async function POST(
     if (existingRefund.rowCount > 0) {
       const summary = await recalculateBookingPayments(original.booking_id, { client });
       await client.query("commit");
-      return NextResponse.json({ ok: true, message: "Refund already recorded", summary });
+      return NextResponse.json({
+        ok: true,
+        message: "Manual refund adjustment already recorded",
+        summary,
+      });
     }
 
     const refundAmount = -Math.abs(Number(original.deposit_amount_cents));
@@ -101,7 +111,7 @@ export async function POST(
 
     await writeAuditLog({
       userId: actor.userId,
-      action: "WIPAY_REFUND_CREATED",
+      action: "PAYMENT_MANUAL_REFUND_RECORDED",
       entityType: "payment",
       entityId: refundInsert.rows[0]?.id,
       details: {
@@ -113,11 +123,11 @@ export async function POST(
       },
     });
 
-    return NextResponse.json({ ok: true, message: "Refund recorded", summary });
+    return NextResponse.json({ ok: true, message: "Manual refund adjustment recorded", summary });
   } catch (error) {
     await client.query("rollback");
     logError("api.admin.payments.refund.POST", error, { userId: actor.userId, paymentId });
-    return NextResponse.json({ error: "Failed to record refund" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to record manual refund adjustment" }, { status: 500 });
   } finally {
     client.release();
   }

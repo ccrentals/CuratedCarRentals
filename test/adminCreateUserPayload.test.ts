@@ -18,6 +18,7 @@ test("admin create-user payload includes username and temp password", () => {
     clerkSync: {
       status: "created",
       clerkUserId: "user_clerk_123",
+      finalUsername: "mmalcolm",
       message: "Clerk account created and linked.",
       localLinkSaved: true,
     },

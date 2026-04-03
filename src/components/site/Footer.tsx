@@ -36,16 +36,16 @@ export function Footer() {
 
   return (
     <footer className="site-footer bg-[#070b12] text-white">
-      <Container className="max-w-[86rem] px-6 py-16 sm:px-8 lg:px-10">
-        <div className="grid gap-10 border-b border-white/10 pb-12 md:grid-cols-2 xl:grid-cols-[1.2fr_0.9fr_0.9fr_1.05fr]">
-          <div>
+      <Container className="max-w-[86rem] px-4 py-12 min-[430px]:px-5 sm:px-8 sm:py-14 lg:px-10">
+        <div className="grid grid-cols-2 gap-8 border-b border-white/10 pb-10 md:grid-cols-2 xl:grid-cols-[1.2fr_0.9fr_0.9fr_1.05fr]">
+          <div className="col-span-2 xl:col-span-1">
             <div className="flex items-start gap-3">
-              <SiteLogo size={64} className="h-14 w-14 shrink-0 text-white" />
-              <h2 className="font-display text-[1.9rem] font-bold text-white sm:text-[2.1rem]">
+              <SiteLogo size={56} className="h-12 w-12 shrink-0 text-white sm:h-14 sm:w-14" />
+              <h2 className="font-display text-[1.65rem] font-bold leading-tight text-white sm:text-[1.9rem]">
                 Curated Car Rentals
               </h2>
             </div>
-            <p className="mt-4 max-w-md text-base leading-7 text-white/68">
+            <p className="mt-4 max-w-md text-sm leading-7 text-white/68 sm:text-base">
               {siteContent.brandDescription}
             </p>
 
@@ -59,7 +59,7 @@ export function Footer() {
                     href={item.href}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/12 bg-white/6 text-white/78 transition hover:border-white/24 hover:bg-white/10 hover:text-white"
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/12 bg-white/6 text-white/78 transition hover:border-white/24 hover:bg-white/10 hover:text-white sm:h-11 sm:w-11"
                     aria-label={item.label}
                   >
                     <Icon className="h-4 w-4" />
@@ -69,9 +69,9 @@ export function Footer() {
             </div>
           </div>
 
-          <div>
-            <h3 className="font-display text-2xl font-bold text-white">Quick Links</h3>
-            <ul className="mt-5 space-y-3 text-[15px] text-white/72">
+          <div className="min-w-0">
+            <h3 className="font-display text-xl font-bold text-white sm:text-2xl">Quick Links</h3>
+            <ul className="mt-4 space-y-2.5 text-[13px] text-white/72 sm:mt-5 sm:space-y-3 sm:text-[15px]">
               {quickLinks.map((link) => (
                 <li key={link.href}>
                   <Link href={link.href} className="transition hover:text-white">
@@ -82,9 +82,9 @@ export function Footer() {
             </ul>
           </div>
 
-          <div>
-            <h3 className="font-display text-2xl font-bold text-white">Our Services</h3>
-            <ul className="mt-5 space-y-3 text-[15px] text-white/72">
+          <div className="min-w-0">
+            <h3 className="font-display text-xl font-bold text-white sm:text-2xl">Our Services</h3>
+            <ul className="mt-4 space-y-2.5 text-[13px] text-white/72 sm:mt-5 sm:space-y-3 sm:text-[15px]">
               {services.map((service) => (
                 <li key={service.id}>
                   <Link href={`/services#${service.id}`} className="transition hover:text-white">
@@ -95,9 +95,9 @@ export function Footer() {
             </ul>
           </div>
 
-          <div>
-            <h3 className="font-display text-2xl font-bold text-white">Contact Us</h3>
-            <ul className="mt-5 space-y-4 text-[15px] text-white/72">
+          <div className="col-span-2 xl:col-span-1">
+            <h3 className="font-display text-xl font-bold text-white sm:text-2xl">Contact Us</h3>
+            <ul className="mt-4 space-y-3.5 text-sm text-white/72 sm:mt-5 sm:space-y-4 sm:text-[15px]">
               <li className="flex gap-3">
                 <span className="mt-1 text-white/48">
                   <LocationIcon className="h-4 w-4" />
@@ -139,7 +139,7 @@ export function Footer() {
 
         <div className="flex flex-col gap-4 pt-6 text-sm text-white/56 md:flex-row md:items-center md:justify-between">
           <p>© {new Date().getFullYear()} Curated Car Rentals. All rights reserved.</p>
-          <div className="flex flex-wrap gap-x-5 gap-y-2">
+          <div className="flex flex-wrap gap-x-4 gap-y-2 sm:gap-x-5">
             {legalFooterItems.map((item) => (
               <button
                 key={item}

@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { isDeveloperRole } from "@/lib/auth/roles";
+import { notFound } from "next/navigation";
 
-import { getSessionFromRequest } from "@/lib/auth/session";
+import { resolveAdminActor } from "@/lib/auth/adminGuards";
 
 type CapabilityRow = {
   feature: string;
@@ -24,7 +24,7 @@ const CAPABILITIES: CapabilityRow[] = [
     user: "Limited",
   },
   {
-    feature: "Payment actions (manual payment, refund/void, cancel/restore)",
+    feature: "Payment actions (manual payment, manual refund adjustment, cancel/restore)",
     developer: "Full",
     admin: "Full",
     user: "Restricted",
@@ -32,8 +32,8 @@ const CAPABILITIES: CapabilityRow[] = [
   {
     feature: "Run cron jobs and monitoring actions",
     developer: "Full",
-    admin: "Full",
-    user: "Read-only",
+    admin: "No",
+    user: "No",
   },
   {
     feature: "Settings management",
@@ -62,8 +62,10 @@ const CAPABILITIES: CapabilityRow[] = [
 ];
 
 export default async function AdminDeveloperAccessPage() {
-  const session = await getSessionFromRequest();
-  const canView = isDeveloperRole(session?.role);
+  const access = await resolveAdminActor({ requirement: "developer" });
+  if (!access.ok) {
+    notFound();
+  }
 
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-10">
@@ -83,40 +85,31 @@ export default async function AdminDeveloperAccessPage() {
         </Link>
       </div>
 
-      {!canView ? (
-        <section className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
-          <h2 className="text-lg font-bold text-[var(--ccr-text)]">Restricted</h2>
-          <p className="mt-2 text-sm text-[var(--ccr-muted)]">
-            Only DEVELOPER users can view this matrix.
-          </p>
-        </section>
-      ) : (
-        <section className="mt-6 overflow-x-auto rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
-          <table className="min-w-full text-left text-sm">
-            <thead className="border-b border-[var(--ccr-border)] text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
-              <tr>
-                <th className="px-3 py-3">Feature</th>
-                <th className="px-3 py-3">Developer</th>
-                <th className="px-3 py-3">Admin</th>
-                <th className="px-3 py-3">User</th>
+      <section className="mt-6 overflow-x-auto rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
+        <table className="min-w-full text-left text-sm">
+          <thead className="border-b border-[var(--ccr-border)] text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
+            <tr>
+              <th className="px-3 py-3">Feature</th>
+              <th className="px-3 py-3">Developer</th>
+              <th className="px-3 py-3">Admin</th>
+              <th className="px-3 py-3">User</th>
+            </tr>
+          </thead>
+          <tbody>
+            {CAPABILITIES.map((row) => (
+              <tr key={row.feature} className="border-b border-[var(--ccr-border)] last:border-b-0">
+                <td className="px-3 py-3 text-[var(--ccr-text)]">{row.feature}</td>
+                <td className="px-3 py-3 font-semibold text-[var(--ccr-text)]">{row.developer}</td>
+                <td className="px-3 py-3 font-semibold text-[var(--ccr-text)]">{row.admin}</td>
+                <td className="px-3 py-3 font-semibold text-[var(--ccr-text)]">{row.user}</td>
               </tr>
-            </thead>
-            <tbody>
-              {CAPABILITIES.map((row) => (
-                <tr key={row.feature} className="border-b border-[var(--ccr-border)] last:border-b-0">
-                  <td className="px-3 py-3 text-[var(--ccr-text)]">{row.feature}</td>
-                  <td className="px-3 py-3 font-semibold text-[var(--ccr-text)]">{row.developer}</td>
-                  <td className="px-3 py-3 font-semibold text-[var(--ccr-text)]">{row.admin}</td>
-                  <td className="px-3 py-3 font-semibold text-[var(--ccr-text)]">{row.user}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <p className="mt-4 text-xs text-[var(--ccr-muted)]">
-            Note: server-side route guards remain the enforcement source of truth; this page is an operational reference.
-          </p>
-        </section>
-      )}
+            ))}
+          </tbody>
+        </table>
+        <p className="mt-4 text-xs text-[var(--ccr-muted)]">
+          Note: server-side route guards remain the enforcement source of truth; this page is an operational reference.
+        </p>
+      </section>
     </div>
   );
 }

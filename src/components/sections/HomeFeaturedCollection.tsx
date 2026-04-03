@@ -78,7 +78,7 @@ export function HomeFeaturedCollection({
       description="Discover our handpicked selection of premium vehicles that combine style, comfort, and reliability for your Jamaican adventure."
       className="bg-white"
     >
-      <div className="grid gap-6 xl:grid-cols-3">
+      <div className="grid gap-5 sm:gap-6 xl:grid-cols-3">
         {collectionVehicles.length === 0 ? (
           <article className="rounded-[1.8rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 text-sm leading-7 text-[var(--ccr-muted)] shadow-[0_18px_56px_rgba(15,23,42,0.08)] xl:col-span-3">
             No vehicles are currently published. Add and publish vehicles from the Admin portal.
@@ -92,7 +92,7 @@ export function HomeFeaturedCollection({
                 key={vehicle.id}
                 className="flex h-full flex-col overflow-hidden rounded-[1.85rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] shadow-[0_18px_56px_rgba(15,23,42,0.08)]"
               >
-                <div className="relative h-72 overflow-hidden bg-[var(--ccr-surface-soft)]">
+                <div className="relative h-64 overflow-hidden bg-[var(--ccr-surface-soft)] sm:h-72">
                   <Image
                     src={vehicle.images[0] ?? "/window.svg"}
                     alt={vehicle.name}
@@ -112,20 +112,20 @@ export function HomeFeaturedCollection({
                   </div>
                 </div>
 
-                <div className="flex flex-1 flex-col gap-5 p-6">
+                <div className="flex flex-1 flex-col gap-4 p-5 sm:gap-5 sm:p-6">
                   <div>
-                    <div className="min-h-[4.8rem]">
-                      <h3 className="font-display text-[1.9rem] font-bold leading-[1.15] text-[var(--ccr-text)]">
+                    <div className="min-h-[4.2rem] sm:min-h-[4.8rem]">
+                      <h3 className="font-display text-[1.6rem] font-bold leading-[1.12] text-[var(--ccr-text)] sm:text-[1.9rem]">
                         {vehicle.name}
                       </h3>
                     </div>
                     <div className="mt-2 text-sm text-[var(--ccr-muted)]">
-                      <span className="text-[2rem] font-semibold leading-none text-[var(--ccr-text)]">{formatPublicJmd(vehicle.pricePerDay)}</span>{" "}
+                      <span className="text-[1.7rem] font-semibold leading-none text-[var(--ccr-text)] sm:text-[2rem]">{formatPublicJmd(vehicle.pricePerDay)}</span>{" "}
                       per day
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap gap-x-6 gap-y-3 text-[1.05rem] text-[var(--ccr-muted)]">
+                  <div className="flex flex-wrap gap-x-4 gap-y-2.5 text-sm text-[var(--ccr-muted)] sm:gap-x-6 sm:gap-y-3 sm:text-[1.05rem]">
                     <div className="inline-flex items-center gap-2">
                       <span className="text-[var(--ccr-muted)]/90">
                         <PassengersIcon />
@@ -155,7 +155,7 @@ export function HomeFeaturedCollection({
                     className={buttonStyles({
                       variant: "primary",
                       size: "lg",
-                      className: "mt-auto self-start rounded-full",
+                      className: "mt-auto w-full justify-center self-start rounded-full sm:w-auto",
                     })}
                   >
                     Reserve Now
@@ -167,7 +167,7 @@ export function HomeFeaturedCollection({
         )}
       </div>
 
-      <div className="mt-8 flex justify-center">
+      <div className="mt-7 flex justify-center sm:mt-8">
         <Link
           href="/fleet"
           className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--ccr-light-surface-text)] transition hover:text-[var(--ccr-accent-strong)]"
@@ -180,7 +180,7 @@ export function HomeFeaturedCollection({
         </Link>
       </div>
 
-      <p className="mt-4 text-center text-sm text-[var(--ccr-light-surface-muted)]">
+      <p className="mt-3 text-center text-sm text-[var(--ccr-light-surface-muted)] sm:mt-4">
         Showing {collectionVehicles.length} of {vehicleCount} published vehicles.
       </p>
     </PublicSection>

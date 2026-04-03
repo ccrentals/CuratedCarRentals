@@ -15,6 +15,7 @@ type UnreadMessageRow = {
   name: string;
   email: string;
   message: string;
+  source: string | null;
 };
 
 export type ContactNotificationMessageItem = {
@@ -23,6 +24,7 @@ export type ContactNotificationMessageItem = {
   name: string;
   email: string;
   message: string;
+  source: string;
 };
 
 export type ContactNotificationSummary = {
@@ -102,12 +104,14 @@ export async function loadUnreadContactSummary(
   query: ContactMessageNotifierQuery = dbQuery,
 ): Promise<ContactNotificationSummary> {
   const countResult = await query<{ count: unknown }>(
-    "select count(*)::int as count from contact_messages where status = 'NEW' and coalesce(source, 'contact_page') = 'contact_page'",
+    "select count(*)::int as count from contact_messages where status = 'NEW' and coalesce(source, 'contact_page') = any($1::text[])",
+    [["contact_page", "home_page_contact"]],
   );
   const totalNew = Number(countResult.rows[0]?.count ?? 0);
 
   const previewRows = await query<UnreadMessageRow>(
-    "select id, created_at, name, email, message from contact_messages where status = 'NEW' and coalesce(source, 'contact_page') = 'contact_page' order by created_at desc, id::text desc limit 3",
+    "select id, created_at, name, email, message, source from contact_messages where status = 'NEW' and coalesce(source, 'contact_page') = any($1::text[]) order by created_at desc, id::text desc limit 3",
+    [["contact_page", "home_page_contact"]],
   );
 
   return {
@@ -118,6 +122,7 @@ export async function loadUnreadContactSummary(
       name: row.name,
       email: row.email,
       message: row.message,
+      source: row.source?.trim() || "contact_page",
     })),
   };
 }
@@ -143,7 +148,7 @@ const DEFAULT_DEPS: ContactMessageNotifierDeps = {
       name: message.name,
       email: message.email,
       message: message.message,
-      source: "contact_page",
+      source: message.source,
       recipients,
     }),
   sendDigest: ({ recipients, totalNew, items }) =>

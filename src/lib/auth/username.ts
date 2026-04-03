@@ -1,3 +1,5 @@
+import { normalizeUsernameForClerk } from "@/lib/security/clerkUsernames";
+
 const USERNAME_MIN_LENGTH = 3;
 const USERNAME_MAX_LENGTH = 32;
 const COMBINING_MARKS_RE = /[\u0300-\u036f]/g;
@@ -7,10 +9,7 @@ function stripDiacritics(value: string) {
 }
 
 function sanitizeToUsernameCharset(value: string) {
-  return stripDiacritics(value)
-    .toLowerCase()
-    .replace(/[\s\-.'’`]+/g, "")
-    .replace(/[^a-z0-9_]/g, "");
+  return normalizeUsernameForClerk(stripDiacritics(value));
 }
 
 function ensureMinLength(base: string, fallbackSeed: string) {

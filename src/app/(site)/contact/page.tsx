@@ -11,7 +11,8 @@ import { reassuranceItems, siteContent } from "@/data/content";
 
 export default function ContactPage() {
   const startedAtRef = useRef<number>(Date.now());
-  const [name, setName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [message, setMessage] = useState("");
@@ -46,7 +47,7 @@ export default function ContactPage() {
         method: "POST",
         headers,
         body: JSON.stringify({
-          name,
+          name: [firstName, lastName].filter(Boolean).join(" ").trim(),
           email,
           message: phone ? `${message}\n\nPhone Number: ${phone}` : message,
           company,
@@ -72,7 +73,8 @@ export default function ContactPage() {
       }
 
       setSuccess("Message sent successfully. We’ll be in touch shortly.");
-      setName("");
+      setFirstName("");
+      setLastName("");
       setEmail("");
       setPhone("");
       setMessage("");
@@ -123,10 +125,10 @@ export default function ContactPage() {
         </div>
       </PublicPageIntro>
 
-      <PublicSection className="bg-white pt-12 md:pt-16">
-        <div className="grid gap-8 lg:grid-cols-[0.92fr_1.08fr] lg:items-start">
-          <div className="space-y-5">
-            <article className="rounded-[1.9rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-[0_18px_56px_rgba(15,23,42,0.07)]">
+      <PublicSection className="bg-white pt-10 sm:pt-12 md:pt-16">
+        <div className="grid gap-6 sm:gap-8 lg:grid-cols-[0.92fr_1.08fr] lg:items-start">
+          <div className="space-y-4 sm:space-y-5">
+            <article className="rounded-[1.9rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-5 shadow-[0_18px_56px_rgba(15,23,42,0.07)] sm:p-6">
               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--ccr-accent-strong)]">
                 Contact Details
               </p>
@@ -167,7 +169,7 @@ export default function ContactPage() {
               </div>
             </article>
 
-            <article className="rounded-[1.9rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)]/75 p-6">
+            <article className="rounded-[1.9rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)]/75 p-5 sm:p-6">
               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--ccr-accent-strong)]">
                 Before You Send
               </p>
@@ -184,12 +186,12 @@ export default function ContactPage() {
             </article>
           </div>
 
-          <section className="rounded-[2rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-[0_24px_80px_rgba(15,23,42,0.08)] md:p-8">
+          <section className="rounded-[2rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-5 shadow-[0_24px_80px_rgba(15,23,42,0.08)] sm:p-6 md:p-8">
             <div className="max-w-2xl">
               <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--ccr-accent-strong)]">
                 Secure Message Form
               </p>
-              <h2 className="mt-3 text-3xl font-semibold tracking-tight text-[var(--ccr-text)]">
+              <h2 className="mt-3 text-[2rem] font-semibold tracking-tight text-[var(--ccr-text)] sm:text-3xl">
                 Send a message
               </h2>
               <p className="mt-4 text-base leading-7 text-[var(--ccr-muted)]">
@@ -211,20 +213,34 @@ export default function ContactPage() {
                 />
               </label>
 
-              <div className="grid gap-5 md:grid-cols-2">
-                <label className="block text-sm text-[var(--ccr-muted)]">
-                  Name
+              <div className="grid grid-cols-2 gap-3 sm:gap-5">
+                <label className="block min-w-0 text-sm text-[var(--ccr-muted)]">
+                  First Name
                   <input
                     type="text"
-                    value={name}
-                    onChange={(event) => setName(event.target.value)}
-                    autoComplete="name"
+                    value={firstName}
+                    onChange={(event) => setFirstName(event.target.value)}
+                    autoComplete="given-name"
                     required
                     className="mt-2 w-full rounded-[1.1rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-4 py-3 text-[var(--ccr-text)] shadow-sm outline-none ring-[var(--ccr-accent)] transition focus:ring-2"
                   />
                 </label>
-                <label className="block text-sm text-[var(--ccr-muted)]">
-                  Email
+                <label className="block min-w-0 text-sm text-[var(--ccr-muted)]">
+                  Last Name
+                  <input
+                    type="text"
+                    value={lastName}
+                    onChange={(event) => setLastName(event.target.value)}
+                    autoComplete="family-name"
+                    required
+                    className="mt-2 w-full rounded-[1.1rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-4 py-3 text-[var(--ccr-text)] shadow-sm outline-none ring-[var(--ccr-accent)] transition focus:ring-2"
+                  />
+                </label>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 sm:gap-5">
+                <label className="block min-w-0 text-sm text-[var(--ccr-muted)]">
+                  Email Address
                   <input
                     type="email"
                     value={email}
@@ -234,21 +250,20 @@ export default function ContactPage() {
                     className="mt-2 w-full rounded-[1.1rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-4 py-3 text-[var(--ccr-text)] shadow-sm outline-none ring-[var(--ccr-accent)] transition focus:ring-2"
                   />
                 </label>
+                <label className="block min-w-0 text-sm text-[var(--ccr-muted)]">
+                  Phone Number
+                  <input
+                    type="tel"
+                    value={phone}
+                    onChange={(event) => setPhone(event.target.value)}
+                    autoComplete="tel"
+                    className="mt-2 w-full rounded-[1.1rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-4 py-3 text-[var(--ccr-text)] shadow-sm outline-none ring-[var(--ccr-accent)] transition focus:ring-2"
+                  />
+                </label>
               </div>
 
               <label className="block text-sm text-[var(--ccr-muted)]">
-                Phone Number
-                <input
-                  type="tel"
-                  value={phone}
-                  onChange={(event) => setPhone(event.target.value)}
-                  autoComplete="tel"
-                  className="mt-2 w-full rounded-[1.1rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-4 py-3 text-[var(--ccr-text)] shadow-sm outline-none ring-[var(--ccr-accent)] transition focus:ring-2"
-                />
-              </label>
-
-              <label className="block text-sm text-[var(--ccr-muted)]">
-                Message
+                Your Message
                 <textarea
                   value={message}
                   onChange={(event) => setMessage(event.target.value)}
@@ -257,7 +272,7 @@ export default function ContactPage() {
                 />
               </label>
 
-              <div className="rounded-[1.35rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)]/80 p-4">
+              <div className="rounded-[1.35rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)]/80 p-3.5 sm:p-4">
                 <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--ccr-accent-strong)]">
                   Security Check
                 </p>
@@ -280,7 +295,7 @@ export default function ContactPage() {
                 </p>
               ) : null}
 
-              <div className="flex flex-wrap items-center gap-3">
+              <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
                 <Button
                   type="submit"
                   className="w-full bg-[var(--ccr-primary)] px-6 py-3 text-[var(--ccr-on-primary)] hover:bg-[var(--ccr-primary-soft)] sm:w-auto"
@@ -303,11 +318,11 @@ export default function ContactPage() {
         description="The same straightforward service we bring to the fleet and booking experience should be visible when you need answers."
         className="bg-[var(--ccr-surface)]/55"
       >
-        <div className="grid gap-5 md:grid-cols-3">
+        <div className="grid gap-4 sm:gap-5 md:grid-cols-3">
           {reassuranceItems.map((item) => (
             <article
               key={item.title}
-              className="rounded-[1.7rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-5 shadow-[0_18px_56px_rgba(15,23,42,0.07)]"
+              className="rounded-[1.7rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4 shadow-[0_18px_56px_rgba(15,23,42,0.07)] sm:p-5"
             >
               <p className="text-lg font-semibold text-[var(--ccr-text)]">{item.title}</p>
               <p className="mt-3 text-sm leading-7 text-[var(--ccr-muted)]">{item.description}</p>

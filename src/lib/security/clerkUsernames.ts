@@ -9,6 +9,7 @@ type ClerkError = {
 
 const CLERK_USERNAME_MIN_LENGTH = 3;
 const CLERK_USERNAME_MAX_LENGTH = 32;
+const CLERK_USERNAME_INPUT_RE = /^[a-z0-9_-]{3,32}$/i;
 
 function normalizeRaw(value: string) {
   return value
@@ -32,6 +33,10 @@ export function normalizeUsernameForClerk(value: string) {
   }
 
   return clipped.padEnd(CLERK_USERNAME_MIN_LENGTH, "0");
+}
+
+export function isClerkSafeUsernameInput(value: string) {
+  return CLERK_USERNAME_INPUT_RE.test(value.trim());
 }
 
 function pushCandidate(target: string[], candidate: string) {
