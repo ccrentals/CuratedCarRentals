@@ -28,6 +28,187 @@ function isDesktopNavItemActive(pathname: string | null | undefined, href: strin
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
+function MobileTopBar({ onOpen, isOpen }: { onOpen: () => void; isOpen: boolean }) {
+  return (
+    <div className="flex min-w-0 items-center gap-2 min-[1160px]:hidden">
+      <button
+        type="button"
+        onClick={onOpen}
+        className="inline-flex min-h-10 items-center gap-1.5 rounded-full border border-white/15 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/80 transition hover:border-white/30 hover:text-white"
+        aria-controls="mobile-site-nav"
+        aria-expanded={isOpen}
+        aria-label="Open menu"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          className="h-4 w-4"
+          aria-hidden="true"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M4 7h16" />
+          <path d="M4 12h16" />
+          <path d="M4 17h16" />
+        </svg>
+        <span className="hidden min-[380px]:inline">Menu</span>
+      </button>
+
+      <Link
+        href="/"
+        className="inline-flex min-w-0 items-end gap-2 text-white"
+        aria-label="Go to homepage"
+      >
+        <SiteLogo size={56} className="h-11 w-11 shrink-0 sm:h-12 sm:w-12" />
+        <span className="min-w-0 self-end pb-[2px]">
+          <span
+            className="ccr-wordmark-curated block whitespace-nowrap leading-[0.78] text-white"
+            style={{ fontSize: "1.45rem" }}
+          >
+            CCR
+          </span>
+        </span>
+      </Link>
+    </div>
+  );
+}
+
+function MobileDrawerHeader({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="flex items-start justify-between gap-2.5">
+      <Link
+        href="/"
+        className="inline-flex min-w-0 flex-1 items-start gap-1.5 text-white"
+        onClick={onClose}
+      >
+        <SiteLogo size={40} className="h-8 w-8 shrink-0" />
+        <span className="min-w-0 pt-[2px]">
+          <span className="block whitespace-nowrap text-[0.69rem] font-semibold tracking-tight leading-none">
+            <span
+              className="ccr-wordmark-curated align-middle"
+              style={{ fontSize: "0.92rem", lineHeight: 1 }}
+            >
+              Curated
+            </span>{" "}
+            <span className="align-middle">Car Rentals</span>
+          </span>
+          <span className="mt-1 block text-[7px] uppercase tracking-[0.16em] text-white/60">
+            {siteContent.tagline}
+          </span>
+        </span>
+      </Link>
+
+      <button
+        type="button"
+        onClick={onClose}
+        className="inline-flex min-h-10 shrink-0 items-center rounded-full border border-white/15 px-2.5 py-2 text-[9px] font-semibold uppercase tracking-[0.14em] text-white/70 transition hover:border-white/30 hover:text-white"
+        aria-label="Close menu"
+      >
+        Close
+      </button>
+    </div>
+  );
+}
+
+function MobileDrawerFooter({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="space-y-3 border-t border-white/10 px-4 py-4">
+      <div className="flex flex-nowrap items-center gap-2">
+        <div className="min-w-0 basis-0 flex-1">
+          <ThemeToggle
+            controlId="site-theme-toggle-mobile"
+            variant="inverse"
+            showLabel={false}
+            compact
+            className="w-full justify-between rounded-full border-white/15 bg-white/6 px-2.5 text-[11px]"
+          />
+        </div>
+        <Link
+          href="/book"
+          onClick={onClose}
+          className={buttonStyles({
+            variant: "primary",
+            size: "md",
+            className:
+              "min-h-11 shrink-0 whitespace-nowrap rounded-full px-3 text-[13px] font-semibold",
+          })}
+        >
+          Book Now
+        </Link>
+      </div>
+      <Link
+        href="/admin/auth"
+        onClick={onClose}
+        className="inline-flex min-h-11 items-center justify-center rounded-full border border-white/15 bg-white/6 px-4 py-2.5 text-sm font-semibold text-white/78 transition hover:bg-white/10 hover:text-white"
+      >
+        Admin
+      </Link>
+    </div>
+  );
+}
+
+function DesktopBrand() {
+  return (
+    <Link
+      href="/"
+      className="hidden shrink-0 self-start pt-3.5 text-white min-[1160px]:inline-flex min-[1160px]:items-start min-[1160px]:gap-2 min-[1280px]:gap-2.5"
+      aria-label="Go to homepage"
+    >
+      <SiteLogo
+        size={56}
+        className="h-[3.15rem] w-[3.15rem] shrink-0 min-[1280px]:h-14 min-[1280px]:w-14"
+      />
+      <span className="flex min-w-0 flex-col justify-start pt-[2px]">
+        <span className="block whitespace-nowrap text-[0.9rem] font-semibold leading-none tracking-tight min-[1280px]:text-[0.98rem]">
+          <span
+            className="ccr-wordmark-curated align-middle"
+            style={{ fontSize: "1.28rem", lineHeight: 1 }}
+          >
+            Curated
+          </span>{" "}
+          <span className="align-middle">Car Rentals</span>
+        </span>
+        <span className="mt-1 h-[0.75rem] text-[9px] uppercase tracking-[0.18em] text-white/62">
+          <span className="invisible min-[1280px]:visible">{siteContent.tagline}</span>
+        </span>
+      </span>
+    </Link>
+  );
+}
+
+function DesktopNavShell({ pathname }: { pathname: string | null }) {
+  return (
+    <div className="hidden min-[1160px]:flex min-w-0 flex-1 items-center justify-center px-3 min-[1280px]:px-4">
+      <nav aria-label="Primary" className="min-w-0">
+        <ul className="flex items-center gap-4 text-[0.88rem] font-medium text-white/82 min-[1280px]:gap-5 min-[1280px]:text-[0.94rem]">
+          {navLinks.map((item) => {
+            const isActive = isDesktopNavItemActive(pathname, item.href);
+
+            return (
+              <li key={item.href}>
+                <Link
+                  href={item.href}
+                  className={cn(
+                    "whitespace-nowrap transition-colors duration-150",
+                    isActive
+                      ? "text-[var(--ccr-accent-strong)]"
+                      : "text-white/82 hover:text-[var(--ccr-accent)]",
+                  )}
+                  aria-current={isActive ? "page" : undefined}
+                >
+                  {item.label}
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      </nav>
+    </div>
+  );
+}
+
 export function Header() {
   const pathname = usePathname();
   const isAdminRoute = pathname?.startsWith("/admin") ?? false;
@@ -66,7 +247,7 @@ export function Header() {
     <>
       <div
         className={cn(
-          "fixed inset-0 z-50 lg:hidden",
+          "fixed inset-0 z-50 min-[1160px]:hidden",
           mobileNavOpen ? "pointer-events-auto" : "pointer-events-none",
         )}
         role="dialog"
@@ -84,33 +265,12 @@ export function Header() {
         <aside
           id="mobile-site-nav"
           className={cn(
-            "absolute left-0 top-0 flex h-full w-[20rem] max-w-[88vw] flex-col bg-[#070b12] text-white shadow-2xl transition-transform duration-200",
+            "absolute left-0 top-0 flex h-full w-[20rem] max-w-[92vw] flex-col bg-[#070b12] text-white shadow-2xl transition-transform duration-200",
             mobileNavOpen ? "translate-x-0" : "-translate-x-full",
           )}
         >
           <div className="border-b border-white/10 px-4 py-4">
-            <div className="flex items-start justify-between gap-4">
-              <Link href="/" className="inline-flex min-w-0 items-center gap-3 text-white" onClick={() => setMobileNavOpen(false)}>
-                <SiteLogo size={56} className="h-12 w-12 shrink-0" />
-                <span className="min-w-0">
-                  <span className="block text-base font-semibold tracking-tight">
-                    <span className="ccr-wordmark-curated">Curated</span> Car Rentals
-                  </span>
-                  <span className="mt-0.5 block text-[10px] uppercase tracking-[0.22em] text-white/60">
-                    {siteContent.tagline}
-                  </span>
-                </span>
-              </Link>
-
-              <button
-                type="button"
-                onClick={() => setMobileNavOpen(false)}
-                className="inline-flex min-h-10 items-center rounded-full border border-white/15 px-3.5 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/70 transition hover:border-white/30 hover:text-white"
-                aria-label="Close menu"
-              >
-                Close
-              </button>
-            </div>
+            <MobileDrawerHeader onClose={() => setMobileNavOpen(false)} />
           </div>
 
           <nav className="flex-1 overflow-y-auto px-4 py-5">
@@ -153,115 +313,28 @@ export function Header() {
             </div>
           </nav>
 
-          <div className="space-y-3 border-t border-white/10 px-4 py-4">
-            <ThemeToggle
-              controlId="site-theme-toggle-mobile"
-              variant="inverse"
-              showLabel
-              className="w-full justify-between rounded-full border-white/15 bg-white/6 px-4 text-sm"
-            />
-            <Link
-              href="/book"
-              onClick={() => setMobileNavOpen(false)}
-              className={buttonStyles({
-                variant: "primary",
-                size: "lg",
-                className: "w-full rounded-full",
-              })}
-            >
-              Book Now
-            </Link>
-            <Link
-              href="/admin/auth"
-              onClick={() => setMobileNavOpen(false)}
-              className="inline-flex min-h-11 items-center justify-center rounded-full border border-white/15 bg-white/6 px-4 py-2.5 text-sm font-semibold text-white/78 transition hover:bg-white/10 hover:text-white"
-            >
-              Admin
-            </Link>
-          </div>
+          <MobileDrawerFooter onClose={() => setMobileNavOpen(false)} />
         </aside>
       </div>
 
       <header
         className={cn(
-          "site-header sticky top-0 z-40 border-b border-white/10 bg-[#05080e] text-white transition-shadow duration-200 min-[1160px]:fixed min-[1160px]:inset-x-0 min-[1160px]:top-0",
+          "site-header fixed inset-x-0 top-0 z-40 border-b border-white/10 bg-[#05080e] text-white transition-shadow duration-200",
           isScrolled && "shadow-[0_16px_40px_rgba(0,0,0,0.28)]",
         )}
       >
-        <Container className="grid min-h-[4.9rem] grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1.5 py-3.5 lg:h-24 lg:max-w-[86rem] lg:px-8 min-[1160px]:grid-cols-[auto_minmax(0,1fr)_auto] min-[1160px]:justify-normal min-[1160px]:gap-x-7 min-[1160px]:gap-y-0">
-          <div className="flex min-w-0 items-center gap-2 lg:gap-4">
-            <button
-              type="button"
-              onClick={() => setMobileNavOpen(true)}
-              className="inline-flex min-h-10 items-center gap-1.5 rounded-full border border-white/15 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/80 transition hover:border-white/30 hover:text-white lg:hidden"
-              aria-controls="mobile-site-nav"
-              aria-expanded={mobileNavOpen}
-              aria-label="Open menu"
-            >
-              <svg
-                viewBox="0 0 24 24"
-                className="h-4 w-4"
-                aria-hidden="true"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M4 7h16" />
-                <path d="M4 12h16" />
-                <path d="M4 17h16" />
-              </svg>
-              <span className="hidden min-[380px]:inline">Menu</span>
-            </button>
+        <Container className="flex min-h-[4.9rem] items-center justify-between gap-3 py-3.5 min-[1160px]:min-h-[5.25rem] min-[1160px]:max-w-[86rem] min-[1160px]:gap-4 min-[1160px]:px-6 min-[1280px]:h-24 min-[1280px]:gap-5 min-[1280px]:px-8">
+          <MobileTopBar onOpen={() => setMobileNavOpen(true)} isOpen={mobileNavOpen} />
+          <DesktopBrand />
+          <DesktopNavShell pathname={pathname} />
 
-            <Link href="/" className="inline-flex min-w-0 items-center gap-2 text-white lg:gap-3" aria-label="Go to homepage">
-              <SiteLogo size={72} className="h-11 w-11 shrink-0 sm:h-12 sm:w-12 lg:h-16 lg:w-16" />
-              <span className="hidden min-w-0 min-[1160px]:block">
-                <span className="block truncate text-[0.98rem] font-semibold tracking-tight sm:text-[1.05rem] lg:text-[1.2rem]">
-                  <span className="ccr-wordmark-curated">Curated</span> Car Rentals
-                </span>
-                <span className="mt-0.5 hidden text-[10px] uppercase tracking-[0.22em] text-white/62 sm:block">
-                  {siteContent.tagline}
-                </span>
-              </span>
-            </Link>
-          </div>
-
-          <div className="hidden min-[1160px]:flex min-w-0 items-center justify-center px-6 min-[1160px]:justify-self-center">
-            <nav aria-label="Primary" className="min-w-0">
-              <ul className="flex items-center gap-7 text-[0.97rem] font-medium text-white/82">
-                {navLinks.map((item) => {
-                  const isActive = isDesktopNavItemActive(pathname, item.href);
-
-                  return (
-                    <li key={item.href}>
-                      <Link
-                        href={item.href}
-                        className={cn(
-                          "whitespace-nowrap transition-colors duration-150",
-                          isActive
-                            ? "text-[var(--ccr-accent-strong)]"
-                            : "text-white/82 hover:text-[var(--ccr-accent)]",
-                        )}
-                        aria-current={isActive ? "page" : undefined}
-                      >
-                        {item.label}
-                      </Link>
-                    </li>
-                  );
-                })}
-              </ul>
-            </nav>
-          </div>
-
-          <div className="flex items-center gap-2 min-[1160px]:ml-1 min-[1160px]:gap-3">
-            <div className="hidden lg:block">
+          <div className="flex items-center gap-2 min-[1160px]:ml-1 min-[1160px]:gap-2.5 min-[1280px]:gap-3">
+            <div className="hidden min-[1160px]:block">
               <ThemeToggle
                 controlId="site-theme-toggle-header"
                 variant="inverse"
                 showLabel={false}
-                className="rounded-full border-white/15 bg-white/6 px-4 py-2 text-sm text-white"
+                className="min-w-[6.75rem] rounded-full border-white/15 bg-white/6 px-3 py-2 text-[13px] text-white min-[1280px]:min-w-[7.5rem] min-[1280px]:px-4 min-[1280px]:text-sm"
               />
             </div>
             <Link
@@ -270,31 +343,22 @@ export function Header() {
                 variant: "primary",
                 size: "md",
                 className:
-                  "shrink-0 whitespace-nowrap rounded-full px-3.5 text-[13px] sm:px-5 sm:text-sm min-[1160px]:min-h-12 min-[1160px]:px-5 min-[1160px]:py-3",
+                  "shrink-0 whitespace-nowrap rounded-full px-3.5 text-[13px] sm:px-5 sm:text-sm min-[1160px]:min-h-12 min-[1160px]:px-4 min-[1160px]:py-3 min-[1280px]:px-5",
               })}
             >
               Book Now
             </Link>
             <Link
               href="/admin/auth"
-              className="hidden min-h-12 items-center justify-center rounded-full border border-white/15 bg-white/6 px-5 py-3 text-sm font-semibold text-white/72 transition hover:bg-white/10 hover:text-white min-[1160px]:inline-flex"
+              className="hidden min-h-12 items-center justify-center rounded-full border border-white/15 bg-white/6 px-4 py-3 text-sm font-semibold text-white/72 transition hover:bg-white/10 hover:text-white min-[1160px]:inline-flex min-[1280px]:px-5"
               aria-label="Admin sign in"
             >
               Admin
             </Link>
           </div>
-
-          <Link
-            href="/"
-            className="col-span-2 inline-flex min-w-0 items-center text-[0.96rem] font-semibold tracking-tight text-white/88 transition hover:text-white min-[1160px]:hidden"
-            aria-label="Go to homepage"
-          >
-            <span className="truncate">
-              <span className="ccr-wordmark-curated">Curated</span> Car Rentals
-            </span>
-          </Link>
         </Container>
       </header>
+      <div aria-hidden="true" className="h-[4.9rem] min-[1160px]:h-[5.25rem] min-[1280px]:h-24" />
     </>
   );
 }

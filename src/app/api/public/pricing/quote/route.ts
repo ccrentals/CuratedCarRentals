@@ -7,6 +7,8 @@ import {
   QuotePricingError,
 } from "@/lib/quotes/quotePricing";
 
+type QuotePreviewPaymentOption = "FULL" | "DEPOSIT" | "CUSTOM" | "NONE";
+
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -41,6 +43,42 @@ function parseInteger(value: unknown, fallback = 0) {
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   return value as Record<string, unknown>;
+}
+
+export function buildQuotePaymentPreview(input: {
+  amountDue: number;
+  depositRequired: number;
+  paymentOption: QuotePreviewPaymentOption;
+  customAmount: number | null;
+}) {
+  const amountDue = Math.max(0, Math.round(input.amountDue));
+  const depositRequired = Math.max(0, Math.round(input.depositRequired));
+  const customAmount = input.customAmount === null ? null : Math.max(0, Math.round(input.customAmount));
+
+  let dueNow = 0;
+
+  if (input.paymentOption === "DEPOSIT") {
+    dueNow = Math.min(amountDue, depositRequired);
+  } else if (input.paymentOption === "FULL") {
+    dueNow = amountDue;
+  } else if (
+    input.paymentOption === "CUSTOM" &&
+    customAmount !== null &&
+    customAmount > 0 &&
+    customAmount <= amountDue
+  ) {
+    dueNow = customAmount;
+  }
+
+  const dueOnPickup = Math.max(0, amountDue - dueNow);
+  const reserveShortfall = Math.max(0, depositRequired - dueNow);
+
+  return {
+    dueNow,
+    dueOnPickup,
+    reserveShortfall,
+    balanceDue: dueOnPickup,
+  };
 }
 
 export async function POST(request: Request) {
@@ -90,6 +128,12 @@ export async function POST(request: Request) {
     const pricing = asRecord(snapshot.pricingJson);
     const days = parseInteger(pricing.days, 0);
     const insurancePricePerDay = parseInteger(pricing.insurance_price_per_day_cents, 0);
+    const preview = buildQuotePaymentPreview({
+      amountDue: snapshot.summary.amountDueCents,
+      depositRequired: snapshot.summary.depositRequiredCents,
+      paymentOption,
+      customAmount,
+    });
 
     const customAmountWarning =
       paymentOption === "CUSTOM"
@@ -113,7 +157,10 @@ export async function POST(request: Request) {
         amountDue: snapshot.summary.amountDueCents,
         depositRequired: snapshot.summary.depositRequiredCents,
         paidToDate: 0,
-        balanceDue: snapshot.summary.amountDueCents,
+        dueNow: preview.dueNow,
+        dueOnPickup: preview.dueOnPickup,
+        reserveShortfall: preview.reserveShortfall,
+        balanceDue: preview.balanceDue,
         paymentOption,
         promoCode: snapshot.promoCode,
       },

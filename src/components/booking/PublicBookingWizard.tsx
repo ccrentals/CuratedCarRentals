@@ -117,6 +117,9 @@ type PricingQuoteSummary = {
   amountDue: number;
   depositRequired: number;
   paidToDate: number;
+  dueNow: number;
+  dueOnPickup: number;
+  reserveShortfall: number;
   balanceDue: number;
   paymentOption: "FULL" | "DEPOSIT" | "CUSTOM" | "NONE";
   promoCode: string | null;
@@ -227,11 +230,11 @@ const WIZARD_DEBUG_ENABLED = process.env.NEXT_PUBLIC_WIZARD_DEBUG === "1";
 const BACKGROUND_VEHICLE_REFRESH_INTERVAL_MS = 15000;
 
 const bookingFieldClassName =
-  "mt-2 w-full rounded-[1.1rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-3 text-sm text-[var(--ccr-text)] shadow-sm shadow-black/5 outline-none ring-[var(--ccr-accent)] transition focus:ring-2";
+  "mt-2 min-w-0 w-full max-w-full rounded-[1.1rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-3 text-sm text-[var(--ccr-text)] shadow-sm shadow-black/5 outline-none ring-[var(--ccr-accent)] transition focus:ring-2";
 const bookingSoftFieldClassName =
-  "mt-2 w-full rounded-[1.1rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-4 py-3 text-sm text-[var(--ccr-text)] shadow-sm shadow-black/5 outline-none ring-[var(--ccr-accent)] transition focus:ring-2";
+  "mt-2 min-w-0 w-full max-w-full rounded-[1.1rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-4 py-3 text-sm text-[var(--ccr-text)] shadow-sm shadow-black/5 outline-none ring-[var(--ccr-accent)] transition focus:ring-2";
 const bookingReadonlyFieldClassName =
-  "mt-2 w-full rounded-[1.1rem] border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-4 py-3 text-sm text-[var(--ccr-text)] shadow-sm shadow-black/5";
+  "mt-2 min-w-0 w-full max-w-full rounded-[1.1rem] border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-4 py-3 text-sm text-[var(--ccr-text)] shadow-sm shadow-black/5";
 const bookingPrimaryButtonClassName =
   "rounded-[1rem] bg-[var(--ccr-primary)] px-5 py-3 text-sm font-semibold text-[var(--ccr-on-primary)] transition hover:bg-[var(--ccr-primary-soft)] disabled:opacity-60";
 const bookingOutlineButtonClassName =
@@ -945,11 +948,23 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
   const discountTotal = pricingQuote?.discountTotal ?? Math.max(0, Math.min(baseTotal + insuranceTotal, couponDiscount));
   const amountDue = pricingQuote?.amountDue ?? Math.max(0, baseTotal + insuranceTotal - discountTotal);
   const depositRequired = pricingQuote?.depositRequired ?? (selectedVehicle ? selectedVehicle.deposit_cents : 0);
-  const balanceDueOnPickup = pricingQuote?.balanceDue ?? Math.max(0, amountDue - depositRequired);
 
   const customPaymentNumber = Number(customPaymentAmount);
   const customPaymentIsValid =
     Number.isFinite(customPaymentNumber) && customPaymentNumber > 0 && customPaymentNumber <= amountDue;
+  const paymentPreviewDueNow =
+    pricingQuote?.dueNow ??
+    (paymentOption === "FULL"
+      ? amountDue
+      : paymentOption === "DEPOSIT"
+        ? Math.min(amountDue, depositRequired)
+        : paymentOption === "CUSTOM" && customPaymentIsValid
+          ? customPaymentNumber
+          : 0);
+  const reserveShortfall =
+    pricingQuote?.reserveShortfall ?? Math.max(0, depositRequired - paymentPreviewDueNow);
+  const balanceDueOnPickup =
+    pricingQuote?.dueOnPickup ?? Math.max(0, amountDue - paymentPreviewDueNow);
 
   const pickupAt = combineDateTime(pickupDate, pickupTime);
   const dropoffAt = combineDateTime(dropoffDate, dropoffTime);
@@ -2883,123 +2898,125 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     <div className="bg-[var(--ccr-bg)] pb-12 sm:pb-16" data-testid="booking-wizard-hydrated">
       {bookingIntro}
       <Container className="-mt-6 sm:-mt-8 md:-mt-12">
-        <div className="overflow-hidden rounded-[1.7rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)]/96 shadow-[0_32px_110px_rgba(15,23,42,0.14)] backdrop-blur-sm sm:rounded-[2rem]">
-          <div className="border-b border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)]/75 px-4 py-5 sm:py-6 md:px-8">
-            <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
-              <div className="max-w-2xl">
+        <div className="min-w-0 overflow-hidden rounded-[1.7rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)]/96 shadow-[0_32px_110px_rgba(15,23,42,0.14)] backdrop-blur-sm sm:rounded-[2rem]">
+          <div className="border-b border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)]/75 px-3.5 py-4 sm:px-4 sm:py-6 md:px-8">
+            <div className="flex min-w-0 flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
+              <div className="min-w-0 max-w-2xl">
                 <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--ccr-accent-strong)]">
                   Guided reservation
                 </p>
-                <h2 className="mt-3 text-[1.95rem] font-semibold tracking-tight text-[var(--ccr-text)] sm:text-3xl md:text-4xl">
+                <h2 className="mt-3 break-words text-[1.8rem] font-semibold tracking-tight text-[var(--ccr-text)] sm:text-3xl md:text-4xl">
                   Complete six steps before secure checkout.
                 </h2>
-                <p className="mt-4 text-base leading-7 text-[var(--ccr-muted)]">
+                <p className="mt-4 break-words text-base leading-7 text-[var(--ccr-muted)]">
                   Keep your selections accurate as dates, availability, pricing, and payment details
                   update in real time.
                 </p>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-3 xl:w-[34rem]">
-                <article className="rounded-[1.35rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)]/90 p-4">
+              <div className="grid min-w-0 gap-3 sm:grid-cols-3 xl:w-[34rem]">
+                <article className="min-w-0 rounded-[1.35rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)]/90 p-4">
                   <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--ccr-accent-strong)]">
                     Pickup window
                   </p>
-                  <p className="mt-3 text-sm font-semibold text-[var(--ccr-text)]">
+                  <p className="mt-3 break-words text-sm font-semibold text-[var(--ccr-text)]">
                     {pickupDate} at {pickupTime}
                   </p>
                 </article>
-                <article className="rounded-[1.35rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)]/90 p-4">
+                <article className="min-w-0 rounded-[1.35rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)]/90 p-4">
                   <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--ccr-accent-strong)]">
                     Vehicle status
                   </p>
-                  <p className="mt-3 text-sm font-semibold text-[var(--ccr-text)]">
+                  <p className="mt-3 break-words text-sm font-semibold text-[var(--ccr-text)]">
                     {summaryVehicleLabel}
                   </p>
                 </article>
-                <article className="rounded-[1.35rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)]/90 p-4">
+                <article className="min-w-0 rounded-[1.35rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)]/90 p-4">
                   <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--ccr-accent-strong)]">
                     Reserve now
                   </p>
-                  <p className="mt-3 text-sm font-semibold text-[var(--ccr-text)]">
+                  <p className="mt-3 break-words text-sm font-semibold text-[var(--ccr-text)]">
                     {hideFallbackTotals ? "Pricing updating" : formatJmd(depositRequired)}
                   </p>
                 </article>
               </div>
             </div>
 
-            <ol className="mt-6 flex gap-3 overflow-x-auto pb-1 sm:grid sm:grid-cols-3 lg:grid-cols-7">
-              {STEPS.map((item) => {
-                const isActive = item.step === step;
-                const isDone = item.step < step;
-                const isUnlocked = item.step <= maxStepCompleted;
-                return (
-                  <li key={item.step} className="min-w-[9.5rem] shrink-0 sm:min-w-0">
-                    <button
-                      type="button"
-                      onClick={() => jumpToStep(item.step)}
-                      disabled={!isUnlocked || submitting}
-                      className={cn(
-                        "w-full rounded-[1.35rem] border px-4 py-3 text-left transition disabled:opacity-55",
-                        isActive
-                          ? "border-[var(--ccr-accent)] bg-[var(--ccr-accent)]/10 text-[var(--ccr-text)] shadow-sm shadow-[var(--ccr-accent)]/10"
-                          : isDone
-                            ? "border-[var(--ccr-accent)]/40 bg-[var(--ccr-accent)]/5 text-[var(--ccr-text)]"
-                            : "border-[var(--ccr-border)] bg-[var(--ccr-surface)]/90 text-[var(--ccr-muted)]",
-                      )}
-                      data-testid={`booking-step-tab-${item.step}`}
-                    >
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em]">
-                        Step {item.step}
-                      </p>
-                      <p className="mt-2 text-sm font-semibold">{item.title}</p>
-                    </button>
-                  </li>
-                );
-              })}
-              <li className="min-w-[9.5rem] shrink-0 sm:min-w-0">
-                <button
-                  type="button"
-                  onClick={() => {
-                    resetMessages();
-                    setStep(6);
-                    setStatusMessage("Step 7 launches when you continue from Payments.");
-                  }}
-                  disabled={maxStepCompleted < 6 || submitting}
-                  className={cn(
-                    "w-full rounded-[1.35rem] border px-4 py-3 text-left transition disabled:opacity-55",
-                    maxStepCompleted >= 6
-                      ? "border-[var(--ccr-accent)]/40 bg-[var(--ccr-accent)]/5 text-[var(--ccr-text)]"
-                      : "border-[var(--ccr-border)] bg-[var(--ccr-surface)]/90 text-[var(--ccr-muted)]",
-                  )}
-                  data-testid="booking-step-tab-7"
-                >
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em]">
-                    Step {CHECKOUT_STEP.step}
-                  </p>
-                  <p className="mt-2 text-sm font-semibold">{CHECKOUT_STEP.title}</p>
-                </button>
-              </li>
-            </ol>
+            <div className="-mx-1 mt-6 min-w-0 overflow-x-auto pb-1 sm:mx-0 sm:overflow-visible">
+              <ol className="flex min-w-max gap-3 px-1 sm:grid sm:min-w-0 sm:grid-cols-3 sm:px-0 lg:grid-cols-7">
+                {STEPS.map((item) => {
+                  const isActive = item.step === step;
+                  const isDone = item.step < step;
+                  const isUnlocked = item.step <= maxStepCompleted;
+                  return (
+                    <li key={item.step} className="min-w-[9.5rem] shrink-0 sm:min-w-0">
+                      <button
+                        type="button"
+                        onClick={() => jumpToStep(item.step)}
+                        disabled={!isUnlocked || submitting}
+                        className={cn(
+                          "w-full rounded-[1.35rem] border px-4 py-3 text-left transition disabled:opacity-55",
+                          isActive
+                            ? "border-[var(--ccr-accent)] bg-[var(--ccr-accent)]/10 text-[var(--ccr-text)] shadow-sm shadow-[var(--ccr-accent)]/10"
+                            : isDone
+                              ? "border-[var(--ccr-accent)]/40 bg-[var(--ccr-accent)]/5 text-[var(--ccr-text)]"
+                              : "border-[var(--ccr-border)] bg-[var(--ccr-surface)]/90 text-[var(--ccr-muted)]",
+                        )}
+                        data-testid={`booking-step-tab-${item.step}`}
+                      >
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em]">
+                          Step {item.step}
+                        </p>
+                        <p className="mt-2 text-sm font-semibold">{item.title}</p>
+                      </button>
+                    </li>
+                  );
+                })}
+                <li className="min-w-[9.5rem] shrink-0 sm:min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      resetMessages();
+                      setStep(6);
+                      setStatusMessage("Step 7 launches when you continue from Payments.");
+                    }}
+                    disabled={maxStepCompleted < 6 || submitting}
+                    className={cn(
+                      "w-full rounded-[1.35rem] border px-4 py-3 text-left transition disabled:opacity-55",
+                      maxStepCompleted >= 6
+                        ? "border-[var(--ccr-accent)]/40 bg-[var(--ccr-accent)]/5 text-[var(--ccr-text)]"
+                        : "border-[var(--ccr-border)] bg-[var(--ccr-surface)]/90 text-[var(--ccr-muted)]",
+                    )}
+                    data-testid="booking-step-tab-7"
+                  >
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em]">
+                      Step {CHECKOUT_STEP.step}
+                    </p>
+                    <p className="mt-2 text-sm font-semibold">{CHECKOUT_STEP.title}</p>
+                  </button>
+                </li>
+              </ol>
+            </div>
           </div>
 
-          <div className="grid gap-6 bg-[linear-gradient(180deg,rgba(148,163,184,0.06),transparent)] px-4 py-5 md:px-6 md:py-8 lg:grid-cols-[minmax(0,1fr)_22rem] xl:grid-cols-[minmax(0,1fr)_24rem]">
-            <div className="rounded-[1.5rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)]/96 px-4 py-5 shadow-[0_18px_56px_rgba(15,23,42,0.08)] sm:rounded-[1.75rem] md:px-6 md:py-7">
+          <div className="grid min-w-0 items-start gap-5 bg-[linear-gradient(180deg,rgba(148,163,184,0.06),transparent)] px-3.5 py-4 sm:px-4 sm:py-5 md:px-6 md:py-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] xl:grid-cols-[minmax(0,1fr)_minmax(0,24rem)]">
+            <div className="min-w-0 rounded-[1.5rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)]/96 px-3.5 py-4 shadow-[0_18px_56px_rgba(15,23,42,0.08)] sm:rounded-[1.75rem] sm:px-4 sm:py-5 md:px-6 md:py-7">
               <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-[var(--ccr-border)] pb-5">
-                <div>
+                <div className="min-w-0">
                   <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--ccr-accent-strong)]">
                     Step {step} of 6
                   </p>
-                  <p className="mt-2 text-sm text-[var(--ccr-muted)]">
+                  <p className="mt-2 break-words text-sm text-[var(--ccr-muted)]">
                     Review each section carefully. Live availability and pricing stay connected while you move through the wizard.
                   </p>
                 </div>
-                <div className="rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--ccr-muted)]">
+                <div className="w-full rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-4 py-2 text-center text-xs font-semibold uppercase tracking-[0.16em] text-[var(--ccr-muted)] min-[430px]:w-auto">
                   Secure booking flow
                 </div>
               </div>
               {step === 1 ? (
-                <section data-testid="booking-step-dates">
-                  <h2 className="text-xl font-bold text-[var(--ccr-text)]">Date & Time</h2>
+                <section className="min-w-0" data-testid="booking-step-dates">
+                  <h2 className="break-words text-xl font-bold text-[var(--ccr-text)]">Date & Time</h2>
                   <p className="mt-1 text-sm text-[var(--ccr-muted)]">
                     Select pickup and dropoff date/time plus location options.
                   </p>
@@ -3048,8 +3065,8 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                     </label>
                   </div>
 
-                  <div className="mt-4 grid gap-4 md:grid-cols-2">
-                    <label className="block">
+                  <div className="mt-4 grid min-w-0 gap-4 md:grid-cols-2">
+                    <label className="block min-w-0">
                       <span className="text-sm font-semibold text-[var(--ccr-muted)]">Pickup Location</span>
                       <select
                         value={pickupLocationId}
@@ -3064,8 +3081,8 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                         ))}
                       </select>
                     </label>
-                    <div>
-                      <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex flex-col items-start gap-2 min-[430px]:flex-row min-[430px]:items-center min-[430px]:justify-between">
                         <span className="text-sm font-semibold text-[var(--ccr-muted)]">
                           Dropoff Location
                         </span>
@@ -3073,7 +3090,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                           <button
                             type="button"
                             onClick={handleMatchPickupLocation}
-                            className={bookingOutlineButtonClassName}
+                            className={cn("w-full justify-center min-[430px]:w-auto", bookingOutlineButtonClassName)}
                           >
                             Match pickup
                           </button>
@@ -3094,12 +3111,12 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                     </div>
                   </div>
 
-                  <div className="mt-4 grid gap-4 md:grid-cols-2">
-                    <div className="space-y-4">
+                  <div className="mt-4 grid min-w-0 gap-4 md:grid-cols-2">
+                    <div className="min-w-0 space-y-4">
                       {pickupFieldSchema.map((field) => (
                         <label
                           key={`pickup-${field.appliesTo}-${field.key}-${field.label}`}
-                          className="block"
+                          className="block min-w-0"
                         >
                           <span className="text-sm font-semibold text-[var(--ccr-muted)]">
                             {field.label}
@@ -3123,11 +3140,11 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                       ))}
                     </div>
 
-                    <div className="space-y-4">
+                    <div className="min-w-0 space-y-4">
                       {dropoffFieldSchema.map((field) => (
                         <label
                           key={`dropoff-${field.appliesTo}-${field.key}-${field.label}`}
-                          className="block"
+                          className="block min-w-0"
                         >
                           <span className="text-sm font-semibold text-[var(--ccr-muted)]">
                             {field.label}
@@ -3155,8 +3172,8 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
               ) : null}
 
               {step === 2 ? (
-                <section data-testid="booking-step-vehicles">
-                  <h2 className="text-xl font-bold text-[var(--ccr-text)]">Available Vehicles</h2>
+                <section className="min-w-0" data-testid="booking-step-vehicles">
+                  <h2 className="break-words text-xl font-bold text-[var(--ccr-text)]">Available Vehicles</h2>
                   <p className="mt-1 text-sm text-[var(--ccr-muted)]">
                     Choose a vehicle for your dates. Details are pulled from your admin fleet setup.
                   </p>
@@ -3188,7 +3205,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
 
                   {vehicleLoading ? <p className="mt-4 text-sm text-[var(--ccr-muted)]">Checking availability…</p> : null}
 
-                  <div className="mt-5 grid gap-3 md:grid-cols-2">
+                  <div className="mt-5 grid min-w-0 gap-3 md:grid-cols-2">
                     {vehicleOptions.map((vehicle) => {
                       const selected = vehicle.id === selectedVehicleId;
                       return (
@@ -3215,23 +3232,23 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
               ) : null}
 
               {step === 3 ? (
-                <section>
-                  <h2 className="text-xl font-bold text-[var(--ccr-text)]">Protections & Coverage</h2>
+                <section className="min-w-0">
+                  <h2 className="break-words text-xl font-bold text-[var(--ccr-text)]">Protections & Coverage</h2>
                   <p className="mt-1 text-sm text-[var(--ccr-muted)]">
                     Insurance can only be selected after choosing a vehicle.
                   </p>
 
-                  <div className="mt-5 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-lg font-semibold text-[var(--ccr-text)]">
+                  <div className="mt-5 min-w-0 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
+                    <div className="flex min-w-0 flex-col gap-4 min-[430px]:flex-row min-[430px]:items-start min-[430px]:justify-between">
+                      <div className="min-w-0">
+                        <p className="break-words text-lg font-semibold text-[var(--ccr-text)]">
                           Full Coverage Insurance Plan
                         </p>
                         <p className="mt-1 text-sm text-[var(--ccr-muted)]">
                           {formatJmd(insurancePricePerDay)} per day
                         </p>
                       </div>
-                      <label className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--ccr-muted)]">
+                      <label className="inline-flex w-full items-center justify-between gap-2 text-sm font-semibold text-[var(--ccr-muted)] min-[430px]:w-auto min-[430px]:justify-start">
                         <input
                           type="checkbox"
                           checked={insuranceSelected}
@@ -3257,20 +3274,20 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                     ) : null}
                   </div>
 
-                  <div className="mt-4 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
+                  <div className="mt-4 min-w-0 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
                     <p className="text-sm font-semibold text-[var(--ccr-text)]">Coupon Code</p>
-                    <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                    <div className="mt-2 flex min-w-0 flex-col gap-2 min-[430px]:flex-row min-[430px]:items-start">
                       <input
                         value={couponCode}
                         onChange={(event) => setCouponCode(event.target.value.toUpperCase())}
                         placeholder="Enter coupon code"
-                        className="min-w-0 w-full flex-1 rounded-xl border border-[var(--ccr-border)] px-3 py-2 text-sm sm:min-w-[220px]"
+                        className="min-w-0 w-full flex-1 rounded-xl border border-[var(--ccr-border)] px-3 py-2 text-sm min-[430px]:min-w-[220px]"
                       />
                       <button
                         type="button"
                         onClick={applyCoupon}
                         disabled={couponBusy}
-                        className="w-full rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-sm font-semibold text-[var(--ccr-on-primary)] disabled:opacity-60 sm:w-auto"
+                        className="w-full rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-sm font-semibold text-[var(--ccr-on-primary)] disabled:opacity-60 min-[430px]:w-auto"
                       >
                         {couponBusy ? "Applying..." : "Apply"}
                       </button>
@@ -3278,7 +3295,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                         <button
                           type="button"
                           onClick={clearCoupon}
-                          className="w-full rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] sm:w-auto"
+                          className="w-full rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] min-[430px]:w-auto"
                         >
                           Remove
                         </button>
@@ -3294,10 +3311,10 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
               ) : null}
 
               {step === 4 ? (
-                <section>
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <h2 className="text-xl font-bold text-[var(--ccr-text)]">Customer Information</h2>
+                <section className="min-w-0">
+                  <div className="flex min-w-0 flex-col items-start gap-3 min-[430px]:flex-row min-[430px]:items-center min-[430px]:justify-between">
+                    <div className="min-w-0">
+                      <h2 className="break-words text-xl font-bold text-[var(--ccr-text)]">Customer Information</h2>
                       <p className="mt-1 text-sm text-[var(--ccr-muted)]">
                         Enter your details and driver&apos;s license information.
                       </p>
@@ -3320,8 +3337,8 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                     Enter your Driver&apos;s License number to prefill your details.
                   </p>
 
-                  <div className="mt-5 grid gap-4 md:grid-cols-2">
-                    <label className="block">
+                  <div className="mt-5 grid min-w-0 gap-4 md:grid-cols-2">
+                    <label className="block min-w-0">
                       <span className="text-sm font-semibold text-[var(--ccr-muted)]">First Name *</span>
                       <input
                         value={firstName}
@@ -3329,7 +3346,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                         className={bookingFieldClassName}
                       />
                     </label>
-                    <label className="block">
+                    <label className="block min-w-0">
                       <span className="text-sm font-semibold text-[var(--ccr-muted)]">Last Name *</span>
                       <input
                         value={lastName}
@@ -3337,7 +3354,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                         className={bookingFieldClassName}
                       />
                     </label>
-                    <label className="block">
+                    <label className="block min-w-0">
                       <span className="text-sm font-semibold text-[var(--ccr-muted)]">Email Address *</span>
                       <input
                         type="email"
@@ -3346,7 +3363,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                         className={bookingFieldClassName}
                       />
                     </label>
-                    <label className="block">
+                    <label className="block min-w-0">
                       <span className="text-sm font-semibold text-[var(--ccr-muted)]">Phone Number *</span>
                       <input
                         value={phoneNumber}
@@ -3354,7 +3371,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                         className={bookingFieldClassName}
                       />
                     </label>
-                    <label className="block">
+                    <label className="block min-w-0">
                       <span className="text-sm font-semibold text-[var(--ccr-muted)]">Street</span>
                       <input
                         value={street}
@@ -3362,7 +3379,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                         className={bookingFieldClassName}
                       />
                     </label>
-                    <label className="block">
+                    <label className="block min-w-0">
                       <span className="text-sm font-semibold text-[var(--ccr-muted)]">Street 2</span>
                       <input
                         value={street2}
@@ -3370,7 +3387,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                         className={bookingFieldClassName}
                       />
                     </label>
-                    <label className="block">
+                    <label className="block min-w-0">
                       <span className="text-sm font-semibold text-[var(--ccr-muted)]">City</span>
                       <input
                         value={city}
@@ -3378,7 +3395,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                         className={bookingFieldClassName}
                       />
                     </label>
-                    <label className="block">
+                    <label className="block min-w-0">
                       <span className="text-sm font-semibold text-[var(--ccr-muted)]">Parish / Region</span>
                       <input
                         value={parish}
@@ -3393,7 +3410,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                         ))}
                       </datalist>
                     </label>
-                    <label className="block">
+                    <label className="block min-w-0">
                       <span className="text-sm font-semibold text-[var(--ccr-muted)]">Country</span>
                       <input
                         value={country}
@@ -3402,7 +3419,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                         className={bookingFieldClassName}
                       />
                     </label>
-                    <label className="block">
+                    <label className="block min-w-0">
                       <span className="text-sm font-semibold text-[var(--ccr-muted)]">Birthday</span>
                       <input
                         type="date"
@@ -3413,15 +3430,15 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                     </label>
                   </div>
 
-                  <div className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
+                  <div className="mt-6 min-w-0 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
                     <p className="text-base font-semibold text-[var(--ccr-text)]">
                       Driver&apos;s License
                     </p>
                     <p className="mt-1 text-sm text-[var(--ccr-muted)]">
                       Driver&apos;s license details are optional.
                     </p>
-                    <div className="mt-4 grid gap-4 md:grid-cols-2">
-                      <label className="block">
+                    <div className="mt-4 grid min-w-0 gap-4 md:grid-cols-2">
+                      <label className="block min-w-0">
                         <span className="text-sm font-semibold text-[var(--ccr-muted)]">DL Number</span>
                         <input
                           value={driversLicenseNumber}
@@ -3429,7 +3446,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                           className={bookingSoftFieldClassName}
                         />
                       </label>
-                      <label className="block">
+                      <label className="block min-w-0">
                         <span className="text-sm font-semibold text-[var(--ccr-muted)]">
                           Expiration Date
                         </span>
@@ -3441,7 +3458,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                         />
                       </label>
                     </div>
-                    <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                    <div className="mt-4 flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap">
                       <button
                         type="button"
                         onClick={() => uploadInputRef.current?.click()}
@@ -3488,32 +3505,32 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
               ) : null}
 
               {step === 5 ? (
-                <section>
-                  <h2 className="text-xl font-bold text-[var(--ccr-text)]">Confirm Reservation</h2>
+                <section className="min-w-0">
+                  <h2 className="break-words text-xl font-bold text-[var(--ccr-text)]">Confirm Reservation</h2>
                   <p className="mt-1 text-sm text-[var(--ccr-muted)]">
                     Review your details, sign, and proceed to payment.
                   </p>
 
-                  <div className="mt-5 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4 text-sm text-[var(--ccr-muted)]">
-                    <p>
+                  <div className="mt-5 min-w-0 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4 text-sm text-[var(--ccr-muted)]">
+                    <p className="break-words">
                       <span className="font-semibold text-[var(--ccr-text)]">Vehicle:</span>{" "}
                       {summaryVehicleLabel}
                     </p>
-                    <p className="mt-1">
+                    <p className="mt-1 break-words">
                       <span className="font-semibold text-[var(--ccr-text)]">Pickup:</span> {pickupDate}{" "}
                       {pickupTime} · {pickupLocationText}
                     </p>
-                    <p className="mt-1">
+                    <p className="mt-1 break-words">
                       <span className="font-semibold text-[var(--ccr-text)]">Dropoff:</span> {dropoffDate}{" "}
                       {dropoffTime} · {dropoffLocationText}
                     </p>
-                    <p className="mt-1">
+                    <p className="mt-1 break-words">
                       <span className="font-semibold text-[var(--ccr-text)]">Customer:</span> {firstName}{" "}
                       {lastName}
                     </p>
                   </div>
 
-                  <div className="mt-5 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
+                  <div className="mt-5 min-w-0 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
                     <p className="text-sm font-semibold text-[var(--ccr-text)]">Signature *</p>
                     <p className="mt-1 text-xs text-[var(--ccr-muted)]">
                       Sign clearly inside the box using your finger or mouse.
@@ -3527,7 +3544,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                       onPointerLeave={endSignature}
                       onPointerCancel={endSignature}
                     />
-                    <div className="mt-3 flex items-center gap-2">
+                    <div className="mt-3 flex min-w-0 flex-col items-start gap-2 min-[430px]:flex-row min-[430px]:items-center">
                       <button
                         type="button"
                         onClick={clearSignature}
@@ -3552,7 +3569,8 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                       type="checkbox"
                       checked={acceptTerms}
                       onChange={(event) => setAcceptTerms(event.target.checked)}
-                      className="mt-1 h-4 w-4 rounded border-[var(--ccr-border)]"
+                      style={{ accentColor: "var(--ccr-accent)" }}
+                      className="mt-1 h-4 w-4 shrink-0 rounded border-[var(--ccr-border)] bg-[var(--ccr-surface)] shadow-sm outline-none ring-[var(--ccr-accent)]/35 transition focus-visible:ring-2"
                     />
                     <span>
                       By clicking here, I confirm that I accept the privacy policy and terms.
@@ -3562,8 +3580,8 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
               ) : null}
 
               {step === 6 ? (
-                <section data-testid="booking-step-payments">
-                  <h2 className="text-xl font-bold text-[var(--ccr-text)]">Payments</h2>
+                <section className="min-w-0" data-testid="booking-step-payments">
+                  <h2 className="break-words text-xl font-bold text-[var(--ccr-text)]">Payments</h2>
                   <p className="mt-1 text-sm text-[var(--ccr-muted)]">
                     Choose your payment option in JMD. Step 7 launches hosted WiPay checkout.
                   </p>
@@ -3592,12 +3610,12 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                     </div>
                   ) : null}
 
-                  <div className="mt-5 grid gap-3 md:grid-cols-2">
+                  <div className="mt-5 grid min-w-0 gap-3 md:grid-cols-2">
                     <button
                       type="button"
                       onClick={() => setPaymentOption("DEPOSIT")}
                       className={cn(
-                        "rounded-2xl border px-4 py-3 text-left",
+                        "min-w-0 rounded-2xl border px-4 py-3 text-left",
                         paymentOption === "DEPOSIT"
                           ? "border-[var(--ccr-accent)] bg-[var(--ccr-accent)]/10"
                           : "border-[var(--ccr-border)] bg-[var(--ccr-surface)]",
@@ -3610,7 +3628,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                       type="button"
                       onClick={() => setPaymentOption("FULL")}
                       className={cn(
-                        "rounded-2xl border px-4 py-3 text-left",
+                        "min-w-0 rounded-2xl border px-4 py-3 text-left",
                         paymentOption === "FULL"
                           ? "border-[var(--ccr-accent)] bg-[var(--ccr-accent)]/10"
                           : "border-[var(--ccr-border)] bg-[var(--ccr-surface)]",
@@ -3623,7 +3641,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                       type="button"
                       onClick={() => setPaymentOption("CUSTOM")}
                       className={cn(
-                        "rounded-2xl border px-4 py-3 text-left",
+                        "min-w-0 rounded-2xl border px-4 py-3 text-left",
                         paymentOption === "CUSTOM"
                           ? "border-[var(--ccr-accent)] bg-[var(--ccr-accent)]/10"
                           : "border-[var(--ccr-border)] bg-[var(--ccr-surface)]",
@@ -3636,7 +3654,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                       type="button"
                       onClick={() => setPaymentOption("NONE")}
                       className={cn(
-                        "rounded-2xl border px-4 py-3 text-left",
+                        "min-w-0 rounded-2xl border px-4 py-3 text-left",
                         paymentOption === "NONE"
                           ? "border-[var(--ccr-accent)] bg-[var(--ccr-accent)]/10"
                           : "border-[var(--ccr-border)] bg-[var(--ccr-surface)]",
@@ -3669,7 +3687,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                   ) : null}
 
                   <div
-                    className="mt-4 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3 sm:p-4"
+                    className="mt-4 min-w-0 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3 sm:p-4"
                     data-testid="booking-security-check"
                   >
                     <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
@@ -3718,7 +3736,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
               {statusMessage ? (
                 <p
                   className={cn(
-                    "mt-4 rounded-[1.1rem] border px-4 py-3 text-sm",
+                    "mt-4 break-words rounded-[1.1rem] border px-4 py-3 text-sm",
                     statusIsDraftRestoreNotice
                       ? "border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] text-[var(--ccr-text)] shadow-sm shadow-black/5"
                       : "border-emerald-200 bg-emerald-50 text-emerald-800",
@@ -3759,75 +3777,77 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
               </div>
             </div>
 
-            <aside className="lg:sticky lg:top-24 lg:self-start">
-              <div className="overflow-hidden rounded-[1.5rem] border border-[var(--ccr-border)] bg-[linear-gradient(160deg,var(--ccr-primary),rgba(15,23,42,0.96))] px-4 py-5 text-[var(--ccr-on-primary)] shadow-[0_28px_90px_rgba(15,23,42,0.2)] sm:rounded-[1.75rem] md:px-6 md:py-6">
+            <aside className="min-w-0 lg:sticky lg:top-24 lg:self-start">
+              <div className="min-w-0 overflow-hidden rounded-[1.5rem] border border-[var(--ccr-border)] bg-[linear-gradient(160deg,var(--ccr-primary),rgba(15,23,42,0.96))] px-3.5 py-4 text-[var(--ccr-on-primary)] shadow-[0_28px_90px_rgba(15,23,42,0.2)] sm:rounded-[1.75rem] sm:px-4 sm:py-5 md:px-6 md:py-6">
               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--ccr-accent)]">
                 Booking summary
               </p>
               <h3 className="mt-3 text-[1.65rem] font-semibold tracking-tight sm:text-2xl">Review before checkout</h3>
-              <p className="mt-3 text-sm leading-6 text-[var(--ccr-on-primary-muted)]">
+              <p className="mt-3 break-words text-sm leading-6 text-[var(--ccr-on-primary-muted)]">
                 Use these controls to update your itinerary or change the vehicle before final payment.
               </p>
-              <div className="mt-4 flex flex-nowrap items-center gap-1.5 overflow-x-auto pb-1 pr-1">
-                <button
-                  type="button"
-                  onClick={handleChangeDates}
-                  className="shrink-0 whitespace-nowrap rounded-full border border-white/12 bg-white/8 px-3 py-1.5 text-[11px] font-semibold leading-5 text-[var(--ccr-on-primary)] backdrop-blur-sm sm:text-xs"
-                  data-testid="booking-summary-change-dates"
-                >
-                  Change dates
-                </button>
-                <button
-                  type="button"
-                  onClick={handleChangeVehicle}
-                  className="shrink-0 whitespace-nowrap rounded-full border border-white/12 bg-white/8 px-3 py-1.5 text-[11px] font-semibold leading-5 text-[var(--ccr-on-primary)] backdrop-blur-sm sm:text-xs"
-                  data-testid="booking-summary-change-vehicle"
-                >
-                  Change vehicle
-                </button>
-                {hasSelectedVehicleId ? (
+              <div className="-mx-1 mt-4 min-w-0 overflow-x-auto pb-1 sm:mx-0 sm:overflow-visible">
+                <div className="flex min-w-max items-center gap-1.5 px-1 sm:min-w-0 sm:flex-wrap sm:px-0">
                   <button
                     type="button"
-                    onClick={handleDeselectVehicle}
-                    className="shrink-0 whitespace-nowrap rounded-full border border-[var(--ccr-clerk-danger-border)] bg-white/6 px-3 py-1.5 text-[11px] font-semibold leading-5 text-[var(--ccr-clerk-danger-text)] sm:text-xs"
-                    data-testid="booking-summary-deselect-vehicle"
+                    onClick={handleChangeDates}
+                    className="shrink-0 whitespace-nowrap rounded-full border border-white/12 bg-white/8 px-3 py-1.5 text-[11px] font-semibold leading-5 text-[var(--ccr-on-primary)] backdrop-blur-sm sm:text-xs"
+                    data-testid="booking-summary-change-dates"
                   >
-                    Deselect vehicle
+                    Change dates
                   </button>
-                ) : null}
-                {draftWasRestored ? (
                   <button
                     type="button"
-                    onClick={() => setShowStartOverConfirm(true)}
-                    className="shrink-0 whitespace-nowrap rounded-full border border-[var(--ccr-clerk-danger-border)] bg-white/6 px-3 py-1.5 text-[11px] font-semibold leading-5 text-[var(--ccr-clerk-danger-text)] sm:text-xs"
-                    data-testid="booking-summary-start-over"
+                    onClick={handleChangeVehicle}
+                    className="shrink-0 whitespace-nowrap rounded-full border border-white/12 bg-white/8 px-3 py-1.5 text-[11px] font-semibold leading-5 text-[var(--ccr-on-primary)] backdrop-blur-sm sm:text-xs"
+                    data-testid="booking-summary-change-vehicle"
                   >
-                    Clear draft
+                    Change vehicle
                   </button>
-                ) : null}
+                  {hasSelectedVehicleId ? (
+                    <button
+                      type="button"
+                      onClick={handleDeselectVehicle}
+                      className="shrink-0 whitespace-nowrap rounded-full border border-[var(--ccr-clerk-danger-border)] bg-white/6 px-3 py-1.5 text-[11px] font-semibold leading-5 text-[var(--ccr-clerk-danger-text)] sm:text-xs"
+                      data-testid="booking-summary-deselect-vehicle"
+                    >
+                      Deselect vehicle
+                    </button>
+                  ) : null}
+                  {draftWasRestored ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowStartOverConfirm(true)}
+                      className="shrink-0 whitespace-nowrap rounded-full border border-[var(--ccr-clerk-danger-border)] bg-white/6 px-3 py-1.5 text-[11px] font-semibold leading-5 text-[var(--ccr-clerk-danger-text)] sm:text-xs"
+                      data-testid="booking-summary-start-over"
+                    >
+                      Clear draft
+                    </button>
+                  ) : null}
+                </div>
               </div>
-              <div className="mt-5 space-y-3 rounded-[1.35rem] border border-white/10 bg-white/6 p-4 text-sm shadow-inner shadow-black/10">
-                <p>
+              <div className="mt-5 min-w-0 space-y-3 rounded-[1.35rem] border border-white/10 bg-white/6 p-4 text-sm shadow-inner shadow-black/10">
+                <p className="break-words">
                   <span className="text-[var(--ccr-on-primary-muted)]">Pickup:</span> {pickupDate} {pickupTime}
                 </p>
-                <p>
+                <p className="break-words">
                   <span className="text-[var(--ccr-on-primary-muted)]">Dropoff:</span> {dropoffDate} {dropoffTime}
                 </p>
-                <p>
+                <p className="break-words">
                   <span className="text-[var(--ccr-on-primary-muted)]">Pickup Location:</span>{" "}
                   {pickupLocationText || "Not selected"}
                 </p>
-                <p>
+                <p className="break-words">
                   <span className="text-[var(--ccr-on-primary-muted)]">Dropoff Location:</span>{" "}
                   {dropoffLocationText || "Not selected"}
                 </p>
-                <p>
+                <p className="break-words">
                   <span className="text-[var(--ccr-on-primary-muted)]">Vehicle:</span>{" "}
                   {summaryVehicleLabel}
                 </p>
               </div>
 
-              <div className="mt-6 rounded-[1.5rem] border border-white/10 bg-white/8 p-4 backdrop-blur-sm">
+              <div className="mt-6 min-w-0 rounded-[1.5rem] border border-white/10 bg-white/8 p-4 backdrop-blur-sm">
                 <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--ccr-on-primary-muted)]">Pricing (JMD)</p>
                 {pricingQuoteLoading ? (
                   <div className="mt-3 space-y-2 text-sm">
@@ -3844,46 +3864,57 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                     {pricingQuoteUpdating ? (
                       <p className="text-xs text-[var(--ccr-on-primary-muted)]">Updating...</p>
                     ) : null}
-                    <div className="flex items-center justify-between">
-                      <span>Days</span>
-                      <span className="font-semibold">{hideFallbackTotals ? "—" : rentalDays}</span>
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="min-w-0">Days</span>
+                      <span className="shrink-0 text-right font-semibold">{hideFallbackTotals ? "—" : rentalDays}</span>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span>Base rental</span>
-                      <span className="font-semibold">{hideFallbackTotals ? "—" : formatJmd(baseTotal)}</span>
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="min-w-0">Base rental</span>
+                      <span className="shrink-0 text-right font-semibold">{hideFallbackTotals ? "—" : formatJmd(baseTotal)}</span>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span>Insurance</span>
-                      <span className="font-semibold">{hideFallbackTotals ? "—" : formatJmd(insuranceTotal)}</span>
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="min-w-0">Insurance</span>
+                      <span className="shrink-0 text-right font-semibold">{hideFallbackTotals ? "—" : formatJmd(insuranceTotal)}</span>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span>Coupon</span>
-                      <span className="font-semibold">{hideFallbackTotals ? "—" : `-${formatJmd(discountTotal)}`}</span>
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="min-w-0">Coupon</span>
+                      <span className="shrink-0 text-right font-semibold">{hideFallbackTotals ? "—" : `-${formatJmd(discountTotal)}`}</span>
                     </div>
                     <div className="my-2 h-px bg-[var(--ccr-border)]" />
-                    <div className="flex items-center justify-between text-base">
-                      <span className="font-semibold">Total</span>
-                      <span className="font-bold">{hideFallbackTotals ? "—" : formatJmd(amountDue)}</span>
+                    <div className="flex items-start justify-between gap-3 text-base">
+                      <span className="min-w-0 font-semibold">Total</span>
+                      <span className="shrink-0 text-right font-bold">{hideFallbackTotals ? "—" : formatJmd(amountDue)}</span>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span>Amount Required to Reserve</span>
-                      <span className="font-semibold">{hideFallbackTotals ? "—" : formatJmd(depositRequired)}</span>
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="min-w-0">Minimum Deposit to Reserve</span>
+                      <span className="shrink-0 text-right font-semibold">{hideFallbackTotals ? "—" : formatJmd(depositRequired)}</span>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span>Balance Due on Pickup</span>
-                      <span className="font-semibold">{hideFallbackTotals ? "—" : formatJmd(balanceDueOnPickup)}</span>
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="min-w-0">Due Now</span>
+                      <span className="shrink-0 text-right font-semibold">
+                        {hideFallbackTotals ? "—" : formatJmd(paymentPreviewDueNow)}
+                      </span>
                     </div>
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="min-w-0">Balance Due on Pickup</span>
+                      <span className="shrink-0 text-right font-semibold">{hideFallbackTotals ? "—" : formatJmd(balanceDueOnPickup)}</span>
+                    </div>
+                    {reserveShortfall > 0 && !hideFallbackTotals ? (
+                      <p className="text-xs text-amber-200">
+                        Pay {formatJmd(reserveShortfall)} more to meet the minimum deposit.
+                      </p>
+                    ) : null}
                   </div>
                 )}
                 {pricingQuoteError ? (
                   <p className="mt-3 text-xs text-amber-200">{pricingQuoteError}</p>
                 ) : null}
               </div>
-              <div className="mt-6 rounded-[1.35rem] border border-white/10 bg-black/10 p-4">
+              <div className="mt-6 min-w-0 rounded-[1.35rem] border border-white/10 bg-black/10 p-4">
                 <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--ccr-accent)]">
                   Need assistance?
                 </p>
-                <p className="mt-3 text-sm leading-6 text-[var(--ccr-on-primary-muted)]">
+                <p className="mt-3 break-words text-sm leading-6 text-[var(--ccr-on-primary-muted)]">
                   Contact the Curated Car Rentals team at {siteContent.phones[0]?.label} if you need help before checkout.
                 </p>
               </div>
@@ -3895,7 +3926,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
 
       {showReturningCustomerModal ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--ccr-primary)]/65 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-[1.75rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-[0_28px_90px_rgba(15,23,42,0.22)]">
+          <div className="w-full max-w-[calc(100vw-2rem)] rounded-[1.75rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-5 shadow-[0_28px_90px_rgba(15,23,42,0.22)] sm:max-w-md sm:p-6">
             <h4 className="text-lg font-bold text-[var(--ccr-text)]">Returning Customer</h4>
             <p className="mt-1 text-sm text-[var(--ccr-muted)]">
               Verify with your Driver&apos;s License number before prefilling details.
@@ -4003,7 +4034,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
       {showStartOverConfirm ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--ccr-primary)]/65 p-4 backdrop-blur-sm">
           <div
-            className="w-full max-w-md rounded-[1.75rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-[0_28px_90px_rgba(15,23,42,0.22)]"
+            className="w-full max-w-[calc(100vw-2rem)] rounded-[1.75rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-5 shadow-[0_28px_90px_rgba(15,23,42,0.22)] sm:max-w-md sm:p-6"
             role="dialog"
             aria-modal="true"
             aria-labelledby="booking-start-over-title"
@@ -4016,11 +4047,11 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
             <p id="booking-start-over-description" className="mt-2 text-sm text-[var(--ccr-muted)]">
               This will clear your current draft and you&apos;ll restart from the beginning.
             </p>
-            <div className="mt-5 flex justify-end gap-2">
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <button
                 type="button"
                 onClick={() => setShowStartOverConfirm(false)}
-                className={bookingOutlineButtonClassName}
+                className={cn("w-full justify-center sm:w-auto", bookingOutlineButtonClassName)}
                 data-testid="booking-start-over-cancel"
               >
                 Cancel
@@ -4028,7 +4059,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
               <button
                 type="button"
                 onClick={handleStartOver}
-                className={bookingResetButtonClassName}
+                className={cn("w-full justify-center sm:w-auto", bookingResetButtonClassName)}
                 data-testid="booking-start-over-confirm"
               >
                 Start over

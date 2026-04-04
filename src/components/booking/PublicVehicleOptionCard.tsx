@@ -226,7 +226,7 @@ export function PublicVehicleOptionCard({
   return (
     <article
       className={cn(
-        "overflow-hidden rounded-xl border transition",
+        "min-w-0 overflow-hidden rounded-xl border transition",
         selected
           ? "border-[var(--ccr-accent)] bg-[var(--ccr-surface)] shadow-[0_0_0_1px_var(--ccr-accent)]"
           : "border-[var(--ccr-border)] bg-[var(--ccr-surface)]",
@@ -255,37 +255,37 @@ export function PublicVehicleOptionCard({
         ) : null}
       </button>
 
-      <div className="p-4 sm:p-5">
-        <h3 className="text-[1.55rem] font-bold text-[var(--ccr-text)] sm:text-2xl">{vehicleName}</h3>
-        <p className="mt-1 text-sm text-[var(--ccr-muted)]">{subtitle || "Vehicle details"}</p>
+      <div className="min-w-0 p-4 sm:p-5">
+        <h3 className="break-words text-[1.35rem] font-bold leading-tight text-[var(--ccr-text)] sm:text-2xl">{vehicleName}</h3>
+        <p className="mt-1 break-words text-sm text-[var(--ccr-muted)]">{subtitle || "Vehicle details"}</p>
 
-        <div className="mt-4 grid grid-cols-2 gap-x-3 gap-y-2.5 sm:gap-x-4">
+        <div className="mt-4 grid grid-cols-1 gap-x-3 gap-y-3 min-[380px]:grid-cols-2 sm:gap-x-4">
           {specs.map((item) => (
-            <div key={`${vehicle.id}-${item.key}`} className="flex items-start gap-1.5">
+            <div key={`${vehicle.id}-${item.key}`} className="flex min-w-0 items-start gap-1.5">
               <span className="mt-0.5 text-[var(--ccr-muted)]/90">{item.icon}</span>
-              <div>
-                <p className="text-xs text-[var(--ccr-muted)]">{item.label}</p>
-                <p className="text-sm font-medium text-[var(--ccr-text)]">{item.value}</p>
+              <div className="min-w-0">
+                <p className="break-words text-xs text-[var(--ccr-muted)]">{item.label}</p>
+                <p className="break-words text-sm font-medium leading-5 text-[var(--ccr-text)]">{item.value}</p>
               </div>
             </div>
           ))}
         </div>
 
-        {description ? <p className="mt-4 text-sm text-[var(--ccr-muted)]">{description}</p> : null}
+        {description ? <p className="mt-4 break-words text-sm text-[var(--ccr-muted)]">{description}</p> : null}
 
-        <div className="mt-4 flex flex-col gap-3 min-[430px]:flex-row min-[430px]:items-center min-[430px]:justify-between">
-          <div className="min-w-0">
+        <div className="mt-4 flex min-w-0 flex-col gap-3 min-[430px]:flex-row min-[430px]:items-center min-[430px]:justify-between">
+          <div className="min-w-0 space-y-1">
             <p className="text-sm font-semibold text-[var(--ccr-text)]">{formatMoney(vehicle.daily_rate_cents)} / Day</p>
-            <p className="text-xs text-[var(--ccr-muted)]">{rentalDays} day total: {formatMoney(rentalTotal)}</p>
-            <p className="text-xs text-[var(--ccr-muted)]">Deposit: {formatMoney(vehicle.deposit_cents)}</p>
+            <p className="break-words text-xs text-[var(--ccr-muted)]">{rentalDays} day total: {formatMoney(rentalTotal)}</p>
+            <p className="break-words text-xs text-[var(--ccr-muted)]">Deposit: {formatMoney(vehicle.deposit_cents)}</p>
           </div>
-          <div className="flex w-full gap-2 min-[430px]:w-auto">
+          <div className="flex w-full flex-col gap-2 min-[430px]:w-auto min-[430px]:flex-row">
             <button
               type="button"
               onClick={onSelect}
               disabled={loading}
               className={cn(
-                "flex-1 rounded-lg border px-3 py-2 text-sm font-semibold min-[430px]:flex-none",
+                "w-full rounded-lg border px-3 py-2 text-sm font-semibold min-[430px]:w-auto min-[430px]:flex-1 min-[430px]:flex-none",
                 selected
                   ? "border-[var(--ccr-primary)] bg-[var(--ccr-primary)] text-[var(--ccr-on-primary)]"
                   : "border-[var(--ccr-border)] bg-[var(--ccr-surface)] text-[var(--ccr-text)]",
@@ -297,7 +297,7 @@ export function PublicVehicleOptionCard({
               <button
                 type="button"
                 onClick={onDeselect}
-                className="flex-1 rounded-lg border border-[var(--ccr-clerk-danger-border)] bg-[var(--ccr-surface)] px-3 py-2 text-sm font-semibold text-[var(--ccr-clerk-danger-text)] min-[430px]:flex-none"
+                className="w-full rounded-lg border border-[var(--ccr-clerk-danger-border)] bg-[var(--ccr-surface)] px-3 py-2 text-sm font-semibold text-[var(--ccr-clerk-danger-text)] min-[430px]:w-auto min-[430px]:flex-1 min-[430px]:flex-none"
               >
                 Remove
               </button>

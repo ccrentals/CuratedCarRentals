@@ -27,6 +27,7 @@ type ThemeToggleProps = {
   persistence?: "local" | "user";
   showLabel?: boolean;
   controlId?: string;
+  compact?: boolean;
 };
 
 function applyTheme(theme: AppTheme) {
@@ -90,6 +91,7 @@ export function ThemeToggle({
   persistence = "local",
   showLabel = true,
   controlId,
+  compact = false,
 }: ThemeToggleProps) {
   const generatedId = useId();
   const selectId = controlId ?? generatedId;
@@ -196,6 +198,7 @@ export function ThemeToggle({
         aria-label="Theme"
         className={cn(
           "inline-flex min-h-10 items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ccr-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--ccr-surface)]",
+          compact && "gap-1.5 px-2.5 py-2 text-[11px]",
           variant === "default" &&
             "border border-[var(--ccr-border)] bg-[var(--ccr-surface)] text-[var(--ccr-text)] hover:bg-[var(--ccr-surface-soft)]",
           variant === "inverse" &&
@@ -203,9 +206,11 @@ export function ThemeToggle({
           className,
         )}
       >
-        <span className="min-w-[4.5rem] text-left">{selectedLabel}</span>
+        <span className={cn("min-w-[4.5rem] text-left", compact && "min-w-[3.2rem] truncate")}>
+          {selectedLabel}
+        </span>
         <svg
-          className={cn("h-4 w-4 transition-transform", open ? "rotate-180" : "")}
+          className={cn("h-4 w-4 shrink-0 transition-transform", open ? "rotate-180" : "")}
           viewBox="0 0 20 20"
           fill="none"
           aria-hidden="true"

@@ -7,6 +7,7 @@ type QuotePayload = {
   insuranceSelected?: boolean;
   promoCode?: string | null;
   paymentOption?: "FULL" | "DEPOSIT" | "CUSTOM" | "NONE";
+  customAmount?: number | string | null;
 };
 
 const VEHICLE_ID = "11111111-1111-4111-8111-111111111111";
@@ -31,6 +32,28 @@ function buildQuoteSummary(payload: QuotePayload) {
   const subtotal = baseTotal + insuranceTotal;
   const discountTotal = String(payload.promoCode ?? "").toUpperCase() === "SAVE5" ? 5_000 : 0;
   const total = Math.max(0, subtotal - discountTotal);
+  const depositRequired = 3_000;
+  const requestedCustomAmount =
+    payload.customAmount === null || payload.customAmount === undefined || payload.customAmount === ""
+      ? null
+      : Number(payload.customAmount);
+  let dueNow = 0;
+
+  if (payload.paymentOption === "DEPOSIT" || !payload.paymentOption) {
+    dueNow = Math.min(total, depositRequired);
+  } else if (payload.paymentOption === "FULL") {
+    dueNow = total;
+  } else if (
+    payload.paymentOption === "CUSTOM" &&
+    Number.isFinite(requestedCustomAmount) &&
+    requestedCustomAmount! > 0 &&
+    requestedCustomAmount! <= total
+  ) {
+    dueNow = Math.round(requestedCustomAmount!);
+  }
+
+  const dueOnPickup = Math.max(0, total - dueNow);
+  const reserveShortfall = Math.max(0, depositRequired - dueNow);
 
   return {
     days,
@@ -41,9 +64,12 @@ function buildQuoteSummary(payload: QuotePayload) {
     subtotal,
     total,
     amountDue: total,
-    depositRequired: 3_000,
+    depositRequired,
     paidToDate: 0,
-    balanceDue: total,
+    dueNow,
+    dueOnPickup,
+    reserveShortfall,
+    balanceDue: dueOnPickup,
     paymentOption: payload.paymentOption ?? "DEPOSIT",
     promoCode: discountTotal > 0 ? "SAVE5" : null,
   };
@@ -180,6 +206,28 @@ async function advanceToPaymentsStep(page: Page) {
   await page.getByLabel("By clicking here, I confirm that I accept the privacy policy and terms.").check();
   await page.getByRole("button", { name: "Next Step" }).click();
   await expect(page.locator('[data-testid="booking-step-payments"]')).toBeVisible();
+}
+
+async function advanceToConfirmStep(page: Page) {
+  await page.getByRole("button", { name: "Next Step" }).click();
+  await page.getByRole("button", { name: /^Select$/ }).first().click();
+  await page.getByRole("button", { name: "Next Step" }).click();
+  await page.getByRole("button", { name: "Next Step" }).click();
+
+  await page.getByLabel("First Name *").fill("Theme");
+  await page.getByLabel("Last Name *").fill("Check");
+  await page.getByLabel("Email Address *").fill("theme.check@example.com");
+  await page.getByLabel("Phone Number *").fill("8765551234");
+  await page.getByLabel("DL Number").fill("D1234567");
+  const fileInputs = page.locator('input[type="file"]');
+  await fileInputs.first().setInputFiles({
+    name: "dl.jpg",
+    mimeType: "image/jpeg",
+    buffer: Buffer.from("fake-dl-image"),
+  });
+  await page.getByRole("button", { name: "Next Step" }).click();
+
+  await expect(page.getByRole("heading", { name: "Confirm Reservation" })).toBeVisible();
 }
 
 test.beforeEach(async ({ page }) => {
@@ -530,6 +578,61 @@ test("step 5 does not show vehicle as not selected while draft selection resolve
   await expect(page.getByRole("heading", { name: "Confirm Reservation" })).toBeVisible();
   const confirmPanel = page.locator("section").filter({ hasText: "Confirm Reservation" });
   await expect(confirmPanel).not.toContainText("Vehicle: Not selected");
+});
+
+test("step 5 checkbox uses the active theme accent color", async ({ page }) => {
+  await page.goto("/book", { waitUntil: "networkidle" });
+  await advanceToConfirmStep(page);
+
+  const checkbox = page.getByLabel(
+    "By clicking here, I confirm that I accept the privacy policy and terms.",
+  );
+  const colors = await checkbox.evaluate((element) => {
+    const input = element as HTMLInputElement;
+    const probe = document.createElement("div");
+    probe.style.color = "var(--ccr-accent)";
+    document.body.appendChild(probe);
+    const resolvedAccent = getComputedStyle(probe).color;
+    probe.remove();
+    return {
+      accentColor: getComputedStyle(input).accentColor,
+      resolvedAccent,
+    };
+  });
+
+  expect(colors.accentColor).toBe(colors.resolvedAccent);
+});
+
+test("step 6 custom payment updates the side summary due-now and pickup-balance values", async ({ page }) => {
+  await page.goto("/book", { waitUntil: "networkidle" });
+  await advanceToPaymentsStep(page);
+
+  const customQuotePromise = page.waitForResponse((response) => {
+    if (!response.url().includes("/api/public/pricing/quote")) return false;
+    const body = response.request().postData() ?? "";
+    return body.includes('"paymentOption":"CUSTOM"') && body.includes('"customAmount":"11000"');
+  });
+
+  await page.getByRole("button", { name: "Custom Payment" }).click();
+  await page.getByLabel("Custom Amount (JMD)").fill("11000");
+  const customQuote = (await (await customQuotePromise).json()) as {
+    summary: {
+      total: number;
+      depositRequired: number;
+      dueNow: number;
+      dueOnPickup: number;
+    };
+  };
+
+  const pricingPanel = page.locator("aside").filter({ hasText: "Pricing (JMD)" });
+  await expect(pricingPanel).toContainText(`Total${formatJmd(customQuote.summary.total)}`);
+  await expect(pricingPanel).toContainText(
+    `Minimum Deposit to Reserve${formatJmd(customQuote.summary.depositRequired)}`,
+  );
+  await expect(pricingPanel).toContainText(`Due Now${formatJmd(customQuote.summary.dueNow)}`);
+  await expect(pricingPanel).toContainText(
+    `Balance Due on Pickup${formatJmd(customQuote.summary.dueOnPickup)}`,
+  );
 });
 
 test("step 7 checkout route starts WiPay and follows redirect URL", async ({ page }) => {
