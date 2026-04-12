@@ -215,9 +215,9 @@ export const reservationOptions = {
     "FREE airport pickup at Kingston Airport.",
   ],
   unpaid: [
-    "Reserve without payment.",
-    "Not guaranteed.",
-    "Subject to vehicle availability at pickup.",
+    "Vehicle availability is not guaranteed without payment.",
+    "A deposit is required to guarantee availability.",
+    "Subject to availability until the deposit is paid.",
     "NO airport pickup available.",
   ],
   airportPickupNote: "Airport pickup is provided ONLY with a PAID reservation.",

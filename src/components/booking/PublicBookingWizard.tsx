@@ -2789,7 +2789,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
 
   const paymentWarning =
     paymentOption === "NONE"
-      ? "If no payment is made, you are not entitled to the vehicle until the minimum deposit is paid."
+      ? "Please note vehicle availability is not guaranteed without payment. To guarantee availability a deposit is required."
       : paymentOption === "CUSTOM" && customPaymentIsValid && customPaymentNumber < depositRequired
         ? "Custom payment is below deposit. This may not guarantee the vehicle."
         : null;

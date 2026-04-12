@@ -93,10 +93,10 @@ export default async function BookingSummaryPage({
         ) : null}
         {!isOverridden && isNonBlocking ? (
           <div className="mt-4 rounded-xl border border-amber-300/40 bg-amber-400/10 p-4 text-sm text-amber-100">
-            <p className="font-semibold">Unpaid bookings are non-blocking</p>
+            <p className="font-semibold">Deposit required to guarantee availability</p>
             <p className="mt-1 text-amber-100/90">
-              Bookings without payment do not reserve the vehicle. If another customer pays first
-              for the same dates, this booking may be cancelled.
+              Please note vehicle availability is not guaranteed without payment. To guarantee
+              availability a deposit is required.
             </p>
           </div>
         ) : null}
@@ -147,7 +147,7 @@ export default async function BookingSummaryPage({
             Policies & Payment Instructions
           </h3>
           <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-[var(--ccr-text)]">
-            <li>Deposit secures the booking. Balance is due by pickup.</li>
+            <li>Please note vehicle availability is not guaranteed without payment. To guarantee availability a deposit is required.</li>
             <li>Please bring a valid driver’s license and your booking reference.</li>
             <li>Cancellations within 24 hours of pickup may be non-refundable.</li>
           </ul>

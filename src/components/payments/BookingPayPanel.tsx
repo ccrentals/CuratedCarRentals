@@ -132,18 +132,18 @@ export function BookingPayPanel({
           Final payment step. Apply promo codes here before you continue to payment.
         </p>
         <div className="mt-4 rounded-xl border border-amber-300/40 bg-amber-200/15 p-4 text-sm text-amber-100">
-          <p className="font-semibold">Important</p>
+          <p className="font-semibold">Deposit required to guarantee availability</p>
           <p className="mt-1 text-amber-100/90">
-            Bookings without payment do not reserve the vehicle. If another customer pays for the
-            same dates first, unpaid bookings may be cancelled.
+            Please note vehicle availability is not guaranteed without payment. To guarantee
+            availability a deposit is required.
           </p>
         </div>
         {summary.paymentOption === "NONE" ? (
           <div className="mt-4 rounded-xl border border-red-300/40 bg-red-500/15 p-4 text-sm text-red-100">
             <p className="font-semibold">Pay on Pickup selected</p>
             <p className="mt-1 text-red-100/90">
-              This booking is currently non-blocking and can be cancelled if another customer pays
-              for the same vehicle dates before you do.
+              Please note vehicle availability is not guaranteed without payment. To guarantee
+              availability a deposit is required.
             </p>
           </div>
         ) : null}
@@ -238,7 +238,7 @@ export function BookingPayPanel({
               Pay {formatJmd(0)} now. Total of {formatJmd(summary.total)} due on pickup.
             </p>
             <div className="mt-2 rounded-lg border border-amber-300/40 bg-amber-200/15 p-3 text-xs text-amber-100">
-              Selecting this option does not reserve the vehicle until a payment is made.
+              Please note vehicle availability is not guaranteed without payment. To guarantee availability a deposit is required.
             </div>
             <div className="mt-3">
               {summary.netPaidToDate > 0 ? (

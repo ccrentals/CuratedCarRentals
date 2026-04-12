@@ -125,7 +125,7 @@ function policyHtml() {
     <div style="margin-top:16px; font-size:12px; color:#64748b;">
       <p style="font-weight:600; color:#0f172a; margin-bottom:6px;">Payment & pickup notes</p>
       <ul style="margin:0; padding-left:18px;">
-        <li>Deposit secures the booking. Balance is due by pickup.</li>
+        <li>Please note vehicle availability is not guaranteed without payment. To guarantee availability a deposit is required.</li>
         <li>Please bring a valid driver’s license and the booking reference.</li>
         <li>Cancellations within 24 hours of pickup may be non-refundable.</li>
       </ul>
