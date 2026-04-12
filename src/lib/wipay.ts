@@ -1,6 +1,13 @@
 import { createHash } from "node:crypto";
 
-const WIPAY_ENDPOINT = "https://jm.wipayfinancial.com/plugins/payments/request";
+const WIPAY_BASE_URLS = {
+  BB: "https://bb.wipayfinancial.com",
+  GY: "https://gy.wipayfinancial.com",
+  JM: "https://jm.wipayfinancial.com",
+  TT: "https://tt.wipayfinancial.com",
+} as const;
+
+const WIPAY_REQUEST_TIMEOUT_MS = 12_000;
 
 export type WiPayRequestParams = {
   orderId: string;
@@ -10,6 +17,34 @@ export type WiPayRequestParams = {
   email?: string;
   phone?: string;
 };
+
+type WiPayCountryCode = keyof typeof WIPAY_BASE_URLS;
+
+async function fetchWithTimeout(url: string, timeoutMs: number, init?: RequestInit) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export function getWiPayCountryCode(): WiPayCountryCode {
+  const raw = (process.env.WIPAY_COUNTRY_CODE ?? "JM").trim().toUpperCase();
+  if (raw in WIPAY_BASE_URLS) {
+    return raw as WiPayCountryCode;
+  }
+  throw new Error("Invalid WIPAY_COUNTRY_CODE: must be JM, TT, BB, or GY");
+}
+
+export function getWiPayBaseUrl() {
+  return WIPAY_BASE_URLS[getWiPayCountryCode()];
+}
+
+export function getWiPayRequestEndpoint() {
+  return `${getWiPayBaseUrl()}/plugins/payments/request`;
+}
 
 export function getCanonicalSiteUrl() {
   const raw = process.env.SITE_URL?.trim();
@@ -68,7 +103,7 @@ export function buildRequestParams({
 
   return {
     account_number: accountNumber,
-    country_code: "JM",
+    country_code: getWiPayCountryCode(),
     currency: "JMD",
     environment,
     fee_structure: feeStructure,
@@ -83,8 +118,13 @@ export function buildRequestParams({
   };
 }
 
-export async function requestHostedPageUrl(params: Record<string, string | undefined>) {
+export async function requestHostedPageUrl(
+  params: Record<string, string | undefined>,
+  options?: { timeoutMs?: number },
+) {
+  const timeoutMs = options?.timeoutMs ?? WIPAY_REQUEST_TIMEOUT_MS;
   const body = new URLSearchParams();
+  const endpoint = getWiPayRequestEndpoint();
 
   Object.entries(params).forEach(([key, value]) => {
     if (value !== undefined && value !== "") {
@@ -92,14 +132,22 @@ export async function requestHostedPageUrl(params: Record<string, string | undef
     }
   });
 
-  const response = await fetch(WIPAY_ENDPOINT, {
-    method: "POST",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body,
-  });
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(endpoint, timeoutMs, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(`WiPay request timed out after ${timeoutMs}ms (${endpoint})`);
+    }
+    throw error;
+  }
 
   const responseText = await response.text();
 

@@ -1,6 +1,7 @@
 import { dbQuery } from "@/lib/db";
 import { getInvoiceProvider, validateEnv, type EnvValidation } from "@/lib/env";
 import { redactText } from "@/lib/log";
+import { getWiPayBaseUrl } from "@/lib/wipay";
 
 type CheckResult = {
   ok: boolean;
@@ -93,10 +94,16 @@ export async function getHealthSnapshot(): Promise<HealthSnapshot> {
       return { ok: false, configured: false, latencyMs: Date.now() - started };
     }
     try {
-      const res = await fetchWithTimeout("https://jm.wipayfinancial.com", 4000, { method: "GET" });
+      const baseUrl = getWiPayBaseUrl();
+      const res = await fetchWithTimeout(baseUrl, 4000, { method: "GET" });
       return { ok: res.status < 500, configured: true, status: res.status, latencyMs: Date.now() - started };
     } catch (error) {
-      const message = error instanceof Error ? error.message : "WiPay fetch failed";
+      const message =
+        error instanceof Error && error.name === "AbortError"
+          ? "WiPay connectivity timed out after 4000ms"
+          : error instanceof Error
+            ? error.message
+            : "WiPay fetch failed";
       return {
         ok: false,
         configured: true,

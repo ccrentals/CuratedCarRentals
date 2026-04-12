@@ -7,6 +7,7 @@ function missingKeys(keys: string[]) {
 }
 
 const WIPAY_ALLOWED_FEE_STRUCTURES = new Set(["customer_pay", "merchant_absorb", "split"]);
+const WIPAY_ALLOWED_COUNTRY_CODES = new Set(["JM", "TT", "BB", "GY"]);
 const INVOICE_PROVIDERS = new Set(["pdfmonkey", "gotenberg"]);
 
 function isValidUrl(value: string | undefined) {
@@ -72,6 +73,13 @@ export function validateEnv(): EnvValidation {
   const account = (process.env.WIPAY_ACCOUNT_NUMBER ?? "").trim();
   if (isNonEmpty(process.env.WIPAY_ACCOUNT_NUMBER) && !/^\d+$/.test(account)) {
     paymentsInvalid.push("WIPAY_ACCOUNT_NUMBER must be digits only");
+  }
+  const wipayCountryCode = (process.env.WIPAY_COUNTRY_CODE ?? "").trim().toUpperCase();
+  if (
+    isNonEmpty(process.env.WIPAY_COUNTRY_CODE) &&
+    !WIPAY_ALLOWED_COUNTRY_CODES.has(wipayCountryCode)
+  ) {
+    paymentsInvalid.push("WIPAY_COUNTRY_CODE must be JM, TT, BB, or GY");
   }
 
   const emailMissing = missingKeys(["RESEND_API_KEY", "RESEND_FROM"]);
