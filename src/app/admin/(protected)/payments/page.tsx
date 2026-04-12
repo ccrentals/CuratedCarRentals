@@ -17,6 +17,7 @@ import { dbQuery } from "@/lib/db";
 import { formatJmd } from "@/lib/money";
 import { normalizePageSize, parsePositiveIntParam } from "@/lib/pagination/sharedPagination";
 import { formatPaymentStatus } from "@/lib/payments/formatPaymentStatus";
+import { formatPaymentMetadataError, sanitizePaymentMetadataForUi } from "@/lib/payments/formatWipayError";
 
 function maskValue(value: string | undefined, visible = 4) {
   if (!value) return "missing";
@@ -38,17 +39,9 @@ function displayProvider(provider: string, meta: Record<string, unknown> | null)
   return "MANUAL";
 }
 
-function extractError(meta: Record<string, unknown> | null) {
-  if (!meta) return "";
-  const error = meta.error as { message?: string } | undefined;
-  if (error?.message) return error.message;
-  const response = meta.response as { message?: string; reasonDescription?: string } | undefined;
-  if (response?.message) return response.message;
-  if (response?.reasonDescription) return response.reasonDescription;
-  const raw = meta.raw as { message?: string; reasonDescription?: string } | undefined;
-  if (raw?.message) return raw.message;
-  if (raw?.reasonDescription) return raw.reasonDescription;
-  return "";
+function formatPaymentLog(meta: Record<string, unknown> | null) {
+  const sanitized = sanitizePaymentMetadataForUi(meta);
+  return sanitized ? JSON.stringify(sanitized, null, 2) : "";
 }
 
 type PaymentRow = {
@@ -322,14 +315,6 @@ export default async function AdminPaymentsPage({
               <dd className="font-semibold">{envSummary.apiKey}</dd>
             </div>
           </dl>
-          <p className="mt-4 text-xs text-[var(--ccr-muted)]">
-            <Link
-              href="/api/admin/payments/diagnostics"
-              className="font-semibold text-[var(--ccr-text)] underline-offset-4 hover:underline"
-            >
-              View raw diagnostics JSON
-            </Link>
-          </p>
         </div>
 
         <div className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
@@ -341,7 +326,7 @@ export default async function AdminPaymentsPage({
           ) : (
             <ul className="mt-4 space-y-3 text-sm">
               {wipayRecent.rows.map((row: WipayRow) => {
-                const errorMessage = extractError(row.metadata_json);
+                const formattedError = formatPaymentMetadataError(row.metadata_json);
                 const statusLabel = formatPaymentStatus(row.status, {
                   paymentType: extractPaymentType(row.metadata_json),
                 });
@@ -373,8 +358,11 @@ export default async function AdminPaymentsPage({
                         Txn: {row.provider_transaction_id}
                       </div>
                     ) : null}
-                    {errorMessage ? (
-                      <div className="mt-2 text-xs text-red-300">{errorMessage}</div>
+                    {formattedError ? (
+                      <div className="mt-2 space-y-1">
+                        <div className="text-xs font-semibold text-red-300">{formattedError.title}</div>
+                        <div className="text-xs text-[var(--ccr-muted)]">{formattedError.detail}</div>
+                      </div>
                     ) : null}
                     </Link>
                   </li>
@@ -396,7 +384,7 @@ export default async function AdminPaymentsPage({
           <>
             <div className="divide-y divide-[var(--ccr-border)] md:hidden">
               {visiblePayments.map((payment: PaymentRow) => {
-                const errorMessage = extractError(payment.metadata_json);
+                const formattedError = formatPaymentMetadataError(payment.metadata_json);
                 const statusLabel = formatPaymentStatus(payment.status, {
                   paymentType: extractPaymentType(payment.metadata_json),
                 });
@@ -458,9 +446,18 @@ export default async function AdminPaymentsPage({
                     </dl>
                     {canViewPaymentErrors ? (
                       <div className="flex items-start justify-between gap-3">
-                        <p className="min-h-4 text-xs text-red-300">{errorMessage || "—"}</p>
+                        <div className="min-h-4 flex-1 space-y-1">
+                          {formattedError ? (
+                            <>
+                              <p className="text-xs font-semibold text-red-300">{formattedError.title}</p>
+                              <p className="text-xs text-[var(--ccr-muted)]">{formattedError.detail}</p>
+                            </>
+                          ) : (
+                            <p className="text-xs text-[var(--ccr-muted)]">—</p>
+                          )}
+                        </div>
                         <PaymentLogToggle
-                          log={payment.metadata_json ? JSON.stringify(payment.metadata_json, null, 2) : ""}
+                          log={formatPaymentLog(payment.metadata_json)}
                         />
                       </div>
                     ) : null}
@@ -486,7 +483,7 @@ export default async function AdminPaymentsPage({
                 </thead>
                 <tbody>
                   {visiblePayments.map((payment: PaymentRow) => {
-                    const errorMessage = extractError(payment.metadata_json);
+                    const formattedError = formatPaymentMetadataError(payment.metadata_json);
                     const statusLabel = formatPaymentStatus(payment.status, {
                       paymentType: extractPaymentType(payment.metadata_json),
                     });
@@ -550,10 +547,17 @@ export default async function AdminPaymentsPage({
                         </td>
                         {canViewPaymentErrors ? (
                           <td className="px-4 py-3 text-xs text-red-300">
-                            <div>{errorMessage || "—"}</div>
+                            {formattedError ? (
+                              <div className="space-y-1">
+                                <div className="font-semibold">{formattedError.title}</div>
+                                <div className="text-[var(--ccr-muted)]">{formattedError.detail}</div>
+                              </div>
+                            ) : (
+                              <div className="text-[var(--ccr-muted)]">—</div>
+                            )}
                             <div className="mt-2">
                               <PaymentLogToggle
-                                log={payment.metadata_json ? JSON.stringify(payment.metadata_json, null, 2) : ""}
+                                log={formatPaymentLog(payment.metadata_json)}
                               />
                             </div>
                           </td>
