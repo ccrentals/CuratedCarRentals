@@ -74,6 +74,43 @@ function buildAdminAuthEntryHref(params: {
   return queryString ? `/admin/auth?${queryString}` : "/admin/auth";
 }
 
+function resolveAdminRedirectTarget(params: {
+  [key: string]: string | string[] | undefined;
+}) {
+  const redirectValue = params.redirect;
+  if (typeof redirectValue === "string" && redirectValue.startsWith("/")) {
+    return redirectValue;
+  }
+
+  const redirectUrlValue = params.redirect_url;
+  if (typeof redirectUrlValue === "string") {
+    try {
+      const pathname =
+        redirectUrlValue.startsWith("http://") || redirectUrlValue.startsWith("https://")
+          ? new URL(redirectUrlValue).pathname
+          : redirectUrlValue;
+      if (pathname.startsWith("/")) {
+        return pathname;
+      }
+    } catch {
+      if (redirectUrlValue.startsWith("/")) {
+        return redirectUrlValue;
+      }
+    }
+  }
+
+  return "/admin";
+}
+
+function buildAdminBootstrapHref(params: {
+  [key: string]: string | string[] | undefined;
+}) {
+  const redirectTarget = resolveAdminRedirectTarget(params);
+  const query = new URLSearchParams();
+  query.set("redirect", redirectTarget);
+  return `/api/admin/session/bootstrap?${query.toString()}`;
+}
+
 export default async function SignInPage({
   searchParams,
 }: {
@@ -88,6 +125,9 @@ export default async function SignInPage({
   const postClerkAdminAuthPath = await loadPostClerkAdminAuthPath();
   const hideSiteActions = shouldHideSiteActions(params);
   const showAuxiliaryAuthUi = !hideSiteActions;
+  const fallbackRedirectUrl = hideSiteActions
+    ? buildAdminBootstrapHref(params)
+    : postClerkAdminAuthPath;
 
   if (!isClerkPublishableKeyConfigured()) {
     return (
@@ -109,7 +149,7 @@ export default async function SignInPage({
             routing="path"
             withSignUp={false}
             transferable={false}
-            fallbackRedirectUrl={postClerkAdminAuthPath}
+            fallbackRedirectUrl={fallbackRedirectUrl}
             appearance={signInAppearance}
           />
         </div>

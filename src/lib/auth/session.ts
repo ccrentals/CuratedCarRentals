@@ -30,6 +30,11 @@ export type GetSessionFromRequestOptions = {
    * `any-local-user` allows non-admin bridge sessions to propagate so admin guards can return 403.
    */
   clerkBridgeMode?: ClerkBridgeMode;
+  /**
+   * Enable Clerk admin-bridge resolution for explicit bootstrap flows.
+   * General admin routes should rely on the signed app session cookie so idle-timeout semantics stay consistent.
+   */
+  allowClerkBridge?: boolean;
 };
 
 function getSessionSecret() {
@@ -330,6 +335,10 @@ export async function getSessionFromRequest(
     if (legacySession) {
       return legacySession;
     }
+  }
+
+  if (!options.allowClerkBridge) {
+    return null;
   }
 
   // Clerk admin bridge is opt-in via CLERK_PROTECT_ADMIN_ROUTES.

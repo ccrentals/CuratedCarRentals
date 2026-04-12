@@ -9,6 +9,8 @@ const SHARED_ADMIN_GUARD_PATTERN =
 const ADMIN_API_ROUTE_EXEMPTIONS: Record<string, RegExp> = {
   "src/app/api/admin/login/route.ts": /\bcreateSessionToken\b|\bbreak-glass\b/i,
   "src/app/api/admin/logout/route.ts": /\bclearSessionCookie\b/,
+  "src/app/api/admin/session/bootstrap/route.ts":
+    /\ballowClerkBridge\b|\bcreateSessionToken\b|\bsetSessionCookie\b/,
   "src/app/api/admin/maintenance/export/route.ts": /\bhandleAdminMaintenanceGet\b/,
   "src/app/api/admin/vehicles/[id]/documents/[docId]/file/route.ts":
     /\bhandleAdminVehicleDocumentDownload\b/,
