@@ -20,7 +20,6 @@ import { dbQuery } from "@/lib/db";
 import { isVehicleExtensionsMissingTableError } from "@/lib/vehicles/extensionTables";
 import {
   deriveVehicleStatus,
-  type DerivedVehicleStatus,
   type VehicleStatusBlockoutLike,
   type VehicleStatusBookingLike,
 } from "@/lib/vehicles/vehicleStatus";
@@ -93,6 +92,128 @@ function normalizeVehicleDetailTab(value: string | string[] | undefined): Vehicl
   return match?.key ?? "overview";
 }
 
+async function loadVehicleProfile(vehicleId: string) {
+  try {
+    const profileResult = await dbQuery<VehicleProfileRow>(
+      "select p.vin, p.license_plate, p.vehicle_type, p.vehicle_class, p.year, p.color, v.seat_count, p.current_location_label, p.odometer_value, p.odometer_unit, p.fuel_level_value, coalesce((to_jsonb(p)->>'needs_cleaning')::boolean, false) as needs_cleaning, p.available_from, p.available_until, p.entry_date, p.exit_date from vehicles v left join vehicle_profiles p on p.vehicle_id = v.id where v.id = $1::uuid limit 1",
+      [vehicleId],
+    );
+    const profile = profileResult.rows[0] ?? null;
+    return {
+      profile,
+      needsCleaning: profile?.needs_cleaning === true,
+    };
+  } catch (error) {
+    if (!isVehicleExtensionsMissingTableError(error)) {
+      throw error;
+    }
+    return {
+      profile: null,
+      needsCleaning: false,
+    };
+  }
+}
+
+async function loadVehicleBlockouts(vehicleId: string, nowIso: string) {
+  try {
+    const blockoutsResult = await dbQuery<VehicleBlockoutRow>(
+      `select start_at, end_at
+       from blockouts
+       where vehicle_id = $1::uuid
+         and end_at > $2::timestamptz
+       order by start_at asc`,
+      [vehicleId, nowIso],
+    );
+    return blockoutsResult.rows;
+  } catch (error) {
+    const code = String((error as { code?: unknown } | null)?.code ?? "");
+    const message = String((error as { message?: unknown } | null)?.message ?? "").toLowerCase();
+    const missingBlockouts = code === "42P01" && message.includes("blockouts");
+    if (!missingBlockouts) {
+      throw error;
+    }
+    return [];
+  }
+}
+
+async function loadVehicleNotes(vehicleId: string) {
+  try {
+    const notesResult = await dbQuery<VehicleNoteRow>(
+      `select n.id, n.note_text, n.created_at, n.created_by_user_id, u.email as created_by_email
+       from vehicle_notes n
+       left join users u on u.id = n.created_by_user_id
+       where n.vehicle_id = $1::uuid and n.deleted_at is null
+       order by n.created_at desc`,
+      [vehicleId],
+    );
+    return notesResult.rows;
+  } catch (error) {
+    if (!isVehicleExtensionsMissingTableError(error)) {
+      throw error;
+    }
+    return [];
+  }
+}
+
+async function loadOverviewData(vehicle: VehicleDetail) {
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const [profileData, bookingRows, blockoutRows, vehicleNotes] = await Promise.all([
+    loadVehicleProfile(vehicle.id),
+    dbQuery<VehicleBookingRow>(
+      `select
+         b.id,
+         b.status,
+         b.archived_at,
+         b.start_at,
+         b.start_date,
+         b.end_at,
+         b.end_date,
+         b.pricing_json,
+         v.deposit_cents as vehicle_deposit_cents
+       from bookings b
+       join vehicles v on v.id = b.vehicle_id
+       where b.vehicle_id = $1::uuid
+         and coalesce(b.end_at, (b.end_date::timestamptz + interval '1 day')) >= $2::timestamptz
+       order by coalesce(b.start_at, b.start_date::timestamptz) asc`,
+      [vehicle.id, nowIso],
+    ),
+    loadVehicleBlockouts(vehicle.id, nowIso),
+    loadVehicleNotes(vehicle.id),
+  ]);
+
+  return {
+    profile: profileData.profile,
+    initialNotes: vehicleNotes,
+    derivedStatus: deriveVehicleStatus(vehicle, now, {
+      bookings: bookingRows.rows,
+      blockouts: blockoutRows,
+      needsCleaning: profileData.needsCleaning,
+    }),
+  };
+}
+
+async function loadVehicleDocumentSettings() {
+  try {
+    const { settings } = await loadAdminSettings();
+    return {
+      documentFolders: settings.vehicleDocumentFolders,
+      documentTypeOptions: settings.vehicleDocumentTypeOptions,
+      checklistTemplates: settings.vehicleChecklistTemplates.map((template) => ({
+        ...template,
+      })),
+    };
+  } catch {
+    return {
+      documentFolders: [...DEFAULT_ADMIN_SETTINGS.vehicleDocumentFolders],
+      documentTypeOptions: [...DEFAULT_ADMIN_SETTINGS.vehicleDocumentTypeOptions],
+      checklistTemplates: DEFAULT_ADMIN_SETTINGS.vehicleChecklistTemplates.map((template) => ({
+        ...template,
+      })),
+    };
+  }
+}
+
 export default async function AdminVehicleDetailPage({
   params,
   searchParams,
@@ -105,8 +226,12 @@ export default async function AdminVehicleDetailPage({
   const access = await resolveAdminActor({ requirement: "admin" });
   const canManageCommercial =
     access.ok && (access.actor.appRole === "ADMIN" || access.actor.appRole === "DEVELOPER");
+  const visibleTabs = canManageCommercial
+    ? VEHICLE_DETAIL_TABS
+    : VEHICLE_DETAIL_TABS.filter((tab) => tab.key !== "promo" && tab.key !== "insurance");
 
   const requestedTab = normalizeVehicleDetailTab(query.tab);
+  const activeTab = visibleTabs.some((tab) => tab.key === requestedTab) ? requestedTab : "overview";
   const requestedFolder =
     typeof query.folder === "string" && query.folder.trim() ? query.folder.trim() : undefined;
   const requestedDocumentId =
@@ -149,108 +274,9 @@ export default async function AdminVehicleDetailPage({
     notFound();
   }
 
-  let vehicleProfile: VehicleProfileRow | null = null;
-  let needsCleaning = false;
-  try {
-    const profileResult = await dbQuery<VehicleProfileRow>(
-      "select p.vin, p.license_plate, p.vehicle_type, p.vehicle_class, p.year, p.color, v.seat_count, p.current_location_label, p.odometer_value, p.odometer_unit, p.fuel_level_value, coalesce((to_jsonb(p)->>'needs_cleaning')::boolean, false) as needs_cleaning, p.available_from, p.available_until, p.entry_date, p.exit_date from vehicles v left join vehicle_profiles p on p.vehicle_id = v.id where v.id = $1::uuid limit 1",
-      [vehicle.id],
-    );
-    vehicleProfile = profileResult.rows[0] ?? null;
-    needsCleaning = vehicleProfile?.needs_cleaning === true;
-  } catch (error) {
-    if (!isVehicleExtensionsMissingTableError(error)) {
-      throw error;
-    }
-  }
-
-  const now = new Date();
-  const bookingRows = await dbQuery<VehicleBookingRow>(
-    `select
-       b.id,
-       b.status,
-       b.archived_at,
-       b.start_at,
-       b.start_date,
-       b.end_at,
-       b.end_date,
-       b.pricing_json,
-       v.deposit_cents as vehicle_deposit_cents
-     from bookings b
-     join vehicles v on v.id = b.vehicle_id
-     where b.vehicle_id = $1::uuid
-       and coalesce(b.end_at, (b.end_date::timestamptz + interval '1 day')) >= $2::timestamptz
-     order by coalesce(b.start_at, b.start_date::timestamptz) asc`,
-    [vehicle.id, now.toISOString()],
-  );
-
-  let blockoutRows: VehicleBlockoutRow[] = [];
-  try {
-    const blockoutsResult = await dbQuery<VehicleBlockoutRow>(
-      `select start_at, end_at
-       from blockouts
-       where vehicle_id = $1::uuid
-         and end_at > $2::timestamptz
-       order by start_at asc`,
-      [vehicle.id, now.toISOString()],
-    );
-    blockoutRows = blockoutsResult.rows;
-  } catch (error) {
-    const code = String((error as { code?: unknown } | null)?.code ?? "");
-    const message = String((error as { message?: unknown } | null)?.message ?? "").toLowerCase();
-    const missingBlockouts = code === "42P01" && message.includes("blockouts");
-    if (!missingBlockouts) {
-      throw error;
-    }
-  }
-
-  const derivedStatus: DerivedVehicleStatus = deriveVehicleStatus(vehicle, now, {
-    bookings: bookingRows.rows,
-    blockouts: blockoutRows,
-    needsCleaning,
-  });
-
-  let vehicleNotes: VehicleNoteRow[] = [];
-  try {
-    const notesResult = await dbQuery<VehicleNoteRow>(
-      `select n.id, n.note_text, n.created_at, n.created_by_user_id, u.email as created_by_email
-       from vehicle_notes n
-       left join users u on u.id = n.created_by_user_id
-       where n.vehicle_id = $1::uuid and n.deleted_at is null
-       order by n.created_at desc`,
-      [vehicle.id],
-    );
-    vehicleNotes = notesResult.rows;
-  } catch (error) {
-    if (!isVehicleExtensionsMissingTableError(error)) {
-      throw error;
-    }
-  }
-
-  let documentFolders = [...DEFAULT_ADMIN_SETTINGS.vehicleDocumentFolders];
-  let documentTypeOptions = [...DEFAULT_ADMIN_SETTINGS.vehicleDocumentTypeOptions];
-  let checklistTemplates = DEFAULT_ADMIN_SETTINGS.vehicleChecklistTemplates.map((template) => ({
-    ...template,
-  }));
-  try {
-    const { settings } = await loadAdminSettings();
-    documentFolders = settings.vehicleDocumentFolders;
-    documentTypeOptions = settings.vehicleDocumentTypeOptions;
-    checklistTemplates = settings.vehicleChecklistTemplates.map((template) => ({
-      ...template,
-    }));
-  } catch {
-    documentFolders = [...DEFAULT_ADMIN_SETTINGS.vehicleDocumentFolders];
-    documentTypeOptions = [...DEFAULT_ADMIN_SETTINGS.vehicleDocumentTypeOptions];
-    checklistTemplates = DEFAULT_ADMIN_SETTINGS.vehicleChecklistTemplates.map((template) => ({
-      ...template,
-    }));
-  }
-
-  const visibleTabs = canManageCommercial
-    ? VEHICLE_DETAIL_TABS
-    : VEHICLE_DETAIL_TABS.filter((tab) => tab.key !== "promo" && tab.key !== "insurance");
-  const activeTab = visibleTabs.some((tab) => tab.key === requestedTab) ? requestedTab : "overview";
+  const overviewData = activeTab === "overview" ? await loadOverviewData(vehicle) : null;
+  const documentSettings =
+    activeTab === "files" || activeTab === "checklist" ? await loadVehicleDocumentSettings() : null;
 
   return (
     <div data-testid="vehicle-detail" className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6">
@@ -274,9 +300,9 @@ export default async function AdminVehicleDetailPage({
         {activeTab === "overview" ? (
           <VehicleDetailForm
             vehicle={vehicle}
-            profile={vehicleProfile}
-            initialNotes={vehicleNotes}
-            initialDerivedStatus={derivedStatus}
+            profile={overviewData?.profile ?? null}
+            initialNotes={overviewData?.initialNotes ?? []}
+            initialDerivedStatus={overviewData?.derivedStatus ?? "AVAILABLE"}
           />
         ) : null}
 
@@ -297,8 +323,10 @@ export default async function AdminVehicleDetailPage({
         {activeTab === "files" ? (
           <VehicleFilesPanel
             vehicleId={vehicle.id}
-            folders={documentFolders}
-            documentTypes={documentTypeOptions}
+            folders={documentSettings?.documentFolders ?? DEFAULT_ADMIN_SETTINGS.vehicleDocumentFolders}
+            documentTypes={
+              documentSettings?.documentTypeOptions ?? DEFAULT_ADMIN_SETTINGS.vehicleDocumentTypeOptions
+            }
             initialFolder={requestedFolder}
             initialDocumentId={requestedDocumentId}
             initialChecklistItemId={requestedAttachChecklistItemId}
@@ -308,8 +336,13 @@ export default async function AdminVehicleDetailPage({
         {activeTab === "checklist" ? (
           <VehicleChecklistPanel
             vehicleId={vehicle.id}
-            folders={documentFolders}
-            templates={checklistTemplates}
+            folders={documentSettings?.documentFolders ?? DEFAULT_ADMIN_SETTINGS.vehicleDocumentFolders}
+            templates={
+              documentSettings?.checklistTemplates ??
+              DEFAULT_ADMIN_SETTINGS.vehicleChecklistTemplates.map((template) => ({
+                ...template,
+              }))
+            }
             initialChecklistItemId={requestedChecklistItemId}
           />
         ) : null}
