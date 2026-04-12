@@ -1328,18 +1328,47 @@ export default async function AdminReportsPage({
         </p>
       </section>
 
-      <form className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
-        <input type="hidden" name="reportGroup" value={reportGroup} />
-        <input type="hidden" name="impactRows" value={String(impactRowsPerPage)} />
-        <input type="hidden" name="revenueGranularity" value={report.revenue.granularity} />
-        {reportsPreviewFlagsEnabled && previewMissingBlockouts ? (
-          <input type="hidden" name="previewMissingBlockouts" value="1" />
-        ) : null}
-        {reportsPreviewFlagsEnabled && previewMissingMaintenance ? (
-          <input type="hidden" name="previewMissingMaintenance" value="1" />
-        ) : null}
-        <div className="grid grid-cols-2 gap-3 max-[359px]:grid-cols-1 md:grid-cols-[1fr_1fr_1fr_1.2fr_180px_180px_140px_auto_auto] md:gap-4">
-          <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+      <details className="group mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)]">
+        <summary className="cursor-pointer list-none px-4 py-4 text-left transition hover:bg-[var(--ccr-surface-soft)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ccr-accent)] [&::-webkit-details-marker]:hidden">
+          <span className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <span className="min-w-0">
+              <span className="block text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                Filters
+              </span>
+              <span className="mt-1 block text-sm text-[var(--ccr-text)]">
+                Open to adjust report filters
+              </span>
+            </span>
+            <span className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-accent)] transition group-open:bg-[var(--ccr-accent)] group-open:text-[var(--ccr-bg)] sm:w-auto sm:shrink-0">
+              <span className="group-open:hidden">Show filters</span>
+              <span className="hidden group-open:inline">Hide filters</span>
+              <svg
+                viewBox="0 0 20 20"
+                className="h-3.5 w-3.5 transition group-open:rotate-180"
+                aria-hidden="true"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M5 7l5 6 5-6" />
+              </svg>
+            </span>
+          </span>
+        </summary>
+        <form className="hidden border-t border-[var(--ccr-border)] p-4 group-open:block">
+          <input type="hidden" name="reportGroup" value={reportGroup} />
+          <input type="hidden" name="impactRows" value={String(impactRowsPerPage)} />
+          <input type="hidden" name="revenueGranularity" value={report.revenue.granularity} />
+          {reportsPreviewFlagsEnabled && previewMissingBlockouts ? (
+            <input type="hidden" name="previewMissingBlockouts" value="1" />
+          ) : null}
+          {reportsPreviewFlagsEnabled && previewMissingMaintenance ? (
+            <input type="hidden" name="previewMissingMaintenance" value="1" />
+          ) : null}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-12 xl:gap-4">
+          <label className="min-w-0 text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)] xl:col-span-4">
             Snapshot Date
             <input
               type="date"
@@ -1348,7 +1377,7 @@ export default async function AdminReportsPage({
               className="promo-date-time-input date-icon-edge mt-2 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
             />
           </label>
-          <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+          <label className="min-w-0 text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)] xl:col-span-4">
             Range From
             <input
               type="date"
@@ -1357,7 +1386,7 @@ export default async function AdminReportsPage({
               className="promo-date-time-input date-icon-edge mt-2 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
             />
           </label>
-          <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+          <label className="min-w-0 text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)] xl:col-span-4">
             Range To
             <input
               type="date"
@@ -1366,7 +1395,7 @@ export default async function AdminReportsPage({
               className="promo-date-time-input date-icon-edge mt-2 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
             />
           </label>
-          <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+          <label className="min-w-0 text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)] xl:col-span-4">
             Vehicle
             <select
               name="vehicleId"
@@ -1382,7 +1411,7 @@ export default async function AdminReportsPage({
               ))}
             </select>
           </label>
-          <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+          <label className="min-w-0 text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)] xl:col-span-4">
             Pickup Type
             <select
               name="pickupLocationType"
@@ -1395,7 +1424,7 @@ export default async function AdminReportsPage({
               <option value="CUSTOM_ADDRESS">Custom address</option>
             </select>
           </label>
-          <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+          <label className="min-w-0 text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)] xl:col-span-4">
             Dropoff Type
             <select
               name="dropoffLocationType"
@@ -1408,7 +1437,7 @@ export default async function AdminReportsPage({
               <option value="CUSTOM_ADDRESS">Custom address</option>
             </select>
           </label>
-          <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+          <label className="min-w-0 text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)] xl:col-span-6">
             Location Label
             <input
               type="text"
@@ -1418,7 +1447,7 @@ export default async function AdminReportsPage({
               className="mt-2 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
             />
           </label>
-          <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+          <label className="min-w-0 text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)] xl:col-span-2">
             Rows
             <select
               name="rows"
@@ -1432,20 +1461,21 @@ export default async function AdminReportsPage({
               ))}
             </select>
           </label>
-          <button
-            type="submit"
-            className="mt-0 rounded-xl bg-[var(--ccr-primary)] px-4 py-2 text-xs font-semibold text-white md:mt-6"
-          >
-            Apply
-          </button>
           <Link
             href="/admin/reports"
-            className="mt-0 rounded-xl border border-[var(--ccr-border)] px-4 py-2 text-center text-xs font-semibold text-[var(--ccr-text)] md:mt-6"
+            className="min-w-0 rounded-xl border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-4 py-2 text-center text-xs font-semibold text-[var(--ccr-accent)] transition hover:bg-[var(--ccr-surface-soft)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ccr-accent)] sm:self-end xl:col-span-2"
           >
             Reset
           </Link>
-        </div>
-      </form>
+          <button
+            type="submit"
+            className="min-w-0 rounded-xl border border-[var(--ccr-accent)] bg-[var(--ccr-accent)] px-4 py-2 text-xs font-semibold text-[var(--ccr-bg)] transition hover:bg-[var(--ccr-accent-strong)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ccr-accent)] sm:self-end xl:col-span-2"
+          >
+            Apply
+          </button>
+          </div>
+        </form>
+      </details>
 
       {reportsPreviewFlagsEnabled ? (
         <section className="mt-3 rounded-2xl border border-dashed border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-3">

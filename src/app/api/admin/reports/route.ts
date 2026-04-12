@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { requireAdminRole } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import { formatJmd } from "@/lib/money";
-import { buildAdminExportPdf } from "@/lib/pdf/adminExportPdf";
+import { buildAdminExportPdf, type AdminExportPdfColumn } from "@/lib/pdf/adminExportPdf";
 import {
   buildReportsFilterQueryString,
   getAdminReportsPayload,
@@ -126,6 +126,16 @@ function formatGeneratedAt(value: string) {
   });
 }
 
+function formatGeneratedMetadata(
+  payload: AdminReportsPayload,
+  options: { includeTimeZoneLabel?: boolean } = {},
+) {
+  const generated = formatGeneratedAt(payload.generatedAt);
+  return options.includeTimeZoneLabel === false
+    ? `Generated: ${generated}`
+    : `Generated: ${generated} (America/Jamaica)`;
+}
+
 function titleForKey(key: ExportReportKey) {
   if (key === "cash_collections") return "Cash Collections by Period";
   if (key === "vehicle_profitability") return "Vehicle Profitability";
@@ -190,7 +200,7 @@ function resolveVehicleLabel(payload: AdminReportsPayload) {
 function buildCommonMetadata(payload: AdminReportsPayload, sectionMeta: ReportSectionMeta, scopeLabel: string) {
   const vehicleLabel = resolveVehicleLabel(payload);
   const metadata = [
-    `Generated: ${formatGeneratedAt(payload.generatedAt)} (America/Jamaica)`,
+    formatGeneratedMetadata(payload),
     `Mode: ${sectionMeta.mode === "operational" ? "Operational snapshot" : "Historical analysis"}`,
     `Date basis: ${sectionMeta.dateBasisLabel}`,
     scopeLabel,
@@ -683,9 +693,13 @@ function buildExportSpec(key: ExportReportKey, payload: AdminReportsPayload): Ex
   };
 }
 
-function buildReportMetaLines(payload: AdminReportsPayload, spec: ExportSpec) {
+function buildReportMetaLines(
+  payload: AdminReportsPayload,
+  spec: ExportSpec,
+  options: { includeTimeZoneLabel?: boolean } = {},
+) {
   return [
-    `Generated: ${formatGeneratedAt(payload.generatedAt)} (America/Jamaica)`,
+    formatGeneratedMetadata(payload, options),
     `Mode: ${spec.sectionMeta.mode === "operational" ? "Operational snapshot" : "Historical analysis"}`,
     `Date basis: ${spec.sectionMeta.dateBasisLabel}`,
     spec.scopeLabel,
@@ -879,14 +893,70 @@ function buildPdfColumns(headers: string[]) {
   }));
 }
 
-function createPdf(spec: ExportSpec, meta: string[]) {
+const OUTSTANDING_BALANCES_PDF_COLUMNS: AdminExportPdfColumn[] = [
+  { label: "Booking", width: 52 },
+  { label: "Customer", width: 66 },
+  { label: "Vehicle", width: 66 },
+  { label: "Pickup", width: 49 },
+  { label: "Return", width: 49 },
+  { label: "Payment", width: 62 },
+  { label: "Total", width: 46, align: "right" },
+  { label: "Paid", width: 43, align: "right" },
+  { label: "Balance", width: 49, align: "right" },
+  { label: "Days", width: 33, align: "right" },
+];
+
+const OUTSTANDING_BALANCES_PDF_COLUMN_INDEXES = [0, 1, 2, 3, 4, 7, 8, 9, 10, 11] as const;
+
+function formatPdfShortDateCell(value: ExportCell) {
+  const text = normalizeTextCell(value);
+  const match = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return match ? `${match[2]}/${match[3]}/${match[1].slice(2)}` : text;
+}
+
+function formatPdfPaymentStatusCell(value: ExportCell) {
+  const status = normalizeTextCell(value).trim().toUpperCase();
+  if (status === "PAID_IN_FULL" || status === "PAID") return "Paid";
+  if (status === "PARTIALLY_PAID") return "Partial";
+  if (status === "DEPOSIT_PAID") return "Deposit";
+  if (status === "UNPAID") return "Unpaid";
+  if (status === "PENDING_PAYMENT") return "Pending";
+  return normalizeTextCell(value).replace(/_/g, " ");
+}
+
+function formatOutstandingBalancesPdfCell(row: ExportCell[], index: number) {
+  if (index === 3 || index === 4) return formatPdfShortDateCell(row[index]);
+  if (index === 7) return formatPdfPaymentStatusCell(row[index]);
+  return normalizeTextCell(row[index]);
+}
+
+function buildPdfTable(spec: ExportSpec, report: ExportReportKey) {
+  if (report === "outstanding_balances") {
+    return {
+      columns: OUTSTANDING_BALANCES_PDF_COLUMNS,
+      rows: spec.rows.map((row) =>
+        OUTSTANDING_BALANCES_PDF_COLUMN_INDEXES.map((index) =>
+          formatOutstandingBalancesPdfCell(row, index),
+        ),
+      ),
+    };
+  }
+
+  return {
+    columns: buildPdfColumns(spec.headers),
+    rows: spec.rows.map((row) => row.map((cell) => normalizeTextCell(cell))),
+  };
+}
+
+function createPdf(spec: ExportSpec, meta: string[], report: ExportReportKey) {
+  const pdfTable = buildPdfTable(spec, report);
   return buildAdminExportPdf({
     title: spec.title,
     subtitle: spec.subtitle,
     metadata: meta,
     summary: spec.summary,
-    columns: buildPdfColumns(spec.headers),
-    rows: spec.rows.map((row) => row.map((cell) => normalizeTextCell(cell))),
+    columns: pdfTable.columns,
+    rows: pdfTable.rows,
     emptyState: spec.emptyState,
     footerNote: "Generated from the Curated Car Rentals admin reports page.",
   });
@@ -954,7 +1024,7 @@ export async function handleReportsGet(request: Request, deps: ReportsRouteDeps 
       });
     }
 
-    const pdf = createPdf(spec, meta);
+    const pdf = createPdf(spec, buildReportMetaLines(payload, spec, { includeTimeZoneLabel: false }), report);
     return new Response(pdf, {
       status: 200,
       headers: {

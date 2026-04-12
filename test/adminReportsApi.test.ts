@@ -340,8 +340,21 @@ test("admin reports API: supports branded PDF export", async () => {
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /application\/pdf/i);
   const body = await response.arrayBuffer();
-  const prefix = Buffer.from(body).subarray(0, 8).toString("ascii");
-  assert.match(prefix, /^%PDF-1\./);
+  const text = Buffer.from(body).toString("latin1");
+  assert.match(text.slice(0, 8), /^%PDF-1\./);
+  assert.match(
+    text,
+    /\(info@curatedcarrentals\.com\) Tj\s+T\*\s+\(\+1 \\\(876\\\) 379-7163\) Tj/,
+  );
+  assert.doesNotMatch(text, /America\/Jamaica/);
+  assert.match(text, /\(Page 1 of 1\) Tj/);
+  assert.match(text, /\(OUTSTANDING AMOUNT\) Tj/);
+  assert.match(text, /\(\$250\.00\) Tj/);
+  assert.match(text, /\(OUTSTANDING BOOKINGS\) Tj/);
+  assert.match(text, /\(02\/12\/26\) Tj/);
+  assert.match(text, /\(Partial\) Tj/);
+  assert.match(text, /\(PAYMENT\) Tj/);
+  assert.doesNotMatch(text, /\(PAYMENT OPTION\) Tj/);
 });
 
 test("admin reports API: rejects unsupported export format", async () => {

@@ -263,7 +263,7 @@ function buildPageCommands(input: {
     commands,
     x: 360,
     y: 753,
-    lines: wrapLine(`${siteContent.email} | ${siteContent.phone}`, 34),
+    lines: [siteContent.email, siteContent.phone],
     font: "F1",
     fontSize: 9,
     color: MUTED_TEXT_COLOR,
@@ -271,15 +271,6 @@ function buildPageCommands(input: {
   });
 
   const pageLabel = `Page ${pageIndex + 1} of ${totalPages}`;
-  pushText({
-    commands,
-    x: PAGE_WIDTH - PAGE_MARGIN - estimateTextWidth(pageLabel, 9),
-    y: 730,
-    lines: [pageLabel],
-    font: "F1",
-    fontSize: 9,
-    color: MUTED_TEXT_COLOR,
-  });
 
   let tableTopY = 690;
 
@@ -472,6 +463,16 @@ function buildPageCommands(input: {
       color: MUTED_TEXT_COLOR,
     });
   }
+
+  pushText({
+    commands,
+    x: PAGE_WIDTH - PAGE_MARGIN - estimateTextWidth(pageLabel, 8),
+    y: 34,
+    lines: [pageLabel],
+    font: "F1",
+    fontSize: 8,
+    color: MUTED_TEXT_COLOR,
+  });
 
   return commands;
 }
