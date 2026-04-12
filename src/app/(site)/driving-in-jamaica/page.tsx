@@ -25,11 +25,11 @@ export default function DrivingInJamaicaPage() {
             {drivingTips.map((item) => (
               <article
                 key={item.title}
-                className="rounded-[1.9rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-7 shadow-[0_18px_56px_rgba(15,23,42,0.07)]"
+                className="flex h-full flex-col rounded-[1.9rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-7 shadow-[0_18px_56px_rgba(15,23,42,0.07)]"
               >
                 <h2 className="font-display text-2xl font-bold text-[var(--ccr-text)]">{item.title}</h2>
-                <p className="mt-4 text-base leading-8 text-[var(--ccr-muted)]">{item.description}</p>
-                <p className="mt-5 rounded-[1.2rem] bg-[var(--ccr-surface-soft)] px-4 py-4 text-sm font-medium text-[var(--ccr-text)]">
+                <p className="mb-5 mt-4 text-base leading-8 text-[var(--ccr-muted)]">{item.description}</p>
+                <p className="mt-auto rounded-[1.2rem] bg-[var(--ccr-surface-soft)] px-4 py-4 text-sm font-medium text-[var(--ccr-text)]">
                   {item.tip}
                 </p>
               </article>
