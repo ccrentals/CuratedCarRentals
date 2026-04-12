@@ -113,7 +113,7 @@
   <body>
     <h1>Curated Car Rentals – Website Proposal</h1>
     <div class="meta">
-      <p><strong>Date:</strong> February 11, 2026</p>
+      <p><strong>Date:</strong> March 28, 2026</p>
       <p><strong>Prepared for:</strong> Trevor Bell</p>
       <p><strong>Prepared by:</strong> Damian Thompson</p>
       <p>
@@ -193,7 +193,7 @@
       <li><strong>Hosting/Deploy:</strong> Netlify (supports Next.js deployments + serverless/edge capabilities).</li>
     </ul>
 
-    <h2>4) Third-Party Services &amp; Pricing (as of February 11, 2026)</h2>
+    <h2>4) Third-Party Services &amp; Pricing (as of March 28, 2026)</h2>
     <p class="small">
       Pricing changes frequently. The figures below are a snapshot from vendor pricing pages on the date above. Actual
       monthly cost depends on usage (traffic, storage, emails sent, PDFs generated, etc.).
@@ -214,9 +214,9 @@
           <td>Hosting, deployments, CDN, serverless/edge runtime</td>
           <td>
             <ul>
-              <li>Free: $0 (300 credit limit / month)</li>
-              <li>Personal: $9 / month (1,000 credits / month)</li>
-              <li>Pro: $20 per member / month (3,000 credits / month)</li>
+              <li>Free: $0 forever (300 credit limit / month)</li>
+              <li>Personal: $9 / month (1,000 credits included / month)</li>
+              <li>Pro: $20 per member / month (5,000 credits included / team / month)</li>
               <li>Enterprise: Custom</li>
             </ul>
           </td>
@@ -236,14 +236,14 @@
               <li>Egress: 100 GB included, then $0.10 per GB</li>
             </ul>
           </td>
-          <td class="small">Best for predictable Postgres with good dev experience; final cost depends on compute + storage.</td>
+          <td class="small">Managed Postgres with a good developer experience; actual spend depends on compute, storage, and egress.</td>
         </tr>
         <tr>
           <td><strong>Resend</strong></td>
           <td>Transactional email (booking confirmations, reminders)</td>
           <td>
             <ul>
-              <li>Free: $0 / month (3,000 emails / month)</li>
+              <li>Free: $0 / month (3,000 emails / month, 100 / day)</li>
               <li>Pro: $20 / month (50,000 emails / month)</li>
               <li>Scale: $90 / month (100,000 emails / month)</li>
               <li>Additional emails: $0.90 per 1,000</li>
@@ -257,29 +257,30 @@
           <td>Invoice PDF generation</td>
           <td>
             <ul>
-              <li>Starter: €5 / month (≈ $5.95 USD) (300 documents / month)</li>
-              <li>Pro: €15 / month (≈ $17.84 USD) (3,000 documents / month)</li>
-              <li>Pro+: €60 / month (≈ $71.37 USD) (5,000 documents / month)</li>
-              <li>Premium: €300 / month (≈ $356.86 USD) (60,000 documents / month)</li>
+              <li>Free: $0 / month (20 documents / month)</li>
+              <li>Starter: €5 / month (≈ $5.77 USD) (300 documents / month)</li>
+              <li>Pro: €15 / month (≈ $17.30 USD) (3,000 documents / month)</li>
+              <li>Pro+: €60 / month (≈ $69.19 USD) (5,000 documents / month)</li>
             </ul>
           </td>
           <td class="small">
-            EU pricing shown; vendor also offers annual billing discounts and free trial options.
+            EU pricing shown; Premium (€300 / month for 60,000 documents) is available if higher volume is required.
+            Starter is the practical launch tier.
           </td>
         </tr>
         <tr>
           <td><strong>Uploadcare</strong></td>
-          <td>Vehicle image uploads, storage, and delivery</td>
+          <td>Optional image/document uploads when enabled</td>
           <td>
             <ul>
-              <li>Trial: $0 / month (3 GB storage + 3 GB bandwidth)</li>
-              <li>Pay as you go: $25 / month (150 GB storage + 150 GB bandwidth)</li>
-              <li>Startups: $49 / month (300 GB storage + 300 GB bandwidth)</li>
-              <li>Business: $239 / month (1 TB storage + 1 TB bandwidth)</li>
-              <li>Overages: storage $0.05/GB, bandwidth $0.22/GB, uploads $0.05/1,000, transformations $0.15/1,000</li>
+              <li>Free: $0 / month (1,000 operations / month, 5 GB)</li>
+              <li>Pro: $66 / month (100,000 operations / month)</li>
+              <li>Enterprise: Custom</li>
+              <li>Higher-volume plans are available on request.</li>
+              <li>The current free tier is positioned for personal use only.</li>
             </ul>
           </td>
-          <td class="small">Offloads image storage/optimization; cost depends mainly on storage + bandwidth.</td>
+          <td class="small">Useful if you want managed uploads, but it can stay deferred for launch if those flows remain disabled.</td>
         </tr>
         <tr>
           <td><strong>WiPay</strong></td>
@@ -293,7 +294,9 @@
             </ul>
           </td>
           <td class="small">
-            For planning, this proposal includes an estimated <strong>4.5%</strong> processing rate (confirm final terms with WiPay).
+            For planning, assume published Jamaica rates as a guide only and confirm the final live merchant terms during
+            onboarding. This proposal previously used an estimated <strong>4.5%</strong> processing rate; for the current
+            launch plan, WiPay can remain deferred until public online payments are re-enabled.
           </td>
         </tr>
       </tbody>
@@ -301,8 +304,9 @@
 
     <h2>5) Proposed Monthly Service Costs (Two Options)</h2>
     <p class="small">
-      The items below reflect third-party/vendor costs and an allowance for miscellaneous expenses. WiPay processing is
-      a variable percentage of each successful transaction. Vendor billing may be in USD/EUR and may also include taxes.
+      The items below reflect third-party/vendor costs and an allowance for miscellaneous expenses. Variable spend now
+      depends mainly on database usage, optional uploads, and whether online payments are enabled. Vendor billing may be
+      in USD/EUR and may also include taxes.
     </p>
 
     <table>
@@ -316,48 +320,48 @@
       </thead>
       <tbody>
         <tr>
-          <td><strong>Option 1</strong><br /><span class="small">Minimum viable</span></td>
+          <td><strong>Option 1</strong><br /><span class="small">Launch with payments deferred</span></td>
           <td>
             <ul>
-              <li>Netlify: 1st paid tier (Personal) – $9/mo</li>
-              <li>PDFMonkey: 1st paid tier (Starter) – €5/mo (≈ $5.95 USD)</li>
-              <li>WiPay processing – estimated 4.5%</li>
-              <li>Miscellaneous allowance – $50/mo</li>
+              <li>Netlify: Free tier – $0/mo</li>
+              <li>Neon + Resend: free tiers – $0/mo initially</li>
+              <li>PDFMonkey: Starter – €5/mo (≈ $5.77 USD)</li>
+              <li>Miscellaneous allowance – $25/mo</li>
             </ul>
           </td>
           <td>
-            <p><strong>$59.00/mo</strong> + <strong>€5.00/mo</strong> (≈ <strong>$5.95/mo</strong>)</p>
-            <p><strong>Total fixed:</strong> <strong>$64.95/mo</strong> (≈ <strong>JMD 10,144.77/mo</strong>)</p>
-            <p class="small">(excludes WiPay variable fees)</p>
+            <p><strong>$25.00/mo</strong> + <strong>€5.00/mo</strong> (≈ <strong>$30.77/mo</strong>)</p>
+            <p><strong>Total fixed:</strong> <strong>$30.77/mo</strong> (≈ <strong>JMD 4,817.84/mo</strong>)</p>
+            <p class="small">(excludes database usage if free-tier limits are exceeded)</p>
           </td>
-          <td class="small">WiPay: ~4.5% of online payments processed</td>
+          <td class="small">Database usage only after free-tier limits; no WiPay processing while online payments remain disabled</td>
         </tr>
         <tr>
-          <td><strong>Option 2</strong><br /><span class="small">All services baseline</span></td>
+          <td><strong>Option 2</strong><br /><span class="small">Online payments + uploads enabled</span></td>
           <td>
             <ul>
               <li>Netlify: 1st paid tier (Personal) – $9/mo</li>
               <li>Neon: 1st paid tier (Launch) – usage-based (no fixed minimum)</li>
-              <li>Uploadcare: 1st paid tier (Pay as you go) – $25/mo</li>
-              <li>Resend: Free tier ($0, up to 3,000 emails/mo) <span class="small">(upgrade to Pro $20/mo if volume requires)</span></li>
-              <li>PDFMonkey: 1st paid tier (Starter) – €5/mo (≈ $5.95 USD)</li>
-              <li>WiPay processing – estimated 4.5%</li>
-              <li>Miscellaneous allowance – $50/mo</li>
+              <li>Uploadcare: Pro – $66/mo (production apps / websites)</li>
+              <li>Resend: Free tier ($0, up to 3,000 emails/mo, 100 / day) <span class="small">(upgrade to Pro $20/mo if volume requires)</span></li>
+              <li>PDFMonkey: Starter – €5/mo (≈ $5.77 USD)</li>
+              <li>WiPay processing – published Jamaica examples: 4.20% + GCT or 3.80% + GCT on paid plans</li>
+              <li>Miscellaneous allowance – $25/mo</li>
             </ul>
           </td>
           <td>
-            <p><strong>$84.00/mo</strong> + <strong>€5.00/mo</strong> (≈ <strong>$5.95/mo</strong>)</p>
-            <p><strong>Total fixed:</strong> <strong>$89.95/mo</strong> (≈ <strong>JMD 14,049.75/mo</strong>)</p>
-            <p class="small">(excludes Neon usage + WiPay variable fees)</p>
+            <p><strong>$100.00/mo</strong> + <strong>€5.00/mo</strong> (≈ <strong>$105.77/mo</strong>)</p>
+            <p><strong>Total fixed:</strong> <strong>$105.77/mo</strong> (≈ <strong>JMD 16,562.74/mo</strong>)</p>
+            <p class="small">(excludes Neon usage and any WiPay paid-plan fees)</p>
           </td>
-          <td class="small">Neon usage-based + WiPay ~4.5% of online payments processed</td>
+          <td class="small">Neon usage-based + WiPay processing at the merchant rate you are approved for</td>
         </tr>
       </tbody>
     </table>
 
     <p class="small">
-      Exchange rate snapshot used for conversions: 1 EUR = 1.18952 USD; 1 USD = 156.199241 JMD (last update UTC: Wed,
-      11 Feb 2026 00:02:31 +0000).
+      Exchange-rate examples above use rounded planning conversions as of March 28, 2026. Re-check taxes and FX before
+      go-live.
     </p>
 
     <h2>6) Project Fees (Not Included in Service Fees)</h2>
@@ -385,26 +389,26 @@
     <h2>9) Responsibilities &amp; Go-Live</h2>
     <ul>
       <li>The site owner is expected to test all functionality before go-live (end-to-end).</li>
-      <li>Third-party accounts (Netlify, Neon, WiPay, Resend, PDFMonkey, Uploadcare) must be created/owned by the site owner.</li>
-      <li>WiPay live activation is subject to merchant onboarding/approval and provision of live credentials.</li>
+      <li>Accounts required before initial launch are Netlify, Postgres/Neon, Resend, and PDFMonkey. WiPay and Uploadcare only need to be activated if those features are turned on.</li>
+      <li>WiPay live activation can be deferred until merchant onboarding is complete, live credentials are issued, and one small real payment has been tested end-to-end.</li>
     </ul>
 
     <h2>10) Assumptions &amp; Notes</h2>
     <ul>
       <li>All vendor prices are subject to change; validate during implementation/go-live.</li>
-      <li>Payment processing is handled by the payment gateway; the site should not store raw card data.</li>
-      <li>Final ongoing costs depend heavily on traffic, booking volume, emails, PDF invoices, and image bandwidth.</li>
+      <li>Payment processing is handled by the gateway; the site should not store raw card data. Online payments can remain disabled at launch until WiPay is ready.</li>
+      <li>Final ongoing costs depend heavily on traffic, booking volume, emails, PDF invoices, database usage, and whether Uploadcare/WiPay are enabled.</li>
     </ul>
 
     <h2>11) Sources (Pricing Pages)</h2>
     <ul class="small">
-      <li>Netlify Pricing: https://www.netlify.com/pricing/</li>
+      <li>Netlify Pricing: https://www.netlify.com/pricing/?category=developer</li>
       <li>Neon Pricing: https://neon.com/pricing</li>
       <li>Resend Pricing: https://resend.com/pricing</li>
       <li>PDFMonkey Pricing: https://pdfmonkey.io/pricing/</li>
       <li>Uploadcare Pricing: https://uploadcare.com/pricing/</li>
-      <li>WiPay Caribbean (pricing varies): https://wipaycaribbean.com/pricing</li>
-      <li>WiPay Online Payments: https://wipaycaribbean.com/solutions/online-payments</li>
+      <li>WiPay Merchant Signup: https://wipayfinancial.com/concierge/signup</li>
+      <li>WiPay API Documentation: https://wipaycaribbean.com/WiPay-API-Documentation.pdf</li>
     </ul>
 
     <h2>12) Sign-Off</h2>
