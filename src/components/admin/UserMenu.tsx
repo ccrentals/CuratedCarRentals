@@ -82,22 +82,23 @@ function UserMenuInner({
             controlId={themeToggleId}
             persistence="user"
             showLabel={showThemeLabel}
+            compact
           />
-          {showSignOut ? (
-            <button
-              type="button"
-              onClick={handleSignOut}
-              disabled={loading}
-              className={buttonStyles({
-                variant: "primary",
-                size: "xs",
-                className: "shrink-0 whitespace-nowrap",
-              })}
-            >
-              {loading ? "Signing out..." : "Sign out"}
-            </button>
-          ) : null}
         </div>
+        {showSignOut ? (
+          <button
+            type="button"
+            onClick={handleSignOut}
+            disabled={loading}
+            className={buttonStyles({
+              variant: "primary",
+              size: "xs",
+              className: "w-full",
+            })}
+          >
+            {loading ? "Signing out..." : "Sign out"}
+          </button>
+        ) : null}
       </div>
     );
   }

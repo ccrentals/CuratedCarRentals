@@ -1159,15 +1159,6 @@ export function AdminShell({
                 </div>
               ) : null}
             </div>
-            <div className="md:hidden">
-              <UserMenu
-                email={user.email}
-                showEmail={false}
-                showThemeLabel={false}
-                showSignOut={false}
-                className="w-auto shrink-0 justify-end"
-              />
-            </div>
             <div className="hidden md:block">
               <UserMenu
                 email={user.email}
