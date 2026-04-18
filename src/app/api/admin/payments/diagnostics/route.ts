@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { dbQuery } from "@/lib/db";
 import { requireAdminRole } from "@/lib/auth/adminGuards";
+import { getWiPayRequestOrigin } from "@/lib/wipay";
 
 function maskValue(value: string | undefined, visible = 4) {
   if (!value) return "missing";
@@ -30,10 +31,12 @@ export async function GET() {
   const auth = await requireAdminRole();
   if (!auth.ok) return auth.response;
 
+  const originConfigured = Boolean(process.env.WIPAY_ORIGIN?.trim());
   const env = {
     WIPAY_ENV: process.env.WIPAY_ENV ?? "missing",
     WIPAY_FEE_STRUCTURE: process.env.WIPAY_FEE_STRUCTURE ?? "missing",
-    WIPAY_ORIGIN: process.env.WIPAY_ORIGIN ?? "missing",
+    WIPAY_ORIGIN: getWiPayRequestOrigin(),
+    WIPAY_ORIGIN_SOURCE: originConfigured ? "env" : "default",
     SITE_URL: process.env.SITE_URL ?? "missing",
     WIPAY_ACCOUNT_NUMBER: maskValue(process.env.WIPAY_ACCOUNT_NUMBER?.trim()),
     WIPAY_API_KEY: process.env.WIPAY_API_KEY ? "set" : "missing",
@@ -47,7 +50,6 @@ export async function GET() {
   const missing = [
     "WIPAY_ENV",
     "WIPAY_FEE_STRUCTURE",
-    "WIPAY_ORIGIN",
     "SITE_URL",
     "WIPAY_ACCOUNT_NUMBER",
     "WIPAY_API_KEY",

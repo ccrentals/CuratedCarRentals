@@ -7,6 +7,8 @@ const WIPAY_BASE_URLS = {
   TT: "https://tt.wipayfinancial.com",
 } as const;
 
+export const DEFAULT_WIPAY_ORIGIN = "curated-car-rentals";
+
 const WIPAY_REQUEST_TIMEOUT_MS = 12_000;
 
 export type WiPayRequestParams = {
@@ -73,6 +75,17 @@ export function buildCanonicalSiteUrl(pathname: string) {
   return new URL(pathname, getCanonicalSiteUrl()).toString();
 }
 
+export function getWiPayRequestOrigin(value = process.env.WIPAY_ORIGIN) {
+  const rawOrigin = value?.trim() || DEFAULT_WIPAY_ORIGIN;
+  const origin = rawOrigin
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 32);
+
+  return origin || DEFAULT_WIPAY_ORIGIN;
+}
+
 export function buildRequestParams({
   orderId,
   amountDecimal,
@@ -85,12 +98,7 @@ export function buildRequestParams({
   const apiKey = process.env.WIPAY_API_KEY;
   const environment = (process.env.WIPAY_ENV ?? "sandbox").trim().toLowerCase();
   const feeStructure = (process.env.WIPAY_FEE_STRUCTURE ?? "merchant_absorb").trim().toLowerCase();
-  const rawOrigin = process.env.WIPAY_ORIGIN ?? "curated-car-rentals";
-  const origin = rawOrigin
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 32);
+  const origin = getWiPayRequestOrigin();
 
   if (!accountNumberRaw || !apiKey) {
     throw new Error("WIPAY_ACCOUNT_NUMBER or WIPAY_API_KEY not set");

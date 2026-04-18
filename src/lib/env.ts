@@ -1,3 +1,5 @@
+import { DEFAULT_WIPAY_ORIGIN } from "@/lib/wipay";
+
 function isNonEmpty(value: string | undefined) {
   return Boolean(value && value.trim().length > 0);
 }
@@ -59,9 +61,11 @@ export function validateEnv(): EnvValidation {
     "WIPAY_API_KEY",
     "WIPAY_ENV",
     "WIPAY_FEE_STRUCTURE",
-    "WIPAY_ORIGIN",
   ]);
   const paymentsInvalid: string[] = [];
+  if (!isNonEmpty(process.env.WIPAY_ORIGIN)) {
+    notes.push(`WIPAY_ORIGIN is not set; defaulting to ${DEFAULT_WIPAY_ORIGIN}.`);
+  }
   const wipayEnv = (process.env.WIPAY_ENV ?? "").trim().toLowerCase();
   if (isNonEmpty(process.env.WIPAY_ENV) && !["sandbox", "live"].includes(wipayEnv)) {
     paymentsInvalid.push("WIPAY_ENV must be sandbox or live");

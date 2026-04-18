@@ -1435,11 +1435,13 @@ x-csrf-token: <token>
 - SITE_URL
 
 Payments (WiPay)
+- SITE_URL (builds WiPay response_url)
 - WIPAY_ACCOUNT_NUMBER
 - WIPAY_API_KEY
 - WIPAY_ENV (sandbox|live)
 - WIPAY_FEE_STRUCTURE (customer_pay|merchant_absorb|split)
-- WIPAY_ORIGIN
+- WIPAY_COUNTRY_CODE (optional; current site uses JM/JMD)
+- WIPAY_ORIGIN (optional; defaults to curated-car-rentals)
 
 Email (Resend)
 - RESEND_API_KEY
@@ -1519,7 +1521,8 @@ Cron
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">WiPay:</span> Replace sandbox credentials with live{" "}
                 <code>WIPAY_ACCOUNT_NUMBER</code> and <code>WIPAY_API_KEY</code>, set <code>WIPAY_ENV=live</code>, confirm{" "}
-                <code>WIPAY_FEE_STRUCTURE</code> matches business policy, and run a small real payment + webhook reconciliation.
+                <code>WIPAY_FEE_STRUCTURE</code> matches business policy, keep <code>WIPAY_COUNTRY_CODE=JM</code> for the current
+                JMD flow, and run a small real payment + webhook reconciliation.
               </li>
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">Email (Resend):</span> Validate <code>RESEND_API_KEY</code>{" "}
@@ -1644,7 +1647,8 @@ Cron
               </li>
               <li>
                 Return reconciliation is handled by <code>GET /api/payments/wipay/return</code>; async provider callbacks
-                are processed by <code>POST /api/payments/wipay/webhook</code>.
+                are processed by <code>POST /api/payments/wipay/webhook</code>. Provider-side webhook registration is external
+                WiPay/dashboard setup; this repo does not use a <code>WIPAY_CALLBACK_URL</code> env var.
               </li>
             </ul>
           </>

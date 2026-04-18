@@ -79,6 +79,48 @@ test("buildRequestParams uses the selected WiPay country code", async () => {
   );
 });
 
+test("buildRequestParams defaults WiPay origin when the env var is absent or sanitizes empty", async () => {
+  await withEnv(
+    {
+      WIPAY_ACCOUNT_NUMBER: "1234567890",
+      WIPAY_API_KEY: "test-api-key",
+      WIPAY_COUNTRY_CODE: "JM",
+      WIPAY_ENV: "sandbox",
+      WIPAY_FEE_STRUCTURE: "merchant_absorb",
+      WIPAY_ORIGIN: "!!!",
+    },
+    async () => {
+      const params = buildRequestParams({
+        orderId: "order-123",
+        amountDecimal: "10.00",
+        responseUrl: "https://example.com/return",
+      });
+
+      assert.equal(params.origin, "curated-car-rentals");
+    },
+  );
+
+  await withEnv(
+    {
+      WIPAY_ACCOUNT_NUMBER: "1234567890",
+      WIPAY_API_KEY: "test-api-key",
+      WIPAY_COUNTRY_CODE: "JM",
+      WIPAY_ENV: "sandbox",
+      WIPAY_FEE_STRUCTURE: "merchant_absorb",
+      WIPAY_ORIGIN: undefined,
+    },
+    async () => {
+      const params = buildRequestParams({
+        orderId: "order-123",
+        amountDecimal: "10.00",
+        responseUrl: "https://example.com/return",
+      });
+
+      assert.equal(params.origin, "curated-car-rentals");
+    },
+  );
+});
+
 test("requestHostedPageUrl surfaces timeout errors clearly", async () => {
   const originalFetch = globalThis.fetch;
 

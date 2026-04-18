@@ -18,6 +18,7 @@ import { formatJmd } from "@/lib/money";
 import { normalizePageSize, parsePositiveIntParam } from "@/lib/pagination/sharedPagination";
 import { formatPaymentStatus } from "@/lib/payments/formatPaymentStatus";
 import { formatPaymentMetadataError, sanitizePaymentMetadataForUi } from "@/lib/payments/formatWipayError";
+import { getWiPayRequestOrigin } from "@/lib/wipay";
 
 function maskValue(value: string | undefined, visible = 4) {
   if (!value) return "missing";
@@ -166,10 +167,11 @@ export default async function AdminPaymentsPage({
   );
 
   const accountNumber = process.env.WIPAY_ACCOUNT_NUMBER?.trim() ?? "";
+  const originConfigured = Boolean(process.env.WIPAY_ORIGIN?.trim());
   const envSummary = {
     env: process.env.WIPAY_ENV ?? "missing",
     fee: process.env.WIPAY_FEE_STRUCTURE ?? "missing",
-    origin: process.env.WIPAY_ORIGIN ?? "missing",
+    origin: originConfigured ? getWiPayRequestOrigin() : `${getWiPayRequestOrigin()} (default)`,
     siteUrl: process.env.SITE_URL ?? "missing",
     accountNumber: maskValue(accountNumber),
     accountNumberValid: accountNumber ? /^\d+$/.test(accountNumber) : false,

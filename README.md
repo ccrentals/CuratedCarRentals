@@ -148,17 +148,23 @@ The app also normalizes `sslmode=require|prefer|verify-ca` to `verify-full` unle
 
 ## Payments (WiPay)
 
-Deposit payments:
+Hosted checkout payments:
 - Start: `POST /api/payments/wipay/start`
 - Return: `GET /api/payments/wipay/return`
 - Webhook: `POST /api/payments/wipay/webhook`
 
-WiPay env vars (see `.env.example`):
+Current scope: JM/JMD hosted checkout. Keep `WIPAY_COUNTRY_CODE` unset or set to `JM` unless multi-country payment support is deliberately added later.
+
+WiPay env vars for Netlify/Lovable (see `.env.example`):
+- `SITE_URL` (required; used to derive WiPay `response_url` as `${SITE_URL}/api/payments/wipay/return`)
 - `WIPAY_ACCOUNT_NUMBER` (digits only)
 - `WIPAY_API_KEY`
 - `WIPAY_ENV` (`sandbox` or `live`)
-- `WIPAY_FEE_STRUCTURE` (`merchant_absorb`)
-- `WIPAY_ORIGIN` (slug, letters/numbers/dash/underscore)
+- `WIPAY_FEE_STRUCTURE` (`customer_pay`, `merchant_absorb`, or `split`)
+- `WIPAY_COUNTRY_CODE` (optional; defaults to `JM`, current site should use `JM`)
+- `WIPAY_ORIGIN` (optional; defaults to `curated-car-rentals`, slug letters/numbers/dash/underscore)
+
+Do not add `WIPAY_RESPONSE_URL` or `WIPAY_CALLBACK_URL`; the app does not read them. The webhook route exists at `POST /api/payments/wipay/webhook`, but any provider-side registration of that webhook is external WiPay/dashboard setup, not a repo env var.
 
 ## Emails (Resend)
 
