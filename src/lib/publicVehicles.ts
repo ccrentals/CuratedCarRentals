@@ -106,7 +106,28 @@ function readMetaBoolean(meta: Record<string, unknown>, keys: string[], fallback
 
 function toImageArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
-  return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0)
+    .filter((item) => {
+      if (item.startsWith("/")) return true;
+
+      try {
+        const parsed = new URL(item);
+        if (!["http:", "https:"].includes(parsed.protocol)) return false;
+
+        const hostname = parsed.hostname.trim().toLowerCase();
+        if (!hostname || hostname === "base") return false;
+        if (["localhost", "127.0.0.1", "0.0.0.0"].includes(hostname)) {
+          return process.env.NODE_ENV !== "production";
+        }
+
+        return hostname.includes(".");
+      } catch {
+        return false;
+      }
+    });
 }
 
 function slugify(value: string): string {

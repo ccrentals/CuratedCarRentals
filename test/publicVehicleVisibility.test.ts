@@ -129,3 +129,40 @@ test("public vehicle queries exclude unavailable, maintenance, and inactive vehi
     }
   }
 });
+
+test("public vehicle queries drop malformed remote image URLs", async (t) => {
+  requireDatabaseOrSkip(t);
+
+  const runTag = `public-images-${randomUUID().slice(0, 8)}`;
+  const ids: string[] = [];
+
+  try {
+    const result = await dbQuery<{ id: string }>(
+      `insert into vehicles (
+         make, model, year, seat_count, daily_rate_cents, deposit_cents, status, image_urls_json, features_json
+       ) values ($1, $2, $3, $4, $5, $6, 'AVAILABLE', $7::jsonb, $8::jsonb)
+       returning id`,
+      [
+        "Image Guard",
+        runTag,
+        2026,
+        5,
+        7200,
+        7000,
+        JSON.stringify(["https://base/bad-image.jpg"]),
+        JSON.stringify({ slug: `image-guard-${runTag}`, public_visible: true }),
+      ],
+    );
+    ids.push(result.rows[0].id);
+
+    const publicVehicles = await getPublicVehicles();
+    const vehicle = publicVehicles.find((item) => item.id === result.rows[0].id);
+
+    assert.ok(vehicle);
+    assert.deepEqual(vehicle.images, ["/window.svg"]);
+  } finally {
+    if (ids.length > 0) {
+      await dbQuery("delete from vehicles where id = any($1::uuid[])", [ids]);
+    }
+  }
+});
