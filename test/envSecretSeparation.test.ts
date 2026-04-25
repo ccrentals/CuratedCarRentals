@@ -50,3 +50,19 @@ test("health snapshot is not ok when RETURNING_CUSTOMER_OTP_SECRET is missing", 
     restoreEnv("CSRF_SECRET", previousCsrf);
   }
 });
+
+test("env validation rejects placeholder DATABASE_URL hosts in production", () => {
+  const previousDb = process.env.DATABASE_URL;
+  const previousNodeEnv = process.env.NODE_ENV;
+
+  process.env.NODE_ENV = "production";
+  process.env.DATABASE_URL = "postgres://user:password@base:5432/curated";
+
+  try {
+    const env = validateEnv();
+    assert.match(env.core.invalid.join(","), /DATABASE_URL host "base" is not valid for production/);
+  } finally {
+    restoreEnv("DATABASE_URL", previousDb);
+    restoreEnv("NODE_ENV", previousNodeEnv);
+  }
+});

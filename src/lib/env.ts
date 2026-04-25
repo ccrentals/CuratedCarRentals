@@ -11,6 +11,13 @@ function missingKeys(keys: string[]) {
 const WIPAY_ALLOWED_FEE_STRUCTURES = new Set(["customer_pay", "merchant_absorb", "split"]);
 const WIPAY_ALLOWED_COUNTRY_CODES = new Set(["JM", "TT", "BB", "GY"]);
 const INVOICE_PROVIDERS = new Set(["pdfmonkey", "gotenberg"]);
+const DISALLOWED_PRODUCTION_DATABASE_HOSTS = new Set([
+  "base",
+  "localhost",
+  "127.0.0.1",
+  "0.0.0.0",
+  "::1",
+]);
 
 function isValidUrl(value: string | undefined) {
   if (!value) return false;
@@ -19,6 +26,31 @@ function isValidUrl(value: string | undefined) {
     return url.protocol === "http:" || url.protocol === "https:";
   } catch {
     return false;
+  }
+}
+
+export function getDatabaseUrlValidationError(value: string | undefined) {
+  if (!value || value.trim().length === 0) return null;
+
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "postgres:" && url.protocol !== "postgresql:") {
+      return "DATABASE_URL must use postgres:// or postgresql://";
+    }
+
+    const hostname = url.hostname.trim().toLowerCase();
+    if (process.env.NODE_ENV === "production") {
+      if (!hostname) {
+        return "DATABASE_URL must include a database host in production";
+      }
+      if (DISALLOWED_PRODUCTION_DATABASE_HOSTS.has(hostname)) {
+        return `DATABASE_URL host "${hostname}" is not valid for production`;
+      }
+    }
+
+    return null;
+  } catch {
+    return "DATABASE_URL must be a valid postgres connection string";
   }
 }
 
@@ -46,6 +78,10 @@ export function validateEnv(): EnvValidation {
 
   const coreMissing = missingKeys(["DATABASE_URL", "ADMIN_SESSION_SECRET", "SITE_URL"]);
   const coreInvalid: string[] = [];
+  const databaseUrlError = getDatabaseUrlValidationError(process.env.DATABASE_URL);
+  if (databaseUrlError) {
+    coreInvalid.push(databaseUrlError);
+  }
   if (isNonEmpty(process.env.SITE_URL) && !isValidUrl(process.env.SITE_URL)) {
     coreInvalid.push("SITE_URL must be a valid http(s) URL");
   }

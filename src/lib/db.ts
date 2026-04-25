@@ -1,5 +1,7 @@
 import { Pool } from "pg";
 
+import { getDatabaseUrlValidationError } from "@/lib/env";
+
 function createPool(connectionString: string) {
   return new Pool({
     connectionString,
@@ -63,6 +65,10 @@ export function getDbPool() {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
     throw new Error("DATABASE_URL is not set");
+  }
+  const databaseUrlError = getDatabaseUrlValidationError(connectionString);
+  if (databaseUrlError) {
+    throw new Error(databaseUrlError);
   }
 
   pool = createPool(normalizeDatabaseUrl(connectionString));
