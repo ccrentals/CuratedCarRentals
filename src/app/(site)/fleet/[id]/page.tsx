@@ -40,6 +40,8 @@ export default async function FleetVehicleDetailPage({
     { label: "Category", value: vehicle.category },
   ];
   const headlineMeta = [vehicle.category, String(vehicle.year)].filter(Boolean).join(" • ");
+  const heroImage = vehicle.images[0] ?? "/window.svg";
+  const unoptimizedHeroImage = !heroImage.startsWith("/");
 
   return (
     <div className="pb-6">
@@ -60,11 +62,12 @@ export default async function FleetVehicleDetailPage({
             <div>
               <div className="relative h-[280px] overflow-hidden rounded-[2rem] border border-white/10 bg-black/10 shadow-[0_30px_90px_rgba(0,0,0,0.24)] sm:h-[320px] md:h-[460px]">
                 <Image
-                  src={vehicle.images[0] ?? "/window.svg"}
+                  src={heroImage}
                   alt={vehicle.name}
                   fill
                   sizes="(min-width: 1280px) 54vw, 100vw"
                   className="object-cover"
+                  unoptimized={unoptimizedHeroImage}
                 />
               </div>
 
@@ -81,6 +84,7 @@ export default async function FleetVehicleDetailPage({
                         fill
                         sizes="(min-width: 768px) 18vw, 30vw"
                         className="object-cover"
+                        unoptimized={!image.startsWith("/")}
                       />
                     </div>
                   ))}

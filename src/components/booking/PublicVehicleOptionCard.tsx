@@ -215,6 +215,7 @@ export function PublicVehicleOptionCard({
   formatMoney,
 }: PublicVehicleOptionCardProps) {
   const imageSrc = Array.isArray(vehicle.images) && vehicle.images.length > 0 ? vehicle.images[0] : "/window.svg";
+  const unoptimizedImage = !imageSrc.startsWith("/");
   const vehicleName = displayVehicleName(vehicle);
   const category = normalizeText(vehicle.category);
   const subtitle = [vehicle.year ? String(vehicle.year) : "", category].filter(Boolean).join(" • ");
@@ -242,7 +243,14 @@ export function PublicVehicleOptionCard({
         )}
         aria-label={canOpenGallery ? `Open ${vehicleName} image gallery` : undefined}
       >
-        <Image src={imageSrc} alt={vehicleName} fill className="object-cover" sizes="(max-width: 768px) 100vw, 25vw" />
+        <Image
+          src={imageSrc}
+          alt={vehicleName}
+          fill
+          className="object-cover"
+          sizes="(max-width: 768px) 100vw, 25vw"
+          unoptimized={unoptimizedImage}
+        />
         {vehicle.hybrid ? (
           <span className="absolute right-3 top-3 rounded-md bg-[var(--ccr-accent)] px-3 py-1 text-xs font-semibold text-[var(--ccr-text)]">
             Hybrid
