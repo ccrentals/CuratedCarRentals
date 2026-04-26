@@ -1,7 +1,5 @@
-import { logError, logWarn, redactText } from "@/lib/log";
-
-const RESEND_ENDPOINT = "https://api.resend.com/emails";
-const DEFAULT_FROM = "onboarding@resend.dev";
+import { logWarn } from "@/lib/log";
+import { sendTrackedResendEmail } from "@/lib/notifications/emailDispatch";
 
 let contactAlertConfigWarned = false;
 
@@ -63,44 +61,38 @@ function warnConfigOnce(reason: string) {
 }
 
 async function sendResendAlertEmail(input: {
-  apiKey: string;
-  from: string;
   to: string;
   subject: string;
   html: string;
   replyTo?: string;
+  dispatch: {
+    entityType?: string | null;
+    entityId?: string | null;
+    entityPublicId?: string | null;
+    emailType: string;
+    triggerSource: "contact_alert";
+    metadata?: Record<string, unknown>;
+  };
 }): Promise<ContactMessageAlertResult> {
-  const response = await fetch(RESEND_ENDPOINT, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${input.apiKey}`,
-      "Content-Type": "application/json",
+  const result = await sendTrackedResendEmail({
+    to: input.to,
+    subject: input.subject,
+    html: input.html,
+    replyTo: input.replyTo,
+    dispatch: {
+      ...input.dispatch,
+      recipientName: null,
+      manualResendAllowed: true,
     },
-    body: JSON.stringify({
-      from: input.from,
-      to: input.to,
-      subject: input.subject,
-      html: input.html,
-      reply_to: input.replyTo ?? input.from,
-    }),
   });
 
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    logError("contact_message_alert_email_failed", new Error(`HTTP ${response.status}`), {
-      status: response.status,
-      responseBody: text,
-      to: input.to,
-      subject: input.subject,
-    });
-    const safe = redactText(text).replace(/\s+/g, " ").slice(0, 300);
-    return {
-      ok: false,
-      error: safe || `HTTP ${response.status}`,
-    };
-  }
-
-  return { ok: true };
+  return result.ok
+    ? { ok: true }
+    : {
+        ok: false,
+        skipped: result.skipped,
+        error: result.error,
+      };
 }
 
 function resolveRecipients(customRecipients?: string[]) {
@@ -115,13 +107,15 @@ async function sendContactAlertEmailBatch(input: {
   subject: string;
   html: string;
   replyTo?: string;
+  dispatch: {
+    entityType?: string | null;
+    entityId?: string | null;
+    entityPublicId?: string | null;
+    emailType: string;
+    triggerSource: "contact_alert";
+    metadata?: Record<string, unknown>;
+  };
 }) {
-  const apiKey = process.env.RESEND_API_KEY?.trim();
-  if (!apiKey) {
-    warnConfigOnce("RESEND_API_KEY not set");
-    return { ok: false, skipped: true, error: "RESEND_API_KEY not set" };
-  }
-
   const recipients = resolveRecipients(input.recipients);
   if (recipients.length === 0) {
     warnConfigOnce("No configured recipients for contact alerts");
@@ -131,19 +125,16 @@ async function sendContactAlertEmailBatch(input: {
       error: "No configured recipients for contact alerts",
     };
   }
-
-  const from = process.env.RESEND_FROM?.trim() || DEFAULT_FROM;
   let delivered = 0;
   let firstError = "";
 
   for (const recipient of recipients) {
     const result = await sendResendAlertEmail({
-      apiKey,
-      from,
       to: recipient,
       subject: input.subject,
       html: input.html,
       replyTo: input.replyTo,
+      dispatch: input.dispatch,
     });
 
     if (result.ok) {
@@ -200,6 +191,16 @@ export async function sendContactMessageCreatedAlert(input: {
     subject: `[Contact] New message from ${input.name}`,
     html,
     replyTo: input.email,
+    dispatch: {
+      entityType: "contact_message",
+      entityId: input.messageId,
+      emailType: "contact_message_created_alert",
+      triggerSource: "contact_alert",
+      metadata: {
+        messageId: input.messageId,
+        source,
+      },
+    },
   });
 }
 
@@ -250,5 +251,15 @@ export async function sendContactMessagesDigestAlert(input: {
     recipients: input.recipients,
     subject: `[Contact] ${input.totalNew} new message${input.totalNew === 1 ? "" : "s"} in inbox`,
     html,
+    dispatch: {
+      entityType: "system",
+      entityId: null,
+      emailType: "contact_messages_digest_alert",
+      triggerSource: "contact_alert",
+      metadata: {
+        totalNew: input.totalNew,
+        itemIds: input.items.map((item) => item.id),
+      },
+    },
   });
 }

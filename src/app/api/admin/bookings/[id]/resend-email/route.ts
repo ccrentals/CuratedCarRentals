@@ -34,6 +34,7 @@ export async function POST(
 ) {
   const auth = await requireAdminAccess();
   if (!auth.ok) return auth.response;
+  const { actor } = auth;
 
   if (!(await requireCsrf(request))) {
     return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
@@ -111,6 +112,13 @@ export async function POST(
       deposit: depositValue,
       promoCode,
       promoDiscount,
+      dispatch: {
+        triggerSource: "admin_resend",
+        triggeredByUserId: actor.userId,
+        metadata: {
+          resendOfLegacyRoute: true,
+        },
+      },
     });
 
     if (!result.ok) {
@@ -162,6 +170,13 @@ export async function POST(
     paidToDate,
     promoCode,
     promoDiscount,
+    dispatch: {
+      triggerSource: "admin_resend",
+      triggeredByUserId: actor.userId,
+      metadata: {
+        resendOfLegacyRoute: true,
+      },
+    },
   });
 
   if (!receiptResult.ok) {

@@ -208,6 +208,15 @@ export async function PATCH(
         endDate: overriddenBooking.endDate,
         pickupLocation: overriddenBooking.pickupLocation,
         overriddenByBookingId: payment.booking_id,
+        dispatch: {
+          triggerSource: "admin_payment",
+          triggeredByUserId: actor.userId,
+          entityType: "booking",
+          entityId: overriddenBooking.id,
+          relatedTransactionType: "booking",
+          relatedTransactionId: payment.booking_id,
+          manualResendAllowed: true,
+        },
       });
 
       await sendBookingOverriddenByPaidBookingEmail({
@@ -221,6 +230,15 @@ export async function PATCH(
         endDate: overriddenBooking.endDate,
         pickupLocation: overriddenBooking.pickupLocation,
         overriddenByBookingId: payment.booking_id,
+        dispatch: {
+          triggerSource: "admin_payment",
+          triggeredByUserId: actor.userId,
+          entityType: "booking",
+          entityId: overriddenBooking.id,
+          relatedTransactionType: "booking",
+          relatedTransactionId: payment.booking_id,
+          manualResendAllowed: true,
+        },
       });
     }
 

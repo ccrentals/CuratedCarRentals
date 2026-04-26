@@ -466,13 +466,20 @@ export async function handleAdminBookingsPost(
         customerEmail: normalizedEmail,
         customerName: String(fullName).trim(),
         vehicleLabel: `${vehicle.year} ${vehicle.make} ${vehicle.model}`.trim(),
-          startDate: String(startDate),
-          endDate: String(endDate),
-          pickupLocation: pickupLocationTextSnapshot,
-          dailyRate,
-          deposit: depositAmount,
+        startDate: String(startDate),
+        endDate: String(endDate),
+        pickupLocation: pickupLocationTextSnapshot,
+        dailyRate,
+        deposit: depositAmount,
         promoCode: promoCode || null,
         promoDiscount,
+        dispatch: {
+          triggerSource: "admin_booking",
+          triggeredByUserId: actor.userId,
+          metadata: {
+            createdFromAdmin: true,
+          },
+        },
       });
     } catch (error) {
       deps.log("admin_booking_email_failed", error, {

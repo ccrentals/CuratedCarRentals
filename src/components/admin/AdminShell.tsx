@@ -179,6 +179,26 @@ const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    label: "Emails",
+    href: "/admin/emails",
+    icon: (className: string) => (
+      <svg
+        viewBox="0 0 24 24"
+        className={className}
+        aria-hidden="true"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <rect x="3" y="5" width="18" height="14" rx="2" />
+        <path d="M3 8l9 6 9-6" />
+        <path d="M16 4v3M13.5 4h5" />
+      </svg>
+    ),
+  },
+  {
     label: "Payments",
     href: "/admin/payments",
     icon: (className: string) => (
@@ -488,6 +508,7 @@ const NAV_GROUPS: NavGroup[] = [
       "/admin/bookings",
       "/admin/customers",
       "/admin/messages",
+      "/admin/emails",
       "/admin/payments",
       "/admin/promo-codes",
       "/admin/calendar",

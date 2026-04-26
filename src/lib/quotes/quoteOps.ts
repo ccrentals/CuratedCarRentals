@@ -10,12 +10,15 @@ import {
 import { writeAuditLog } from "@/lib/audit";
 import { CustomerBlockedError, upsertCustomerForBooking } from "@/lib/customers";
 import { dbQuery, getDbPool } from "@/lib/db";
-import { logError, logWarn, redactText } from "@/lib/log";
+import { logWarn } from "@/lib/log";
 import { validatePromoForBooking } from "@/lib/promos";
 import { resolveEffectiveQuoteStatus } from "@/lib/quotes/lifecycle";
 import { buildQuotePricingSnapshot } from "@/lib/quotes/quotePricing";
+import {
+  sendTrackedResendEmail,
+  type EmailDispatchContext,
+} from "@/lib/notifications/emailDispatch";
 
-const RESEND_ENDPOINT = "https://api.resend.com/emails";
 const DEFAULT_FROM = "onboarding@resend.dev";
 
 const UUID_REGEX =
@@ -404,56 +407,29 @@ export async function sendQuoteEmailWithAttachment(input: {
   html: string;
   attachmentFilename: string;
   attachmentBase64: string;
+  dispatch?: EmailDispatchContext;
 }): Promise<SendQuoteEmailResult> {
-  const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.RESEND_FROM?.trim() || DEFAULT_FROM;
-
-  if (!apiKey) {
-    logWarn("quote_email_skipped", { reason: "RESEND_API_KEY not set" });
-    return { ok: false, skipped: true, error: "RESEND_API_KEY not set" };
-  }
-
-  const response = await fetch(RESEND_ENDPOINT, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      from,
-      to: input.toEmail,
-      subject: input.subject,
-      html: input.html,
-      reply_to: from,
-      attachments: [
-        {
-          filename: input.attachmentFilename,
-          content: input.attachmentBase64,
-        },
-      ],
-    }),
-  });
-
-  const payload = (await response.json().catch(() => null)) as
-    | { id?: unknown; message?: unknown }
-    | null;
-
-  if (!response.ok) {
-    const message = String(payload?.message ?? `HTTP ${response.status}`);
-    const safe = redactText(message).replace(/\s+/g, " ").slice(0, 300);
-    logError("quote_email_send_failed", new Error(`HTTP ${response.status}`), {
-      status: response.status,
+  if (!input.dispatch) {
+    logWarn("quote_email_missing_dispatch_context", {
       toEmail: input.toEmail,
       subject: input.subject,
-      responseBody: safe,
     });
-    return { ok: false, error: safe || `HTTP ${response.status}` };
+    return { ok: false, error: "Missing email dispatch context" };
   }
 
-  return {
-    ok: true,
-    providerMessageId: typeof payload?.id === "string" ? payload.id : null,
-  };
+  return sendTrackedResendEmail({
+    to: input.toEmail,
+    subject: input.subject,
+    html: input.html,
+    replyTo: process.env.RESEND_FROM?.trim() || DEFAULT_FROM,
+    attachments: [
+      {
+        filename: input.attachmentFilename,
+        content: input.attachmentBase64,
+      },
+    ],
+    dispatch: input.dispatch,
+  });
 }
 
 function sanitizePdfText(value: string) {

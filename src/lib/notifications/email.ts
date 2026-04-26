@@ -9,14 +9,18 @@ import {
   formatBookingLocationDisplayText,
   readBookingLocationDetails,
 } from "@/lib/bookings/bookingLocations";
-import { logError, logWarn, redactText } from "@/lib/log";
+import { logError, logWarn } from "@/lib/log";
 import { readInsurancePricingFields, readPromoPricingFields } from "@/lib/payments/pricing";
 import { dbQuery } from "@/lib/db";
 import { formatPaymentStatus } from "@/lib/payments/formatPaymentStatus";
 import { calcDaysInclusive } from "@/lib/payments/dateMath";
 import { resolveStoredRegionCountry } from "@/lib/jamaicaParishes";
-
-const RESEND_ENDPOINT = "https://api.resend.com/emails";
+import {
+  sendTrackedResendEmail,
+  type EmailDispatchAttachment,
+  type EmailDispatchContext,
+  type SendTrackedEmailResult,
+} from "@/lib/notifications/emailDispatch";
 
 const DEFAULT_FROM = "onboarding@resend.dev";
 
@@ -42,23 +46,14 @@ function formatDateTime(value: string) {
 }
 
 type SendEmailInput = {
-  to: string | string[];
+  to: string;
   subject: string;
   html: string;
   replyTo?: string;
+  dispatch: EmailDispatchContext;
 };
 
-type Attachment = {
-  filename: string;
-  content: string;
-};
-
-type SendEmailResult = {
-  ok: boolean;
-  skipped?: boolean;
-  error?: string;
-  providerMessageId?: string | null;
-};
+type SendEmailResult = SendTrackedEmailResult;
 
 async function sendResendEmail({
   to,
@@ -66,54 +61,16 @@ async function sendResendEmail({
   html,
   replyTo,
   attachments,
-}: SendEmailInput & { attachments?: Attachment[] }): Promise<SendEmailResult> {
-  const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.RESEND_FROM?.trim() || DEFAULT_FROM;
-
-  if (!apiKey) {
-    logWarn("resend_email_skipped", { reason: "RESEND_API_KEY not set" });
-    return { ok: false, skipped: true, error: "RESEND_API_KEY not set" };
-  }
-
-  const response = await fetch(RESEND_ENDPOINT, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      from,
-      to,
-      subject,
-      html,
-      reply_to: replyTo ?? from,
-      attachments,
-    }),
+  dispatch,
+}: SendEmailInput & { attachments?: EmailDispatchAttachment[] }): Promise<SendEmailResult> {
+  return sendTrackedResendEmail({
+    to,
+    subject,
+    html,
+    replyTo,
+    attachments,
+    dispatch,
   });
-
-  const payload = (await response.json().catch(() => null)) as
-    | { id?: unknown; message?: unknown }
-    | null;
-
-  if (!response.ok) {
-    logError("resend_email_failed", new Error(`HTTP ${response.status}`), {
-      status: response.status,
-      responseBody: payload?.message ?? null,
-      to,
-      subject,
-    });
-    const safe = redactText(String(payload?.message ?? "")).replace(/\s+/g, " ").slice(0, 300);
-    return {
-      ok: false,
-      error: safe || `HTTP ${response.status}`,
-      providerMessageId: typeof payload?.id === "string" ? payload.id : null,
-    };
-  }
-
-  return {
-    ok: true,
-    providerMessageId: typeof payload?.id === "string" ? payload.id : null,
-  };
 }
 
 function baseUrl() {
@@ -596,6 +553,24 @@ type EmailFinancialSummaryInput = {
   insuranceTotal?: number;
 };
 
+type EmailDispatchOverrides = Partial<Omit<EmailDispatchContext, "emailType">> & {
+  metadata?: Record<string, unknown> | null;
+};
+
+function withDispatchContext(
+  defaults: EmailDispatchContext,
+  overrides?: EmailDispatchOverrides,
+): EmailDispatchContext {
+  return {
+    ...defaults,
+    ...overrides,
+    metadata: {
+      ...defaults.metadata,
+      ...(overrides?.metadata ?? {}),
+    },
+  };
+}
+
 function readOptionalMoney(value: unknown): number | null {
   const amount = Number(value);
   if (!Number.isFinite(amount)) return null;
@@ -698,6 +673,7 @@ export async function sendBookingCreatedEmail(input: {
   deposit: number;
   promoCode?: string | null;
   promoDiscount?: number;
+  dispatch?: EmailDispatchOverrides;
 }): Promise<SendEmailResult> {
   const days = Math.max(1, calcDaysInclusive(input.startDate, input.endDate));
   const summary = await resolveEmailFinancialSummary({
@@ -771,6 +747,23 @@ export async function sendBookingCreatedEmail(input: {
     subject: "Your booking is ready — deposit required",
     html: htmlWithAttachmentNotice,
     attachments: agreementAttachment.attachments,
+    dispatch: withDispatchContext(
+      {
+        entityType: "booking",
+        entityId: input.bookingId,
+        entityPublicId: summary.bookingReference,
+        emailType: "booking_created",
+        recipientName: input.customerName,
+        triggerSource: "public_booking",
+        manualResendAllowed: true,
+        metadata: {
+          bookingId: input.bookingId,
+          bookingReference: summary.bookingReference,
+          vehicleLabel: input.vehicleLabel,
+        },
+      },
+      input.dispatch,
+    ),
   });
 }
 
@@ -787,6 +780,7 @@ export async function sendDepositReceiptEmail(input: {
   paidToDate: number;
   promoCode?: string | null;
   promoDiscount?: number;
+  dispatch?: EmailDispatchOverrides;
 }): Promise<SendEmailResult> {
   const days = Math.max(1, calcDaysInclusive(input.startDate, input.endDate));
   const summary = await resolveEmailFinancialSummary({
@@ -864,6 +858,25 @@ export async function sendDepositReceiptEmail(input: {
     subject: "Deposit received — booking confirmed",
     html: htmlWithAttachmentNotice,
     attachments: invoiceAttachment.attachments,
+    dispatch: withDispatchContext(
+      {
+        entityType: "booking",
+        entityId: input.bookingId,
+        entityPublicId: summary.bookingReference,
+        emailType: "deposit_receipt",
+        recipientName: input.customerName,
+        triggerSource: "wipay_reconcile",
+        relatedTransactionType: "payment",
+        manualResendAllowed: true,
+        metadata: {
+          bookingId: input.bookingId,
+          bookingReference: summary.bookingReference,
+          vehicleLabel: input.vehicleLabel,
+          paidToDate: summary.paidToDate,
+        },
+      },
+      input.dispatch,
+    ),
   });
 }
 
@@ -884,6 +897,7 @@ export async function sendPaymentUpdateEmail(input: {
   paymentMethod?: string;
   paymentDateTime?: string;
   paymentReference?: string;
+  dispatch?: EmailDispatchOverrides;
 }): Promise<SendEmailResult> {
   const bookingLink = `${baseUrl()}/bookings/${input.bookingId}`;
   const invoiceLink = `${baseUrl()}/bookings/${input.bookingId}/invoice`;
@@ -975,6 +989,27 @@ export async function sendPaymentUpdateEmail(input: {
     subject: "Payment update — balance outstanding",
     html: htmlWithAttachmentNotice,
     attachments: invoiceAttachment.attachments,
+    dispatch: withDispatchContext(
+      {
+        entityType: "booking",
+        entityId: input.bookingId,
+        entityPublicId: summary.bookingReference,
+        emailType: "payment_update",
+        recipientName: input.customerName,
+        triggerSource: "admin_payment",
+        relatedTransactionType: "payment",
+        manualResendAllowed: true,
+        metadata: {
+          bookingId: input.bookingId,
+          bookingReference: summary.bookingReference,
+          paymentReference: input.paymentReference ?? null,
+          paymentMethod: input.paymentMethod ?? null,
+          paymentAmount: input.paymentAmount ?? null,
+          paymentDateTime: input.paymentDateTime ?? null,
+        },
+      },
+      input.dispatch,
+    ),
   });
 }
 
@@ -995,6 +1030,7 @@ export async function sendPaymentCompleteEmail(input: {
   paymentMethod?: string;
   paymentDateTime?: string;
   paymentReference?: string;
+  dispatch?: EmailDispatchOverrides;
 }): Promise<SendEmailResult> {
   const bookingLink = `${baseUrl()}/bookings/${input.bookingId}`;
   const invoiceLink = `${baseUrl()}/bookings/${input.bookingId}/invoice`;
@@ -1084,6 +1120,27 @@ export async function sendPaymentCompleteEmail(input: {
     subject: "Payment complete — booking paid in full",
     html: htmlWithAttachmentNotice,
     attachments: invoiceAttachment.attachments,
+    dispatch: withDispatchContext(
+      {
+        entityType: "booking",
+        entityId: input.bookingId,
+        entityPublicId: summary.bookingReference,
+        emailType: "payment_complete",
+        recipientName: input.customerName,
+        triggerSource: "wipay_reconcile",
+        relatedTransactionType: "payment",
+        manualResendAllowed: true,
+        metadata: {
+          bookingId: input.bookingId,
+          bookingReference: summary.bookingReference,
+          paymentReference: input.paymentReference ?? null,
+          paymentMethod: input.paymentMethod ?? null,
+          paymentAmount: input.paymentAmount ?? null,
+          paymentDateTime: input.paymentDateTime ?? null,
+        },
+      },
+      input.dispatch,
+    ),
   });
 }
 
@@ -1096,6 +1153,7 @@ export async function sendBalanceDueReminderEmail(input: {
   endDate: string;
   pickupLocation: string;
   balanceDue: number;
+  dispatch?: EmailDispatchOverrides;
 }) {
   const balanceLink = `${baseUrl()}/bookings/${input.bookingId}/balance`;
   const bookingReference = await resolveBookingReference(input.bookingId);
@@ -1130,6 +1188,23 @@ export async function sendBalanceDueReminderEmail(input: {
     to: input.customerEmail,
     subject: "Balance required for pickup",
     html,
+    dispatch: withDispatchContext(
+      {
+        entityType: "booking",
+        entityId: input.bookingId,
+        entityPublicId: bookingReference,
+        emailType: "balance_due_reminder",
+        recipientName: input.customerName,
+        triggerSource: "cron",
+        manualResendAllowed: true,
+        metadata: {
+          bookingId: input.bookingId,
+          bookingReference,
+          balanceDue: input.balanceDue,
+        },
+      },
+      input.dispatch,
+    ),
   });
 }
 
@@ -1142,6 +1217,7 @@ export async function sendDropoffReminderEmail(input: {
   endDate: string;
   pickupLocation: string;
   balanceDue: number;
+  dispatch?: EmailDispatchOverrides;
 }) {
   const bookingLink = `${baseUrl()}/bookings/${input.bookingId}`;
   const balanceLink = `${baseUrl()}/bookings/${input.bookingId}/balance`;
@@ -1178,6 +1254,23 @@ export async function sendDropoffReminderEmail(input: {
     to: input.customerEmail,
     subject: "Dropoff day reminder — balance due",
     html,
+    dispatch: withDispatchContext(
+      {
+        entityType: "booking",
+        entityId: input.bookingId,
+        entityPublicId: bookingReference,
+        emailType: "dropoff_reminder",
+        recipientName: input.customerName,
+        triggerSource: "cron",
+        manualResendAllowed: true,
+        metadata: {
+          bookingId: input.bookingId,
+          bookingReference,
+          balanceDue: input.balanceDue,
+        },
+      },
+      input.dispatch,
+    ),
   });
 }
 
@@ -1190,6 +1283,7 @@ export async function sendLateDropoffAlertEmail(input: {
   endDate: string;
   pickupLocation: string;
   balanceDue: number;
+  dispatch?: EmailDispatchOverrides;
 }) {
   const bookingLink = `${baseUrl()}/bookings/${input.bookingId}`;
   const balanceLink = `${baseUrl()}/bookings/${input.bookingId}/balance`;
@@ -1226,6 +1320,23 @@ export async function sendLateDropoffAlertEmail(input: {
     to: input.customerEmail,
     subject: "Late dropoff alert — balance required",
     html,
+    dispatch: withDispatchContext(
+      {
+        entityType: "booking",
+        entityId: input.bookingId,
+        entityPublicId: bookingReference,
+        emailType: "late_dropoff_alert",
+        recipientName: input.customerName,
+        triggerSource: "cron",
+        manualResendAllowed: true,
+        metadata: {
+          bookingId: input.bookingId,
+          bookingReference,
+          balanceDue: input.balanceDue,
+        },
+      },
+      input.dispatch,
+    ),
   });
 }
 
@@ -1242,6 +1353,7 @@ export async function sendBookingCancelledByBlockoutEmail(input: {
   blockoutReason: string;
   blockoutStart: string;
   blockoutEnd: string;
+  dispatch?: EmailDispatchOverrides;
 }) {
   const isInternal = input.recipientType === "internal";
   const bookingLink = isInternal
@@ -1283,6 +1395,26 @@ export async function sendBookingCancelledByBlockoutEmail(input: {
       ? `[Internal] Blockout cancellation — ${bookingReference}`
       : "Booking cancelled due to vehicle unavailability",
     html,
+    dispatch: withDispatchContext(
+      {
+        entityType: "booking",
+        entityId: input.bookingId,
+        entityPublicId: bookingReference,
+        emailType: "booking_cancelled_by_blockout",
+        recipientName: input.recipientType === "customer" ? input.customerName : null,
+        triggerSource: "admin_booking",
+        manualResendAllowed: true,
+        metadata: {
+          bookingId: input.bookingId,
+          bookingReference,
+          recipientType: input.recipientType,
+          blockoutReason: input.blockoutReason,
+          blockoutStart: input.blockoutStart,
+          blockoutEnd: input.blockoutEnd,
+        },
+      },
+      input.dispatch,
+    ),
   });
 }
 
@@ -1297,6 +1429,7 @@ export async function sendBookingOverriddenByPaidBookingEmail(input: {
   endDate: string;
   pickupLocation: string;
   overriddenByBookingId: string;
+  dispatch?: EmailDispatchOverrides;
 }) {
   const isInternal = input.recipientType === "internal";
   const bookingReferences = await resolveBookingReferences([
@@ -1355,6 +1488,27 @@ export async function sendBookingOverriddenByPaidBookingEmail(input: {
       ? `[Internal] Booking overridden — ${bookingReference}`
       : "Booking cancelled — vehicle reserved by another paid booking",
     html,
+    dispatch: withDispatchContext(
+      {
+        entityType: "booking",
+        entityId: input.bookingId,
+        entityPublicId: bookingReference,
+        emailType: "booking_overridden_by_paid_booking",
+        recipientName: input.recipientType === "customer" ? input.customerName : null,
+        triggerSource: "wipay_reconcile",
+        relatedTransactionType: "booking",
+        relatedTransactionId: input.overriddenByBookingId,
+        manualResendAllowed: true,
+        metadata: {
+          bookingId: input.bookingId,
+          bookingReference,
+          recipientType: input.recipientType,
+          overriddenByBookingId: input.overriddenByBookingId,
+          overriddenByBookingReference,
+        },
+      },
+      input.dispatch,
+    ),
   });
 }
 
@@ -1371,6 +1525,7 @@ export async function sendOperationalAlertEmail(input: {
   subject: string;
   html: string;
   replyTo?: string;
+  dispatch?: EmailDispatchOverrides;
 }) {
   if (!Array.isArray(input.recipientEmails) || input.recipientEmails.length === 0) {
     return {
@@ -1381,12 +1536,48 @@ export async function sendOperationalAlertEmail(input: {
     } as const;
   }
 
-  return sendResendEmail({
-    to: input.recipientEmails,
-    subject: input.subject,
-    html: input.html,
-    replyTo: input.replyTo,
-  });
+  const recipients = input.recipientEmails.map((entry) => entry.trim()).filter(Boolean);
+  let delivered = 0;
+  let firstError = "";
+
+  for (const recipient of recipients) {
+    const result = await sendResendEmail({
+      to: recipient,
+      subject: input.subject,
+      html: input.html,
+      replyTo: input.replyTo,
+      dispatch: withDispatchContext(
+        {
+          entityType: "system",
+          entityId: null,
+          entityPublicId: null,
+          emailType: "operational_alert",
+          triggerSource: "system",
+          manualResendAllowed: true,
+          metadata: {
+            html: input.html,
+            replyTo: input.replyTo ?? null,
+          },
+        },
+        input.dispatch,
+      ),
+    });
+
+    if (result.ok) {
+      delivered += 1;
+    } else if (!firstError) {
+      firstError = result.error ?? "Delivery failed";
+    }
+  }
+
+  if (delivered > 0) {
+    return { ok: true } satisfies SendEmailResult;
+  }
+
+  return {
+    ok: false,
+    error: firstError || "Delivery failed",
+  } satisfies SendEmailResult;
 }
 
 export async function sendBookingNoteEmail(input: {
@@ -1402,6 +1593,7 @@ export async function sendBookingNoteEmail(input: {
   noteMessage: string;
   sentByUserId?: string;
   scheduledFor?: string | null;
+  dispatch?: EmailDispatchOverrides;
 }) {
   const bookingLink = `${baseUrl()}/admin/bookings/${input.bookingId}`;
   const notePrefix = input.recipientType === "internal" ? "[Internal] " : "";
@@ -1439,6 +1631,26 @@ export async function sendBookingNoteEmail(input: {
     to: input.recipientEmail,
     subject: `${notePrefix}Booking note — ${bookingReference}`,
     html,
+    dispatch: withDispatchContext(
+      {
+        entityType: "booking",
+        entityId: input.bookingId,
+        entityPublicId: bookingReference,
+        emailType: "booking_note",
+        recipientName: input.recipientType === "customer" ? input.customerName : null,
+        triggeredByUserId: input.sentByUserId ?? null,
+        triggerSource: input.scheduledFor ? "cron" : "admin_booking",
+        manualResendAllowed: true,
+        metadata: {
+          bookingId: input.bookingId,
+          bookingReference,
+          recipientType: input.recipientType,
+          scheduledFor: input.scheduledFor ?? null,
+          noteMessage: input.noteMessage,
+        },
+      },
+      input.dispatch,
+    ),
   });
 }
 
@@ -1451,6 +1663,7 @@ export async function sendPickupReminderEmail(input: {
   endDate: string;
   pickupLocation: string;
   balanceDue: number;
+  dispatch?: EmailDispatchOverrides;
 }) {
   const bookingLink = `${baseUrl()}/bookings/${input.bookingId}`;
   const balanceLink = `${baseUrl()}/bookings/${input.bookingId}/balance`;
@@ -1487,5 +1700,22 @@ export async function sendPickupReminderEmail(input: {
     to: input.customerEmail,
     subject: "Pickup reminder — balance due",
     html,
+    dispatch: withDispatchContext(
+      {
+        entityType: "booking",
+        entityId: input.bookingId,
+        entityPublicId: bookingReference,
+        emailType: "pickup_reminder",
+        recipientName: input.customerName,
+        triggerSource: "cron",
+        manualResendAllowed: true,
+        metadata: {
+          bookingId: input.bookingId,
+          bookingReference,
+          balanceDue: input.balanceDue,
+        },
+      },
+      input.dispatch,
+    ),
   });
 }

@@ -46,6 +46,17 @@ export type AdminQuoteEmailRouteDeps = {
     html: string;
     attachmentFilename: string;
     attachmentBase64: string;
+    dispatch: {
+      entityType: "quote";
+      entityId: string;
+      entityPublicId: string | null;
+      emailType: "quote_email";
+      recipientName: string;
+      triggeredByUserId: string;
+      triggerSource: "admin_quote";
+      manualResendAllowed: true;
+      metadata: Record<string, unknown>;
+    };
   }) => Promise<{ ok: boolean; skipped?: boolean; error?: string; providerMessageId?: string | null }>;
   updateQuoteLastEmailedAt: (input: { quoteId: string; toEmail: string }) => Promise<void>;
   logQuoteEvent: (input: {
@@ -163,6 +174,22 @@ export async function handleAdminQuoteEmailPost(
       html: emailContent.html,
       attachmentFilename: `quote-${quote.publicId || quote.id.slice(0, 8)}.pdf`,
       attachmentBase64: Buffer.from(pdf).toString("base64"),
+      dispatch: {
+        entityType: "quote",
+        entityId: quote.id,
+        entityPublicId: quote.publicId,
+        emailType: "quote_email",
+        recipientName: quote.customerFullName,
+        triggeredByUserId: actor.userId,
+        triggerSource: "admin_quote",
+        manualResendAllowed: true,
+        metadata: {
+          quoteId: quote.id,
+          quotePublicId: quote.publicId,
+          toEmail,
+          operatorMessage: message,
+        },
+      },
     });
 
     if (!sendResult.ok) {

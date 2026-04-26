@@ -263,6 +263,15 @@ export async function handleAdminBookingAddPaymentPost(
           endDate: overriddenBooking.endDate,
           pickupLocation: overriddenBooking.pickupLocation,
           overriddenByBookingId: booking.id,
+          dispatch: {
+            triggerSource: "admin_payment",
+            triggeredByUserId: actor.userId,
+            entityType: "booking",
+            entityId: overriddenBooking.id,
+            relatedTransactionType: "booking",
+            relatedTransactionId: booking.id,
+            manualResendAllowed: true,
+          },
         });
       });
 
@@ -278,6 +287,15 @@ export async function handleAdminBookingAddPaymentPost(
           endDate: overriddenBooking.endDate,
           pickupLocation: overriddenBooking.pickupLocation,
           overriddenByBookingId: booking.id,
+          dispatch: {
+            triggerSource: "admin_payment",
+            triggeredByUserId: actor.userId,
+            entityType: "booking",
+            entityId: overriddenBooking.id,
+            relatedTransactionType: "booking",
+            relatedTransactionId: booking.id,
+            manualResendAllowed: true,
+          },
         });
       });
     }
@@ -314,6 +332,16 @@ export async function handleAdminBookingAddPaymentPost(
           paymentMethod: methodLabel,
           paymentDateTime: paidAtIso,
           paymentReference: reference || undefined,
+          dispatch: {
+            triggerSource: "admin_payment",
+            triggeredByUserId: actor.userId,
+            entityType: "booking",
+            entityId: booking.id,
+            entityPublicId: booking.public_id ?? null,
+            relatedTransactionType: "booking",
+            relatedTransactionId: booking.id,
+            manualResendAllowed: true,
+          },
         });
       });
     } else {
@@ -335,6 +363,16 @@ export async function handleAdminBookingAddPaymentPost(
           paymentMethod: methodLabel,
           paymentDateTime: paidAtIso,
           paymentReference: reference || undefined,
+          dispatch: {
+            triggerSource: "admin_payment",
+            triggeredByUserId: actor.userId,
+            entityType: "booking",
+            entityId: booking.id,
+            entityPublicId: booking.public_id ?? null,
+            relatedTransactionType: "booking",
+            relatedTransactionId: booking.id,
+            manualResendAllowed: true,
+          },
         });
       });
     }

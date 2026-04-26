@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { getDbPool } from "@/lib/db";
 import { redactText } from "@/lib/log";
+import { applyProviderEventToEmailDispatch } from "@/lib/notifications/emailDispatch";
 
 type QueryResult<T = unknown> = Promise<{ rows: T[]; rowCount: number }>;
 
@@ -20,10 +21,19 @@ type ContactMessageInsertRow = {
 };
 
 type QuoteEmailCorrelationRow = {
+  id: string;
   quote_id: string;
   quote_public_id: string | null;
   to_email: string | null;
   subject: string | null;
+};
+
+type EmailDispatchCorrelationRow = {
+  id: string;
+  entity_type: string | null;
+  entity_id: string | null;
+  entity_public_id: string | null;
+  email_type: string | null;
 };
 
 type DispatchCorrelationRow = {
@@ -63,10 +73,11 @@ export type ResendWebhookEvent = {
 };
 
 export type ResendWebhookCorrelation = {
+  emailDispatchId: string | null;
   entityType: string | null;
   entityId: string | null;
   entityPublicId: string | null;
-  source: "tags" | "quote_email" | "notification_dispatch_log" | "none";
+  source: "tags" | "email_dispatch" | "quote_email" | "notification_dispatch_log" | "none";
   relatedEventType: string | null;
 };
 
@@ -344,10 +355,26 @@ export function normalizeResendWebhookEvent(payload: unknown, webhookMessageId?:
 
 async function lookupQuoteCorrelation(client: DbClient, providerEmailId: string) {
   const result = await client.query(
-    "select qe.quote_id, q.public_id as quote_public_id, qe.to_email, qe.subject from quote_emails qe join quotes q on q.id = qe.quote_id where qe.provider_message_id = $1 limit 1",
+    "select qe.id, qe.quote_id, q.public_id as quote_public_id, qe.to_email, qe.subject from quote_emails qe join quotes q on q.id = qe.quote_id where qe.provider_message_id = $1 limit 1",
     [providerEmailId],
   );
   return (result.rows[0] as QuoteEmailCorrelationRow | undefined) ?? null;
+}
+
+async function lookupEmailDispatchById(client: DbClient, dispatchId: string) {
+  const result = await client.query(
+    "select id, entity_type, entity_id, entity_public_id, email_type from email_dispatches where id = $1::uuid limit 1",
+    [dispatchId],
+  );
+  return (result.rows[0] as EmailDispatchCorrelationRow | undefined) ?? null;
+}
+
+async function lookupEmailDispatchByProviderMessageId(client: DbClient, providerEmailId: string) {
+  const result = await client.query(
+    "select id, entity_type, entity_id, entity_public_id, email_type from email_dispatches where provider = 'resend' and provider_message_id = $1 order by created_at desc limit 1",
+    [providerEmailId],
+  );
+  return (result.rows[0] as EmailDispatchCorrelationRow | undefined) ?? null;
 }
 
 async function lookupDispatchCorrelation(client: DbClient, providerEmailId: string) {
@@ -388,6 +415,7 @@ async function correlateResendWebhookEvent(
   client: DbClient,
   event: ResendWebhookEvent,
 ): Promise<ResendWebhookCorrelation> {
+  const tagDispatchId = readTag(event.tags, ["dispatchId", "emailDispatchId", "email_dispatch_id"]);
   const tagBookingId = readTag(event.tags, ["bookingId", "booking_id"]);
   const tagQuoteId = readTag(event.tags, ["quoteId", "quote_id"]);
   const tagCustomerId = readTag(event.tags, ["customerId", "customer_id"]);
@@ -395,8 +423,23 @@ async function correlateResendWebhookEvent(
   const tagBookingPublicId = readTag(event.tags, ["bookingPublicId", "booking_public_id", "bookingReference"]);
   const tagQuotePublicId = readTag(event.tags, ["quotePublicId", "quote_public_id", "quoteReference"]);
 
+  if (UUID_RE.test(tagDispatchId)) {
+    const emailDispatch = await lookupEmailDispatchById(client, tagDispatchId);
+    if (emailDispatch) {
+      return {
+        emailDispatchId: emailDispatch.id,
+        entityType: asString(emailDispatch.entity_type) || null,
+        entityId: asString(emailDispatch.entity_id) || null,
+        entityPublicId: asString(emailDispatch.entity_public_id) || null,
+        source: "tags",
+        relatedEventType: asString(emailDispatch.email_type) || null,
+      };
+    }
+  }
+
   if (tagBookingId || tagBookingPublicId) {
     return {
+      emailDispatchId: null,
       entityType: "booking",
       entityId: tagBookingId || null,
       entityPublicId: tagBookingPublicId || null,
@@ -407,6 +450,7 @@ async function correlateResendWebhookEvent(
 
   if (tagQuoteId || tagQuotePublicId) {
     return {
+      emailDispatchId: null,
       entityType: "quote",
       entityId: tagQuoteId || null,
       entityPublicId: tagQuotePublicId || null,
@@ -417,6 +461,7 @@ async function correlateResendWebhookEvent(
 
   if (tagCustomerId) {
     return {
+      emailDispatchId: null,
       entityType: "customer",
       entityId: tagCustomerId,
       entityPublicId: null,
@@ -427,6 +472,7 @@ async function correlateResendWebhookEvent(
 
   if (tagUserId) {
     return {
+      emailDispatchId: null,
       entityType: "user",
       entityId: tagUserId,
       entityPublicId: null,
@@ -436,9 +482,22 @@ async function correlateResendWebhookEvent(
   }
 
   if (event.providerEmailId) {
+    const emailDispatch = await lookupEmailDispatchByProviderMessageId(client, event.providerEmailId);
+    if (emailDispatch) {
+      return {
+        emailDispatchId: emailDispatch.id,
+        entityType: asString(emailDispatch.entity_type) || null,
+        entityId: asString(emailDispatch.entity_id) || null,
+        entityPublicId: asString(emailDispatch.entity_public_id) || null,
+        source: "email_dispatch",
+        relatedEventType: asString(emailDispatch.email_type) || null,
+      };
+    }
+
     const quote = await lookupQuoteCorrelation(client, event.providerEmailId);
     if (quote) {
       return {
+        emailDispatchId: null,
         entityType: "quote",
         entityId: quote.quote_id,
         entityPublicId: asString(quote.quote_public_id) || null,
@@ -450,6 +509,7 @@ async function correlateResendWebhookEvent(
     const dispatch = await lookupDispatchCorrelation(client, event.providerEmailId);
     if (dispatch) {
       return {
+        emailDispatchId: null,
         entityType: asString(dispatch.entity_type) || null,
         entityId: asString(dispatch.entity_id) || null,
         entityPublicId:
@@ -465,6 +525,7 @@ async function correlateResendWebhookEvent(
   }
 
   return {
+    emailDispatchId: null,
     entityType: null,
     entityId: null,
     entityPublicId: null,
@@ -566,6 +627,7 @@ export async function processResendWebhookEvent(
         eventType: event.eventType,
         notificationId: null,
         correlation: {
+          emailDispatchId: null,
           entityType: null,
           entityId: null,
           entityPublicId: null,
@@ -576,6 +638,29 @@ export async function processResendWebhookEvent(
     }
 
     const correlation = await correlateResendWebhookEvent(client, event);
+    if (correlation.emailDispatchId) {
+      await applyProviderEventToEmailDispatch(
+        {
+          id: correlation.emailDispatchId,
+          eventType: event.eventType,
+          occurredAt: event.occurredAt,
+          providerMessageId: event.providerEmailId,
+          status: event.eventType === "email.bounced" ? "BOUNCED" : "FAILED",
+          error: event.reason,
+          providerErrorCategory: event.category,
+          providerErrorReason: event.reason,
+          details: {
+            webhookMessageId: event.webhookMessageId,
+            primaryRecipient: event.primaryRecipient,
+            subject: event.subject,
+            tags: event.tags,
+            providerData: event.providerData,
+          },
+        },
+        client.query.bind(client),
+      );
+    }
+
     const notification = await insertAdminNotificationMessage(client, {
       recipientEmail: event.primaryRecipient,
       message: buildAdminMessageBody({ event, correlation }),

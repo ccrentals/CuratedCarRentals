@@ -147,6 +147,15 @@ export async function POST(
         endDate: overriddenBooking.endDate,
         pickupLocation: overriddenBooking.pickupLocation,
         overriddenByBookingId: booking.id,
+        dispatch: {
+          triggerSource: "admin_payment",
+          triggeredByUserId: actor.userId,
+          entityType: "booking",
+          entityId: overriddenBooking.id,
+          relatedTransactionType: "booking",
+          relatedTransactionId: booking.id,
+          manualResendAllowed: true,
+        },
       });
 
       await sendBookingOverriddenByPaidBookingEmail({
@@ -160,6 +169,15 @@ export async function POST(
         endDate: overriddenBooking.endDate,
         pickupLocation: overriddenBooking.pickupLocation,
         overriddenByBookingId: booking.id,
+        dispatch: {
+          triggerSource: "admin_payment",
+          triggeredByUserId: actor.userId,
+          entityType: "booking",
+          entityId: overriddenBooking.id,
+          relatedTransactionType: "booking",
+          relatedTransactionId: booking.id,
+          manualResendAllowed: true,
+        },
       });
     }
 
@@ -192,6 +210,16 @@ export async function POST(
         paymentAmount: depositCents,
         paymentMethod: "Manual / Admin (Deposit)",
         paymentDateTime,
+        dispatch: {
+          triggerSource: "admin_payment",
+          triggeredByUserId: actor.userId,
+          entityType: "booking",
+          entityId: booking.id,
+          entityPublicId: booking.public_id ?? null,
+          relatedTransactionType: "booking",
+          relatedTransactionId: booking.id,
+          manualResendAllowed: true,
+        },
       });
     } else {
       await sendPaymentUpdateEmail({
@@ -210,6 +238,16 @@ export async function POST(
         paymentAmount: depositCents,
         paymentMethod: "Manual / Admin (Deposit)",
         paymentDateTime,
+        dispatch: {
+          triggerSource: "admin_payment",
+          triggeredByUserId: actor.userId,
+          entityType: "booking",
+          entityId: booking.id,
+          entityPublicId: booking.public_id ?? null,
+          relatedTransactionType: "booking",
+          relatedTransactionId: booking.id,
+          manualResendAllowed: true,
+        },
       });
     }
 

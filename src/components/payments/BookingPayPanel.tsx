@@ -224,7 +224,7 @@ export function BookingPayPanel({
               <span className="text-[var(--ccr-muted)]">Paid to date</span>
               <span className="text-right font-semibold">{formatJmd(summary.netPaidToDate)}</span>
             </div>
-            <div className="flex items-start justify-between gap-4 text-[var(--ccr-text)] sm:col-span-2">
+            <div className="flex items-start justify-between gap-4 text-[var(--ccr-text)] sm:col-start-2">
               <span className="text-[var(--ccr-muted)]">Balance due</span>
               <span className="text-right font-semibold">{formatJmd(summary.balanceDue)}</span>
             </div>

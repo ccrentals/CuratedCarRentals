@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import { writeAuditLog } from "@/lib/audit";
 import { dbQuery } from "@/lib/db";
 import { logWarn } from "@/lib/log";
+import { sendTrackedResendEmail } from "@/lib/notifications/emailDispatch";
 import { hashReturningCustomerOtp } from "@/lib/security/returningCustomerOtp";
 import {
   categorizeTurnstileFailure,
@@ -50,26 +51,32 @@ async function hitRateLimit(ip: string, sessionKey: string) {
   return Number(result.rows[0]?.count ?? 0) >= LOOKUP_RATE_LIMIT;
 }
 
-async function sendOtpEmail(to: string, otpCode: string) {
-  const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.RESEND_FROM;
-  if (!apiKey || !from) return false;
-
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
+async function sendOtpEmail(input: {
+  customerId: string;
+  to: string;
+  otpCode: string;
+  challengeToken: string;
+  sessionKey: string;
+}) {
+  const result = await sendTrackedResendEmail({
+    to: input.to,
+    subject: "Your Curated Car Rentals verification code",
+    html: `<p>Your one-time verification code is <strong>${input.otpCode}</strong>.</p><p>This code expires in 10 minutes.</p>`,
+    dispatch: {
+      entityType: "customer",
+      entityId: input.customerId,
+      emailType: "returning_customer_otp",
+      triggerSource: "public_returning_customer",
+      manualResendAllowed: false,
+      metadata: {
+        challengeToken: input.challengeToken,
+        sessionKey: input.sessionKey,
+        sensitive: true,
+      },
     },
-    body: JSON.stringify({
-      from,
-      to: [to],
-      subject: "Your Curated Car Rentals verification code",
-      html: `<p>Your one-time verification code is <strong>${otpCode}</strong>.</p><p>This code expires in 10 minutes.</p>`,
-    }),
   });
 
-  return response.ok;
+  return result.ok;
 }
 
 export async function POST(request: Request) {
@@ -141,7 +148,13 @@ export async function POST(request: Request) {
     const otpCode = String(randomInt(100000, 999999));
     const otpHash = hashReturningCustomerOtp(challengeToken, otpCode);
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-    const emailSent = await sendOtpEmail(customer.email.trim(), otpCode).catch(() => false);
+    const emailSent = await sendOtpEmail({
+      customerId: customer.id,
+      to: customer.email.trim(),
+      otpCode,
+      challengeToken,
+      sessionKey,
+    }).catch(() => false);
 
     if (emailSent) {
       await writeAuditLog({
