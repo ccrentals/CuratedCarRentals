@@ -1,4 +1,5 @@
 import { SignIn } from "@clerk/nextjs";
+import { auth } from "@clerk/nextjs/server";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
@@ -138,6 +139,13 @@ export default async function SignInPage({
         </div>
       </AuthPageShell>
     );
+  }
+
+  if (hideSiteActions) {
+    const authState = await auth().catch(() => null);
+    if (authState?.userId && authState.sessionStatus === "active") {
+      redirect(fallbackRedirectUrl);
+    }
   }
 
   return (
