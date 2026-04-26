@@ -197,22 +197,42 @@ export function BookingPayPanel({
 
         <div className="mt-4 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
           <h3 className="text-sm font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Pricing Summary</h3>
-          <div className="mt-3 grid gap-2 text-sm text-[var(--ccr-text)]">
-            <p>Confirmed booked days: <span className="font-semibold">{summary.days}</span></p>
-            <p>Subtotal: <span className="font-semibold">{formatJmd(summary.subtotal)}</span></p>
-            <p>
-              Promo{summary.promoCode ? ` (${summary.promoCode})` : ""}:{" "}
-              <span className="font-semibold">-{formatJmd(summary.promoDiscount)}</span>
-            </p>
-            <p>Total you will pay: <span className="font-semibold">{formatJmd(summary.total)}</span></p>
-            <p>Deposit online: <span className="font-semibold">{formatJmd(summary.deposit)}</span></p>
-            <p>Paid to date: <span className="font-semibold">{formatJmd(summary.netPaidToDate)}</span></p>
-            <p>Balance due: <span className="font-semibold">{formatJmd(summary.balanceDue)}</span></p>
+          <div className="mt-3 grid gap-x-8 gap-y-3 text-sm sm:grid-cols-2">
+            <div className="flex items-start justify-between gap-4 text-[var(--ccr-text)]">
+              <span className="text-[var(--ccr-muted)]">Confirmed booked days</span>
+              <span className="text-right font-semibold">{summary.days}</span>
+            </div>
+            <div className="flex items-start justify-between gap-4 text-[var(--ccr-text)]">
+              <span className="text-[var(--ccr-muted)]">Subtotal</span>
+              <span className="text-right font-semibold">{formatJmd(summary.subtotal)}</span>
+            </div>
+            <div className="flex items-start justify-between gap-4 text-[var(--ccr-text)]">
+              <span className="text-[var(--ccr-muted)]">
+                Promo{summary.promoCode ? ` (${summary.promoCode})` : ""}
+              </span>
+              <span className="text-right font-semibold">-{formatJmd(summary.promoDiscount)}</span>
+            </div>
+            <div className="flex items-start justify-between gap-4 text-[var(--ccr-text)]">
+              <span className="text-[var(--ccr-muted)]">Total you will pay</span>
+              <span className="text-right font-semibold">{formatJmd(summary.total)}</span>
+            </div>
+            <div className="flex items-start justify-between gap-4 text-[var(--ccr-text)]">
+              <span className="text-[var(--ccr-muted)]">Deposit online</span>
+              <span className="text-right font-semibold">{formatJmd(summary.deposit)}</span>
+            </div>
+            <div className="flex items-start justify-between gap-4 text-[var(--ccr-text)]">
+              <span className="text-[var(--ccr-muted)]">Paid to date</span>
+              <span className="text-right font-semibold">{formatJmd(summary.netPaidToDate)}</span>
+            </div>
+            <div className="flex items-start justify-between gap-4 text-[var(--ccr-text)] sm:col-span-2">
+              <span className="text-[var(--ccr-muted)]">Balance due</span>
+              <span className="text-right font-semibold">{formatJmd(summary.balanceDue)}</span>
+            </div>
           </div>
         </div>
 
         <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <div className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
+          <div className="flex h-full flex-col rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
             <p className="text-sm font-semibold text-[var(--ccr-text)]">Pay Deposit</p>
             <p className="mt-1 text-sm text-[var(--ccr-muted)]">
               {depositDue > 0
@@ -221,7 +241,7 @@ export function BookingPayPanel({
                   )} due on pickup.`
                 : "Deposit is already paid."}
             </p>
-            <div className="mt-3">
+            <div className="mt-auto pt-3">
               {depositDue > 0 ? (
                 <PayDepositButton bookingId={bookingId} />
               ) : (
@@ -232,7 +252,7 @@ export function BookingPayPanel({
             </div>
           </div>
 
-          <div className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
+          <div className="flex h-full flex-col rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
             <p className="text-sm font-semibold text-[var(--ccr-text)]">Pay on Pickup</p>
             <p className="mt-1 text-sm text-[var(--ccr-muted)]">
               Pay {formatJmd(0)} now. Total of {formatJmd(summary.total)} due on pickup.
@@ -240,7 +260,7 @@ export function BookingPayPanel({
             <div className="mt-2 rounded-lg border border-amber-300/40 bg-amber-200/15 p-3 text-xs text-amber-100">
               Please note vehicle availability is not guaranteed without payment. To guarantee availability a deposit is required.
             </div>
-            <div className="mt-3">
+            <div className="mt-auto pt-3">
               {summary.netPaidToDate > 0 ? (
                 <span className="inline-flex items-center whitespace-nowrap rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)]">
                   Payment already started
@@ -255,7 +275,7 @@ export function BookingPayPanel({
             </div>
           </div>
 
-          <div className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
+          <div className="flex h-full flex-col rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
             <p className="text-sm font-semibold text-[var(--ccr-text)]">
               {canPayBalance ? "Pay Balance" : "Pay in Full"}
             </p>
@@ -266,7 +286,7 @@ export function BookingPayPanel({
                   ? `Pay the remaining balance of ${formatJmd(summary.balanceDue)} now.`
                   : `Pay ${formatJmd(summary.total)} now. Balance due becomes ${formatJmd(0)}.`}
             </p>
-            <div className="mt-3">
+            <div className="mt-auto pt-3">
               {summary.balanceDue <= 0 ? (
                 <span className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)]">
                   Paid in full
