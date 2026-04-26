@@ -9,6 +9,10 @@ import {
   formatBookingLocationDisplayText,
   readBookingLocationDetails,
 } from "@/lib/bookings/bookingLocations";
+import {
+  createBookingEmailAccessSignature,
+  readBookingAccessHash,
+} from "@/lib/bookings/privateAccess";
 import { logError, logWarn } from "@/lib/log";
 import { readInsurancePricingFields, readPromoPricingFields } from "@/lib/payments/pricing";
 import { dbQuery } from "@/lib/db";
@@ -75,6 +79,50 @@ async function sendResendEmail({
 
 function baseUrl() {
   return process.env.SITE_URL ?? "http://localhost:3000";
+}
+
+type PublicBookingEmailLinkTarget = "view" | "pay" | "balance" | "invoice";
+
+async function buildPublicBookingEmailLink(
+  bookingId: string,
+  target: PublicBookingEmailLinkTarget = "view",
+) {
+  const normalizedBookingId = normalizeText(bookingId);
+  const pathMap: Record<PublicBookingEmailLinkTarget, string> = {
+    view: `/bookings/${normalizedBookingId}`,
+    pay: `/bookings/${normalizedBookingId}/pay`,
+    balance: `/bookings/${normalizedBookingId}/balance`,
+    invoice: `/bookings/${normalizedBookingId}/invoice`,
+  };
+
+  if (!normalizedBookingId) {
+    return `${baseUrl()}${pathMap[target]}`;
+  }
+
+  try {
+    const result = await dbQuery<{ pricing_json: Record<string, unknown> | null }>(
+      "select pricing_json from bookings where id = $1 limit 1",
+      [normalizedBookingId],
+    );
+    const accessHash = readBookingAccessHash(result.rows[0]?.pricing_json);
+    const signature = createBookingEmailAccessSignature(normalizedBookingId, accessHash);
+    if (!accessHash || !signature) {
+      return `${baseUrl()}${pathMap[target]}`;
+    }
+
+    const params = new URLSearchParams({
+      target,
+      sig: signature,
+    });
+    return `${baseUrl()}/bookings/${normalizedBookingId}/access?${params.toString()}`;
+  } catch (error) {
+    logWarn("public_booking_email_link_build_failed", {
+      bookingId: normalizedBookingId,
+      target,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return `${baseUrl()}${pathMap[target]}`;
+  }
 }
 
 function policyHtml() {
@@ -683,7 +731,7 @@ export async function sendBookingCreatedEmail(input: {
     promoDiscount: input.promoDiscount ?? 0,
     paidToDate: 0,
   });
-  const bookingLink = `${baseUrl()}/bookings/${input.bookingId}`;
+  const bookingLink = await buildPublicBookingEmailLink(input.bookingId, "pay");
   const paymentStatusLabel = summary.balanceDue > 0 ? "Payment incomplete" : "Paid in full";
   const pickupLocationDisplay = summary.pickupLocationDisplay || input.pickupLocation;
   const dropoffLocationDisplay = summary.dropoffLocationDisplay || input.pickupLocation;
@@ -790,8 +838,8 @@ export async function sendDepositReceiptEmail(input: {
     promoCode: input.promoCode ?? null,
     promoDiscount: input.promoDiscount ?? 0,
   });
-  const bookingLink = `${baseUrl()}/bookings/${input.bookingId}`;
-  const invoiceLink = `${baseUrl()}/bookings/${input.bookingId}/invoice`;
+  const bookingLink = await buildPublicBookingEmailLink(input.bookingId, "view");
+  const invoiceLink = await buildPublicBookingEmailLink(input.bookingId, "invoice");
   const paymentStatusLabel = summary.balanceDue > 0 ? "Payment incomplete" : "Paid in full";
   const pickupLocationDisplay = summary.pickupLocationDisplay || input.pickupLocation;
   const dropoffLocationDisplay = summary.dropoffLocationDisplay || input.pickupLocation;
@@ -899,9 +947,9 @@ export async function sendPaymentUpdateEmail(input: {
   paymentReference?: string;
   dispatch?: EmailDispatchOverrides;
 }): Promise<SendEmailResult> {
-  const bookingLink = `${baseUrl()}/bookings/${input.bookingId}`;
-  const invoiceLink = `${baseUrl()}/bookings/${input.bookingId}/invoice`;
-  const balanceLink = `${baseUrl()}/bookings/${input.bookingId}/balance`;
+  const bookingLink = await buildPublicBookingEmailLink(input.bookingId, "view");
+  const invoiceLink = await buildPublicBookingEmailLink(input.bookingId, "invoice");
+  const balanceLink = await buildPublicBookingEmailLink(input.bookingId, "balance");
   const summary = await resolveEmailFinancialSummary({
     bookingId: input.bookingId,
     total: input.total,
@@ -1032,8 +1080,8 @@ export async function sendPaymentCompleteEmail(input: {
   paymentReference?: string;
   dispatch?: EmailDispatchOverrides;
 }): Promise<SendEmailResult> {
-  const bookingLink = `${baseUrl()}/bookings/${input.bookingId}`;
-  const invoiceLink = `${baseUrl()}/bookings/${input.bookingId}/invoice`;
+  const bookingLink = await buildPublicBookingEmailLink(input.bookingId, "view");
+  const invoiceLink = await buildPublicBookingEmailLink(input.bookingId, "invoice");
   const summary = await resolveEmailFinancialSummary({
     bookingId: input.bookingId,
     total: input.total,
@@ -1155,7 +1203,7 @@ export async function sendBalanceDueReminderEmail(input: {
   balanceDue: number;
   dispatch?: EmailDispatchOverrides;
 }) {
-  const balanceLink = `${baseUrl()}/bookings/${input.bookingId}/balance`;
+  const balanceLink = await buildPublicBookingEmailLink(input.bookingId, "balance");
   const bookingReference = await resolveBookingReference(input.bookingId);
   const summary = await resolveEmailFinancialSummary({
     bookingId: input.bookingId,
@@ -1219,8 +1267,8 @@ export async function sendDropoffReminderEmail(input: {
   balanceDue: number;
   dispatch?: EmailDispatchOverrides;
 }) {
-  const bookingLink = `${baseUrl()}/bookings/${input.bookingId}`;
-  const balanceLink = `${baseUrl()}/bookings/${input.bookingId}/balance`;
+  const bookingLink = await buildPublicBookingEmailLink(input.bookingId, "view");
+  const balanceLink = await buildPublicBookingEmailLink(input.bookingId, "balance");
   const bookingReference = await resolveBookingReference(input.bookingId);
   const summary = await resolveEmailFinancialSummary({
     bookingId: input.bookingId,
@@ -1285,8 +1333,8 @@ export async function sendLateDropoffAlertEmail(input: {
   balanceDue: number;
   dispatch?: EmailDispatchOverrides;
 }) {
-  const bookingLink = `${baseUrl()}/bookings/${input.bookingId}`;
-  const balanceLink = `${baseUrl()}/bookings/${input.bookingId}/balance`;
+  const bookingLink = await buildPublicBookingEmailLink(input.bookingId, "view");
+  const balanceLink = await buildPublicBookingEmailLink(input.bookingId, "balance");
   const bookingReference = await resolveBookingReference(input.bookingId);
   const summary = await resolveEmailFinancialSummary({
     bookingId: input.bookingId,
@@ -1358,7 +1406,7 @@ export async function sendBookingCancelledByBlockoutEmail(input: {
   const isInternal = input.recipientType === "internal";
   const bookingLink = isInternal
     ? `${baseUrl()}/admin/bookings/${input.bookingId}`
-    : `${baseUrl()}/bookings/${input.bookingId}`;
+    : await buildPublicBookingEmailLink(input.bookingId, "view");
   const bookingReference = await resolveBookingReference(input.bookingId);
   const greeting = isInternal ? "Operations update" : `Hi ${input.customerName},`;
   const intro = isInternal
@@ -1443,7 +1491,7 @@ export async function sendBookingOverriddenByPaidBookingEmail(input: {
     fallbackBookingReference(input.overriddenByBookingId);
   const bookingLink = isInternal
     ? `${baseUrl()}/admin/bookings/${input.bookingId}`
-    : `${baseUrl()}/bookings/${input.bookingId}`;
+    : await buildPublicBookingEmailLink(input.bookingId, "view");
   const overridingBookingLink = `${baseUrl()}/admin/bookings/${input.overriddenByBookingId}`;
 
   const greeting = isInternal ? "Operations update" : `Hi ${input.customerName},`;
@@ -1665,8 +1713,8 @@ export async function sendPickupReminderEmail(input: {
   balanceDue: number;
   dispatch?: EmailDispatchOverrides;
 }) {
-  const bookingLink = `${baseUrl()}/bookings/${input.bookingId}`;
-  const balanceLink = `${baseUrl()}/bookings/${input.bookingId}/balance`;
+  const bookingLink = await buildPublicBookingEmailLink(input.bookingId, "view");
+  const balanceLink = await buildPublicBookingEmailLink(input.bookingId, "balance");
   const bookingReference = await resolveBookingReference(input.bookingId);
   const summary = await resolveEmailFinancialSummary({
     bookingId: input.bookingId,
