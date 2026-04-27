@@ -380,25 +380,27 @@ export async function startPublicWipayPayment({
       });
     }
 
-    const startAt = booking.start_at ?? `${booking.start_date}T00:00:00.000Z`;
-    const fallbackEndAt = new Date(`${booking.end_date}T00:00:00.000Z`);
-    fallbackEndAt.setUTCDate(fallbackEndAt.getUTCDate() + 1);
-    const endAt = booking.end_at ?? fallbackEndAt.toISOString();
-    const unavailable = await isVehicleUnavailableEntitlementBased(
-      booking.vehicle_id,
-      { startAt, endAt },
-      { excludeBookingId: booking.id, includeBlockouts: true },
-    );
-    if (unavailable) {
-      await client.query("rollback");
-      return jsonError(
-        409,
-        "vehicle_unavailable",
-        "This vehicle has been secured by another customer for the selected dates.",
+    const netPaidToDate = await fetchNetPaidToDate(booking.id, { client });
+    if (!(mode === "balance" || netPaidToDate > 0)) {
+      const startAt = booking.start_at ?? `${booking.start_date}T00:00:00.000Z`;
+      const fallbackEndAt = new Date(`${booking.end_date}T00:00:00.000Z`);
+      fallbackEndAt.setUTCDate(fallbackEndAt.getUTCDate() + 1);
+      const endAt = booking.end_at ?? fallbackEndAt.toISOString();
+      const unavailable = await isVehicleUnavailableEntitlementBased(
+        booking.vehicle_id,
+        { startAt, endAt },
+        { excludeBookingId: booking.id, includeBlockouts: true },
       );
+      if (unavailable) {
+        await client.query("rollback");
+        return jsonError(
+          409,
+          "vehicle_unavailable",
+          "This vehicle has been secured by another customer for the selected dates.",
+        );
+      }
     }
 
-    const netPaidToDate = await fetchNetPaidToDate(booking.id, { client });
     const startDetails = buildStartDetails(mode, booking, customAmountCents, netPaidToDate);
     if (!startDetails.ok) {
       await client.query("rollback");
