@@ -125,15 +125,22 @@ async function buildPublicBookingEmailLink(
   }
 }
 
-function policyHtml() {
+function policyHtml(options?: { includeAvailabilityNote?: boolean }) {
+  const includeAvailabilityNote = options?.includeAvailabilityNote ?? true;
+  const noteItems = [
+    includeAvailabilityNote
+      ? "<li>Please note vehicle availability is not guaranteed without payment. To guarantee availability a deposit is required.</li>"
+      : "",
+    "<li>Please bring a valid driver’s license and the booking reference.</li>",
+    "<li>Cancellations within 24 hours of pickup may be non-refundable.</li>",
+  ]
+    .filter(Boolean)
+    .join("");
+
   return `
     <div style="margin-top:16px; font-size:12px; color:#64748b;">
       <p style="font-weight:600; color:#0f172a; margin-bottom:6px;">Payment & pickup notes</p>
-      <ul style="margin:0; padding-left:18px;">
-        <li>Please note vehicle availability is not guaranteed without payment. To guarantee availability a deposit is required.</li>
-        <li>Please bring a valid driver’s license and the booking reference.</li>
-        <li>Cancellations within 24 hours of pickup may be non-refundable.</li>
-      </ul>
+      <ul style="margin:0; padding-left:18px;">${noteItems}</ul>
     </div>
   `;
 }
@@ -477,7 +484,15 @@ async function buildInvoiceAttachment(input: {
       payments,
     });
     const pdf = await generateInvoicePdf(payload, input.bookingId);
-    if (!pdf?.downloadUrl) return undefined;
+    if (!pdf?.downloadUrl) {
+      logWarn("invoice_pdf_download_url_unavailable", {
+        bookingId: input.bookingId,
+        provider: pdf?.provider ?? null,
+        providerStatus: pdf?.providerStatus ?? null,
+        documentId: pdf?.documentId ?? null,
+      });
+      return undefined;
+    }
     const base64 = await downloadPdfBase64(pdf.downloadUrl);
     return [{ filename: `invoice-${invoiceNumber}.pdf`, content: base64 }];
   } catch (error) {
@@ -709,6 +724,15 @@ function renderEmailChargeSummary(
   `;
 }
 
+function renderPrimaryEmailButton(label: string, href: string, options?: { accent?: "primary" | "secondary" }) {
+  const accent = options?.accent ?? "primary";
+  const style =
+    accent === "primary"
+      ? "background:#1f2d4d; color:#fff; border:1px solid #1f2d4d;"
+      : "background:#f8fafc; color:#1f2d4d; border:1px solid #cbd5e1;";
+  return `<a href="${href}" style="display:inline-block; ${style} padding:10px 16px; border-radius:8px; text-decoration:none; font-weight:600;">${label}</a>`;
+}
+
 export async function sendBookingCreatedEmail(input: {
   bookingId: string;
   customerEmail: string;
@@ -860,11 +884,12 @@ export async function sendDepositReceiptEmail(input: {
       ${renderEmailChargeSummary(summary, { depositLabel: "Deposit paid", balanceLabel: "Balance on pickup" })}
       <p><strong>Payment status:</strong> ${paymentStatusLabel}</p>
       <p style="margin-top: 16px;">
-        <a href="${bookingLink}" style="background:#1f2d4d; color:#fff; padding:10px 16px; border-radius:8px; text-decoration:none;">View Booking</a>
-        <a href="${invoiceLink}" style="margin-left:12px; color:#1f2d4d; text-decoration:underline;">View Invoice</a>
+        ${renderPrimaryEmailButton("View Booking", bookingLink)}
+        <span style="display:inline-block; width:12px;"></span>
+        ${renderPrimaryEmailButton("View Invoice", invoiceLink, { accent: "secondary" })}
       </p>
       <p style="font-size:12px; color:#64748b;">The attached invoice includes your live payment ledger.</p>
-      ${policyHtml()}
+      ${policyHtml({ includeAvailabilityNote: false })}
       <p style="font-size:12px; color:#64748b;">Need help? Reply to this email.</p>
     </div>
   `;
@@ -987,15 +1012,20 @@ export async function sendPaymentUpdateEmail(input: {
         dropoffLocation: dropoffLocationDisplay,
       })}
       <hr />
-      ${renderEmailChargeSummary(summary, { depositLabel: "Deposit required", balanceLabel: "Balance outstanding" })}
+      ${renderEmailChargeSummary(summary, {
+        depositLabel: summary.paidToDate > 0 ? "Deposit paid" : "Deposit amount",
+        balanceLabel: "Balance outstanding",
+      })}
       <p><strong>Payment status:</strong> ${paymentStatusLabel}</p>
       <p style="margin-top: 16px;">
-        <a href="${bookingLink}" style="background:#1f2d4d; color:#fff; padding:10px 16px; border-radius:8px; text-decoration:none;">View Booking</a>
-        <a href="${balanceLink}" style="margin-left:12px; background:#e2a100; color:#111827; padding:10px 16px; border-radius:8px; text-decoration:none;">Pay Balance</a>
-        <a href="${invoiceLink}" style="margin-left:12px; color:#1f2d4d; text-decoration:underline;">View Invoice</a>
+        ${renderPrimaryEmailButton("View Booking", bookingLink)}
+        <span style="display:inline-block; width:12px;"></span>
+        ${renderPrimaryEmailButton("Pay Balance", balanceLink, { accent: "secondary" })}
+        <span style="display:inline-block; width:12px;"></span>
+        ${renderPrimaryEmailButton("View Invoice", invoiceLink, { accent: "secondary" })}
       </p>
       <p style="font-size:12px; color:#64748b;">The attached invoice includes your live payment ledger.</p>
-      ${policyHtml()}
+      ${policyHtml({ includeAvailabilityNote: false })}
       <p style="font-size:12px; color:#64748b;">Need help? Reply to this email.</p>
     </div>
   `;
@@ -1119,14 +1149,18 @@ export async function sendPaymentCompleteEmail(input: {
         dropoffLocation: dropoffLocationDisplay,
       })}
       <hr />
-      ${renderEmailChargeSummary(summary, { depositLabel: "Deposit required", balanceLabel: "Balance outstanding" })}
+      ${renderEmailChargeSummary(summary, {
+        depositLabel: summary.paidToDate > 0 ? "Deposit paid" : "Deposit amount",
+        balanceLabel: "Balance outstanding",
+      })}
       <p><strong>Payment status:</strong> ${paymentStatusLabel}</p>
       <p style="margin-top: 16px;">
-        <a href="${bookingLink}" style="background:#1f2d4d; color:#fff; padding:10px 16px; border-radius:8px; text-decoration:none;">View Booking</a>
-        <a href="${invoiceLink}" style="margin-left:12px; color:#1f2d4d; text-decoration:underline;">View Invoice</a>
+        ${renderPrimaryEmailButton("View Booking", bookingLink)}
+        <span style="display:inline-block; width:12px;"></span>
+        ${renderPrimaryEmailButton("View Invoice", invoiceLink, { accent: "secondary" })}
       </p>
       <p style="font-size:12px; color:#64748b;">The attached invoice includes your live payment ledger.</p>
-      ${policyHtml()}
+      ${policyHtml({ includeAvailabilityNote: false })}
       <p style="font-size:12px; color:#64748b;">Need help? Reply to this email.</p>
     </div>
   `;

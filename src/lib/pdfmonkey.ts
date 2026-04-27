@@ -2311,7 +2311,7 @@ export async function generateInvoicePdfWithDeps(
       }
 
       if (document.id) {
-        const delays = [200, 300, 500, 800];
+        const delays = [250, 500, 1000, 1500, 2000, 3000];
         for (const delay of delays) {
           await sleep(delay);
           const refreshed = await fetchPdfMonkeyDocument(document.id);
@@ -2349,10 +2349,15 @@ export async function generateInvoicePdfWithDeps(
     let previewUrl = document.preview_url ?? undefined;
 
     if ((!downloadUrl || !previewUrl) && document.id) {
-      const refreshed = await fetchPdfMonkeyDocument(document.id);
-      if (refreshed && (refreshed.status ?? "").toLowerCase() === "success") {
-        downloadUrl = refreshed.download_url ?? downloadUrl;
-        previewUrl = refreshed.preview_url ?? previewUrl;
+      const refillDelays = [300, 800, 1500];
+      for (const delay of refillDelays) {
+        await sleep(delay);
+        const refreshed = await fetchPdfMonkeyDocument(document.id);
+        if (refreshed && (refreshed.status ?? "").toLowerCase() === "success") {
+          downloadUrl = refreshed.download_url ?? downloadUrl;
+          previewUrl = refreshed.preview_url ?? previewUrl;
+        }
+        if (downloadUrl && previewUrl) break;
       }
     }
 
