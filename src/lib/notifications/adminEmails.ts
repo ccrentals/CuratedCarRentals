@@ -233,6 +233,17 @@ function normalizeNullableText(value: unknown) {
   return text || null;
 }
 
+function normalizeIdentifierFilter(value: unknown) {
+  const text = normalizeText(value);
+  if (!text) return null;
+
+  return text
+    .toLowerCase()
+    .replace(/[.\s-]+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
 function normalizeNumber(value: unknown, fallback = 0) {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : fallback;
@@ -404,19 +415,19 @@ function buildWhereClause(input: FetchAdminEmailsInput) {
     whereParts.push(`status = $${values.length}`);
   }
 
-  const emailType = normalizeNullableText(input.emailType);
+  const emailType = normalizeIdentifierFilter(input.emailType);
   if (emailType) {
     values.push(emailType);
     whereParts.push(`email_type = $${values.length}`);
   }
 
-  const entityType = normalizeNullableText(input.entityType);
+  const entityType = normalizeIdentifierFilter(input.entityType);
   if (entityType) {
     values.push(entityType);
     whereParts.push(`entity_type = $${values.length}`);
   }
 
-  const triggerSource = normalizeNullableText(input.triggerSource);
+  const triggerSource = normalizeIdentifierFilter(input.triggerSource);
   if (triggerSource) {
     values.push(triggerSource);
     whereParts.push(`trigger_source = $${values.length}`);

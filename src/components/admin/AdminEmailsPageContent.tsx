@@ -16,6 +16,14 @@ function buildHref(basePath: string, params: URLSearchParams) {
   return qs ? `${basePath}?${qs}` : basePath;
 }
 
+function formatAdminEmailLabel(value: string | null | undefined) {
+  if (!value) return "—";
+
+  const normalized = value.replace(/[_.]+/g, " ").trim().toLowerCase();
+  if (!normalized) return "—";
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
 function statusBadgeClass(status: string) {
   const normalized = String(status ?? "").trim().toUpperCase();
   if (normalized === "SENT") {
@@ -215,14 +223,18 @@ export async function AdminEmailsPageContent({
                     </td>
                     <td className="px-4 py-3 text-[var(--ccr-text)]">
                       <Link href={`/admin/emails/${encodeURIComponent(item.id)}?back=${encodeURIComponent(currentHref)}`} className="font-semibold text-[var(--ccr-accent)] underline-offset-2 hover:underline">
-                        {item.emailType}
+                        {formatAdminEmailLabel(item.emailType)}
                       </Link>
                     </td>
                     <td className="px-4 py-3 text-[var(--ccr-text)]">
                       <div>{item.entityPublicId || item.relatedTransactionId || "—"}</div>
-                      <div className="text-xs text-[var(--ccr-muted)]">{item.relatedTransactionType || item.entityType || "—"}</div>
+                      <div className="text-xs text-[var(--ccr-muted)]">
+                        {formatAdminEmailLabel(item.relatedTransactionType || item.entityType)}
+                      </div>
                     </td>
-                    <td className="px-4 py-3 text-[var(--ccr-text)]">{item.triggerSource || "—"}</td>
+                    <td className="px-4 py-3 text-[var(--ccr-text)]">
+                      {formatAdminEmailLabel(item.triggerSource)}
+                    </td>
                     <td className="px-4 py-3 text-xs text-[var(--ccr-muted)]">{item.providerMessageId || "—"}</td>
                     <td className="px-4 py-3 text-xs text-[var(--ccr-muted)]">{item.lastError || "—"}</td>
                   </tr>

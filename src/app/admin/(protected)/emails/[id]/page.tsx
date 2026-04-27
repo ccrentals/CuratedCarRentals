@@ -14,6 +14,14 @@ function statusBadgeClass(status: string) {
   return "border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] text-[var(--ccr-text)]";
 }
 
+function formatAdminEmailLabel(value: string | null | undefined) {
+  if (!value) return "—";
+
+  const normalized = value.replace(/[_.]+/g, " ").trim().toLowerCase();
+  if (!normalized) return "—";
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
 function safeBackHref(value: string | undefined) {
   if (!value) return "/admin/emails";
   if (!value.startsWith("/admin/emails")) return "/admin/emails";
@@ -55,7 +63,9 @@ export default async function AdminEmailDetailPage({
       <div className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-xl font-bold text-[var(--ccr-text)]">{item.subject || item.emailType}</p>
+            <p className="text-xl font-bold text-[var(--ccr-text)]">
+              {item.subject || formatAdminEmailLabel(item.emailType)}
+            </p>
             <p className="text-sm text-[var(--ccr-muted)]">{item.recipientEmail || "Legacy / unavailable recipient"}</p>
             <p className="mt-1 text-xs text-[var(--ccr-muted)]">
               Created <DateTimeInline value={item.createdAt} className="inline-flex text-[var(--ccr-text)]" />
@@ -69,11 +79,11 @@ export default async function AdminEmailDetailPage({
         <dl className="mt-5 grid gap-3 text-sm text-[var(--ccr-muted)] sm:grid-cols-2 xl:grid-cols-3">
           <div>
             <dt className="text-xs font-semibold uppercase tracking-wide">Email Type</dt>
-            <dd className="mt-1 text-[var(--ccr-text)]">{item.emailType}</dd>
+            <dd className="mt-1 text-[var(--ccr-text)]">{formatAdminEmailLabel(item.emailType)}</dd>
           </div>
           <div>
             <dt className="text-xs font-semibold uppercase tracking-wide">Trigger Source</dt>
-            <dd className="mt-1 text-[var(--ccr-text)]">{item.triggerSource || "—"}</dd>
+            <dd className="mt-1 text-[var(--ccr-text)]">{formatAdminEmailLabel(item.triggerSource)}</dd>
           </div>
           <div>
             <dt className="text-xs font-semibold uppercase tracking-wide">Triggered By</dt>
@@ -81,7 +91,7 @@ export default async function AdminEmailDetailPage({
           </div>
           <div>
             <dt className="text-xs font-semibold uppercase tracking-wide">Entity</dt>
-            <dd className="mt-1 text-[var(--ccr-text)]">{item.entityType || "—"}</dd>
+            <dd className="mt-1 text-[var(--ccr-text)]">{formatAdminEmailLabel(item.entityType)}</dd>
           </div>
           <div>
             <dt className="text-xs font-semibold uppercase tracking-wide">Reference</dt>
@@ -89,7 +99,11 @@ export default async function AdminEmailDetailPage({
           </div>
           <div>
             <dt className="text-xs font-semibold uppercase tracking-wide">Transaction</dt>
-            <dd className="mt-1 text-[var(--ccr-text)]">{item.relatedTransactionType ? `${item.relatedTransactionType}${item.relatedTransactionId ? ` • ${item.relatedTransactionId}` : ""}` : "—"}</dd>
+            <dd className="mt-1 text-[var(--ccr-text)]">
+              {item.relatedTransactionType
+                ? `${formatAdminEmailLabel(item.relatedTransactionType)}${item.relatedTransactionId ? ` • ${item.relatedTransactionId}` : ""}`
+                : "—"}
+            </dd>
           </div>
           <div>
             <dt className="text-xs font-semibold uppercase tracking-wide">Provider Message ID</dt>
@@ -115,13 +129,14 @@ export default async function AdminEmailDetailPage({
                 {item.events.map((event) => (
                   <div key={event.id} className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="font-semibold text-[var(--ccr-text)]">{event.eventType}</p>
+                      <p className="font-semibold text-[var(--ccr-text)]">{formatAdminEmailLabel(event.eventType)}</p>
                       <span className="text-xs text-[var(--ccr-muted)]">
                         <DateTimeInline value={event.occurredAt} />
                       </span>
                     </div>
                     <p className="mt-1 text-xs text-[var(--ccr-muted)]">
-                      {event.source}{event.status ? ` • ${event.status}` : ""}
+                      {formatAdminEmailLabel(event.source)}
+                      {event.status ? ` • ${formatAdminEmailLabel(event.status)}` : ""}
                     </p>
                     <pre className="mt-3 overflow-x-auto whitespace-pre-wrap break-words rounded-lg bg-[var(--ccr-bg)] p-3 text-xs text-[var(--ccr-text)]">
                       {JSON.stringify(event.details, null, 2)}
