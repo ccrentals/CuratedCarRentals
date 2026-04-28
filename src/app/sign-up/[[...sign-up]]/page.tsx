@@ -1,8 +1,30 @@
 import { AuthPageShell } from "@/components/security/AuthPageShell";
 import { ClerkAccountSetupForm } from "@/components/security/ClerkAccountSetupForm";
+import { ClerkInvitationSignUpForm } from "@/components/security/ClerkInvitationSignUpForm";
+import { loadPostClerkAdminAuthPath } from "@/lib/auth/adminLoginMethod";
 import { isClerkPublishableKeyConfigured } from "@/lib/security/clerk";
 
-export default function SignUpPage() {
+function resolveRedirectUrl(
+  value: string | string[] | undefined,
+  fallback: string,
+) {
+  if (typeof value !== "string" || !value.trim()) {
+    return fallback;
+  }
+
+  try {
+    const decoded = decodeURIComponent(value);
+    return decoded.startsWith("/") ? decoded : fallback;
+  } catch {
+    return value.startsWith("/") ? value : fallback;
+  }
+}
+
+export default async function SignUpPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ redirect?: string | string[]; __clerk_ticket?: string | string[] }>;
+}) {
   if (!isClerkPublishableKeyConfigured()) {
     return (
       <AuthPageShell>
@@ -14,10 +36,27 @@ export default function SignUpPage() {
     );
   }
 
+  const [fallbackRedirectUrl, params] = await Promise.all([
+    loadPostClerkAdminAuthPath(),
+    searchParams,
+  ]);
+  const redirectUrlComplete = resolveRedirectUrl(params.redirect, fallbackRedirectUrl);
+  const invitationTicket =
+    typeof params.__clerk_ticket === "string" && params.__clerk_ticket.trim()
+      ? params.__clerk_ticket.trim()
+      : null;
+
   return (
     <AuthPageShell>
       <div className="mx-auto max-w-md">
-        <ClerkAccountSetupForm />
+        {invitationTicket ? (
+          <ClerkInvitationSignUpForm
+            invitationTicket={invitationTicket}
+            redirectUrlComplete={redirectUrlComplete}
+          />
+        ) : (
+          <ClerkAccountSetupForm />
+        )}
       </div>
     </AuthPageShell>
   );

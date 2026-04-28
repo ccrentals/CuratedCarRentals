@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { requireAdminAccess } from "@/lib/auth/adminGuards";
 import { hashPassword } from "@/lib/auth/password";
+import { getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery } from "@/lib/db";
 import { isNonEmptyString } from "@/lib/validators";
 import { requireCsrf } from "@/lib/security/csrf";
@@ -94,7 +95,14 @@ async function loadUserState(userId: string): Promise<AdminSetPasswordUserRow | 
 }
 
 const DEFAULT_DEPS: AdminSetPasswordDeps = {
-  requireAuth: requireAdminAccess,
+  requireAuth: () =>
+    requireAdminAccess({
+      getSession: () =>
+        getSessionFromRequest({
+          allowClerkBridge: true,
+          clerkBridgeMode: "any-local-user",
+        }),
+    }),
   requireCsrfCheck: requireCsrf,
   isClerkEnabledFn: isClerkEnabled,
   loadUserState,

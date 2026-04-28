@@ -9,7 +9,6 @@ import { isEmail, isNonEmptyString } from "@/lib/validators";
 import { hashPassword } from "@/lib/auth/password";
 import { writeAuditLog } from "@/lib/audit";
 import { requireCsrf } from "@/lib/security/csrf";
-import { isClerkUsernameError } from "@/lib/security/clerkUsernames";
 import { logError, logWarn } from "@/lib/log";
 import { isClerkEnabled } from "@/lib/security/clerk";
 import {
@@ -17,12 +16,8 @@ import {
   resolveUsernameCollision,
 } from "@/lib/auth/username";
 
-const ADMIN_CREATED_FORCE_PASSWORD_CHANGE_KEY = "forcePasswordChange";
-const ADMIN_CREATED_TEMP_PASSWORD_EXPIRES_AT_KEY = "tempPasswordExpiresAt";
-
-function generateTempPassword() {
-  // Short, copy-friendly, URL-safe, and strong enough as a temporary secret.
-  return randomBytes(9).toString("base64url"); // ~12 chars
+function generateBootstrapPassword() {
+  return `Ccr!${randomBytes(24).toString("base64url")}Aa9`;
 }
 
 function isUndefinedColumn(error: unknown, column: string) {
@@ -82,7 +77,15 @@ type ClerkSyncResult =
       message: string;
     }
   | {
-      status: "created" | "linked_existing";
+      status: "invited";
+      clerkUserId: null;
+      finalUsername: string;
+      invitationId: string;
+      inviteEmail: string;
+      message: string;
+    }
+  | {
+      status: "linked_existing";
       clerkUserId: string;
       finalUsername: string;
       message: string;
@@ -100,8 +103,7 @@ export function buildAdminUserCreateSuccessPayload(input: {
   userId: string;
   userPublicId: string | null;
   username: string;
-  tempPassword: string;
-  tempPasswordExpiresAt: string;
+  invitedEmail: string;
   clerkSync: ClerkSyncResult;
 }) {
   return {
@@ -109,8 +111,7 @@ export function buildAdminUserCreateSuccessPayload(input: {
     userId: input.userId,
     userPublicId: input.userPublicId,
     username: input.username,
-    tempPassword: input.tempPassword,
-    tempPasswordExpiresAt: input.tempPasswordExpiresAt,
+    invitedEmail: input.invitedEmail,
     clerkSync: input.clerkSync,
   };
 }
@@ -120,52 +121,6 @@ type QueryClient = {
 };
 
 type ClerkUsersApi = Awaited<ReturnType<typeof clerkClient>>["users"];
-type ClerkEmailAddressesApi = Awaited<ReturnType<typeof clerkClient>>["emailAddresses"];
-
-export function shouldSkipEmailChallengeForAdminCreatedUsers(input?: {
-  nodeEnv?: string;
-  envFlag?: string;
-}) {
-  const nodeEnv = input?.nodeEnv ?? process.env.NODE_ENV ?? "";
-  const envFlag = input?.envFlag ?? process.env.CLERK_ADMIN_CREATED_SKIP_EMAIL_CHALLENGE ?? "";
-  return nodeEnv !== "production" || envFlag === "1";
-}
-
-export function buildAdminCreatedUserPublicMetadata(input: { tempPasswordExpiresAt: string }) {
-  return {
-    [ADMIN_CREATED_FORCE_PASSWORD_CHANGE_KEY]: true,
-    [ADMIN_CREATED_TEMP_PASSWORD_EXPIRES_AT_KEY]: input.tempPasswordExpiresAt,
-  } as const;
-}
-
-type EmailAddressShape = { id?: string | null; verification?: { status?: string } | null };
-
-export async function ensureAdminCreatedUserEmailVerification(input: {
-  clerkEmailAddressesApi: Pick<ClerkEmailAddressesApi, "updateEmailAddress">;
-  shouldVerify: boolean;
-  primaryEmailAddressId?: string | null;
-  emailAddresses?: EmailAddressShape[] | null;
-}) {
-  if (!input.shouldVerify) {
-    return { attempted: false, verified: false };
-  }
-
-  const primaryId = input.primaryEmailAddressId?.trim();
-  if (!primaryId) {
-    return { attempted: true, verified: false };
-  }
-
-  const currentPrimary = (input.emailAddresses ?? []).find(
-    (item) => item?.id && item.id === primaryId,
-  );
-  if (currentPrimary?.verification?.status === "verified") {
-    return { attempted: true, verified: true };
-  }
-
-  await input.clerkEmailAddressesApi.updateEmailAddress(primaryId, { verified: true });
-  return { attempted: true, verified: true };
-}
-
 async function linkLocalUserToClerkId({
   client,
   localUserId,
@@ -248,21 +203,19 @@ async function provisionClerkUserForAdminInvite({
   preferredUsername,
   firstName,
   lastName,
-  tempPassword,
-  tempPasswordExpiresAt,
   role,
   localUserId,
   client,
+  inviteRedirectUrl,
 }: {
   email: string;
   preferredUsername: string;
   firstName: string;
   lastName: string;
-  tempPassword: string;
-  tempPasswordExpiresAt: string;
   role: string;
   localUserId: string;
   client: QueryClient;
+  inviteRedirectUrl: string;
 }): Promise<ClerkSyncResult> {
   if (!isClerkEnabled()) {
     return {
@@ -276,85 +229,15 @@ async function provisionClerkUserForAdminInvite({
   try {
     const clerk = await clerkClient();
     const clerkUsers = clerk.users;
-    const shouldVerifyEmailForAdminCreate = shouldSkipEmailChallengeForAdminCreatedUsers();
     const existing = await clerk.users.getUserList({
       emailAddress: [email],
       limit: 1,
     });
     const existingUser = existing.data[0] ?? null;
-    let clerkUserId = "";
-    let status: "created" | "linked_existing" = "created";
     let finalClerkUsername = preferredUsername;
 
-    if (!existingUser) {
-      finalClerkUsername = await resolveClerkUsernameForCreate({
-        clerkUsers,
-        baseUsername: preferredUsername,
-      });
-
-      let created:
-        | Awaited<ReturnType<Awaited<ReturnType<typeof clerkClient>>["users"]["createUser"]>>
-        | null = null;
-      let createError: unknown = null;
-
-      try {
-        created = await clerk.users.createUser({
-          emailAddress: [email],
-          firstName,
-          lastName,
-          password: tempPassword,
-          skipLegalChecks: true,
-          username: finalClerkUsername,
-          publicMetadata: buildAdminCreatedUserPublicMetadata({
-            tempPasswordExpiresAt,
-          }),
-          privateMetadata: {
-            localUserId,
-            localRole: role,
-            authProvisionedBy: "admin-user-create",
-          },
-        });
-      } catch (error) {
-        createError = error;
-        if (isClerkUsernameError(error)) {
-          finalClerkUsername = await resolveClerkUsernameForCreate({
-            clerkUsers,
-            baseUsername: preferredUsername,
-          });
-          created = await clerk.users.createUser({
-            emailAddress: [email],
-            firstName,
-            lastName,
-            password: tempPassword,
-            skipLegalChecks: true,
-            username: finalClerkUsername,
-            publicMetadata: buildAdminCreatedUserPublicMetadata({
-              tempPasswordExpiresAt,
-            }),
-            privateMetadata: {
-              localUserId,
-              localRole: role,
-              authProvisionedBy: "admin-user-create",
-            },
-          });
-        } else {
-          throw error;
-        }
-      }
-
-      if (!created) {
-        throw createError ?? new Error("Unable to create Clerk user");
-      }
-      clerkUserId = created.id;
-      await ensureAdminCreatedUserEmailVerification({
-        clerkEmailAddressesApi: clerk.emailAddresses,
-        shouldVerify: shouldVerifyEmailForAdminCreate,
-        primaryEmailAddressId: created.primaryEmailAddressId,
-        emailAddresses: created.emailAddresses as unknown as EmailAddressShape[],
-      });
-    } else {
-      status = "linked_existing";
-      clerkUserId = existingUser.id;
+    if (existingUser) {
+      const clerkUserId = existingUser.id;
       const updateBase = {
         firstName: existingUser.firstName || firstName,
         lastName: existingUser.lastName || lastName,
@@ -374,24 +257,36 @@ async function provisionClerkUserForAdminInvite({
         ...updateBase,
         username: finalClerkUsername,
       });
+      const linkResult = await linkLocalUserToClerkId({
+        client,
+        localUserId,
+        clerkUserId,
+      });
+
+      return {
+        status: "linked_existing",
+        clerkUserId,
+        finalUsername: finalClerkUsername,
+        message: "Existing Clerk account linked by email. No new invite was needed.",
+        localLinkSaved: linkResult.linked,
+        localLinkWarning: linkResult.warning ?? undefined,
+      };
     }
 
-    const linkResult = await linkLocalUserToClerkId({
-      client,
-      localUserId,
-      clerkUserId,
+    const invitation = await clerk.invitations.createInvitation({
+      emailAddress: email,
+      notify: true,
+      ignoreExisting: true,
+      redirectUrl: inviteRedirectUrl,
     });
 
     return {
-      status,
-      clerkUserId,
+      status: "invited",
+      clerkUserId: null,
       finalUsername: finalClerkUsername,
-      message:
-        status === "created"
-          ? "Clerk account created and linked."
-          : "Existing Clerk account linked by email.",
-      localLinkSaved: linkResult.linked,
-      localLinkWarning: linkResult.warning ?? undefined,
+      invitationId: invitation.id,
+      inviteEmail: email,
+      message: "Clerk invitation created and email sent.",
     };
   } catch (error) {
     logWarn("api.admin.users.clerkProvisioningFailed", {
@@ -404,7 +299,7 @@ async function provisionClerkUserForAdminInvite({
       clerkUserId: null,
       finalUsername: null,
       message:
-        "Local user created, but Clerk provisioning failed. Create/link this user in Clerk Dashboard and set users.clerk_user_id manually.",
+        "Local user created, but Clerk invitation failed. Create/link this user in Clerk Dashboard and set users.clerk_user_id manually.",
     };
   }
 }
@@ -478,11 +373,10 @@ export async function POST(request: Request) {
     );
   }
 
-  // Temporary password is displayed once to the admin.
-  const tempPassword = generateTempPassword();
-  const passwordHash = await hashPassword(tempPassword);
-
-  const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000); // 72h
+  const bootstrapPassword = generateBootstrapPassword();
+  const passwordHash = await hashPassword(bootstrapPassword);
+  const inviteRedirect = new URL("/sign-up", process.env.SITE_URL ?? new URL(request.url).origin);
+  inviteRedirect.searchParams.set("redirect", "/admin");
 
   const pool = getDbPool();
   const client = await pool.connect();
@@ -526,8 +420,8 @@ export async function POST(request: Request) {
     const insert = await (async () => {
       try {
         return await client.query(
-          "insert into users (email, username, full_name, password_hash, role, is_active, must_change_password, temp_password_expires_at, password_updated_at) values ($1, $2, $3, $4, $5, true, true, $6, now()) returning id, public_id",
-          [emailLower, usernameFinal, fullNameFinal, passwordHash, role, expiresAt.toISOString()],
+          "insert into users (email, username, full_name, password_hash, role, is_active, must_change_password, temp_password_expires_at, password_updated_at) values ($1, $2, $3, $4, $5, true, false, null, now()) returning id, public_id",
+          [emailLower, usernameFinal, fullNameFinal, passwordHash, role],
         );
       } catch (error) {
         const code = (error as { code?: string } | null)?.code;
@@ -558,15 +452,14 @@ export async function POST(request: Request) {
       preferredUsername: usernameFinal,
       firstName,
       lastName,
-      tempPassword,
-      tempPasswordExpiresAt: expiresAt.toISOString(),
       role,
       localUserId: newUserId,
       client,
+      inviteRedirectUrl: inviteRedirect.toString(),
     });
 
     const returnedUsername =
-      clerkSync.status === "created" || clerkSync.status === "linked_existing"
+      clerkSync.status === "invited" || clerkSync.status === "linked_existing"
         ? clerkSync.finalUsername
         : usernameFinal;
 
@@ -597,6 +490,7 @@ export async function POST(request: Request) {
         username: returnedUsername,
         clerkSyncStatus: clerkSync.status,
         clerkUserId: clerkSync.clerkUserId,
+        invitationId: clerkSync.status === "invited" ? clerkSync.invitationId : null,
       },
     });
 
@@ -605,8 +499,7 @@ export async function POST(request: Request) {
         userId: newUserId,
         userPublicId: newUserPublicId,
         username: returnedUsername,
-        tempPassword,
-        tempPasswordExpiresAt: expiresAt.toISOString(),
+        invitedEmail: emailLower,
         clerkSync,
       }),
     );

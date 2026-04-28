@@ -19,11 +19,18 @@ type CreateUserResult = {
   ok: true;
   userId: string;
   username: string;
-  tempPassword: string;
-  tempPasswordExpiresAt: string;
+  invitedEmail: string;
   clerkSync?:
     | {
-      status: "created" | "linked_existing";
+      status: "invited";
+      clerkUserId: null;
+      finalUsername: string;
+      invitationId: string;
+      inviteEmail: string;
+      message: string;
+    }
+    | {
+      status: "linked_existing";
       clerkUserId: string;
       finalUsername: string;
       message: string;
@@ -76,31 +83,17 @@ export function CreateUserForm({
   const [role, setRole] = useState<UserRole>("USER");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [copyToast, setCopyToast] = useState<{ message: string; tone: "success" | "error" } | null>(
-    null,
-  );
-  const [showTempPassword, setShowTempPassword] = useState(true);
   const [panelOpen, setPanelOpen] = useState(false);
   const [successNotice, setSuccessNotice] = useState<{
-    tempPassword: string;
-    tempPasswordExpiresAt: string | null;
+    invitedEmail: string;
     createdUsername: string | null;
     clerkMessage: string | null;
     clerkWarning: string | null;
     clerkWarningDetail: string | null;
   } | null>(null);
 
-  function showCopyToast(message: string, tone: "success" | "error" = "success") {
-    setCopyToast({ message, tone });
-    window.setTimeout(() => {
-      setCopyToast((current) => (current?.message === message ? null : current));
-    }, 1600);
-  }
-
   function dismissSuccessNotice() {
     setSuccessNotice(null);
-    setShowTempPassword(true);
-    setCopyToast(null);
   }
 
   async function submit() {
@@ -109,7 +102,6 @@ export function CreateUserForm({
     setLoading(true);
     setError(null);
     setSuccessNotice(null);
-    setCopyToast(null);
 
     if (firstName.trim().length < 1) {
       setError("First name is required.");
@@ -155,8 +147,8 @@ export function CreateUserForm({
       return;
     }
 
-    if (!data.tempPassword) {
-      setError("User created, but the temporary password was not returned.");
+    if (!data.invitedEmail) {
+      setError("User created, but the invited email was not returned.");
       router.refresh();
       return;
     }
@@ -167,10 +159,8 @@ export function CreateUserForm({
       return;
     }
 
-    setShowTempPassword(true);
     setSuccessNotice({
-      tempPassword: data.tempPassword,
-      tempPasswordExpiresAt: data.tempPasswordExpiresAt ?? null,
+      invitedEmail: data.invitedEmail,
       createdUsername: String(data.username),
       clerkMessage:
         data.clerkSync && "message" in data.clerkSync ? data.clerkSync.message : null,
@@ -199,7 +189,7 @@ export function CreateUserForm({
     <div className="mt-6" data-testid="create-user-section">
       <SlideDownPanel
         title="Create user"
-        description="Creates an account with a temporary password (expires in 3 days). The user will be prompted to set a permanent password after first login."
+        description="Creates a local admin user and sends a Clerk invitation email for first-time sign-in."
         defaultOpen={false}
         open={panelOpen}
         onOpenChange={setPanelOpen}
@@ -288,7 +278,7 @@ export function CreateUserForm({
           </button>
           <p className="font-semibold text-[var(--ccr-text)]">User created successfully.</p>
           <p className="mt-1 text-[11px] text-[var(--ccr-muted)]">
-            Save this now - it won&apos;t be shown again.
+            The user should complete setup from the Clerk invitation email.
           </p>
           {successNotice.createdUsername ? (
             <p className="mt-2 text-[11px] text-[var(--ccr-muted)]">
@@ -301,36 +291,10 @@ export function CreateUserForm({
               </span>
             </p>
           ) : null}
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <label className="sr-only" htmlFor="create-user-temp-password">
-              Temporary password
-            </label>
-            <input
-              id="create-user-temp-password"
-              type={showTempPassword ? "text" : "password"}
-              value={successNotice.tempPassword}
-              readOnly
-              data-testid="create-user-success-temp-password"
-              className="min-w-[16rem] flex-1 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 font-mono text-xs text-[var(--ccr-text)]"
-            />
-            <button
-              type="button"
-              onClick={() => setShowTempPassword((current) => !current)}
-              className={buttonStyles({ variant: "secondary", size: "xs" })}
-              data-testid="create-user-toggle-password-visibility"
-            >
-              {showTempPassword ? "Hide" : "Show"}
-            </button>
-          </div>
-          {successNotice.tempPasswordExpiresAt ? (
-            <p className="mt-1 text-[11px] text-[var(--ccr-muted)]">
-              Password expires:{" "}
-              <DateTimeInline
-                value={successNotice.tempPasswordExpiresAt}
-                className="inline-flex"
-              />
-            </p>
-          ) : null}
+          <p className="mt-2 text-[11px] text-[var(--ccr-muted)]">
+            Invite email:{" "}
+            <span className="font-mono text-[var(--ccr-text)]">{successNotice.invitedEmail}</span>
+          </p>
           {successNotice.clerkMessage ? (
             <p
               className={`mt-1 text-[11px] ${
@@ -346,21 +310,6 @@ export function CreateUserForm({
             <p className="mt-1 text-[11px] text-amber-300">{successNotice.clerkWarningDetail}</p>
           ) : null}
           <div className="mt-2 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={async () => {
-                try {
-                  await navigator.clipboard.writeText(successNotice.tempPassword);
-                  showCopyToast("Copied", "success");
-                } catch {
-                  showCopyToast("Copy failed", "error");
-                }
-              }}
-              className={buttonStyles({ variant: "secondary", size: "xs" })}
-              data-testid="create-user-copy-temp-password"
-            >
-              Copy temp password
-            </button>
             <button
               type="button"
               onClick={() => {
@@ -379,19 +328,6 @@ export function CreateUserForm({
             >
               Dismiss
             </button>
-            {copyToast ? (
-              <span
-                className={`rounded-lg border px-2 py-1 text-[11px] font-semibold ${
-                  copyToast.tone === "success"
-                    ? "border-[var(--ccr-accent)] bg-[var(--ccr-bg)] text-[var(--ccr-accent)]"
-                    : "border-red-400/40 bg-[var(--ccr-bg)] text-red-200"
-                }`}
-                role="status"
-                aria-live="polite"
-              >
-                {copyToast.message}
-              </span>
-            ) : null}
           </div>
         </div>
       ) : null}

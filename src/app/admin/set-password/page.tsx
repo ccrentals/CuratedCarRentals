@@ -15,6 +15,12 @@ export default function AdminSetPasswordPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [toast, setToast] = useState<{ message: string; tone: "error" | "success" } | null>(null);
 
+  function buildBootstrapHref() {
+    const query = new URLSearchParams();
+    query.set("redirect", "/admin/set-password");
+    return `/api/admin/session/bootstrap?${query.toString()}`;
+  }
+
   function showToast(message: string, tone: "error" | "success" = "error") {
     setToast({ message, tone });
     window.setTimeout(() => {
@@ -28,14 +34,14 @@ export default function AdminSetPasswordPage() {
     async function boot() {
       const response = await fetch("/api/admin/me", { cache: "no-store" });
       if (!response.ok) {
-        router.replace("/admin/login");
+        window.location.replace(buildBootstrapHref());
         return;
       }
       if (!cancelled) setBootLoading(false);
     }
 
     boot().catch(() => {
-      router.replace("/admin/login");
+      window.location.replace(buildBootstrapHref());
     });
 
     return () => {
@@ -208,4 +214,3 @@ export default function AdminSetPasswordPage() {
     </div>
   );
 }
-
