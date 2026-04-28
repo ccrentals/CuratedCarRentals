@@ -13,6 +13,7 @@ import {
   sendLateDropoffAlertEmail,
   sendOperationalAlertEmail,
   sendPaymentCompleteEmail,
+  sendPickupConfirmedEmail,
   sendPaymentUpdateEmail,
   sendPickupReminderEmail,
 } from "@/lib/notifications/email";
@@ -887,6 +888,7 @@ export async function resendAdminEmail(recordId: string, actorUserId: string) {
     | Awaited<ReturnType<typeof sendDepositReceiptEmail>>
     | Awaited<ReturnType<typeof sendPaymentUpdateEmail>>
     | Awaited<ReturnType<typeof sendPaymentCompleteEmail>>
+    | Awaited<ReturnType<typeof sendPickupConfirmedEmail>>
     | Awaited<ReturnType<typeof sendPickupReminderEmail>>
     | Awaited<ReturnType<typeof sendDropoffReminderEmail>>
     | Awaited<ReturnType<typeof sendLateDropoffAlertEmail>>
@@ -991,6 +993,20 @@ export async function resendAdminEmail(recordId: string, actorUserId: string) {
         startDate: booking.start_date,
         endDate: booking.end_date,
         pickupLocation: booking.pickup_location,
+        balanceDue,
+        dispatch: { ...commonDispatch },
+      });
+      break;
+    case "pickup_confirmed":
+      result = await sendPickupConfirmedEmail({
+        bookingId: booking.id,
+        customerEmail: detail.recipientEmail ?? booking.customer_email,
+        customerName: booking.customer_name,
+        vehicleLabel,
+        startDate: booking.start_date,
+        endDate: booking.end_date,
+        pickupLocation: booking.pickup_location,
+        paidToDate,
         balanceDue,
         dispatch: { ...commonDispatch },
       });

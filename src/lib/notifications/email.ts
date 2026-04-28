@@ -529,7 +529,15 @@ async function buildRentalAgreementAttachment(input: {
     const agreement = await loadBookingRentalAgreementPayload(input.bookingId);
     if (!agreement) return undefined;
     const pdf = await generateRentalAgreementPdf(agreement.payload);
-    if (!pdf?.downloadUrl) return undefined;
+    if (!pdf?.downloadUrl) {
+      logWarn("rental_agreement_pdf_download_url_unavailable", {
+        bookingId: input.bookingId,
+        provider: pdf?.provider ?? null,
+        providerStatus: pdf?.providerStatus ?? null,
+        documentId: pdf?.documentId ?? null,
+      });
+      return undefined;
+    }
     const base64 = await downloadPdfBase64(pdf.downloadUrl);
     return [{ filename: `rental-agreement-${agreement.bookingPublicId}.pdf`, content: base64 }];
   } catch (error) {
@@ -1795,6 +1803,103 @@ export async function sendPickupReminderEmail(input: {
           bookingId: input.bookingId,
           bookingReference,
           balanceDue: input.balanceDue,
+        },
+      },
+      input.dispatch,
+    ),
+  });
+}
+
+export async function sendPickupConfirmedEmail(input: {
+  bookingId: string;
+  customerEmail: string;
+  customerName: string;
+  vehicleLabel: string;
+  startDate: string;
+  endDate: string;
+  pickupLocation: string;
+  paidToDate: number;
+  balanceDue: number;
+  dispatch?: EmailDispatchOverrides;
+}) {
+  const bookingLink = await buildPublicBookingEmailLink(input.bookingId, "view");
+  const bookingReference = await resolveBookingReference(input.bookingId);
+  const summary = await resolveEmailFinancialSummary({
+    bookingId: input.bookingId,
+    paidToDate: input.paidToDate,
+    balanceDue: input.balanceDue,
+  });
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; color: #0f172a;">
+      <h2>Pickup confirmed</h2>
+      <p>Hi ${input.customerName},</p>
+      <p>Your pickup has been confirmed and your rental agreement is attached.</p>
+      <p><strong>Booking reference:</strong> ${bookingReference}</p>
+      <p><strong>Vehicle:</strong> ${input.vehicleLabel}</p>
+      <p><strong>Dates:</strong> ${formatDateOnly(input.startDate)} → ${formatDateOnly(input.endDate)}</p>
+      ${renderEmailLocationSection({
+        pickupLocation: summary.pickupLocationDisplay || input.pickupLocation,
+        dropoffLocation: summary.dropoffLocationDisplay || input.pickupLocation,
+      })}
+      <hr />
+      <p><strong>Paid to date:</strong> ${formatAmount(summary.paidToDate)}</p>
+      <p><strong>Balance outstanding:</strong> ${formatAmount(summary.balanceDue)}</p>
+      <p style="margin-top: 16px;">
+        ${renderPrimaryEmailButton("View Booking", bookingLink)}
+      </p>
+      <p style="font-size:12px; color:#64748b;">The attached rental agreement includes your booking terms.</p>
+      <p style="font-size:12px; color:#64748b;">Need help? Reply to this email.</p>
+    </div>
+  `;
+
+  const agreementAttachment = await buildOptionalRentalAgreementEmailAttachment(
+    {
+      bookingId: input.bookingId,
+      bookingPublicId: bookingReference,
+      bookingStatus: "PICKED_UP",
+      startDate: input.startDate,
+      endDate: input.endDate,
+      pickupLocation: summary.pickupLocationDisplay || input.pickupLocation,
+      returnLocation: summary.dropoffLocationDisplay || input.pickupLocation,
+      customerName: input.customerName,
+      customerEmail: input.customerEmail,
+      customerPhone: "",
+      vehicleMake: input.vehicleLabel,
+      vehicleModel: "",
+      vehicleYear: 0,
+      dailyRate: 0,
+      total: summary.totalAfterDiscount,
+      deposit: summary.depositRequired,
+      paidToDate: summary.paidToDate,
+      balanceDue: summary.balanceDue,
+      paymentMethod: "Not specified",
+    },
+    "pickup_confirmed",
+  );
+
+  const htmlWithAttachmentNotice = html.replace(
+    '<p style="font-size:12px; color:#64748b;">The attached rental agreement includes your booking terms.</p>',
+    agreementAttachment.noticeHtml,
+  );
+
+  return sendResendEmail({
+    to: input.customerEmail,
+    subject: "Pickup confirmed — rental agreement attached",
+    html: htmlWithAttachmentNotice,
+    attachments: agreementAttachment.attachments,
+    dispatch: withDispatchContext(
+      {
+        entityType: "booking",
+        entityId: input.bookingId,
+        entityPublicId: bookingReference,
+        emailType: "pickup_confirmed",
+        recipientName: input.customerName,
+        triggerSource: "admin_pickup",
+        manualResendAllowed: true,
+        metadata: {
+          bookingId: input.bookingId,
+          bookingReference,
         },
       },
       input.dispatch,

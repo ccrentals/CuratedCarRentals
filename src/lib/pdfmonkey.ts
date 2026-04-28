@@ -161,7 +161,8 @@ export function resolveInvoicePdfProvider(
 export function resolveRentalAgreementPdfProvider(
   providerOverride?: RentalAgreementPdfProvider | null,
 ): RentalAgreementPdfProvider {
-  return providerOverride ?? "gotenberg";
+  if (providerOverride) return providerOverride;
+  return getRentalAgreementTemplateId() && getPdfMonkeyKey() ? "pdfmonkey" : "gotenberg";
 }
 
 function sleep(ms: number) {
@@ -2469,7 +2470,7 @@ export async function generateRentalAgreementPdfWithDeps(
     }
 
     if (document.id) {
-      const delays = [200, 300, 500, 800];
+      const delays = [250, 500, 1000, 1500, 2000, 3000];
       for (const delay of delays) {
         await sleep(delay);
         const refreshed = await fetchPdfMonkeyDocument(document.id);
@@ -2486,11 +2487,37 @@ export async function generateRentalAgreementPdfWithDeps(
     }
   }
 
+  if ((document.status ?? "").toLowerCase() !== "success") {
+    return {
+      provider,
+      providerStatus: document.status ?? "PENDING",
+      downloadUrl: document.download_url ?? undefined,
+      previewUrl: document.preview_url ?? undefined,
+      documentId: document.id ?? undefined,
+    };
+  }
+
+  let downloadUrl = document.download_url ?? undefined;
+  let previewUrl = document.preview_url ?? undefined;
+
+  if ((!downloadUrl || !previewUrl) && document.id) {
+    const refillDelays = [300, 800, 1500];
+    for (const delay of refillDelays) {
+      await sleep(delay);
+      const refreshed = await fetchPdfMonkeyDocument(document.id);
+      if (refreshed && (refreshed.status ?? "").toLowerCase() === "success") {
+        downloadUrl = refreshed.download_url ?? downloadUrl;
+        previewUrl = refreshed.preview_url ?? previewUrl;
+      }
+      if (downloadUrl && previewUrl) break;
+    }
+  }
+
   return {
     provider,
-    providerStatus: document.status ?? "PENDING",
-    downloadUrl: document.download_url ?? undefined,
-    previewUrl: document.preview_url ?? undefined,
+    providerStatus: document.status ?? "SUCCESS",
+    downloadUrl,
+    previewUrl,
     documentId: document.id ?? undefined,
   };
 }

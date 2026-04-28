@@ -5,7 +5,12 @@ import { isAdminRole, isDeveloperRole } from "@/lib/auth/roles";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery, getDbPool } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
-import { getInternalNotesRecipient, sendBookingNoteEmail } from "@/lib/notifications/email";
+import {
+  getInternalNotesRecipient,
+  sendBookingNoteEmail,
+  sendPickupConfirmedEmail,
+} from "@/lib/notifications/email";
+import { logWarn } from "@/lib/log";
 import {
   isNonBlockingPricing,
   readBookingOverrideInfo,
@@ -305,6 +310,12 @@ type PickupActionBookingRow = {
   status: string;
   start_date: string;
   end_date: string;
+  pickup_location: string;
+  customer_name: string;
+  customer_email: string;
+  vehicle_make: string;
+  vehicle_model: string;
+  vehicle_year: number;
   pricing_json: Record<string, unknown> | null;
   daily_rate_cents: number;
   deposit_cents: number;
@@ -315,6 +326,7 @@ export type AdminBookingPickupActionDeps = {
   fetchNetPaid: typeof fetchNetPaidToDate;
   hasCompletedPickupInspection: typeof hasCompletedBookingVehicleInspection;
   writeAudit: typeof writeAuditLog;
+  sendPickupConfirmed: typeof sendPickupConfirmedEmail;
 };
 
 const DEFAULT_BOOKING_PICKUP_ACTION_DEPS: AdminBookingPickupActionDeps = {
@@ -322,6 +334,7 @@ const DEFAULT_BOOKING_PICKUP_ACTION_DEPS: AdminBookingPickupActionDeps = {
   fetchNetPaid: fetchNetPaidToDate,
   hasCompletedPickupInspection: hasCompletedBookingVehicleInspection,
   writeAudit: writeAuditLog,
+  sendPickupConfirmed: sendPickupConfirmedEmail,
 };
 
 export async function handleAdminBookingPickupAction(
@@ -331,7 +344,7 @@ export async function handleAdminBookingPickupAction(
 ) {
   const resolvedDeps = { ...DEFAULT_BOOKING_PICKUP_ACTION_DEPS, ...deps };
   const bookingResult = await resolvedDeps.query<PickupActionBookingRow>(
-    "select b.status, b.start_date, b.end_date, b.pricing_json, v.daily_rate_cents, v.deposit_cents from bookings b join vehicles v on v.id = b.vehicle_id where b.id = $1",
+    "select b.status, b.start_date, b.end_date, b.pickup_location, b.pricing_json, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model, v.year as vehicle_year, v.daily_rate_cents, v.deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.id = $1",
     [bookingId],
   );
 
@@ -400,6 +413,32 @@ export async function handleAdminBookingPickupAction(
       pickup_inspection_completed: true,
     },
   });
+
+  const pickupEmailResult = await resolvedDeps.sendPickupConfirmed({
+    bookingId,
+    customerEmail: booking.customer_email,
+    customerName: booking.customer_name,
+    vehicleLabel: `${booking.vehicle_year} ${booking.vehicle_make} ${booking.vehicle_model}`.trim(),
+    startDate: booking.start_date,
+    endDate: booking.end_date,
+    pickupLocation: booking.pickup_location,
+    paidToDate: paymentSummary.netPaidToDate,
+    balanceDue: paymentSummary.balanceDue,
+    dispatch: {
+      triggerSource: "admin_pickup",
+      metadata: {
+        bookingId,
+        bookingReference: null,
+      },
+    },
+  });
+  if (!pickupEmailResult.ok) {
+    logWarn("admin.booking-pickup.email_failed", {
+      bookingId,
+      recipientEmail: booking.customer_email,
+      error: pickupEmailResult.error ?? "delivery failed",
+    });
+  }
 
   return NextResponse.json({ ok: true, message: "Booking marked as picked up." });
 }
