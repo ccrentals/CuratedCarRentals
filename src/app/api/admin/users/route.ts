@@ -11,6 +11,7 @@ import { writeAuditLog } from "@/lib/audit";
 import { requireCsrf } from "@/lib/security/csrf";
 import { logError, logWarn } from "@/lib/log";
 import { isClerkEnabled } from "@/lib/security/clerk";
+import { revokePendingClerkInvitationsByEmail } from "@/lib/security/clerkInvitations";
 import {
   generateStandardUsernameBase,
   resolveUsernameCollision,
@@ -229,6 +230,7 @@ async function provisionClerkUserForAdminInvite({
   try {
     const clerk = await clerkClient();
     const clerkUsers = clerk.users;
+    const revokedInvitationIds = await revokePendingClerkInvitationsByEmail(email);
     const existing = await clerk.users.getUserList({
       emailAddress: [email],
       limit: 1,
@@ -267,7 +269,10 @@ async function provisionClerkUserForAdminInvite({
         status: "linked_existing",
         clerkUserId,
         finalUsername: finalClerkUsername,
-        message: "Existing Clerk account linked by email. No new invite was needed.",
+        message:
+          revokedInvitationIds.length > 0
+            ? "Existing Clerk account linked by email after revoking stale pending invitations."
+            : "Existing Clerk account linked by email. No new invite was needed.",
         localLinkSaved: linkResult.linked,
         localLinkWarning: linkResult.warning ?? undefined,
       };
@@ -286,13 +291,17 @@ async function provisionClerkUserForAdminInvite({
       finalUsername: finalClerkUsername,
       invitationId: invitation.id,
       inviteEmail: email,
-      message: "Clerk invitation created and email sent.",
+      message:
+        revokedInvitationIds.length > 0
+          ? "Clerk invitation recreated and email sent after clearing stale pending invitations."
+          : "Clerk invitation created and email sent.",
     };
   } catch (error) {
     logWarn("api.admin.users.clerkProvisioningFailed", {
       localUserId,
       email,
       code: (error as { errors?: Array<{ code?: string }> } | null)?.errors?.[0]?.code,
+      message: (error as { message?: unknown } | null)?.message ?? null,
     });
     return {
       status: "failed",

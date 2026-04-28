@@ -17,6 +17,7 @@ import {
   normalizeUsernameForClerk,
 } from "@/lib/security/clerkUsernames";
 import { isClerkEnabled } from "@/lib/security/clerk";
+import { revokePendingClerkInvitationsByEmail } from "@/lib/security/clerkInvitations";
 
 type QueryResultRow = Record<string, unknown>;
 type QueryResult = { rowCount: number; rows: QueryResultRow[] };
@@ -904,10 +905,12 @@ export async function PATCH(
 
       let clerkDeleteStatus: "not_linked" | "deleted" | "already_missing" = "not_linked";
       let clerkDeleteUserId: string | null = null;
+      let revokedInvitationIds: string[] = [];
       try {
         const clerkDelete = await deleteLinkedClerkUser(existing);
         clerkDeleteStatus = clerkDelete.status;
         clerkDeleteUserId = clerkDelete.clerkUserId;
+        revokedInvitationIds = await revokePendingClerkInvitationsByEmail(existing.email);
       } catch (error) {
         await client.query("rollback");
         if (error instanceof Error && error.message === "CLERK_DELETE_NOT_CONFIGURED") {
@@ -950,6 +953,7 @@ export async function PATCH(
           deletedUserClerkUserId: existing.clerk_user_id,
           clerkDeleteStatus,
           clerkDeleteUserId,
+          revokedInvitationIds,
           wasActive: existing.is_active ?? null,
           deactivatedAt: existing.deactivated_at ?? null,
           lockedAt: existing.locked_at ?? null,
