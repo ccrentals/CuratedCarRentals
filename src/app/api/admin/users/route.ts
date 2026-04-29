@@ -138,13 +138,16 @@ export async function POST(request: Request) {
   let lastName = typeof body?.lastName === "string" ? body.lastName.trim() : "";
   let fullName = typeof body?.fullName === "string" ? body.fullName.trim() : "";
   const email = typeof body?.email === "string" ? body.email.trim() : "";
-  const roleRaw = typeof body?.role === "string" ? body.role.trim().toUpperCase() : "USER";
+  const roleRaw = typeof body?.role === "string" ? body.role.trim().toUpperCase() : "";
   const role =
     roleRaw === "DEVELOPER"
       ? "DEVELOPER"
       : roleRaw === "ADMIN"
         ? "ADMIN"
-        : "USER";
+        : "";
+  if (!role) {
+    return NextResponse.json({ error: "Invalid role. Only ADMIN or DEVELOPER can be created here." }, { status: 400 });
+  }
   if (role === "DEVELOPER" && !isDeveloperRole(actor.role)) {
     return NextResponse.json({ error: "Only developers can assign DEVELOPER role." }, { status: 403 });
   }

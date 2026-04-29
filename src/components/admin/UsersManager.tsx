@@ -27,9 +27,10 @@ type CreateUserResult = {
   };
 };
 
-type UserRole = "USER" | "ADMIN" | "DEVELOPER";
+type ExistingUserRole = "USER" | "ADMIN" | "DEVELOPER";
+type ManagedUserRole = "ADMIN" | "DEVELOPER";
 
-function normalizeRole(value: string): UserRole {
+function normalizeRole(value: string): ExistingUserRole {
   const normalized = String(value ?? "")
     .trim()
     .toUpperCase();
@@ -42,12 +43,14 @@ function isDeveloperRole(role: string | undefined) {
   return normalizeRole(String(role ?? "")) === "DEVELOPER";
 }
 
-function mapSelectedRole(value: string, canAssignDeveloperRole: boolean): UserRole {
-  const normalized = normalizeRole(value);
-  if (!canAssignDeveloperRole && normalized === "DEVELOPER") {
-    return "USER";
+function mapSelectedRole(value: string, canAssignDeveloperRole: boolean): ManagedUserRole {
+  const normalized = String(value ?? "")
+    .trim()
+    .toUpperCase();
+  if (normalized === "DEVELOPER" && canAssignDeveloperRole) {
+    return "DEVELOPER";
   }
-  return normalized;
+  return "ADMIN";
 }
 
 export function CreateUserForm({
@@ -62,7 +65,7 @@ export function CreateUserForm({
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState<UserRole>("USER");
+  const [role, setRole] = useState<ManagedUserRole>("ADMIN");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -151,7 +154,7 @@ export function CreateUserForm({
     setFirstName("");
     setLastName("");
     setEmail("");
-    setRole("USER");
+    setRole("ADMIN");
     setPanelOpen(false);
     router.refresh();
   }
@@ -205,7 +208,6 @@ export function CreateUserForm({
               data-testid="create-user-role"
               className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)] disabled:opacity-60"
             >
-              <option value="USER">USER</option>
               <option value="ADMIN">ADMIN</option>
               {canAssignDeveloperRole ? <option value="DEVELOPER">DEVELOPER</option> : null}
             </select>
@@ -394,8 +396,9 @@ export function UserRowActions({
   const router = useRouter();
   const canAssignDeveloperRole = isDeveloperRole(actorRole);
   const currentRole = normalizeRole(role);
+  const initialManagedRole: ManagedUserRole = currentRole === "DEVELOPER" ? "DEVELOPER" : "ADMIN";
   const [mode, setMode] = useState<Mode>(null);
-  const [nextRole, setNextRole] = useState<UserRole>(currentRole);
+  const [nextRole, setNextRole] = useState<ManagedUserRole>(initialManagedRole);
   const [reason, setReason] = useState("");
   const [resetResult, setResetResult] = useState<ResetResult | null>(null);
   const [editFullName, setEditFullName] = useState((fullName ?? "").trim() || email);
@@ -684,7 +687,7 @@ export function UserRowActions({
           title="Change role"
           onClick={() => {
             setError(null);
-            setNextRole(currentRole);
+            setNextRole(initialManagedRole);
             openMode("set_role");
           }}
         >
@@ -936,7 +939,6 @@ export function UserRowActions({
                     onChange={(e) => setNextRole(mapSelectedRole(e.target.value, canAssignDeveloperRole))}
                     className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
                   >
-                    <option value="USER">USER</option>
                     <option value="ADMIN">ADMIN</option>
                     {canAssignDeveloperRole ? <option value="DEVELOPER">DEVELOPER</option> : null}
                   </select>

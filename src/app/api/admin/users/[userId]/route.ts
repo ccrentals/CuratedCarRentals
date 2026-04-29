@@ -578,12 +578,10 @@ export async function PATCH(
           ? "DEVELOPER"
           : roleRaw === "ADMIN"
             ? "ADMIN"
-            : roleRaw === "USER"
-              ? "USER"
-              : "";
+            : "";
       if (!nextRole) {
         await client.query("rollback");
-        return NextResponse.json({ error: "Invalid role" }, { status: 400 });
+        return NextResponse.json({ error: "Invalid role. Only ADMIN or DEVELOPER are allowed here." }, { status: 400 });
       }
       if (nextRole === "DEVELOPER" && !actorIsDeveloper) {
         await client.query("rollback");
