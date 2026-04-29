@@ -901,41 +901,6 @@ export async function PATCH(
         return NextResponse.json({ error: "User not found" }, { status: 404 });
       }
 
-      let clerkDeleteStatus: "not_linked" | "deleted" | "already_missing" = "not_linked";
-      let clerkDeleteUserId: string | null = null;
-      let revokedInvitationIds: string[] = [];
-      try {
-        const clerkDelete = await deleteLinkedClerkUser(existing);
-        clerkDeleteStatus = clerkDelete.status;
-        clerkDeleteUserId = clerkDelete.clerkUserId;
-        revokedInvitationIds = await revokePendingClerkInvitationsByEmail(existing.email);
-      } catch (error) {
-        await client.query("rollback");
-        if (error instanceof Error && error.message === "CLERK_DELETE_NOT_CONFIGURED") {
-          return NextResponse.json(
-            {
-              error: "USER_DELETE_SYNC_NOT_CONFIGURED",
-              message:
-                "Clerk is not configured in this environment, so linked users cannot be deleted safely.",
-            },
-            { status: 503 },
-          );
-        }
-        logError("api.admin.users.PATCH.clerkDelete", error, {
-          actorUserId: session.userId,
-          targetUserId: userId,
-          clerkUserId: existing.clerk_user_id,
-        });
-        return NextResponse.json(
-          {
-            error: "USER_DELETE_SYNC_FAILED",
-            message:
-              "The linked Clerk user could not be deleted, so no local deletion was applied.",
-          },
-          { status: 502 },
-        );
-      }
-
       await insertAuditLogWithClient(client, {
         userId: session.userId,
         action: "USER_DELETED",
@@ -949,9 +914,9 @@ export async function PATCH(
           deletedUserUsername: existing.username,
           deletedUserRole: existing.role,
           deletedUserClerkUserId: existing.clerk_user_id,
-          clerkDeleteStatus,
-          clerkDeleteUserId,
-          revokedInvitationIds,
+          clerkDeleteStatus: "pending_cleanup",
+          clerkDeleteUserId: existing.clerk_user_id,
+          revokedInvitationIds: [],
           wasActive: existing.is_active ?? null,
           deactivatedAt: existing.deactivated_at ?? null,
           lockedAt: existing.locked_at ?? null,
@@ -960,7 +925,52 @@ export async function PATCH(
 
       await client.query("commit");
 
-      return NextResponse.json({ ok: true });
+      let warning: string | null = null;
+      try {
+        const clerkDelete = await deleteLinkedClerkUser(existing);
+        const revokedInvitationIds = await revokePendingClerkInvitationsByEmail(existing.email);
+
+        await writeAuditLog({
+          userId: session.userId,
+          action: "USER_DELETE_SYNC_COMPLETED",
+          entityType: "user",
+          entityId: userId,
+          details: {
+            deletedUserId: existing.id,
+            deletedUserEmail: existing.email,
+            deletedUserClerkUserId: existing.clerk_user_id,
+            clerkDeleteStatus: clerkDelete.status,
+            clerkDeleteUserId: clerkDelete.clerkUserId,
+            revokedInvitationIds,
+          },
+        });
+      } catch (error) {
+        logError("api.admin.users.PATCH.clerkDelete", error, {
+          actorUserId: session.userId,
+          targetUserId: userId,
+          clerkUserId: existing.clerk_user_id,
+        });
+
+        warning =
+          error instanceof Error && error.message === "CLERK_DELETE_NOT_CONFIGURED"
+            ? "User deleted locally, but Clerk cleanup is not configured in this environment. Remove the Clerk user or invitation manually if needed."
+            : "User deleted locally, but Clerk cleanup could not be completed. Remove the Clerk user or invitation manually if needed.";
+
+        await writeAuditLog({
+          userId: session.userId,
+          action: "USER_DELETE_SYNC_FAILED",
+          entityType: "user",
+          entityId: userId,
+          details: {
+            deletedUserId: existing.id,
+            deletedUserEmail: existing.email,
+            deletedUserClerkUserId: existing.clerk_user_id,
+            warning,
+          },
+        }).catch(() => {});
+      }
+
+      return NextResponse.json(warning ? { ok: true, warning } : { ok: true });
     }
 
     await client.query("rollback");
