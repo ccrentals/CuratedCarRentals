@@ -1,10 +1,13 @@
 "use client";
 
+import { useSignIn } from "@clerk/nextjs";
 import { Eye, EyeOff } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import { TurnstileWidget } from "@/components/security/TurnstileWidget";
+import { mapClerkAccountSetupError } from "@/lib/security/clerkPasswordFlow";
 
 type SetupTone = "success" | "error" | "info";
 
@@ -30,7 +33,15 @@ function buildSignInHref(redirectUrlComplete?: string) {
   return `/sign-in?${query.toString()}`;
 }
 
+function buildBootstrapHref(redirectUrlComplete?: string) {
+  const query = new URLSearchParams();
+  query.set("redirect", redirectUrlComplete?.trim() || "/admin");
+  return `/api/admin/session/bootstrap?${query.toString()}`;
+}
+
 export function ClerkAccountSetupForm({ redirectUrlComplete }: ClerkAccountSetupFormProps) {
+  const { isLoaded, signIn, setActive } = useSignIn();
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -40,6 +51,7 @@ export function ClerkAccountSetupForm({ redirectUrlComplete }: ClerkAccountSetup
   const [showPassword, setShowPassword] = useState(false);
   const [state, setState] = useState<SetupState | null>(null);
   const signInHref = useMemo(() => buildSignInHref(redirectUrlComplete), [redirectUrlComplete]);
+  const bootstrapHref = useMemo(() => buildBootstrapHref(redirectUrlComplete), [redirectUrlComplete]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -95,8 +107,42 @@ export function ClerkAccountSetupForm({ redirectUrlComplete }: ClerkAccountSetup
         text: data?.warning ? `${message} ${data.warning}` : message,
       });
       if (response.ok) {
-        window.location.assign(data?.redirectTo?.trim() || signInHref);
-        return;
+        if (!isLoaded || !signIn || !setActive) {
+          window.location.assign(data?.redirectTo?.trim() || signInHref);
+          return;
+        }
+
+        try {
+          const result = await signIn.create({
+            identifier: email.trim(),
+            password,
+          });
+
+          if (result.status !== "complete" || !result.createdSessionId) {
+            setState({
+              tone: "error",
+              text:
+                "Account setup succeeded, but automatic sign-in could not be completed. Continue from the sign-in page.",
+            });
+            window.location.assign(data?.redirectTo?.trim() || signInHref);
+            return;
+          }
+
+          await setActive({ session: result.createdSessionId });
+          setState({
+            tone: "success",
+            text: "Account setup complete. Signing you in now...",
+          });
+          router.replace(bootstrapHref);
+          return;
+        } catch (error) {
+          setState({
+            tone: "error",
+            text: `${mapClerkAccountSetupError(error)} Continue from the sign-in page if needed.`,
+          });
+          window.location.assign(data?.redirectTo?.trim() || signInHref);
+          return;
+        }
       } else {
         setTurnstileToken(null);
         setTurnstileResetKey((value) => value + 1);
