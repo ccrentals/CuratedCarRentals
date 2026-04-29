@@ -14,6 +14,7 @@ import {
   resolveOrProvisionClerkIdentityForLocalUser,
   syncPasswordWithClerkAndLocal,
 } from "@/lib/security/clerkPasswordUpdate";
+import { mapClerkAccountSetupError } from "@/lib/security/clerkPasswordFlow";
 import { isEmail } from "@/lib/validators";
 
 type LocalUserRow = {
@@ -155,7 +156,7 @@ export async function POST(request: Request) {
     });
     return NextResponse.json(
       {
-        error: "Could not complete account setup right now. Try again shortly.",
+        error: mapClerkAccountSetupError(error),
       },
       { status: 500 },
     );

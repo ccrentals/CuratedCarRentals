@@ -4,6 +4,7 @@ import { clerkClient } from "@clerk/nextjs/server";
 import { dbQuery } from "@/lib/db";
 import { hashPassword } from "@/lib/auth/password";
 import { isClerkEnabled } from "@/lib/security/clerk";
+import { mapClerkAccountSetupError } from "@/lib/security/clerkPasswordFlow";
 import {
   buildClerkUsernameCandidates,
   isClerkUsernameError,
@@ -308,13 +309,13 @@ export async function syncPasswordWithClerkAndLocal(
         passwordChangedAt: nowIso(),
       },
     });
-  } catch {
+  } catch (error) {
     return {
       ok: false,
       status: 502,
       stage: "clerk",
       clerkUserId,
-      message: "Failed to update password in Clerk.",
+      message: mapClerkAccountSetupError(error),
     };
   }
 
