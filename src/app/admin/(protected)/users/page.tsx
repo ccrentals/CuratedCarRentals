@@ -223,7 +223,7 @@ export default async function AdminUsersPage({
           <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Admin</p>
           <h1 className="text-3xl font-bold text-[var(--ccr-text)]">Users</h1>
           <p className="mt-1 max-w-2xl text-sm text-[var(--ccr-muted)]">
-            Manage staff access, roles, and Clerk invitation onboarding.
+            Manage staff access, roles, and first-time account setup for Clerk-managed sign-in.
           </p>
         </div>
         <div className="flex items-center gap-2">

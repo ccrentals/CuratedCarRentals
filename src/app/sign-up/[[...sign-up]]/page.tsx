@@ -55,7 +55,7 @@ export default async function SignUpPage({
             redirectUrlComplete={redirectUrlComplete}
           />
         ) : (
-          <ClerkAccountSetupForm />
+          <ClerkAccountSetupForm redirectUrlComplete={redirectUrlComplete} />
         )}
       </div>
     </AuthPageShell>

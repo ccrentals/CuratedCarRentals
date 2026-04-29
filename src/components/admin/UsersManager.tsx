@@ -19,30 +19,12 @@ type CreateUserResult = {
   ok: true;
   userId: string;
   username: string;
-  invitedEmail: string;
-  clerkSync?:
-    | {
-      status: "invited";
-      clerkUserId: null;
-      finalUsername: string;
-      invitationId: string;
-      inviteEmail: string;
-      message: string;
-    }
-    | {
-      status: "linked_existing";
-      clerkUserId: string;
-      finalUsername: string;
-      message: string;
-      localLinkSaved: boolean;
-      localLinkWarning?: string;
-    }
-    | {
-      status: "skipped" | "failed";
-      clerkUserId: null;
-      finalUsername: null;
-      message: string;
-    };
+  setupEmail: string;
+  onboarding?: {
+    status: "local_setup_required";
+    message: string;
+    setupPath: string;
+  };
 };
 
 type UserRole = "USER" | "ADMIN" | "DEVELOPER";
@@ -85,11 +67,10 @@ export function CreateUserForm({
   const [error, setError] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [successNotice, setSuccessNotice] = useState<{
-    invitedEmail: string;
+    setupEmail: string;
     createdUsername: string | null;
-    clerkMessage: string | null;
-    clerkWarning: string | null;
-    clerkWarningDetail: string | null;
+    onboardingMessage: string | null;
+    setupPath: string;
   } | null>(null);
 
   function dismissSuccessNotice() {
@@ -147,8 +128,8 @@ export function CreateUserForm({
       return;
     }
 
-    if (!data.invitedEmail) {
-      setError("User created, but the invited email was not returned.");
+    if (!data.setupEmail) {
+      setError("User created, but the setup email was not returned.");
       router.refresh();
       return;
     }
@@ -160,22 +141,12 @@ export function CreateUserForm({
     }
 
     setSuccessNotice({
-      invitedEmail: data.invitedEmail,
+      setupEmail: data.setupEmail,
       createdUsername: String(data.username),
-      clerkMessage:
-        data.clerkSync && "message" in data.clerkSync ? data.clerkSync.message : null,
-      clerkWarning:
-        data.clerkSync &&
-        "status" in data.clerkSync &&
-        (data.clerkSync.status === "failed" ||
-          data.clerkSync.status === "skipped" ||
-          ("localLinkSaved" in data.clerkSync && !data.clerkSync.localLinkSaved))
-          ? "Clerk link needs attention."
-          : "Clerk link ready.",
-      clerkWarningDetail:
-        data.clerkSync && "localLinkWarning" in data.clerkSync
-          ? (data.clerkSync.localLinkWarning ?? null)
-          : null,
+      onboardingMessage:
+        data.onboarding && "message" in data.onboarding ? data.onboarding.message : null,
+      setupPath:
+        data.onboarding && "setupPath" in data.onboarding ? data.onboarding.setupPath : "/sign-up?redirect=%2Fadmin",
     });
     setFirstName("");
     setLastName("");
@@ -189,7 +160,7 @@ export function CreateUserForm({
     <div className="mt-6" data-testid="create-user-section">
       <SlideDownPanel
         title="Create user"
-        description="Creates a local admin user and sends a Clerk invitation email for first-time sign-in."
+        description="Creates the local user record. The user completes first-time setup from the dedicated account setup page."
         defaultOpen={false}
         open={panelOpen}
         onOpenChange={setPanelOpen}
@@ -278,7 +249,7 @@ export function CreateUserForm({
           </button>
           <p className="font-semibold text-[var(--ccr-text)]">User created successfully.</p>
           <p className="mt-1 text-[11px] text-[var(--ccr-muted)]">
-            The user should complete setup from the Clerk invitation email.
+            The user should complete setup from the dedicated account setup page before signing in.
           </p>
           {successNotice.createdUsername ? (
             <p className="mt-2 text-[11px] text-[var(--ccr-muted)]">
@@ -292,24 +263,25 @@ export function CreateUserForm({
             </p>
           ) : null}
           <p className="mt-2 text-[11px] text-[var(--ccr-muted)]">
-            Invite email:{" "}
-            <span className="font-mono text-[var(--ccr-text)]">{successNotice.invitedEmail}</span>
+            Setup email:{" "}
+            <span className="font-mono text-[var(--ccr-text)]">{successNotice.setupEmail}</span>
           </p>
-          {successNotice.clerkMessage ? (
-            <p
-              className={`mt-1 text-[11px] ${
-                successNotice.clerkWarning === "Clerk link needs attention."
-                  ? "text-amber-300"
-                  : "text-emerald-300"
-              }`}
-            >
-              {successNotice.clerkMessage}
-            </p>
-          ) : null}
-          {successNotice.clerkWarningDetail ? (
-            <p className="mt-1 text-[11px] text-amber-300">{successNotice.clerkWarningDetail}</p>
+          <p className="mt-2 text-[11px] text-[var(--ccr-muted)]">
+            Setup page:{" "}
+            <span className="font-mono text-[var(--ccr-text)]">{successNotice.setupPath}</span>
+          </p>
+          {successNotice.onboardingMessage ? (
+            <p className="mt-1 text-[11px] text-emerald-300">{successNotice.onboardingMessage}</p>
           ) : null}
           <div className="mt-2 flex flex-wrap items-center gap-2">
+            <a
+              href={successNotice.setupPath}
+              target="_blank"
+              rel="noreferrer"
+              className={buttonStyles({ variant: "primary", size: "xs" })}
+            >
+              Open setup page
+            </a>
             <button
               type="button"
               onClick={() => {

@@ -1,6 +1,4 @@
 import { NextResponse } from "next/server";
-import { randomBytes } from "node:crypto";
-import { clerkClient } from "@clerk/nextjs/server";
 
 import { parseAppRole } from "@/lib/auth/roles";
 import { dbQuery } from "@/lib/db";
@@ -12,7 +10,10 @@ import {
   getClientIpFromRequest,
   verifyTurnstileToken,
 } from "@/lib/security/turnstile";
-import { buildClerkUsernameCandidates, isClerkUsernameError } from "@/lib/security/clerkUsernames";
+import {
+  resolveOrProvisionClerkIdentityForLocalUser,
+  syncPasswordWithClerkAndLocal,
+} from "@/lib/security/clerkPasswordUpdate";
 import { isEmail } from "@/lib/validators";
 
 type LocalUserRow = {
@@ -24,31 +25,10 @@ type LocalUserRow = {
   clerk_user_id: string | null;
 };
 
-const GENERIC_SETUP_MESSAGE =
-  "If this email is eligible for admin access, setup is ready. Return to sign in and continue with SSO.";
-
 function isUndefinedColumn(error: unknown, column: string) {
   const code = (error as { code?: string } | null)?.code;
   const message = String((error as { message?: unknown } | null)?.message ?? "");
   return code === "42703" && message.includes(`\"${column}\"`) && message.includes("does not exist");
-}
-
-function splitName(fullName: string | null, email: string) {
-  const clean = fullName?.trim() ?? "";
-  if (clean) {
-    const parts = clean.split(/\s+/).filter(Boolean);
-    if (parts.length === 1) {
-      return { firstName: parts[0], lastName: "Admin" };
-    }
-    return { firstName: parts[0], lastName: parts.slice(1).join(" ") };
-  }
-
-  const localPart = email.split("@")[0]?.trim() ?? "Admin";
-  return { firstName: localPart.slice(0, 64), lastName: "Admin" };
-}
-
-function generateClerkBootstrapPassword() {
-  return `Ccr!${randomBytes(24).toString("base64url")}Aa9`;
 }
 
 async function loadLocalUserByEmail(email: string) {
@@ -85,24 +65,11 @@ async function loadLocalUserByEmail(email: string) {
   }
 }
 
-async function linkLocalUserToClerkId(localUserId: string, clerkUserId: string) {
-  try {
-    await dbQuery(
-      "update users set clerk_user_id = $2 where id = $1 and (clerk_user_id is null or clerk_user_id = $2)",
-      [localUserId, clerkUserId],
-    );
-    return null;
-  } catch (error) {
-    if (isUndefinedColumn(error, "clerk_user_id")) {
-      return "users.clerk_user_id column is missing. Apply migration 020_clerk_user_mapping.sql.";
-    }
-    throw error;
-  }
-}
-
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
   const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
+  const password = typeof body?.password === "string" ? body.password : "";
+  const confirmPassword = typeof body?.confirmPassword === "string" ? body.confirmPassword : "";
   const turnstileToken = extractTurnstileToken(body, request);
   const ip = getClientIpFromRequest(request) ?? "unknown";
 
@@ -124,6 +91,12 @@ export async function POST(request: Request) {
   if (!isEmail(email)) {
     return NextResponse.json({ error: "Enter a valid email address." }, { status: 400 });
   }
+  if (password.trim().length < 8) {
+    return NextResponse.json({ error: "Password must be at least 8 characters." }, { status: 400 });
+  }
+  if (password !== confirmPassword) {
+    return NextResponse.json({ error: "Passwords do not match." }, { status: 400 });
+  }
 
   if (!isClerkEnabled()) {
     return NextResponse.json(
@@ -134,124 +107,55 @@ export async function POST(request: Request) {
 
   const localUser = await loadLocalUserByEmail(email);
   if (!localUser || !parseAppRole(localUser.role)) {
-    return NextResponse.json({
-      ok: true,
-      message: `${GENERIC_SETUP_MESSAGE} If your account is still not linked, use legacy admin login once and retry.`,
-    });
+    return NextResponse.json(
+      { error: "No eligible account found for this email." },
+      { status: 404 },
+    );
   }
 
   try {
-    const clerk = await clerkClient();
-    const usernameCandidates = buildClerkUsernameCandidates({
-      localUsername: localUser.username,
-      email: localUser.email,
-      localUserId: localUser.id,
-    });
-
-    let clerkUser =
-      localUser.clerk_user_id?.trim() && localUser.clerk_user_id
-        ? await clerk.users.getUser(localUser.clerk_user_id).catch(() => null)
-        : null;
-
-    if (!clerkUser) {
-      const existing = await clerk.users.getUserList({
-        emailAddress: [localUser.email],
-        limit: 1,
-      });
-      clerkUser = existing.data[0] ?? null;
-    }
-
-    if (!clerkUser) {
-      const { firstName, lastName } = splitName(localUser.full_name, localUser.email);
-      const password = generateClerkBootstrapPassword();
-      let created:
-        | Awaited<ReturnType<Awaited<ReturnType<typeof clerkClient>>["users"]["createUser"]>>
-        | null = null;
-      let createError: unknown = null;
-
-      for (const candidate of [...usernameCandidates, ""]) {
-        try {
-          created = await clerk.users.createUser({
-            emailAddress: [localUser.email],
-            password,
-            firstName,
-            lastName,
-            skipLegalChecks: true,
-            ...(candidate ? { username: candidate } : {}),
-            privateMetadata: {
-              localUserId: localUser.id,
-              localRole: localUser.role,
-              authProvisionedBy: "self-service-account-setup",
-            },
-          });
-          break;
-        } catch (error) {
-          createError = error;
-          if (candidate && isClerkUsernameError(error)) {
-            continue;
-          }
-          throw error;
-        }
-      }
-
-      if (!created) {
-        throw createError ?? new Error("Unable to provision Clerk user");
-      }
-
-      clerkUser = created;
-      await clerk.users.setPasswordCompromised(clerkUser.id, {
-        revokeAllSessions: true,
-      });
-    } else {
-      const currentMetadata = (clerkUser.privateMetadata ?? {}) as Record<string, unknown>;
-      const updatePayload: {
-        privateMetadata: Record<string, unknown>;
-        username?: string;
-      } = {
-        privateMetadata: {
-          ...currentMetadata,
-          localUserId: localUser.id,
-          localRole: localUser.role,
-          authProvisionedBy: "self-service-account-setup-link",
+    const resolution = await resolveOrProvisionClerkIdentityForLocalUser(
+      {
+        localUser: {
+          id: localUser.id,
+          email: localUser.email,
+          role: localUser.role,
+          fullName: localUser.full_name,
+          username: localUser.username,
+          clerkUserId: localUser.clerk_user_id,
         },
-      };
+        flow: "public_clerk_account_setup",
+      },
+    );
 
-      if (!clerkUser.username) {
-        for (const candidate of usernameCandidates) {
-          try {
-            await clerk.users.updateUser(clerkUser.id, {
-              ...updatePayload,
-              username: candidate,
-            });
-            updatePayload.username = candidate;
-            break;
-          } catch (error) {
-            if (isClerkUsernameError(error)) {
-              continue;
-            }
-            throw error;
-          }
-        }
-      }
-
-      await clerk.users.updateUser(clerkUser.id, updatePayload);
+    if (!resolution.ok) {
+      return NextResponse.json({ error: resolution.message }, { status: resolution.status });
     }
 
-    const mappingWarning = await linkLocalUserToClerkId(localUser.id, clerkUser.id);
+    const syncResult = await syncPasswordWithClerkAndLocal({
+      localUserId: localUser.id,
+      clerkUserId: resolution.clerkUserId,
+      password,
+    });
+    if (!syncResult.ok) {
+      return NextResponse.json({ error: syncResult.message }, { status: syncResult.status });
+    }
 
     return NextResponse.json({
       ok: true,
-      message: mappingWarning ? `${GENERIC_SETUP_MESSAGE} ${mappingWarning}` : GENERIC_SETUP_MESSAGE,
+      message: "Account setup complete. Continue to sign in with Clerk.",
+      redirectTo: "/sign-in?redirect=%2Fadmin",
+      ...(resolution.localLinkWarning ? { warning: resolution.localLinkWarning } : {}),
     });
   } catch (error) {
     logWarn("api.public.auth.clerkAccountSetup", {
       email,
       code: (error as { errors?: Array<{ code?: string }> } | null)?.errors?.[0]?.code,
+      message: (error as { message?: unknown } | null)?.message ?? null,
     });
     return NextResponse.json(
       {
-        error:
-          "Could not complete Clerk setup right now. Use legacy admin login once, then retry Clerk sign in.",
+        error: "Could not complete account setup right now. Try again shortly.",
       },
       { status: 500 },
     );

@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { randomBytes } from "node:crypto";
-import { clerkClient } from "@clerk/nextjs/server";
 
 import { requireAdminRole } from "@/lib/auth/adminGuards";
 import { isDeveloperRole } from "@/lib/auth/roles";
@@ -9,9 +8,7 @@ import { isEmail, isNonEmptyString } from "@/lib/validators";
 import { hashPassword } from "@/lib/auth/password";
 import { writeAuditLog } from "@/lib/audit";
 import { requireCsrf } from "@/lib/security/csrf";
-import { logError, logWarn } from "@/lib/log";
-import { isClerkEnabled } from "@/lib/security/clerk";
-import { revokePendingClerkInvitationsByEmail } from "@/lib/security/clerkInvitations";
+import { logError } from "@/lib/log";
 import {
   generateStandardUsernameBase,
   resolveUsernameCollision,
@@ -70,97 +67,34 @@ export async function fetchAdminUsers(input: { q?: string } = {}) {
   }
 }
 
-type ClerkSyncResult =
-  | {
-      status: "skipped";
-      clerkUserId: null;
-      finalUsername: null;
-      message: string;
-    }
-  | {
-      status: "invited";
-      clerkUserId: null;
-      finalUsername: string;
-      invitationId: string;
-      inviteEmail: string;
-      message: string;
-    }
-  | {
-      status: "linked_existing";
-      clerkUserId: string;
-      finalUsername: string;
-      message: string;
-      localLinkSaved: boolean;
-      localLinkWarning?: string;
-    }
-  | {
-      status: "failed";
-      clerkUserId: null;
-      finalUsername: null;
-      message: string;
-    };
+type OnboardingSetupResult = {
+  status: "local_setup_required";
+  message: string;
+  setupPath: string;
+};
 
 export function buildAdminUserCreateSuccessPayload(input: {
   userId: string;
   userPublicId: string | null;
   username: string;
-  invitedEmail: string;
-  clerkSync: ClerkSyncResult;
+  setupEmail: string;
+  onboarding: OnboardingSetupResult;
 }) {
   return {
     ok: true as const,
     userId: input.userId,
     userPublicId: input.userPublicId,
     username: input.username,
-    invitedEmail: input.invitedEmail,
-    clerkSync: input.clerkSync,
+    setupEmail: input.setupEmail,
+    onboarding: input.onboarding,
   };
-}
-
-type QueryClient = {
-  query: (sql: string, values?: unknown[]) => Promise<{ rowCount: number }>;
-};
-
-type ClerkUsersApi = Awaited<ReturnType<typeof clerkClient>>["users"];
-async function linkLocalUserToClerkId({
-  client,
-  localUserId,
-  clerkUserId,
-}: {
-  client: QueryClient;
-  localUserId: string;
-  clerkUserId: string;
-}) {
-  try {
-    const linkResult = await client.query(
-      "update users set clerk_user_id = $2 where id = $1 and (clerk_user_id is null or clerk_user_id = $2)",
-      [localUserId, clerkUserId],
-    );
-    if (linkResult.rowCount > 0) {
-      return { linked: true, warning: null as string | null };
-    }
-    return {
-      linked: false,
-      warning:
-        "Local user was created, but users.clerk_user_id is already set to a different Clerk user. Resolve mapping manually.",
-    };
-  } catch (error) {
-    if (isUndefinedColumn(error, "clerk_user_id")) {
-      return {
-        linked: false,
-        warning:
-          "Local user was created and Clerk user was provisioned, but users.clerk_user_id column is missing. Apply migration 020_clerk_user_mapping.sql.",
-      };
-    }
-    throw error;
-  }
 }
 
 async function resolveLocalUsernameForCreate({
   client,
   baseUsername,
 }: {
-  client: QueryClient;
+  client: { query: (sql: string, values?: unknown[]) => Promise<{ rowCount: number }> };
   baseUsername: string;
 }) {
   return resolveUsernameCollision(baseUsername, async (candidate) => {
@@ -179,138 +113,6 @@ async function resolveLocalUsernameForCreate({
       throw error;
     }
   });
-}
-
-async function resolveClerkUsernameForCreate({
-  clerkUsers,
-  baseUsername,
-  excludeUserId,
-}: {
-  clerkUsers: ClerkUsersApi;
-  baseUsername: string;
-  excludeUserId?: string | null;
-}) {
-  return resolveUsernameCollision(baseUsername, async (candidate) => {
-    const lookup = await clerkUsers.getUserList({
-      username: [candidate],
-      limit: 1,
-    });
-    return lookup.data.some((user) => user.id !== excludeUserId);
-  });
-}
-
-async function provisionClerkUserForAdminInvite({
-  email,
-  preferredUsername,
-  firstName,
-  lastName,
-  role,
-  localUserId,
-  client,
-  inviteRedirectUrl,
-}: {
-  email: string;
-  preferredUsername: string;
-  firstName: string;
-  lastName: string;
-  role: string;
-  localUserId: string;
-  client: QueryClient;
-  inviteRedirectUrl: string;
-}): Promise<ClerkSyncResult> {
-  if (!isClerkEnabled()) {
-    return {
-      status: "skipped",
-      clerkUserId: null,
-      finalUsername: null,
-      message: "Clerk is not configured in this environment.",
-    };
-  }
-
-  try {
-    const clerk = await clerkClient();
-    const clerkUsers = clerk.users;
-    const revokedInvitationIds = await revokePendingClerkInvitationsByEmail(email);
-    const existing = await clerk.users.getUserList({
-      emailAddress: [email],
-      limit: 1,
-    });
-    const existingUser = existing.data[0] ?? null;
-    let finalClerkUsername = preferredUsername;
-
-    if (existingUser) {
-      const clerkUserId = existingUser.id;
-      const updateBase = {
-        firstName: existingUser.firstName || firstName,
-        lastName: existingUser.lastName || lastName,
-        privateMetadata: {
-          ...existingUser.privateMetadata,
-          localUserId,
-          localRole: role,
-          authProvisionedBy: "admin-user-link",
-        },
-      };
-      finalClerkUsername = await resolveClerkUsernameForCreate({
-        clerkUsers,
-        baseUsername: preferredUsername,
-        excludeUserId: existingUser.id,
-      });
-      await clerk.users.updateUser(clerkUserId, {
-        ...updateBase,
-        username: finalClerkUsername,
-      });
-      const linkResult = await linkLocalUserToClerkId({
-        client,
-        localUserId,
-        clerkUserId,
-      });
-
-      return {
-        status: "linked_existing",
-        clerkUserId,
-        finalUsername: finalClerkUsername,
-        message:
-          revokedInvitationIds.length > 0
-            ? "Existing Clerk account linked by email after revoking stale pending invitations."
-            : "Existing Clerk account linked by email. No new invite was needed.",
-        localLinkSaved: linkResult.linked,
-        localLinkWarning: linkResult.warning ?? undefined,
-      };
-    }
-
-    const invitation = await clerk.invitations.createInvitation({
-      emailAddress: email,
-      notify: true,
-      ignoreExisting: true,
-      redirectUrl: inviteRedirectUrl,
-    });
-
-    return {
-      status: "invited",
-      clerkUserId: null,
-      finalUsername: finalClerkUsername,
-      invitationId: invitation.id,
-      inviteEmail: email,
-      message:
-        revokedInvitationIds.length > 0
-          ? "Clerk invitation recreated and email sent after clearing stale pending invitations."
-          : "Clerk invitation created and email sent.",
-    };
-  } catch (error) {
-    logWarn("api.admin.users.clerkProvisioningFailed", {
-      localUserId,
-      email,
-      code: (error as { errors?: Array<{ code?: string }> } | null)?.errors?.[0]?.code,
-      message: (error as { message?: unknown } | null)?.message ?? null,
-    });
-    return {
-      status: "failed",
-      clerkUserId: null,
-      finalUsername: null,
-      message:
-        "Local user created, but Clerk invitation failed. Create/link this user in Clerk Dashboard and set users.clerk_user_id manually.",
-    };
-  }
 }
 
 export async function GET(request: Request) {
@@ -384,8 +186,7 @@ export async function POST(request: Request) {
 
   const bootstrapPassword = generateBootstrapPassword();
   const passwordHash = await hashPassword(bootstrapPassword);
-  const inviteRedirect = new URL("/sign-up", process.env.SITE_URL ?? new URL(request.url).origin);
-  inviteRedirect.searchParams.set("redirect", "/admin");
+  const setupPath = "/sign-up?redirect=%2Fadmin";
 
   const pool = getDbPool();
   const client = await pool.connect();
@@ -456,38 +257,6 @@ export async function POST(request: Request) {
 
     await client.query("commit");
 
-    const clerkSync = await provisionClerkUserForAdminInvite({
-      email: emailLower,
-      preferredUsername: usernameFinal,
-      firstName,
-      lastName,
-      role,
-      localUserId: newUserId,
-      client,
-      inviteRedirectUrl: inviteRedirect.toString(),
-    });
-
-    const returnedUsername =
-      clerkSync.status === "invited" || clerkSync.status === "linked_existing"
-        ? clerkSync.finalUsername
-        : usernameFinal;
-
-    if (returnedUsername !== usernameFinal) {
-      try {
-        await client.query("update users set username = $2, updated_at = now() where id = $1", [
-          newUserId,
-          returnedUsername,
-        ]);
-      } catch (error) {
-        logWarn("api.admin.users.usernamePostProvisionSyncFailed", {
-          localUserId: newUserId,
-          localUsername: usernameFinal,
-          clerkUsername: returnedUsername,
-          code: (error as { code?: string } | null)?.code,
-        });
-      }
-    }
-
     await writeAuditLog({
       userId: actor.userId,
       action: "USER_CREATED",
@@ -496,10 +265,9 @@ export async function POST(request: Request) {
       details: {
         role,
         email: emailLower,
-        username: returnedUsername,
-        clerkSyncStatus: clerkSync.status,
-        clerkUserId: clerkSync.clerkUserId,
-        invitationId: clerkSync.status === "invited" ? clerkSync.invitationId : null,
+        username: usernameFinal,
+        onboardingStatus: "local_setup_required",
+        setupPath,
       },
     });
 
@@ -507,9 +275,14 @@ export async function POST(request: Request) {
       buildAdminUserCreateSuccessPayload({
         userId: newUserId,
         userPublicId: newUserPublicId,
-        username: returnedUsername,
-        invitedEmail: emailLower,
-        clerkSync,
+        username: usernameFinal,
+        setupEmail: emailLower,
+        onboarding: {
+          status: "local_setup_required",
+          message:
+            "Local user created. Complete account setup from the dedicated setup page before signing in with Clerk.",
+          setupPath,
+        },
       }),
     );
   } catch (error) {
