@@ -18,6 +18,7 @@ import {
 } from "@/lib/security/clerkUsernames";
 import { isClerkEnabled } from "@/lib/security/clerk";
 import { revokePendingClerkInvitationsByEmail } from "@/lib/security/clerkInvitations";
+import { normalizeUserLifecycleState } from "@/lib/security/userLifecycle";
 
 type QueryResultRow = Record<string, unknown>;
 type QueryResult = { rowCount: number; rows: QueryResultRow[] };
@@ -32,6 +33,7 @@ type ManagedUserRow = {
   full_name: string | null;
   username: string | null;
   clerk_user_id: string | null;
+  lifecycle_state?: string | null;
   is_active?: boolean | null;
   deactivated_at?: string | null;
   locked_at?: string | null;
@@ -135,7 +137,7 @@ async function queryUserUpdate(
 async function loadUserForUpdate(client: QueryClient, userId: string): Promise<ManagedUserRow | null> {
   try {
     const result = await client.query(
-      "select id, email, role, full_name, username, clerk_user_id, is_active, deactivated_at, locked_at from users where id = $1 for update",
+      "select id, email, role, full_name, username, clerk_user_id, lifecycle_state, is_active, deactivated_at, locked_at from users where id = $1 for update",
       [userId],
     );
     const row = result.rows[0];
@@ -149,6 +151,7 @@ async function loadUserForUpdate(client: QueryClient, userId: string): Promise<M
       full_name: typeof row.full_name === "string" ? row.full_name : null,
       username: typeof row.username === "string" ? row.username : null,
       clerk_user_id: typeof row.clerk_user_id === "string" ? row.clerk_user_id : null,
+      lifecycle_state: typeof row.lifecycle_state === "string" ? row.lifecycle_state : null,
       is_active: typeof row.is_active === "boolean" ? row.is_active : null,
       deactivated_at: typeof row.deactivated_at === "string" ? row.deactivated_at : null,
       locked_at: typeof row.locked_at === "string" ? row.locked_at : null,
@@ -157,7 +160,8 @@ async function loadUserForUpdate(client: QueryClient, userId: string): Promise<M
     if (
       !isUndefinedColumn(error, "full_name") &&
       !isUndefinedColumn(error, "username") &&
-      !isUndefinedColumn(error, "clerk_user_id")
+      !isUndefinedColumn(error, "clerk_user_id") &&
+      !isUndefinedColumn(error, "lifecycle_state")
     ) {
       throw error;
     }
@@ -178,6 +182,7 @@ async function loadUserForUpdate(client: QueryClient, userId: string): Promise<M
     full_name: null,
     username: null,
     clerk_user_id: null,
+    lifecycle_state: null,
     is_active: typeof row.is_active === "boolean" ? row.is_active : null,
     deactivated_at: typeof row.deactivated_at === "string" ? row.deactivated_at : null,
     locked_at: typeof row.locked_at === "string" ? row.locked_at : null,
@@ -895,10 +900,28 @@ export async function PATCH(
         }
       }
 
-      const deleteResult = await client.query("delete from users where id = $1 returning id", [userId]);
-      if (deleteResult.rowCount < 1) {
-        await client.query("rollback");
-        return NextResponse.json({ error: "User not found" }, { status: 404 });
+      const lifecycleState = normalizeUserLifecycleState(existing.lifecycle_state);
+      if (lifecycleState !== "delete_pending_external_cleanup") {
+        try {
+          await queryUserUpdate(
+            client,
+            "update users set is_active = false, lifecycle_state = 'delete_pending_external_cleanup', lifecycle_state_updated_at = now(), lifecycle_error = null, updated_at = now() where id = $1",
+            [userId],
+          );
+        } catch (error) {
+          if (isUndefinedColumn(error, "lifecycle_state")) {
+            await client.query("rollback");
+            return NextResponse.json(
+              {
+                error: "USER_LIFECYCLE_NOT_CONFIGURED",
+                message:
+                  "users lifecycle state columns are missing. Apply schema.sql changes and redeploy.",
+              },
+              { status: 500 },
+            );
+          }
+          throw error;
+        }
       }
 
       let clerkDeleteStatus: "not_linked" | "deleted" | "already_missing" = "not_linked";
@@ -910,15 +933,38 @@ export async function PATCH(
         clerkDeleteUserId = clerkDelete.clerkUserId;
         revokedInvitationIds = await revokePendingClerkInvitationsByEmail(existing.email);
       } catch (error) {
-        await client.query("rollback");
+        const message =
+          error instanceof Error && error.message === "CLERK_DELETE_NOT_CONFIGURED"
+            ? "Clerk is not configured in this environment, so external cleanup could not be completed."
+            : "External identity cleanup could not be completed. The account remains pending external cleanup and the email cannot be reused yet.";
+        await queryUserUpdate(
+          client,
+          "update users set lifecycle_error = $2, lifecycle_state_updated_at = now(), updated_at = now() where id = $1",
+          [userId, message],
+        ).catch(() => {});
+        await insertAuditLogWithClient(client, {
+          userId: session.userId,
+          action: "USER_DELETE_PENDING_EXTERNAL_CLEANUP",
+          entityType: "user",
+          entityId: userId,
+          details: {
+            reason,
+            deletedUserId: existing.id,
+            deletedUserEmail: existing.email,
+            deletedUserClerkUserId: existing.clerk_user_id,
+            lifecycleState: "delete_pending_external_cleanup",
+            cleanupError:
+              (error as { message?: unknown } | null)?.message ?? "unknown_external_cleanup_error",
+          },
+        });
+        await client.query("commit");
         if (error instanceof Error && error.message === "CLERK_DELETE_NOT_CONFIGURED") {
           return NextResponse.json(
             {
-              error: "USER_DELETE_SYNC_NOT_CONFIGURED",
-              message:
-                "Clerk is not configured in this environment, so linked users cannot be deleted safely.",
+              error: "USER_DELETE_PENDING_EXTERNAL_CLEANUP",
+              message,
             },
-            { status: 503 },
+            { status: 409 },
           );
         }
         logError("api.admin.users.PATCH.clerkDelete", error, {
@@ -928,12 +974,17 @@ export async function PATCH(
         });
         return NextResponse.json(
           {
-            error: "USER_DELETE_SYNC_FAILED",
-            message:
-              "The linked Clerk user could not be deleted, so no local deletion was applied.",
+            error: "USER_DELETE_PENDING_EXTERNAL_CLEANUP",
+            message,
           },
-          { status: 502 },
+          { status: 409 },
         );
+      }
+
+      const deleteResult = await client.query("delete from users where id = $1 returning id", [userId]);
+      if (deleteResult.rowCount < 1) {
+        await client.query("rollback");
+        return NextResponse.json({ error: "User not found" }, { status: 404 });
       }
 
       await insertAuditLogWithClient(client, {

@@ -15,6 +15,7 @@ import {
   syncPasswordWithClerkAndLocal,
 } from "@/lib/security/clerkPasswordUpdate";
 import { mapClerkAccountSetupError } from "@/lib/security/clerkPasswordFlow";
+import { normalizeUserLifecycleState } from "@/lib/security/userLifecycle";
 import { isEmail } from "@/lib/validators";
 
 type LocalUserRow = {
@@ -24,6 +25,7 @@ type LocalUserRow = {
   full_name: string | null;
   username: string | null;
   clerk_user_id: string | null;
+  lifecycle_state: string | null;
 };
 
 function isUndefinedColumn(error: unknown, column: string) {
@@ -35,7 +37,7 @@ function isUndefinedColumn(error: unknown, column: string) {
 async function loadLocalUserByEmail(email: string) {
   try {
     const result = await dbQuery<LocalUserRow>(
-      "select id, email, role, full_name, username, clerk_user_id from users where lower(email) = lower($1) limit 1",
+      "select id, email, role, full_name, username, clerk_user_id, lifecycle_state from users where lower(email) = lower($1) limit 1",
       [email],
     );
     return result.rows[0] ?? null;
@@ -43,7 +45,8 @@ async function loadLocalUserByEmail(email: string) {
     if (
       isUndefinedColumn(error, "full_name") ||
       isUndefinedColumn(error, "username") ||
-      isUndefinedColumn(error, "clerk_user_id")
+      isUndefinedColumn(error, "clerk_user_id") ||
+      isUndefinedColumn(error, "lifecycle_state")
     ) {
       const fallback = await dbQuery<Pick<LocalUserRow, "id" | "email" | "role">>(
         "select id, email, role from users where lower(email) = lower($1) limit 1",
@@ -60,6 +63,7 @@ async function loadLocalUserByEmail(email: string) {
         full_name: null,
         username: null,
         clerk_user_id: null,
+        lifecycle_state: null,
       };
     }
     throw error;
@@ -114,6 +118,32 @@ export async function POST(request: Request) {
     );
   }
 
+  const lifecycleState = normalizeUserLifecycleState(localUser.lifecycle_state);
+  if (lifecycleState === "delete_pending_external_cleanup") {
+    return NextResponse.json(
+      {
+        error: "This account is pending external cleanup and cannot be activated yet.",
+      },
+      { status: 409 },
+    );
+  }
+  if (lifecycleState === "active") {
+    return NextResponse.json(
+      {
+        error: "This account is already active. Sign in instead.",
+      },
+      { status: 409 },
+    );
+  }
+  if (lifecycleState !== null && lifecycleState !== "setup_pending") {
+    return NextResponse.json(
+      {
+        error: "This account is not in a setup-pending state.",
+      },
+      { status: 409 },
+    );
+  }
+
   try {
     const resolution = await resolveOrProvisionClerkIdentityForLocalUser(
       {
@@ -130,6 +160,10 @@ export async function POST(request: Request) {
     );
 
     if (!resolution.ok) {
+      await dbQuery(
+        "update users set lifecycle_error = $2, lifecycle_state_updated_at = now(), updated_at = now() where id = $1",
+        [localUser.id, resolution.message],
+      ).catch(() => {});
       return NextResponse.json({ error: resolution.message }, { status: resolution.status });
     }
 
@@ -139,8 +173,17 @@ export async function POST(request: Request) {
       password,
     });
     if (!syncResult.ok) {
+      await dbQuery(
+        "update users set lifecycle_error = $2, lifecycle_state_updated_at = now(), updated_at = now() where id = $1",
+        [localUser.id, syncResult.message],
+      ).catch(() => {});
       return NextResponse.json({ error: syncResult.message }, { status: syncResult.status });
     }
+
+    await dbQuery(
+      "update users set is_active = true, lifecycle_state = 'active', lifecycle_state_updated_at = now(), lifecycle_error = null, updated_at = now() where id = $1",
+      [localUser.id],
+    );
 
     return NextResponse.json({
       ok: true,
@@ -149,6 +192,10 @@ export async function POST(request: Request) {
       ...(resolution.localLinkWarning ? { warning: resolution.localLinkWarning } : {}),
     });
   } catch (error) {
+    await dbQuery(
+      "update users set lifecycle_error = $2, lifecycle_state_updated_at = now(), updated_at = now() where lower(email) = lower($1)",
+      [email, mapClerkAccountSetupError(error)],
+    ).catch(() => {});
     logWarn("api.public.auth.clerkAccountSetup", {
       email,
       code: (error as { errors?: Array<{ code?: string }> } | null)?.errors?.[0]?.code,

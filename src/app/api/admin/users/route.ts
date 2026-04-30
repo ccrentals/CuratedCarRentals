@@ -13,6 +13,11 @@ import {
   generateStandardUsernameBase,
   resolveUsernameCollision,
 } from "@/lib/auth/username";
+import {
+  lifecycleCreateConflictMessage,
+  normalizeUserLifecycleState,
+  type UserLifecycleState,
+} from "@/lib/security/userLifecycle";
 
 function generateBootstrapPassword() {
   return `Ccr!${randomBytes(24).toString("base64url")}Aa9`;
@@ -32,6 +37,7 @@ export type AdminUserListRow = {
   full_name: string | null;
   role: string;
   is_active: boolean | null;
+  lifecycle_state: UserLifecycleState | null;
   deactivated_at: string | null;
   locked_at: string | null;
   created_at: string;
@@ -44,7 +50,7 @@ export async function fetchAdminUsers(input: { q?: string } = {}) {
 
   try {
     const result = await dbQuery<AdminUserListRow>(
-      "select id, public_id, email, username, full_name, role, is_active, deactivated_at, locked_at, created_at, last_login_at from users" +
+      "select id, public_id, email, username, full_name, role, is_active, lifecycle_state, deactivated_at, locked_at, created_at, last_login_at from users" +
         (q
           ? " where (email ilike $1 or username ilike $1 or full_name ilike $1 or public_id ilike $1)"
           : "") +
@@ -53,12 +59,12 @@ export async function fetchAdminUsers(input: { q?: string } = {}) {
     );
     return result.rows;
   } catch (error) {
-    if (!isUndefinedColumn(error, "public_id")) {
+    if (!isUndefinedColumn(error, "public_id") && !isUndefinedColumn(error, "lifecycle_state")) {
       throw error;
     }
 
     const fallback = await dbQuery<AdminUserListRow>(
-      "select id, null::text as public_id, email, username, full_name, role, is_active, deactivated_at, locked_at, created_at, last_login_at from users" +
+      "select id, null::text as public_id, email, username, full_name, role, is_active, null::text as lifecycle_state, deactivated_at, locked_at, created_at, last_login_at from users" +
         (q ? " where (email ilike $1 or username ilike $1 or full_name ilike $1)" : "") +
         " order by created_at desc",
       values,
@@ -68,7 +74,7 @@ export async function fetchAdminUsers(input: { q?: string } = {}) {
 }
 
 type OnboardingSetupResult = {
-  status: "local_setup_required";
+  status: "setup_pending";
   message: string;
   setupPath: string;
 };
@@ -197,12 +203,19 @@ export async function POST(request: Request) {
   try {
     await client.query("begin");
 
-    const dup = await client.query("select id from users where lower(email) = lower($1) limit 1", [
+    const dup = await client.query(
+      "select id, lifecycle_state from users where lower(email) = lower($1) limit 1",
+      [
       emailLower,
-    ]);
+      ],
+    );
     if (dup.rowCount > 0) {
       await client.query("rollback");
-      return NextResponse.json({ error: "Email already exists" }, { status: 409 });
+      const lifecycleState = normalizeUserLifecycleState(dup.rows[0]?.lifecycle_state);
+      return NextResponse.json(
+        { error: lifecycleCreateConflictMessage(lifecycleState) },
+        { status: 409 },
+      );
     }
 
     const usernameFinal = await (async () => {
@@ -233,13 +246,17 @@ export async function POST(request: Request) {
     const insert = await (async () => {
       try {
         return await client.query(
-          "insert into users (email, username, full_name, password_hash, role, is_active, must_change_password, temp_password_expires_at, password_updated_at) values ($1, $2, $3, $4, $5, true, false, null, now()) returning id, public_id",
+          "insert into users (email, username, full_name, password_hash, role, is_active, lifecycle_state, lifecycle_state_updated_at, lifecycle_error, must_change_password, temp_password_expires_at, password_updated_at) values ($1, $2, $3, $4, $5, false, 'setup_pending', now(), null, false, null, now()) returning id, public_id",
           [emailLower, usernameFinal, fullNameFinal, passwordHash, role],
         );
       } catch (error) {
         const code = (error as { code?: string } | null)?.code;
         const message = String((error as { message?: unknown } | null)?.message ?? "");
-        if (code === "42703" && message.includes("\"username\"") && message.includes("does not exist")) {
+        if (
+          code === "42703" &&
+          ((message.includes("\"username\"") && message.includes("does not exist")) ||
+            (message.includes("\"lifecycle_state\"") && message.includes("does not exist")))
+        ) {
           await client.query("rollback");
           return null;
         }
@@ -250,7 +267,8 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error: "USERNAMES_NOT_CONFIGURED",
-          message: "users.username column is missing. Apply schema.sql changes and redeploy.",
+          message:
+            "users.username or lifecycle columns are missing. Apply schema.sql changes and redeploy.",
         },
         { status: 500 },
       );
@@ -269,7 +287,8 @@ export async function POST(request: Request) {
         role,
         email: emailLower,
         username: usernameFinal,
-        onboardingStatus: "local_setup_required",
+        onboardingStatus: "setup_pending",
+        lifecycleState: "setup_pending",
         setupPath,
       },
     });
@@ -281,9 +300,9 @@ export async function POST(request: Request) {
         username: usernameFinal,
         setupEmail: emailLower,
         onboarding: {
-          status: "local_setup_required",
+          status: "setup_pending",
           message:
-            "Local user created. Complete account setup from the dedicated setup page before signing in with Clerk.",
+            "Local user created. Status: setup pending. The account cannot sign in until setup is completed from the dedicated account setup page.",
           setupPath,
         },
       }),

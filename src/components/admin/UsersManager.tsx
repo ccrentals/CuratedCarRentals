@@ -14,6 +14,7 @@ import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 import { SlideDownPanel } from "@/components/admin/SlideDownPanel";
 import { buttonStyles } from "@/components/ui/Button";
+import { type UserLifecycleState } from "@/lib/security/userLifecycle";
 
 type CreateUserResult = {
   ok: true;
@@ -21,7 +22,7 @@ type CreateUserResult = {
   username: string;
   setupEmail: string;
   onboarding?: {
-    status: "local_setup_required";
+    status: "setup_pending";
     message: string;
     setupPath: string;
   };
@@ -163,7 +164,7 @@ export function CreateUserForm({
     <div className="mt-6" data-testid="create-user-section">
       <SlideDownPanel
         title="Create user"
-        description="Creates the local user record. The user completes first-time setup from the dedicated account setup page."
+        description="Creates a local admin account in setup-pending state. The user cannot sign in until setup is completed from the dedicated account setup page."
         defaultOpen={false}
         open={panelOpen}
         onOpenChange={setPanelOpen}
@@ -249,9 +250,9 @@ export function CreateUserForm({
               ×
             </span>
           </button>
-          <p className="font-semibold text-[var(--ccr-text)]">User created successfully.</p>
+          <p className="font-semibold text-[var(--ccr-text)]">User created locally.</p>
           <p className="mt-1 text-[11px] text-[var(--ccr-muted)]">
-            The user should complete setup from the dedicated account setup page before signing in.
+            Status: setup pending. The account is reserved in the system but cannot sign in until setup is completed.
           </p>
           {successNotice.createdUsername ? (
             <p className="mt-2 text-[11px] text-[var(--ccr-muted)]">
@@ -318,6 +319,7 @@ type UserRowActionsProps = {
   role: string;
   actorRole: string;
   isActive?: boolean | null;
+  lifecycleState?: UserLifecycleState | null;
   deactivatedAt?: string | null;
   lockedAt?: string | null;
 };
@@ -390,6 +392,7 @@ export function UserRowActions({
   role,
   actorRole,
   isActive,
+  lifecycleState,
   deactivatedAt,
   lockedAt,
 }: UserRowActionsProps) {
@@ -412,6 +415,7 @@ export function UserRowActions({
   const restoreFocusRef = useRef<HTMLElement | null>(null);
 
   const isDeactivated = isActive === false || Boolean(deactivatedAt);
+  const isPendingDelete = lifecycleState === "delete_pending_external_cleanup";
   const self = currentUserId === userId;
   const isLocked = Boolean(lockedAt);
   const canEditRole = canAssignDeveloperRole || currentRole !== "DEVELOPER";
@@ -966,7 +970,7 @@ export function UserRowActions({
               ) : mode === "delete_user" ? (
                 <div className="space-y-3">
                   <div className="rounded-xl border border-[var(--ccr-clerk-danger-border)] bg-[var(--ccr-clerk-danger-bg)] px-3 py-3 text-sm text-[var(--ccr-clerk-danger-text)]">
-                    This permanently removes the user account. Audit details are retained, but the user record itself is deleted and cannot be restored from this screen.
+                    This removes the user account only after external cleanup is complete. Audit details are retained. {isPendingDelete ? "This account is already pending external cleanup. Submitting again will retry Clerk cleanup." : "If external identity cleanup cannot be completed, the account will remain pending external cleanup and the email cannot be reused yet."}
                   </div>
                   <label className="block text-xs text-[var(--ccr-muted)]">
                     Reason (required)

@@ -14,6 +14,9 @@ create table if not exists users (
   password_updated_at timestamptz,
   role text not null default 'admin',
   is_active boolean not null default true,
+  lifecycle_state text not null default 'active',
+  lifecycle_state_updated_at timestamptz not null default now(),
+  lifecycle_error text,
   deactivated_at timestamptz,
   deactivated_by_user_id uuid references users(id) on delete set null,
   deactivated_reason text,
@@ -41,6 +44,15 @@ alter table users
 
 alter table users
   add column if not exists is_active boolean not null default true;
+
+alter table users
+  add column if not exists lifecycle_state text not null default 'active';
+
+alter table users
+  add column if not exists lifecycle_state_updated_at timestamptz not null default now();
+
+alter table users
+  add column if not exists lifecycle_error text;
 
 alter table users
   add column if not exists deactivated_at timestamptz;
@@ -74,16 +86,40 @@ set updated_at = greatest(
   coalesce(updated_at, created_at, now()),
   coalesce(created_at, now()),
   coalesce(password_updated_at, created_at, now()),
+  coalesce(lifecycle_state_updated_at, created_at, now()),
   coalesce(deactivated_at, created_at, now()),
   coalesce(locked_at, created_at, now())
 )
 where updated_at is null;
+
+update users
+set lifecycle_state = 'active'
+where lifecycle_state is null
+   or lifecycle_state not in ('setup_pending', 'active', 'delete_pending_external_cleanup');
+
+update users
+set lifecycle_state_updated_at = coalesce(lifecycle_state_updated_at, updated_at, created_at, now())
+where lifecycle_state_updated_at is null;
 
 alter table users
   alter column updated_at set default now();
 
 alter table users
   alter column updated_at set not null;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'users_lifecycle_state_check'
+  ) then
+    alter table users
+      add constraint users_lifecycle_state_check
+      check (lifecycle_state in ('setup_pending', 'active', 'delete_pending_external_cleanup'));
+  end if;
+end
+$$;
 
 create table if not exists admin_login_attempts (
   id uuid primary key default gen_random_uuid(),

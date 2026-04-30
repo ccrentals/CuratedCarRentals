@@ -9,6 +9,7 @@ import { CreateUserForm, UserRowActions } from "@/components/admin/UsersManager"
 import { LoadMorePaginationControls } from "@/components/admin/LoadMorePaginationControls";
 import { UsersFilters } from "@/components/admin/UsersFilters";
 import { normalizePageSize, parsePositiveIntParam } from "@/lib/pagination/sharedPagination";
+import { lifecycleStatusLabel, type UserLifecycleState } from "@/lib/security/userLifecycle";
 
 type UserRow = {
   id: string;
@@ -18,6 +19,7 @@ type UserRow = {
   full_name?: string | null;
   role: string;
   is_active?: boolean | null;
+  lifecycle_state?: UserLifecycleState | null;
   deactivated_at?: string | null;
   locked_at?: string | null;
   created_at: string;
@@ -39,9 +41,12 @@ function isUndefinedColumn(error: unknown, column: string) {
 }
 
 function statusLabel(user: UserRow) {
-  if (user.is_active === false || user.deactivated_at) return "Deactivated";
-  if (user.locked_at) return "Locked";
-  return "Active";
+  return lifecycleStatusLabel({
+    lifecycleState: user.lifecycle_state,
+    isActive: user.is_active,
+    deactivatedAt: user.deactivated_at,
+    lockedAt: user.locked_at,
+  });
 }
 
 export default async function AdminUsersPage({
@@ -100,7 +105,7 @@ export default async function AdminUsersPage({
         return {
           result: await dbQuery<UserRow>(
             withLimit(
-              `select id, public_id, email, username, full_name, role, is_active, deactivated_at, locked_at, created_at, ${updatedAtSelect}, last_login_at
+              `select id, public_id, email, username, full_name, role, is_active, lifecycle_state, deactivated_at, locked_at, created_at, ${updatedAtSelect}, last_login_at
                from users
                ${lifecycleWhereSql}
                order by created_at desc`,
@@ -123,7 +128,7 @@ export default async function AdminUsersPage({
           return {
             result: await dbQuery<UserRow>(
               withLimit(
-                `select id, null::text as public_id, email, null::text as username, full_name, role, is_active, deactivated_at, locked_at, created_at, ${updatedAtSelect}, last_login_at
+                `select id, null::text as public_id, email, null::text as username, full_name, role, is_active, null::text as lifecycle_state, deactivated_at, locked_at, created_at, ${updatedAtSelect}, last_login_at
                  from users
                  ${whereWithoutUsername}
                  order by created_at desc`,
@@ -144,7 +149,7 @@ export default async function AdminUsersPage({
           return {
             result: await dbQuery<UserRow>(
               withLimit(
-                `select id, null::text as public_id, email, username, full_name, role, is_active, deactivated_at, locked_at, created_at, ${updatedAtSelect}, last_login_at
+                `select id, null::text as public_id, email, username, full_name, role, is_active, null::text as lifecycle_state, deactivated_at, locked_at, created_at, ${updatedAtSelect}, last_login_at
                  from users
                  ${whereWithoutPublicId}
                  order by created_at desc`,
@@ -157,14 +162,18 @@ export default async function AdminUsersPage({
             usernamesNotConfigured: false,
           };
         }
-        if (isUndefinedColumn(error, "is_active") || isUndefinedColumn(error, "full_name")) {
+        if (
+          isUndefinedColumn(error, "is_active") ||
+          isUndefinedColumn(error, "full_name") ||
+          isUndefinedColumn(error, "lifecycle_state")
+        ) {
           const fallbackWhereSql = q ? "where (email ilike $1 or username ilike $1)" : "";
           return {
             result: await (async () => {
               try {
                 return await dbQuery<UserRow>(
                   withLimit(
-                    `select id, null::text as public_id, email, username, null::text as full_name, role, null::boolean as is_active, null::text as deactivated_at, locked_at, created_at, ${updatedAtSelect}, null::text as last_login_at
+                    `select id, null::text as public_id, email, username, null::text as full_name, role, null::boolean as is_active, null::text as lifecycle_state, null::text as deactivated_at, locked_at, created_at, ${updatedAtSelect}, null::text as last_login_at
                      from users
                      ${fallbackWhereSql}
                      order by created_at desc`,
@@ -179,7 +188,7 @@ export default async function AdminUsersPage({
                 const emailOnlyWhereSql = q ? "where email ilike $1" : "";
                 return dbQuery<UserRow>(
                   withLimit(
-                    `select id, null::text as public_id, email, null::text as username, null::text as full_name, role, null::boolean as is_active, null::text as deactivated_at, locked_at, created_at, ${updatedAtSelect}, null::text as last_login_at
+                    `select id, null::text as public_id, email, null::text as username, null::text as full_name, role, null::boolean as is_active, null::text as lifecycle_state, null::text as deactivated_at, locked_at, created_at, ${updatedAtSelect}, null::text as last_login_at
                      from users
                      ${emailOnlyWhereSql}
                      order by created_at desc`,
@@ -223,7 +232,7 @@ export default async function AdminUsersPage({
           <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Admin</p>
           <h1 className="text-3xl font-bold text-[var(--ccr-text)]">Users</h1>
           <p className="mt-1 max-w-2xl text-sm text-[var(--ccr-muted)]">
-            Manage staff access, roles, and first-time account setup for Clerk-managed sign-in.
+            Manage staff access, roles, and account lifecycle for Clerk-managed sign-in.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -241,7 +250,7 @@ export default async function AdminUsersPage({
           <p className="font-semibold">User management not configured</p>
           <p className="mt-1 text-xs text-amber-100/80">
             The users lifecycle columns are missing in the connected database. Apply the users section
-            from schema.sql to enable deactivation and invites.
+            from schema.sql to enable setup and external-cleanup lifecycle tracking.
           </p>
         </div>
       ) : null}
@@ -315,6 +324,7 @@ export default async function AdminUsersPage({
                       role={user.role}
                       actorRole={effectiveSessionRole ?? "USER"}
                       isActive={user.is_active ?? null}
+                      lifecycleState={user.lifecycle_state ?? null}
                       deactivatedAt={user.deactivated_at ?? null}
                       lockedAt={user.locked_at ?? null}
                     />
