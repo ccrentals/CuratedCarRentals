@@ -917,6 +917,7 @@ export async function PATCH(
         }
       }
 
+      const hasLinkedClerkUser = Boolean(existing.clerk_user_id?.trim());
       let clerkDeleteStatus: "not_linked" | "deleted" | "already_missing" = "not_linked";
       let clerkDeleteUserId: string | null = null;
       let revokedInvitationIds: string[] = [];
@@ -924,7 +925,20 @@ export async function PATCH(
         const clerkDelete = await deleteLinkedClerkUser(existing);
         clerkDeleteStatus = clerkDelete.status;
         clerkDeleteUserId = clerkDelete.clerkUserId;
-        revokedInvitationIds = await revokePendingClerkInvitationsByEmail(existing.email);
+        try {
+          revokedInvitationIds = await revokePendingClerkInvitationsByEmail(existing.email);
+        } catch (error) {
+          if (!lifecycleTrackingAvailable && !hasLinkedClerkUser) {
+            logError("api.admin.users.PATCH.revokeInvitationsLegacyFallback", error, {
+              actorUserId: session.userId,
+              targetUserId: userId,
+              targetEmail: existing.email,
+            });
+            revokedInvitationIds = [];
+          } else {
+            throw error;
+          }
+        }
       } catch (error) {
         const message =
           error instanceof Error && error.message === "CLERK_DELETE_NOT_CONFIGURED"
