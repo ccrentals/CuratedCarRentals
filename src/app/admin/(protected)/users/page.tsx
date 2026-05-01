@@ -247,10 +247,11 @@ export default async function AdminUsersPage({
 
       {lifecycleNotConfigured ? (
         <div className="mt-6 rounded-2xl border border-amber-400/40 bg-amber-500/10 p-4 text-sm text-amber-100">
-          <p className="font-semibold">User management not configured</p>
+          <p className="font-semibold">Legacy user-management mode</p>
           <p className="mt-1 text-xs text-amber-100/80">
-            The users lifecycle columns are missing in the connected database. Apply the users section
-            from schema.sql to enable setup and external-cleanup lifecycle tracking.
+            The connected database does not have the lifecycle columns yet. Create, setup, and delete
+            still work, but explicit setup-pending and external-cleanup tracking are unavailable until
+            the users section from schema.sql is applied.
           </p>
         </div>
       ) : null}
@@ -267,7 +268,7 @@ export default async function AdminUsersPage({
 
       <UsersFilters initialQuery={q} />
 
-      <CreateUserForm disabled={lifecycleNotConfigured} actorRole={effectiveSessionRole ?? "USER"} />
+      <CreateUserForm actorRole={effectiveSessionRole ?? "USER"} />
 
       <div className="mt-6 overflow-x-auto rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)]">
         {totalUsers === 0 ? (

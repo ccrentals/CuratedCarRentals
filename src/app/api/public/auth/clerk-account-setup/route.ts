@@ -70,6 +70,39 @@ async function loadLocalUserByEmail(email: string) {
   }
 }
 
+async function safeLifecycleErrorUpdate(userId: string, message: string) {
+  try {
+    await dbQuery(
+      "update users set lifecycle_error = $2, lifecycle_state_updated_at = now(), updated_at = now() where id = $1",
+      [userId, message],
+    );
+  } catch (error) {
+    if (
+      isUndefinedColumn(error, "lifecycle_error") ||
+      isUndefinedColumn(error, "lifecycle_state_updated_at") ||
+      isUndefinedColumn(error, "updated_at")
+    ) {
+      return;
+    }
+    throw error;
+  }
+}
+
+async function safeActivateUser(userId: string) {
+  try {
+    await dbQuery(
+      "update users set is_active = true, lifecycle_state = 'active', lifecycle_state_updated_at = now(), lifecycle_error = null, updated_at = now() where id = $1",
+      [userId],
+    );
+  } catch (error) {
+    if (isUndefinedColumn(error, "lifecycle_state") || isUndefinedColumn(error, "lifecycle_error")) {
+      await dbQuery("update users set is_active = true, updated_at = now() where id = $1", [userId]);
+      return;
+    }
+    throw error;
+  }
+}
+
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
   const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
@@ -160,10 +193,7 @@ export async function POST(request: Request) {
     );
 
     if (!resolution.ok) {
-      await dbQuery(
-        "update users set lifecycle_error = $2, lifecycle_state_updated_at = now(), updated_at = now() where id = $1",
-        [localUser.id, resolution.message],
-      ).catch(() => {});
+      await safeLifecycleErrorUpdate(localUser.id, resolution.message).catch(() => {});
       return NextResponse.json({ error: resolution.message }, { status: resolution.status });
     }
 
@@ -173,17 +203,11 @@ export async function POST(request: Request) {
       password,
     });
     if (!syncResult.ok) {
-      await dbQuery(
-        "update users set lifecycle_error = $2, lifecycle_state_updated_at = now(), updated_at = now() where id = $1",
-        [localUser.id, syncResult.message],
-      ).catch(() => {});
+      await safeLifecycleErrorUpdate(localUser.id, syncResult.message).catch(() => {});
       return NextResponse.json({ error: syncResult.message }, { status: syncResult.status });
     }
 
-    await dbQuery(
-      "update users set is_active = true, lifecycle_state = 'active', lifecycle_state_updated_at = now(), lifecycle_error = null, updated_at = now() where id = $1",
-      [localUser.id],
-    );
+    await safeActivateUser(localUser.id);
 
     return NextResponse.json({
       ok: true,
@@ -192,10 +216,9 @@ export async function POST(request: Request) {
       ...(resolution.localLinkWarning ? { warning: resolution.localLinkWarning } : {}),
     });
   } catch (error) {
-    await dbQuery(
-      "update users set lifecycle_error = $2, lifecycle_state_updated_at = now(), updated_at = now() where lower(email) = lower($1)",
-      [email, mapClerkAccountSetupError(error)],
-    ).catch(() => {});
+    if (localUser?.id) {
+      await safeLifecycleErrorUpdate(localUser.id, mapClerkAccountSetupError(error)).catch(() => {});
+    }
     logWarn("api.public.auth.clerkAccountSetup", {
       email,
       code: (error as { errors?: Array<{ code?: string }> } | null)?.errors?.[0]?.code,

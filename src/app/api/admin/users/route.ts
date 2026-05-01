@@ -203,12 +203,23 @@ export async function POST(request: Request) {
   try {
     await client.query("begin");
 
-    const dup = await client.query(
-      "select id, lifecycle_state from users where lower(email) = lower($1) limit 1",
-      [
-      emailLower,
-      ],
-    );
+    const dup = await (async () => {
+      try {
+        return await client.query(
+          "select id, lifecycle_state from users where lower(email) = lower($1) limit 1",
+          [emailLower],
+        );
+      } catch (error) {
+        if (!isUndefinedColumn(error, "lifecycle_state")) {
+          throw error;
+        }
+        const fallback = await client.query(
+          "select id, null::text as lifecycle_state from users where lower(email) = lower($1) limit 1",
+          [emailLower],
+        );
+        return fallback;
+      }
+    })();
     if (dup.rowCount > 0) {
       await client.query("rollback");
       const lifecycleState = normalizeUserLifecycleState(dup.rows[0]?.lifecycle_state);
@@ -252,13 +263,15 @@ export async function POST(request: Request) {
       } catch (error) {
         const code = (error as { code?: string } | null)?.code;
         const message = String((error as { message?: unknown } | null)?.message ?? "");
-        if (
-          code === "42703" &&
-          ((message.includes("\"username\"") && message.includes("does not exist")) ||
-            (message.includes("\"lifecycle_state\"") && message.includes("does not exist")))
-        ) {
+        if (code === "42703" && message.includes("\"username\"") && message.includes("does not exist")) {
           await client.query("rollback");
           return null;
+        }
+        if (isUndefinedColumn(error, "lifecycle_state")) {
+          return client.query(
+            "insert into users (email, username, full_name, password_hash, role, is_active, must_change_password, temp_password_expires_at, password_updated_at) values ($1, $2, $3, $4, $5, false, false, null, now()) returning id, public_id",
+            [emailLower, usernameFinal, fullNameFinal, passwordHash, role],
+          );
         }
         throw error;
       }
@@ -267,8 +280,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error: "USERNAMES_NOT_CONFIGURED",
-          message:
-            "users.username or lifecycle columns are missing. Apply schema.sql changes and redeploy.",
+          message: "users.username column is missing. Apply schema.sql changes and redeploy.",
         },
         { status: 500 },
       );

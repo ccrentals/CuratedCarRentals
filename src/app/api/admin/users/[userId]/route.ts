@@ -901,6 +901,7 @@ export async function PATCH(
       }
 
       const lifecycleState = normalizeUserLifecycleState(existing.lifecycle_state);
+      let lifecycleTrackingAvailable = true;
       if (lifecycleState !== "delete_pending_external_cleanup") {
         try {
           await queryUserUpdate(
@@ -910,17 +911,9 @@ export async function PATCH(
           );
         } catch (error) {
           if (isUndefinedColumn(error, "lifecycle_state")) {
-            await client.query("rollback");
-            return NextResponse.json(
-              {
-                error: "USER_LIFECYCLE_NOT_CONFIGURED",
-                message:
-                  "users lifecycle state columns are missing. Apply schema.sql changes and redeploy.",
-              },
-              { status: 500 },
-            );
+            lifecycleTrackingAvailable = false;
           }
-          throw error;
+          else throw error;
         }
       }
 
@@ -937,11 +930,13 @@ export async function PATCH(
           error instanceof Error && error.message === "CLERK_DELETE_NOT_CONFIGURED"
             ? "Clerk is not configured in this environment, so external cleanup could not be completed."
             : "External identity cleanup could not be completed. The account remains pending external cleanup and the email cannot be reused yet.";
-        await queryUserUpdate(
-          client,
-          "update users set lifecycle_error = $2, lifecycle_state_updated_at = now(), updated_at = now() where id = $1",
-          [userId, message],
-        ).catch(() => {});
+        if (lifecycleTrackingAvailable) {
+          await queryUserUpdate(
+            client,
+            "update users set lifecycle_error = $2, lifecycle_state_updated_at = now(), updated_at = now() where id = $1",
+            [userId, message],
+          ).catch(() => {});
+        }
         await insertAuditLogWithClient(client, {
           userId: session.userId,
           action: "USER_DELETE_PENDING_EXTERNAL_CLEANUP",
@@ -957,14 +952,20 @@ export async function PATCH(
               (error as { message?: unknown } | null)?.message ?? "unknown_external_cleanup_error",
           },
         });
-        await client.query("commit");
+        if (lifecycleTrackingAvailable) {
+          await client.query("commit");
+        } else {
+          await client.query("rollback");
+        }
         if (error instanceof Error && error.message === "CLERK_DELETE_NOT_CONFIGURED") {
           return NextResponse.json(
             {
               error: "USER_DELETE_PENDING_EXTERNAL_CLEANUP",
-              message,
+              message: lifecycleTrackingAvailable
+                ? message
+                : "Clerk is not configured in this environment, so the user could not be deleted.",
             },
-            { status: 409 },
+            { status: lifecycleTrackingAvailable ? 409 : 500 },
           );
         }
         logError("api.admin.users.PATCH.clerkDelete", error, {
@@ -975,9 +976,11 @@ export async function PATCH(
         return NextResponse.json(
           {
             error: "USER_DELETE_PENDING_EXTERNAL_CLEANUP",
-            message,
+            message: lifecycleTrackingAvailable
+              ? message
+              : "External identity cleanup failed, so the user could not be deleted.",
           },
-          { status: 409 },
+          { status: lifecycleTrackingAvailable ? 409 : 500 },
         );
       }
 
