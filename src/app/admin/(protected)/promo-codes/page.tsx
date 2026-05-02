@@ -114,24 +114,29 @@ function formatWindowLabel(value: string | null, fallback: string) {
   return `${fmtAdminDateTimeNoSeconds(value)} Jamaica time`;
 }
 
-function buildConstraintBadges(promo: PromoRow) {
-  const badges: string[] = [];
+type ConstraintItem = {
+  label: string;
+  value: string;
+};
+
+function buildConstraintItems(promo: PromoRow) {
+  const items: ConstraintItem[] = [];
   if (promo.min_subtotal_cents !== null) {
-    badges.push(`Min ${formatJmd(promo.min_subtotal_cents)}`);
+    items.push({ label: "Minimum", value: formatJmd(promo.min_subtotal_cents) });
   }
   if (promo.max_redemptions_per_customer !== null) {
-    badges.push(`Per customer ${promo.max_redemptions_per_customer}`);
+    items.push({ label: "Per customer", value: String(promo.max_redemptions_per_customer) });
   }
   if (promo.allowed_vehicle_ids_json.length > 0) {
-    badges.push(`Allowed vehicles ${promo.allowed_vehicle_ids_json.length}`);
+    items.push({ label: "Allowed vehicles", value: String(promo.allowed_vehicle_ids_json.length) });
   }
   if (promo.excluded_vehicle_ids_json.length > 0) {
-    badges.push(`Excluded vehicles ${promo.excluded_vehicle_ids_json.length}`);
+    items.push({ label: "Excluded vehicles", value: String(promo.excluded_vehicle_ids_json.length) });
   }
   if (promo.blackout_dates_json.length > 0) {
-    badges.push(`Blackout dates ${promo.blackout_dates_json.length}`);
+    items.push({ label: "Blackout dates", value: String(promo.blackout_dates_json.length) });
   }
-  return badges;
+  return items;
 }
 
 const EMPTY_PROMO_PAGE: PromoPageResponse = {
@@ -716,13 +721,13 @@ export default function AdminPromoCodesPage() {
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Valid Window</th>
                 <th className="px-4 py-3">Counted / Remaining</th>
-                <th className="px-4 py-3">Constraints</th>
+                <th className="w-[15rem] px-4 py-3">Constraints</th>
                 <th className="px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
               {promoPage.promos.map((promo) => {
-                const constraintBadges = buildConstraintBadges(promo);
+                const constraintItems = buildConstraintItems(promo);
                 return (
                   <tr key={promo.id} className="border-b border-[var(--ccr-border)] last:border-b-0">
                     <td className="px-4 py-3">
@@ -748,18 +753,23 @@ export default function AdminPromoCodesPage() {
                         {promo.remaining_redemptions === null ? "Unlimited remaining" : `${promo.remaining_redemptions} remaining`}
                       </p>
                     </td>
-                    <td className="px-4 py-3">
-                      {constraintBadges.length === 0 ? (
+                    <td className="w-[15rem] px-4 py-3 align-top">
+                      {constraintItems.length === 0 ? (
                         <span className="text-xs text-[var(--ccr-muted)]">No extra constraints</span>
                       ) : (
-                        <div className="flex flex-wrap gap-2">
-                          {constraintBadges.map((badge) => (
-                            <span
-                              key={`${promo.id}-${badge}`}
-                              className="rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-2 py-1 text-[11px] font-semibold text-[var(--ccr-text)]"
+                        <div className="grid min-w-[12rem] gap-2">
+                          {constraintItems.map((item) => (
+                            <div
+                              key={`${promo.id}-${item.label}`}
+                              className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-2"
                             >
-                              {badge}
-                            </span>
+                              <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                                {item.label}
+                              </p>
+                              <p className="mt-1 text-sm font-semibold leading-tight text-[var(--ccr-text)]">
+                                {item.value}
+                              </p>
+                            </div>
                           ))}
                         </div>
                       )}
