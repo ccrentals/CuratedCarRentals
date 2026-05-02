@@ -136,7 +136,11 @@ function promoStatusLabel(status: PromoAdminState) {
 }
 
 function promoMinThresholdLabel(scope: PromoDetails["apply_scope"] | "OVERALL_TOTAL" | "DAYS_TOTAL") {
-  return scope === "DAYS_TOTAL" ? "Min rental-days total (JMD)" : "Min overall subtotal (JMD)";
+  return scope === "DAYS_TOTAL" ? "Min rental-days total" : "Min overall subtotal (JMD)";
+}
+
+function promoDiscountInputLabel(type: "PERCENT" | "FIXED") {
+  return type === "PERCENT" ? "Discount percentage" : "Discount amount";
 }
 
 function formatWindowLabel(value: string | null, fallback: string) {
@@ -473,12 +477,12 @@ export default function AdminPromoCodeDetailPage() {
                   onChange={(event) => setApplyScope(event.target.value as "OVERALL_TOTAL" | "DAYS_TOTAL")}
                   className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
                 >
-                  <option value="OVERALL_TOTAL">Overall subtotal</option>
                   <option value="DAYS_TOTAL">Rental days total</option>
+                  <option value="OVERALL_TOTAL">Overall subtotal</option>
                 </select>
               </label>
               <label className="text-xs text-[var(--ccr-muted)]">
-                Discount Value
+                {promoDiscountInputLabel(discountType)}
                 <input
                   type="number"
                   min="0"
@@ -571,6 +575,22 @@ export default function AdminPromoCodeDetailPage() {
                   <legend className="px-1 text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
                     Allowed Vehicles
                   </legend>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setAllowedVehicleIds(vehicles.map((vehicle) => vehicle.id))}
+                      className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-2 py-1 text-[11px] font-semibold text-[var(--ccr-text)]"
+                    >
+                      Select all
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAllowedVehicleIds([])}
+                      className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-2 py-1 text-[11px] font-semibold text-[var(--ccr-text)]"
+                    >
+                      Deselect all
+                    </button>
+                  </div>
                   <div className="mt-2 max-h-52 space-y-2 overflow-y-auto pr-1">
                     {vehicles.map((vehicle) => (
                       <label key={vehicle.id} className="flex items-center gap-2 text-xs text-[var(--ccr-text)]">
@@ -595,6 +615,22 @@ export default function AdminPromoCodeDetailPage() {
                   <legend className="px-1 text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
                     Excluded Vehicles
                   </legend>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setExcludedVehicleIds(vehicles.map((vehicle) => vehicle.id))}
+                      className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-2 py-1 text-[11px] font-semibold text-[var(--ccr-text)]"
+                    >
+                      Select all
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setExcludedVehicleIds([])}
+                      className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-2 py-1 text-[11px] font-semibold text-[var(--ccr-text)]"
+                    >
+                      Deselect all
+                    </button>
+                  </div>
                   <div className="mt-2 max-h-52 space-y-2 overflow-y-auto pr-1">
                     {vehicles.map((vehicle) => (
                       <label key={vehicle.id} className="flex items-center gap-2 text-xs text-[var(--ccr-text)]">
