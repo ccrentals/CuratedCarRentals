@@ -59,6 +59,16 @@ type SendEmailInput = {
 
 type SendEmailResult = SendTrackedEmailResult;
 
+type SendAdminUserWelcomeEmailInput = {
+  userId: string;
+  userPublicId?: string | null;
+  userEmail: string;
+  username: string;
+  fullName: string;
+  setupUrl: string;
+  actorUserId?: string | null;
+};
+
 async function sendResendEmail({
   to,
   subject,
@@ -739,6 +749,51 @@ function renderPrimaryEmailButton(label: string, href: string, options?: { accen
       ? "background:#1f2d4d; color:#fff; border:1px solid #1f2d4d;"
       : "background:#f8fafc; color:#1f2d4d; border:1px solid #cbd5e1;";
   return `<a href="${href}" style="display:inline-block; ${style} padding:10px 16px; border-radius:8px; text-decoration:none; font-weight:600;">${label}</a>`;
+}
+
+export async function sendAdminUserWelcomeEmail(
+  input: SendAdminUserWelcomeEmailInput,
+): Promise<SendEmailResult> {
+  const displayName = normalizeText(input.fullName) || "there";
+  const setupUrl = normalizeText(input.setupUrl) || `${baseUrl()}/sign-up?redirect=%2Fadmin`;
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; color: #0f172a;">
+      <h2>Welcome to Curated Car Rentals</h2>
+      <p>Hi ${displayName},</p>
+      <p>Your admin account has been created. Complete setup before signing in.</p>
+      <p><strong>Email address:</strong> ${input.userEmail}</p>
+      <p><strong>Username:</strong> ${input.username}</p>
+      <p style="margin-top: 16px;">
+        ${renderPrimaryEmailButton("Complete account setup", setupUrl)}
+      </p>
+      <p style="margin-top: 12px; font-size:12px; color:#64748b;">
+        Setup link: <a href="${setupUrl}" style="color:#1f2d4d;">${setupUrl}</a>
+      </p>
+      <p style="font-size:12px; color:#64748b;">Use the same email address shown above when completing setup.</p>
+    </div>
+  `;
+
+  return sendResendEmail({
+    to: input.userEmail,
+    subject: "Welcome to Curated Car Rentals — complete account setup",
+    html,
+    dispatch: {
+      entityType: "user",
+      entityId: input.userId,
+      entityPublicId: normalizeText(input.userPublicId) || null,
+      emailType: "admin_user_welcome",
+      recipientName: normalizeText(input.fullName) || null,
+      triggeredByUserId: normalizeText(input.actorUserId) || null,
+      triggerSource: "system",
+      manualResendAllowed: true,
+      metadata: {
+        setupUrl,
+        username: input.username,
+        emailAddress: input.userEmail,
+      },
+    },
+  });
 }
 
 export async function sendBookingCreatedEmail(input: {

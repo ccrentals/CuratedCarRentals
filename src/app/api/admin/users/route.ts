@@ -9,6 +9,7 @@ import { hashPassword } from "@/lib/auth/password";
 import { writeAuditLog } from "@/lib/audit";
 import { requireCsrf } from "@/lib/security/csrf";
 import { logError } from "@/lib/log";
+import { sendAdminUserWelcomeEmail } from "@/lib/notifications/email";
 import {
   generateStandardUsernameBase,
   resolveUsernameCollision,
@@ -79,12 +80,17 @@ type OnboardingSetupResult = {
   setupPath: string;
 };
 
+type WelcomeEmailResult = {
+  warning?: string | null;
+};
+
 export function buildAdminUserCreateSuccessPayload(input: {
   userId: string;
   userPublicId: string | null;
   username: string;
   setupEmail: string;
   onboarding: OnboardingSetupResult;
+  welcomeEmail?: WelcomeEmailResult;
 }) {
   return {
     ok: true as const,
@@ -93,6 +99,7 @@ export function buildAdminUserCreateSuccessPayload(input: {
     username: input.username,
     setupEmail: input.setupEmail,
     onboarding: input.onboarding,
+    welcomeEmail: input.welcomeEmail ?? null,
   };
 }
 
@@ -196,6 +203,7 @@ export async function POST(request: Request) {
   const bootstrapPassword = generateBootstrapPassword();
   const passwordHash = await hashPassword(bootstrapPassword);
   const setupPath = "/sign-up?redirect=%2Fadmin";
+  const setupUrl = `${process.env.SITE_URL ?? "http://localhost:3000"}${setupPath}`;
 
   const pool = getDbPool();
   const client = await pool.connect();
@@ -290,6 +298,30 @@ export async function POST(request: Request) {
 
     await client.query("commit");
 
+    let welcomeEmailWarning: string | null = null;
+    const welcomeEmailResult = await sendAdminUserWelcomeEmail({
+      userId: newUserId,
+      userPublicId: newUserPublicId,
+      userEmail: emailLower,
+      username: usernameFinal,
+      fullName: fullNameFinal,
+      setupUrl,
+      actorUserId: actor.userId,
+    }).catch((error) => {
+      logError("api.admin.users.POST.welcomeEmail", error, {
+        actorUserId: actor.userId,
+        userId: newUserId,
+        email: emailLower,
+      });
+      return { ok: false, error: "Welcome email could not be sent." } as const;
+    });
+
+    if (!welcomeEmailResult.ok) {
+      welcomeEmailWarning =
+        welcomeEmailResult.error ??
+        "Welcome email could not be sent. Share the setup link manually.";
+    }
+
     await writeAuditLog({
       userId: actor.userId,
       action: "USER_CREATED",
@@ -302,6 +334,8 @@ export async function POST(request: Request) {
         onboardingStatus: "setup_pending",
         lifecycleState: "setup_pending",
         setupPath,
+        welcomeEmailSent: welcomeEmailResult.ok,
+        welcomeEmailWarning,
       },
     });
 
@@ -316,6 +350,9 @@ export async function POST(request: Request) {
           message:
             "Local user created. Status: setup pending. The account cannot sign in until setup is completed from the dedicated account setup page.",
           setupPath,
+        },
+        welcomeEmail: {
+          warning: welcomeEmailWarning,
         },
       }),
     );

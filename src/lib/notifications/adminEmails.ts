@@ -4,6 +4,7 @@ import {
   sendContactMessagesDigestAlert,
 } from "@/lib/notifications/contactMessageAlert";
 import {
+  sendAdminUserWelcomeEmail,
   sendBookingCancelledByBlockoutEmail,
   sendBookingCreatedEmail,
   sendBookingNoteEmail,
@@ -776,6 +777,34 @@ export async function resendAdminEmail(recordId: string, actorUserId: string) {
   }
 
   if (!detail.entityId || detail.entityType !== "booking") {
+    if (detail.emailType === "admin_user_welcome") {
+      const setupUrl = normalizeText(detail.metadata.setupUrl);
+      const username = normalizeText(detail.metadata.username);
+      const emailAddress = normalizeText(detail.metadata.emailAddress) || normalizeText(detail.recipientEmail);
+
+      if (!detail.entityId || !emailAddress || !username || !setupUrl) {
+        return { ok: false, status: 409, error: "Admin welcome email context is incomplete." } as const;
+      }
+
+      const result = await sendAdminUserWelcomeEmail({
+        userId: detail.entityId,
+        userPublicId: detail.entityPublicId,
+        userEmail: emailAddress,
+        username,
+        fullName: normalizeText(detail.recipientName) || emailAddress,
+        setupUrl,
+        actorUserId,
+      });
+
+      return result.ok
+        ? ({ ok: true, status: 200 } as const)
+        : ({
+            ok: false,
+            status: result.skipped ? 400 : 500,
+            error: result.error ?? "Failed to resend welcome email.",
+          } as const);
+    }
+
     if (detail.emailType === "contact_message_created_alert" || detail.emailType === "contact_messages_digest_alert") {
       if (!detail.recipientEmail) {
         return { ok: false, status: 409, error: "Contact alert recipient is missing." } as const;

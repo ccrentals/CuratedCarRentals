@@ -26,6 +26,9 @@ type CreateUserResult = {
     message: string;
     setupPath: string;
   };
+  welcomeEmail?: {
+    warning?: string | null;
+  } | null;
 };
 
 type ExistingUserRole = "USER" | "ADMIN" | "DEVELOPER";
@@ -63,6 +66,7 @@ export function CreateUserForm({
 }) {
   const router = useRouter();
   const canAssignDeveloperRole = isDeveloperRole(actorRole);
+  const setupOrigin = typeof window !== "undefined" ? window.location.origin : "";
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
@@ -74,11 +78,15 @@ export function CreateUserForm({
     setupEmail: string;
     createdUsername: string | null;
     onboardingMessage: string | null;
+    welcomeEmailWarning: string | null;
     setupPath: string;
+    setupUrl: string;
   } | null>(null);
+  const [copySetupToast, setCopySetupToast] = useState<null | "Copied" | "Copy failed">(null);
 
   function dismissSuccessNotice() {
     setSuccessNotice(null);
+    setCopySetupToast(null);
   }
 
   async function submit() {
@@ -144,13 +152,24 @@ export function CreateUserForm({
       return;
     }
 
+    const setupPath =
+      data.onboarding && "setupPath" in data.onboarding
+        ? data.onboarding.setupPath
+        : "/sign-up?redirect=%2Fadmin";
+    const setupUrl =
+      setupPath.startsWith("http://") || setupPath.startsWith("https://")
+        ? setupPath
+        : `${setupOrigin}${setupPath}`;
+
     setSuccessNotice({
       setupEmail: data.setupEmail,
       createdUsername: String(data.username),
       onboardingMessage:
         data.onboarding && "message" in data.onboarding ? data.onboarding.message : null,
-      setupPath:
-        data.onboarding && "setupPath" in data.onboarding ? data.onboarding.setupPath : "/sign-up?redirect=%2Fadmin",
+      welcomeEmailWarning:
+        data.welcomeEmail && "warning" in data.welcomeEmail ? data.welcomeEmail.warning ?? null : null,
+      setupPath,
+      setupUrl,
     });
     setFirstName("");
     setLastName("");
@@ -271,10 +290,13 @@ export function CreateUserForm({
           </p>
           <p className="mt-2 text-[11px] text-[var(--ccr-muted)]">
             Setup page:{" "}
-            <span className="font-mono text-[var(--ccr-text)]">{successNotice.setupPath}</span>
+            <span className="font-mono text-[var(--ccr-text)]">{successNotice.setupUrl}</span>
           </p>
           {successNotice.onboardingMessage ? (
             <p className="mt-1 text-[11px] text-emerald-300">{successNotice.onboardingMessage}</p>
+          ) : null}
+          {successNotice.welcomeEmailWarning ? (
+            <p className="mt-1 text-[11px] text-amber-300">{successNotice.welcomeEmailWarning}</p>
           ) : null}
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <a
@@ -287,6 +309,22 @@ export function CreateUserForm({
             </a>
             <button
               type="button"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(successNotice.setupUrl);
+                  setCopySetupToast("Copied");
+                  window.setTimeout(() => setCopySetupToast(null), 1400);
+                } catch {
+                  setCopySetupToast("Copy failed");
+                  window.setTimeout(() => setCopySetupToast(null), 1400);
+                }
+              }}
+              className={buttonStyles({ variant: "secondary", size: "xs" })}
+            >
+              Copy setup URL
+            </button>
+            <button
+              type="button"
               onClick={() => {
                 dismissSuccessNotice();
                 setPanelOpen(true);
@@ -295,6 +333,19 @@ export function CreateUserForm({
             >
               Create another
             </button>
+            {copySetupToast ? (
+              <span
+                className={`rounded-lg border px-2 py-1 text-[11px] font-semibold ${
+                  copySetupToast === "Copied"
+                    ? "border-[var(--ccr-accent)] bg-[var(--ccr-bg)] text-[var(--ccr-accent)]"
+                    : "border-red-400/40 bg-[var(--ccr-bg)] text-red-200"
+                }`}
+                role="status"
+                aria-live="polite"
+              >
+                {copySetupToast}
+              </span>
+            ) : null}
             <button
               type="button"
               aria-label="Dismiss user created notice"
