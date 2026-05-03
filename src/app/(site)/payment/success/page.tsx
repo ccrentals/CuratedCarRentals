@@ -6,7 +6,6 @@ import { hasPublicBookingAccessForPage } from "@/lib/bookings/publicAccess";
 import { DateRangeArrow } from "@/components/shared/DateRangeArrow";
 import { dbQuery } from "@/lib/db";
 import { fmtDateOnly } from "@/lib/dateFormat";
-import { getPdfMonkeyDocumentUrls } from "@/lib/pdfmonkey";
 import { formatJmd } from "@/lib/money";
 import { formatPaymentStatus } from "@/lib/payments/formatPaymentStatus";
 import {
@@ -45,7 +44,6 @@ type PaymentRow = {
 };
 
 type InvoiceDocumentRow = {
-  provider_document_id: string | null;
   download_url: string | null;
 };
 
@@ -186,25 +184,15 @@ export default async function PaymentSuccessPage({
   const bookingRef = (booking?.public_id ?? "").trim();
 
   let invoicePdfUrl: string | null = null;
-  let invoicePreviewUrl: string | null = null;
+  let invoicePreviewRoute: string | null = null;
   if (bookingId) {
     try {
       const invoiceDocResult = await dbQuery<InvoiceDocumentRow>(
-        "select provider_document_id, download_url from booking_invoice_documents where booking_id = $1 and (provider_document_id is not null or download_url is not null) order by generated_at desc limit 1",
+        "select download_url from booking_invoice_documents where booking_id = $1 and download_url is not null order by generated_at desc limit 1",
         [bookingId],
       );
-      const latestInvoiceDocument = invoiceDocResult.rows[0] ?? null;
-      invoicePdfUrl = latestInvoiceDocument?.download_url ?? null;
-
-      if (latestInvoiceDocument?.provider_document_id) {
-        const liveDocument = await getPdfMonkeyDocumentUrls(latestInvoiceDocument.provider_document_id);
-        if (liveDocument?.previewUrl) {
-          invoicePreviewUrl = liveDocument.previewUrl;
-        }
-        if (liveDocument?.downloadUrl) {
-          invoicePdfUrl = liveDocument.downloadUrl;
-        }
-      }
+      invoicePdfUrl = invoiceDocResult.rows[0]?.download_url ?? null;
+      invoicePreviewRoute = `/bookings/${bookingId}/invoice/preview`;
     } catch (error) {
       const code = (error as { code?: string } | null)?.code;
       // Graceful fallback if the invoice ledger table does not exist yet.
@@ -298,9 +286,9 @@ export default async function PaymentSuccessPage({
                   <span className="text-xs text-[var(--ccr-muted)]">Booking #{bookingRef || "—"}</span>
                 </div>
                 <div className="overflow-x-auto rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3">
-                  {invoicePreviewUrl ? (
+                  {invoicePreviewRoute ? (
                     <iframe
-                      src={invoicePreviewUrl}
+                      src={invoicePreviewRoute}
                       title={`Invoice preview for booking ${bookingRef || booking.id}`}
                       className="h-[960px] w-full rounded-lg bg-white"
                     />
@@ -323,7 +311,7 @@ export default async function PaymentSuccessPage({
                     </div>
                   )}
                 </div>
-                {!invoicePreviewUrl ? (
+                {!invoicePreviewRoute ? (
                   <p className="mt-3 text-xs text-[var(--ccr-muted)]">
                     PDF preview is unavailable right now. Showing the live invoice page instead.
                   </p>
