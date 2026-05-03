@@ -264,8 +264,11 @@ export default async function PaymentSuccessPage({
     balanceDue === 0
       ? "Your booking is now paid in full."
       : "Your booking is confirmed. We will follow up with pickup details shortly.";
+  const invoicePreviewSrc = invoicePreviewRoute
+    ? `${invoicePreviewRoute}#pagemode=none&navpanes=0&view=FitH&zoom=page-width`
+    : null;
   return (
-    <div className="invoice-page mx-auto w-full max-w-3xl px-6 py-12">
+    <div className="invoice-page mx-auto w-full max-w-7xl px-6 py-12">
       <div className="rounded-3xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-8 shadow-sm print:border-none print:bg-white print:shadow-none">
         <div className="print-hide">
           <h1 className="text-3xl font-bold text-[var(--ccr-text)]">{headline}</h1>
@@ -285,15 +288,15 @@ export default async function PaymentSuccessPage({
                   <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Invoice preview</h2>
                   <span className="text-xs text-[var(--ccr-muted)]">Booking #{bookingRef || "—"}</span>
                 </div>
-                <div className="overflow-x-auto rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3">
-                  {invoicePreviewRoute ? (
+                <div className="overflow-hidden rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)]">
+                  {invoicePreviewSrc ? (
                     <iframe
-                      src={invoicePreviewRoute}
+                      src={invoicePreviewSrc}
                       title={`Invoice preview for booking ${bookingRef || booking.id}`}
-                      className="h-[960px] w-full rounded-lg bg-white"
+                      className="h-[1280px] w-full bg-white"
                     />
                   ) : (
-                    <div className="mx-auto min-w-[720px] max-w-[760px]">
+                    <div className="mx-auto min-w-[720px] max-w-[960px] p-3">
                       <InvoiceSnapshotCard
                         booking={booking}
                         bookingRef={bookingRef}
