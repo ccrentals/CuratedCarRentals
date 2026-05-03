@@ -80,6 +80,16 @@ function resolveAdminRedirectTarget(params: {
 }) {
   const redirectValue = params.redirect;
   if (typeof redirectValue === "string" && redirectValue.startsWith("/")) {
+    if (
+      redirectValue === "/admin/auth" ||
+      redirectValue.startsWith("/admin/auth?") ||
+      redirectValue === "/sign-in" ||
+      redirectValue.startsWith("/sign-in?") ||
+      redirectValue === "/api/admin/session/bootstrap" ||
+      redirectValue.startsWith("/api/admin/session/bootstrap?")
+    ) {
+      return "/admin";
+    }
     return redirectValue;
   }
 
@@ -91,6 +101,13 @@ function resolveAdminRedirectTarget(params: {
           ? new URL(redirectUrlValue).pathname
           : redirectUrlValue;
       if (pathname.startsWith("/")) {
+        if (
+          pathname === "/admin/auth" ||
+          pathname === "/sign-in" ||
+          pathname === "/api/admin/session/bootstrap"
+        ) {
+          return "/admin";
+        }
         return pathname;
       }
     } catch {

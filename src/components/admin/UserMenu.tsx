@@ -54,7 +54,7 @@ function UserMenuInner({
   function handleSignOut() {
     if (loading) return;
     setLoading(true);
-    const fallbackLogoutUrl = "/api/admin/logout?redirect=%2Fadmin%2Fauth";
+    const fallbackLogoutUrl = "/api/admin/logout?redirect=%2Fadmin";
     window.location.assign(fallbackLogoutUrl);
   }
 

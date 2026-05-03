@@ -15,7 +15,18 @@ function resolveRedirectTarget(request: Request) {
     if (target.origin !== origin) {
       return "/admin";
     }
-    return `${target.pathname}${target.search}${target.hash}`;
+    const normalized = `${target.pathname}${target.search}${target.hash}`;
+    if (
+      normalized === "/admin/auth" ||
+      normalized.startsWith("/admin/auth?") ||
+      normalized === "/sign-in" ||
+      normalized.startsWith("/sign-in?") ||
+      normalized === "/api/admin/session/bootstrap" ||
+      normalized.startsWith("/api/admin/session/bootstrap?")
+    ) {
+      return "/admin";
+    }
+    return normalized;
   } catch {
     return "/admin";
   }

@@ -31,6 +31,16 @@ function resolveRedirectTarget(searchParams: {
 }) {
   const redirectValue = searchParams.redirect;
   if (typeof redirectValue === "string" && redirectValue.startsWith("/")) {
+    if (
+      redirectValue === "/admin/auth" ||
+      redirectValue.startsWith("/admin/auth?") ||
+      redirectValue === "/sign-in" ||
+      redirectValue.startsWith("/sign-in?") ||
+      redirectValue === "/api/admin/session/bootstrap" ||
+      redirectValue.startsWith("/api/admin/session/bootstrap?")
+    ) {
+      return "/admin";
+    }
     return redirectValue;
   }
 
