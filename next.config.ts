@@ -35,7 +35,7 @@ const CUSTOMER_SITE_DOMAINS = [
   "https://curatedcarrentals.com",
 ];
 
-function buildCsp() {
+function buildCsp(frameAncestors: string = "'none'") {
   const scriptSrc = [
     "'self'",
     "'unsafe-inline'", // Required for existing inline theme bootstrap script.
@@ -58,7 +58,7 @@ function buildCsp() {
     `default-src 'self'`,
     `base-uri 'self'`,
     `object-src 'none'`,
-    `frame-ancestors 'none'`,
+    `frame-ancestors ${frameAncestors}`,
     `script-src ${scriptSrc.join(" ")}`,
     `style-src 'self' 'unsafe-inline'`,
     `font-src 'self' data:`,
@@ -80,24 +80,26 @@ const CSP_HEADER_NAME =
     ? "Content-Security-Policy"
     : "Content-Security-Policy-Report-Only";
 
-const SECURITY_HEADERS: Array<{ key: string; value: string }> = [
-  { key: CSP_HEADER_NAME, value: buildCsp() },
-  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-  { key: "X-Content-Type-Options", value: "nosniff" },
-  { key: "X-Frame-Options", value: "DENY" },
-  {
-    key: "Permissions-Policy",
-    value: "camera=(), geolocation=(), microphone=(), payment=(), usb=()",
-  },
-  ...(IS_PRODUCTION
-    ? [
-        {
-          key: "Strict-Transport-Security",
-          value: "max-age=63072000; includeSubDomains; preload",
-        },
-      ]
-    : []),
-];
+function buildSecurityHeaders(options?: { frameAncestors?: string; xFrameOptions?: string }) {
+  return [
+    { key: CSP_HEADER_NAME, value: buildCsp(options?.frameAncestors) },
+    { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+    { key: "X-Content-Type-Options", value: "nosniff" },
+    { key: "X-Frame-Options", value: options?.xFrameOptions ?? "DENY" },
+    {
+      key: "Permissions-Policy",
+      value: "camera=(), geolocation=(), microphone=(), payment=(), usb=()",
+    },
+    ...(IS_PRODUCTION
+      ? [
+          {
+            key: "Strict-Transport-Security",
+            value: "max-age=63072000; includeSubDomains; preload",
+          },
+        ]
+      : []),
+  ];
+}
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
@@ -122,8 +124,22 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
+        source: "/bookings/:id/invoice",
+        headers: buildSecurityHeaders({
+          frameAncestors: "'self'",
+          xFrameOptions: "SAMEORIGIN",
+        }),
+      },
+      {
+        source: "/bookings/:id/invoice/preview",
+        headers: buildSecurityHeaders({
+          frameAncestors: "'self'",
+          xFrameOptions: "SAMEORIGIN",
+        }),
+      },
+      {
         source: "/:path*",
-        headers: SECURITY_HEADERS,
+        headers: buildSecurityHeaders(),
       },
     ];
   },
