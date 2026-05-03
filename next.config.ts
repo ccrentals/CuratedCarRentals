@@ -124,6 +124,10 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
+        source: "/:path*",
+        headers: buildSecurityHeaders(),
+      },
+      {
         source: "/bookings/:id/invoice",
         headers: buildSecurityHeaders({
           frameAncestors: "'self'",
@@ -136,10 +140,6 @@ const nextConfig: NextConfig = {
           frameAncestors: "'self'",
           xFrameOptions: "SAMEORIGIN",
         }),
-      },
-      {
-        source: "/:path*",
-        headers: buildSecurityHeaders(),
       },
     ];
   },
