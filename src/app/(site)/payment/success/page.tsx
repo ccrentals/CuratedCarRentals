@@ -282,7 +282,7 @@ export default async function PaymentSuccessPage({
 
         {booking && summary ? (
           <>
-            <div className="mt-8 print-hide">
+            <div className="mx-auto mt-8 max-w-[88rem] print-hide">
               <div className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-2 md:p-4">
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Invoice preview</h2>
