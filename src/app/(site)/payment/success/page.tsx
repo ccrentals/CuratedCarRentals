@@ -262,10 +262,6 @@ export default async function PaymentSuccessPage({
     balanceDue === 0
       ? "Your booking is now paid in full."
       : "Your booking is confirmed. We will follow up with pickup details shortly.";
-  const invoicePdfEmbedUrl = invoicePdfUrl
-    ? `${invoicePdfUrl}${invoicePdfUrl.includes("#") ? "&" : "#"}toolbar=0&navpanes=0&scrollbar=0&view=FitH`
-    : null;
-
   return (
     <div className="invoice-page mx-auto w-full max-w-3xl px-6 py-12">
       <div className="rounded-3xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-8 shadow-sm print:border-none print:bg-white print:shadow-none">
@@ -287,34 +283,24 @@ export default async function PaymentSuccessPage({
                   <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Invoice preview</h2>
                   <span className="text-xs text-[var(--ccr-muted)]">Booking #{bookingRef || "—"}</span>
                 </div>
-                {invoicePdfUrl ? (
-                  <div className="overflow-hidden rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)]">
-                    <iframe
-                      title={`Invoice ${bookingRef || booking.id.slice(0, 8)}`}
-                      src={invoicePdfEmbedUrl ?? invoicePdfUrl}
-                      className="h-[640px] w-full bg-white"
+                <div className="overflow-x-auto rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3">
+                  <div className="mx-auto min-w-[720px] max-w-[760px]">
+                    <InvoiceSnapshotCard
+                      booking={booking}
+                      bookingRef={bookingRef}
+                      dailyRate={summary.dailyRate}
+                      days={days}
+                      subtotal={summary.subtotal}
+                      total={total}
+                      depositPaid={depositPaid}
+                      paidToDate={paidToDate}
+                      balanceDue={balanceDue}
+                      promoCode={summary.promoCode}
+                      promoDiscount={summary.promoDiscount}
+                      payments={payments}
                     />
                   </div>
-                ) : (
-                  <div className="overflow-x-auto rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3">
-                    <div className="mx-auto min-w-[720px] max-w-[760px]">
-                      <InvoiceSnapshotCard
-                        booking={booking}
-                        bookingRef={bookingRef}
-                        dailyRate={summary.dailyRate}
-                        days={days}
-                        subtotal={summary.subtotal}
-                        total={total}
-                        depositPaid={depositPaid}
-                        paidToDate={paidToDate}
-                        balanceDue={balanceDue}
-                        promoCode={summary.promoCode}
-                        promoDiscount={summary.promoDiscount}
-                        payments={payments}
-                      />
-                    </div>
-                  </div>
-                )}
+                </div>
               </div>
             </div>
 
