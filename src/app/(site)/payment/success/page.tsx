@@ -265,11 +265,11 @@ export default async function PaymentSuccessPage({
       ? "Your booking is now paid in full."
       : "Your booking is confirmed. We will follow up with pickup details shortly.";
   const invoicePreviewSrc = invoicePreviewRoute
-    ? `${invoicePreviewRoute}#pagemode=none&navpanes=0&view=FitH&zoom=page-width`
+    ? `${invoicePreviewRoute}#pagemode=none&navpanes=0&zoom=100`
     : null;
   return (
-    <div className="invoice-page mx-auto w-full max-w-7xl px-6 py-12">
-      <div className="rounded-3xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-8 shadow-sm print:border-none print:bg-white print:shadow-none">
+    <div className="invoice-page mx-auto w-full max-w-[110rem] px-3 py-12 md:px-6">
+      <div className="rounded-3xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4 shadow-sm print:border-none print:bg-white print:shadow-none md:p-8">
         <div className="print-hide">
           <h1 className="text-3xl font-bold text-[var(--ccr-text)]">{headline}</h1>
           <p className="mt-3 text-sm text-[var(--ccr-muted)]">{subheadline}</p>
@@ -283,7 +283,7 @@ export default async function PaymentSuccessPage({
         {booking && summary ? (
           <>
             <div className="mt-8 print-hide">
-              <div className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-4">
+              <div className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-2 md:p-4">
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Invoice preview</h2>
                   <span className="text-xs text-[var(--ccr-muted)]">Booking #{bookingRef || "—"}</span>
@@ -293,7 +293,7 @@ export default async function PaymentSuccessPage({
                     <iframe
                       src={invoicePreviewSrc}
                       title={`Invoice preview for booking ${bookingRef || booking.id}`}
-                      className="h-[1280px] w-full bg-white"
+                      className="h-[1400px] w-full bg-white"
                     />
                   ) : (
                     <div className="mx-auto min-w-[720px] max-w-[960px] p-3">
