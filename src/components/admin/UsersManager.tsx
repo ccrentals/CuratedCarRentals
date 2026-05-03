@@ -660,17 +660,25 @@ export function UserRowActions({
                   : { action: "reset_password", reason: reason.trim() };
 
     const response = await patch(payload);
-    const data = (await response.json().catch(() => ({}))) as {
+    const rawResponse = await response.text().catch(() => "");
+    let data = {} as {
       error?: string;
       message?: string;
       tempPassword?: string;
       tempPasswordExpiresAt?: string;
       selfReset?: boolean;
     };
+    if (rawResponse) {
+      try {
+        data = JSON.parse(rawResponse) as typeof data;
+      } catch {
+        data = { error: rawResponse.trim() || undefined };
+      }
+    }
 
     setLoading(false);
     if (!response.ok) {
-      setError(data.error ?? data.message ?? "Action failed.");
+      setError(data.error ?? data.message ?? response.statusText ?? "Action failed.");
       return;
     }
 

@@ -928,7 +928,19 @@ export async function PATCH(
         try {
           revokedInvitationIds = await revokePendingClerkInvitationsByEmail(existing.email);
         } catch (error) {
-          if (!lifecycleTrackingAvailable && !hasLinkedClerkUser) {
+          if (
+            !hasLinkedClerkUser ||
+            clerkDeleteStatus === "not_linked" ||
+            clerkDeleteStatus === "already_missing"
+          ) {
+            logError("api.admin.users.PATCH.revokeInvitationsBestEffort", error, {
+              actorUserId: session.userId,
+              targetUserId: userId,
+              targetEmail: existing.email,
+              clerkDeleteStatus,
+            });
+            revokedInvitationIds = [];
+          } else if (!lifecycleTrackingAvailable && !hasLinkedClerkUser) {
             logError("api.admin.users.PATCH.revokeInvitationsLegacyFallback", error, {
               actorUserId: session.userId,
               targetUserId: userId,
