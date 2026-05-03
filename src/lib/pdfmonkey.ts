@@ -2218,6 +2218,38 @@ async function fetchDocument(documentId: string) {
   return data.document ?? null;
 }
 
+export async function getPdfMonkeyDocumentUrls(documentId: string) {
+  if (!documentId) return null;
+
+  let document = await fetchDocument(documentId);
+  if (!document) return null;
+
+  let downloadUrl = document.download_url ?? undefined;
+  let previewUrl = document.preview_url ?? undefined;
+  const providerStatus = document.status ?? "";
+
+  const documentIdForRefetch = document.id;
+  if ((!downloadUrl || !previewUrl) && documentIdForRefetch) {
+    const refillDelays = [300, 800, 1500];
+    for (const delay of refillDelays) {
+      await sleep(delay);
+      const refreshed = await fetchDocument(documentIdForRefetch);
+      if (!refreshed) continue;
+      downloadUrl = refreshed.download_url ?? downloadUrl;
+      previewUrl = refreshed.preview_url ?? previewUrl;
+      document = refreshed;
+      if (downloadUrl && previewUrl) break;
+    }
+  }
+
+  return {
+    providerStatus: document.status ?? providerStatus,
+    downloadUrl,
+    previewUrl,
+    documentId: document.id ?? documentId,
+  };
+}
+
 type GenerateInvoicePdfDeps = {
   getConfiguredProvider?: () => InvoicePdfProvider;
   getTemplateIdFn?: () => string | null;
