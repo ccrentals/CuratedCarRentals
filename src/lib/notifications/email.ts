@@ -920,6 +920,9 @@ export async function sendBookingCreatedEmail(input: {
     : await buildPublicBookingEmailLink(input.bookingId, "pay");
   const paymentStatusLabel = summary.balanceDue > 0 ? "Payment incomplete" : "Paid in full";
   const paymentOptionLabel = formatPaymentOptionLabel(input.paymentOption);
+  const normalizedPaymentOption = String(input.paymentOption ?? "")
+    .trim()
+    .toUpperCase();
   const pickupLocationDisplay = summary.pickupLocationDisplay || input.pickupLocation;
   const dropoffLocationDisplay = summary.dropoffLocationDisplay || input.pickupLocation;
 
@@ -1011,7 +1014,11 @@ export async function sendBookingCreatedEmail(input: {
     to: recipientEmail,
     subject: isInternal
       ? `[Internal] Booking created — ${summary.bookingReference}`
-      : "Your booking is ready — deposit required",
+      : summary.paidToDate > 0
+        ? "Booking confirmed — payment received"
+        : normalizedPaymentOption === "NONE" || normalizedPaymentOption === "PAY_ON_PICKUP"
+          ? "Booking received — pay on pickup"
+          : "Booking received",
     html: htmlWithAttachmentNotice,
     attachments: agreementAttachment.attachments,
     dispatch: withDispatchContext(
