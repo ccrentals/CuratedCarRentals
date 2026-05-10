@@ -939,6 +939,18 @@ export async function sendBookingCreatedEmail(input: {
       : normalizedPaymentOption === "NONE" || normalizedPaymentOption === "PAY_ON_PICKUP"
         ? "Due on pickup"
         : "Deposit online";
+  const internalIntro =
+    summary.paidToDate > 0
+      ? "A new booking has been created and payment has already been recorded."
+      : normalizedPaymentOption === "NONE" || normalizedPaymentOption === "PAY_ON_PICKUP"
+        ? "A new booking has been created with payment due on pickup."
+        : "A new booking has been created and is awaiting deposit payment.";
+  const internalDepositLabel =
+    summary.paidToDate > 0
+      ? "Deposit paid"
+      : normalizedPaymentOption === "NONE" || normalizedPaymentOption === "PAY_ON_PICKUP"
+        ? "Due on pickup"
+        : "Deposit due now";
   const pickupLocationDisplay = summary.pickupLocationDisplay || input.pickupLocation;
   const dropoffLocationDisplay = summary.dropoffLocationDisplay || input.pickupLocation;
 
@@ -947,7 +959,7 @@ export async function sendBookingCreatedEmail(input: {
     <div style="font-family: Arial, sans-serif; color: #0f172a;">
       <h2>[Internal] Booking created</h2>
       <p>Operations update.</p>
-      <p>A new booking has been created and requires visibility for the operations team.</p>
+      <p>${internalIntro}</p>
       <p><strong>Booking reference:</strong> ${summary.bookingReference}</p>
       <p><strong>Customer:</strong> ${input.customerName}</p>
       <p><strong>Email:</strong> ${input.customerEmail}</p>
@@ -959,7 +971,7 @@ export async function sendBookingCreatedEmail(input: {
         dropoffLocation: dropoffLocationDisplay,
       })}
       <hr />
-      ${renderEmailChargeSummary(summary, { depositLabel: "Deposit due now", balanceLabel: "Balance on pickup" })}
+      ${renderEmailChargeSummary(summary, { depositLabel: internalDepositLabel, balanceLabel: "Balance on pickup" })}
       <p><strong>Payment option:</strong> ${paymentOptionLabel}</p>
       <p><strong>Payment status:</strong> ${paymentStatusLabel}</p>
       <p style="margin-top: 16px;">
