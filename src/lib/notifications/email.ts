@@ -923,6 +923,22 @@ export async function sendBookingCreatedEmail(input: {
   const normalizedPaymentOption = String(input.paymentOption ?? "")
     .trim()
     .toUpperCase();
+  const customerIntro =
+    summary.paidToDate > 0
+      ? "Your booking request has been received and payment has been recorded."
+      : normalizedPaymentOption === "NONE" || normalizedPaymentOption === "PAY_ON_PICKUP"
+        ? "Your booking request has been received. The remaining amount will be due on pickup."
+        : "Your booking request has been received. Please pay the deposit to confirm your reservation.";
+  const customerCtaLabel =
+    summary.paidToDate > 0 || normalizedPaymentOption === "NONE" || normalizedPaymentOption === "PAY_ON_PICKUP"
+      ? "View Booking"
+      : "Pay Deposit";
+  const customerDepositLabel =
+    summary.paidToDate > 0
+      ? "Deposit paid"
+      : normalizedPaymentOption === "NONE" || normalizedPaymentOption === "PAY_ON_PICKUP"
+        ? "Due on pickup"
+        : "Deposit online";
   const pickupLocationDisplay = summary.pickupLocationDisplay || input.pickupLocation;
   const dropoffLocationDisplay = summary.dropoffLocationDisplay || input.pickupLocation;
 
@@ -956,7 +972,7 @@ export async function sendBookingCreatedEmail(input: {
     <div style="font-family: Arial, sans-serif; color: #0f172a;">
       <h2>Booking received</h2>
       <p>Hi ${input.customerName},</p>
-      <p>Your booking request has been received. Please pay the deposit to confirm your reservation.</p>
+      <p>${customerIntro}</p>
       <p><strong>Booking reference:</strong> ${summary.bookingReference}</p>
       <p><strong>Vehicle:</strong> ${input.vehicleLabel}</p>
       <p><strong>Dates:</strong> ${formatDateOnly(input.startDate)} → ${formatDateOnly(input.endDate)} (${days} days)</p>
@@ -965,10 +981,10 @@ export async function sendBookingCreatedEmail(input: {
         dropoffLocation: dropoffLocationDisplay,
       })}
       <hr />
-      ${renderEmailChargeSummary(summary, { depositLabel: "Deposit online", balanceLabel: "Balance on pickup" })}
+      ${renderEmailChargeSummary(summary, { depositLabel: customerDepositLabel, balanceLabel: "Balance on pickup" })}
       <p><strong>Payment status:</strong> ${paymentStatusLabel}</p>
       <p style="margin-top: 16px;">
-        <a href="${bookingLink}" style="background:#1f2d4d; color:#fff; padding:10px 16px; border-radius:8px; text-decoration:none;">Pay Deposit</a>
+        <a href="${bookingLink}" style="background:#1f2d4d; color:#fff; padding:10px 16px; border-radius:8px; text-decoration:none;">${customerCtaLabel}</a>
       </p>
       <p style="font-size:12px; color:#64748b;">The attached rental agreement includes your booking terms.</p>
       ${policyHtml()}
