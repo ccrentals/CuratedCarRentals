@@ -3,6 +3,8 @@ import {
   getInternalNotesRecipient,
   sendBookingOverriddenByPaidBookingEmail,
   sendDepositReceiptEmail,
+  sendInternalDepositReceiptNotifications,
+  sendInternalPaymentCompleteNotifications,
   sendPaymentCompleteEmail,
 } from "@/lib/notifications/email";
 import {
@@ -43,6 +45,8 @@ type ReconcileDependencies = {
   maybeEntitleBookingAfterPayment: typeof maybeEntitleBookingAfterPayment;
   sendBookingOverriddenByPaidBookingEmail: typeof sendBookingOverriddenByPaidBookingEmail;
   sendDepositReceiptEmail: typeof sendDepositReceiptEmail;
+  sendInternalDepositReceiptNotifications: typeof sendInternalDepositReceiptNotifications;
+  sendInternalPaymentCompleteNotifications: typeof sendInternalPaymentCompleteNotifications;
   sendPaymentCompleteEmail: typeof sendPaymentCompleteEmail;
   getInternalNotesRecipient: typeof getInternalNotesRecipient;
   tryAcquireDedupe: typeof tryAcquireDedupe;
@@ -58,6 +62,8 @@ const DEFAULT_RECONCILE_DEPENDENCIES: ReconcileDependencies = {
   maybeEntitleBookingAfterPayment,
   sendBookingOverriddenByPaidBookingEmail,
   sendDepositReceiptEmail,
+  sendInternalDepositReceiptNotifications,
+  sendInternalPaymentCompleteNotifications,
   sendPaymentCompleteEmail,
   getInternalNotesRecipient,
   tryAcquireDedupe,
@@ -324,7 +330,7 @@ export async function reconcileWiPayPayment(
     }
 
     const bookingResult = await client.query(
-      "select b.id, b.start_date, b.end_date, b.status, b.pickup_location, b.pricing_json, c.full_name as customer_name, c.email as customer_email, c.phone as customer_phone, v.make as vehicle_make, v.model as vehicle_model, v.year as vehicle_year, v.daily_rate_cents, v.deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.id = $1",
+      "select b.id, b.public_id, b.start_date, b.end_date, b.status, b.pickup_location, b.pricing_json, c.full_name as customer_name, c.email as customer_email, c.phone as customer_phone, v.make as vehicle_make, v.model as vehicle_model, v.year as vehicle_year, v.daily_rate_cents, v.deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.id = $1",
       [payment.booking_id],
     );
 
@@ -497,6 +503,7 @@ export async function reconcileWiPayPayment(
                   bookingId: booking.id,
                   customerEmail: booking.customer_email,
                   customerName: booking.customer_name,
+                  customerPhone: booking.customer_phone ?? "",
                   vehicleLabel: `${booking.vehicle_year} ${booking.vehicle_make} ${booking.vehicle_model}`.trim(),
                   startDate: booking.start_date,
                   endDate: booking.end_date,
@@ -511,6 +518,7 @@ export async function reconcileWiPayPayment(
                   bookingId: booking.id,
                   customerEmail: booking.customer_email,
                   customerName: booking.customer_name,
+                  customerPhone: booking.customer_phone ?? "",
                   vehicleLabel: `${booking.vehicle_year} ${booking.vehicle_make} ${booking.vehicle_model}`.trim(),
                   startDate: booking.start_date,
                   endDate: booking.end_date,
@@ -529,6 +537,66 @@ export async function reconcileWiPayPayment(
                   ? "Payment complete email failed"
                   : "Deposit receipt email failed"),
             );
+          }
+
+          if (paymentType !== "deposit") {
+            await deps.sendInternalPaymentCompleteNotifications({
+              bookingId: booking.id,
+              customerEmail: booking.customer_email,
+              customerName: booking.customer_name,
+              customerPhone: booking.customer_phone ?? "",
+              vehicleLabel: `${booking.vehicle_year} ${booking.vehicle_make} ${booking.vehicle_model}`.trim(),
+              startDate: booking.start_date,
+              endDate: booking.end_date,
+              pickupLocation: booking.pickup_location,
+              dailyRate: Number(booking.daily_rate_cents || 0),
+              deposit: Number(booking.deposit_cents || 0),
+              total: recalculated.totalAmount,
+              paidToDate: recalculated.netPaidToDate,
+              balanceDue: recalculated.balanceDue,
+              paymentAmount: Number(payment.deposit_amount_cents || 0),
+              paymentMethod: "WiPay",
+              paymentDateTime: payment.paid_at ?? new Date().toISOString(),
+              paymentReference: input.transactionId,
+              dispatch: {
+                triggerSource: "wipay_reconcile",
+                entityType: "booking",
+                entityId: booking.id,
+                entityPublicId: booking.public_id ?? null,
+                relatedTransactionType: "payment",
+                relatedTransactionId: payment.id,
+                manualResendAllowed: true,
+              },
+            });
+          } else {
+            await deps.sendInternalDepositReceiptNotifications({
+              bookingId: booking.id,
+              customerEmail: booking.customer_email,
+              customerName: booking.customer_name,
+              customerPhone: booking.customer_phone ?? "",
+              vehicleLabel: `${booking.vehicle_year} ${booking.vehicle_make} ${booking.vehicle_model}`.trim(),
+              startDate: booking.start_date,
+              endDate: booking.end_date,
+              pickupLocation: booking.pickup_location,
+              dailyRate: Number(booking.daily_rate_cents || 0),
+              deposit: Number(booking.deposit_cents || 0),
+              paidToDate: recalculated.netPaidToDate,
+              paymentAmount: Number(payment.deposit_amount_cents || 0),
+              paymentMethod: "WiPay",
+              paymentDateTime: payment.paid_at ?? new Date().toISOString(),
+              paymentReference: input.transactionId,
+              promoCode,
+              promoDiscount,
+              dispatch: {
+                triggerSource: "wipay_reconcile",
+                entityType: "booking",
+                entityId: booking.id,
+                entityPublicId: booking.public_id ?? null,
+                relatedTransactionType: "payment",
+                relatedTransactionId: payment.id,
+                manualResendAllowed: true,
+              },
+            });
           }
 
           await deps.markDedupeResult(

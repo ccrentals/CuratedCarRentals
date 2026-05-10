@@ -974,7 +974,7 @@ export function AdminSettingsForm({
         >
           <p className="text-sm font-semibold text-[var(--ccr-text)]">Operational notification routing</p>
           <p className="mt-1 text-xs text-[var(--ccr-muted)]">
-            Configure the default operational notification email and any additional recipients used for routed operational warnings.
+            Configure the default operational notification email and any additional recipients used for routed vehicle inspection warnings and internal booking notification emails.
           </p>
 
           <div className="mt-4 grid gap-4 lg:grid-cols-2">
@@ -1040,7 +1040,7 @@ export function AdminSettingsForm({
               }
               className={SETTINGS_CHECKBOX_CLASS_NAME}
             />
-            Enable vehicle inspection warning emails when routed delivery is activated.
+            Enable vehicle inspection warning emails when routed delivery is activated. Internal booking notifications also use the operational recipient list above.
           </label>
           {fieldErrors.sendVehicleInspectionWarningEmails ? (
             <p className="mt-2 text-xs font-semibold text-rose-300">
@@ -1051,7 +1051,7 @@ export function AdminSettingsForm({
           <div className="mt-4 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
             <p className="text-sm font-semibold text-[var(--ccr-text)]">Effective operational recipients</p>
             <p className="mt-1 text-xs text-[var(--ccr-muted)]">
-              Preview of the current recipient resolution order used when vehicle inspection warning emails are enabled.
+              Preview of the current recipient resolution order used for vehicle inspection warnings and internal booking notifications.
             </p>
             <p className="mt-2 text-xs text-[var(--ccr-muted)]">
               Routing source:{" "}
@@ -1077,7 +1077,7 @@ export function AdminSettingsForm({
               </ul>
             ) : (
               <p className="mt-3 text-sm text-[var(--ccr-muted)]">
-                No operational recipients resolve yet. Add a default email or additional recipients to avoid fallback-only routing later.
+                No operational recipients resolve yet. Add a default email or additional recipients to avoid fallback-only routing for internal booking notifications and warning emails.
               </p>
             )}
             {operationalRouting.warnings.length > 0 ? (

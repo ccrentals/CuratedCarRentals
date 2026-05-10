@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 
-import { sendBookingCreatedEmail } from "@/lib/notifications/email";
+import {
+  sendBookingCreatedEmail,
+  sendInternalBookingCreatedNotifications,
+} from "@/lib/notifications/email";
 import { getDbPool } from "@/lib/db";
 import { logError, logWarn } from "@/lib/log";
 import { isEmail, isISODate, isNonEmptyString } from "@/lib/validators";
@@ -651,14 +654,36 @@ export async function POST(request: Request) {
           bookingId: bookingInsert.rows[0].id,
           customerEmail: normalizedEmail,
           customerName: fullName,
+          customerPhone: normalizedPhone,
           vehicleLabel: `${vehicle.year} ${vehicle.make} ${vehicle.model}`.trim(),
           startDate,
           endDate,
           pickupLocation,
           dailyRate: pricingSummary.dailyRate,
           deposit: pricingSummary.deposit,
+          paymentOption,
           promoCode: quoteSnapshot.promoCode,
           promoDiscount: quoteSnapshot.summary.discountTotalCents,
+        });
+        await sendInternalBookingCreatedNotifications({
+          bookingId: bookingInsert.rows[0].id,
+          customerEmail: normalizedEmail,
+          customerName: fullName,
+          customerPhone: normalizedPhone,
+          vehicleLabel: `${vehicle.year} ${vehicle.make} ${vehicle.model}`.trim(),
+          startDate,
+          endDate,
+          pickupLocation,
+          dailyRate: pricingSummary.dailyRate,
+          deposit: pricingSummary.deposit,
+          paymentOption,
+          promoCode: quoteSnapshot.promoCode,
+          promoDiscount: quoteSnapshot.summary.discountTotalCents,
+          dispatch: {
+            triggerSource: "public_booking",
+            entityType: "booking",
+            entityId: bookingInsert.rows[0].id,
+          },
         });
       }
     } catch (error) {

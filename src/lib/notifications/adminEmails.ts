@@ -207,6 +207,8 @@ type BookingEmailContextRow = {
   start_date: string;
   end_date: string;
   pickup_location: string;
+  customer_phone_snapshot: string | null;
+  payment_option: string | null;
   pricing_json: Record<string, unknown> | null;
   customer_name: string;
   customer_email: string;
@@ -664,7 +666,7 @@ export async function fetchAdminEmailDetail(recordId: string): Promise<AdminEmai
 
 async function loadBookingEmailContext(bookingId: string) {
   const result = await dbQuery<BookingEmailContextRow>(
-    "select b.id, b.public_id, b.start_date, b.end_date, b.pickup_location, b.pricing_json, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model, v.year as vehicle_year, v.daily_rate_cents, v.deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.id = $1::uuid limit 1",
+    "select b.id, b.public_id, b.start_date, b.end_date, b.pickup_location, b.customer_phone_snapshot, b.payment_option, b.pricing_json, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model, v.year as vehicle_year, v.daily_rate_cents, v.deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.id = $1::uuid limit 1",
     [bookingId],
   );
   return result.rows[0] ?? null;
@@ -903,6 +905,7 @@ export async function resendAdminEmail(recordId: string, actorUserId: string) {
   const paidToDate =
     normalizeNumber(pricing.paid_to_date ?? pricing.amount_paid, NaN) || (await loadBookingPaidToDate(booking.id));
   const balanceDue = normalizeNumber(pricing.balance_due, Math.max(0, totalValue - paidToDate));
+  const recipientType = normalizeText(detail.metadata.recipientType) === "internal" ? "internal" : "customer";
 
   const commonDispatch = {
     entityType: "booking" as const,
@@ -929,14 +932,18 @@ export async function resendAdminEmail(recordId: string, actorUserId: string) {
     case "booking_created":
       result = await sendBookingCreatedEmail({
         bookingId: booking.id,
-        customerEmail: detail.recipientEmail ?? booking.customer_email,
+        customerEmail: booking.customer_email,
         customerName: booking.customer_name,
+        customerPhone: booking.customer_phone_snapshot ?? "",
         vehicleLabel,
         startDate: booking.start_date,
         endDate: booking.end_date,
         pickupLocation: booking.pickup_location,
         dailyRate: Number(booking.daily_rate_cents || 0),
         deposit: depositValue,
+        paymentOption: booking.payment_option,
+        recipientType,
+        recipientEmail: detail.recipientEmail ?? booking.customer_email,
         promoCode: promo.promoCode,
         promoDiscount: promo.promoDiscount,
         dispatch: { ...commonDispatch },
@@ -945,8 +952,9 @@ export async function resendAdminEmail(recordId: string, actorUserId: string) {
     case "deposit_receipt":
       result = await sendDepositReceiptEmail({
         bookingId: booking.id,
-        customerEmail: detail.recipientEmail ?? booking.customer_email,
+        customerEmail: booking.customer_email,
         customerName: booking.customer_name,
+        customerPhone: booking.customer_phone_snapshot ?? "",
         vehicleLabel,
         startDate: booking.start_date,
         endDate: booking.end_date,
@@ -954,6 +962,8 @@ export async function resendAdminEmail(recordId: string, actorUserId: string) {
         dailyRate: Number(booking.daily_rate_cents || 0),
         deposit: depositValue,
         paidToDate,
+        recipientType,
+        recipientEmail: detail.recipientEmail ?? booking.customer_email,
         promoCode: promo.promoCode,
         promoDiscount: promo.promoDiscount,
         dispatch: {
@@ -966,8 +976,9 @@ export async function resendAdminEmail(recordId: string, actorUserId: string) {
     case "payment_update":
       result = await sendPaymentUpdateEmail({
         bookingId: booking.id,
-        customerEmail: detail.recipientEmail ?? booking.customer_email,
+        customerEmail: booking.customer_email,
         customerName: booking.customer_name,
+        customerPhone: booking.customer_phone_snapshot ?? "",
         vehicleLabel,
         startDate: booking.start_date,
         endDate: booking.end_date,
@@ -977,6 +988,8 @@ export async function resendAdminEmail(recordId: string, actorUserId: string) {
         total: totalValue,
         paidToDate,
         balanceDue,
+        recipientType,
+        recipientEmail: detail.recipientEmail ?? booking.customer_email,
         paymentAmount: normalizeNumber(detail.metadata.paymentAmount, 0),
         paymentMethod: normalizeText(detail.metadata.paymentMethod) || undefined,
         paymentDateTime: normalizeText(detail.metadata.paymentDateTime) || undefined,
@@ -991,8 +1004,9 @@ export async function resendAdminEmail(recordId: string, actorUserId: string) {
     case "payment_complete":
       result = await sendPaymentCompleteEmail({
         bookingId: booking.id,
-        customerEmail: detail.recipientEmail ?? booking.customer_email,
+        customerEmail: booking.customer_email,
         customerName: booking.customer_name,
+        customerPhone: booking.customer_phone_snapshot ?? "",
         vehicleLabel,
         startDate: booking.start_date,
         endDate: booking.end_date,
@@ -1002,6 +1016,8 @@ export async function resendAdminEmail(recordId: string, actorUserId: string) {
         total: totalValue,
         paidToDate,
         balanceDue,
+        recipientType,
+        recipientEmail: detail.recipientEmail ?? booking.customer_email,
         paymentAmount: normalizeNumber(detail.metadata.paymentAmount, 0),
         paymentMethod: normalizeText(detail.metadata.paymentMethod) || undefined,
         paymentDateTime: normalizeText(detail.metadata.paymentDateTime) || undefined,

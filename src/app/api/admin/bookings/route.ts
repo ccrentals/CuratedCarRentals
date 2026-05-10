@@ -9,7 +9,10 @@ import {
   getAdminCreateBookingVehicleById,
 } from "@/lib/bookings/adminCreateBooking";
 import { getDbPool } from "@/lib/db";
-import { sendBookingCreatedEmail } from "@/lib/notifications/email";
+import {
+  sendBookingCreatedEmail,
+  sendInternalBookingCreatedNotifications,
+} from "@/lib/notifications/email";
 import { calcDaysInclusive, dateOnlyUtc } from "@/lib/payments/dateMath";
 import { isVehicleUnavailableEntitlementBased } from "@/lib/availability/entitlement";
 import { requireCsrf } from "@/lib/security/csrf";
@@ -465,17 +468,43 @@ export async function handleAdminBookingsPost(
         bookingId: bookingInsert.rows[0].id,
         customerEmail: normalizedEmail,
         customerName: String(fullName).trim(),
+        customerPhone: String(phone).trim(),
         vehicleLabel: `${vehicle.year} ${vehicle.make} ${vehicle.model}`.trim(),
         startDate: String(startDate),
         endDate: String(endDate),
         pickupLocation: pickupLocationTextSnapshot,
         dailyRate,
         deposit: depositAmount,
+        paymentOption: "DEPOSIT",
         promoCode: promoCode || null,
         promoDiscount,
         dispatch: {
           triggerSource: "admin_booking",
           triggeredByUserId: actor.userId,
+          metadata: {
+            createdFromAdmin: true,
+          },
+        },
+      });
+      await sendInternalBookingCreatedNotifications({
+        bookingId: bookingInsert.rows[0].id,
+        customerEmail: normalizedEmail,
+        customerName: String(fullName).trim(),
+        customerPhone: String(phone).trim(),
+        vehicleLabel: `${vehicle.year} ${vehicle.make} ${vehicle.model}`.trim(),
+        startDate: String(startDate),
+        endDate: String(endDate),
+        pickupLocation: pickupLocationTextSnapshot,
+        dailyRate,
+        deposit: depositAmount,
+        paymentOption: "DEPOSIT",
+        promoCode: promoCode || null,
+        promoDiscount,
+        dispatch: {
+          triggerSource: "admin_booking",
+          triggeredByUserId: actor.userId,
+          entityType: "booking",
+          entityId: bookingInsert.rows[0].id,
           metadata: {
             createdFromAdmin: true,
           },
