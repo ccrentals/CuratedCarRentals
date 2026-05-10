@@ -650,21 +650,23 @@ export async function POST(request: Request) {
     try {
       if (!normalizedEmail.endsWith("@curated.local")) {
         const vehicle = vehicleResult.rows[0];
-        await sendBookingCreatedEmail({
-          bookingId: bookingInsert.rows[0].id,
-          customerEmail: normalizedEmail,
-          customerName: fullName,
-          customerPhone: normalizedPhone,
-          vehicleLabel: `${vehicle.year} ${vehicle.make} ${vehicle.model}`.trim(),
-          startDate,
-          endDate,
-          pickupLocation,
-          dailyRate: pricingSummary.dailyRate,
-          deposit: pricingSummary.deposit,
-          paymentOption,
-          promoCode: quoteSnapshot.promoCode,
-          promoDiscount: quoteSnapshot.summary.discountTotalCents,
-        });
+        if (paymentOption === "NONE") {
+          await sendBookingCreatedEmail({
+            bookingId: bookingInsert.rows[0].id,
+            customerEmail: normalizedEmail,
+            customerName: fullName,
+            customerPhone: normalizedPhone,
+            vehicleLabel: `${vehicle.year} ${vehicle.make} ${vehicle.model}`.trim(),
+            startDate,
+            endDate,
+            pickupLocation,
+            dailyRate: pricingSummary.dailyRate,
+            deposit: pricingSummary.deposit,
+            paymentOption,
+            promoCode: quoteSnapshot.promoCode,
+            promoDiscount: quoteSnapshot.summary.discountTotalCents,
+          });
+        }
         await sendInternalBookingCreatedNotifications({
           bookingId: bookingInsert.rows[0].id,
           customerEmail: normalizedEmail,
