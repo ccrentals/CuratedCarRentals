@@ -72,6 +72,57 @@ function statusBadge(status: string) {
   );
 }
 
+function splitLocationDetailLine(line: string) {
+  const separatorIndex = line.indexOf(":");
+  if (separatorIndex === -1) {
+    return { label: null, value: line };
+  }
+
+  const label = line.slice(0, separatorIndex).trim();
+  const value = line.slice(separatorIndex + 1).trim();
+  return {
+    label: label || null,
+    value: value || line,
+  };
+}
+
+function StructuredLocationSide({
+  title,
+  locationLabel,
+  lines,
+}: {
+  title: string;
+  locationLabel: string;
+  lines: string[];
+}) {
+  return (
+    <div className="min-w-0 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
+      <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">{title}</p>
+      <p className="mt-2 font-semibold text-[var(--ccr-text)]">{locationLabel}</p>
+      {lines.length ? (
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          {lines.map((line) => {
+            const detailLine = splitLocationDetailLine(line);
+
+            return (
+              <div key={`${title}-${line}`} className="min-w-0 rounded-lg bg-[var(--ccr-bg)] px-3 py-2">
+                {detailLine.label ? (
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                    {detailLine.label}
+                  </p>
+                ) : null}
+                <p className="mt-1 break-words font-semibold text-[var(--ccr-text)]">
+                  {detailLine.value}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function AdminBookingDetailClient({
   initialDetail,
   canAdmin,
@@ -136,6 +187,7 @@ export function AdminBookingDetailClient({
             bookingStatus={detail.bookingStatus}
             isPaidInFull={detail.isPaidInFull}
             isDepositPaid={detail.isDepositPaid}
+            isPickupInspectionComplete={detail.isPickupInspectionComplete}
             canAdmin={canAdmin}
             vehicleId={detail.vehicleId}
             vehicleLabel={detail.vehicleLabel}
@@ -232,40 +284,34 @@ export function AdminBookingDetailClient({
                   {detail.bookingDetails.dropoffLocationSnapshot}
                 </dd>
               </div>
-              <div className="min-w-0 md:col-span-2">
-                <dt className="text-xs uppercase tracking-wide">Structured Location Details</dt>
+            </div>
+            <div className="min-w-0 md:col-span-2">
+              <details className="group">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)] transition-colors hover:text-[var(--ccr-text)] [&::-webkit-details-marker]:hidden">
+                  <span>Structured Location Details</span>
+                  <span
+                    aria-hidden="true"
+                    className="text-base leading-none text-[var(--ccr-accent)] transition-transform group-open:rotate-180"
+                  >
+                    ^
+                  </span>
+                </summary>
                 <dd
                   data-testid="booking-location-details-block"
                   className="mt-2 grid gap-4 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-4 md:grid-cols-2"
                 >
-                  <div className="space-y-2">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-                      Pickup
-                    </p>
-                    <p className="font-semibold text-[var(--ccr-text)]">
-                      {detail.bookingDetails.pickupLocationLabel}
-                    </p>
-                    {detail.bookingDetails.pickupLocationLines.map((line) => (
-                      <p key={`pickup-${line}`} className="text-[var(--ccr-muted)]">
-                        {line}
-                      </p>
-                    ))}
-                  </div>
-                  <div className="space-y-2">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-                      Dropoff
-                    </p>
-                    <p className="font-semibold text-[var(--ccr-text)]">
-                      {detail.bookingDetails.dropoffLocationLabel}
-                    </p>
-                    {detail.bookingDetails.dropoffLocationLines.map((line) => (
-                      <p key={`dropoff-${line}`} className="text-[var(--ccr-muted)]">
-                        {line}
-                      </p>
-                    ))}
-                  </div>
+                  <StructuredLocationSide
+                    title="Pickup"
+                    locationLabel={detail.bookingDetails.pickupLocationLabel}
+                    lines={detail.bookingDetails.pickupLocationLines}
+                  />
+                  <StructuredLocationSide
+                    title="Dropoff"
+                    locationLabel={detail.bookingDetails.dropoffLocationLabel}
+                    lines={detail.bookingDetails.dropoffLocationLines}
+                  />
                 </dd>
-              </div>
+              </details>
             </div>
           </dl>
         </section>
@@ -539,9 +585,21 @@ export function AdminBookingDetailClient({
         )}
       </section>
 
-      <section className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm">
-        <h2 className="text-lg font-bold text-[var(--ccr-text)]">Admin Notes</h2>
-        <BookingNotes bookingId={detail.bookingId} notes={detail.notes} />
+      <section className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] shadow-sm">
+        <details className="group">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-6 py-5 text-lg font-bold text-[var(--ccr-text)] transition-colors hover:text-[var(--ccr-accent)] [&::-webkit-details-marker]:hidden">
+            <span>Admin Notes</span>
+            <span
+              aria-hidden="true"
+              className="text-base leading-none text-[var(--ccr-accent)] transition-transform group-open:rotate-180"
+            >
+              ^
+            </span>
+          </summary>
+          <div className="border-t border-[var(--ccr-border)] px-6 pb-6 pt-1">
+            <BookingNotes bookingId={detail.bookingId} notes={detail.notes} />
+          </div>
+        </details>
       </section>
     </>
   );

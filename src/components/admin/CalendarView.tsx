@@ -123,6 +123,13 @@ function bookingPhaseBadge(phase: DerivedBookingPhase) {
         "rounded-full border border-[var(--ccr-status-info-border)] bg-[var(--ccr-status-info-bg)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--ccr-status-info-text)]",
     };
   }
+  if (phase === "PICKUP_OVERDUE") {
+    return {
+      label: "Pickup overdue",
+      className:
+        "rounded-full border border-[var(--ccr-status-accent-border)] bg-[var(--ccr-status-accent-bg)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--ccr-status-accent-text)]",
+    };
+  }
   if (phase === "ON_RENT") {
     return {
       label: "On Rent",

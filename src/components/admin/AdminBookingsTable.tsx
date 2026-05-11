@@ -53,6 +53,9 @@ function statusPillToneClass(status: string, phase: AdminBookingListItem["derive
   if (phase === "UPCOMING") {
     return "border-[var(--ccr-status-info-border)] bg-[var(--ccr-status-info-bg)] text-[var(--ccr-status-info-text)]";
   }
+  if (phase === "PICKUP_OVERDUE") {
+    return "border-[var(--ccr-status-accent-border)] bg-[var(--ccr-status-accent-bg)] text-[var(--ccr-status-accent-text)]";
+  }
   if (phase === "ON_RENT") {
     return "border-[var(--ccr-status-info-border)] bg-[var(--ccr-status-info-bg)] text-[var(--ccr-status-info-text)]";
   }
@@ -84,6 +87,7 @@ function statusPillToneClass(status: string, phase: AdminBookingListItem["derive
 
 function bookingPhaseLabel(booking: AdminBookingListItem) {
   if (booking.derivedPhase === "UPCOMING") return "Upcoming";
+  if (booking.derivedPhase === "PICKUP_OVERDUE") return "Pickup overdue";
   if (booking.derivedPhase === "ON_RENT") return "On Rent";
   return booking.statusLabel;
 }

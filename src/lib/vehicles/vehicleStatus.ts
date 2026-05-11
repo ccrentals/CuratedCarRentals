@@ -5,8 +5,6 @@ const ACTIVE_RENTAL_STATUSES = new Set([
   "PICKED_UP",
   "ACTIVE",
   "IN_PROGRESS",
-  "CONFIRMED",
-  "PENDING_PAYMENT",
 ]);
 
 const COMPLETED_STATUSES = new Set(["RETURNED", "COMPLETED"]);
@@ -16,6 +14,7 @@ const ARCHIVED_STATUSES = new Set(["ARCHIVED"]);
 
 export type DerivedBookingPhase =
   | "UPCOMING"
+  | "PICKUP_OVERDUE"
   | "ON_RENT"
   | "COMPLETED"
   | "CANCELLED"
@@ -159,9 +158,10 @@ export function getStartOfToday(now = new Date()) {
  *
  * Rules:
  * - ARCHIVED/CANCELLED/LOST/COMPLETED are status-first terminal states.
- * - ON_RENT is any non-terminal booking where start <= now < end.
- * - UPCOMING is any non-terminal booking with start >= startOfToday(now).
- * - If a booking is non-terminal but lacks usable date bounds, we conservatively map to COMPLETED.
+ * - ON_RENT is any active-rental booking where pickup has actually been confirmed.
+ * - PICKUP_OVERDUE is any pre-rental booking whose pickup time has passed without pickup confirmation.
+ * - UPCOMING is any pre-rental booking whose pickup time is still in the future.
+ * - If a booking is non-terminal but lacks a usable start bound, we conservatively map to COMPLETED.
  */
 export function deriveBookingPhase(
   booking: VehicleStatusBookingLike,
@@ -184,13 +184,18 @@ export function deriveBookingPhase(
 
   const startAt = getBookingStartAt(booking);
   const endAt = resolveBookingEndAt(booking);
+  const isActiveRentalStatus = ACTIVE_RENTAL_STATUSES.has(status);
 
-  if (overlapsNow(startAt, endAt, now)) {
+  if (isActiveRentalStatus && overlapsNow(startAt, endAt, now)) {
     return "ON_RENT";
   }
 
-  if (startAt && startAt >= getStartOfToday(now)) {
+  if (startAt && startAt > now) {
     return "UPCOMING";
+  }
+
+  if (startAt && startAt <= now && !isActiveRentalStatus) {
+    return "PICKUP_OVERDUE";
   }
 
   return "COMPLETED";
@@ -198,6 +203,7 @@ export function deriveBookingPhase(
 
 export function derivedBookingPhaseLabel(phase: DerivedBookingPhase) {
   if (phase === "UPCOMING") return "Upcoming";
+  if (phase === "PICKUP_OVERDUE") return "Pickup overdue";
   if (phase === "ON_RENT") return "On Rent";
   if (phase === "CANCELLED") return "Cancelled";
   if (phase === "LOST") return "Lost";
@@ -212,11 +218,11 @@ export function derivedBookingPhaseLabel(phase: DerivedBookingPhase) {
  * 1) ON_RENT: an active-window booking that is entitled or operationally active.
  * 2) DIRTY: profile needs_cleaning=true (or legacy MAINTENANCE manual status).
  * 3) UNAVAILABLE: currently blocked by blockout or manually unavailable/inactive.
- * 4) UPCOMING: at least one future booking from startOfToday onward.
+ * 4) UPCOMING: at least one future or overdue pre-rental booking.
  * 5) AVAILABLE: none of the above.
  *
- * Decision note: UPCOMING includes both entitled and tentative future bookings
- * (as long as they are not terminal/cancelled/lost/archived), so planning views stay complete.
+ * Decision note: UPCOMING includes both future and overdue pre-rental bookings
+ * so vehicles do not become available just because pickup time passed without confirmation.
  */
 export function deriveVehicleStatus(
   vehicle: { status?: unknown } | null | undefined,
@@ -247,7 +253,10 @@ export function deriveVehicleStatus(
     return "UNAVAILABLE";
   }
 
-  const hasUpcoming = bookings.some((booking) => deriveBookingPhase(booking, now) === "UPCOMING");
+  const hasUpcoming = bookings.some((booking) => {
+    const phase = deriveBookingPhase(booking, now);
+    return phase === "UPCOMING" || phase === "PICKUP_OVERDUE";
+  });
   if (hasUpcoming) {
     return "UPCOMING";
   }

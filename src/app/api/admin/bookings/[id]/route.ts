@@ -35,7 +35,10 @@ import {
   normalizeBookingLocationFieldValuesInput,
   validateBookingLocationSelection,
 } from "@/lib/bookings/locationConfigRuntime";
-import { hasCompletedBookingVehicleInspection } from "@/lib/bookings/vehicleInspection";
+import {
+  hasCompletedBookingVehicleInspection,
+  isBookingVehicleInspectionMissingTableError,
+} from "@/lib/bookings/vehicleInspection";
 import {
   syncPromoRedemptionStateForBooking,
   validatePromoForBooking,
@@ -1153,6 +1156,14 @@ export async function PATCH(
       const nextInsuranceTotal = Number(
         (nextPricing as Record<string, unknown>).insurance_total_cents ?? 0,
       );
+      let isPickupInspectionComplete = false;
+      try {
+        isPickupInspectionComplete = await hasCompletedBookingVehicleInspection(booking.id, "PICKUP");
+      } catch (error) {
+        if (!isBookingVehicleInspectionMissingTableError(error)) {
+          throw error;
+        }
+      }
       const bookingPublicId = String(booking.public_id ?? "").trim() || booking.id;
       const vehicleLabel = `${booking.vehicle_year} ${booking.vehicle_make} ${booking.vehicle_model}`.trim();
       const bookingDetail = buildAdminBookingDetailView({
@@ -1165,6 +1176,7 @@ export async function PATCH(
         isOverridden: nextOverrideInfo.isOverridden,
         isPaidInFull: nextIsPaidInFull,
         isDepositPaid: nextIsDepositPaid,
+        isPickupInspectionComplete,
         vehicleId: booking.vehicle_id,
         vehicleLabel,
         initialPromoCode: pricingSummary.promoCode,

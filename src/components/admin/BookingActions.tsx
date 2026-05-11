@@ -28,6 +28,7 @@ type BookingActionsProps = {
   bookingStatus?: string;
   isPaidInFull?: boolean;
   isDepositPaid?: boolean;
+  isPickupInspectionComplete?: boolean;
   canAdmin?: boolean;
   vehicleId: string;
   vehicleLabel?: string;
@@ -59,6 +60,7 @@ export function BookingActions({
   bookingStatus,
   isPaidInFull,
   isDepositPaid,
+  isPickupInspectionComplete,
   canAdmin,
   vehicleId,
   vehicleLabel,
@@ -85,8 +87,14 @@ export function BookingActions({
   const [insuranceSelected, setInsuranceSelected] = useState<boolean>(initialInsuranceSelected === true);
   const normalizedStatus = bookingStatus?.trim().toUpperCase();
   const canConfirm = !normalizedStatus || ["PENDING_PAYMENT", "PENDING"].includes(normalizedStatus);
+  const pickupRequiresConfirmedStatus = normalizedStatus !== "CONFIRMED";
+  const pickupRequiresFullPayment = !isPaidInFull;
+  const pickupRequiresInspection = !isPickupInspectionComplete;
   const canPickup =
-    Boolean(normalizedStatus) && normalizedStatus === "CONFIRMED" && Boolean(isPaidInFull);
+    Boolean(normalizedStatus) &&
+    normalizedStatus === "CONFIRMED" &&
+    Boolean(isPaidInFull) &&
+    Boolean(isPickupInspectionComplete);
   const canComplete = !normalizedStatus || ["CONFIRMED", "PICKED_UP"].includes(normalizedStatus);
   const canArchive = Boolean(canAdmin) && normalizedStatus === "RETURNED";
   const canCancel = !normalizedStatus || !["CANCELLED", "RETURNED"].includes(normalizedStatus);
@@ -121,6 +129,17 @@ export function BookingActions({
     size: "sm",
     className: "uppercase tracking-wide text-[var(--ccr-muted)] hover:text-[var(--ccr-text)]",
   });
+  const pickupDisabledReason = !canPickup
+    ? pickupRequiresInspection
+      ? "Complete the pickup inspection before confirming pickup."
+      : pickupRequiresConfirmedStatus
+        ? normalizedStatus === "PICKED_UP"
+          ? "Pickup has already been confirmed."
+          : "Confirm the booking before confirming pickup."
+        : pickupRequiresFullPayment
+          ? "Booking must be fully paid before pickup."
+          : "Pickup cannot be confirmed yet."
+    : null;
 
   useEffect(() => {
     if (!error) return undefined;
@@ -449,19 +468,16 @@ export function BookingActions({
                 data-testid="booking-action-pickup"
                 onClick={() => runAction("pickup")}
                 disabled={loadingKey === "pickup" || !canPickup}
-                title={
-                  !canPickup
-                    ? !isPaidInFull
-                      ? "Full payment is required before pickup"
-                      : normalizedStatus === "PICKED_UP"
-                        ? "Already picked up"
-                        : "Booking must be confirmed before pickup"
-                    : undefined
-                }
+                title={pickupDisabledReason ?? undefined}
                 className={actionButtonBaseClass}
               >
                 {loadingKey === "pickup" ? "Working..." : actionLabels.pickup}
               </button>
+              {pickupDisabledReason ? (
+                <p className="col-span-2 -mt-1 text-xs text-[var(--ccr-muted)] lg:w-full">
+                  {pickupDisabledReason}
+                </p>
+              ) : null}
               <button
                 type="button"
                 data-testid="booking-action-complete"

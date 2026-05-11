@@ -61,6 +61,7 @@ export type AdminBookingDetailViewModel = {
   dropoffLocationBadge: string;
   isPaidInFull: boolean;
   isDepositPaid: boolean;
+  isPickupInspectionComplete: boolean;
   vehicleId: string;
   vehicleLabel: string;
   initialPromoCode: string | null;
@@ -181,6 +182,7 @@ export function buildAdminBookingDetailView(input: {
   isOverridden: boolean;
   isPaidInFull: boolean;
   isDepositPaid: boolean;
+  isPickupInspectionComplete: boolean;
   vehicleId: string;
   vehicleLabel: string;
   initialPromoCode: string | null;
@@ -230,6 +232,7 @@ export function buildAdminBookingDetailView(input: {
     dropoffLocationBadge: getBookingLocationAdminBadgeLabel(input.bookingLocationDetails.dropoff.type),
     isPaidInFull: input.isPaidInFull,
     isDepositPaid: input.isDepositPaid,
+    isPickupInspectionComplete: input.isPickupInspectionComplete,
     vehicleId: input.vehicleId,
     vehicleLabel: input.vehicleLabel,
     initialPromoCode: input.initialPromoCode,
