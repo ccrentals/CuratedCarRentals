@@ -4,6 +4,7 @@ import {
   coerceDateTimeLabel,
   splitDateTimeLabel,
   type DateTimeInput,
+  type DateTimeDisplayPreset,
 } from "@/components/shared/dateTimeDisplay";
 
 type TableDateTimeProps = {
@@ -12,6 +13,7 @@ type TableDateTimeProps = {
   dateClassName?: string;
   timeClassName?: string;
   title?: string;
+  preset?: DateTimeDisplayPreset;
 };
 
 export function TableDateTime({
@@ -20,12 +22,13 @@ export function TableDateTime({
   dateClassName,
   timeClassName,
   title,
+  preset = "local",
 }: TableDateTimeProps) {
   if (value === null || value === undefined || value === "") {
     return <span className={cn("inline-block", className)}>—</span>;
   }
 
-  const displayLabel = coerceDateTimeLabel(value);
+  const displayLabel = coerceDateTimeLabel(value, preset);
   const parts = splitDateTimeLabel(displayLabel);
 
   if (!parts || !parts.dateText) {

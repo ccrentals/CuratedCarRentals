@@ -4,11 +4,11 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
+import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { TableDateTime } from "@/components/shared/TableDateTime";
 import { refreshUnreadMessagesCount } from "@/lib/messages/useUnreadMessagesCount";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 import { SortableTh } from "@/components/admin/SortableTh";
-import { fmtAdminDateTimeNoSeconds } from "@/lib/dateFormat";
 import {
   applySortToSearchParams,
   readSortFromSearchParams,
@@ -45,10 +45,6 @@ function snippet(value: string) {
   const compact = String(value ?? "").replace(/\s+/g, " ").trim();
   if (compact.length <= 90) return compact;
   return `${compact.slice(0, 87)}...`;
-}
-
-function formatAdminDateTime(value: string) {
-  return fmtAdminDateTimeNoSeconds(value) || "—";
 }
 
 export function MessagesInboxTable({
@@ -339,7 +335,11 @@ export function MessagesInboxTable({
                   {row.statusLabel}
                 </span>
               </div>
-              <p className="text-xs text-[var(--ccr-muted)]">{formatAdminDateTime(row.createdAt)}</p>
+              <DateTimeInline
+                value={row.createdAt}
+                preset="admin"
+                className="inline-flex text-xs text-[var(--ccr-muted)]"
+              />
               {row.relatedEntityLabel ? (
                 row.relatedEntityHref ? (
                   <Link
@@ -452,7 +452,7 @@ export function MessagesInboxTable({
                     </td>
                   ) : null}
                   <td className="px-4 py-3 text-[var(--ccr-muted)]">
-                    <TableDateTime value={formatAdminDateTime(row.createdAt)} />
+                    <TableDateTime value={row.createdAt} preset="admin" />
                   </td>
                   <td className="px-4 py-3 font-semibold text-[var(--ccr-text)]">{row.displayName}</td>
                   <td className="px-4 py-3 text-[var(--ccr-text)]">{row.displayEmail}</td>
