@@ -57,6 +57,7 @@ export default async function AdminMessageDetailPage({
   const query = await searchParams;
   const markRead = query.markRead === "1";
   const backHref = safeBackHref(typeof query.back === "string" ? query.back : undefined);
+  const isTrashBack = backHref.startsWith("/admin/messages/trash");
 
   let result: Awaited<ReturnType<typeof fetchAdminMessageByIdWithOptionalMarkRead>> | null = null;
   try {
@@ -114,18 +115,25 @@ export default async function AdminMessageDetailPage({
           href={backHref}
           className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
         >
-          Back to messages
+          {isTrashBack ? "Back to trash" : "Back to messages"}
         </Link>
       </div>
 
       <div className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-xl font-bold text-[var(--ccr-text)]">{result.item.displayName}</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+              {result.item.sourceLabel}
+            </p>
+            <p className="text-xl font-bold text-[var(--ccr-text)]">{result.item.subject}</p>
             <p className="text-sm text-[var(--ccr-muted)]">{result.item.displayEmail}</p>
             <p className="mt-1 text-xs text-[var(--ccr-muted)]">
               Received{" "}
-              <DateTimeInline value={result.item.createdAt} className="inline-flex text-[var(--ccr-text)]" />
+              <DateTimeInline
+                value={result.item.createdAt}
+                preset="admin"
+                className="inline-flex text-[var(--ccr-text)]"
+              />
             </p>
           </div>
           <span
@@ -146,10 +154,16 @@ export default async function AdminMessageDetailPage({
             <dt className="font-semibold uppercase tracking-wide">Read at</dt>
             <dd className="mt-0.5 text-[var(--ccr-text)]">
               {result.item.readAt ? (
-                <DateTimeInline value={result.item.readAt} className="inline-flex" />
+                <DateTimeInline value={result.item.readAt} preset="admin" className="inline-flex" />
               ) : (
                 "Not read yet"
               )}
+            </dd>
+          </div>
+          <div>
+            <dt className="font-semibold uppercase tracking-wide">Priority</dt>
+            <dd className="mt-0.5 text-[var(--ccr-text)]">
+              {result.item.priority.charAt(0).toUpperCase() + result.item.priority.slice(1)}
             </dd>
           </div>
           <div>

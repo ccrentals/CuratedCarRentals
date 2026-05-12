@@ -92,17 +92,6 @@ export async function handleAdminMessagesBulkPost(
   try {
     if (action === "DELETE_PERMANENT") {
       const result = await deps.bulkDelete({ ids });
-      if (result.blockedIds.length > 0) {
-        return NextResponse.json(
-          {
-            ok: false,
-            error: "Only trashed messages can be permanently deleted.",
-            blockedIds: result.blockedIds,
-          },
-          { status: 400 },
-        );
-      }
-
       await Promise.all(
         result.deletedIds.map((messageId) =>
           deps.writeAudit({
@@ -121,6 +110,9 @@ export async function handleAdminMessagesBulkPost(
       return NextResponse.json({
         ok: true,
         updatedCount: result.deletedCount,
+        deletedCount: result.deletedCount,
+        deletedIds: result.deletedIds,
+        blockedIds: result.blockedIds,
       });
     }
 

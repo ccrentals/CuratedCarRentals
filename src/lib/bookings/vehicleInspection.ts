@@ -31,6 +31,7 @@ import {
 } from "@/lib/bookings/vehicleInspectionShared";
 import { markDedupeResult, tryAcquireDedupe, computeDedupeKey } from "@/lib/notifications/dedupe";
 import { sendOperationalAlertEmail } from "@/lib/notifications/email";
+import { insertMailboxMessage } from "@/lib/messages/mailboxStore";
 import { loadOperationalNotificationRoutingSummary } from "@/lib/notifications/operationalRouting";
 type DbQueryFn = typeof dbQuery;
 
@@ -1735,11 +1736,26 @@ export async function processBookingVehicleInspectionIssues(
   const insertAdminNotification =
     deps.insertAdminNotification ??
     (async (input: { recipientEmail: string; message: string }) => {
-      const result = await query<{ id: string }>(
-        "insert into contact_messages (name, email, message, source) values ($1, $2, $3, $4) returning id",
-        ["Vehicle inspection warning", input.recipientEmail, input.message, "booking_inspection"],
-      );
-      const row = result.rows[0];
+      const row = await insertMailboxMessage(query, {
+        name: "Vehicle inspection warning",
+        email: input.recipientEmail,
+        message: input.message,
+        source: "booking_inspection",
+        subject: `Vehicle inspection warning for ${context?.bookingPublicId ?? "booking"}`,
+        displayName: context?.bookingPublicId
+          ? `Vehicle inspection alert · ${context.bookingPublicId}`
+          : "Vehicle inspection warning",
+        displayEmail: input.recipientEmail ? `Recipient: ${input.recipientEmail}` : "Internal alert",
+        messageType: "inspection_alert",
+        priority: "high",
+        relatedEntityType: "booking",
+        relatedEntityId: bookingId,
+        relatedEntityPublicId: context?.bookingPublicId ?? null,
+        notificationEligible: true,
+        metadataJson: {
+          inspectionType: "return",
+        },
+      });
       return row ? { id: row.id } : null;
     });
   const writeAudit =

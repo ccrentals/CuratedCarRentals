@@ -14,16 +14,17 @@ import {
   readSortFromSearchParams,
   type SortState,
 } from "@/components/admin/tableSort";
-import type { AdminMessageListItem, ContactMessageStatus } from "@/lib/messages/adminMessages";
+import type { AdminMessageListItem } from "@/lib/messages/adminMessages";
 
 type BulkAction = "MARK_READ" | "ARCHIVE" | "MARK_NEW" | "UNARCHIVE" | "DELETE_PERMANENT";
+type ViewMode = "inbox" | "trash";
 
 type MessagesInboxTableProps = {
   rows: AdminMessageListItem[];
   currentPath: string;
   canManage: boolean;
   canDeletePermanent: boolean;
-  currentStatusFilter: ContactMessageStatus | null;
+  viewMode: ViewMode;
 };
 
 function statusBadgeClass(status: string) {
@@ -51,7 +52,7 @@ export function MessagesInboxTable({
   currentPath,
   canManage,
   canDeletePermanent,
-  currentStatusFilter,
+  viewMode,
 }: MessagesInboxTableProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -63,22 +64,23 @@ export function MessagesInboxTable({
   const [success, setSuccess] = useState<string | null>(null);
   const [pendingRowAction, setPendingRowAction] = useState<string | null>(null);
 
-  const bulkOptions = useMemo(() => {
-    const options: Array<{ value: BulkAction; label: string }> = [
-      { value: "MARK_READ", label: "Mark as Read" },
-      { value: "ARCHIVE", label: "Trash" },
-      { value: "MARK_NEW", label: "Mark as New" },
-    ];
-
-    if (currentStatusFilter === "ARCHIVED") {
-      options.push({ value: "UNARCHIVE", label: "Restore to Read" });
+  const bulkOptions = useMemo<Array<{ value: BulkAction; label: string }>>(() => {
+    if (viewMode === "trash") {
+      const options: Array<{ value: BulkAction; label: string }> = [
+        { value: "UNARCHIVE", label: "Restore to Read" },
+      ];
       if (canDeletePermanent) {
         options.push({ value: "DELETE_PERMANENT", label: "Delete Permanently" });
       }
+      return options;
     }
 
-    return options;
-  }, [canDeletePermanent, currentStatusFilter]);
+    return [
+      { value: "MARK_READ", label: "Mark as Read" },
+      { value: "ARCHIVE", label: "Move to Trash" },
+      { value: "MARK_NEW", label: "Mark as New" },
+    ];
+  }, [canDeletePermanent, viewMode]);
 
   useEffect(() => {
     if (bulkOptions.some((option) => option.value === bulkAction)) return;
@@ -134,8 +136,15 @@ export function MessagesInboxTable({
     });
   }
 
-  async function runRowAction(rowId: string, action: Exclude<BulkAction, "DELETE_PERMANENT" | "UNARCHIVE" | "MARK_NEW" | "MARK_READ">) {
+  async function runRowAction(rowId: string, action: BulkAction) {
     if (!canManage || pending || pendingRowAction) return;
+
+    if (
+      action === "DELETE_PERMANENT" &&
+      !window.confirm("Permanently delete this trashed message? This cannot be undone.")
+    ) {
+      return;
+    }
 
     setPendingRowAction(`${rowId}:${action}`);
     setError(null);
@@ -161,7 +170,17 @@ export function MessagesInboxTable({
         return;
       }
 
-      setSuccess("Moved message to Trash.");
+      if (action === "ARCHIVE") {
+        setSuccess("Moved message to Trash.");
+      } else if (action === "UNARCHIVE") {
+        setSuccess("Restored message to Read.");
+      } else if (action === "DELETE_PERMANENT") {
+        setSuccess("Permanently deleted message.");
+      } else if (action === "MARK_NEW") {
+        setSuccess("Marked message as New.");
+      } else {
+        setSuccess("Marked message as Read.");
+      }
       await refreshUnreadMessagesCount();
       router.refresh();
     } catch {
@@ -206,7 +225,13 @@ export function MessagesInboxTable({
       });
 
       const payload = (await response.json().catch(() => null)) as
-        | { ok?: boolean; error?: string; updatedCount?: number }
+        | {
+            ok?: boolean;
+            error?: string;
+            updatedCount?: number;
+            deletedCount?: number;
+            blockedIds?: string[];
+          }
         | null;
 
       if (!response.ok || !payload?.ok) {
@@ -214,7 +239,16 @@ export function MessagesInboxTable({
         return;
       }
 
-      setSuccess(bulkActionSuccessLabel(bulkAction, payload.updatedCount ?? 0));
+      const affectedCount =
+        bulkAction === "DELETE_PERMANENT"
+          ? payload.deletedCount ?? payload.updatedCount ?? 0
+          : payload.updatedCount ?? 0;
+      setSuccess(bulkActionSuccessLabel(bulkAction, affectedCount));
+      if (bulkAction === "DELETE_PERMANENT" && (payload.blockedIds?.length ?? 0) > 0) {
+        setError(
+          `${payload.blockedIds?.length ?? 0} selected message${payload.blockedIds?.length === 1 ? "" : "s"} could not be deleted because they are not in Trash.`,
+        );
+      }
       setSelectedIds(new Set());
       await refreshUnreadMessagesCount();
       router.refresh();
@@ -301,7 +335,11 @@ export function MessagesInboxTable({
                   {row.statusLabel}
                 </span>
               </div>
-              <DateTimeInline value={row.createdAt} className="text-xs text-[var(--ccr-muted)]" />
+              <DateTimeInline
+                value={row.createdAt}
+                preset="admin"
+                className="text-xs text-[var(--ccr-muted)]"
+              />
               {row.relatedEntityLabel ? (
                 row.relatedEntityHref ? (
                   <Link
@@ -331,6 +369,28 @@ export function MessagesInboxTable({
                   >
                     {pendingRowAction === `${row.id}:ARCHIVE` ? "Moving..." : "Trash"}
                   </button>
+                ) : null}
+                {canManage && row.isTrashed ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => void runRowAction(row.id, "UNARCHIVE")}
+                      disabled={Boolean(pendingRowAction) || pending}
+                      className="inline-flex rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-50"
+                    >
+                      {pendingRowAction === `${row.id}:UNARCHIVE` ? "Restoring..." : "Restore"}
+                    </button>
+                    {canDeletePermanent ? (
+                      <button
+                        type="button"
+                        onClick={() => void runRowAction(row.id, "DELETE_PERMANENT")}
+                        disabled={Boolean(pendingRowAction) || pending}
+                        className="inline-flex rounded-lg border border-red-400/40 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-200 disabled:opacity-50"
+                      >
+                        {pendingRowAction === `${row.id}:DELETE_PERMANENT` ? "Deleting..." : "Delete"}
+                      </button>
+                    ) : null}
+                  </>
                 ) : null}
               </div>
             </article>
@@ -364,7 +424,7 @@ export function MessagesInboxTable({
                 onChange={updateSort}
                 defaultDirection="asc"
               />
-              <th className="px-4 py-3">Source</th>
+              <th className="px-4 py-3">Type</th>
               <SortableTh
                 label="Status"
                 columnKey="status"
@@ -392,7 +452,7 @@ export function MessagesInboxTable({
                     </td>
                   ) : null}
                   <td className="px-4 py-3 text-[var(--ccr-muted)]">
-                    <TableDateTime value={row.createdAt} />
+                    <TableDateTime value={row.createdAt} preset="admin" />
                   </td>
                   <td className="px-4 py-3 font-semibold text-[var(--ccr-text)]">{row.displayName}</td>
                   <td className="px-4 py-3 text-[var(--ccr-text)]">{row.displayEmail}</td>
@@ -438,6 +498,28 @@ export function MessagesInboxTable({
                         >
                           {pendingRowAction === `${row.id}:ARCHIVE` ? "Moving..." : "Trash"}
                         </button>
+                      ) : null}
+                      {canManage && row.isTrashed ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => void runRowAction(row.id, "UNARCHIVE")}
+                            disabled={Boolean(pendingRowAction) || pending}
+                            className="inline-flex rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-50"
+                          >
+                            {pendingRowAction === `${row.id}:UNARCHIVE` ? "Restoring..." : "Restore"}
+                          </button>
+                          {canDeletePermanent ? (
+                            <button
+                              type="button"
+                              onClick={() => void runRowAction(row.id, "DELETE_PERMANENT")}
+                              disabled={Boolean(pendingRowAction) || pending}
+                              className="inline-flex rounded-lg border border-red-400/40 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-200 disabled:opacity-50"
+                            >
+                              {pendingRowAction === `${row.id}:DELETE_PERMANENT` ? "Deleting..." : "Delete"}
+                            </button>
+                          ) : null}
+                        </>
                       ) : null}
                     </div>
                   </td>

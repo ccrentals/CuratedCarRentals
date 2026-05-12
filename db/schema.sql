@@ -932,10 +932,20 @@ create table if not exists contact_messages (
   name text not null,
   email text not null,
   message text not null,
+  subject text,
+  display_name text,
+  display_email text,
   status text not null default 'NEW',
   read_at timestamptz,
   read_by_user_id uuid references users(id) on delete set null,
   source text not null default 'contact_page',
+  message_type text not null default 'contact_inquiry',
+  priority text not null default 'normal',
+  related_entity_type text,
+  related_entity_id text,
+  related_entity_public_id text,
+  notification_eligible boolean not null default false,
+  metadata_json jsonb not null default '{}'::jsonb,
   constraint contact_messages_status_check check (status in ('NEW', 'READ', 'ARCHIVED'))
 );
 
@@ -995,6 +1005,8 @@ create index if not exists promo_redemption_events_customer_id_idx on promo_rede
 create index if not exists promo_redemption_events_customer_email_lower_idx on promo_redemption_events (lower(customer_email));
 create index if not exists contact_messages_status_created_idx on contact_messages(status, created_at desc);
 create index if not exists contact_messages_created_idx on contact_messages(created_at desc);
+create index if not exists contact_messages_type_created_idx on contact_messages(message_type, created_at desc);
+create index if not exists contact_messages_notification_eligible_idx on contact_messages(notification_eligible, status, created_at desc);
 -- Booking revamp foundation (additive / backward-compatible)
 create table if not exists booking_locations (
   id uuid primary key default gen_random_uuid(),

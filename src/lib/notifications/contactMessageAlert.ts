@@ -16,7 +16,7 @@ function baseUrl() {
 function formatDateTime(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("en-JM");
+  return date.toLocaleString("en-JM", { timeZone: "America/Jamaica" });
 }
 
 function escapeHtml(value: string) {
@@ -52,6 +52,42 @@ export function compactMessageSnippet(message: string, maxLength = 240) {
   const compact = message.replace(/\s+/g, " ").trim();
   if (compact.length <= maxLength) return compact;
   return `${compact.slice(0, Math.max(0, maxLength - 3))}...`;
+}
+
+function humanizeSourceLabel(source: string | null | undefined) {
+  const normalized = String(source ?? "")
+    .trim()
+    .toLowerCase();
+  if (!normalized || normalized === "contact_page" || normalized === "contact_inquiry") {
+    return "Contact form";
+  }
+  if (normalized === "home_page_contact" || normalized === "home_contact_inquiry") {
+    return "Home contact form";
+  }
+  if (normalized === "booking_inspection" || normalized === "inspection_alert") {
+    return "Vehicle inspection alert";
+  }
+  if (normalized === "resend_webhook" || normalized === "email_delivery_issue") {
+    return "Email delivery issue";
+  }
+  return normalized
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((segment) => `${segment.slice(0, 1).toUpperCase()}${segment.slice(1).toLowerCase()}`)
+    .join(" ");
+}
+
+function resolveAlertHeading(source: string | null | undefined) {
+  const normalized = String(source ?? "")
+    .trim()
+    .toLowerCase();
+  if (normalized === "booking_inspection" || normalized === "inspection_alert") {
+    return "New vehicle inspection alert";
+  }
+  if (normalized === "resend_webhook" || normalized === "email_delivery_issue") {
+    return "New email delivery issue";
+  }
+  return "New contact message received";
 }
 
 function warnConfigOnce(reason: string) {
@@ -161,20 +197,25 @@ export async function sendContactMessageCreatedAlert(input: {
   email: string;
   message: string;
   source?: string | null;
+  subject?: string | null;
   recipients?: string[];
 }) {
   const link = `${baseUrl()}/admin/messages/${input.messageId}`;
   const snippet = compactMessageSnippet(input.message, 260);
   const source = (input.source ?? "contact_page").trim() || "contact_page";
   const createdLabel = formatDateTime(input.createdAt);
+  const sourceLabel = humanizeSourceLabel(source);
+  const heading = resolveAlertHeading(source);
+  const subject = input.subject?.trim() || `${sourceLabel} notification`;
 
   const html = `
     <div style="font-family: Arial, sans-serif; color: #0f172a;">
-      <h2>New contact message received</h2>
+      <h2>${escapeHtml(heading)}</h2>
+      <p><strong>Subject:</strong> ${escapeHtml(subject)}</p>
       <p><strong>Name:</strong> ${escapeHtml(input.name)}</p>
       <p><strong>Email:</strong> ${escapeHtml(input.email)}</p>
       <p><strong>Received:</strong> ${escapeHtml(createdLabel)}</p>
-      <p><strong>Source:</strong> ${escapeHtml(source)}</p>
+      <p><strong>Type:</strong> ${escapeHtml(sourceLabel)}</p>
       <div style="margin-top:12px; padding:12px; border:1px solid #e2e8f0; border-radius:10px; background:#f8fafc;">
         <p style="margin:0 0 6px; font-weight:600;">Message snippet</p>
         <p style="margin:0;">${escapeHtml(snippet)}</p>
@@ -188,7 +229,7 @@ export async function sendContactMessageCreatedAlert(input: {
 
   return sendContactAlertEmailBatch({
     recipients: input.recipients,
-    subject: `[Contact] New message from ${input.name}`,
+    subject: `[Messages] ${subject}`,
     html,
     replyTo: input.email,
     dispatch: {
@@ -213,6 +254,8 @@ export async function sendContactMessagesDigestAlert(input: {
     email: string;
     message: string;
     createdAt: string;
+    source?: string | null;
+    subject?: string | null;
   }>;
 }) {
   const rows = input.items
@@ -221,7 +264,9 @@ export async function sendContactMessagesDigestAlert(input: {
       const itemLink = `${baseUrl()}/admin/messages/${item.id}`;
       return `
         <li style="margin-bottom:10px;">
-          <div><strong>${escapeHtml(item.name)}</strong> (${escapeHtml(item.email)})</div>
+          <div><strong>${escapeHtml(item.subject?.trim() || item.name)}</strong></div>
+          <div style="font-size:12px; color:#475569;">${escapeHtml(humanizeSourceLabel(item.source))}</div>
+          <div style="font-size:12px; color:#475569;">${escapeHtml(item.name)} (${escapeHtml(item.email)})</div>
           <div style="font-size:12px; color:#475569;">${escapeHtml(formatDateTime(item.createdAt))}</div>
           <div>${escapeHtml(compactMessageSnippet(item.message, 180))}</div>
           <div style="margin-top:4px;"><a href="${itemLink}">Open message</a></div>
@@ -234,9 +279,9 @@ export async function sendContactMessagesDigestAlert(input: {
 
   const html = `
     <div style="font-family: Arial, sans-serif; color: #0f172a;">
-      <h2>Contact inbox update</h2>
-      <p>You currently have <strong>${input.totalNew}</strong> new contact message(s).</p>
-      <p>Recent senders:</p>
+      <h2>Messages inbox update</h2>
+      <p>You currently have <strong>${input.totalNew}</strong> new inbox item(s).</p>
+      <p>Recent items:</p>
       <ul style="padding-left:18px;">
         ${rows || "<li>No preview available.</li>"}
       </ul>
@@ -249,7 +294,7 @@ export async function sendContactMessagesDigestAlert(input: {
 
   return sendContactAlertEmailBatch({
     recipients: input.recipients,
-    subject: `[Contact] ${input.totalNew} new message${input.totalNew === 1 ? "" : "s"} in inbox`,
+    subject: `[Messages] ${input.totalNew} new message${input.totalNew === 1 ? "" : "s"} in inbox`,
     html,
     dispatch: {
       entityType: "system",

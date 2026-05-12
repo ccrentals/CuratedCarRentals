@@ -5,6 +5,7 @@ import { dbQuery } from "@/lib/db";
 import { logError, logWarn } from "@/lib/log";
 import { assessContactMessageSpam } from "@/lib/messages/spamDetection";
 import { maybeSendContactMessageNotification } from "@/lib/notifications/contactMessageNotifier";
+import { insertMailboxMessage } from "@/lib/messages/mailboxStore";
 import {
   consumeRateLimit,
   type ConsumeRateLimitResult,
@@ -144,13 +145,24 @@ const DEFAULT_DEPS: ContactRouteDeps = {
   nowMs: () => Date.now(),
   consumeRateLimit: (input) => consumeRateLimitWithAuditFallback(input),
   insertContactMessage: async ({ name, email, message, source }) => {
-    const result = await dbQuery<{ id: string; created_at: string }>(
-      "insert into contact_messages (name, email, message, source) values ($1, $2, $3, $4) returning id, created_at",
-      [name, email, message, source],
-    );
+    const result = await insertMailboxMessage(dbQuery, {
+      name,
+      email,
+      message,
+      source,
+      subject: `New contact message from ${name}`,
+      displayName: name,
+      displayEmail: email,
+      messageType: source === "home_page_contact" ? "home_contact_inquiry" : "contact_inquiry",
+      priority: "normal",
+      notificationEligible: true,
+      metadataJson: {
+        submittedFrom: source,
+      },
+    });
     return {
-      id: result.rows[0]?.id ?? "",
-      createdAt: result.rows[0]?.created_at ?? new Date().toISOString(),
+      id: result?.id ?? "",
+      createdAt: String(result?.created_at ?? new Date().toISOString()),
     };
   },
   writeAudit: async ({ action, details, entityType = "contact_message", entityId }) => {

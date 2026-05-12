@@ -69,6 +69,21 @@ const BOOKINGS_CHILDREN: NavChild[] = [
   },
 ];
 
+const MESSAGES_CHILDREN: NavChild[] = [
+  {
+    label: "Inbox",
+    href: "/admin/messages",
+    icon: FileText,
+    testId: "admin-subnav-messages-inbox",
+  },
+  {
+    label: "Trash",
+    href: "/admin/messages/trash",
+    icon: FileText,
+    testId: "admin-subnav-messages-trash",
+  },
+];
+
 const TEMPLATE_CHILDREN: NavChild[] = [
   {
     label: "Invoice",
@@ -162,6 +177,7 @@ const NAV_ITEMS: NavItem[] = [
   {
     label: "Messages",
     href: "/admin/messages",
+    children: MESSAGES_CHILDREN,
     icon: (className: string) => (
       <svg
         viewBox="0 0 24 24"
@@ -771,7 +787,7 @@ export function AdminShell({
   const drawerTriggerRef = useRef<HTMLElement | null>(null);
   const previousFocusedElementRef = useRef<HTMLElement | null>(null);
   const mobileCompactThresholdRef = useRef(72);
-  const shouldPollUnreadMessages = pathname.startsWith("/admin/messages");
+  const shouldPollUnreadMessages = pathname.startsWith("/admin");
   const {
     count: liveUnreadMessagesCount,
     refresh: refreshUnreadMessagesCount,
@@ -799,7 +815,7 @@ export function AdminShell({
   });
 
   useEffect(() => {
-    if (!pathname.startsWith("/admin/messages")) return;
+    if (!pathname.startsWith("/admin")) return;
     void refreshUnreadMessagesCount();
   }, [pathname, refreshUnreadMessagesCount]);
 

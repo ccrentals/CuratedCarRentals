@@ -71,6 +71,14 @@ export async function AdminMessagesPageContent({
   }
 
   const q = typeof searchParams.q === "string" ? searchParams.q.trim() : "";
+  const dateFrom =
+    typeof searchParams.dateFrom === "string" && searchParams.dateFrom.trim()
+      ? searchParams.dateFrom.trim()
+      : "";
+  const dateTo =
+    typeof searchParams.dateTo === "string" && searchParams.dateTo.trim()
+      ? searchParams.dateTo.trim()
+      : "";
   const requestedStatus = normalizeContactMessageStatusFilter(
     typeof searchParams.status === "string" ? searchParams.status : undefined,
   );
@@ -100,6 +108,8 @@ export async function AdminMessagesPageContent({
       status,
       source,
       q,
+      dateFrom,
+      dateTo,
       sortBy,
       sortDir,
       limit: rowsPerPage,
@@ -116,6 +126,8 @@ export async function AdminMessagesPageContent({
         status,
         source,
         q,
+        dateFrom,
+        dateTo,
         sortBy,
         sortDir,
         limit: rowsPerPage,
@@ -137,6 +149,8 @@ export async function AdminMessagesPageContent({
   }
   setStringParam(commonParams, "source", source);
   setStringParam(commonParams, "q", q || null);
+  setStringParam(commonParams, "dateFrom", dateFrom || null);
+  setStringParam(commonParams, "dateTo", dateTo || null);
   setStringParam(commonParams, "sortBy", sortBy);
   setStringParam(commonParams, "sortDir", sortDir);
   if (rowsPerPage !== 10) {
@@ -146,6 +160,8 @@ export async function AdminMessagesPageContent({
   const toggleParams = new URLSearchParams();
   setStringParam(toggleParams, "source", source);
   setStringParam(toggleParams, "q", q || null);
+  setStringParam(toggleParams, "dateFrom", dateFrom || null);
+  setStringParam(toggleParams, "dateTo", dateTo || null);
   setStringParam(toggleParams, "sortBy", sortBy);
   setStringParam(toggleParams, "sortDir", sortDir);
   if (rowsPerPage !== 10) {
@@ -175,9 +191,8 @@ export async function AdminMessagesPageContent({
   const totalPages = Math.max(1, Math.ceil(totalCount / rowsPerPage));
   const from = totalCount === 0 ? 0 : (page - 1) * rowsPerPage + 1;
   const to = Math.min(page * rowsPerPage, totalCount);
-  const searchLabelClass = isTrashView
-    ? "sm:col-span-3 text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]"
-    : "sm:col-span-2 text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]";
+  const searchLabelClass =
+    "sm:col-span-2 text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]";
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
@@ -218,7 +233,7 @@ export async function AdminMessagesPageContent({
         </Link>
       </div>
 
-      <form className="mt-5 grid gap-3 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4 sm:grid-cols-4">
+      <form className="mt-5 grid gap-3 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4 sm:grid-cols-6">
         <input type="hidden" name="sortBy" value={sortBy} />
         <input type="hidden" name="sortDir" value={sortDir} />
         {!isTrashView ? (
@@ -236,7 +251,7 @@ export async function AdminMessagesPageContent({
           </label>
         ) : null}
         <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-          Source
+          Type
           <select
             name="source"
             defaultValue={source ?? ""}
@@ -255,7 +270,25 @@ export async function AdminMessagesPageContent({
           <input
             name="q"
             defaultValue={q}
-            placeholder="Name, email, message, source, booking ID"
+            placeholder="Name, email, subject, message, related ID"
+            className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+          />
+        </label>
+        <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+          Date from
+          <input
+            type="date"
+            name="dateFrom"
+            defaultValue={dateFrom}
+            className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+          />
+        </label>
+        <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+          Date to
+          <input
+            type="date"
+            name="dateTo"
+            defaultValue={dateTo}
             className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
           />
         </label>
@@ -271,7 +304,7 @@ export async function AdminMessagesPageContent({
             <option value="50">50</option>
           </select>
         </label>
-        <div className="sm:col-span-4 flex justify-end gap-2">
+        <div className="sm:col-span-6 flex justify-end gap-2">
           <button
             type="submit"
             className="rounded-lg border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
@@ -307,7 +340,7 @@ export async function AdminMessagesPageContent({
               currentPath={currentPath}
               canManage={canManage}
               canDeletePermanent={canDeletePermanent}
-              currentStatusFilter={status}
+              viewMode={viewMode}
             />
           )}
 

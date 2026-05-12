@@ -1,11 +1,16 @@
 import { dbQuery } from "@/lib/db";
+import {
+  buildMailboxSelectFields,
+  getFallbackMessageTypeFromSource,
+  loadMailboxSchemaCapabilities,
+} from "@/lib/messages/mailboxStore";
 
 export const CONTACT_MESSAGE_STATUSES = ["NEW", "READ", "ARCHIVED"] as const;
 export const ADMIN_MESSAGE_SOURCE_OPTIONS = [
-  { value: "contact_page", label: "Contact form" },
-  { value: "home_page_contact", label: "Home contact form" },
-  { value: "booking_inspection", label: "Vehicle inspection alert" },
-  { value: "resend_webhook", label: "Email delivery issue" },
+  { value: "contact_inquiry", label: "Contact form" },
+  { value: "home_contact_inquiry", label: "Home contact form" },
+  { value: "inspection_alert", label: "Vehicle inspection alert" },
+  { value: "email_delivery_issue", label: "Email delivery issue" },
 ] as const;
 
 export type ContactMessageStatus = (typeof CONTACT_MESSAGE_STATUSES)[number];
@@ -35,6 +40,16 @@ type ContactMessageRow = {
   read_at: string | Date | null;
   read_by_user_id: string | null;
   source: string | null;
+  subject: string | null;
+  display_name: string | null;
+  display_email: string | null;
+  message_type: string | null;
+  priority: string | null;
+  related_entity_type: string | null;
+  related_entity_id: string | null;
+  related_entity_public_id: string | null;
+  notification_eligible: boolean | null;
+  metadata_json: unknown;
 };
 
 type ContactMessageRelatedAuditRow = {
@@ -68,6 +83,9 @@ export type AdminMessageListItem = {
   source: string;
   sourceKey: string;
   sourceLabel: string;
+  subject: string;
+  messageType: string;
+  priority: string;
   isTrashed: boolean;
   displayName: string;
   displayEmail: string;
@@ -281,6 +299,13 @@ function humanizeFallbackLabel(value: string) {
     .join(" ");
 }
 
+function legacySourcesForMessageType(messageType: string) {
+  if (messageType === "home_contact_inquiry") return ["home_page_contact"];
+  if (messageType === "inspection_alert") return ["booking_inspection"];
+  if (messageType === "email_delivery_issue") return ["resend_webhook"];
+  return ["contact_page"];
+}
+
 export function humanizeAdminMessageSource(value: unknown) {
   const sourceKey = normalizeText(value).toLowerCase();
   const known = ADMIN_MESSAGE_SOURCE_OPTIONS.find((option) => option.value === sourceKey);
@@ -304,6 +329,8 @@ function buildRelatedEntityHref(entityType: string, entityId: string) {
   if (!isUuid(entityId)) return null;
   if (entityType === "booking") return `/admin/bookings/${entityId}`;
   if (entityType === "quote") return `/admin/bookings/quotes/${entityId}`;
+  if (entityType === "email") return `/admin/emails/${entityId}`;
+  if (entityType === "contact_message") return `/admin/messages/${entityId}`;
   return null;
 }
 
@@ -390,28 +417,37 @@ async function loadAdminMessageEnrichmentByNotificationIds(
 
 function buildPresentationFields(
   row: ContactMessageRow,
-  sourceKey: string,
+  messageTypeKey: string,
   sourceLabel: string,
   enrichment: AdminMessageEnrichment | undefined,
 ) {
   const rawName = normalizeText(row.name);
   const rawEmail = normalizeText(row.email);
+  const directDisplayName = normalizeText(row.display_name);
+  const directDisplayEmail = normalizeText(row.display_email);
 
-  if (sourceKey === "contact_page") {
+  if (directDisplayName || directDisplayEmail) {
+    return {
+      displayName: directDisplayName || rawName || sourceLabel,
+      displayEmail: directDisplayEmail || rawEmail || "System message",
+    };
+  }
+
+  if (messageTypeKey === "contact_inquiry") {
     return {
       displayName: rawName || "Unknown sender",
       displayEmail: rawEmail || "No email provided",
     };
   }
 
-  if (sourceKey === "home_page_contact") {
+  if (messageTypeKey === "home_contact_inquiry") {
     return {
       displayName: rawName || "Unknown sender",
       displayEmail: rawEmail || "No email provided",
     };
   }
 
-  if (sourceKey === "booking_inspection") {
+  if (messageTypeKey === "inspection_alert") {
     return {
       displayName:
         enrichment?.relatedEntityPublicId
@@ -421,7 +457,7 @@ function buildPresentationFields(
     };
   }
 
-  if (sourceKey === "resend_webhook") {
+  if (messageTypeKey === "email_delivery_issue") {
     return {
       displayName:
         enrichment?.relatedEntityPublicId
@@ -444,9 +480,34 @@ async function hydrateAdminMessageRows(rows: ContactMessageRow[]) {
   return rows.map((row) => {
     const message = normalizeText(row.message);
     const sourceKey = normalizeText(row.source) || "contact_page";
+    const messageType = normalizeText(row.message_type) || getFallbackMessageTypeFromSource(sourceKey);
     const sourceLabel = humanizeAdminMessageSource(sourceKey);
-    const enrichment = enrichmentById.get(row.id);
-    const presentation = buildPresentationFields(row, sourceKey, sourceLabel, enrichment);
+    const auditEnrichment = enrichmentById.get(row.id);
+    const directRelatedEntityType = normalizeText(row.related_entity_type).toLowerCase() || null;
+    const directRelatedEntityId = normalizeText(row.related_entity_id) || null;
+    const directRelatedEntityPublicId = normalizeText(row.related_entity_public_id) || null;
+    const directRelatedEntityLabel =
+      directRelatedEntityType && (directRelatedEntityPublicId || directRelatedEntityId)
+        ? buildRelatedEntityLabel(
+            directRelatedEntityType,
+            directRelatedEntityPublicId ?? "",
+            directRelatedEntityId ?? "",
+          )
+        : null;
+    const directRelatedEntityHref =
+      directRelatedEntityType && directRelatedEntityId
+        ? buildRelatedEntityHref(directRelatedEntityType, directRelatedEntityId)
+        : null;
+    const enrichment = directRelatedEntityType
+      ? {
+          relatedEntityType: directRelatedEntityType,
+          relatedEntityId: directRelatedEntityId,
+          relatedEntityPublicId: directRelatedEntityPublicId,
+          relatedEntityLabel: directRelatedEntityLabel,
+          relatedEntityHref: directRelatedEntityHref,
+        }
+      : auditEnrichment;
+    const presentation = buildPresentationFields(row, messageType, sourceLabel, enrichment);
     return {
       id: row.id,
       createdAt: toIsoTimestamp(row.created_at),
@@ -454,13 +515,16 @@ async function hydrateAdminMessageRows(rows: ContactMessageRow[]) {
       email: normalizeText(row.email),
       displayName: presentation.displayName,
       displayEmail: presentation.displayEmail,
+      subject: normalizeText(row.subject) || presentation.displayName,
+      messageType,
+      priority: normalizeText(row.priority) || "normal",
       status: toStatus(row.status),
       visibleStatus: getAdminMessageVisibleStatus(row.status),
       statusLabel: getAdminMessageStatusLabel(row.status),
       snippet: buildSnippet(message),
-      source: sourceKey,
-      sourceKey,
-      sourceLabel,
+      source: messageType,
+      sourceKey: messageType,
+      sourceLabel: humanizeAdminMessageSource(messageType),
       isTrashed: toStatus(row.status) === "ARCHIVED",
       relatedEntityType: enrichment?.relatedEntityType ?? null,
       relatedEntityId: enrichment?.relatedEntityId ?? null,
@@ -475,6 +539,7 @@ async function hydrateAdminMessageRows(rows: ContactMessageRow[]) {
 }
 
 function buildFilters(input: FetchAdminMessagesInput) {
+  const messageCapabilitiesPromise = loadMailboxSchemaCapabilities();
   const status = normalizeContactMessageStatusFilter(input.status);
   const source = normalizeAdminMessageSourceFilter(input.source);
   const q = normalizeText(input.q);
@@ -482,7 +547,7 @@ function buildFilters(input: FetchAdminMessagesInput) {
   const dateTo = isIsoDate(normalizeText(input.dateTo)) ? normalizeText(input.dateTo) : null;
 
   const whereParts: string[] = [];
-  const values: Array<string | number> = [];
+  const values: unknown[] = [];
   let index = 1;
 
   if (status) {
@@ -493,18 +558,17 @@ function buildFilters(input: FetchAdminMessagesInput) {
     whereParts.push(`m.status <> 'ARCHIVED'`);
   }
 
-  if (source) {
-    whereParts.push(`coalesce(m.source, 'contact_page') = $${index}`);
-    values.push(source);
-    index += 1;
-  }
-
   if (q) {
     whereParts.push(`(
       m.name ilike $${index}
       or m.email ilike $${index}
+      or coalesce(m.subject, '') ilike $${index}
+      or coalesce(m.display_name, '') ilike $${index}
+      or coalesce(m.display_email, '') ilike $${index}
       or m.message ilike $${index}
+      or coalesce(m.message_type, '') ilike $${index}
       or coalesce(m.source, 'contact_page') ilike $${index}
+      or coalesce(m.related_entity_public_id, '') ilike $${index}
       or exists (
         select 1
         from audit_logs a
@@ -533,7 +597,17 @@ function buildFilters(input: FetchAdminMessagesInput) {
     index += 1;
   }
 
-  return { whereParts, values, index, status, q, source, dateFrom, dateTo };
+  return {
+    whereParts,
+    values,
+    index,
+    status,
+    q,
+    source,
+    dateFrom,
+    dateTo,
+    messageCapabilitiesPromise,
+  };
 }
 
 export async function fetchAdminMessagesPage(
@@ -551,7 +625,21 @@ export async function fetchAdminMessagesPage(
   const sortDir = normalizeAdminMessageSortDir(input.sortDir) ?? "desc";
 
   const filters = buildFilters(input);
-  const values: Array<string | number> = [...filters.values];
+  const capabilities = await filters.messageCapabilitiesPromise;
+  const values: unknown[] = [...filters.values];
+
+  if (filters.source) {
+    if (capabilities.hasMessageType) {
+      filters.whereParts.push(`coalesce(m.message_type, $${filters.index}) = $${filters.index}`);
+      values.push(filters.source);
+      filters.index += 1;
+    } else {
+      filters.whereParts.push(`coalesce(m.source, 'contact_page') = any($${filters.index}::text[])`);
+      values.push(legacySourcesForMessageType(filters.source));
+      filters.index += 1;
+    }
+  }
+  const filterValues = [...values];
 
   values.push(limit + 1);
   const limitIndex = values.length;
@@ -562,17 +650,10 @@ export async function fetchAdminMessagesPage(
   const whereSql =
     filters.whereParts.length > 0 ? ` where ${filters.whereParts.join(" and ")}` : "";
 
+  const selectFields = buildMailboxSelectFields("m", capabilities);
   const result = await dbQuery<ContactMessageRow>(
     `select
-        m.id,
-        m.created_at,
-        m.name,
-        m.email,
-        m.message,
-        m.status,
-        m.read_at,
-        m.read_by_user_id,
-        m.source
+        ${selectFields}
       from contact_messages m${whereSql} ${orderBySql} limit $${limitIndex} offset $${offsetIndex}`,
     values,
   );
@@ -584,7 +665,7 @@ export async function fetchAdminMessagesPage(
 
   const countResult = await dbQuery<{ total_count: unknown }>(
     `select count(*)::int as total_count from contact_messages m${countWhereSql}`,
-    filters.values,
+    filterValues,
   );
 
   const hasMore = result.rows.length > limit;
@@ -610,8 +691,10 @@ export async function fetchAdminMessagesPage(
 }
 
 export async function fetchAdminMessageById(id: string) {
+  const capabilities = await loadMailboxSchemaCapabilities();
+  const selectFields = buildMailboxSelectFields("contact_messages", capabilities);
   const result = await dbQuery<ContactMessageRow>(
-    "select id, created_at, name, email, message, status, read_at, read_by_user_id, source from contact_messages where id = $1 limit 1",
+    `select ${selectFields} from contact_messages where id = $1 limit 1`,
     [id],
   );
   const row = result.rows[0];
@@ -626,23 +709,30 @@ export async function fetchAdminMessageExportRows(input: FetchAdminMessagesInput
   const sortBy = normalizeAdminMessageSortBy(input.sortBy) ?? "received";
   const sortDir = normalizeAdminMessageSortDir(input.sortDir) ?? "desc";
   const filters = buildFilters(input);
+  const capabilities = await filters.messageCapabilitiesPromise;
+  const values: unknown[] = [...filters.values];
+
+  if (filters.source) {
+    if (capabilities.hasMessageType) {
+      filters.whereParts.push(`coalesce(m.message_type, $${filters.index}) = $${filters.index}`);
+      values.push(filters.source);
+      filters.index += 1;
+    } else {
+      filters.whereParts.push(`coalesce(m.source, 'contact_page') = any($${filters.index}::text[])`);
+      values.push(legacySourcesForMessageType(filters.source));
+      filters.index += 1;
+    }
+  }
   const orderBySql = buildOrderBySql(sortBy, sortDir);
   const whereSql =
     filters.whereParts.length > 0 ? ` where ${filters.whereParts.join(" and ")}` : "";
+  const selectFields = buildMailboxSelectFields("m", capabilities);
 
   const result = await dbQuery<ContactMessageRow>(
     `select
-        m.id,
-        m.created_at,
-        m.name,
-        m.email,
-        m.message,
-        m.status,
-        m.read_at,
-        m.read_by_user_id,
-        m.source
+        ${selectFields}
       from contact_messages m${whereSql} ${orderBySql}`,
-    filters.values,
+    values,
   );
 
   return hydrateAdminMessageRows(result.rows);
@@ -656,6 +746,9 @@ export async function fetchAdminMessageByIdWithOptionalMarkRead(input: {
   const markRead = Boolean(input.markRead);
   const actorUserId = normalizeUserId(input.actorUserId);
 
+  const capabilities = await loadMailboxSchemaCapabilities();
+  const selectFields = buildMailboxSelectFields("contact_messages", capabilities);
+
   if (!markRead) {
     const existing = await fetchAdminMessageById(input.id);
     return {
@@ -666,7 +759,13 @@ export async function fetchAdminMessageByIdWithOptionalMarkRead(input: {
   }
 
   const updateResult = await dbQuery<ContactMessageRow>(
-    "update contact_messages set status = 'READ', read_at = coalesce(read_at, now()), read_by_user_id = coalesce(read_by_user_id, $2::uuid) where id = $1 and status = 'NEW' returning id, created_at, name, email, message, status, read_at, read_by_user_id, source",
+    `update contact_messages
+        set status = 'READ',
+            read_at = coalesce(read_at, now()),
+            read_by_user_id = coalesce(read_by_user_id, $2::uuid)
+      where id = $1
+        and status = 'NEW'
+      returning ${selectFields}`,
     [input.id, actorUserId],
   );
 
@@ -710,23 +809,40 @@ export async function updateAdminMessageStatus(input: {
 
   const previousStatus = toStatus(existingStatus);
 
+  const capabilities = await loadMailboxSchemaCapabilities();
+  const selectFields = buildMailboxSelectFields("contact_messages", capabilities);
   let query =
-    "update contact_messages set status = status where id = $1 returning id, created_at, name, email, message, status, read_at, read_by_user_id, source";
+    `update contact_messages set status = status where id = $1 returning ${selectFields}`;
   let values: Array<string | null> = [input.id];
 
   if (input.action === "MARK_READ") {
     query =
-      "update contact_messages set status = 'READ', read_at = coalesce(read_at, now()), read_by_user_id = coalesce(read_by_user_id, $2::uuid) where id = $1 returning id, created_at, name, email, message, status, read_at, read_by_user_id, source";
+      `update contact_messages
+          set status = 'READ',
+              read_at = coalesce(read_at, now()),
+              read_by_user_id = coalesce(read_by_user_id, $2::uuid)
+        where id = $1
+        returning ${selectFields}`;
     values = [input.id, actorUserId];
   } else if (input.action === "MARK_NEW") {
     query =
-      "update contact_messages set status = 'NEW', read_at = null, read_by_user_id = null where id = $1 returning id, created_at, name, email, message, status, read_at, read_by_user_id, source";
+      `update contact_messages
+          set status = 'NEW',
+              read_at = null,
+              read_by_user_id = null
+        where id = $1
+        returning ${selectFields}`;
   } else if (input.action === "ARCHIVE") {
     query =
-      "update contact_messages set status = 'ARCHIVED' where id = $1 returning id, created_at, name, email, message, status, read_at, read_by_user_id, source";
+      `update contact_messages set status = 'ARCHIVED' where id = $1 returning ${selectFields}`;
   } else if (input.action === "UNARCHIVE") {
     query =
-      "update contact_messages set status = 'READ', read_at = coalesce(read_at, now()), read_by_user_id = coalesce(read_by_user_id, $2::uuid) where id = $1 returning id, created_at, name, email, message, status, read_at, read_by_user_id, source";
+      `update contact_messages
+          set status = 'READ',
+              read_at = coalesce(read_at, now()),
+              read_by_user_id = coalesce(read_by_user_id, $2::uuid)
+        where id = $1
+        returning ${selectFields}`;
     values = [input.id, actorUserId];
   }
 
@@ -816,11 +932,13 @@ export async function bulkUpdateAdminMessagesStatus(input: {
 }
 
 export async function deleteAdminMessagePermanently(input: { id: string }) {
+  const capabilities = await loadMailboxSchemaCapabilities();
+  const selectFields = buildMailboxSelectFields("contact_messages", capabilities);
   const result = await dbQuery<ContactMessageRow>(
     `delete from contact_messages
       where id = $1
         and status = 'ARCHIVED'
-      returning id, created_at, name, email, message, status, read_at, read_by_user_id, source`,
+      returning ${selectFields}`,
     [input.id],
   );
 
@@ -844,7 +962,11 @@ export async function bulkDeleteAdminMessagesPermanently(input: { ids: string[] 
     .filter((row: { id: string; status: string }) => toStatus(row.status) !== "ARCHIVED")
     .map((row: { id: string; status: string }) => row.id);
 
-  if (blockedIds.length > 0) {
+  const eligibleIds = existingResult.rows
+    .filter((row: { id: string; status: string }) => toStatus(row.status) === "ARCHIVED")
+    .map((row: { id: string; status: string }) => row.id);
+
+  if (eligibleIds.length === 0) {
     return {
       deletedCount: 0,
       deletedIds: [] as string[],
@@ -854,7 +976,7 @@ export async function bulkDeleteAdminMessagesPermanently(input: { ids: string[] 
 
   const deleteResult = await dbQuery<{ id: string }>(
     "delete from contact_messages where id = any($1::uuid[]) and status = 'ARCHIVED' returning id",
-    [ids],
+    [eligibleIds],
   );
 
   return {

@@ -3,6 +3,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { getDbPool } from "@/lib/db";
 import { redactText } from "@/lib/log";
 import { applyProviderEventToEmailDispatch } from "@/lib/notifications/emailDispatch";
+import { insertMailboxMessage } from "@/lib/messages/mailboxStore";
 
 type QueryResult<T = unknown> = Promise<{ rows: T[]; rowCount: number }>;
 
@@ -13,11 +14,6 @@ type DbClient = {
 
 type DbPoolLike = {
   connect: () => Promise<DbClient>;
-};
-
-type ContactMessageInsertRow = {
-  id: string;
-  created_at: string | Date;
 };
 
 type QuoteEmailCorrelationRow = {
@@ -539,18 +535,31 @@ async function insertAdminNotificationMessage(
   input: {
     recipientEmail: string | null;
     message: string;
+    subject?: string | null;
+    relatedEntityType?: string | null;
+    relatedEntityId?: string | null;
+    relatedEntityPublicId?: string | null;
+    metadataJson?: Record<string, unknown>;
   },
 ) {
-  const result = await client.query(
-    "insert into contact_messages (name, email, message, source) values ($1, $2, $3, $4) returning id, created_at",
-    [
-      "Email delivery issue",
-      safeEmail(input.recipientEmail),
-      input.message,
-      "resend_webhook",
-    ],
-  );
-  return (result.rows[0] as ContactMessageInsertRow | undefined) ?? null;
+  return insertMailboxMessage(client, {
+    name: "Email delivery issue",
+    email: safeEmail(input.recipientEmail),
+    message: input.message,
+    source: "resend_webhook",
+    subject: input.subject ?? "Email delivery issue",
+    displayName: "Email delivery issue",
+    displayEmail: safeEmail(input.recipientEmail)
+      ? `Recipient: ${safeEmail(input.recipientEmail)}`
+      : "System email event",
+    messageType: "email_delivery_issue",
+    priority: "high",
+    relatedEntityType: input.relatedEntityType ?? null,
+    relatedEntityId: input.relatedEntityId ?? null,
+    relatedEntityPublicId: input.relatedEntityPublicId ?? null,
+    notificationEligible: true,
+    metadataJson: input.metadataJson ?? {},
+  });
 }
 
 async function insertResendIssueAuditLog(
@@ -664,6 +673,22 @@ export async function processResendWebhookEvent(
     const notification = await insertAdminNotificationMessage(client, {
       recipientEmail: event.primaryRecipient,
       message: buildAdminMessageBody({ event, correlation }),
+      subject: event.subject ? `Email delivery issue: ${event.subject}` : "Email delivery issue",
+      relatedEntityType: correlation.entityType || "email",
+      relatedEntityId:
+        correlation.entityId ||
+        event.providerEmailId ||
+        event.primaryRecipient ||
+        event.webhookMessageId ||
+        null,
+      relatedEntityPublicId: correlation.entityPublicId || null,
+      metadataJson: {
+        provider: "resend",
+        eventType: event.eventType,
+        occurredAt: event.occurredAt,
+        providerEmailId: event.providerEmailId,
+        webhookMessageId: event.webhookMessageId,
+      },
     });
 
     await insertResendIssueAuditLog(client, {

@@ -1,6 +1,7 @@
 import { loadAdminSettings } from "@/lib/adminSettings";
 import { dbQuery } from "@/lib/db";
 import { logWarn } from "@/lib/log";
+import { buildMailboxSelectFields, loadMailboxSchemaCapabilities } from "@/lib/messages/mailboxStore";
 import {
   parseEmailList,
   sendContactMessageCreatedAlert,
@@ -16,6 +17,12 @@ type UnreadMessageRow = {
   email: string;
   message: string;
   source: string | null;
+  subject: string | null;
+  display_name: string | null;
+  display_email: string | null;
+  message_type: string | null;
+  priority: string | null;
+  notification_eligible: boolean | null;
 };
 
 export type ContactNotificationMessageItem = {
@@ -25,6 +32,8 @@ export type ContactNotificationMessageItem = {
   email: string;
   message: string;
   source: string;
+  subject: string;
+  priority: string;
 };
 
 export type ContactNotificationSummary = {
@@ -103,15 +112,25 @@ async function allowByNotificationThrottle(input: { cooldownMinutes: number; now
 export async function loadUnreadContactSummary(
   query: ContactMessageNotifierQuery = dbQuery,
 ): Promise<ContactNotificationSummary> {
+  const capabilities = await loadMailboxSchemaCapabilities(query);
+  const legacySources = ["contact_page", "home_page_contact", "booking_inspection", "resend_webhook"];
+  const notificationWhere = capabilities.hasNotificationEligible
+    ? "status = 'NEW' and coalesce(notification_eligible, false) = true"
+    : "status = 'NEW' and coalesce(source, 'contact_page') = any($1::text[])";
   const countResult = await query<{ count: unknown }>(
-    "select count(*)::int as count from contact_messages where status = 'NEW' and coalesce(source, 'contact_page') = any($1::text[])",
-    [["contact_page", "home_page_contact"]],
+    `select count(*)::int as count from contact_messages where ${notificationWhere}`,
+    capabilities.hasNotificationEligible ? [] : [legacySources],
   );
   const totalNew = Number(countResult.rows[0]?.count ?? 0);
 
+  const selectFields = buildMailboxSelectFields("contact_messages", capabilities);
   const previewRows = await query<UnreadMessageRow>(
-    "select id, created_at, name, email, message, source from contact_messages where status = 'NEW' and coalesce(source, 'contact_page') = any($1::text[]) order by created_at desc, id::text desc limit 3",
-    [["contact_page", "home_page_contact"]],
+    `select ${selectFields}
+       from contact_messages
+      where ${notificationWhere}
+      order by created_at desc, id::text desc
+      limit 3`,
+    capabilities.hasNotificationEligible ? [] : [legacySources],
   );
 
   return {
@@ -119,10 +138,12 @@ export async function loadUnreadContactSummary(
     items: previewRows.rows.map((row: UnreadMessageRow) => ({
       id: row.id,
       createdAt: row.created_at,
-      name: row.name,
-      email: row.email,
+      name: row.display_name?.trim() || row.name,
+      email: row.display_email?.trim() || row.email,
       message: row.message,
-      source: row.source?.trim() || "contact_page",
+      source: row.message_type?.trim() || row.source?.trim() || "contact_page",
+      subject: row.subject?.trim() || row.display_name?.trim() || row.name,
+      priority: row.priority?.trim() || "normal",
     })),
   };
 }
@@ -149,6 +170,7 @@ const DEFAULT_DEPS: ContactMessageNotifierDeps = {
       email: message.email,
       message: message.message,
       source: message.source,
+      subject: message.subject,
       recipients,
     }),
   sendDigest: ({ recipients, totalNew, items }) =>
