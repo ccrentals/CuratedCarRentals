@@ -2,10 +2,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { canAccessAdmin } from "@/lib/auth/roles";
 
-import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { MessageStatusActions } from "@/components/admin/MessageStatusActions";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { writeAuditLog } from "@/lib/audit";
+import { fmtAdminDateTimeNoSeconds } from "@/lib/dateFormat";
 import {
   fetchAdminMessageByIdWithOptionalMarkRead,
   isContactMessagesMissingTableError,
@@ -29,6 +29,11 @@ function safeBackHref(value: string | undefined) {
   if (!value) return "/admin/messages";
   if (!value.startsWith("/admin/messages")) return "/admin/messages";
   return value;
+}
+
+function formatAdminDateTime(value: string | null) {
+  if (!value) return "—";
+  return fmtAdminDateTimeNoSeconds(value) || value;
 }
 
 export default async function AdminMessageDetailPage({
@@ -128,12 +133,7 @@ export default async function AdminMessageDetailPage({
             <p className="text-xl font-bold text-[var(--ccr-text)]">{result.item.subject}</p>
             <p className="text-sm text-[var(--ccr-muted)]">{result.item.displayEmail}</p>
             <p className="mt-1 text-xs text-[var(--ccr-muted)]">
-              Received{" "}
-              <DateTimeInline
-                value={result.item.createdAt}
-                preset="admin"
-                className="inline-flex text-[var(--ccr-text)]"
-              />
+              Received <span className="inline-flex text-[var(--ccr-text)]">{formatAdminDateTime(result.item.createdAt)}</span>
             </p>
           </div>
           <span
@@ -153,11 +153,7 @@ export default async function AdminMessageDetailPage({
           <div>
             <dt className="font-semibold uppercase tracking-wide">Read at</dt>
             <dd className="mt-0.5 text-[var(--ccr-text)]">
-              {result.item.readAt ? (
-                <DateTimeInline value={result.item.readAt} preset="admin" className="inline-flex" />
-              ) : (
-                "Not read yet"
-              )}
+              {result.item.readAt ? formatAdminDateTime(result.item.readAt) : "Not read yet"}
             </dd>
           </div>
           <div>
