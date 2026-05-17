@@ -2836,41 +2836,65 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
         : "Refreshing selection..."
       : "Not selected";
   const hideFallbackTotals = hasSelectedVehicleId && !pricingQuote;
+  const bookingSupportHighlights = (
+    <div className="grid gap-3 sm:grid-cols-3">
+      <article className="rounded-[1.4rem] border border-white/12 bg-white/8 px-4 py-4 backdrop-blur-sm">
+        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--ccr-accent)]">
+          Simple pricing
+        </p>
+        <p className="mt-3 text-sm leading-6 text-white/76">
+          Live totals stay updated as your dates, protections, and payment choices change.
+        </p>
+      </article>
+      <article className="rounded-[1.4rem] border border-white/12 bg-white/8 px-4 py-4 backdrop-blur-sm">
+        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--ccr-accent)]">
+          Local support
+        </p>
+        <p className="mt-3 text-sm leading-6 text-white/76">
+          Questions before checkout? Reach the Kingston team at {siteContent.phones[0]?.label}.
+        </p>
+      </article>
+      <article className="rounded-[1.4rem] border border-white/12 bg-white/8 px-4 py-4 backdrop-blur-sm">
+        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--ccr-accent)]">
+          Secure checkout
+        </p>
+        <p className="mt-3 text-sm leading-6 text-white/76">
+          Reservation details are reviewed in six steps before Step 7 launches WiPay.
+        </p>
+      </article>
+    </div>
+  );
   const bookingIntro = (
-    <PublicPageIntro
-      eyebrow="Book"
-      title="Reserve your Curated vehicle with guided steps and clear pricing."
-      description="Choose your dates, review the right vehicle, confirm your details, and continue to secure checkout when you are ready."
-      primaryAction={{ href: "/fleet", label: "Browse Fleet" }}
-      secondaryAction={{ href: "/contact", label: "Need Help?" }}
-    >
-      <div className="grid gap-3 sm:grid-cols-3">
-        <article className="rounded-[1.4rem] border border-white/12 bg-white/8 px-4 py-4 backdrop-blur-sm">
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--ccr-accent)]">
-            Simple pricing
-          </p>
-          <p className="mt-3 text-sm leading-6 text-white/76">
-            Live totals stay updated as your dates, protections, and payment choices change.
-          </p>
-        </article>
-        <article className="rounded-[1.4rem] border border-white/12 bg-white/8 px-4 py-4 backdrop-blur-sm">
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--ccr-accent)]">
-            Local support
-          </p>
-          <p className="mt-3 text-sm leading-6 text-white/76">
-            Questions before checkout? Reach the Kingston team at {siteContent.phones[0]?.label}.
-          </p>
-        </article>
-        <article className="rounded-[1.4rem] border border-white/12 bg-white/8 px-4 py-4 backdrop-blur-sm">
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--ccr-accent)]">
-            Secure checkout
-          </p>
-          <p className="mt-3 text-sm leading-6 text-white/76">
-            Reservation details are reviewed in six steps before Step 7 launches WiPay.
-          </p>
-        </article>
+    <>
+      <section className="relative overflow-hidden border-b border-[var(--ccr-border)] bg-[var(--ccr-primary)] text-white sm:hidden">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.16),transparent_42%),radial-gradient(circle_at_bottom_right,rgba(255,207,109,0.18),transparent_38%)]" />
+        <Container className="relative py-6">
+          <div className="max-w-xl">
+            <p className="text-xs font-semibold uppercase tracking-[0.26em] text-[var(--ccr-accent)]">
+              Book
+            </p>
+            <h1 className="mt-3 text-[1.95rem] font-semibold leading-[1.08] tracking-tight text-white">
+              Start your reservation.
+            </h1>
+            <p className="mt-3 text-sm leading-6 text-white/78">
+              Choose your dates and continue through the guided booking steps below.
+            </p>
+          </div>
+        </Container>
+      </section>
+
+      <div className="hidden sm:block">
+        <PublicPageIntro
+          eyebrow="Book"
+          title="Reserve your Curated vehicle with guided steps and clear pricing."
+          description="Choose your dates, review the right vehicle, confirm your details, and continue to secure checkout when you are ready."
+          primaryAction={{ href: "/fleet", label: "Browse Fleet" }}
+          secondaryAction={{ href: "/contact", label: "Need Help?" }}
+        >
+          {bookingSupportHighlights}
+        </PublicPageIntro>
       </div>
-    </PublicPageIntro>
+    </>
   );
 
   if (!hydrated) {
@@ -2899,8 +2923,17 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
       {bookingIntro}
       <Container className="-mt-6 sm:-mt-8 md:-mt-12">
         <div className="min-w-0 overflow-hidden rounded-[1.7rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)]/96 shadow-[0_32px_110px_rgba(15,23,42,0.14)] backdrop-blur-sm sm:rounded-[2rem]">
-          <div className="border-b border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)]/75 px-3.5 py-4 sm:px-4 sm:py-6 md:px-8">
-            <div className="flex min-w-0 flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
+          <div className="border-b border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)]/75 px-3.5 py-3 sm:px-4 sm:py-6 md:px-8">
+            <div className="sm:hidden">
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--ccr-accent-strong)]">
+                Start booking
+              </p>
+              <p className="mt-2 text-sm text-[var(--ccr-muted)]">
+                Step {step} of 6. Begin with your dates below.
+              </p>
+            </div>
+
+            <div className="hidden min-w-0 flex-col gap-6 sm:flex xl:flex-row xl:items-end xl:justify-between">
               <div className="min-w-0 max-w-2xl">
                 <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--ccr-accent-strong)]">
                   Guided reservation
@@ -2942,20 +2975,20 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
               </div>
             </div>
 
-            <div className="-mx-1 mt-6 min-w-0 overflow-x-auto pb-1 sm:mx-0 sm:overflow-visible">
-              <ol className="flex min-w-max gap-3 px-1 sm:grid sm:min-w-0 sm:grid-cols-3 sm:px-0 lg:grid-cols-7">
+            <div className="-mx-1 mt-4 min-w-0 overflow-x-auto pb-1 sm:mx-0 sm:mt-6 sm:overflow-visible">
+              <ol className="flex min-w-max gap-2 px-1 sm:grid sm:min-w-0 sm:grid-cols-3 sm:px-0 sm:gap-3 lg:grid-cols-7">
                 {STEPS.map((item) => {
                   const isActive = item.step === step;
                   const isDone = item.step < step;
                   const isUnlocked = item.step <= maxStepCompleted;
                   return (
-                    <li key={item.step} className="min-w-[9.5rem] shrink-0 sm:min-w-0">
+                    <li key={item.step} className="min-w-[6.1rem] shrink-0 sm:min-w-0">
                       <button
                         type="button"
                         onClick={() => jumpToStep(item.step)}
                         disabled={!isUnlocked || submitting}
                         className={cn(
-                          "w-full rounded-[1.35rem] border px-4 py-3 text-left transition disabled:opacity-55",
+                          "w-full rounded-[1.15rem] border px-2 py-2 text-left transition disabled:opacity-55 sm:rounded-[1.35rem] sm:px-4 sm:py-3",
                           isActive
                             ? "border-[var(--ccr-accent)] bg-[var(--ccr-accent)]/10 text-[var(--ccr-text)] shadow-sm shadow-[var(--ccr-accent)]/10"
                             : isDone
@@ -2967,12 +3000,12 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                         <p className="text-[11px] font-semibold uppercase tracking-[0.18em]">
                           Step {item.step}
                         </p>
-                        <p className="mt-2 text-sm font-semibold">{item.title}</p>
+                        <p className="mt-1.5 text-[13px] font-semibold sm:mt-2 sm:text-sm">{item.title}</p>
                       </button>
                     </li>
                   );
                 })}
-                <li className="min-w-[9.5rem] shrink-0 sm:min-w-0">
+                <li className="min-w-[6.1rem] shrink-0 sm:min-w-0">
                   <button
                     type="button"
                     onClick={() => {
@@ -2982,7 +3015,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                     }}
                     disabled={maxStepCompleted < 6 || submitting}
                     className={cn(
-                      "w-full rounded-[1.35rem] border px-4 py-3 text-left transition disabled:opacity-55",
+                      "w-full rounded-[1.15rem] border px-2 py-2 text-left transition disabled:opacity-55 sm:rounded-[1.35rem] sm:px-4 sm:py-3",
                       maxStepCompleted >= 6
                         ? "border-[var(--ccr-accent)]/40 bg-[var(--ccr-accent)]/5 text-[var(--ccr-text)]"
                         : "border-[var(--ccr-border)] bg-[var(--ccr-surface)]/90 text-[var(--ccr-muted)]",
@@ -2992,7 +3025,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                     <p className="text-[11px] font-semibold uppercase tracking-[0.18em]">
                       Step {CHECKOUT_STEP.step}
                     </p>
-                    <p className="mt-2 text-sm font-semibold">{CHECKOUT_STEP.title}</p>
+                    <p className="mt-1.5 text-[13px] font-semibold sm:mt-2 sm:text-sm">{CHECKOUT_STEP.title}</p>
                   </button>
                 </li>
               </ol>
@@ -3001,16 +3034,16 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
 
           <div className="grid min-w-0 items-start gap-5 bg-[linear-gradient(180deg,rgba(148,163,184,0.06),transparent)] px-3.5 py-4 sm:px-4 sm:py-5 md:px-6 md:py-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] xl:grid-cols-[minmax(0,1fr)_minmax(0,24rem)]">
             <div className="min-w-0 rounded-[1.5rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)]/96 px-3.5 py-4 shadow-[0_18px_56px_rgba(15,23,42,0.08)] sm:rounded-[1.75rem] sm:px-4 sm:py-5 md:px-6 md:py-7">
-              <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-[var(--ccr-border)] pb-5">
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-[var(--ccr-border)] pb-4 sm:mb-6 sm:pb-5">
                 <div className="min-w-0">
                   <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--ccr-accent-strong)]">
                     Step {step} of 6
                   </p>
-                  <p className="mt-2 break-words text-sm text-[var(--ccr-muted)]">
+                  <p className="mt-2 hidden break-words text-sm text-[var(--ccr-muted)] sm:block">
                     Review each section carefully. Live availability and pricing stay connected while you move through the wizard.
                   </p>
                 </div>
-                <div className="w-full rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-4 py-2 text-center text-xs font-semibold uppercase tracking-[0.16em] text-[var(--ccr-muted)] min-[430px]:w-auto">
+                <div className="hidden w-full rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-4 py-2 text-center text-xs font-semibold uppercase tracking-[0.16em] text-[var(--ccr-muted)] min-[430px]:w-auto sm:block">
                   Secure booking flow
                 </div>
               </div>
@@ -4068,6 +4101,10 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
           </div>
         </div>
       ) : null}
+
+      <Container className="mt-5 sm:hidden">
+        {bookingSupportHighlights}
+      </Container>
     </div>
   );
 }
