@@ -424,6 +424,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     createPricingLifecycleState<PricingQuoteSummary>(),
   );
   const selectedVehicleIdRef = useRef("");
+  const wizardContainerRef = useRef<HTMLDivElement | null>(null);
   const latestVehiclesKeyRef = useRef("");
   const latestVehiclesRequestIdRef = useRef(0);
   const lastVehiclesSuccessKeyRef = useRef("");
@@ -2032,9 +2033,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     if (submitting) return;
     resetMessages();
     const scrollToWizardTop = () => {
-      if (typeof window !== "undefined") {
-        window.scrollTo({ top: 0, behavior: "smooth" });
-      }
+      wizardContainerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     };
 
     if (targetStep < step) {
@@ -2192,6 +2191,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
 
   function handleDeselectVehicle() {
     resetMessages();
+    wizardContainerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     setStep(2);
     setMaxStepCompleted((current) => (current > 2 ? 2 : current));
     clearSelectedVehicleSelection({
@@ -2209,17 +2209,20 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     }
     if (step >= 6) return;
     const nextStep = (step + 1) as WizardStep;
+    wizardContainerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     setStep(nextStep);
     setMaxStepCompleted((previous) => (nextStep > previous ? nextStep : previous));
   }
 
   function moveToPreviousStep() {
     resetMessages();
+    wizardContainerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     setStep((current) => (current > 1 ? ((current - 1) as WizardStep) : current));
   }
 
   function handleChangeDates() {
     resetMessages();
+    wizardContainerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     setStep(1);
     setMaxStepCompleted(1);
     clearSelectedVehicleSelection({
@@ -2230,6 +2233,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
 
   function handleChangeVehicle() {
     resetMessages();
+    wizardContainerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     setStep(2);
     setMaxStepCompleted((current) => (current < 2 ? 2 : current));
     setStatusMessage("Review your selected vehicle or choose another.");
@@ -2254,6 +2258,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     setRequestedVehicleFromQuery("");
     setShowStartOverConfirm(false);
     setDraftWasRestored(false);
+    wizardContainerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
 
     const defaultPickupDate = dateInputForOffset(0);
     const defaultDropoffDate = dateInputForOffset(2);
@@ -2921,8 +2926,9 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
   return (
     <div className="bg-[var(--ccr-bg)] pb-12 sm:pb-16" data-testid="booking-wizard-hydrated">
       {bookingIntro}
-      <Container className="-mt-6 sm:-mt-8 md:-mt-12">
-        <div className="min-w-0 overflow-hidden rounded-[1.7rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)]/96 shadow-[0_32px_110px_rgba(15,23,42,0.14)] backdrop-blur-sm sm:rounded-[2rem]">
+      <div ref={wizardContainerRef} className="scroll-mt-24 sm:scroll-mt-28">
+        <Container className="-mt-6 sm:-mt-8 md:-mt-12">
+          <div className="min-w-0 overflow-hidden rounded-[1.7rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)]/96 shadow-[0_32px_110px_rgba(15,23,42,0.14)] backdrop-blur-sm sm:rounded-[2rem]">
           <div className="border-b border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)]/75 px-3.5 py-3 sm:px-4 sm:py-6 md:px-8">
             <div className="sm:hidden">
               <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--ccr-accent-strong)]">
@@ -3010,6 +3016,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                     type="button"
                     onClick={() => {
                       resetMessages();
+                      wizardContainerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
                       setStep(6);
                       setStatusMessage("Step 7 launches when you continue from Payments.");
                     }}
@@ -3954,8 +3961,9 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
               </div>
             </aside>
           </div>
-        </div>
-      </Container>
+          </div>
+        </Container>
+      </div>
 
       {showReturningCustomerModal ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--ccr-primary)]/65 p-4 backdrop-blur-sm">
