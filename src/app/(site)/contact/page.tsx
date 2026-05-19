@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { type FormEvent, useRef, useState } from "react";
 
 import { TurnstileWidget } from "@/components/security/TurnstileWidget";
@@ -155,12 +156,10 @@ export default function ContactPage() {
                 </div>
                 <div>
                   <p className="font-semibold text-[var(--ccr-text)]">Email</p>
-                  <a
-                    href={`mailto:${siteContent.email}`}
-                    className="mt-2 block transition hover:text-[var(--ccr-accent-strong)]"
-                  >
-                    {siteContent.email}
-                  </a>
+                  <Link href="#contact-form" className="mt-2 block transition hover:text-[var(--ccr-accent-strong)]">
+                    Send a tracked message below
+                  </Link>
+                  <p className="mt-1 break-words text-[var(--ccr-muted)]">{siteContent.email}</p>
                 </div>
                 <div>
                   <p className="font-semibold text-[var(--ccr-text)]">Visit us</p>
@@ -186,7 +185,10 @@ export default function ContactPage() {
             </article>
           </div>
 
-          <section className="rounded-[2rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-5 shadow-[0_24px_80px_rgba(15,23,42,0.08)] sm:p-6 md:p-8">
+          <section
+            id="contact-form"
+            className="rounded-[2rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-5 shadow-[0_24px_80px_rgba(15,23,42,0.08)] scroll-mt-32 sm:p-6 md:p-8"
+          >
             <div className="max-w-2xl">
               <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--ccr-accent-strong)]">
                 Secure Message Form

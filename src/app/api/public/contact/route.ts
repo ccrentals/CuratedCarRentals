@@ -173,8 +173,17 @@ const DEFAULT_DEPS: ContactRouteDeps = {
       details,
     });
   },
-  notifyNewMessage: async ({ messageId }) => {
-    const alertResult = await maybeSendContactMessageNotification();
+  notifyNewMessage: async ({ messageId, createdAt, name, email, message, source }) => {
+    const alertResult = await maybeSendContactMessageNotification({
+      id: messageId,
+      createdAt,
+      name,
+      email,
+      message,
+      source,
+      subject: `New contact message from ${name}`,
+      priority: "normal",
+    });
 
     if (!alertResult.ok && !alertResult.skipped) {
       logError("public_contact_alert_email_failed", new Error(alertResult.error || "Email failed"), {

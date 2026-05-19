@@ -139,9 +139,12 @@ function FooterContactColumn() {
           <span className="mt-1 text-white/48">
             <MailIcon className="h-4 w-4" />
           </span>
-          <a href={`mailto:${siteContent.email}`} className="transition hover:text-white">
-            {siteContent.email}
-          </a>
+          <div>
+            <Link href="/contact#contact-form" className="transition hover:text-white">
+              Send a tracked message
+            </Link>
+            <p className="mt-1 break-words text-white/56">{siteContent.email}</p>
+          </div>
         </li>
       </ul>
     </div>

@@ -306,9 +306,10 @@ export function Header() {
                     {phone.label}
                   </a>
                 ))}
-                <a href={`mailto:${siteContent.email}`} className="block break-words hover:text-white">
-                  {siteContent.email}
-                </a>
+                <Link href="/contact#contact-form" onClick={() => setMobileNavOpen(false)} className="block break-words hover:text-white">
+                  Send a tracked message
+                </Link>
+                <p className="break-words text-white/56">{siteContent.email}</p>
               </div>
             </div>
           </nav>

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { type FormEvent, useRef, useState } from "react";
 
 import { TurnstileWidget } from "@/components/security/TurnstileWidget";
@@ -123,12 +124,13 @@ export function HomeContactSection() {
                 <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--ccr-accent-strong)]">
                   Email Us
                 </p>
-                <a
-                  href={`mailto:${siteContent.email}`}
+                <Link
+                  href="/contact#contact-form"
                   className="mt-3 block text-sm leading-7 text-[var(--ccr-muted)] transition hover:text-[var(--ccr-text)]"
                 >
-                  {siteContent.email}
-                </a>
+                  Send a tracked message
+                </Link>
+                <p className="mt-1 break-words text-sm leading-7 text-[var(--ccr-muted)]">{siteContent.email}</p>
               </article>
 
               <article className="rounded-[1.35rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4 sm:p-5">
