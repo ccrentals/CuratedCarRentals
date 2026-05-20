@@ -481,12 +481,12 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
   };
   try {
     let planResult = await dbQuery<InsurancePlanOptionRow>(
-      "select id, is_enabled, price_per_day_cents from insurance_plans where vehicle_id = $1 and is_enabled = true order by updated_at desc limit 1",
-      [booking.vehicle_id],
+      "select id, is_enabled, price_per_day_cents from insurance_plans where is_global_default = true and is_enabled = true order by updated_at desc limit 1",
     );
     if (planResult.rowCount === 0) {
       planResult = await dbQuery<InsurancePlanOptionRow>(
-        "select id, is_enabled, price_per_day_cents from insurance_plans where is_global_default = true and is_enabled = true order by updated_at desc limit 1",
+        "select id, is_enabled, price_per_day_cents from insurance_plans where vehicle_id = $1 and is_enabled = true order by updated_at desc limit 1",
+        [booking.vehicle_id],
       );
     }
     const plan = planResult.rows[0];

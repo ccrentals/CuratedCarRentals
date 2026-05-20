@@ -1297,9 +1297,8 @@ export async function PATCH(
       let insurancePricePerDay = 0;
 
       if (enableInsurance) {
-        const vehiclePlanResult = (await client.query(
-          "select id, is_enabled, price_per_day_cents from insurance_plans where vehicle_id = $1 and is_enabled = true order by updated_at desc limit 1",
-          [booking.vehicle_id],
+        const globalPlanResult = (await client.query(
+          "select id, is_enabled, price_per_day_cents from insurance_plans where is_global_default = true and is_enabled = true order by updated_at desc limit 1",
         )) as {
           rows: Array<{
             id: string;
@@ -1307,12 +1306,11 @@ export async function PATCH(
             price_per_day_cents: number;
           }>;
         };
-        const vehiclePlan = vehiclePlanResult.rows[0] ?? null;
-
-        let resolvedPlan = vehiclePlan;
+        let resolvedPlan = globalPlanResult.rows[0] ?? null;
         if (!resolvedPlan) {
-          const globalPlanResult = (await client.query(
-            "select id, is_enabled, price_per_day_cents from insurance_plans where is_global_default = true and is_enabled = true order by updated_at desc limit 1",
+          const vehiclePlanResult = (await client.query(
+            "select id, is_enabled, price_per_day_cents from insurance_plans where vehicle_id = $1 and is_enabled = true order by updated_at desc limit 1",
+            [booking.vehicle_id],
           )) as {
             rows: Array<{
               id: string;
@@ -1320,7 +1318,7 @@ export async function PATCH(
               price_per_day_cents: number;
             }>;
           };
-          resolvedPlan = globalPlanResult.rows[0] ?? null;
+          resolvedPlan = vehiclePlanResult.rows[0] ?? null;
         }
 
         if (!resolvedPlan || !resolvedPlan.is_enabled) {

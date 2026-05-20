@@ -192,6 +192,7 @@ type BookingWizardDraft = {
   dropoffAirline?: string;
   dropoffLocationManuallyEdited?: boolean;
   selectedVehicleId?: string;
+  protectionChoice?: "NONE" | "STANDARD" | null;
   insuranceSelected?: boolean;
   couponCode?: string;
   couponAppliedCode?: string | null;
@@ -346,6 +347,7 @@ function draftContainsMeaningfulProgress(draft: BookingWizardDraft) {
   if (hasLocationFieldProgress(draft.dropoffLocationValues)) return true;
   if (normalizeText(draft.pickupCustomAddress ?? "").length > 0) return true;
   if (normalizeText(draft.dropoffCustomAddress ?? "").length > 0) return true;
+  if (draft.protectionChoice === "NONE" || draft.protectionChoice === "STANDARD") return true;
   if (draft.insuranceSelected === true) return true;
   if (normalizeText(draft.couponCode ?? "").length > 0) return true;
   if (normalizeText(draft.couponAppliedCode ?? "").length > 0) return true;
@@ -409,11 +411,12 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
   const [vehicleSelectionUnavailable, setVehicleSelectionUnavailable] = useState(false);
   const [vehicleRefreshWarning, setVehicleRefreshWarning] = useState<string | null>(null);
 
-  const [insuranceSelected, setInsuranceSelected] = useState(false);
+  const [protectionChoice, setProtectionChoice] = useState<"NONE" | "STANDARD" | null>(null);
   const [insuranceEnabled, setInsuranceEnabled] = useState(false);
   const [insurancePlanId, setInsurancePlanId] = useState<string | null>(null);
   const [insurancePricePerDay, setInsurancePricePerDay] = useState(0);
   const [insuranceLoading, setInsuranceLoading] = useState(false);
+  const insuranceSelected = protectionChoice === "STANDARD";
 
   const [couponCode, setCouponCode] = useState("");
   const [couponAppliedCode, setCouponAppliedCode] = useState<string | null>(null);
@@ -602,10 +605,18 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
           pickupLocationId,
           dropoffLocationId,
           selectedVehicleId,
-          insuranceSelected,
+          insuranceSelected: protectionChoice === "STANDARD",
           paymentOption,
         },
       );
+      const restoredProtectionChoice =
+        draft.protectionChoice === "NONE" || draft.protectionChoice === "STANDARD"
+          ? draft.protectionChoice
+          : restoredSelections.insuranceSelected
+            ? "STANDARD"
+            : restoredStep >= 3
+              ? "NONE"
+              : null;
       setStep(restoredStep);
       setMaxStepCompleted(
         restoredMaxStep > restoredStep ? restoredMaxStep : restoredStep,
@@ -627,7 +638,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
           : "OFFICE",
       );
       setSelectedVehicleId(restoredSelections.selectedVehicleId);
-      setInsuranceSelected(restoredSelections.insuranceSelected);
+      setProtectionChoice(restoredProtectionChoice);
       setPaymentOption(restoredSelections.paymentOption);
       if (draft.pickupLocationValues && typeof draft.pickupLocationValues === "object") {
         setPickupLocationValues(draft.pickupLocationValues);
@@ -716,8 +727,8 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     dropoffDate,
     dropoffLocationId,
     dropoffTime,
-    insuranceSelected,
     paymentOption,
+    protectionChoice,
     pickupDate,
     pickupLocationId,
     pickupTime,
@@ -740,6 +751,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
       dropoffLocationValues,
       dropoffLocationManuallyEdited,
       selectedVehicleId,
+      protectionChoice,
       insuranceSelected,
       couponCode,
       couponAppliedCode,
@@ -771,6 +783,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
       Object.values(pickupLocationValues).some((value) => normalizeText(value ?? "").length > 0) ||
       Object.values(dropoffLocationValues).some((value) => normalizeText(value ?? "").length > 0) ||
       normalizeText(selectedVehicleId).length > 0 ||
+      protectionChoice !== null ||
       insuranceSelected ||
       normalizeText(couponCode).length > 0 ||
       normalizeText(couponAppliedCode ?? "").length > 0 ||
@@ -819,6 +832,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     pickupLocationId,
     pickupLocationValues,
     pickupTime,
+    protectionChoice,
     selectedVehicleId,
     step,
     maxStepCompleted,
@@ -944,6 +958,8 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
   }, [destroyVehicleLightbox]);
 
   const rentalDays = pricingQuote?.days ?? calcDaysInclusive(pickupDate, dropoffDate);
+  const standardProtectionAvailable = insuranceEnabled && !insuranceLoading;
+  const standardProtectionTotal = rentalDays * insurancePricePerDay;
   const baseTotal = pricingQuote?.baseTotal ?? (selectedVehicle ? selectedVehicle.daily_rate_cents * rentalDays : 0);
   const insuranceTotal = pricingQuote?.insuranceTotal ?? (insuranceSelected ? rentalDays * insurancePricePerDay : 0);
   const discountTotal = pricingQuote?.discountTotal ?? Math.max(0, Math.min(baseTotal + insuranceTotal, couponDiscount));
@@ -1396,7 +1412,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
         setInsuranceEnabled(false);
         setInsurancePlanId(null);
         setInsurancePricePerDay(0);
-        setInsuranceSelected(false);
+        setProtectionChoice(null);
         return;
       }
       if (!selectedVehicle || vehicleSelectionUnavailable) {
@@ -1431,14 +1447,14 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
           Number.isFinite(price) && price > 0 ? Math.round(price) : 0,
         );
         if (!enabled) {
-          setInsuranceSelected(false);
+          setProtectionChoice((current) => (current === "STANDARD" ? null : current));
         }
       } catch {
         if (cancelled) return;
         setInsuranceEnabled(false);
         setInsurancePlanId(null);
         setInsurancePricePerDay(0);
-        setInsuranceSelected(false);
+        setProtectionChoice((current) => (current === "STANDARD" ? null : current));
       } finally {
         if (!cancelled) setInsuranceLoading(false);
       }
@@ -1983,7 +1999,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     setVehicleSelectionUnavailable(false);
     setVehicleRefreshWarning(null);
     if (shouldClearVehicleOptions) setVehicleOptions([]);
-    setInsuranceSelected(false);
+    setProtectionChoice(null);
     setInsuranceEnabled(false);
     setInsurancePlanId(null);
     setInsurancePricePerDay(0);
@@ -2106,6 +2122,17 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
       }
     }
 
+    if (stepToValidate === 3) {
+      if (protectionChoice === null) {
+        setErrorMessage("Choose a protection option to continue.");
+        return false;
+      }
+      if (protectionChoice === "STANDARD" && (!insuranceEnabled || !insurancePlanId)) {
+        setErrorMessage("Standard Protection is unavailable for this vehicle. Choose No Protection to continue.");
+        return false;
+      }
+    }
+
     if (stepToValidate === 4) {
       if (!normalizeText(firstName) || !normalizeText(lastName)) {
         setErrorMessage("First name and last name are required.");
@@ -2183,6 +2210,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     const available = await revalidateSelectedVehicleAvailability(vehicleId);
     if (available) {
       setSelectedVehicleId(vehicleId);
+      setProtectionChoice(null);
       setVehicleSelectionUnavailable(false);
       wizardContainerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       setStep(3);
@@ -2316,7 +2344,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     setSelectedVehicleId("");
     setVehicleSelectionUnavailable(false);
     setVehicleOptions([]);
-    setInsuranceSelected(false);
+    setProtectionChoice(null);
     setInsuranceEnabled(false);
     setInsurancePlanId(null);
     setInsurancePricePerDay(0);
@@ -3276,47 +3304,6 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
 
               {step === 3 ? (
                 <section className="min-w-0">
-                  <h2 className="break-words text-xl font-bold text-[var(--ccr-text)]">Protections & Coverage</h2>
-                  <p className="mt-1 text-sm text-[var(--ccr-muted)]">
-                    Insurance can only be selected after choosing a vehicle.
-                  </p>
-
-                  <div className="mt-5 min-w-0 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
-                    <div className="flex min-w-0 flex-col gap-4 min-[430px]:flex-row min-[430px]:items-start min-[430px]:justify-between">
-                      <div className="min-w-0">
-                        <p className="break-words text-lg font-semibold text-[var(--ccr-text)]">
-                          Full Coverage Insurance Plan
-                        </p>
-                        <p className="mt-1 text-sm text-[var(--ccr-muted)]">
-                          {formatJmd(insurancePricePerDay)} per day
-                        </p>
-                      </div>
-                      <label className="inline-flex w-full items-center justify-between gap-2 text-sm font-semibold text-[var(--ccr-muted)] min-[430px]:w-auto min-[430px]:justify-start">
-                        <input
-                          type="checkbox"
-                          checked={insuranceSelected}
-                          disabled={!selectedVehicleId || !insuranceEnabled || insuranceLoading}
-                          onChange={(event) => setInsuranceSelected(event.target.checked)}
-                          className="h-4 w-4 rounded border-[var(--ccr-border)]"
-                        />
-                        Add plan
-                      </label>
-                    </div>
-                    {!selectedVehicleId ? (
-                      <p className="mt-3 text-sm text-amber-700">
-                        Select a vehicle first to enable insurance options.
-                      </p>
-                    ) : null}
-                    {selectedVehicleId && insuranceLoading ? (
-                      <p className="mt-3 text-sm text-[var(--ccr-muted)]">Checking insurance plan…</p>
-                    ) : null}
-                    {selectedVehicleId && !insuranceLoading && !insuranceEnabled ? (
-                      <p className="mt-3 text-sm text-[var(--ccr-muted)]">
-                        Full Coverage Insurance Plan is currently unavailable for this vehicle.
-                      </p>
-                    ) : null}
-                  </div>
-
                   <div className="mt-4 min-w-0 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
                     <p className="text-sm font-semibold text-[var(--ccr-text)]">Coupon Code</p>
                     <div className="mt-2 flex min-w-0 flex-col gap-2 min-[430px]:flex-row min-[430px]:items-start">
@@ -3349,6 +3336,98 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                         {couponAppliedCode} applied.
                       </p>
                     ) : null}
+                  </div>
+
+                  <div className="mt-6 border-t border-[var(--ccr-border)]" />
+
+                  <div className="mt-6">
+                    <h2 className="break-words text-xl font-bold text-[var(--ccr-text)]">Insurance Coverage</h2>
+                    <p className="mt-1 text-sm text-[var(--ccr-muted)]">
+                      Choose your insurance preference. This selection is required.
+                    </p>
+
+                    <div className="mt-5 grid gap-4 lg:grid-cols-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          resetMessages();
+                          setProtectionChoice("NONE");
+                        }}
+                        className={`flex h-full min-w-0 flex-col rounded-2xl border p-5 text-left transition ${
+                          protectionChoice === "NONE"
+                            ? "border-[var(--ccr-accent)] bg-[var(--ccr-accent)]/10 shadow-[0_0_0_1px_rgba(245,199,88,0.2)]"
+                            : "border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] hover:border-[var(--ccr-accent)]/40"
+                        }`}
+                      >
+                        <div className="min-h-[11.5rem]">
+                          <p className="text-lg font-semibold text-[var(--ccr-text)]">No Protection</p>
+                          <p className="mt-2 text-3xl font-bold text-[var(--ccr-text)]">{formatJmd(0)}</p>
+                          <p className="mt-1 text-sm text-[var(--ccr-muted)]">No additional charge</p>
+                          <p className="mt-1 text-sm text-transparent select-none" aria-hidden="true">
+                            {formatJmd(0)} total · {rentalDays} day{rentalDays === 1 ? "" : "s"}
+                          </p>
+                        </div>
+                        <div className="mt-4 flex-1 border-t border-[var(--ccr-border)] pt-4">
+                          <p className="text-sm leading-7 text-[var(--ccr-muted)]">
+                            No insurance will be added to this booking. Your insurance total remains {formatJmd(0)}.
+                          </p>
+                        </div>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!standardProtectionAvailable) return;
+                          resetMessages();
+                          setProtectionChoice("STANDARD");
+                        }}
+                        disabled={!standardProtectionAvailable}
+                        className={`flex h-full min-w-0 flex-col rounded-2xl border p-5 text-left transition ${
+                          !standardProtectionAvailable
+                            ? "cursor-not-allowed border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] opacity-45"
+                            : protectionChoice === "STANDARD"
+                              ? "border-[var(--ccr-accent)] bg-[var(--ccr-accent)]/10 shadow-[0_0_0_1px_rgba(245,199,88,0.2)]"
+                              : "border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] hover:border-[var(--ccr-accent)]/40"
+                        }`}
+                      >
+                        <div className="flex min-h-[11.5rem] items-start justify-between gap-4">
+                          <div className="min-w-0">
+                            <p className="text-lg font-semibold text-[var(--ccr-text)]">Standard Protection</p>
+                            {insuranceLoading ? (
+                              <div className="mt-2">
+                                <p className="text-sm text-[var(--ccr-muted)]">Checking protection pricing…</p>
+                              </div>
+                            ) : standardProtectionAvailable ? (
+                              <>
+                                <p className="mt-2 text-3xl font-bold text-[var(--ccr-text)]">
+                                  {formatJmd(insurancePricePerDay)}
+                                  <span className="ml-1 text-base font-medium text-[var(--ccr-muted)]">/day</span>
+                                </p>
+                                <p className="mt-1 text-sm text-[var(--ccr-muted)]">
+                                  {formatJmd(standardProtectionTotal)} total · {rentalDays} day{rentalDays === 1 ? "" : "s"}
+                                </p>
+                              </>
+                            ) : (
+                              <div className="mt-2">
+                                <p className="text-sm text-[var(--ccr-muted)]">Unavailable for this vehicle</p>
+                              </div>
+                            )}
+                          </div>
+                          {!standardProtectionAvailable ? (
+                            <span className="rounded-full border border-[var(--ccr-border)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--ccr-muted)]">
+                              Unavailable
+                            </span>
+                          ) : null}
+                        </div>
+
+                        <div className="mt-4 flex-1 border-t border-[var(--ccr-border)] pt-4">
+                          <p className="text-sm font-semibold text-[var(--ccr-text)]">Coverage: JMD 160,000.00</p>
+                          <p className="mt-2 text-sm leading-7 text-[var(--ccr-muted)]">
+                            With this option, the renter pays an additional daily fee to reduce their financial exposure. If the vehicle is damaged, the renter&apos;s maximum out-of-pocket cost is capped at JMD 160,000.00.
+                          </p>
+                        </div>
+                      </button>
+                    </div>
                   </div>
                 </section>
               ) : null}

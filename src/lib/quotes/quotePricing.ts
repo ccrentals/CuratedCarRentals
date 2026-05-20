@@ -146,12 +146,11 @@ async function resolveInsurancePlan(input: {
     };
   }
 
-  const vehiclePlanResult = await input.db.query(
-    "select id, vehicle_id, is_enabled, price_per_day_cents, is_global_default from insurance_plans where vehicle_id = $1 and is_enabled = true limit 1",
-    [input.vehicleId],
+  const globalPlanResult = await input.db.query(
+    "select id, vehicle_id, is_enabled, price_per_day_cents, is_global_default from insurance_plans where is_global_default = true and is_enabled = true limit 1",
   );
-  if (vehiclePlanResult.rowCount > 0) {
-    const plan = vehiclePlanResult.rows[0] as InsurancePlanRow;
+  if (globalPlanResult.rowCount > 0) {
+    const plan = globalPlanResult.rows[0] as InsurancePlanRow;
     return {
       insuranceEnabled: true,
       insurancePlanId: plan.id,
@@ -159,11 +158,12 @@ async function resolveInsurancePlan(input: {
     };
   }
 
-  const globalPlanResult = await input.db.query(
-    "select id, vehicle_id, is_enabled, price_per_day_cents, is_global_default from insurance_plans where is_global_default = true and is_enabled = true limit 1",
+  const vehiclePlanResult = await input.db.query(
+    "select id, vehicle_id, is_enabled, price_per_day_cents, is_global_default from insurance_plans where vehicle_id = $1 and is_enabled = true limit 1",
+    [input.vehicleId],
   );
-  if (globalPlanResult.rowCount > 0) {
-    const plan = globalPlanResult.rows[0] as InsurancePlanRow;
+  if (vehiclePlanResult.rowCount > 0) {
+    const plan = vehiclePlanResult.rows[0] as InsurancePlanRow;
     return {
       insuranceEnabled: true,
       insurancePlanId: plan.id,
