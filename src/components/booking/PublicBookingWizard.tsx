@@ -2184,7 +2184,10 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     if (available) {
       setSelectedVehicleId(vehicleId);
       setVehicleSelectionUnavailable(false);
-      setStatusMessage("Vehicle selected and availability confirmed.");
+      wizardContainerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      setStep(3);
+      setMaxStepCompleted((current) => (current < 3 ? 3 : current));
+      setStatusMessage("Vehicle selected and availability confirmed. Continue with your rental details.");
     }
     setVehicleLoading(false);
   }
