@@ -26,7 +26,11 @@ const socialLinks = [
   { href: "https://youtube.com", label: "YouTube", icon: YouTubeIcon },
 ];
 
-const legalFooterItems = ["Privacy Policy", "Terms & Conditions", "FAQ"] as const;
+const legalFooterItems = [
+  { href: "/rental-policies", label: "Privacy Policy" },
+  { href: "/rental-policies", label: "Terms & Conditions" },
+  { href: "/rental-policies", label: "FAQ" },
+] as const;
 
 function FooterBrand() {
   return (
@@ -157,14 +161,13 @@ function FooterLegal() {
       <p>© {new Date().getFullYear()} Curated Car Rentals. All rights reserved.</p>
       <div className="flex flex-wrap gap-x-4 gap-y-2 sm:gap-x-5">
         {legalFooterItems.map((item) => (
-          <button
-            key={item}
-            type="button"
-            className="border-0 bg-transparent p-0 text-left transition hover:text-white focus:outline-none focus-visible:text-white"
-            aria-disabled="true"
+          <Link
+            key={item.label}
+            href={item.href}
+            className="transition hover:text-white focus:outline-none focus-visible:text-white"
           >
-            {item}
-          </button>
+            {item.label}
+          </Link>
         ))}
       </div>
     </div>

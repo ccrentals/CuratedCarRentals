@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { requireAdminRole, requireAdminAccess } from "@/lib/auth/adminGuards";
+import { requireOperationsAccess } from "@/lib/auth/adminGuards";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { fetchAdminBookingsPage } from "@/lib/bookings/adminBookingsList";
 import {
@@ -56,7 +56,7 @@ export async function handleAdminBookingsGet(
   request: Request,
   deps: AdminBookingsGetRouteDeps = DEFAULT_BOOKINGS_GET_DEPS,
 ) {
-  const auth = await requireAdminAccess({ getSession: deps.getSession });
+  const auth = await requireOperationsAccess({ getSession: deps.getSession });
   if (!auth.ok) return auth.response;
 
   const { searchParams } = new URL(request.url);
@@ -82,26 +82,30 @@ export async function POST(request: Request) {
 }
 
 export type AdminBookingsPostRouteDeps = {
-  requireAdmin: typeof requireAdminRole;
+  requireAdmin: typeof requireOperationsAccess;
   requireCsrfToken: typeof requireCsrf;
   getPool: typeof getDbPool;
+  loadBookingLocationConfigs: typeof listActiveBookingLocationConfigs;
   isVehicleUnavailable: typeof isVehicleUnavailableEntitlementBased;
   upsertCustomer: typeof upsertCustomerForBooking;
   validatePromo: typeof validatePromoForBooking;
   writeAudit: typeof writeAuditLog;
   sendCreatedEmail: typeof sendBookingCreatedEmail;
+  sendInternalCreatedNotifications: typeof sendInternalBookingCreatedNotifications;
   log: typeof logError;
 };
 
 const DEFAULT_BOOKINGS_POST_DEPS: AdminBookingsPostRouteDeps = {
-  requireAdmin: requireAdminRole,
+  requireAdmin: requireOperationsAccess,
   requireCsrfToken: requireCsrf,
   getPool: getDbPool,
+  loadBookingLocationConfigs: listActiveBookingLocationConfigs,
   isVehicleUnavailable: isVehicleUnavailableEntitlementBased,
   upsertCustomer: upsertCustomerForBooking,
   validatePromo: validatePromoForBooking,
   writeAudit: writeAuditLog,
   sendCreatedEmail: sendBookingCreatedEmail,
+  sendInternalCreatedNotifications: sendInternalBookingCreatedNotifications,
   log: logError,
 };
 
@@ -205,7 +209,7 @@ export async function handleAdminBookingsPost(
 
   let bookingLocationConfigs;
   try {
-    bookingLocationConfigs = await listActiveBookingLocationConfigs(deps.getPool());
+    bookingLocationConfigs = await deps.loadBookingLocationConfigs(deps.getPool());
   } catch (error) {
     const schemaError = toBookingLocationConfigSchemaError(error);
     if (schemaError) {
@@ -486,7 +490,7 @@ export async function handleAdminBookingsPost(
           },
         },
       });
-      await sendInternalBookingCreatedNotifications({
+      await deps.sendInternalCreatedNotifications({
         bookingId: bookingInsert.rows[0].id,
         customerEmail: normalizedEmail,
         customerName: String(fullName).trim(),

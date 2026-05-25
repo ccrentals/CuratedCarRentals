@@ -5,6 +5,7 @@ import {
   sendContactMessageCreatedAlert,
   type ContactMessageAlertResult,
 } from "@/lib/notifications/contactMessageAlert";
+import { loadOperationalNotificationRoutingSummary } from "@/lib/notifications/operationalRouting";
 
 export type ContactNotificationMessageItem = {
   id: string;
@@ -21,13 +22,22 @@ export type ContactMessageNotifierDeps = {
   loadSettings: () => Promise<{
     settings: {
       contactNotificationEmails: string;
+      primaryAdminUserId: string | null;
+      primaryDeveloperUserId: string | null;
+      defaultOperationalNotificationEmail: string;
+      additionalOperationalNotificationEmails: string[];
     };
   }>;
+  loadOperationalRecipients: (input: {
+    primaryAdminUserId: string | null;
+    primaryDeveloperUserId: string | null;
+    defaultOperationalNotificationEmail: string;
+    additionalOperationalNotificationEmails: string[];
+  }) => Promise<string[]>;
   sendSingle: (input: {
     recipients?: string[];
     message: ContactNotificationMessageItem;
   }) => Promise<ContactMessageAlertResult>;
-  envHasRecipients: () => boolean;
   warnNoRecipients: () => void;
 };
 
@@ -38,12 +48,16 @@ function defaultWarnNoRecipients() {
   recipientWarningShown = true;
   logWarn("contact_message_notification_recipients_missing", {
     settingKey: "contactNotificationEmails",
-    envFallback: "ADMIN_NOTIFY_EMAILS",
+    fallback: "operational_notification_routing",
   });
 }
 
 const DEFAULT_DEPS: ContactMessageNotifierDeps = {
   loadSettings: () => loadAdminSettings(),
+  loadOperationalRecipients: async (settings) => {
+    const routing = await loadOperationalNotificationRoutingSummary(settings);
+    return routing.effectiveRecipients;
+  },
   sendSingle: ({ recipients, message }) =>
     sendContactMessageCreatedAlert({
       messageId: message.id,
@@ -55,8 +69,6 @@ const DEFAULT_DEPS: ContactMessageNotifierDeps = {
       subject: message.subject,
       recipients,
     }),
-  envHasRecipients: () =>
-    Boolean(process.env.ADMIN_NOTIFY_EMAILS?.trim() || process.env.CONTACT_ALERT_RECIPIENTS?.trim()),
   warnNoRecipients: () => defaultWarnNoRecipients(),
 };
 
@@ -66,9 +78,23 @@ export async function maybeSendContactMessageNotification(
 ): Promise<ContactMessageAlertResult> {
   const { settings } = await deps.loadSettings();
   const settingsRecipients = parseEmailList(settings.contactNotificationEmails);
-  const recipients = settingsRecipients.length > 0 ? settingsRecipients : undefined;
+  const operationalRecipients =
+    settingsRecipients.length === 0
+      ? await deps.loadOperationalRecipients({
+          primaryAdminUserId: settings.primaryAdminUserId,
+          primaryDeveloperUserId: settings.primaryDeveloperUserId,
+          defaultOperationalNotificationEmail: settings.defaultOperationalNotificationEmail,
+          additionalOperationalNotificationEmails: settings.additionalOperationalNotificationEmails,
+        })
+      : [];
+  const recipients =
+    settingsRecipients.length > 0
+      ? settingsRecipients
+      : operationalRecipients.length > 0
+        ? operationalRecipients
+        : undefined;
 
-  if (!recipients && !deps.envHasRecipients()) {
+  if (!recipients) {
     deps.warnNoRecipients();
   }
 

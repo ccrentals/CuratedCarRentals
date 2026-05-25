@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { requireAdminRole } from "@/lib/auth/adminGuards";
+import { requireOperationsAccess } from "@/lib/auth/adminGuards";
 import { dbQuery } from "@/lib/db";
 import { requireCsrf } from "@/lib/security/csrf";
 import { writeAuditLog } from "@/lib/audit";
@@ -80,7 +80,7 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireAdminRole();
+  const auth = await requireOperationsAccess();
   if (!auth.ok) return auth.response;
 
   const { id } = await params;
@@ -179,7 +179,7 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireAdminRole();
+  const auth = await requireOperationsAccess();
   if (!auth.ok) return auth.response;
   const session = auth.session;
 

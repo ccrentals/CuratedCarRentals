@@ -155,11 +155,16 @@ export async function POST(request: Request) {
   const role =
     roleRaw === "DEVELOPER"
       ? "DEVELOPER"
+      : roleRaw === "OPERATIONS"
+        ? "OPERATIONS"
       : roleRaw === "ADMIN"
         ? "ADMIN"
         : "";
   if (!role) {
-    return NextResponse.json({ error: "Invalid role. Only ADMIN or DEVELOPER can be created here." }, { status: 400 });
+    return NextResponse.json(
+      { error: "Invalid role. Only OPERATIONS, ADMIN, or DEVELOPER can be created here." },
+      { status: 400 },
+    );
   }
   if (role === "DEVELOPER" && !isDeveloperRole(actor.role)) {
     return NextResponse.json({ error: "Only developers can assign DEVELOPER role." }, { status: 403 });

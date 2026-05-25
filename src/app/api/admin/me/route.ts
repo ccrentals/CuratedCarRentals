@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { requireAdminAccess } from "@/lib/auth/adminGuards";
+import { requireOperationsAccess } from "@/lib/auth/adminGuards";
+import { parseAppRole } from "@/lib/auth/roles";
 import { dbQuery } from "@/lib/db";
 import { logError } from "@/lib/log";
 import { requireCsrf } from "@/lib/security/csrf";
@@ -43,7 +44,7 @@ function parseThemePreference(content: unknown): AppTheme | null {
 }
 
 export async function GET() {
-  const auth = await requireAdminAccess();
+  const auth = await requireOperationsAccess();
   if (!auth.ok) return auth.response;
   const session = auth.session;
 
@@ -94,7 +95,7 @@ export async function GET() {
       ok: true,
       userId: session.userId,
       publicId: typeof user.public_id === "string" ? user.public_id : null,
-      role: user.role ?? session.role,
+      role: parseAppRole(user.role ?? session.role) ?? session.role,
       email: user.email,
       fullName: user.full_name ?? null,
       username: user.username ?? null,
@@ -112,7 +113,7 @@ export async function GET() {
 }
 
 export async function PATCH(request: Request) {
-  const auth = await requireAdminAccess();
+  const auth = await requireOperationsAccess();
   if (!auth.ok) return auth.response;
   const session = auth.session;
 

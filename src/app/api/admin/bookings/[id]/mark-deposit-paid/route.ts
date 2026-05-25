@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { requireAdminAccess } from "@/lib/auth/adminGuards";
+import { requireOperationsAccess } from "@/lib/auth/adminGuards";
 import { getDbPool } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
 import { logError } from "@/lib/log";
@@ -20,7 +20,7 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireAdminAccess();
+  const auth = await requireOperationsAccess();
   if (!auth.ok) return auth.response;
   const { actor } = auth;
 

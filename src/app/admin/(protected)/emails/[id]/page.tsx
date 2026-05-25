@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 
 import { AdminEmailResendButton } from "@/components/admin/AdminEmailResendButton";
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
+import { isAdminRole } from "@/lib/auth/roles";
+import { getSessionFromRequest } from "@/lib/auth/session";
 import { fetchAdminEmailDetail } from "@/lib/notifications/adminEmails";
 
 function statusBadgeClass(status: string) {
@@ -35,6 +37,18 @@ export default async function AdminEmailDetailPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  const session = await getSessionFromRequest();
+  if (!isAdminRole(session?.role)) {
+    return (
+      <div className="mx-auto w-full max-w-4xl px-4 py-10 sm:px-6 lg:px-8">
+        <h1 className="text-2xl font-bold text-[var(--ccr-text)]">Email Detail</h1>
+        <p className="mt-2 text-sm text-[var(--ccr-muted)]">
+          You do not have permission to view this page.
+        </p>
+      </div>
+    );
+  }
+
   const { id } = await params;
   const query = await searchParams;
   const backHref = safeBackHref(typeof query.back === "string" ? query.back : undefined);
@@ -68,7 +82,7 @@ export default async function AdminEmailDetailPage({
             </p>
             <p className="text-sm text-[var(--ccr-muted)]">{item.recipientEmail || "Legacy / unavailable recipient"}</p>
             <p className="mt-1 text-xs text-[var(--ccr-muted)]">
-              Created <DateTimeInline value={item.createdAt} className="inline-flex text-[var(--ccr-text)]" />
+              Created <DateTimeInline value={item.createdAt} className="inline-flex text-[var(--ccr-text)]" preset="admin" />
             </p>
           </div>
           <span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wide ${statusBadgeClass(item.status)}`}>
@@ -111,11 +125,11 @@ export default async function AdminEmailDetailPage({
           </div>
           <div>
             <dt className="text-xs font-semibold uppercase tracking-wide">Sent At</dt>
-            <dd className="mt-1 text-[var(--ccr-text)]"><DateTimeInline value={item.sentAt} /></dd>
+            <dd className="mt-1 text-[var(--ccr-text)]"><DateTimeInline value={item.sentAt} preset="admin" /></dd>
           </div>
           <div>
             <dt className="text-xs font-semibold uppercase tracking-wide">Last Event</dt>
-            <dd className="mt-1 text-[var(--ccr-text)]"><DateTimeInline value={item.lastEventAt} /></dd>
+            <dd className="mt-1 text-[var(--ccr-text)]"><DateTimeInline value={item.lastEventAt} preset="admin" /></dd>
           </div>
         </dl>
 
@@ -131,7 +145,7 @@ export default async function AdminEmailDetailPage({
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <p className="font-semibold text-[var(--ccr-text)]">{formatAdminEmailLabel(event.eventType)}</p>
                       <span className="text-xs text-[var(--ccr-muted)]">
-                        <DateTimeInline value={event.occurredAt} />
+                        <DateTimeInline value={event.occurredAt} preset="admin" />
                       </span>
                     </div>
                     <p className="mt-1 text-xs text-[var(--ccr-muted)]">

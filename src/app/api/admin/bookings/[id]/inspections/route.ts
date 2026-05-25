@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { requireAdminAccess } from "@/lib/auth/adminGuards";
+import { requireOperationsAccess } from "@/lib/auth/adminGuards";
 import { hasRequiredAdminAccess } from "@/lib/auth/roles";
 import { writeAuditLog } from "@/lib/audit";
 import {
@@ -27,7 +27,7 @@ const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export type AdminBookingInspectionRouteDeps = {
-  requireAdminAccess: typeof requireAdminAccess;
+  requireAdminAccess: typeof requireOperationsAccess;
   requireCsrfCheck: (request: Request, bodyToken?: string | null) => Promise<boolean>;
   getBookingStatus: (bookingId: string) => Promise<string | null>;
   loadInspections: typeof loadBookingVehicleInspectionSummaries;
@@ -39,7 +39,7 @@ export type AdminBookingInspectionRouteDeps = {
 };
 
 const DEFAULT_DEPS: AdminBookingInspectionRouteDeps = {
-  requireAdminAccess: requireAdminAccess,
+  requireAdminAccess: requireOperationsAccess,
   requireCsrfCheck: (request, bodyToken) => requireCsrf(request, bodyToken),
   getBookingStatus: async (bookingId) => {
     const result = await dbQuery<{ status: string }>(

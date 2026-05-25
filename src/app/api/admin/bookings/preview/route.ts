@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { requireAdminRole } from "@/lib/auth/adminGuards";
+import { requireOperationsAccess } from "@/lib/auth/adminGuards";
 import { getAdminCreateBookingPricingPreview } from "@/lib/bookings/adminCreateBooking";
 import { logError } from "@/lib/log";
 import { isISODate } from "@/lib/validators";
@@ -13,7 +13,7 @@ function normalizeText(value: string | null) {
 }
 
 export async function GET(request: Request) {
-  const auth = await requireAdminRole();
+  const auth = await requireOperationsAccess();
   if (!auth.ok) return auth.response;
   const { actor } = auth;
 

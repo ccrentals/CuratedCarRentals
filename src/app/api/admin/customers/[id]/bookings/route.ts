@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 
-import { requireAdminRole } from "@/lib/auth/adminGuards";
+import { requireOperationsAccess } from "@/lib/auth/adminGuards";
 import { fetchCustomerSnapshotBookingsPage } from "@/lib/customers/customerSnapshotBookings";
 
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireAdminRole();
+  const auth = await requireOperationsAccess();
   if (!auth.ok) return auth.response;
 
   const { id } = await params;

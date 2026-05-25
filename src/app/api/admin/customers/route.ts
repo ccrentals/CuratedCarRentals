@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { requireAdminAccess } from "@/lib/auth/adminGuards";
+import { requireOperationsAccess } from "@/lib/auth/adminGuards";
 import { dbQuery } from "@/lib/db";
 import { requireCsrf } from "@/lib/security/csrf";
 import { isEmail } from "@/lib/validators";
@@ -330,7 +330,7 @@ async function fetchCustomers({
 }
 
 export async function GET(request: Request) {
-  const auth = await requireAdminAccess();
+  const auth = await requireOperationsAccess();
   if (!auth.ok) return auth.response;
 
   const url = new URL(request.url);
@@ -374,7 +374,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const auth = await requireAdminAccess();
+  const auth = await requireOperationsAccess();
   if (!auth.ok) return auth.response;
   const session = auth.session;
 

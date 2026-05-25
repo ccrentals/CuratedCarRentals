@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { requireAdminAccess } from "@/lib/auth/adminGuards";
+import { requireOperationsAccess } from "@/lib/auth/adminGuards";
 import { dbQuery } from "@/lib/db";
 import { logError } from "@/lib/log";
 import { requireCsrf } from "@/lib/security/csrf";
@@ -23,7 +23,7 @@ type ImageItemRouteContext = {
 };
 
 export type AdminBookingInspectionImageRouteDeps = {
-  requireAdminAccess: typeof requireAdminAccess;
+  requireAdminAccess: typeof requireOperationsAccess;
   requireCsrfCheck: (request: Request, bodyToken?: string | null) => Promise<boolean>;
   getBookingStatus: (bookingId: string) => Promise<string | null>;
   loadInspections: typeof loadBookingVehicleInspectionSummaries;
@@ -31,7 +31,7 @@ export type AdminBookingInspectionImageRouteDeps = {
 };
 
 const DEFAULT_DEPS: AdminBookingInspectionImageRouteDeps = {
-  requireAdminAccess: requireAdminAccess,
+  requireAdminAccess: requireOperationsAccess,
   requireCsrfCheck: (request, bodyToken) => requireCsrf(request, bodyToken),
   getBookingStatus: async (bookingId) => {
     const result = await dbQuery<{ status: string }>(

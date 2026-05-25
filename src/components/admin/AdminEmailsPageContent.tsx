@@ -3,6 +3,8 @@ import Link from "next/link";
 import { PaginationSummaryNav } from "@/components/admin/PaginationSummaryNav";
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { applySortToSearchParams, ariaSortValue, nextSort, readSortFromSearchParams } from "@/components/admin/tableSort";
+import { isAdminRole } from "@/lib/auth/roles";
+import { getSessionFromRequest } from "@/lib/auth/session";
 import { fetchAdminEmailsPage, ADMIN_EMAIL_SORT_COLUMNS } from "@/lib/notifications/adminEmails";
 
 type SearchParams = Record<string, string | string[] | undefined>;
@@ -55,6 +57,19 @@ export async function AdminEmailsPageContent({
 }: {
   searchParams: SearchParams;
 }) {
+  const session = await getSessionFromRequest();
+  const canView = isAdminRole(session?.role);
+  if (!canView) {
+    return (
+      <div className="mx-auto w-full max-w-4xl px-4 py-10 sm:px-6 lg:px-8">
+        <h1 className="text-2xl font-bold text-[var(--ccr-text)]">Emails</h1>
+        <p className="mt-2 text-sm text-[var(--ccr-muted)]">
+          You do not have permission to view this page.
+        </p>
+      </div>
+    );
+  }
+
   const q = normalizeTextParam(searchParams.q);
   const status = normalizeTextParam(searchParams.status);
   const emailType = normalizeTextParam(searchParams.emailType);
@@ -215,7 +230,7 @@ export async function AdminEmailsPageContent({
                       </span>
                     </td>
                     <td className="px-4 py-3 text-[var(--ccr-text)]">
-                      <DateTimeInline value={item.lastEventAt ?? item.sentAt ?? item.createdAt} />
+                      <DateTimeInline value={item.lastEventAt ?? item.sentAt ?? item.createdAt} preset="admin" />
                     </td>
                     <td className="px-4 py-3">
                       <div className="font-semibold text-[var(--ccr-text)]">{item.recipientName || "—"}</div>

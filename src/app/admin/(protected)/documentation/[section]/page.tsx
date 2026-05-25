@@ -2038,8 +2038,8 @@ Cron
                 (bookings, vehicles, payments, reports, users, health).
               </li>
               <li>
-                <span className="font-semibold text-[var(--ccr-text)]">USER:</span> Intended for limited access (feature
-                gating can be expanded as needed).
+                <span className="font-semibold text-[var(--ccr-text)]">OPERATIONS:</span> Day-to-day operational access
+                for bookings, quotes, customers, and calendar workflows without privileged admin tooling.
               </li>
             </ul>
             <p className="mt-3 text-sm text-[var(--ccr-muted)]">

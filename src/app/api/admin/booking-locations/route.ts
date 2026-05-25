@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { requireAdminRole } from "@/lib/auth/adminGuards";
+import { requireAdminRole, requireOperationsAccess } from "@/lib/auth/adminGuards";
 import {
   buildBookingLocationConfigs,
   createCanonicalBookingLocationSeedConfigs,
@@ -163,7 +163,7 @@ const DEFAULT_FIELD_SCHEMA_MAP = new Map(
 );
 
 export async function GET() {
-  const auth = await requireAdminRole();
+  const auth = await requireOperationsAccess();
   if (!auth.ok) return auth.response;
   const { actor } = auth;
 

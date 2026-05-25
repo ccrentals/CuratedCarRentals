@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { requireAdminAccess } from "@/lib/auth/adminGuards";
+import { requireOperationsAccess } from "@/lib/auth/adminGuards";
 import { logError, redactText } from "@/lib/log";
 import {
   generateQuotePdfDocument,
@@ -10,13 +10,13 @@ import {
 import { isQuoteOpsMissingTableError } from "@/lib/quotes/quoteOps";
 
 export type AdminQuoteDocumentRouteDeps = {
-  requireAdminAccess: typeof requireAdminAccess;
+  requireAdminAccess: typeof requireOperationsAccess;
   loadQuotePayload: typeof loadQuotePdfPayload;
   generateQuoteDocument: typeof generateQuotePdfDocument;
 };
 
 const DEFAULT_DEPS: AdminQuoteDocumentRouteDeps = {
-  requireAdminAccess: requireAdminAccess,
+  requireAdminAccess: requireOperationsAccess,
   loadQuotePayload: loadQuotePdfPayload,
   generateQuoteDocument: generateQuotePdfDocument,
 };

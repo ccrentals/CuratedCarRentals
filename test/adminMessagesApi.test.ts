@@ -425,7 +425,18 @@ test("admin messages API: bulk permanent delete rejects non-trashed rows", async
     },
   );
 
-  assert.equal(response.status, 400);
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as {
+    ok: boolean;
+    updatedCount: number;
+    deletedCount: number;
+    deletedIds: string[];
+    blockedIds: string[];
+  };
+  assert.equal(body.ok, true);
+  assert.equal(body.deletedCount, 0);
+  assert.deepEqual(body.deletedIds, []);
+  assert.deepEqual(body.blockedIds, ["91c7c89a-9f07-4d59-b79b-f92d55f0cf8b"]);
 });
 
 test("admin messages API: bulk permanent delete allows admin", async () => {

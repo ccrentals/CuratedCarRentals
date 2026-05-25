@@ -14,6 +14,10 @@ export type WizardSelectionFields = {
   paymentOption: WizardPaymentOption;
 };
 
+export type DraftRestoreOptions = {
+  selectedVehicleIdOverride?: string | null;
+};
+
 export type DraftRestoreSecurityState = {
   requiresDriversLicenseUpload: boolean;
   requiresSignatureUpload: boolean;
@@ -80,8 +84,10 @@ function parsePaymentOption(value: unknown): WizardPaymentOption | null {
 export function restoreSelectionFieldsFromDraft(
   draft: Record<string, unknown>,
   fallback: WizardSelectionFields,
+  options: DraftRestoreOptions = {},
 ): WizardSelectionFields {
   const paymentOption = parsePaymentOption(draft.paymentOption) ?? fallback.paymentOption;
+  const selectedVehicleIdOverride = normalizeText(options.selectedVehicleIdOverride);
 
   return {
     pickupDate: normalizeText(draft.pickupDate) || fallback.pickupDate,
@@ -90,7 +96,10 @@ export function restoreSelectionFieldsFromDraft(
     dropoffTime: normalizeText(draft.dropoffTime) || fallback.dropoffTime,
     pickupLocationId: normalizeText(draft.pickupLocationId) || fallback.pickupLocationId,
     dropoffLocationId: normalizeText(draft.dropoffLocationId) || fallback.dropoffLocationId,
-    selectedVehicleId: normalizeText(draft.selectedVehicleId) || fallback.selectedVehicleId,
+    selectedVehicleId:
+      selectedVehicleIdOverride ||
+      normalizeText(draft.selectedVehicleId) ||
+      fallback.selectedVehicleId,
     insuranceSelected:
       typeof draft.insuranceSelected === "boolean"
         ? draft.insuranceSelected

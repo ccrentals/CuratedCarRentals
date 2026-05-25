@@ -1096,7 +1096,7 @@ export function AdminSettingsForm({
         >
           <p className="text-sm font-semibold text-[var(--ccr-text)]">Message notification recipients</p>
           <p className="mt-1 text-xs text-[var(--ccr-muted)]">
-            Comma-separated emails for contact message alerts. Leave empty to use <code>ADMIN_NOTIFY_EMAILS</code>.
+            Comma-separated emails for contact message alerts. Leave empty to use the effective operational recipients configured above, then environment fallback if none resolve.
           </p>
           <div className="mt-3">
             <input

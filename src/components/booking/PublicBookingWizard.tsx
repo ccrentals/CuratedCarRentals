@@ -3421,9 +3421,9 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                         </div>
 
                         <div className="mt-4 flex-1 border-t border-[var(--ccr-border)] pt-4">
-                          <p className="text-sm font-semibold text-[var(--ccr-text)]">Coverage: JMD 160,000.00</p>
+                          <p className="text-sm font-semibold text-[var(--ccr-text)]">Coverage: JMD 155,000.00</p>
                           <p className="mt-2 text-sm leading-7 text-[var(--ccr-muted)]">
-                            With this option, the renter pays an additional daily fee to reduce their financial exposure. If the vehicle is damaged, the renter&apos;s maximum out-of-pocket cost is capped at JMD 160,000.00.
+                            With this option, the renter pays an additional daily fee to reduce their financial exposure. If the vehicle is damaged, the renter&apos;s maximum out-of-pocket cost is capped at JMD 155,000.00.
                           </p>
                         </div>
                       </button>

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { isAdminRole } from "@/lib/auth/roles";
+import { canAccessAdmin } from "@/lib/auth/roles";
 import { dbQuery } from "@/lib/db";
 import { logWarn } from "@/lib/log";
 import { isClerkEnabled } from "@/lib/security/clerk";
@@ -144,7 +144,7 @@ export async function POST(request: Request) {
   }
 
   const localUser = await loadLocalUserByEmail(email);
-  if (!localUser || !isAdminRole(localUser.role)) {
+  if (!localUser || !canAccessAdmin(localUser.role)) {
     return NextResponse.json(
       { error: "No eligible admin account found for this email." },
       { status: 404 },

@@ -123,7 +123,7 @@ function toRoleLabel(role: string | null | undefined) {
   const normalized = parseAppRole(role);
   if (normalized === "ADMIN") return "Admin";
   if (normalized === "DEVELOPER") return "Developer";
-  if (normalized === "USER") return "User";
+  if (normalized === "OPERATIONS") return "Operations";
   return "Unknown role";
 }
 

@@ -74,7 +74,7 @@ export default async function AdminDeveloperAccessPage() {
           <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Administration</p>
           <h1 className="text-3xl font-bold text-[var(--ccr-text)]">Role Capability Matrix</h1>
           <p className="mt-2 text-sm text-[var(--ccr-muted)]">
-            Quick reference for what DEVELOPER, ADMIN, and USER accounts are expected to handle.
+            Quick reference for what DEVELOPER, ADMIN, and OPERATIONS accounts are expected to handle.
           </p>
         </div>
         <Link
@@ -92,7 +92,7 @@ export default async function AdminDeveloperAccessPage() {
               <th className="px-3 py-3">Feature</th>
               <th className="px-3 py-3">Developer</th>
               <th className="px-3 py-3">Admin</th>
-              <th className="px-3 py-3">User</th>
+              <th className="px-3 py-3">Operations</th>
             </tr>
           </thead>
           <tbody>

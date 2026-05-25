@@ -105,6 +105,12 @@ export async function requireAdminAccess(
   return requireAdminApiSession({ ...options, requirement: "admin" });
 }
 
+export async function requireOperationsAccess(
+  options: Omit<RequireAdminGuardOptions, "requirement"> = {},
+) {
+  return requireAdminApiSession({ ...options, requirement: "operations" });
+}
+
 export async function requireAdminRole(
   options: Omit<RequireAdminGuardOptions, "requirement"> = {},
 ) {

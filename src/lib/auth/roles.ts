@@ -7,11 +7,11 @@
  *
  * Clerk metadata can mirror roles in the future, but is non-authoritative for app RBAC.
  */
-export const APP_ROLES = ["ADMIN", "USER", "DEVELOPER"] as const;
+export const APP_ROLES = ["ADMIN", "OPERATIONS", "DEVELOPER"] as const;
 export type AppRole = (typeof APP_ROLES)[number];
 
 export const ADMIN_ROLES: readonly AppRole[] = ["ADMIN", "DEVELOPER"] as const;
-export type AdminAccessRequirement = "admin" | "developer";
+export type AdminAccessRequirement = "operations" | "admin" | "developer";
 
 export function normalizeRole(role: string | null | undefined) {
   return String(role ?? "")
@@ -21,6 +21,9 @@ export function normalizeRole(role: string | null | undefined) {
 
 export function parseAppRole(role: string | null | undefined): AppRole | null {
   const normalized = normalizeRole(role);
+  if (normalized === "USER") {
+    return "OPERATIONS";
+  }
   return APP_ROLES.includes(normalized as AppRole) ? (normalized as AppRole) : null;
 }
 
@@ -33,8 +36,12 @@ export function isDeveloperRole(role: string | null | undefined) {
   return parseAppRole(role) === "DEVELOPER";
 }
 
+export function isOperationsRole(role: string | null | undefined) {
+  return parseAppRole(role) === "OPERATIONS";
+}
+
 export function canAccessAdmin(role: string | null | undefined) {
-  return isAdminRole(role);
+  return parseAppRole(role) !== null;
 }
 
 export function canPerformAdminWrite(role: string | null | undefined) {
@@ -45,6 +52,9 @@ export function hasRequiredAdminAccess(
   role: string | null | undefined,
   requirement: AdminAccessRequirement,
 ) {
+  if (requirement === "operations") {
+    return canAccessAdmin(role);
+  }
   if (requirement === "admin") {
     return isAdminRole(role);
   }

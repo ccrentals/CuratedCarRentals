@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { requireAdminAccess } from "@/lib/auth/adminGuards";
+import { requireOperationsAccess } from "@/lib/auth/adminGuards";
 import { getOrCreateInvoiceLedgerRow, hashInvoicePayload } from "@/lib/invoices/ledger";
 import { loadAdminBookingInvoicePayload } from "@/lib/invoices/adminInvoicePayload";
 import { logError } from "@/lib/log";
@@ -9,7 +9,7 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireAdminAccess();
+  const auth = await requireOperationsAccess();
   if (!auth.ok) return auth.response;
 
   const { id } = await params;

@@ -53,6 +53,55 @@ test("draft restore keeps vehicle, dates, locations, insurance, and payment opti
   assert.equal(restored.paymentOption, "FULL");
 });
 
+test("draft restore lets an explicit vehicle selection override a stale draft vehicle", () => {
+  const fallback: WizardSelectionFields = {
+    pickupDate: "2099-01-01",
+    pickupTime: "11:00",
+    dropoffDate: "2099-01-04",
+    dropoffTime: "11:00",
+    pickupLocationId: "L1",
+    dropoffLocationId: "L1",
+    selectedVehicleId: "",
+    insuranceSelected: false,
+    paymentOption: "DEPOSIT",
+  };
+
+  const restored = restoreSelectionFieldsFromDraft(
+    {
+      selectedVehicleId: "previous-vehicle",
+      paymentOption: "DEPOSIT",
+    },
+    fallback,
+    { selectedVehicleIdOverride: "new-query-vehicle" },
+  );
+
+  assert.equal(restored.selectedVehicleId, "new-query-vehicle");
+});
+
+test("draft restore keeps the draft vehicle when there is no explicit vehicle override", () => {
+  const fallback: WizardSelectionFields = {
+    pickupDate: "2099-01-01",
+    pickupTime: "11:00",
+    dropoffDate: "2099-01-04",
+    dropoffTime: "11:00",
+    pickupLocationId: "L1",
+    dropoffLocationId: "L1",
+    selectedVehicleId: "",
+    insuranceSelected: false,
+    paymentOption: "DEPOSIT",
+  };
+
+  const restored = restoreSelectionFieldsFromDraft(
+    {
+      selectedVehicleId: "previous-vehicle",
+      paymentOption: "DEPOSIT",
+    },
+    fallback,
+  );
+
+  assert.equal(restored.selectedVehicleId, "previous-vehicle");
+});
+
 test("draft restore security state keeps license upload optional and re-requires signature", () => {
   const security = draftRestoreSecurityState();
 

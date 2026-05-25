@@ -9,14 +9,14 @@ function addHours(date: Date, hours: number) {
   return new Date(date.getTime() + hours * 60 * 60 * 1000).toISOString();
 }
 
-test("derive booking phase: active window is ON_RENT", () => {
+test("derive booking phase: overdue unpicked booking is PICKUP_OVERDUE", () => {
   const booking = {
     status: "CONFIRMED",
     start_at: addHours(NOW, -5),
     end_at: addHours(NOW, 10),
   };
 
-  assert.equal(deriveBookingPhase(booking, NOW), "ON_RENT");
+  assert.equal(deriveBookingPhase(booking, NOW), "PICKUP_OVERDUE");
 });
 
 test("derive booking phase: future booking is UPCOMING", () => {
@@ -29,7 +29,7 @@ test("derive booking phase: future booking is UPCOMING", () => {
   assert.equal(deriveBookingPhase(booking, NOW), "UPCOMING");
 });
 
-test("derive vehicle status: ON_RENT takes precedence", () => {
+test("derive vehicle status: active picked-up booking takes precedence", () => {
   const status = deriveVehicleStatus(
     { status: "AVAILABLE" },
     NOW,
@@ -37,7 +37,7 @@ test("derive vehicle status: ON_RENT takes precedence", () => {
       needsCleaning: true,
       bookings: [
         {
-          status: "CONFIRMED",
+          status: "PICKED_UP",
           start_at: addHours(NOW, -2),
           end_at: addHours(NOW, 6),
         },

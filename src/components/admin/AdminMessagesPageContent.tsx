@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { canAccessAdmin } from "@/lib/auth/roles";
+import { isAdminRole } from "@/lib/auth/roles";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { MessagesInboxTable } from "@/components/admin/MessagesInboxTable";
 import { PaginationSummaryNav } from "@/components/admin/PaginationSummaryNav";
@@ -43,7 +43,7 @@ export async function AdminMessagesPageContent({
   viewMode,
 }: AdminMessagesPageContentProps) {
   const session = await getSessionFromRequest();
-  const canView = canAccessAdmin(session?.role);
+  const canView = isAdminRole(session?.role);
   const canManage = canView;
   const canDeletePermanent = canManage;
 

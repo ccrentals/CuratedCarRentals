@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { requireAdminAccess } from "@/lib/auth/adminGuards";
+import { requireOperationsAccess } from "@/lib/auth/adminGuards";
 import { isAdminRole, isDeveloperRole } from "@/lib/auth/roles";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery, getDbPool } from "@/lib/db";
@@ -227,7 +227,7 @@ export async function handleAdminBookingByIdGet(
   { params }: BookingByIdRouteContext,
   deps: AdminBookingByIdGetDeps = DEFAULT_BOOKING_BY_ID_GET_DEPS,
 ) {
-  const auth = await requireAdminAccess({ getSession: deps.getSession });
+  const auth = await requireOperationsAccess({ getSession: deps.getSession });
   if (!auth.ok) return auth.response;
 
   const { id } = await params;
@@ -543,7 +543,7 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireAdminAccess();
+  const auth = await requireOperationsAccess();
   if (!auth.ok) return auth.response;
   const session = auth.session;
 

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { isAdminRole } from "@/lib/auth/roles";
+import { isAdminRole, parseAppRole } from "@/lib/auth/roles";
 
 import { TableDateTime } from "@/components/shared/TableDateTime";
 import { dbQuery } from "@/lib/db";
@@ -47,6 +47,14 @@ function statusLabel(user: UserRow) {
     deactivatedAt: user.deactivated_at,
     lockedAt: user.locked_at,
   });
+}
+
+function roleLabel(role: string) {
+  const normalized = parseAppRole(role);
+  if (normalized === "OPERATIONS") return "OPERATIONS";
+  if (normalized === "DEVELOPER") return "DEVELOPER";
+  if (normalized === "ADMIN") return "ADMIN";
+  return role;
 }
 
 export default async function AdminUsersPage({
@@ -268,7 +276,7 @@ export default async function AdminUsersPage({
 
       <UsersFilters initialQuery={q} />
 
-      <CreateUserForm actorRole={effectiveSessionRole ?? "USER"} />
+      <CreateUserForm actorRole={effectiveSessionRole ?? "OPERATIONS"} />
 
       <div className="mt-6 overflow-x-auto rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)]">
         {totalUsers === 0 ? (
@@ -307,7 +315,7 @@ export default async function AdminUsersPage({
                       </p>
                     ) : null}
                   </td>
-                  <td className="px-4 py-3 text-[var(--ccr-text)]">{user.role}</td>
+                  <td className="px-4 py-3 text-[var(--ccr-text)]">{roleLabel(user.role)}</td>
                   <td className="px-4 py-3 text-[var(--ccr-text)]">{statusLabel(user)}</td>
                   <td className="px-4 py-3 text-[var(--ccr-muted)]">
                     <TableDateTime value={user.created_at} />
@@ -323,7 +331,7 @@ export default async function AdminUsersPage({
                       fullName={user.full_name ?? null}
                       username={user.username ?? null}
                       role={user.role}
-                      actorRole={effectiveSessionRole ?? "USER"}
+                      actorRole={effectiveSessionRole ?? "OPERATIONS"}
                       isActive={user.is_active ?? null}
                       lifecycleState={user.lifecycle_state ?? null}
                       deactivatedAt={user.deactivated_at ?? null}

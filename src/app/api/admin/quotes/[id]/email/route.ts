@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { requireAdminAccess } from "@/lib/auth/adminGuards";
+import { requireOperationsAccess } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import { logError } from "@/lib/log";
 import { isQuoteExpired } from "@/lib/quotes/lifecycle";
@@ -104,7 +104,7 @@ export async function handleAdminQuoteEmailPost(
   context: RouteContext,
   deps: AdminQuoteEmailRouteDeps = DEFAULT_DEPS,
 ) {
-  const auth = await requireAdminAccess({ getSession: deps.getSession });
+  const auth = await requireOperationsAccess({ getSession: deps.getSession });
   if (!auth.ok) return auth.response;
   const { actor } = auth;
 

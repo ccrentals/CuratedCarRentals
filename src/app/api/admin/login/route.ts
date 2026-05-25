@@ -246,7 +246,7 @@ export async function POST(request: Request) {
     const whereClause = lookupByEmail ? "lower(email) = lower($1)" : "lower(username) = lower($1)";
     try {
       return await dbQuery<UserRow>(
-        `select id, email, password_hash, role, locked_at, is_active, deactivated_at, must_change_password, temp_password_expires_at from users where ${whereClause} and role in ('ADMIN','DEVELOPER','admin','developer') limit 1`,
+        `select id, email, password_hash, role, locked_at, is_active, deactivated_at, must_change_password, temp_password_expires_at from users where ${whereClause} and role in ('ADMIN','OPERATIONS','DEVELOPER','admin','operations','developer','USER','user') limit 1`,
         [identifierLower],
       );
     } catch (error) {
@@ -261,7 +261,7 @@ export async function POST(request: Request) {
         isUndefinedColumn(error, "temp_password_expires_at")
       ) {
         return await dbQuery<UserRow>(
-          `select id, email, password_hash, role, locked_at from users where ${whereClause} and role in ('ADMIN','DEVELOPER','admin','developer') limit 1`,
+          `select id, email, password_hash, role, locked_at from users where ${whereClause} and role in ('ADMIN','OPERATIONS','DEVELOPER','admin','operations','developer','USER','user') limit 1`,
           [identifierLower],
         );
       }

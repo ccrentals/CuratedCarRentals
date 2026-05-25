@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { requireAdminAccess } from "@/lib/auth/adminGuards";
+import { requireOperationsAccess } from "@/lib/auth/adminGuards";
 import {
   parseSafePrivateBookingImageDataUrl,
   resolveSafePrivateBookingResponseMimeType,
@@ -40,7 +40,7 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string; documentType: string }> },
 ) {
-  const auth = await requireAdminAccess();
+  const auth = await requireOperationsAccess();
   if (!auth.ok) {
     return auth.response;
   }

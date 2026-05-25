@@ -295,6 +295,7 @@ test("admin bookings API: submit still rejects unavailable vehicles after UI pre
       ({
         connect: async () => client,
       }) as ReturnType<AdminBookingsPostRouteDeps["getPool"]>,
+    loadBookingLocationConfigs: async () => [],
     isVehicleUnavailable: async () => true,
     upsertCustomer: async () => {
       throw new Error("upsertCustomer should not be reached when vehicle is unavailable");
@@ -304,6 +305,7 @@ test("admin bookings API: submit still rejects unavailable vehicles after UI pre
     },
     writeAudit: async () => undefined,
     sendCreatedEmail: async () => undefined,
+    sendInternalCreatedNotifications: async () => ({ ok: true, skipped: false, delivered: 0, errors: [] }),
     log: () => undefined,
   };
 
@@ -374,6 +376,7 @@ test("admin bookings API: submit rejects soft-deleted vehicles even if posted di
       ({
         connect: async () => client,
       }) as ReturnType<AdminBookingsPostRouteDeps["getPool"]>,
+    loadBookingLocationConfigs: async () => [],
     isVehicleUnavailable: async () => {
       throw new Error("isVehicleUnavailable should not be reached when vehicle is not bookable");
     },
@@ -385,6 +388,7 @@ test("admin bookings API: submit rejects soft-deleted vehicles even if posted di
     },
     writeAudit: async () => undefined,
     sendCreatedEmail: async () => undefined,
+    sendInternalCreatedNotifications: async () => ({ ok: true, skipped: false, delivered: 0, errors: [] }),
     log: () => undefined,
   };
 
@@ -473,6 +477,7 @@ test("admin bookings API: create still succeeds when audit logging fails after c
       ({
         connect: async () => client,
       }) as ReturnType<AdminBookingsPostRouteDeps["getPool"]>,
+    loadBookingLocationConfigs: async () => [],
     isVehicleUnavailable: async () => false,
     upsertCustomer: async () => ({
       customerId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
@@ -483,6 +488,7 @@ test("admin bookings API: create still succeeds when audit logging fails after c
       throw new Error("audit unavailable");
     },
     sendCreatedEmail: async () => undefined,
+    sendInternalCreatedNotifications: async () => ({ ok: true, skipped: false, delivered: 0, errors: [] }),
     log: () => undefined,
   };
 
@@ -572,6 +578,82 @@ test("admin bookings API: persists structured pickup and dropoff location detail
       ({
         connect: async () => client,
       }) as ReturnType<AdminBookingsPostRouteDeps["getPool"]>,
+    loadBookingLocationConfigs: async () => [
+      {
+        id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        label: "Norman Manley Airport",
+        locationType: "AIRPORT",
+        locationTypeKey: "AIRPORT",
+        pickupLabel: "Norman Manley Airport",
+        dropoffLabel: "Norman Manley Airport",
+        allowPickup: true,
+        allowDropoff: true,
+        appliesToPickup: true,
+        appliesToDropoff: true,
+        fieldSchema: [
+          {
+            key: "flight_date",
+            label: "Flight date",
+            inputType: "date",
+            required: true,
+            appliesTo: "both",
+            defaultSource: "pickup_date",
+          },
+          {
+            key: "flight_time",
+            label: "Flight time",
+            inputType: "time",
+            required: true,
+            appliesTo: "both",
+            defaultSource: "pickup_time",
+          },
+          {
+            key: "flight_number",
+            label: "Flight number",
+            inputType: "text",
+            required: false,
+            appliesTo: "both",
+            defaultSource: null,
+          },
+          {
+            key: "airline",
+            label: "Airline",
+            inputType: "text",
+            required: false,
+            appliesTo: "both",
+            defaultSource: null,
+          },
+        ],
+        isActive: true,
+        sortOrder: 1,
+        dbBacked: true,
+      },
+      {
+        id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+        label: "Custom Address",
+        locationType: "CUSTOM_ADDRESS",
+        locationTypeKey: "CUSTOM_ADDRESS",
+        pickupLabel: "Custom Address",
+        dropoffLabel: "Custom Address",
+        allowPickup: true,
+        allowDropoff: true,
+        appliesToPickup: true,
+        appliesToDropoff: true,
+        fieldSchema: [
+          {
+            key: "address",
+            label: "Address",
+            inputType: "text",
+            required: true,
+            appliesTo: "both",
+            defaultSource: null,
+          },
+        ],
+        isActive: true,
+        sortOrder: 2,
+        dbBacked: true,
+      },
+    ],
     isVehicleUnavailable: async () => false,
     upsertCustomer: async () => ({
       customerId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
@@ -580,6 +662,7 @@ test("admin bookings API: persists structured pickup and dropoff location detail
     validatePromo: async () => ({ ok: true, discountAmountCents: 0, promoId: null }),
     writeAudit: async () => undefined,
     sendCreatedEmail: async () => undefined,
+    sendInternalCreatedNotifications: async () => ({ ok: true, skipped: false, delivered: 0, errors: [] }),
     log: () => undefined,
   };
 

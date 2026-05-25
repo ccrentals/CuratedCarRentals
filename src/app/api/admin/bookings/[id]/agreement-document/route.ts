@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { requireAdminAccess } from "@/lib/auth/adminGuards";
+import { requireOperationsAccess } from "@/lib/auth/adminGuards";
 import { loadBookingRentalAgreementPayload } from "@/lib/agreements/rentalAgreementPayload";
 import { logError, redactText } from "@/lib/log";
 import {
@@ -9,13 +9,13 @@ import {
 } from "@/lib/pdfmonkey";
 
 export type AdminAgreementDocumentRouteDeps = {
-  requireAdminAccess: typeof requireAdminAccess;
+  requireAdminAccess: typeof requireOperationsAccess;
   loadAgreementPayload: typeof loadBookingRentalAgreementPayload;
   generateAgreement: typeof generateRentalAgreementPdf;
 };
 
 const DEFAULT_DEPS: AdminAgreementDocumentRouteDeps = {
-  requireAdminAccess: requireAdminAccess,
+  requireAdminAccess: requireOperationsAccess,
   loadAgreementPayload: loadBookingRentalAgreementPayload,
   generateAgreement: generateRentalAgreementPdf,
 };

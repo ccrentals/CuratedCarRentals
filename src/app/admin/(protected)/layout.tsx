@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { clerkClient } from "@clerk/nextjs/server";
 
 import { resolveAdminActor } from "@/lib/auth/adminGuards";
+import { parseAppRole } from "@/lib/auth/roles";
 import { dbQuery } from "@/lib/db";
 import {
   getUnreadContactMessagesCount,
@@ -22,7 +23,7 @@ export default async function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const access = await resolveAdminActor({ requirement: "admin" });
+  const access = await resolveAdminActor({ requirement: "operations" });
 
   if (!access.ok) {
     if (access.reason === "forbidden") {
@@ -56,6 +57,15 @@ export default async function AdminLayout({
   })();
 
   const user = userResult.rows[0] ?? { email: "admin", role: session.role };
+  const normalizedRole = parseAppRole(user.role ?? session.role);
+  const roleLabel =
+    normalizedRole === "OPERATIONS"
+      ? "Operations"
+      : normalizedRole === "DEVELOPER"
+        ? "Developer"
+        : normalizedRole === "ADMIN"
+          ? "Admin"
+          : user.role ?? "Admin";
   const unreadMessagesCount = await (async () => {
     try {
       return await getUnreadContactMessagesCount();
@@ -92,7 +102,7 @@ export default async function AdminLayout({
 
   return (
     <AdminShell
-      user={{ email: user.email, role: user.role ?? "Admin" }}
+      user={{ email: user.email, role: roleLabel }}
       unreadMessagesCount={unreadMessagesCount}
     >
       <ForcePasswordChangeGate

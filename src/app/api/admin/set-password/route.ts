@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { requireAdminAccess } from "@/lib/auth/adminGuards";
+import { requireOperationsAccess } from "@/lib/auth/adminGuards";
 import { hashPassword } from "@/lib/auth/password";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery } from "@/lib/db";
@@ -30,7 +30,7 @@ type AdminSetPasswordUserRow = {
 };
 
 export type AdminSetPasswordDeps = {
-  requireAuth: typeof requireAdminAccess;
+  requireAuth: typeof requireOperationsAccess;
   requireCsrfCheck: typeof requireCsrf;
   isClerkEnabledFn: typeof isClerkEnabled;
   loadUserState: (userId: string) => Promise<AdminSetPasswordUserRow | null>;
@@ -96,7 +96,7 @@ async function loadUserState(userId: string): Promise<AdminSetPasswordUserRow | 
 
 const DEFAULT_DEPS: AdminSetPasswordDeps = {
   requireAuth: () =>
-    requireAdminAccess({
+    requireOperationsAccess({
       getSession: () =>
         getSessionFromRequest({
           allowClerkBridge: true,

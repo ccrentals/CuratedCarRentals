@@ -1,19 +1,19 @@
 import { NextResponse } from "next/server";
 
-import { requireAdminAccess } from "@/lib/auth/adminGuards";
+import { requireOperationsAccess } from "@/lib/auth/adminGuards";
 import { loadAdminBookingInvoicePayload } from "@/lib/invoices/adminInvoicePayload";
 import { hashInvoicePayload } from "@/lib/invoices/ledger";
 import { logError, redactText } from "@/lib/log";
 import { generateInvoicePdf, type InvoicePdfProvider } from "@/lib/pdfmonkey";
 
 export type AdminInvoiceDocumentRouteDeps = {
-  requireAdminAccess: typeof requireAdminAccess;
+  requireAdminAccess: typeof requireOperationsAccess;
   loadInvoicePayload: typeof loadAdminBookingInvoicePayload;
   generateInvoice: typeof generateInvoicePdf;
 };
 
 const DEFAULT_DEPS: AdminInvoiceDocumentRouteDeps = {
-  requireAdminAccess: requireAdminAccess,
+  requireAdminAccess: requireOperationsAccess,
   loadInvoicePayload: loadAdminBookingInvoicePayload,
   generateInvoice: generateInvoicePdf,
 };

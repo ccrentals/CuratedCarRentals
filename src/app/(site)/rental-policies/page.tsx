@@ -59,6 +59,39 @@ export default function RentalPoliciesPage() {
             </article>
 
             <article className="rounded-[1.9rem] border border-[var(--ccr-border)] bg-white p-8 shadow-[0_18px_56px_rgba(15,23,42,0.07)]">
+              <h2 className="font-display text-2xl font-bold text-[var(--ccr-light-surface-text)]">
+                Insurance Coverage Terms
+              </h2>
+              <p className="mt-5 text-base leading-7 text-[var(--ccr-light-surface-muted)]">
+                Customers must choose one of the following insurance options before taking possession of the
+                vehicle.
+              </p>
+
+              <div className="mt-8 grid gap-6 lg:grid-cols-2">
+                <article className="rounded-[1.5rem] border border-[var(--ccr-border)] border-l-4 border-l-[var(--ccr-status-warning-border)] bg-white p-6 shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
+                  <h3 className="text-xl font-semibold text-[var(--ccr-light-surface-text)]">
+                    Decline CDW (Collision Damage Waiver)
+                  </h3>
+                  <p className="mt-4 text-base leading-7 text-[var(--ccr-light-surface-muted)]">
+                    If you decline the CDW, you will be responsible for the full amount of any damage up to
+                    the total cost of the vehicle, along with any subsequent loss of use while the vehicle is
+                    out of service.
+                  </p>
+                </article>
+
+                <article className="rounded-[1.5rem] border border-[var(--ccr-border)] border-l-4 border-l-[var(--ccr-status-success-border)] bg-white p-6 shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
+                  <h3 className="text-xl font-semibold text-[var(--ccr-light-surface-text)]">
+                    Choose Insurance Coverage
+                  </h3>
+                  <p className="mt-4 text-base leading-7 text-[var(--ccr-light-surface-muted)]">
+                    If you choose the insurance coverage, you will only be responsible for the deductible of
+                    the first JMD 155,000.00 in the event of damage.
+                  </p>
+                </article>
+              </div>
+            </article>
+
+            <article className="rounded-[1.9rem] border border-[var(--ccr-border)] bg-white p-8 shadow-[0_18px_56px_rgba(15,23,42,0.07)]">
               <h2 className="font-display text-2xl font-bold text-[var(--ccr-accent-strong)]">
                 📢 Online Booking &amp; Reservation Notice
               </h2>

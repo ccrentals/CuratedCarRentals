@@ -4,7 +4,7 @@ import path from "node:path";
 import test from "node:test";
 
 const SHARED_ADMIN_GUARD_PATTERN =
-  /\b(requireAdminAccess|requireAdminRole|requireDeveloperRole|requireAdminApiSession)\b/;
+  /\b(requireAdminAccess|requireOperationsAccess|requireAdminRole|requireDeveloperRole|requireAdminApiSession)\b/;
 
 const ADMIN_API_ROUTE_EXEMPTIONS: Record<string, RegExp> = {
   "src/app/api/admin/login/route.ts": /\bcreateSessionToken\b|\bbreak-glass\b/i,

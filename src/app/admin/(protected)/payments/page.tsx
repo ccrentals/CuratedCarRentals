@@ -12,6 +12,7 @@ import {
   readSortFromSearchParams,
   type SortDir,
 } from "@/components/admin/tableSort";
+import { isAdminRole } from "@/lib/auth/roles";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery } from "@/lib/db";
 import { formatJmd } from "@/lib/money";
@@ -93,6 +94,16 @@ export default async function AdminPaymentsPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const session = await getSessionFromRequest();
+  if (!isAdminRole(session?.role)) {
+    return (
+      <div className="mx-auto w-full max-w-4xl px-6 py-10">
+        <h1 className="text-2xl font-bold text-[var(--ccr-text)]">Payments</h1>
+        <p className="mt-2 text-sm text-[var(--ccr-muted)]">
+          You do not have permission to view this page.
+        </p>
+      </div>
+    );
+  }
   const canViewPaymentErrors =
     String(session?.role ?? "")
       .trim()

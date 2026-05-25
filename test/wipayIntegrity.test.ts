@@ -230,12 +230,17 @@ test("reconcileWiPayPayment accepts localhost sandbox success callbacks when WiP
                   return { rows: [] };
                 }
 
-                if (text.startsWith("select b.id, b.start_date, b.end_date, b.status")) {
+                if (
+                  text.startsWith(
+                    "select b.id, b.public_id, b.start_date, b.end_date, b.status, b.pickup_location, b.pricing_json",
+                  )
+                ) {
                   return {
                     rowCount: 1,
                     rows: [
                       {
                         id: "booking-sandbox-compat",
+                        public_id: "BK4sandboxcompat",
                         start_date: "2026-04-15",
                         end_date: "2026-04-17",
                         status: "CONFIRMED",

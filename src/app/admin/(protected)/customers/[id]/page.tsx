@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { isAdminRole } from "@/lib/auth/roles";
+import { canAccessAdmin } from "@/lib/auth/roles";
 
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { CustomerSnapshotBookingsTable } from "@/components/admin/CustomerSnapshotBookingsTable";
@@ -72,8 +72,8 @@ export default async function AdminCustomerDetailPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const session = await getSessionFromRequest();
-  const isAdmin = isAdminRole(session?.role);
-  if (!isAdmin) {
+  const canView = canAccessAdmin(session?.role);
+  if (!canView) {
     return (
       <div className="mx-auto w-full max-w-4xl px-6 py-10">
         <h1 className="text-2xl font-bold text-[var(--ccr-text)]">Customer Profile</h1>

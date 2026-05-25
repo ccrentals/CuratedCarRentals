@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { requireAdminAccess } from "@/lib/auth/adminGuards";
+import { requireOperationsAccess } from "@/lib/auth/adminGuards";
 import { getDbPool } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
 import { requireCsrf } from "@/lib/security/csrf";
@@ -30,7 +30,7 @@ type AddPaymentRouteContext = {
 };
 
 export type AdminBookingAddPaymentRouteDeps = {
-  requireAdminAccess: typeof requireAdminAccess;
+  requireAdminAccess: typeof requireOperationsAccess;
   requireCsrfCheck: typeof requireCsrf;
   getPool: typeof getDbPool;
   maybeEntitle: typeof maybeEntitleBookingAfterPayment;
@@ -44,7 +44,7 @@ export type AdminBookingAddPaymentRouteDeps = {
 };
 
 const DEFAULT_ADD_PAYMENT_DEPS: AdminBookingAddPaymentRouteDeps = {
-  requireAdminAccess: requireAdminAccess,
+  requireAdminAccess: requireOperationsAccess,
   requireCsrfCheck: requireCsrf,
   getPool: getDbPool,
   maybeEntitle: maybeEntitleBookingAfterPayment,

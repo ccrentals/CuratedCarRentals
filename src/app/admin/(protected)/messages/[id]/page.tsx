@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { canAccessAdmin } from "@/lib/auth/roles";
+import { isAdminRole } from "@/lib/auth/roles";
 
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { MessageStatusActions } from "@/components/admin/MessageStatusActions";
@@ -39,7 +39,7 @@ export default async function AdminMessageDetailPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const session = await getSessionFromRequest();
-  const canView = canAccessAdmin(session?.role);
+  const canView = isAdminRole(session?.role);
   const canDeletePermanent = canView;
 
   if (!canView || !session) {
