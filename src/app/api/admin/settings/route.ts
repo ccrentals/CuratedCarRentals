@@ -19,8 +19,11 @@ import {
 import { dbQuery } from "@/lib/db";
 import { logError } from "@/lib/log";
 import { requireCsrf } from "@/lib/security/csrf";
+import { consumeRouteRateLimit, withRateLimitHeaders } from "@/lib/security/rate-limit";
 
 const SETTINGS_KEY = "settings";
+const ADMIN_SETTINGS_LIMIT = 10;
+const ADMIN_SETTINGS_WINDOW_SECONDS = 10 * 60;
 type AdminSettings = typeof DEFAULT_ADMIN_SETTINGS;
 type RequireAdminRoleResult = Awaited<ReturnType<typeof requireAdminRole>>;
 type NotificationOwnershipResult = Awaited<ReturnType<typeof loadNotificationOwnershipDirectory>>;
@@ -49,6 +52,7 @@ type SettingsRecordRow = {
 type AdminSettingsRouteDeps = {
   requireAdmin?: () => Promise<RequireAdminRoleResult>;
   requireCsrfCheck?: typeof requireCsrf;
+  consumeRateLimitCheck?: typeof consumeRouteRateLimit;
   query?: typeof dbQuery;
   log?: typeof logError;
   envOverrideValue?: string | undefined;
@@ -237,6 +241,7 @@ export async function handleAdminSettingsPatch(
 ) {
   const requireAdmin = deps.requireAdmin ?? requireAdminRole;
   const requireCsrfCheck = deps.requireCsrfCheck ?? requireCsrf;
+  const consumeRateLimitCheck = deps.consumeRateLimitCheck ?? consumeRouteRateLimit;
   const query = deps.query ?? dbQuery;
   const logger = deps.log ?? logError;
   const envOverrideValue = deps.envOverrideValue ?? process.env.AUTH_LOGIN_METHOD_OVERRIDE;
@@ -267,6 +272,21 @@ export async function handleAdminSettingsPatch(
   if (!(await requireCsrfCheck(request, body?.csrfToken ?? null))) {
     return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
   }
+
+  const rateLimit = await consumeRateLimitCheck({
+    scope: "ADMIN_SETTINGS_USER",
+    route: "/api/admin/settings:patch",
+    limit: ADMIN_SETTINGS_LIMIT,
+    windowSeconds: ADMIN_SETTINGS_WINDOW_SECONDS,
+    keyParts: [auth.actor.userId],
+  });
+  if (!rateLimit.allowed) {
+    return withRateLimitHeaders(
+      NextResponse.json({ error: "Too many settings updates. Please try again later." }, { status: 429 }),
+      rateLimit,
+    );
+  }
+
   if (!body || typeof body !== "object" || !("settings" in body)) {
     return NextResponse.json(
       {

@@ -5,6 +5,7 @@ import { requireAdminAccess } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery } from "@/lib/db";
 import { requireCsrf } from "@/lib/security/csrf";
+import { consumeRouteRateLimit, withRateLimitHeaders } from "@/lib/security/rate-limit";
 import {
   removeMaintenanceBlockoutByRecordId,
   syncMaintenanceBlockout,
@@ -27,6 +28,8 @@ const UUID_REGEX =
 
 const DEFAULT_LIMIT = 15;
 const MAX_LIMIT = 50;
+const ADMIN_MAINTENANCE_MUTATION_LIMIT = 20;
+const ADMIN_MAINTENANCE_MUTATION_WINDOW_SECONDS = 10 * 60;
 
 const DEFAULT_MAINTENANCE_CATEGORIES = [
   "SERVICE",
@@ -139,6 +142,7 @@ type MaintenanceSettingsMeta = {
 export type VehicleMaintenanceRouteDeps = {
   getSession: () => Promise<AdminSession | null>;
   requireCsrfCheck: (request: Request, bodyToken?: string | null) => Promise<boolean>;
+  consumeRateLimitCheck?: typeof consumeRouteRateLimit;
   resolveActorUserId?: (userId: string | null) => Promise<string | null>;
   getDueConfig?: () => Promise<{ dueSoonDays: number; dueSoonKm: number }>;
   getSettingsMeta?: () => Promise<MaintenanceSettingsMeta>;
@@ -538,6 +542,7 @@ const BASE_SELECT = `
 const DEFAULT_DEPS: VehicleMaintenanceRouteDeps = {
   getSession: () => getSessionFromRequest(),
   requireCsrfCheck: (request, bodyToken) => requireCsrf(request, bodyToken),
+  consumeRateLimitCheck: consumeRouteRateLimit,
   resolveActorUserId: async (userId) => {
     if (!userId || !UUID_REGEX.test(userId)) return null;
     const result = await dbQuery<{ id: string }>(
@@ -847,7 +852,6 @@ export async function handleVehicleMaintenanceGet(
   if (!UUID_REGEX.test(id)) {
     return NextResponse.json({ ok: false, error: "Invalid vehicle id." }, { status: 400 });
   }
-
   try {
     const dueConfig = deps.getDueConfig
       ? await deps.getDueConfig()
@@ -914,6 +918,19 @@ export async function handleVehicleMaintenancePost(
   const { id } = await context.params;
   if (!UUID_REGEX.test(id)) {
     return NextResponse.json({ ok: false, error: "Invalid vehicle id." }, { status: 400 });
+  }
+  const rateLimit = await (deps.consumeRateLimitCheck ?? consumeRouteRateLimit)({
+    scope: "ADMIN_MAINTENANCE_MUTATION_USER",
+    route: "/api/admin/vehicles/[id]/maintenance",
+    limit: ADMIN_MAINTENANCE_MUTATION_LIMIT,
+    windowSeconds: ADMIN_MAINTENANCE_MUTATION_WINDOW_SECONDS,
+    keyParts: [session.userId, id, "create"],
+  });
+  if (!rateLimit.allowed) {
+    return withRateLimitHeaders(
+      NextResponse.json({ ok: false, error: "Too many maintenance changes. Please try again later." }, { status: 429 }),
+      rateLimit,
+    );
   }
 
   const settingsMeta = await resolveSettingsMeta(deps);

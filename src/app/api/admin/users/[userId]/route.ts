@@ -9,6 +9,7 @@ import { requireCsrf } from "@/lib/security/csrf";
 import { writeAuditLog } from "@/lib/audit";
 import { hashPassword } from "@/lib/auth/password";
 import { logError } from "@/lib/log";
+import { sendAdminUserWelcomeEmail } from "@/lib/notifications/email";
 import { isEmail, isNonEmptyString } from "@/lib/validators";
 import {
   buildClerkUsernameCandidates,
@@ -265,6 +266,116 @@ function splitName(fullName: string | null, email: string) {
 
   const localPart = email.split("@")[0]?.trim() ?? "Admin";
   return { firstName: localPart.slice(0, 64), lastName: "Admin" };
+}
+
+type ResendSetupInviteResult =
+  | {
+      ok: true;
+      message: string;
+      setupPath: string;
+      setupUrl: string;
+      setupEmail: string;
+    }
+  | {
+      ok: false;
+      status: 400 | 409 | 502;
+      error: string;
+    };
+
+export async function resendSetupPendingInviteForUser(
+  input: {
+    userId: string;
+    userPublicId?: string | null;
+    email: string;
+    username?: string | null;
+    fullName?: string | null;
+    lifecycleState?: string | null;
+    actorUserId?: string | null;
+    siteUrl?: string | null;
+  },
+  deps: {
+    sendWelcomeEmail?: typeof sendAdminUserWelcomeEmail;
+    writeAudit?: typeof writeAuditLog;
+  } = {},
+): Promise<ResendSetupInviteResult> {
+  const lifecycleState = normalizeUserLifecycleState(input.lifecycleState);
+  if (lifecycleState !== "setup_pending") {
+    return {
+      ok: false,
+      status: 409,
+      error: "Only setup-pending accounts can receive a setup invite resend.",
+    };
+  }
+
+  const email = String(input.email ?? "").trim().toLowerCase();
+  if (!isEmail(email)) {
+    return {
+      ok: false,
+      status: 400,
+      error: "A valid email is required before the setup invite can be resent.",
+    };
+  }
+
+  const username = String(input.username ?? "").trim();
+  if (!username) {
+    return {
+      ok: false,
+      status: 409,
+      error: "This setup-pending account is missing a username. Repair the account record before resending the invite.",
+    };
+  }
+
+  const setupPath = "/sign-up?redirect=%2Fadmin";
+  const siteUrl = String(input.siteUrl ?? process.env.SITE_URL ?? "http://localhost:3000").trim();
+  const setupUrl = `${siteUrl.replace(/\/+$/, "")}${setupPath}`;
+
+  const sendWelcomeEmail = deps.sendWelcomeEmail ?? sendAdminUserWelcomeEmail;
+  const writeAudit = deps.writeAudit ?? writeAuditLog;
+  const result = await sendWelcomeEmail({
+    userId: input.userId,
+    userPublicId: input.userPublicId ?? null,
+    userEmail: email,
+    username,
+    fullName: String(input.fullName ?? "").trim() || email,
+    setupUrl,
+    actorUserId: input.actorUserId ?? null,
+  }).catch((error) => {
+    logError("admin.users.resendSetupInvite", error, {
+      actorUserId: input.actorUserId ?? null,
+      targetUserId: input.userId,
+      email,
+    });
+    return { ok: false, error: "Setup invite email could not be sent." } as const;
+  });
+
+  if (!result.ok) {
+    return {
+      ok: false,
+      status: 502,
+      error: result.error ?? "Setup invite email could not be sent.",
+    };
+  }
+
+  await writeAudit({
+    userId: input.actorUserId ?? null,
+    action: "USER_SETUP_INVITE_RESENT",
+    entityType: "user",
+    entityId: input.userId,
+    details: {
+      setupPath,
+      setupUrl,
+      email,
+      username,
+    },
+  });
+
+  return {
+    ok: true,
+    message: "Setup invite email resent.",
+    setupPath,
+    setupUrl,
+    setupEmail: email,
+  };
 }
 
 async function syncClerkPasswordReset({
@@ -636,6 +747,31 @@ export async function PATCH(
       });
 
       return NextResponse.json({ ok: true });
+    }
+
+    if (action === "resend_invite") {
+      await client.query("rollback");
+      const resend = await resendSetupPendingInviteForUser({
+        userId: existing.id,
+        userPublicId: null,
+        email: existing.email,
+        username: existing.username,
+        fullName: existing.full_name,
+        lifecycleState: existing.lifecycle_state ?? null,
+        actorUserId: session.userId,
+      });
+
+      if (!resend.ok) {
+        return NextResponse.json({ error: resend.error }, { status: resend.status });
+      }
+
+      return NextResponse.json({
+        ok: true,
+        message: resend.message,
+        setupPath: resend.setupPath,
+        setupUrl: resend.setupUrl,
+        setupEmail: resend.setupEmail,
+      });
     }
 
     if (action === "unlock") {

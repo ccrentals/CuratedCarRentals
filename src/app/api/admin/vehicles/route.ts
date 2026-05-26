@@ -5,10 +5,13 @@ import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery, getDbPool } from "@/lib/db";
 import { isNonEmptyString, parseIntSafe, parseMoneyToCents, parseImageUrls } from "@/lib/validators";
 import { requireCsrf } from "@/lib/security/csrf";
+import { consumeRouteRateLimit, withRateLimitHeaders } from "@/lib/security/rate-limit";
 import { buildVehicleGalleryEntries } from "@/lib/vehicles/gallery";
 
 const allowedStatuses = ["AVAILABLE", "UNAVAILABLE", "RESERVED", "RENTED", "MAINTENANCE", "INACTIVE"];
 const INVALID_SEAT_COUNT = Symbol("INVALID_SEAT_COUNT");
+const ADMIN_VEHICLE_MUTATION_LIMIT = 20;
+const ADMIN_VEHICLE_MUTATION_WINDOW_SECONDS = 10 * 60;
 
 function validateStatus(value: unknown) {
   return typeof value === "string" && allowedStatuses.includes(value);
@@ -100,6 +103,7 @@ type VehicleMutationClient = {
 type AdminVehiclePostDeps = {
   authorize: () => Promise<AdminAccessResult>;
   requireCsrfCheck: (request: Request, bodyToken?: string | null) => Promise<boolean>;
+  consumeRateLimitCheck?: typeof consumeRouteRateLimit;
   connect: () => Promise<VehicleMutationClient>;
 };
 
@@ -120,6 +124,7 @@ const DEFAULT_GET_DEPS: AdminVehiclesGetDeps = {
 const DEFAULT_POST_DEPS: AdminVehiclePostDeps = {
   authorize: () => requireAdminAccess(),
   requireCsrfCheck: (request, bodyToken) => requireCsrf(request, bodyToken),
+  consumeRateLimitCheck: consumeRouteRateLimit,
   connect: async () => getDbPool().connect(),
 };
 
@@ -160,6 +165,20 @@ export async function handleAdminVehiclePost(
 
   if (!(await deps.requireCsrfCheck(request, (body?.csrfToken as string) ?? null))) {
     return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
+  }
+
+  const rateLimit = await (deps.consumeRateLimitCheck ?? consumeRouteRateLimit)({
+    scope: "ADMIN_VEHICLE_MUTATION_USER",
+    route: "/api/admin/vehicles",
+    limit: ADMIN_VEHICLE_MUTATION_LIMIT,
+    windowSeconds: ADMIN_VEHICLE_MUTATION_WINDOW_SECONDS,
+    keyParts: [auth.actor.userId],
+  });
+  if (!rateLimit.allowed) {
+    return withRateLimitHeaders(
+      NextResponse.json({ error: "Too many vehicle changes. Please try again later." }, { status: 429 }),
+      rateLimit,
+    );
   }
 
   const make = body.make;

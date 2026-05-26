@@ -6,21 +6,64 @@ import { getDbPool } from "@/lib/db";
 import { logError } from "@/lib/log";
 import { syncPromoRedemptionStateForBooking } from "@/lib/promos";
 import { requireCsrf } from "@/lib/security/csrf";
+import { consumeRouteRateLimit, withRateLimitHeaders } from "@/lib/security/rate-limit";
 
-export async function POST(
+const ADMIN_BOOKING_CANCEL_LIMIT = 10;
+const ADMIN_BOOKING_CANCEL_WINDOW_SECONDS = 10 * 60;
+
+type AdminBookingCancelRouteContext = {
+  params: Promise<{ id: string }>;
+};
+
+export type AdminBookingCancelRouteDeps = {
+  requireAdminAccess: typeof requireOperationsAccess;
+  requireCsrfCheck: typeof requireCsrf;
+  consumeRateLimitCheck: typeof consumeRouteRateLimit;
+  getPool: typeof getDbPool;
+  syncPromoRedemption: typeof syncPromoRedemptionStateForBooking;
+  writeAudit: typeof writeAuditLog;
+  log: typeof logError;
+};
+
+const DEFAULT_DEPS: AdminBookingCancelRouteDeps = {
+  requireAdminAccess: requireOperationsAccess,
+  requireCsrfCheck: requireCsrf,
+  consumeRateLimitCheck: consumeRouteRateLimit,
+  getPool: getDbPool,
+  syncPromoRedemption: syncPromoRedemptionStateForBooking,
+  writeAudit: writeAuditLog,
+  log: logError,
+};
+
+export async function handleAdminBookingCancelPost(
   request: Request,
-  { params }: { params: Promise<{ id: string }> },
+  { params }: AdminBookingCancelRouteContext,
+  deps: AdminBookingCancelRouteDeps = DEFAULT_DEPS,
 ) {
-  const auth = await requireOperationsAccess();
+  const auth = await deps.requireAdminAccess();
   if (!auth.ok) return auth.response;
   const { actor } = auth;
 
-  if (!(await requireCsrf(request))) {
+  if (!(await deps.requireCsrfCheck(request))) {
     return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
   }
 
   const { id } = await params;
-  const pool = getDbPool();
+  const rateLimit = await deps.consumeRateLimitCheck({
+    scope: "ADMIN_BOOKING_MUTATION_USER",
+    route: "/api/admin/bookings/[id]/cancel",
+    limit: ADMIN_BOOKING_CANCEL_LIMIT,
+    windowSeconds: ADMIN_BOOKING_CANCEL_WINDOW_SECONDS,
+    keyParts: [actor.userId, id],
+  });
+  if (!rateLimit.allowed) {
+    return withRateLimitHeaders(
+      NextResponse.json({ error: "Too many booking cancellation attempts. Please try again later." }, { status: 429 }),
+      rateLimit,
+    );
+  }
+
+  const pool = deps.getPool();
   const client = await pool.connect();
 
   try {
@@ -57,14 +100,14 @@ export async function POST(
         cancelled_at: cancelledAt,
       },
     ]);
-    await syncPromoRedemptionStateForBooking(id, {
+    await deps.syncPromoRedemption(id, {
       client,
       source: "admin_booking_cancel",
     });
 
     await client.query("commit");
 
-    await writeAuditLog({
+    await deps.writeAudit({
       userId: actor.userId,
       action: "BOOKING_CANCELLED",
       entityType: "booking",
@@ -75,9 +118,13 @@ export async function POST(
     return NextResponse.json({ ok: true });
   } catch (error) {
     await client.query("rollback");
-    logError("api.admin.bookings.cancel.POST", error, { bookingId: id, userId: actor.userId });
+    deps.log("api.admin.bookings.cancel.POST", error, { bookingId: id, userId: actor.userId });
     return NextResponse.json({ error: "Failed to cancel booking" }, { status: 500 });
   } finally {
     client.release();
   }
+}
+
+export async function POST(request: Request, context: AdminBookingCancelRouteContext) {
+  return handleAdminBookingCancelPost(request, context, DEFAULT_DEPS);
 }

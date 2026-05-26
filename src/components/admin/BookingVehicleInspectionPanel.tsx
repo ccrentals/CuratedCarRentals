@@ -54,6 +54,14 @@ type ImageUploadState = {
   message: string | null;
 };
 
+type InspectionSaveResult = {
+  inspection: LoadedBookingVehicleInspections["pickup"];
+  inspections: Pick<
+    LoadedBookingVehicleInspections,
+    "vehicleOdometerValue" | "vehicleOdometerUnit" | "pickup" | "returnInspection"
+  >;
+};
+
 function getStatusBadgeClass(status: LoadedBookingVehicleInspections["pickup"]["displayStatus"]) {
   if (status === "COMPLETED") {
     return "border border-[var(--ccr-status-success-border)] bg-[var(--ccr-status-success-bg)] text-[var(--ccr-status-success-text)]";
@@ -150,7 +158,7 @@ function InspectionImagesSection({
 }) {
   const needsDraftBeforeUpload = editable && !summary.inspectionId;
   const emptyStateText = needsDraftBeforeUpload
-    ? "Save a draft first, then upload odometer, fuel, exterior, or damage photos for this inspection."
+    ? "Uploading the first image will save this inspection as a draft automatically. Then you can add odometer, fuel, exterior, or damage photos."
     : editable
       ? "No images uploaded yet. Add supporting inspection photos before you complete this step."
       : "No inspection photos were uploaded for this locked inspection.";
@@ -190,18 +198,22 @@ function InspectionImagesSection({
           </label>
             <button
               type="button"
-              disabled={!editable || needsDraftBeforeUpload || uploadState.loading}
+              disabled={!editable || uploadState.loading}
               onClick={onUpload}
               className={buttonStyles({ variant: "secondary", size: "sm" })}
             >
-              {uploadState.loading ? "Uploading..." : "Upload selected category"}
+              {uploadState.loading
+                ? "Uploading..."
+                : needsDraftBeforeUpload
+                  ? "Save draft & upload selected category"
+                  : "Upload selected category"}
             </button>
         </div>
       </div>
 
       {needsDraftBeforeUpload ? (
         <div className="mt-3 rounded-xl border border-dashed border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-sm text-[var(--ccr-muted)]">
-          Save a draft first to attach images to this inspection.
+          The first upload will save this inspection as a draft automatically.
         </div>
       ) : null}
 
@@ -587,7 +599,7 @@ export function BookingVehicleInspectionPanel({
   async function saveInspection(
     inspectionType: "PICKUP" | "RETURN",
     status: "DRAFT" | "COMPLETED",
-  ) {
+  ): Promise<InspectionSaveResult | null> {
     const isPickup = inspectionType === "PICKUP";
     const form = isPickup ? pickupForm : returnForm;
     const setMessage = isPickup ? setPickupMessage : setReturnMessage;
@@ -641,7 +653,7 @@ export function BookingVehicleInspectionPanel({
 
     if (!response.ok || !payload.ok || !payload.inspection) {
       setError(payload.error ?? `Unable to save ${inspectionType.toLowerCase()} inspection.`);
-      return;
+      return null;
     }
 
     const nextInspectionSet = {
@@ -666,6 +678,10 @@ export function BookingVehicleInspectionPanel({
         ? `${isPickup ? "Pickup" : "Return"} inspection completed.`
         : `${isPickup ? "Pickup" : "Return"} inspection draft saved.`,
     );
+    return {
+      inspection: payload.inspection,
+      inspections: nextInspectionSet,
+    };
   }
 
   async function correctInspectionOdometer(inspectionType: "PICKUP" | "RETURN") {
@@ -750,8 +766,17 @@ export function BookingVehicleInspectionPanel({
     }));
 
     try {
-      if (!summary.inspectionId) {
-        throw new Error("Save a draft first to attach images to this inspection.");
+      let inspectionId = summary.inspectionId;
+      if (!inspectionId) {
+        const draftSave = await saveInspection(inspectionType, "DRAFT");
+        if (!draftSave?.inspection.inspectionId) {
+          setUploadState((current) => ({
+            ...current,
+            loading: false,
+          }));
+          return;
+        }
+        inspectionId = draftSave.inspection.inspectionId;
       }
 
       const uploadedUrls = await openUploadcareImagesDialog({
@@ -777,7 +802,7 @@ export function BookingVehicleInspectionPanel({
           "x-csrf-token": csrfToken ?? "",
         },
         body: JSON.stringify({
-          inspectionId: summary.inspectionId,
+          inspectionId,
           inspectionType,
           category: uploadState.category,
           files: uploadedUrls.map((url) => ({

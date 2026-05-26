@@ -14,6 +14,17 @@ function adminSession() {
   };
 }
 
+function allowRateLimit() {
+  return {
+    count: 1,
+    limit: 20,
+    allowed: true,
+    remaining: 19,
+    resetAt: "2026-03-14T12:10:00.000Z",
+    retryAfterSeconds: 600,
+  };
+}
+
 test("restoring an archived vehicle clears deleted_at", async () => {
   let restoreCalled = false;
   const response = await handleAdminVehicleRestore(
@@ -29,6 +40,7 @@ test("restoring an archived vehicle clears deleted_at", async () => {
     {
       getSession: async () => adminSession(),
       requireCsrfCheck: async () => true,
+      consumeRateLimitCheck: async () => allowRateLimit(),
       findVehicleById: async () => ({ id: VEHICLE_ID, deleted_at: "2026-04-02T08:00:00.000Z" }),
       restoreVehicle: async () => {
         restoreCalled = true;
@@ -59,6 +71,7 @@ test("restoring an active vehicle is a no-op", async () => {
     {
       getSession: async () => adminSession(),
       requireCsrfCheck: async () => true,
+      consumeRateLimitCheck: async () => allowRateLimit(),
       findVehicleById: async () => ({ id: VEHICLE_ID, deleted_at: null }),
       restoreVehicle: async () => {
         restoreCalled = true;

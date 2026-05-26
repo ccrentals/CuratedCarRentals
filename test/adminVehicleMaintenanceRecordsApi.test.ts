@@ -26,6 +26,17 @@ function adminSession() {
   };
 }
 
+function allowRateLimit() {
+  return {
+    count: 1,
+    limit: 20,
+    allowed: true,
+    remaining: 19,
+    resetAt: "2026-03-14T12:10:00.000Z",
+    retryAfterSeconds: 600,
+  };
+}
+
 function maintenanceRow(overrides: Record<string, unknown> = {}) {
   return {
     id: RECORD_ID,
@@ -77,6 +88,7 @@ test("admin vehicle maintenance API: GET requires auth", async () => {
     {
       getSession: async () => null,
       requireCsrfCheck: async () => true,
+      consumeRateLimitCheck: async () => allowRateLimit(),
       listRecords: async () => [],
       createRecord: async () => null,
       summarize: async () => ({
@@ -103,6 +115,7 @@ test("admin vehicle maintenance API: GET applies pagination/search/sort paramete
     {
       getSession: async () => adminSession(),
       requireCsrfCheck: async () => true,
+      consumeRateLimitCheck: async () => allowRateLimit(),
       listRecords: async (_vehicleId, filters) => {
         capturedFilters = filters;
         return {
@@ -170,6 +183,7 @@ test("admin vehicle maintenance API: POST validates scheduled/service date", asy
     {
       getSession: async () => adminSession(),
       requireCsrfCheck: async () => true,
+      consumeRateLimitCheck: async () => allowRateLimit(),
       listRecords: async () => [],
       createRecord: async () => null,
       summarize: async () => ({
@@ -209,6 +223,7 @@ test("admin vehicle maintenance API: POST computes canonical total from parts", 
     {
       getSession: async () => adminSession(),
       requireCsrfCheck: async () => true,
+      consumeRateLimitCheck: async () => allowRateLimit(),
       listRecords: async () => [],
       createRecord: async (_vehicleId, input, userId) => {
         void userId;
@@ -253,6 +268,7 @@ test("admin vehicle maintenance API: POST persists linked expense/repair IDs", a
     {
       getSession: async () => adminSession(),
       requireCsrfCheck: async () => true,
+      consumeRateLimitCheck: async () => allowRateLimit(),
       listRecords: async () => [],
       createRecord: async (_vehicleId, input) => {
         capturedExpenseId = input.linkedExpenseId;
@@ -298,6 +314,7 @@ test("admin vehicle maintenance API: POST rejects invalid linked UUID values", a
     {
       getSession: async () => adminSession(),
       requireCsrfCheck: async () => true,
+      consumeRateLimitCheck: async () => allowRateLimit(),
       listRecords: async () => [],
       createRecord: async () => {
         throw new Error("should not create");
@@ -325,6 +342,7 @@ test("admin vehicle maintenance API: GET filters by dueState query", async () =>
     {
       getSession: async () => adminSession(),
       requireCsrfCheck: async () => true,
+      consumeRateLimitCheck: async () => allowRateLimit(),
       listRecords: async () => [maintenanceRow({ next_due_date: "2026-02-01" })],
       createRecord: async () => null,
       summarize: async () => ({
@@ -351,6 +369,7 @@ test("admin vehicle maintenance API: GET supports completed due-state filter", a
     {
       getSession: async () => adminSession(),
       requireCsrfCheck: async () => true,
+      consumeRateLimitCheck: async () => allowRateLimit(),
       listRecords: async () =>
         [
           maintenanceRow({ status: "COMPLETED", service_date: "2026-02-10" }),
@@ -385,6 +404,7 @@ test("admin vehicle maintenance API: GET returns settings-driven options metadat
     {
       getSession: async () => adminSession(),
       requireCsrfCheck: async () => true,
+      consumeRateLimitCheck: async () => allowRateLimit(),
       getSettingsMeta: async () => ({
         categories: ["SERVICE", "REPAIR", "INSPECTION"],
         priorities: ["LOW", "NORMAL", "HIGH"],
@@ -433,6 +453,7 @@ test("admin maintenance record API: PATCH updates a record", async () => {
     {
       getSession: async () => adminSession(),
       requireCsrfCheck: async () => true,
+      consumeRateLimitCheck: async () => allowRateLimit(),
       getRecord: async () => maintenanceRow(),
       updateRecord: async (_vehicleId, _recordId, patch) =>
         maintenanceRow({
@@ -470,6 +491,7 @@ test("admin maintenance record API: PATCH updates linked expense/repair IDs", as
     {
       getSession: async () => adminSession(),
       requireCsrfCheck: async () => true,
+      consumeRateLimitCheck: async () => allowRateLimit(),
       getRecord: async () => maintenanceRow(),
       updateRecord: async (_vehicleId, _recordId, patch) => {
         capturedExpenseId = patch.linkedExpenseId;
@@ -505,6 +527,7 @@ test("admin maintenance record API: PATCH rejects invalid linked UUID values", a
     {
       getSession: async () => adminSession(),
       requireCsrfCheck: async () => true,
+      consumeRateLimitCheck: async () => allowRateLimit(),
       getRecord: async () => maintenanceRow(),
       updateRecord: async () => maintenanceRow(),
       archiveRecord: async () => true,
@@ -537,6 +560,7 @@ test("admin maintenance record API: PATCH can create or update linked maintenanc
     {
       getSession: async () => adminSession(),
       requireCsrfCheck: async () => true,
+      consumeRateLimitCheck: async () => allowRateLimit(),
       getRecord: async () =>
         maintenanceRow({
           linked_blockout_id: "33333333-3333-4333-8333-333333333333",
@@ -575,6 +599,7 @@ test("admin maintenance record API: PATCH removes linked blockout when canceled"
     {
       getSession: async () => adminSession(),
       requireCsrfCheck: async () => true,
+      consumeRateLimitCheck: async () => allowRateLimit(),
       getRecord: async () => maintenanceRow(),
       updateRecord: async () => maintenanceRow({ status: "CANCELLED" }),
       archiveRecord: async () => true,
@@ -606,6 +631,7 @@ test("admin maintenance record API: PATCH completed records trigger blockout syn
     {
       getSession: async () => adminSession(),
       requireCsrfCheck: async () => true,
+      consumeRateLimitCheck: async () => allowRateLimit(),
       getRecord: async () =>
         maintenanceRow({
           linked_blockout_id: "33333333-3333-4333-8333-333333333333",
@@ -647,6 +673,7 @@ test("admin maintenance record API: PATCH reopen triggers blockout recreation se
     {
       getSession: async () => adminSession(),
       requireCsrfCheck: async () => true,
+      consumeRateLimitCheck: async () => allowRateLimit(),
       getRecord: async () =>
         maintenanceRow({
           status: "COMPLETED",
@@ -678,6 +705,7 @@ test("admin maintenance record API: GET includes sorted status history for selec
     {
       getSession: async () => adminSession(),
       requireCsrfCheck: async () => true,
+      consumeRateLimitCheck: async () => allowRateLimit(),
       getRecord: async () => maintenanceRow(),
       getStatusHistory: async () => [
         {
@@ -724,6 +752,7 @@ test("admin maintenance record API: DELETE archives record", async () => {
     {
       getSession: async () => adminSession(),
       requireCsrfCheck: async () => true,
+      consumeRateLimitCheck: async () => allowRateLimit(),
       getRecord: async () => maintenanceRow(),
       updateRecord: async () => maintenanceRow(),
       archiveRecord: async () => true,

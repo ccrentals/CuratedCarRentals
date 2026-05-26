@@ -4,6 +4,7 @@ import { requireOperationsAccess } from "@/lib/auth/adminGuards";
 import { getDbPool } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
 import { requireCsrf } from "@/lib/security/csrf";
+import { consumeRouteRateLimit, withRateLimitHeaders } from "@/lib/security/rate-limit";
 import {
   getInternalNotesRecipient,
   sendBookingOverriddenByPaidBookingEmail,
@@ -24,6 +25,8 @@ const METHOD_LABELS: Record<string, string> = {
   CHEQUE: "Cheque",
   OTHER: "Other",
 };
+const ADMIN_BOOKING_PAYMENT_LIMIT = 10;
+const ADMIN_BOOKING_PAYMENT_WINDOW_SECONDS = 10 * 60;
 
 type AddPaymentRouteContext = {
   params: Promise<{ id: string }>;
@@ -32,6 +35,7 @@ type AddPaymentRouteContext = {
 export type AdminBookingAddPaymentRouteDeps = {
   requireAdminAccess: typeof requireOperationsAccess;
   requireCsrfCheck: typeof requireCsrf;
+  consumeRateLimitCheck: typeof consumeRouteRateLimit;
   getPool: typeof getDbPool;
   maybeEntitle: typeof maybeEntitleBookingAfterPayment;
   recalculate: typeof recalculateBookingPayments;
@@ -46,6 +50,7 @@ export type AdminBookingAddPaymentRouteDeps = {
 const DEFAULT_ADD_PAYMENT_DEPS: AdminBookingAddPaymentRouteDeps = {
   requireAdminAccess: requireOperationsAccess,
   requireCsrfCheck: requireCsrf,
+  consumeRateLimitCheck: consumeRouteRateLimit,
   getPool: getDbPool,
   maybeEntitle: maybeEntitleBookingAfterPayment,
   recalculate: recalculateBookingPayments,
@@ -68,6 +73,20 @@ export async function handleAdminBookingAddPaymentPost(
 
   if (!(await deps.requireCsrfCheck(request))) {
     return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
+  }
+
+  const rateLimit = await deps.consumeRateLimitCheck({
+    scope: "ADMIN_BOOKING_PAYMENT_USER",
+    route: "/api/admin/bookings/[id]/add-payment",
+    limit: ADMIN_BOOKING_PAYMENT_LIMIT,
+    windowSeconds: ADMIN_BOOKING_PAYMENT_WINDOW_SECONDS,
+    keyParts: [actor.userId],
+  });
+  if (!rateLimit.allowed) {
+    return withRateLimitHeaders(
+      NextResponse.json({ error: "Too many payment actions. Please try again later." }, { status: 429 }),
+      rateLimit,
+    );
   }
 
   const { id } = await params;

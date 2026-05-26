@@ -1,0 +1,162 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { handleAdminBookingCancelPost } from "@/app/api/admin/bookings/[id]/cancel/route";
+import { handleAdminBookingMarkDepositPaidPost } from "@/app/api/admin/bookings/[id]/mark-deposit-paid/route";
+import { handleAdminBookingMarkFullyPaidPost } from "@/app/api/admin/bookings/[id]/mark-fully-paid/route";
+import { handleAdminBookingResendEmailPost } from "@/app/api/admin/bookings/[id]/resend-email/route";
+
+function operationsAuth() {
+  return {
+    ok: true as const,
+    actor: {
+      userId: "operations-user-id",
+      role: "OPERATIONS",
+      appRole: "OPERATIONS",
+    },
+  };
+}
+
+function deniedRateLimit(limit = 10) {
+  return {
+    count: limit + 1,
+    limit,
+    allowed: false,
+    remaining: 0,
+    resetAt: "2026-05-25T18:10:00.000Z",
+    retryAfterSeconds: 600,
+  };
+}
+
+test("admin booking cancel API: rate limits repeated cancellation attempts per user and booking", async () => {
+  const response = await handleAdminBookingCancelPost(
+    new Request("http://localhost/api/admin/bookings/booking-1/cancel", {
+      method: "POST",
+      headers: { "x-csrf-token": "token" },
+    }),
+    { params: Promise.resolve({ id: "booking-1" }) },
+    {
+      requireAdminAccess: async () => operationsAuth(),
+      requireCsrfCheck: async () => true,
+      consumeRateLimitCheck: async () => deniedRateLimit(),
+      getPool: () => {
+        throw new Error("should not reach database");
+      },
+      syncPromoRedemption: async () => undefined,
+      writeAudit: async () => undefined,
+      log: () => undefined,
+    },
+  );
+
+  assert.equal(response.status, 429);
+  assert.equal(response.headers.get("Retry-After"), "600");
+  const payload = (await response.json()) as { error?: string };
+  assert.match(String(payload.error), /too many booking cancellation attempts/i);
+});
+
+test("admin booking mark deposit paid API: rate limits repeated deposit actions per user and booking", async () => {
+  const response = await handleAdminBookingMarkDepositPaidPost(
+    new Request("http://localhost/api/admin/bookings/booking-1/mark-deposit-paid", {
+      method: "POST",
+      headers: { "x-csrf-token": "token" },
+    }),
+    { params: Promise.resolve({ id: "booking-1" }) },
+    {
+      requireAdminAccess: async () => operationsAuth(),
+      requireCsrfCheck: async () => true,
+      consumeRateLimitCheck: async () => deniedRateLimit(),
+      getPool: () => {
+        throw new Error("should not reach database");
+      },
+      maybeEntitle: async () => {
+        throw new Error("should not reach entitlement");
+      },
+      recalculate: async () => {
+        throw new Error("should not reach recalculation");
+      },
+      writeAudit: async () => undefined,
+      sendOverrideEmail: async () => ({ ok: true, skipped: false, delivered: 1, errors: [] }),
+      sendCompleteEmail: async () => ({ ok: true, skipped: false, delivered: 1, errors: [] }),
+      sendUpdateEmail: async () => ({ ok: true, skipped: false, delivered: 1, errors: [] }),
+      sendInternalComplete: async () => ({ ok: true, skipped: false, delivered: 1, errors: [] }),
+      sendInternalUpdate: async () => ({ ok: true, skipped: false, delivered: 1, errors: [] }),
+      getNotesRecipient: () => "ops@example.com",
+      log: () => undefined,
+    },
+  );
+
+  assert.equal(response.status, 429);
+  assert.equal(response.headers.get("Retry-After"), "600");
+  const payload = (await response.json()) as { error?: string };
+  assert.match(String(payload.error), /too many deposit payment actions/i);
+});
+
+test("admin booking mark fully paid API: rate limits repeated full payment actions per user and booking", async () => {
+  const response = await handleAdminBookingMarkFullyPaidPost(
+    new Request("http://localhost/api/admin/bookings/booking-1/mark-fully-paid", {
+      method: "POST",
+      headers: { "x-csrf-token": "token" },
+    }),
+    { params: Promise.resolve({ id: "booking-1" }) },
+    {
+      requireAdminAccess: async () => operationsAuth(),
+      requireCsrfCheck: async () => true,
+      consumeRateLimitCheck: async () => deniedRateLimit(),
+      getPool: () => {
+        throw new Error("should not reach database");
+      },
+      maybeEntitle: async () => {
+        throw new Error("should not reach entitlement");
+      },
+      recalculate: async () => {
+        throw new Error("should not reach recalculation");
+      },
+      writeAudit: async () => undefined,
+      sendOverrideEmail: async () => ({ ok: true, skipped: false, delivered: 1, errors: [] }),
+      sendCompleteEmail: async () => ({ ok: true, skipped: false, delivered: 1, errors: [] }),
+      sendUpdateEmail: async () => ({ ok: true, skipped: false, delivered: 1, errors: [] }),
+      sendInternalComplete: async () => ({ ok: true, skipped: false, delivered: 1, errors: [] }),
+      sendInternalUpdate: async () => ({ ok: true, skipped: false, delivered: 1, errors: [] }),
+      getNotesRecipient: () => "ops@example.com",
+      log: () => undefined,
+    },
+  );
+
+  assert.equal(response.status, 429);
+  assert.equal(response.headers.get("Retry-After"), "600");
+  const payload = (await response.json()) as { error?: string };
+  assert.match(String(payload.error), /too many full payment actions/i);
+});
+
+test("admin booking resend email API: rate limits repeated resend actions per user and booking", async () => {
+  const response = await handleAdminBookingResendEmailPost(
+    new Request("http://localhost/api/admin/bookings/booking-1/resend-email", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-csrf-token": "token",
+      },
+      body: JSON.stringify({ type: "booking_created" }),
+    }),
+    { params: Promise.resolve({ id: "booking-1" }) },
+    {
+      requireAdminAccess: async () => operationsAuth(),
+      requireCsrfCheck: async () => true,
+      consumeRateLimitCheck: async () => deniedRateLimit(),
+      query: async () => {
+        throw new Error("should not reach database");
+      },
+      sendBookingCreated: async () => ({ ok: true, skipped: false, delivered: 1, errors: [] }),
+      sendDepositReceipt: async () => ({ ok: true, skipped: false, delivered: 1, errors: [] }),
+      acquireDedupe: async () => undefined,
+      finalizeDedupe: async () => undefined,
+      makeDedupeKey: () => "dedupe-key",
+      randomId: () => "uuid",
+    },
+  );
+
+  assert.equal(response.status, 429);
+  assert.equal(response.headers.get("Retry-After"), "600");
+  const payload = (await response.json()) as { error?: string };
+  assert.match(String(payload.error), /too many resend email actions/i);
+});

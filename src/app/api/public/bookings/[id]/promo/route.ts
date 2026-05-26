@@ -9,6 +9,13 @@ import {
   fetchNetPaidToDate,
 } from "@/lib/payments/pricing";
 import { requireCsrf } from "@/lib/security/csrf";
+import { consumeRouteRateLimit, withRateLimitHeaders } from "@/lib/security/rate-limit";
+import { getClientIpFromRequest } from "@/lib/security/turnstile";
+
+const BOOKING_PROMO_IP_LIMIT = 20;
+const BOOKING_PROMO_IP_WINDOW_SECONDS = 10 * 60;
+const BOOKING_PROMO_BOOKING_LIMIT = 12;
+const BOOKING_PROMO_BOOKING_WINDOW_SECONDS = 10 * 60;
 
 type BookingRow = {
   id: string;
@@ -105,10 +112,39 @@ export async function POST(
   }
 
   const { id: bookingId } = await params;
+  const clientIp = getClientIpFromRequest(request) ?? "unknown";
   const body = await request.json().catch(() => null);
   const promoCode = normalizePromoInputCode(typeof body?.code === "string" ? body.code : "");
   if (!promoCode) {
     return NextResponse.json({ ok: false, error: "Enter a promo code." }, { status: 400 });
+  }
+
+  const perIp = await consumeRouteRateLimit({
+    scope: "PUBLIC_BOOKING_PROMO_IP",
+    route: "/api/public/bookings/[id]/promo:post",
+    limit: BOOKING_PROMO_IP_LIMIT,
+    windowSeconds: BOOKING_PROMO_IP_WINDOW_SECONDS,
+    keyParts: [clientIp],
+  });
+  if (!perIp.allowed) {
+    return withRateLimitHeaders(
+      NextResponse.json({ ok: false, error: "Too many promo attempts. Please try again later." }, { status: 429 }),
+      perIp,
+    );
+  }
+
+  const perBooking = await consumeRouteRateLimit({
+    scope: "PUBLIC_BOOKING_PROMO_BOOKING",
+    route: "/api/public/bookings/[id]/promo:post",
+    limit: BOOKING_PROMO_BOOKING_LIMIT,
+    windowSeconds: BOOKING_PROMO_BOOKING_WINDOW_SECONDS,
+    keyParts: [bookingId],
+  });
+  if (!perBooking.allowed) {
+    return withRateLimitHeaders(
+      NextResponse.json({ ok: false, error: "Too many promo attempts. Please try again later." }, { status: 429 }),
+      perBooking,
+    );
   }
 
   const pool = getDbPool();
@@ -202,6 +238,36 @@ export async function DELETE(
   }
 
   const { id: bookingId } = await params;
+  const clientIp = getClientIpFromRequest(request) ?? "unknown";
+
+  const perIp = await consumeRouteRateLimit({
+    scope: "PUBLIC_BOOKING_PROMO_IP",
+    route: "/api/public/bookings/[id]/promo:delete",
+    limit: BOOKING_PROMO_IP_LIMIT,
+    windowSeconds: BOOKING_PROMO_IP_WINDOW_SECONDS,
+    keyParts: [clientIp],
+  });
+  if (!perIp.allowed) {
+    return withRateLimitHeaders(
+      NextResponse.json({ ok: false, error: "Too many promo attempts. Please try again later." }, { status: 429 }),
+      perIp,
+    );
+  }
+
+  const perBooking = await consumeRouteRateLimit({
+    scope: "PUBLIC_BOOKING_PROMO_BOOKING",
+    route: "/api/public/bookings/[id]/promo:delete",
+    limit: BOOKING_PROMO_BOOKING_LIMIT,
+    windowSeconds: BOOKING_PROMO_BOOKING_WINDOW_SECONDS,
+    keyParts: [bookingId],
+  });
+  if (!perBooking.allowed) {
+    return withRateLimitHeaders(
+      NextResponse.json({ ok: false, error: "Too many promo attempts. Please try again later." }, { status: 429 }),
+      perBooking,
+    );
+  }
+
   const pool = getDbPool();
   const client = await pool.connect();
 

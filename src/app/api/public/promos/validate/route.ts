@@ -1,12 +1,19 @@
 import { NextResponse } from "next/server";
 
 import { buildQuotePricingSnapshot, QuotePricingError } from "@/lib/quotes/quotePricing";
+import { consumeRouteRateLimit, withRateLimitHeaders } from "@/lib/security/rate-limit";
+import { getClientIpFromRequest } from "@/lib/security/turnstile";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const PROMO_VALIDATE_IP_LIMIT = 20;
+const PROMO_VALIDATE_IP_WINDOW_SECONDS = 5 * 60;
+const PROMO_VALIDATE_EMAIL_LIMIT = 10;
+const PROMO_VALIDATE_EMAIL_WINDOW_SECONDS = 30 * 60;
 
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
+  const clientIp = getClientIpFromRequest(request) ?? "unknown";
 
   const codeRaw = typeof body?.code === "string" ? body.code.trim() : "";
   const vehicleId = typeof body?.vehicleId === "string" ? body.vehicleId : "";
@@ -41,6 +48,36 @@ export async function POST(request: Request) {
   }
   if (!codeRaw) {
     return NextResponse.json({ error: "Promo code is required" }, { status: 400 });
+  }
+
+  const perIp = await consumeRouteRateLimit({
+    scope: "PUBLIC_PROMO_VALIDATE_IP",
+    route: "/api/public/promos/validate",
+    limit: PROMO_VALIDATE_IP_LIMIT,
+    windowSeconds: PROMO_VALIDATE_IP_WINDOW_SECONDS,
+    keyParts: [clientIp],
+  });
+  if (!perIp.allowed) {
+    return withRateLimitHeaders(
+      NextResponse.json({ ok: false, error: "Too many requests. Please try again later." }, { status: 429 }),
+      perIp,
+    );
+  }
+
+  if (customerEmail) {
+    const perEmail = await consumeRouteRateLimit({
+      scope: "PUBLIC_PROMO_VALIDATE_EMAIL",
+      route: "/api/public/promos/validate",
+      limit: PROMO_VALIDATE_EMAIL_LIMIT,
+      windowSeconds: PROMO_VALIDATE_EMAIL_WINDOW_SECONDS,
+      keyParts: [customerEmail],
+    });
+    if (!perEmail.allowed) {
+      return withRateLimitHeaders(
+        NextResponse.json({ ok: false, error: "Too many requests. Please try again later." }, { status: 429 }),
+        perEmail,
+      );
+    }
   }
 
   try {

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { requireAdminRole } from "@/lib/auth/adminGuards";
 import { dbQuery } from "@/lib/db";
 import { requireCsrf } from "@/lib/security/csrf";
+import { consumeRouteRateLimit, withRateLimitHeaders } from "@/lib/security/rate-limit";
 import {
   computeRemainingRedemptions,
   derivePromoAdminState,
@@ -11,6 +12,9 @@ import {
 import { writeAuditLog } from "@/lib/audit";
 import { logError } from "@/lib/log";
 import { parsePositiveIntParam } from "@/lib/pagination/sharedPagination";
+
+const ADMIN_PROMO_MUTATION_LIMIT = 20;
+const ADMIN_PROMO_MUTATION_WINDOW_SECONDS = 10 * 60;
 
 type PromoRow = {
   id: string;
@@ -284,23 +288,56 @@ export async function GET(
   }
 }
 
-export async function PATCH(
+export type AdminPromoCodePatchDeps = {
+  requireAdmin: typeof requireAdminRole;
+  requireCsrfCheck: typeof requireCsrf;
+  consumeRateLimitCheck: typeof consumeRouteRateLimit;
+  query: typeof dbQuery;
+  writeAudit: typeof writeAuditLog;
+  log: typeof logError;
+};
+
+const DEFAULT_PATCH_DEPS: AdminPromoCodePatchDeps = {
+  requireAdmin: requireAdminRole,
+  requireCsrfCheck: requireCsrf,
+  consumeRateLimitCheck: consumeRouteRateLimit,
+  query: dbQuery,
+  writeAudit: writeAuditLog,
+  log: logError,
+};
+
+export async function handleAdminPromoCodePatch(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
+  deps: AdminPromoCodePatchDeps = DEFAULT_PATCH_DEPS,
 ) {
-  const auth = await requireAdminRole();
+  const auth = await deps.requireAdmin();
   if (!auth.ok) return auth.response;
   const { actor } = auth;
 
   const { id } = await params;
   const body = await request.json().catch(() => null);
-  if (!(await requireCsrf(request, body?.csrfToken ?? null))) {
+  if (!(await deps.requireCsrfCheck(request, body?.csrfToken ?? null))) {
     return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
+  }
+
+  const rateLimit = await deps.consumeRateLimitCheck({
+    scope: "ADMIN_PROMO_MUTATION_USER",
+    route: "/api/admin/promo-codes/[id]",
+    limit: ADMIN_PROMO_MUTATION_LIMIT,
+    windowSeconds: ADMIN_PROMO_MUTATION_WINDOW_SECONDS,
+    keyParts: [actor.userId, id, typeof body?.action === "string" ? body.action : "update"],
+  });
+  if (!rateLimit.allowed) {
+    return withRateLimitHeaders(
+      NextResponse.json({ error: "Too many promo code changes. Please try again later." }, { status: 429 }),
+      rateLimit,
+    );
   }
 
   if (body?.action === "set_active") {
     const isActive = body?.isActive !== false;
-    const updated = await dbQuery<{ id: string }>(
+    const updated = await deps.query<{ id: string }>(
       "update promo_codes set is_active = $2, updated_at = now() where id = $1 returning id",
       [id, isActive],
     );
@@ -308,7 +345,7 @@ export async function PATCH(
       return NextResponse.json({ error: "Promo code not found." }, { status: 404 });
     }
 
-    await writeAuditLog({
+    await deps.writeAudit({
       userId: actor.userId,
       action: isActive ? "PROMO_CODE_ACTIVATED" : "PROMO_CODE_DEACTIVATED",
       entityType: "promo_code",
@@ -352,7 +389,7 @@ export async function PATCH(
   }
 
   try {
-    const updated = await dbQuery<{ id: string }>(
+    const updated = await deps.query<{ id: string }>(
       "update promo_codes set code = $2, is_active = $3, discount_type = $4, apply_scope = $5, discount_value = $6, min_subtotal_cents = $7, max_redemptions = $8, max_redemptions_per_customer = $9, start_at = $10, end_at = $11, allowed_vehicle_ids_json = $12::jsonb, excluded_vehicle_ids_json = $13::jsonb, blackout_dates_json = $14::jsonb, updated_at = now() where id = $1 returning id",
       [
         id,
@@ -375,7 +412,7 @@ export async function PATCH(
       return NextResponse.json({ error: "Promo code not found." }, { status: 404 });
     }
 
-    await writeAuditLog({
+    await deps.writeAudit({
       userId: actor.userId,
       action: "PROMO_CODE_UPDATED",
       entityType: "promo_code",
@@ -389,7 +426,14 @@ export async function PATCH(
     if (codeError === "23505") {
       return NextResponse.json({ error: "Promo code already exists." }, { status: 409 });
     }
-    logError("api.admin.promo-codes.[id].PATCH", error, { userId: actor.userId, promoId: id });
+    deps.log("api.admin.promo-codes.[id].PATCH", error, { userId: actor.userId, promoId: id });
     return NextResponse.json({ error: "Failed to update promo code." }, { status: 500 });
   }
+}
+
+export async function PATCH(
+  request: Request,
+  context: { params: Promise<{ id: string }> },
+) {
+  return handleAdminPromoCodePatch(request, context, DEFAULT_PATCH_DEPS);
 }

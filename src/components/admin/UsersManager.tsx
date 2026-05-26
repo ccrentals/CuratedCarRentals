@@ -469,6 +469,11 @@ export function UserRowActions({
   const [editUsername, setEditUsername] = useState((username ?? "").trim());
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [copyToast, setCopyToast] = useState<null | "Copied" | "Copy failed">(null);
+  const [quickActionLoading, setQuickActionLoading] = useState<null | "resend_invite">(null);
+  const [quickActionNotice, setQuickActionNotice] = useState<null | {
+    tone: "success" | "error";
+    text: string;
+  }>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const modalPanelRef = useRef<HTMLDivElement | null>(null);
@@ -721,6 +726,45 @@ export function UserRowActions({
     router.refresh();
   }
 
+  async function resendInvite() {
+    if (quickActionLoading) return;
+    setQuickActionNotice(null);
+    setQuickActionLoading("resend_invite");
+
+    const response = await patch({ action: "resend_invite" });
+    const rawResponse = await response.text().catch(() => "");
+    let data = {} as {
+      error?: string;
+      message?: string;
+    };
+    if (rawResponse) {
+      try {
+        data = JSON.parse(rawResponse) as typeof data;
+      } catch {
+        data = { error: rawResponse.trim() || undefined };
+      }
+    }
+
+    setQuickActionLoading(null);
+    if (!response.ok) {
+      setQuickActionNotice({
+        tone: "error",
+        text: data.error ?? data.message ?? "Unable to resend setup invite.",
+      });
+      return;
+    }
+
+    const successText = data.message ?? "Setup invite email resent.";
+    setQuickActionNotice({
+      tone: "success",
+      text: successText,
+    });
+    window.setTimeout(() => {
+      setQuickActionNotice((current) => (current?.text === successText ? null : current));
+    }, 2500);
+    router.refresh();
+  }
+
   return (
     <div className="flex items-center justify-end gap-2">
       {canEditRole ? (
@@ -775,6 +819,35 @@ export function UserRowActions({
           >
             <path d="M12 3l7 4v5c0 5-3.5 7.7-7 9-3.5-1.3-7-4-7-9V7l7-4z" />
             <path d="M9.5 12.5l2 2 3-3" />
+          </svg>
+        </ActionIconButton>
+      ) : null}
+
+      {lifecycleState === "setup_pending" ? (
+        <ActionIconButton
+          label="Resend setup invite"
+          title="Resend setup invite"
+          onClick={() => {
+            setError(null);
+            setResetResult(null);
+            void resendInvite();
+          }}
+          disabled={quickActionLoading !== null}
+        >
+          <svg
+            viewBox="0 0 24 24"
+            className="h-4 w-4"
+            aria-hidden="true"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M22 12h-6" />
+            <path d="M19 9l3 3-3 3" />
+            <path d="M4 5h10a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z" />
+            <path d="m3 7 6 4 6-4" />
           </svg>
         </ActionIconButton>
       ) : null}
@@ -953,6 +1026,20 @@ export function UserRowActions({
           <path d="M14 11v6" />
         </svg>
       </ActionIconButton>
+
+      {quickActionNotice ? (
+        <span
+          role="status"
+          aria-live="polite"
+          className={`rounded-lg border px-2 py-1 text-[11px] font-semibold ${
+            quickActionNotice.tone === "success"
+              ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-200"
+              : "border-red-400/40 bg-red-500/10 text-red-200"
+          }`}
+        >
+          {quickActionNotice.text}
+        </span>
+      ) : null}
 
       {mode ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">

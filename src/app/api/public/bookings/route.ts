@@ -44,11 +44,18 @@ import {
   getClientIpFromRequest,
   verifyTurnstileToken,
 } from "@/lib/security/turnstile";
+import { consumeRouteRateLimit, withRateLimitHeaders } from "@/lib/security/rate-limit";
 import { extractUploadcareFileId } from "@/lib/uploads/uploadcare";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const TIME_ONLY_REGEX = /^([01]\d|2[0-3]):[0-5]\d$/;
+const PUBLIC_BOOKING_IP_LIMIT = 5;
+const PUBLIC_BOOKING_IP_WINDOW_SECONDS = 15 * 60;
+const PUBLIC_BOOKING_EMAIL_LIMIT = 3;
+const PUBLIC_BOOKING_EMAIL_WINDOW_SECONDS = 30 * 60;
+const PUBLIC_BOOKING_SUBMISSION_LIMIT = 6;
+const PUBLIC_BOOKING_SUBMISSION_WINDOW_SECONDS = 30 * 60;
 
 function normalizeText(value: unknown) {
   if (typeof value !== "string") return "";
@@ -261,6 +268,48 @@ export async function POST(request: Request) {
   const submissionKeyHash = hashBookingSubmissionKey(submissionKey);
   const bookingAccessToken = createBookingAccessToken(submissionKey);
   const bookingAccessTokenHash = hashBookingAccessToken(bookingAccessToken);
+
+  const perIp = await consumeRouteRateLimit({
+    scope: "PUBLIC_BOOKING_IP",
+    route: "/api/public/bookings",
+    limit: PUBLIC_BOOKING_IP_LIMIT,
+    windowSeconds: PUBLIC_BOOKING_IP_WINDOW_SECONDS,
+    keyParts: [clientIp],
+  });
+  if (!perIp.allowed) {
+    return withRateLimitHeaders(
+      NextResponse.json({ error: "Too many booking attempts. Please try again later." }, { status: 429 }),
+      perIp,
+    );
+  }
+
+  const perEmail = await consumeRouteRateLimit({
+    scope: "PUBLIC_BOOKING_EMAIL",
+    route: "/api/public/bookings",
+    limit: PUBLIC_BOOKING_EMAIL_LIMIT,
+    windowSeconds: PUBLIC_BOOKING_EMAIL_WINDOW_SECONDS,
+    keyParts: [normalizedEmail],
+  });
+  if (!perEmail.allowed) {
+    return withRateLimitHeaders(
+      NextResponse.json({ error: "Too many booking attempts. Please try again later." }, { status: 429 }),
+      perEmail,
+    );
+  }
+
+  const perSubmission = await consumeRouteRateLimit({
+    scope: "PUBLIC_BOOKING_SUBMISSION",
+    route: "/api/public/bookings",
+    limit: PUBLIC_BOOKING_SUBMISSION_LIMIT,
+    windowSeconds: PUBLIC_BOOKING_SUBMISSION_WINDOW_SECONDS,
+    keyParts: [submissionKeyHash],
+  });
+  if (!perSubmission.allowed) {
+    return withRateLimitHeaders(
+      NextResponse.json({ error: "Too many booking attempts. Please refresh and try again." }, { status: 429 }),
+      perSubmission,
+    );
+  }
 
   const pool = getDbPool();
   let bookingLocationConfigs;

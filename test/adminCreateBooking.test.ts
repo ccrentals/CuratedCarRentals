@@ -795,6 +795,14 @@ test("admin add payment API: payment succeeds even when post-commit audit and em
         },
       }) as Awaited<ReturnType<AdminBookingAddPaymentRouteDeps["requireAdminAccess"]>>,
     requireCsrfCheck: async () => true,
+    consumeRateLimitCheck: async () => ({
+      count: 1,
+      limit: 10,
+      allowed: true,
+      remaining: 9,
+      resetAt: "2099-04-10T12:10:00.000Z",
+      retryAfterSeconds: 600,
+    }),
     getPool: () =>
       ({
         connect: async () => client,
@@ -867,4 +875,76 @@ test("admin add payment API: payment succeeds even when post-commit audit and em
   assert.ok(queries.some((query) => query.includes("insert into payments")));
   assert.ok(queries.includes("commit"));
   assert.equal(maybeEntitleOptions?.auditUserId, undefined);
+});
+
+test("admin add payment API: rate limits repeated manual payment actions per operator", async () => {
+  const deps: AdminBookingAddPaymentRouteDeps = {
+    requireAdminAccess: async () =>
+      ({
+        ok: true,
+        actor: {
+          userId: "91c7c89a-9f07-4d59-b79b-f92d55f0cf8b",
+          role: "ADMIN",
+          appRole: "ADMIN",
+          authSource: "legacy",
+          clerkUserId: null,
+          issuedAt: 999999000,
+          expiresAt: 999999999,
+        },
+        session: {
+          userId: "91c7c89a-9f07-4d59-b79b-f92d55f0cf8b",
+          role: "ADMIN",
+          issuedAt: 999999000,
+          expiresAt: 999999999,
+        },
+      }) as Awaited<ReturnType<AdminBookingAddPaymentRouteDeps["requireAdminAccess"]>>,
+    requireCsrfCheck: async () => true,
+    consumeRateLimitCheck: async () => ({
+      count: 11,
+      limit: 10,
+      allowed: false,
+      remaining: 0,
+      resetAt: "2099-04-10T12:10:00.000Z",
+      retryAfterSeconds: 600,
+    }),
+    getPool: () =>
+      ({
+        connect: async () => {
+          throw new Error("getPool should not run when rate limited");
+        },
+      }) as ReturnType<AdminBookingAddPaymentRouteDeps["getPool"]>,
+    maybeEntitle: async () => {
+      throw new Error("maybeEntitle should not run when rate limited");
+    },
+    recalculate: async () => {
+      throw new Error("recalculate should not run when rate limited");
+    },
+    writeAudit: async () => undefined,
+    sendOverrideEmail: async () => ({ ok: true }),
+    sendCompleteEmail: async () => ({ ok: true }),
+    sendUpdateEmail: async () => ({ ok: true }),
+    getNotesRecipient: () => "ops@example.com",
+    log: () => undefined,
+  };
+
+  const response = await handleAdminBookingAddPaymentPost(
+    new Request("http://localhost/api/admin/bookings/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/add-payment", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-csrf-token": "token",
+      },
+      body: JSON.stringify({
+        amount: 25000,
+        method: "CASH",
+      }),
+    }),
+    { params: Promise.resolve({ id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" }) },
+    deps,
+  );
+
+  assert.equal(response.status, 429);
+  assert.equal(response.headers.get("Retry-After"), "600");
+  const payload = await response.json();
+  assert.match(String(payload.error ?? ""), /too many payment actions/i);
 });

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { requireAdminRole } from "@/lib/auth/adminGuards";
 import { dbQuery } from "@/lib/db";
 import { requireCsrf } from "@/lib/security/csrf";
+import { consumeRouteRateLimit, withRateLimitHeaders } from "@/lib/security/rate-limit";
 import {
   computeRemainingRedemptions,
   derivePromoAdminState,
@@ -11,6 +12,9 @@ import {
 import { writeAuditLog } from "@/lib/audit";
 import { logError } from "@/lib/log";
 import { normalizePageSize, parsePositiveIntParam } from "@/lib/pagination/sharedPagination";
+
+const ADMIN_PROMO_MUTATION_LIMIT = 20;
+const ADMIN_PROMO_MUTATION_WINDOW_SECONDS = 10 * 60;
 
 type PromoListRow = {
   id: string;
@@ -228,14 +232,49 @@ export async function GET(request: Request) {
   return NextResponse.json(promoPage);
 }
 
-export async function POST(request: Request) {
-  const auth = await requireAdminRole();
+export type AdminPromoCodesPostDeps = {
+  requireAdmin: typeof requireAdminRole;
+  requireCsrfCheck: typeof requireCsrf;
+  consumeRateLimitCheck: typeof consumeRouteRateLimit;
+  query: typeof dbQuery;
+  writeAudit: typeof writeAuditLog;
+  log: typeof logError;
+};
+
+const DEFAULT_POST_DEPS: AdminPromoCodesPostDeps = {
+  requireAdmin: requireAdminRole,
+  requireCsrfCheck: requireCsrf,
+  consumeRateLimitCheck: consumeRouteRateLimit,
+  query: dbQuery,
+  writeAudit: writeAuditLog,
+  log: logError,
+};
+
+export async function handleAdminPromoCodesPost(
+  request: Request,
+  deps: AdminPromoCodesPostDeps = DEFAULT_POST_DEPS,
+) {
+  const auth = await deps.requireAdmin();
   if (!auth.ok) return auth.response;
   const { actor } = auth;
 
   const body = await request.json().catch(() => null);
-  if (!(await requireCsrf(request, body?.csrfToken ?? null))) {
+  if (!(await deps.requireCsrfCheck(request, body?.csrfToken ?? null))) {
     return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
+  }
+
+  const rateLimit = await deps.consumeRateLimitCheck({
+    scope: "ADMIN_PROMO_MUTATION_USER",
+    route: "/api/admin/promo-codes",
+    limit: ADMIN_PROMO_MUTATION_LIMIT,
+    windowSeconds: ADMIN_PROMO_MUTATION_WINDOW_SECONDS,
+    keyParts: [actor.userId],
+  });
+  if (!rateLimit.allowed) {
+    return withRateLimitHeaders(
+      NextResponse.json({ error: "Too many promo code changes. Please try again later." }, { status: 429 }),
+      rateLimit,
+    );
   }
 
   const code = normalizePromoInputCode(typeof body?.code === "string" ? body.code : "");
@@ -271,7 +310,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const insert = await dbQuery<{ id: string; public_id: string }>(
+    const insert = await deps.query<{ id: string; public_id: string }>(
       "insert into promo_codes (code, is_active, discount_type, apply_scope, discount_value, min_subtotal_cents, max_redemptions, max_redemptions_per_customer, start_at, end_at, allowed_vehicle_ids_json, excluded_vehicle_ids_json, blackout_dates_json, created_by) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12::jsonb, $13::jsonb, $14) returning id, public_id",
       [
         code,
@@ -293,7 +332,7 @@ export async function POST(request: Request) {
 
     const promoId = insert.rows[0]?.id;
     const promoPublicId = insert.rows[0]?.public_id;
-    await writeAuditLog({
+    await deps.writeAudit({
       userId: actor.userId,
       action: "PROMO_CODE_CREATED",
       entityType: "promo_code",
@@ -307,7 +346,11 @@ export async function POST(request: Request) {
     if (codeError === "23505") {
       return NextResponse.json({ error: "Promo code already exists." }, { status: 409 });
     }
-    logError("api.admin.promo-codes.POST", error, { userId: actor.userId });
+    deps.log("api.admin.promo-codes.POST", error, { userId: actor.userId });
     return NextResponse.json({ error: "Failed to create promo code." }, { status: 500 });
   }
+}
+
+export async function POST(request: Request) {
+  return handleAdminPromoCodesPost(request, DEFAULT_POST_DEPS);
 }

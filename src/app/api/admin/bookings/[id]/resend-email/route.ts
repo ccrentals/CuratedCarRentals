@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { dbQuery } from "@/lib/db";
 import { requireOperationsAccess } from "@/lib/auth/adminGuards";
 import { requireCsrf } from "@/lib/security/csrf";
+import { consumeRouteRateLimit, withRateLimitHeaders } from "@/lib/security/rate-limit";
 import {
   sendBookingCreatedEmail,
   sendDepositReceiptEmail,
@@ -19,6 +20,39 @@ const ALLOWED_TYPES = ["booking_created", "deposit_receipt"] as const;
 
 type EmailType = (typeof ALLOWED_TYPES)[number];
 
+const ADMIN_BOOKING_RESEND_EMAIL_LIMIT = 10;
+const ADMIN_BOOKING_RESEND_EMAIL_WINDOW_SECONDS = 10 * 60;
+
+type AdminBookingResendEmailRouteContext = {
+  params: Promise<{ id: string }>;
+};
+
+export type AdminBookingResendEmailRouteDeps = {
+  requireAdminAccess: typeof requireOperationsAccess;
+  requireCsrfCheck: typeof requireCsrf;
+  consumeRateLimitCheck: typeof consumeRouteRateLimit;
+  query: typeof dbQuery;
+  sendBookingCreated: typeof sendBookingCreatedEmail;
+  sendDepositReceipt: typeof sendDepositReceiptEmail;
+  acquireDedupe: typeof tryAcquireDedupe;
+  finalizeDedupe: typeof markDedupeResult;
+  makeDedupeKey: typeof computeDedupeKey;
+  randomId: typeof randomUUID;
+};
+
+const DEFAULT_DEPS: AdminBookingResendEmailRouteDeps = {
+  requireAdminAccess: requireOperationsAccess,
+  requireCsrfCheck: requireCsrf,
+  consumeRateLimitCheck: consumeRouteRateLimit,
+  query: dbQuery,
+  sendBookingCreated: sendBookingCreatedEmail,
+  sendDepositReceipt: sendDepositReceiptEmail,
+  acquireDedupe: tryAcquireDedupe,
+  finalizeDedupe: markDedupeResult,
+  makeDedupeKey: computeDedupeKey,
+  randomId: randomUUID,
+};
+
 function wasEmailSkipped(result: unknown): boolean {
   return (
     !!result &&
@@ -28,19 +62,34 @@ function wasEmailSkipped(result: unknown): boolean {
   );
 }
 
-export async function POST(
+export async function handleAdminBookingResendEmailPost(
   request: Request,
-  { params }: { params: Promise<{ id: string }> },
+  { params }: AdminBookingResendEmailRouteContext,
+  deps: AdminBookingResendEmailRouteDeps = DEFAULT_DEPS,
 ) {
-  const auth = await requireOperationsAccess();
+  const auth = await deps.requireAdminAccess();
   if (!auth.ok) return auth.response;
   const { actor } = auth;
 
-  if (!(await requireCsrf(request))) {
+  if (!(await deps.requireCsrfCheck(request))) {
     return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
   }
 
   const { id } = await params;
+  const rateLimit = await deps.consumeRateLimitCheck({
+    scope: "ADMIN_BOOKING_EMAIL_USER",
+    route: "/api/admin/bookings/[id]/resend-email",
+    limit: ADMIN_BOOKING_RESEND_EMAIL_LIMIT,
+    windowSeconds: ADMIN_BOOKING_RESEND_EMAIL_WINDOW_SECONDS,
+    keyParts: [actor.userId, id],
+  });
+  if (!rateLimit.allowed) {
+    return withRateLimitHeaders(
+      NextResponse.json({ error: "Too many resend email actions. Please try again later." }, { status: 429 }),
+      rateLimit,
+    );
+  }
+
   const body = await request.json().catch(() => null);
   const type = body?.type as EmailType | undefined;
 
@@ -48,7 +97,7 @@ export async function POST(
     return NextResponse.json({ error: "Invalid email type" }, { status: 400 });
   }
 
-  const bookingResult = await dbQuery<{
+  const bookingResult = await deps.query<{
     id: string;
     start_date: string;
     end_date: string;
@@ -80,15 +129,15 @@ export async function POST(
     type === "booking_created"
       ? "RESEND_BOOKING_CREATED_EMAIL"
       : "RESEND_DEPOSIT_RECEIPT_EMAIL";
-  const dedupeKey = computeDedupeKey({
+  const dedupeKey = deps.makeDedupeKey({
     entityType: "booking",
     entityId: booking.id,
     eventType,
     // Manual resend should remain intentional and repeatable.
-    extra: randomUUID(),
+    extra: deps.randomId(),
   });
 
-  await tryAcquireDedupe(
+  await deps.acquireDedupe(
     {
       dedupeKey,
       entityType: "booking",
@@ -96,11 +145,11 @@ export async function POST(
       eventType,
       provider: "resend",
     },
-    dbQuery,
+    deps.query,
   );
 
   if (type === "booking_created") {
-    const result = await sendBookingCreatedEmail({
+    const result = await deps.sendBookingCreated({
       bookingId: booking.id,
       customerEmail: booking.customer_email,
       customerName: booking.customer_name,
@@ -123,14 +172,14 @@ export async function POST(
 
     if (!result.ok) {
       const skipped = wasEmailSkipped(result);
-      await markDedupeResult(
+      await deps.finalizeDedupe(
         {
           dedupeKey,
           status: skipped ? "SKIPPED" : "FAILED",
           provider: "resend",
           error: result.error ?? "Email failed",
         },
-        dbQuery,
+        deps.query,
       );
       return NextResponse.json(
         { error: result.error ?? "Email failed" },
@@ -138,26 +187,26 @@ export async function POST(
       );
     }
 
-    await markDedupeResult(
+    await deps.finalizeDedupe(
       {
         dedupeKey,
         status: "SENT",
         provider: "resend",
         providerMessageId: result.providerMessageId ?? null,
       },
-      dbQuery,
+      deps.query,
     );
     return NextResponse.json({ ok: true });
   }
 
-  const paymentResult = await dbQuery<{ amount: number }>(
+  const paymentResult = await deps.query<{ amount: number }>(
     "select coalesce(sum(deposit_amount_cents), 0) as amount from payments where booking_id = $1 and status = 'DEPOSIT_PAID'",
     [booking.id],
   );
 
   const paidToDate = Number(paymentResult.rows[0]?.amount ?? 0);
 
-  const receiptResult = await sendDepositReceiptEmail({
+  const receiptResult = await deps.sendDepositReceipt({
     bookingId: booking.id,
     customerEmail: booking.customer_email,
     customerName: booking.customer_name,
@@ -181,14 +230,14 @@ export async function POST(
 
   if (!receiptResult.ok) {
     const skipped = wasEmailSkipped(receiptResult);
-    await markDedupeResult(
+    await deps.finalizeDedupe(
       {
         dedupeKey,
         status: skipped ? "SKIPPED" : "FAILED",
         provider: "resend",
         error: receiptResult.error ?? "Email failed",
       },
-      dbQuery,
+      deps.query,
     );
     return NextResponse.json(
       { error: receiptResult.error ?? "Email failed" },
@@ -196,14 +245,18 @@ export async function POST(
     );
   }
 
-  await markDedupeResult(
+  await deps.finalizeDedupe(
     {
       dedupeKey,
       status: "SENT",
       provider: "resend",
       providerMessageId: receiptResult.providerMessageId ?? null,
     },
-    dbQuery,
+    deps.query,
   );
   return NextResponse.json({ ok: true });
+}
+
+export async function POST(request: Request, context: AdminBookingResendEmailRouteContext) {
+  return handleAdminBookingResendEmailPost(request, context, DEFAULT_DEPS);
 }

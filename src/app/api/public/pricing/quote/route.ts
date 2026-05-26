@@ -6,11 +6,34 @@ import {
   buildQuotePricingSnapshot,
   QuotePricingError,
 } from "@/lib/quotes/quotePricing";
+import { consumeRouteRateLimit, withRateLimitHeaders } from "@/lib/security/rate-limit";
+import { getClientIpFromRequest } from "@/lib/security/turnstile";
+import type { RouteRateLimitResult } from "@/lib/security/rate-limit";
 
 type QuotePreviewPaymentOption = "FULL" | "DEPOSIT" | "CUSTOM" | "NONE";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const QUOTE_RATE_LIMIT_PER_MINUTE = 60;
+const QUOTE_RATE_LIMIT_WINDOW_SECONDS = 60;
+
+type PricingQuoteRouteDeps = {
+  getClientIp: (request: Request) => string;
+  consumeRateLimitCheck: (input: {
+    scope: "PUBLIC_PRICING_QUOTE_IP";
+    route: string;
+    limit: number;
+    windowSeconds: number;
+    keyParts: Array<string | null | undefined>;
+  }) => Promise<RouteRateLimitResult>;
+  buildQuoteSnapshot: typeof buildQuotePricingSnapshot;
+};
+
+const DEFAULT_DEPS: PricingQuoteRouteDeps = {
+  getClientIp: (request) => getClientIpFromRequest(request) ?? "unknown",
+  consumeRateLimitCheck: consumeRouteRateLimit,
+  buildQuoteSnapshot: (input) => buildQuotePricingSnapshot(input),
+};
 
 function normalizeText(value: unknown) {
   if (typeof value !== "string") return "";
@@ -81,9 +104,13 @@ export function buildQuotePaymentPreview(input: {
   };
 }
 
-export async function POST(request: Request) {
+export async function handlePublicPricingQuotePost(
+  request: Request,
+  deps: PricingQuoteRouteDeps = DEFAULT_DEPS,
+) {
   try {
     const body = await request.json().catch(() => null);
+    const clientIp = deps.getClientIp(request);
 
     const vehicleId = normalizeText(body?.vehicleId);
     const startAt = toDate(body?.startAt);
@@ -113,7 +140,21 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: "Invalid payment option." }, { status: 400 });
     }
 
-    const snapshot = await buildQuotePricingSnapshot({
+    const rateLimit = await deps.consumeRateLimitCheck({
+      scope: "PUBLIC_PRICING_QUOTE_IP",
+      route: "/api/public/pricing/quote",
+      limit: QUOTE_RATE_LIMIT_PER_MINUTE,
+      windowSeconds: QUOTE_RATE_LIMIT_WINDOW_SECONDS,
+      keyParts: [clientIp],
+    });
+    if (!rateLimit.allowed) {
+      return withRateLimitHeaders(
+        NextResponse.json({ ok: false, error: "Too many requests. Please try again shortly." }, { status: 429 }),
+        rateLimit,
+      );
+    }
+
+    const snapshot = await deps.buildQuoteSnapshot({
       vehicleId,
       startAt,
       endAt,
@@ -175,4 +216,8 @@ export async function POST(request: Request) {
     logError("api.public.pricing.quote.POST", error);
     return NextResponse.json({ ok: false, error: "Unable to generate pricing quote." }, { status: 500 });
   }
+}
+
+export async function POST(request: Request) {
+  return handlePublicPricingQuotePost(request);
 }

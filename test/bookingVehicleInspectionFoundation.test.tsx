@@ -401,7 +401,7 @@ test("booking vehicle inspection image helper: stores upload metadata with booki
                 category: "ODOMETER",
                 label: null,
                 storage_provider: "UPLOADCARE_FILE_ID",
-                storage_key: "f5a4c5f0-1234-4d1d-9ef5-000000000111",
+                storage_key: "https://ucarecdn.com/f5a4c5f0-1234-4d1d-9ef5-000000000111/",
                 original_file_name: null,
                 generated_file_name: "BK000334-pickup-odometer-20260315T134512Z-02.png",
                 mime_type: "image/png",
@@ -423,10 +423,15 @@ test("booking vehicle inspection image helper: stores upload metadata with booki
   assert.equal(created.length, 1);
   assert.equal(created[0]?.category, "ODOMETER");
   assert.match(created[0]?.generatedFileName ?? "", /^BK000334-pickup-odometer-/);
+  assert.equal(created[0]?.previewUrl, "https://ucarecdn.com/f5a4c5f0-1234-4d1d-9ef5-000000000111/");
   const metadata = inserts[0]?.[12] as Record<string, unknown>;
   assert.equal(metadata.bookingPublicId, "BK000334");
   assert.equal(metadata.inspectionType, "PICKUP");
   assert.equal(metadata.category, "ODOMETER");
+  assert.equal(
+    inserts[0]?.[6],
+    "https://ucarecdn.com/f5a4c5f0-1234-4d1d-9ef5-000000000111/",
+  );
 });
 
 test("booking vehicle inspection image helper: rejects external URLs that only mimic Uploadcare refs", async () => {
@@ -2783,7 +2788,10 @@ test("booking vehicle inspection panel: renders pickup/return summary cards and 
   assert.match(html, /Return Inspection/);
   assert.match(html, /Not started/);
   assert.match(html, /0 photos/);
-  assert.match(html, /Save a draft first, then upload odometer, fuel, exterior, or damage photos/i);
+  assert.match(
+    html,
+    /Uploading the first image will save this inspection as a draft automatically\. Then you can add odometer, fuel, exterior, or damage photos\./i,
+  );
   assert.match(html, /Return inspection becomes available after pickup is confirmed\./);
   assert.doesNotMatch(html, /Complete return inspection/);
 });
@@ -2823,6 +2831,29 @@ test("booking vehicle inspection panel: pickup inspection prefills odometer from
   );
 
   assert.match(html, /value="45200"/);
+});
+
+test("booking vehicle inspection panel: new pickup inspection offers automatic draft creation before upload", () => {
+  const html = renderToStaticMarkup(
+    <BookingVehicleInspectionPanel
+      bookingId={BOOKING_ID}
+      bookingStatus="CONFIRMED"
+      bookingPublicId="BK000334"
+      inspections={createEmptyBookingVehicleInspectionSummaries({
+        bookingId: BOOKING_ID,
+        bookingPublicId: "BK000334",
+        vehicleId: VEHICLE_ID,
+        vehicleOdometerValue: 45200,
+        vehicleOdometerUnit: "KM",
+      })}
+    />,
+  );
+
+  assert.match(html, /Save draft &amp; upload selected category/);
+  assert.match(
+    html,
+    /The first upload will save this inspection as a draft automatically\./,
+  );
 });
 
 test("booking vehicle inspection panel: pickup form renders existing values while pre-pickup", () => {

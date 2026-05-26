@@ -126,6 +126,17 @@ function makeOwnershipDirectory(
   };
 }
 
+function allowRateLimit() {
+  return {
+    count: 1,
+    limit: 10,
+    allowed: true,
+    remaining: 9,
+    resetAt: "2026-03-14T12:10:00.000Z",
+    retryAfterSeconds: 600,
+  };
+}
+
 test("admin settings API: GET requires admin auth", async () => {
   const response = await handleAdminSettingsGet(
     new Request("http://localhost/api/admin/settings"),
@@ -155,12 +166,51 @@ test("admin settings API: PATCH enforces CSRF", async () => {
     {
       requireAdmin: async () => adminAuth(),
       requireCsrfCheck: async () => false,
+      consumeRateLimitCheck: async () => allowRateLimit(),
       query: async () => ({ rows: [] }),
       resolveNotificationOwnership: async () => makeOwnershipDirectory(),
     },
   );
 
   assert.equal(response.status, 403);
+});
+
+test("admin settings API: PATCH rate limits repeated updates per admin user", async () => {
+  const response = await handleAdminSettingsPatch(
+    new Request("http://localhost/api/admin/settings", {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "x-csrf-token": "token",
+      },
+      body: JSON.stringify({
+        settings: {
+          contactNotificationEmails: "ops@example.com",
+        },
+        baseUpdatedAt: "2026-03-14T12:00:00.000Z",
+        csrfToken: "token",
+      }),
+    }),
+    {
+      requireAdmin: async () => adminAuth(),
+      requireCsrfCheck: async () => true,
+      consumeRateLimitCheck: async () => ({
+        count: 11,
+        limit: 10,
+        allowed: false,
+        remaining: 0,
+        resetAt: "2026-03-14T12:10:00.000Z",
+        retryAfterSeconds: 600,
+      }),
+      query: async () => ({ rows: [] }),
+      resolveNotificationOwnership: async () => makeOwnershipDirectory(),
+    },
+  );
+
+  assert.equal(response.status, 429);
+  assert.equal(response.headers.get("Retry-After"), "600");
+  const payload = (await response.json()) as { error?: string };
+  assert.match(String(payload.error), /too many settings updates/i);
 });
 
 test("admin settings API: PATCH returns validation errors for malformed input", async () => {
@@ -206,6 +256,7 @@ test("admin settings API: PATCH returns validation errors for malformed input", 
     {
       requireAdmin: async () => adminAuth(),
       requireCsrfCheck: async () => true,
+      consumeRateLimitCheck: async () => allowRateLimit(),
       query: harness.query,
       resolveNotificationOwnership: async () => makeOwnershipDirectory(),
     },
@@ -286,6 +337,7 @@ test("admin settings API: PATCH returns normalized persisted settings and metada
     {
       requireAdmin: async () => adminAuth(),
       requireCsrfCheck: async () => true,
+      consumeRateLimitCheck: async () => allowRateLimit(),
       query: harness.query,
       resolveNotificationOwnership: async () =>
         makeOwnershipDirectory({
@@ -397,6 +449,7 @@ test("admin settings API: PATCH rejects stale baseUpdatedAt and returns latest s
     {
       requireAdmin: async () => adminAuth(),
       requireCsrfCheck: async () => true,
+      consumeRateLimitCheck: async () => allowRateLimit(),
       query: harness.query,
       resolveNotificationOwnership: async () => makeOwnershipDirectory(),
     },
@@ -445,6 +498,7 @@ test("admin settings API: PATCH rejects invalid ownership selections", async () 
     {
       requireAdmin: async () => adminAuth(),
       requireCsrfCheck: async () => true,
+      consumeRateLimitCheck: async () => allowRateLimit(),
       query: harness.query,
       resolveNotificationOwnership: async () =>
         makeOwnershipDirectory({
@@ -514,6 +568,7 @@ test("admin settings API: PATCH restricts primary developer changes to DEVELOPER
     {
       requireAdmin: async () => adminAuth(),
       requireCsrfCheck: async () => true,
+      consumeRateLimitCheck: async () => allowRateLimit(),
       query: harness.query,
       resolveNotificationOwnership: async () =>
         makeOwnershipDirectory({
@@ -567,6 +622,7 @@ test("admin settings API: PATCH allows DEVELOPER users to change primary develop
     {
       requireAdmin: async () => developerAuth(),
       requireCsrfCheck: async () => true,
+      consumeRateLimitCheck: async () => allowRateLimit(),
       query: harness.query,
       resolveNotificationOwnership: async () =>
         makeOwnershipDirectory({
@@ -622,6 +678,7 @@ test("admin settings API: PATCH blocks enabling warning emails when no recipient
     {
       requireAdmin: async () => adminAuth(),
       requireCsrfCheck: async () => true,
+      consumeRateLimitCheck: async () => allowRateLimit(),
       query: harness.query,
       resolveNotificationOwnership: async () => makeOwnershipDirectory(),
       resolveOperationalRouting: async () => ({

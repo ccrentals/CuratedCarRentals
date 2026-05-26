@@ -5,6 +5,7 @@ import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery, getDbPool } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
 import { requireCsrf } from "@/lib/security/csrf";
+import { consumeRouteRateLimit, withRateLimitHeaders } from "@/lib/security/rate-limit";
 import { parseMoneyToCents, parseImageUrls } from "@/lib/validators";
 import { buildVehicleGalleryEntries } from "@/lib/vehicles/gallery";
 
@@ -26,6 +27,8 @@ const ALLOWED_STATUSES = new Set([
 const INVALID_SEAT_COUNT = Symbol("INVALID_SEAT_COUNT");
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const ADMIN_VEHICLE_MUTATION_LIMIT = 20;
+const ADMIN_VEHICLE_MUTATION_WINDOW_SECONDS = 10 * 60;
 
 type VehicleRouteContext = { params: Promise<{ id: string }> };
 type AdminAccessResult = Awaited<ReturnType<typeof requireAdminAccess>>;
@@ -54,6 +57,7 @@ type VehicleProfilePatchInput = {
 type AdminVehicleDeleteDeps = {
   getSession: () => Promise<AdminSession | null>;
   requireCsrfCheck: (request: Request, bodyToken?: string | null) => Promise<boolean>;
+  consumeRateLimitCheck?: typeof consumeRouteRateLimit;
   findVehicleById: (vehicleId: string) => Promise<{ id: string; deleted_at: string | null } | null>;
   countBlockingBookings: (vehicleId: string) => Promise<number>;
   softDeleteVehicle: (vehicleId: string) => Promise<boolean>;
@@ -63,6 +67,7 @@ type AdminVehicleDeleteDeps = {
 type AdminVehicleRestoreDeps = {
   getSession: () => Promise<AdminSession | null>;
   requireCsrfCheck: (request: Request, bodyToken?: string | null) => Promise<boolean>;
+  consumeRateLimitCheck?: typeof consumeRouteRateLimit;
   findVehicleById: (vehicleId: string) => Promise<{ id: string; deleted_at: string | null } | null>;
   restoreVehicle: (vehicleId: string) => Promise<boolean>;
   writeRestoreAudit: (input: { userId: string; vehicleId: string }) => Promise<void>;
@@ -71,6 +76,7 @@ type AdminVehicleRestoreDeps = {
 type AdminVehiclePatchDeps = {
   authorize: () => Promise<AdminAccessResult>;
   requireCsrfCheck: (request: Request, bodyToken?: string | null) => Promise<boolean>;
+  consumeRateLimitCheck?: typeof consumeRouteRateLimit;
   connect: () => Promise<VehicleMutationClient>;
   writeAudit: typeof writeAuditLog;
 };
@@ -78,6 +84,7 @@ type AdminVehiclePatchDeps = {
 const DEFAULT_DELETE_DEPS: AdminVehicleDeleteDeps = {
   getSession: () => getSessionFromRequest(),
   requireCsrfCheck: (request, bodyToken) => requireCsrf(request, bodyToken),
+  consumeRateLimitCheck: consumeRouteRateLimit,
   findVehicleById: async (vehicleId) => {
     const result = await dbQuery<{ id: string; deleted_at: string | null }>(
       "select id, deleted_at from vehicles where id = $1::uuid limit 1",
@@ -118,6 +125,7 @@ const DEFAULT_DELETE_DEPS: AdminVehicleDeleteDeps = {
 const DEFAULT_RESTORE_DEPS: AdminVehicleRestoreDeps = {
   getSession: () => getSessionFromRequest(),
   requireCsrfCheck: (request, bodyToken) => requireCsrf(request, bodyToken),
+  consumeRateLimitCheck: consumeRouteRateLimit,
   findVehicleById: DEFAULT_DELETE_DEPS.findVehicleById,
   restoreVehicle: async (vehicleId) => {
     const result = await dbQuery(
@@ -140,6 +148,7 @@ const DEFAULT_RESTORE_DEPS: AdminVehicleRestoreDeps = {
 const DEFAULT_PATCH_DEPS: AdminVehiclePatchDeps = {
   authorize: () => requireAdminAccess(),
   requireCsrfCheck: (request, bodyToken) => requireCsrf(request, bodyToken),
+  consumeRateLimitCheck: consumeRouteRateLimit,
   connect: async () => getDbPool().connect(),
   writeAudit: writeAuditLog,
 };
@@ -267,6 +276,19 @@ export async function handleAdminVehiclePatch(
   const body = bodyOverride ?? (await readJsonBody(request));
   if (!(await deps.requireCsrfCheck(request, (body?.csrfToken as string | null | undefined) ?? null))) {
     return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
+  }
+  const rateLimit = await (deps.consumeRateLimitCheck ?? consumeRouteRateLimit)({
+    scope: "ADMIN_VEHICLE_MUTATION_USER",
+    route: "/api/admin/vehicles/[id]",
+    limit: ADMIN_VEHICLE_MUTATION_LIMIT,
+    windowSeconds: ADMIN_VEHICLE_MUTATION_WINDOW_SECONDS,
+    keyParts: [actor.userId, id, "patch"],
+  });
+  if (!rateLimit.allowed) {
+    return withRateLimitHeaders(
+      NextResponse.json({ error: "Too many vehicle changes. Please try again later." }, { status: 429 }),
+      rateLimit,
+    );
   }
   const profilePatch = parseProfilePatch(body);
   const dailyRateRaw =
@@ -575,6 +597,19 @@ export async function handleAdminVehicleRestore(
   if (!UUID_REGEX.test(id)) {
     return NextResponse.json({ ok: false, error: "Invalid vehicle id" }, { status: 400 });
   }
+  const rateLimit = await (deps.consumeRateLimitCheck ?? consumeRouteRateLimit)({
+    scope: "ADMIN_VEHICLE_MUTATION_USER",
+    route: "/api/admin/vehicles/[id]",
+    limit: ADMIN_VEHICLE_MUTATION_LIMIT,
+    windowSeconds: ADMIN_VEHICLE_MUTATION_WINDOW_SECONDS,
+    keyParts: [actor.userId, id, "restore"],
+  });
+  if (!rateLimit.allowed) {
+    return withRateLimitHeaders(
+      NextResponse.json({ ok: false, error: "Too many vehicle changes. Please try again later." }, { status: 429 }),
+      rateLimit,
+    );
+  }
 
   const vehicle = await deps.findVehicleById(id);
   if (!vehicle) {
@@ -610,6 +645,19 @@ export async function handleAdminVehicleDelete(
   const { id } = await context.params;
   if (!UUID_REGEX.test(id)) {
     return NextResponse.json({ ok: false, error: "Invalid vehicle id" }, { status: 400 });
+  }
+  const rateLimit = await (deps.consumeRateLimitCheck ?? consumeRouteRateLimit)({
+    scope: "ADMIN_VEHICLE_MUTATION_USER",
+    route: "/api/admin/vehicles/[id]",
+    limit: ADMIN_VEHICLE_MUTATION_LIMIT,
+    windowSeconds: ADMIN_VEHICLE_MUTATION_WINDOW_SECONDS,
+    keyParts: [actor.userId, id, "delete"],
+  });
+  if (!rateLimit.allowed) {
+    return withRateLimitHeaders(
+      NextResponse.json({ ok: false, error: "Too many vehicle changes. Please try again later." }, { status: 429 }),
+      rateLimit,
+    );
   }
 
   const vehicle = await deps.findVehicleById(id);

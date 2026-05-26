@@ -15,6 +15,17 @@ function adminSession() {
   };
 }
 
+function allowRateLimit() {
+  return {
+    count: 1,
+    limit: 20,
+    allowed: true,
+    remaining: 19,
+    resetAt: "2026-03-14T12:10:00.000Z",
+    retryAfterSeconds: 600,
+  };
+}
+
 test("deleting vehicle with active/upcoming bookings returns 409", async () => {
   let softDeleteCalled = false;
   const response = await handleAdminVehicleDelete(
@@ -30,6 +41,7 @@ test("deleting vehicle with active/upcoming bookings returns 409", async () => {
     {
       getSession: async () => adminSession(),
       requireCsrfCheck: async () => true,
+      consumeRateLimitCheck: async () => allowRateLimit(),
       findVehicleById: async () => ({ id: VEHICLE_ID, deleted_at: null }),
       countBlockingBookings: async () => 1,
       softDeleteVehicle: async () => {
@@ -86,6 +98,7 @@ test("soft-deleted vehicle is hidden from default list and visible in archived l
     {
       getSession: async () => adminSession(),
       requireCsrfCheck: async () => true,
+      consumeRateLimitCheck: async () => allowRateLimit(),
       findVehicleById: async (vehicleId) => rows.find((row) => row.id === vehicleId) ?? null,
       countBlockingBookings: async () => 0,
       softDeleteVehicle: async (vehicleId) => {

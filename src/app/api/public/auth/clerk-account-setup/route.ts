@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { canAccessAdmin } from "@/lib/auth/roles";
 import { dbQuery } from "@/lib/db";
 import { logWarn } from "@/lib/log";
+import { consumeRouteRateLimit, withRateLimitHeaders } from "@/lib/security/rate-limit";
 import { isClerkEnabled } from "@/lib/security/clerk";
 import {
   categorizeTurnstileFailure,
@@ -17,6 +18,11 @@ import {
 import { mapClerkAccountSetupError } from "@/lib/security/clerkPasswordFlow";
 import { normalizeUserLifecycleState } from "@/lib/security/userLifecycle";
 import { isEmail } from "@/lib/validators";
+
+const CLERK_SETUP_IP_LIMIT = 5;
+const CLERK_SETUP_IP_WINDOW_SECONDS = 15 * 60;
+const CLERK_SETUP_EMAIL_LIMIT = 5;
+const CLERK_SETUP_EMAIL_WINDOW_SECONDS = 30 * 60;
 
 type LocalUserRow = {
   id: string;
@@ -134,6 +140,34 @@ export async function POST(request: Request) {
   }
   if (password !== confirmPassword) {
     return NextResponse.json({ error: "Passwords do not match." }, { status: 400 });
+  }
+
+  const perIp = await consumeRouteRateLimit({
+    scope: "PUBLIC_CLERK_SETUP_IP",
+    route: "/api/public/auth/clerk-account-setup",
+    limit: CLERK_SETUP_IP_LIMIT,
+    windowSeconds: CLERK_SETUP_IP_WINDOW_SECONDS,
+    keyParts: [ip],
+  });
+  if (!perIp.allowed) {
+    return withRateLimitHeaders(
+      NextResponse.json({ error: "Too many attempts. Please try again later." }, { status: 429 }),
+      perIp,
+    );
+  }
+
+  const perEmail = await consumeRouteRateLimit({
+    scope: "PUBLIC_CLERK_SETUP_EMAIL",
+    route: "/api/public/auth/clerk-account-setup",
+    limit: CLERK_SETUP_EMAIL_LIMIT,
+    windowSeconds: CLERK_SETUP_EMAIL_WINDOW_SECONDS,
+    keyParts: [email],
+  });
+  if (!perEmail.allowed) {
+    return withRateLimitHeaders(
+      NextResponse.json({ error: "Too many attempts. Please try again later." }, { status: 429 }),
+      perEmail,
+    );
   }
 
   if (!isClerkEnabled()) {

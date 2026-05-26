@@ -4,6 +4,7 @@ import { requireOperationsAccess } from "@/lib/auth/adminGuards";
 import { getDbPool } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
 import { requireCsrf } from "@/lib/security/csrf";
+import { consumeRouteRateLimit, withRateLimitHeaders } from "@/lib/security/rate-limit";
 import { recalculateBookingPayments } from "@/lib/payments/recalculateBooking";
 import { logError } from "@/lib/log";
 import {
@@ -16,20 +17,76 @@ import {
 } from "@/lib/notifications/email";
 import { maybeEntitleBookingAfterPayment } from "@/lib/availability/entitlement";
 
-export async function POST(
+const ADMIN_BOOKING_FULLY_PAID_LIMIT = 10;
+const ADMIN_BOOKING_FULLY_PAID_WINDOW_SECONDS = 10 * 60;
+
+type AdminBookingMarkFullyPaidRouteContext = {
+  params: Promise<{ id: string }>;
+};
+
+export type AdminBookingMarkFullyPaidRouteDeps = {
+  requireAdminAccess: typeof requireOperationsAccess;
+  requireCsrfCheck: typeof requireCsrf;
+  consumeRateLimitCheck: typeof consumeRouteRateLimit;
+  getPool: typeof getDbPool;
+  maybeEntitle: typeof maybeEntitleBookingAfterPayment;
+  recalculate: typeof recalculateBookingPayments;
+  writeAudit: typeof writeAuditLog;
+  sendOverrideEmail: typeof sendBookingOverriddenByPaidBookingEmail;
+  sendCompleteEmail: typeof sendPaymentCompleteEmail;
+  sendUpdateEmail: typeof sendPaymentUpdateEmail;
+  sendInternalComplete: typeof sendInternalPaymentCompleteNotifications;
+  sendInternalUpdate: typeof sendInternalPaymentUpdateNotifications;
+  getNotesRecipient: typeof getInternalNotesRecipient;
+  log: typeof logError;
+};
+
+const DEFAULT_DEPS: AdminBookingMarkFullyPaidRouteDeps = {
+  requireAdminAccess: requireOperationsAccess,
+  requireCsrfCheck: requireCsrf,
+  consumeRateLimitCheck: consumeRouteRateLimit,
+  getPool: getDbPool,
+  maybeEntitle: maybeEntitleBookingAfterPayment,
+  recalculate: recalculateBookingPayments,
+  writeAudit: writeAuditLog,
+  sendOverrideEmail: sendBookingOverriddenByPaidBookingEmail,
+  sendCompleteEmail: sendPaymentCompleteEmail,
+  sendUpdateEmail: sendPaymentUpdateEmail,
+  sendInternalComplete: sendInternalPaymentCompleteNotifications,
+  sendInternalUpdate: sendInternalPaymentUpdateNotifications,
+  getNotesRecipient: getInternalNotesRecipient,
+  log: logError,
+};
+
+export async function handleAdminBookingMarkFullyPaidPost(
   request: Request,
-  { params }: { params: Promise<{ id: string }> },
+  { params }: AdminBookingMarkFullyPaidRouteContext,
+  deps: AdminBookingMarkFullyPaidRouteDeps = DEFAULT_DEPS,
 ) {
-  const auth = await requireOperationsAccess();
+  const auth = await deps.requireAdminAccess();
   if (!auth.ok) return auth.response;
   const { actor } = auth;
 
-  if (!(await requireCsrf(request))) {
+  if (!(await deps.requireCsrfCheck(request))) {
     return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
   }
 
   const { id } = await params;
-  const pool = getDbPool();
+  const rateLimit = await deps.consumeRateLimitCheck({
+    scope: "ADMIN_BOOKING_MUTATION_USER",
+    route: "/api/admin/bookings/[id]/mark-fully-paid",
+    limit: ADMIN_BOOKING_FULLY_PAID_LIMIT,
+    windowSeconds: ADMIN_BOOKING_FULLY_PAID_WINDOW_SECONDS,
+    keyParts: [actor.userId, id],
+  });
+  if (!rateLimit.allowed) {
+    return withRateLimitHeaders(
+      NextResponse.json({ error: "Too many full payment actions. Please try again later." }, { status: 429 }),
+      rateLimit,
+    );
+  }
+
+  const pool = deps.getPool();
   const client = await pool.connect();
 
   try {
@@ -51,7 +108,7 @@ export async function POST(
       return NextResponse.json({ error: "Cancelled booking cannot be paid" }, { status: 400 });
     }
 
-    const before = await recalculateBookingPayments(booking.id, { client });
+    const before = await deps.recalculate(booking.id, { client });
     const balanceDue = before.balanceDue;
 
     if (balanceDue <= 0) {
@@ -79,16 +136,16 @@ export async function POST(
       ],
     );
 
-    const entitlementResolution = await maybeEntitleBookingAfterPayment(booking.id, {
+    const entitlementResolution = await deps.maybeEntitle(booking.id, {
       client,
       auditUserId: actor.userId,
     });
-    const after = await recalculateBookingPayments(booking.id, { client });
+    const after = await deps.recalculate(booking.id, { client });
     const confirmed = entitlementResolution.state === "ENTITLED";
 
     await client.query("commit");
 
-    await writeAuditLog({
+    await deps.writeAudit({
       userId: actor.userId,
       action: "BOOKING_MARK_FULLY_PAID",
       entityType: "booking",
@@ -103,7 +160,7 @@ export async function POST(
     });
 
     for (const overriddenBooking of entitlementResolution.cancelledOverlaps) {
-      await writeAuditLog({
+      await deps.writeAudit({
         userId: actor.userId,
         action: "BOOKING_OVERRIDDEN_BY_PAID_BOOKING",
         entityType: "booking",
@@ -114,7 +171,7 @@ export async function POST(
         },
       });
 
-      await sendBookingOverriddenByPaidBookingEmail({
+      await deps.sendOverrideEmail({
         recipientType: "customer",
         recipientEmail: overriddenBooking.customerEmail,
         bookingId: overriddenBooking.id,
@@ -136,9 +193,9 @@ export async function POST(
         },
       });
 
-      await sendBookingOverriddenByPaidBookingEmail({
+      await deps.sendOverrideEmail({
         recipientType: "internal",
-        recipientEmail: getInternalNotesRecipient(),
+        recipientEmail: deps.getNotesRecipient(),
         bookingId: overriddenBooking.id,
         customerName: overriddenBooking.customerName,
         customerEmail: overriddenBooking.customerEmail,
@@ -172,7 +229,7 @@ export async function POST(
     const paymentDateTime = new Date().toISOString();
 
     if (after.balanceDue <= 0) {
-      await sendPaymentCompleteEmail({
+      await deps.sendCompleteEmail({
         bookingId: booking.id,
         customerEmail: booking.customer_email,
         customerName: booking.customer_name,
@@ -200,7 +257,7 @@ export async function POST(
           manualResendAllowed: true,
         },
       });
-      await sendInternalPaymentCompleteNotifications({
+      await deps.sendInternalComplete({
         bookingId: booking.id,
         customerEmail: booking.customer_email,
         customerName: booking.customer_name,
@@ -229,7 +286,7 @@ export async function POST(
         },
       });
     } else {
-      await sendPaymentUpdateEmail({
+      await deps.sendUpdateEmail({
         bookingId: booking.id,
         customerEmail: booking.customer_email,
         customerName: booking.customer_name,
@@ -257,7 +314,7 @@ export async function POST(
           manualResendAllowed: true,
         },
       });
-      await sendInternalPaymentUpdateNotifications({
+      await deps.sendInternalUpdate({
         bookingId: booking.id,
         customerEmail: booking.customer_email,
         customerName: booking.customer_name,
@@ -290,9 +347,13 @@ export async function POST(
     return NextResponse.json({ ok: true, message: "Balance payment recorded" });
   } catch (error) {
     await client.query("rollback");
-    logError("admin_mark_fully_paid_failed", error, { bookingId: id, userId: actor.userId });
+    deps.log("admin_mark_fully_paid_failed", error, { bookingId: id, userId: actor.userId });
     return NextResponse.json({ error: "Failed to mark fully paid" }, { status: 500 });
   } finally {
     client.release();
   }
+}
+
+export async function POST(request: Request, context: AdminBookingMarkFullyPaidRouteContext) {
+  return handleAdminBookingMarkFullyPaidPost(request, context, DEFAULT_DEPS);
 }
