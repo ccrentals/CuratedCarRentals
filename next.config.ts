@@ -10,6 +10,7 @@ const CLERK_DOMAINS = [
   "https://*.clerk.dev",
   "https://*.clerk.services",
   "https://*.clerk.accounts.dev",
+  "https://clerk.curatedcarrentals.com",
 ];
 
 const TURNSTILE_DOMAINS = [
