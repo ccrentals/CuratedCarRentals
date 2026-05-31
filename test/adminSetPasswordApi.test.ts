@@ -59,7 +59,7 @@ function makeDeps(overrides: Partial<AdminSetPasswordDeps> = {}): AdminSetPasswo
   };
 }
 
-test("legacy admin set-password uses Clerk first when Clerk is enabled", async () => {
+test("legacy admin set-password updates local password and syncs Clerk when enabled", async () => {
   let resolveInput:
     | {
         localUser: {
@@ -81,6 +81,7 @@ test("legacy admin set-password uses Clerk first when Clerk is enabled", async (
       }
     | null = null;
   let auditDetails: Record<string, unknown> | null = null;
+  let localUpdate: { userId: string; passwordHash: string } | null = null;
 
   const response = await handleAdminSetPasswordPost(
     new Request("http://localhost/api/admin/set-password", {
@@ -111,6 +112,9 @@ test("legacy admin set-password uses Clerk first when Clerk is enabled", async (
           clerkUserId: input.clerkUserId,
         } as const;
       },
+      updateLocalPasswordState: async (input) => {
+        localUpdate = input;
+      },
       writeAudit: async (input) => {
         auditDetails = input.details ?? null;
       },
@@ -131,6 +135,10 @@ test("legacy admin set-password uses Clerk first when Clerk is enabled", async (
     localUserId: "local-admin-1",
     clerkUserId: "user_clerk_123",
     password: "NewPass123!",
+  });
+  assert.deepEqual(localUpdate, {
+    userId: "local-admin-1",
+    passwordHash: "hashed-password",
   });
   assert.equal(auditDetails?.flow, "legacy_admin_set_password");
   assert.equal(auditDetails?.clerkUserId, "user_clerk_123");
@@ -180,8 +188,9 @@ test("legacy admin set-password preserves local-only behavior when Clerk is disa
   });
 });
 
-test("legacy admin set-password fails safely when Clerk identity resolution is ambiguous", async () => {
+test("legacy admin set-password allows local password update when Clerk identity resolution is ambiguous", async () => {
   let syncCalled = false;
+  let localUpdate: { userId: string; passwordHash: string } | null = null;
 
   const response = await handleAdminSetPasswordPost(
     new Request("http://localhost/api/admin/set-password", {
@@ -211,15 +220,23 @@ test("legacy admin set-password fails safely when Clerk identity resolution is a
           clerkUserId: "user_clerk_123",
         } as const;
       },
+      updateLocalPasswordState: async (input) => {
+        localUpdate = input;
+      },
     }),
   );
 
-  assert.equal(response.status, 409);
+  assert.equal(response.status, 200);
   assert.equal(syncCalled, false);
+  assert.deepEqual(localUpdate, {
+    userId: "local-admin-1",
+    passwordHash: "hashed-password",
+  });
 
-  const body = (await response.json()) as { error?: string };
-  assert.equal(
-    body.error,
-    "Multiple Clerk users were found for this email. Resolve the Clerk mapping manually first.",
+  const body = (await response.json()) as { ok?: boolean; warning?: string };
+  assert.equal(body.ok, true);
+  assert.match(
+    body.warning ?? "",
+    /Password updated locally, but Clerk account setup needs attention/,
   );
 });

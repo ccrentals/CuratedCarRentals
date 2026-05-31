@@ -48,6 +48,8 @@ export type AdminSetPasswordDeps = {
   writeAudit: typeof writeAuditLog;
 };
 
+const CLERK_PASSWORD_SYNC_TIMEOUT_MS = 8000;
+
 function isUndefinedColumn(error: unknown, column: string) {
   const code = (error as { code?: string } | null)?.code;
   const message = String((error as { message?: unknown } | null)?.message ?? "");
@@ -130,6 +132,20 @@ function readPasswordPayload(body: unknown) {
   };
 }
 
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string) {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out`)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export async function handleAdminSetPasswordPost(
   request: Request,
   deps: AdminSetPasswordDeps = DEFAULT_DEPS,
@@ -174,99 +190,97 @@ export async function handleAdminSetPasswordPost(
 
   const flow = "legacy_admin_set_password";
 
+  let passwordHash: string;
+  try {
+    passwordHash = await deps.hashPasswordFn(payload.password);
+    await deps.updateLocalPasswordState({
+      userId: session.userId,
+      passwordHash,
+    });
+  } catch (error) {
+    logError("api.admin.set-password.POST.updateLocalPasswordState", error, {
+      userId: session.userId,
+    });
+    return NextResponse.json({ error: "Failed to update password." }, { status: 500 });
+  }
+
+  let clerkWarning: string | null = null;
+  let clerkAuditDetails: Record<string, unknown> = { flow };
+
   if (deps.isClerkEnabledFn()) {
-    let resolution: ClerkIdentityResolutionResult;
+    let resolution: ClerkIdentityResolutionResult | null = null;
     try {
-      resolution = await deps.resolveClerkIdentity({
-        localUser: {
-          id: user.id,
-          email: user.email,
-          role: user.role,
-          fullName: user.full_name,
-          username: user.username,
-          clerkUserId: user.clerk_user_id,
-        },
-        flow,
-      });
+      resolution = await withTimeout(
+        deps.resolveClerkIdentity({
+          localUser: {
+            id: user.id,
+            email: user.email,
+            role: user.role,
+            fullName: user.full_name,
+            username: user.username,
+            clerkUserId: user.clerk_user_id,
+          },
+          flow,
+        }),
+        CLERK_PASSWORD_SYNC_TIMEOUT_MS,
+        "Clerk identity resolution",
+      );
     } catch (error) {
       logError("api.admin.set-password.POST.resolveClerkIdentity", error, {
         userId: session.userId,
       });
-      return NextResponse.json(
-        { error: "Failed to resolve the Clerk account for this user." },
-        { status: 502 },
-      );
+      clerkWarning =
+        "Password updated locally, but Clerk account setup did not finish. Use the legacy admin login for now.";
     }
 
-    if (!resolution.ok) {
+    if (resolution && !resolution.ok) {
       logError("api.admin.set-password.POST.resolveClerkIdentity", new Error(resolution.message), {
         userId: session.userId,
       });
-      return NextResponse.json({ error: resolution.message }, { status: resolution.status });
+      clerkWarning = `Password updated locally, but Clerk account setup needs attention: ${resolution.message}`;
     }
 
-    let syncResult: ClerkPasswordSyncResult;
-    try {
-      syncResult = await deps.syncPassword({
-        localUserId: session.userId,
-        clerkUserId: resolution.clerkUserId,
-        password: payload.password,
-      });
-    } catch (error) {
-      logError("api.admin.set-password.POST.syncPassword", error, {
-        userId: session.userId,
-        clerkUserId: resolution.clerkUserId,
-        stage: "unexpected",
-      });
-      return NextResponse.json({ error: "Failed to update password." }, { status: 500 });
-    }
+    if (resolution && resolution.ok) {
+      let syncResult: ClerkPasswordSyncResult | null = null;
+      try {
+        syncResult = await withTimeout(
+          deps.syncPassword({
+            localUserId: session.userId,
+            clerkUserId: resolution.clerkUserId,
+            password: payload.password,
+          }),
+          CLERK_PASSWORD_SYNC_TIMEOUT_MS,
+          "Clerk password sync",
+        );
+      } catch (error) {
+        logError("api.admin.set-password.POST.syncPassword", error, {
+          userId: session.userId,
+          clerkUserId: resolution.clerkUserId,
+          stage: "unexpected",
+        });
+        clerkWarning =
+          "Password updated locally, but Clerk password sync did not finish. Use the legacy admin login for now.";
+      }
 
-    if (!syncResult.ok) {
-      logError("api.admin.set-password.POST.syncPassword", new Error(syncResult.message), {
-        userId: session.userId,
-        clerkUserId: resolution.clerkUserId,
-        stage: syncResult.stage,
-      });
-      return NextResponse.json({ error: syncResult.message, stage: syncResult.stage }, { status: syncResult.status });
-    }
+      if (syncResult && !syncResult.ok) {
+        logError("api.admin.set-password.POST.syncPassword", new Error(syncResult.message), {
+          userId: session.userId,
+          clerkUserId: resolution.clerkUserId,
+          stage: syncResult.stage,
+        });
+        clerkWarning = `Password updated locally, but Clerk password sync needs attention: ${syncResult.message}`;
+      }
 
-    try {
-      await deps.writeAudit({
-        userId: session.userId,
-        action: "USER_PASSWORD_SET",
-        entityType: "user",
-        entityId: session.userId,
-        details: {
+      if (syncResult && syncResult.ok) {
+        clerkAuditDetails = {
           flow,
           clerkUserId: resolution.clerkUserId,
           clerkResolution: resolution.resolution,
           ...(resolution.localLinkWarning ? { localLinkWarning: resolution.localLinkWarning } : {}),
-        },
-      });
-    } catch (error) {
-      logError("api.admin.set-password.POST.writeAudit", error, {
-        userId: session.userId,
-        clerkUserId: resolution.clerkUserId,
-      });
-      return NextResponse.json({
-        ok: true,
-        warning:
-          "Password updated, but the audit log could not be written.",
-        ...(resolution.localLinkWarning ? { localLinkWarning: resolution.localLinkWarning } : {}),
-      });
+        };
+      }
     }
-
-    return NextResponse.json({
-      ok: true,
-      ...(resolution.localLinkWarning ? { warning: resolution.localLinkWarning } : {}),
-    });
   }
-
-  const passwordHash = await deps.hashPasswordFn(payload.password);
-  await deps.updateLocalPasswordState({
-    userId: session.userId,
-    passwordHash,
-  });
 
   try {
     await deps.writeAudit({
@@ -274,7 +288,10 @@ export async function handleAdminSetPasswordPost(
       action: "USER_PASSWORD_SET",
       entityType: "user",
       entityId: session.userId,
-      details: { flow },
+      details: {
+        ...clerkAuditDetails,
+        ...(clerkWarning ? { clerkWarning } : {}),
+      },
     });
   } catch (error) {
     logError("api.admin.set-password.POST.writeAudit", error, {
@@ -282,11 +299,14 @@ export async function handleAdminSetPasswordPost(
     });
     return NextResponse.json({
       ok: true,
-      warning: "Password updated, but the audit log could not be written.",
+      warning: clerkWarning ?? "Password updated, but the audit log could not be written.",
     });
   }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({
+    ok: true,
+    ...(clerkWarning ? { warning: clerkWarning } : {}),
+  });
 }
 
 export async function POST(request: Request) {
