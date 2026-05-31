@@ -17,6 +17,8 @@ import { logWarn } from "@/lib/log";
 import { isClerkEnabled } from "@/lib/security/clerk";
 import { isAppTheme, type AppTheme, THEME_COOKIE_NAME } from "@/lib/theme";
 
+const CLERK_LOGIN_BRIDGE_TIMEOUT_MS = 5000;
+
 function getClientIp(request: Request) {
   const forwarded = request.headers.get("x-forwarded-for");
   if (forwarded) {
@@ -193,6 +195,20 @@ async function ensureClerkBridgeForLegacyLogin(context: LegacyLoginClerkLinkCont
       code: (error as { errors?: Array<{ code?: string }>; code?: string } | null)?.errors?.[0]
         ?.code,
     });
+  }
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string) {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out`)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 
@@ -445,16 +461,28 @@ export async function POST(request: Request) {
     }
   })();
 
-  // Best-effort compatibility bridge: keep legacy login functional even if Clerk provisioning fails.
-  await ensureClerkBridgeForLegacyLogin({
-    userId: user.id,
-    email: user.email,
-    localUsername: clerkLinkResult.localUsername,
-    role: user.role,
-    fullName: clerkLinkResult.fullName,
-    clerkUserId: clerkLinkResult.clerkUserId,
-    password,
-  });
+  // Best-effort compatibility bridge: never block the legacy session cookie from reaching the browser.
+  try {
+    await withTimeout(
+      ensureClerkBridgeForLegacyLogin({
+        userId: user.id,
+        email: user.email,
+        localUsername: clerkLinkResult.localUsername,
+        role: user.role,
+        fullName: clerkLinkResult.fullName,
+        clerkUserId: clerkLinkResult.clerkUserId,
+        password,
+      }),
+      CLERK_LOGIN_BRIDGE_TIMEOUT_MS,
+      "Clerk legacy login bridge",
+    );
+  } catch (error) {
+    logWarn("api.admin.login.clerkBridgeTimedOut", {
+      userId: user.id,
+      email: user.email,
+      message: error instanceof Error ? error.message : "Unknown Clerk bridge error",
+    });
+  }
 
   let theme: AppTheme = "light";
   try {
