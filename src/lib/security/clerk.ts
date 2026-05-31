@@ -1,5 +1,10 @@
 const LEGACY_ADMIN_PUBLIC_PATHS = ["/admin/login", "/admin/set-password", "/admin/auth"] as const;
-const LEGACY_ADMIN_PUBLIC_API_PATHS = ["/api/admin/login", "/api/admin/logout"] as const;
+const LEGACY_ADMIN_PUBLIC_API_PATHS = [
+  "/api/admin/login",
+  "/api/admin/logout",
+  "/api/admin/session/bootstrap",
+  "/api/admin/set-password",
+] as const;
 const CLERK_PUBLIC_AUTH_PATHS = [
   "/sign-in",
   "/sign-up",
