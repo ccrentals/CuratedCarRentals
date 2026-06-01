@@ -95,7 +95,7 @@ function createCsv(rows: CustomerListRow[]) {
 }
 
 function createExcel(rows: CustomerListRow[]) {
-  const nowLabel = new Date().toLocaleString();
+  const nowLabel = formatGeneratedAt();
   const headers = [
     "Customer Name",
     "Email Address",
@@ -118,8 +118,8 @@ function createExcel(rows: CustomerListRow[]) {
       .join("")}</Row>`,
     ...rows.map((row) => {
       const totalSpend = (Number(row.total_spend) / 100).toFixed(2);
-      const lastBooked = row.last_booked_at ? new Date(row.last_booked_at).toLocaleString() : "No bookings yet";
-      const created = new Date(row.created_at).toLocaleString();
+      const lastBooked = formatDateTime(row.last_booked_at);
+      const created = formatDateTime(row.created_at);
       return `<Row>
         <Cell ss:StyleID="cell"><Data ss:Type="String">${xmlEscape(row.full_name)}</Data></Cell>
         <Cell ss:StyleID="cell"><Data ss:Type="String">${xmlEscape(row.email)}</Data></Cell>
@@ -173,6 +173,7 @@ function formatDateTime(value: string | null) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString("en-JM", {
+    timeZone: "America/Jamaica",
     year: "numeric",
     month: "short",
     day: "numeric",
@@ -183,6 +184,7 @@ function formatDateTime(value: string | null) {
 
 function formatGeneratedAt() {
   return new Date().toLocaleString("en-JM", {
+    timeZone: "America/Jamaica",
     year: "numeric",
     month: "short",
     day: "numeric",

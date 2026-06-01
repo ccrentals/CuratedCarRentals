@@ -22,7 +22,7 @@ export function TableDateTime({
   dateClassName,
   timeClassName,
   title,
-  preset = "local",
+  preset = "admin",
 }: TableDateTimeProps) {
   if (value === null || value === undefined || value === "") {
     return <span className={cn("inline-block", className)}>—</span>;
