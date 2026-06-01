@@ -26,6 +26,7 @@ const ALLOWED_STATUSES = new Set([
 const INVALID_SEAT_COUNT = Symbol("INVALID_SEAT_COUNT");
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const CURRENT_VEHICLE_YEAR_LIMIT = new Date().getFullYear() + 1;
 
 type VehicleRouteContext = { params: Promise<{ id: string }> };
 type AdminAccessResult = Awaited<ReturnType<typeof requireAdminAccess>>;
@@ -269,6 +270,9 @@ export async function handleAdminVehiclePatch(
     return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
   }
   const profilePatch = parseProfilePatch(body);
+  const makeRaw = body?.make;
+  const modelRaw = body?.model;
+  const yearRaw = body?.year;
   const dailyRateRaw =
     typeof body?.daily_rate === "number"
       ? body.daily_rate
@@ -295,6 +299,43 @@ export async function handleAdminVehiclePatch(
   const values: Array<string | number | null> = [];
   let index = 1;
   const auditFields: string[] = [];
+  let nextMakeValue: string | undefined;
+  let nextModelValue: string | undefined;
+
+  if (makeRaw !== undefined) {
+    const make = normalizeText(makeRaw);
+    if (make.length < 2) {
+      return NextResponse.json({ error: "Invalid make" }, { status: 400 });
+    }
+    nextMakeValue = make.slice(0, 120);
+    updates.push(`make = $${index}`);
+    values.push(nextMakeValue);
+    auditFields.push("make");
+    index += 1;
+  }
+
+  if (modelRaw !== undefined) {
+    const model = normalizeText(modelRaw);
+    if (model.length < 1) {
+      return NextResponse.json({ error: "Invalid model" }, { status: 400 });
+    }
+    nextModelValue = model.slice(0, 120);
+    updates.push(`model = $${index}`);
+    values.push(nextModelValue);
+    auditFields.push("model");
+    index += 1;
+  }
+
+  if (yearRaw !== undefined) {
+    const year = normalizeNullableInt(yearRaw);
+    if (year === null || year < 1990 || year > CURRENT_VEHICLE_YEAR_LIMIT) {
+      return NextResponse.json({ error: "Invalid year" }, { status: 400 });
+    }
+    updates.push(`year = $${index}`);
+    values.push(year);
+    auditFields.push("year");
+    index += 1;
+  }
 
   if (dailyRateRaw !== undefined) {
     if (!Number.isFinite(dailyRateRaw) || dailyRateRaw < 0) {
@@ -399,8 +440,24 @@ export async function handleAdminVehiclePatch(
     const currentVehicle = lockedVehicle.rows[0];
     const currentFeatures = toObject(currentVehicle.features_json);
     const currentSlug = normalizeText(currentFeatures.slug) || `${currentVehicle.make}-${currentVehicle.model}-${currentVehicle.year}`;
+    const nextMake = nextMakeValue ?? currentVehicle.make;
+    const nextModel = nextModelValue ?? currentVehicle.model;
+    const oldVehicleName = `${currentVehicle.make} ${currentVehicle.model}`.trim();
+    const nextVehicleName = `${nextMake} ${nextModel}`.trim();
+    const shouldRefreshDefaultName =
+      nextVehicleName !== oldVehicleName &&
+      (!normalizeText(currentFeatures.name) || normalizeText(currentFeatures.name) === oldVehicleName);
 
-    if (imageUrls.length > 0 || body?.image_urls_json !== undefined || publicVisibleRaw !== undefined) {
+    if (
+      shouldRefreshDefaultName ||
+      imageUrls.length > 0 ||
+      body?.image_urls_json !== undefined ||
+      publicVisibleRaw !== undefined
+    ) {
+      const nextFeatures: Record<string, unknown> = {
+        ...currentFeatures,
+        ...(shouldRefreshDefaultName ? { name: nextVehicleName } : {}),
+      };
       const galleryImages = buildVehicleGalleryEntries({
         imageUrls:
           imageUrls.length > 0 || body?.image_urls_json !== undefined
@@ -414,7 +471,7 @@ export async function handleAdminVehiclePatch(
           .replace(/[^a-z0-9]+/g, "-")
           .replace(/^-+|-+$/g, "")
           .slice(0, 80),
-        existingGallery: currentFeatures.gallery_images,
+        existingGallery: nextFeatures.gallery_images,
       });
       const currentPublicVisible = (() => {
         const value = currentFeatures.public_visible;
@@ -431,7 +488,7 @@ export async function handleAdminVehiclePatch(
       updates.push(`features_json = $${index}::jsonb`);
       values.push(
         JSON.stringify({
-          ...currentFeatures,
+          ...nextFeatures,
           public_visible: nextPublicVisible,
           gallery_images: galleryImages,
         }),
