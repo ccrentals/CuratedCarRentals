@@ -55,9 +55,9 @@ export default async function AdminMessageDetailPage({
 
   const { id } = await params;
   const query = await searchParams;
-  const markRead = query.markRead === "1";
   const backHref = safeBackHref(typeof query.back === "string" ? query.back : undefined);
   const isTrashBack = backHref.startsWith("/admin/messages/trash");
+  const markRead = !isTrashBack && query.markRead !== "0";
 
   let result: Awaited<ReturnType<typeof fetchAdminMessageByIdWithOptionalMarkRead>> | null = null;
   try {
