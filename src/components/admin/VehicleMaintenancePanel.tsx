@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/drawer";
 import { buttonStyles } from "@/components/ui/Button";
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
+import { fmtDateNoSeconds } from "@/lib/dateFormat";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
 const WIDGET_SRC = "https://ucarecdn.com/libs/widget/3.x/uploadcare.full.min.js";
@@ -263,13 +264,7 @@ function formatServiceDateTime(value: string | null) {
 
   const parsed = new Date(raw);
   if (Number.isNaN(parsed.getTime())) return raw;
-  return new Intl.DateTimeFormat("en-US", {
-    year: "numeric",
-    month: "numeric",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(parsed);
+  return fmtDateNoSeconds(raw);
 }
 
 function dueServiceDateLabel(record: MaintenanceRecord) {

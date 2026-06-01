@@ -10,7 +10,7 @@ import {
 } from "@/lib/bookings/adminBookingsList";
 import { bookingStartSqlExpr, buildUpcomingWhereSql, getStartOfToday } from "@/lib/bookings/upcoming";
 import { dbQuery } from "@/lib/db";
-import { fmtDate } from "@/lib/dateFormat";
+import { fmtDate, fmtDateOnly } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
 import { paginateRows } from "@/lib/pagination/sharedPagination";
 import {
@@ -59,7 +59,7 @@ export default async function AdminDashboardPage({
 }) {
   const params = await searchParams;
   const now = new Date();
-  const todayLabel = now.toLocaleDateString();
+  const todayLabel = fmtDateOnly(now);
   const hoverTextClass = "hover:text-[var(--ccr-muted)]";
   // Shared gold-ring quick action treatment for visual consistency.
   const quickActionClass =

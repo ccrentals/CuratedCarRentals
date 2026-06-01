@@ -9,6 +9,7 @@ import {
   buildDocumentationSearchEntries,
   DOCUMENTATION_SECTION_LINKS,
 } from "@/lib/documentation/catalog";
+import { fmtDateOnly } from "@/lib/dateFormat";
 
 type DocRow = {
   content: string;
@@ -47,7 +48,7 @@ export default async function AdminDocumentationPage({
     }
   }
 
-  const updatedAt = doc?.updated_at ? new Date(doc.updated_at).toLocaleDateString() : "Not yet set";
+  const updatedAt = doc?.updated_at ? fmtDateOnly(doc.updated_at) : "Not yet set";
   const updatedBy = doc?.updated_by_email ?? "System";
   const notesContent = doc?.content ?? "";
   const initialQuery =
