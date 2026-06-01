@@ -8,6 +8,14 @@ export type DateTimeParts = {
   timeText: string | null;
 };
 
+function isTimestampString(value: string) {
+  return (
+    /^\d{4}-\d{2}-\d{2}T/.test(value) ||
+    /^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}/.test(value) ||
+    /(?:Z|[+-]\d{2}:?\d{2})$/.test(value)
+  );
+}
+
 export function coerceDateTimeLabel(
   value: Date | string | number,
   preset: DateTimeDisplayPreset = "local",
@@ -19,6 +27,10 @@ export function coerceDateTimeLabel(
 
   const raw = String(value ?? "").trim();
   if (!raw) return "";
+
+  if (!isTimestampString(raw)) {
+    return raw;
+  }
 
   const parsed = new Date(raw);
   if (!Number.isNaN(parsed.getTime())) {
