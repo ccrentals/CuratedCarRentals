@@ -180,6 +180,100 @@ test("admin vehicle patch API toggles public visibility and refreshes gallery me
   ]);
 });
 
+test("admin vehicle patch API updates title fields used by public vehicle displays", async () => {
+  let updateValues: unknown[] = [];
+  let auditFields: unknown[] = [];
+
+  const response = await handleAdminVehiclePatch(
+    new Request(`http://localhost/api/admin/vehicles/${VEHICLE_ID}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", "x-csrf-token": "token" },
+      body: JSON.stringify({
+        make: "Nissan",
+        model: "X-Trail",
+        year: 2020,
+        csrfToken: "token",
+      }),
+    }),
+    { params: Promise.resolve({ id: VEHICLE_ID }) },
+    {
+      authorize: async () => authorizedActor(),
+      requireCsrfCheck: async () => true,
+      consumeRateLimitCheck: async () => allowRateLimit(),
+      connect: async () =>
+        ({
+          async query(text: string, values?: unknown[]) {
+            if (text === "begin" || text === "commit" || text === "rollback") {
+              return { rows: [] };
+            }
+            if (text.includes("from vehicles where id = $1::uuid for update")) {
+              return {
+                rowCount: 1,
+                rows: [
+                  {
+                    id: VEHICLE_ID,
+                    public_id: "VE000222",
+                    make: "Nissan",
+                    model: "X-Trail",
+                    year: 2018,
+                    features_json: {
+                      name: "Nissan X-Trail",
+                      slug: "nissan-x-trail",
+                      public_visible: true,
+                      gallery_images: [],
+                    },
+                    image_urls_json: [],
+                  },
+                ],
+              };
+            }
+            if (text.startsWith("update vehicles set")) {
+              updateValues = values ?? [];
+              return {
+                rows: [
+                  {
+                    id: VEHICLE_ID,
+                    public_id: "VE000222",
+                    make: "Nissan",
+                    model: "X-Trail",
+                    year: 2020,
+                    seat_count: 5,
+                    daily_rate_cents: 7200,
+                    deposit_cents: 7000,
+                    status: "AVAILABLE",
+                  },
+                ],
+              };
+            }
+            throw new Error(`Unexpected query: ${text}`);
+          },
+          release() {},
+        }),
+      writeAudit: async (input) => {
+        auditFields = Array.isArray(input.details?.fields) ? input.details.fields : [];
+      },
+    },
+  );
+
+  const payload = (await response.json()) as { vehicle?: { make?: string; model?: string; year?: number } };
+  assert.equal(response.status, 200);
+  assert.deepEqual(payload.vehicle, {
+    id: VEHICLE_ID,
+    public_id: "VE000222",
+    make: "Nissan",
+    model: "X-Trail",
+    year: 2020,
+    seat_count: 5,
+    daily_rate_cents: 7200,
+    deposit_cents: 7000,
+    status: "AVAILABLE",
+  });
+  assert.equal(updateValues[0], "Nissan");
+  assert.equal(updateValues[1], "X-Trail");
+  assert.equal(updateValues[2], 2020);
+  assert.deepEqual(auditFields, ["make", "model", "year"]);
+});
+
 test("admin vehicle patch API maps unavailable to UNAVAILABLE", async () => {
   let storedStatus: unknown = null;
 

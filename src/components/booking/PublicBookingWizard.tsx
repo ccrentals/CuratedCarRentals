@@ -3369,7 +3369,8 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                         </div>
                         <div className="mt-4 flex-1 border-t border-[var(--ccr-border)] pt-4">
                           <p className="text-sm leading-7 text-[var(--ccr-muted)]">
-                            No insurance will be added to this booking. Your insurance total remains {formatJmd(0)}.
+                            No insurance will be added to this booking. The renter is responsible for the full cost
+                            of any damage, including any loss of use.
                           </p>
                         </div>
                       </button>

@@ -59,6 +59,9 @@ type VehicleDetailFormProps = {
 };
 
 type OverviewFormState = {
+  make: string;
+  model: string;
+  year: string;
   dailyRate: string;
   deposit: string;
   status: "available" | "unavailable" | "maintenance";
@@ -118,6 +121,9 @@ function buildFormState(vehicle: VehicleDetail, profile: VehicleProfile | null):
         : "available";
 
   return {
+    make: vehicle.make,
+    model: vehicle.model,
+    year: String(vehicle.year ?? ""),
     dailyRate: String(vehicle.daily_rate_cents ?? ""),
     deposit: String(vehicle.deposit_cents ?? ""),
     status,
@@ -187,6 +193,9 @@ export function VehicleDetailForm({
   }, [toastMessage]);
 
   const displayStatus = initialDerivedStatus;
+  const displayYear = form.year.trim() || String(vehicle.year);
+  const displayMake = form.make.trim() || vehicle.make;
+  const displayModel = form.model.trim() || vehicle.model;
 
   function resetToViewMode() {
     setForm(baseline);
@@ -214,6 +223,9 @@ export function VehicleDetailForm({
         },
         signal: controller.signal,
         body: JSON.stringify({
+          make: form.make,
+          model: form.model,
+          year: form.year.trim() ? Number(form.year) : null,
           daily_rate: Number(form.dailyRate),
           deposit: form.deposit,
           image_urls_json: form.images,
@@ -389,7 +401,7 @@ export function VehicleDetailForm({
           </p>
           <div className="mt-1 flex flex-wrap items-center gap-3">
             <h1 className="text-2xl font-bold text-[var(--ccr-text)]">
-              {vehicle.year} {vehicle.make} {vehicle.model}
+              {displayYear} {displayMake} {displayModel}
             </h1>
             <span
               className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${statusBadge(
@@ -459,6 +471,36 @@ export function VehicleDetailForm({
       </div>
 
       <div className="mt-6 grid gap-4 md:grid-cols-2">
+        <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+          Vehicle Year
+          <input
+            type="number"
+            value={form.year}
+            min="1990"
+            max={new Date().getFullYear() + 1}
+            readOnly={!isEditing}
+            onChange={(event) => setForm((current) => ({ ...current, year: event.target.value }))}
+            className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)] read-only:cursor-default read-only:opacity-80"
+          />
+        </label>
+        <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+          Make
+          <input
+            value={form.make}
+            readOnly={!isEditing}
+            onChange={(event) => setForm((current) => ({ ...current, make: event.target.value }))}
+            className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)] read-only:cursor-default read-only:opacity-80"
+          />
+        </label>
+        <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)] md:col-span-2">
+          Model
+          <input
+            value={form.model}
+            readOnly={!isEditing}
+            onChange={(event) => setForm((current) => ({ ...current, model: event.target.value }))}
+            className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)] read-only:cursor-default read-only:opacity-80"
+          />
+        </label>
         <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
           Daily Rate (JMD)
           <input
