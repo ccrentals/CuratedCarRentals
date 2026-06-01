@@ -71,7 +71,6 @@ type OverviewFormState = {
   licensePlate: string;
   vehicleType: string;
   vehicleClass: string;
-  profileYear: string;
   color: string;
   seatCount: string;
   currentLocationLabel: string;
@@ -133,7 +132,6 @@ function buildFormState(vehicle: VehicleDetail, profile: VehicleProfile | null):
     licensePlate: profile?.license_plate ?? "",
     vehicleType: profile?.vehicle_type ?? "",
     vehicleClass: profile?.vehicle_class ?? "",
-    profileYear: profile?.year ? String(profile.year) : "",
     color: profile?.color ?? "",
     seatCount:
       profile?.seat_count === null || profile?.seat_count === undefined
@@ -237,7 +235,7 @@ export function VehicleDetailForm({
             license_plate: form.licensePlate,
             vehicle_type: form.vehicleType,
             vehicle_class: form.vehicleClass,
-            year: form.profileYear.trim() ? Number(form.profileYear) : null,
+            year: form.year.trim() ? Number(form.year) : null,
             color: form.color,
             seat_count: form.seatCount.trim() ? Number(form.seatCount) : null,
             current_location_label: form.currentLocationLabel,
@@ -472,18 +470,6 @@ export function VehicleDetailForm({
 
       <div className="mt-6 grid gap-4 md:grid-cols-2">
         <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-          Vehicle Year
-          <input
-            type="number"
-            value={form.year}
-            min="1990"
-            max={new Date().getFullYear() + 1}
-            readOnly={!isEditing}
-            onChange={(event) => setForm((current) => ({ ...current, year: event.target.value }))}
-            className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)] read-only:cursor-default read-only:opacity-80"
-          />
-        </label>
-        <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
           Make
           <input
             value={form.make}
@@ -492,7 +478,7 @@ export function VehicleDetailForm({
             className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)] read-only:cursor-default read-only:opacity-80"
           />
         </label>
-        <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)] md:col-span-2">
+        <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
           Model
           <input
             value={form.model}
@@ -607,14 +593,14 @@ export function VehicleDetailForm({
             />
           </label>
           <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-            Profile Year
+            Vehicle Year
             <input
               type="number"
-              min="1900"
-              max="2100"
-              value={form.profileYear}
+              min="1990"
+              max={new Date().getFullYear() + 1}
+              value={form.year}
               readOnly={!isEditing}
-              onChange={(event) => setForm((current) => ({ ...current, profileYear: event.target.value }))}
+              onChange={(event) => setForm((current) => ({ ...current, year: event.target.value }))}
               className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)] read-only:cursor-default read-only:opacity-80"
             />
           </label>
