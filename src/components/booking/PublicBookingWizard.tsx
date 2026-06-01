@@ -269,6 +269,32 @@ function combineDateTime(date: string, time: string) {
   return Number.isNaN(value.getTime()) ? null : value;
 }
 
+function buildPricingQuoteKey(input: {
+  vehicleId: string;
+  startAt: Date;
+  endAt: Date;
+  insuranceSelected: boolean;
+  promoCode: string | null;
+  paymentOption: string;
+  customPaymentAmount: string;
+  customerEmail: string;
+  deliverySelected: boolean;
+  deliveryZoneLabel: string | null;
+}) {
+  return JSON.stringify({
+    vehicleId: input.vehicleId,
+    startAt: input.startAt.toISOString(),
+    endAt: input.endAt.toISOString(),
+    insuranceSelected: input.insuranceSelected,
+    promoCode: input.promoCode,
+    paymentOption: input.paymentOption,
+    customAmount: input.paymentOption === "CUSTOM" ? input.customPaymentAmount : null,
+    customerEmail: normalizeText(input.customerEmail),
+    deliverySelected: input.deliverySelected,
+    deliveryZoneLabel: input.deliveryZoneLabel,
+  });
+}
+
 function normalizeText(value: string) {
   return value.trim();
 }
@@ -987,7 +1013,13 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
 
   const pickupAt = combineDateTime(pickupDate, pickupTime);
   const dropoffAt = combineDateTime(dropoffDate, dropoffTime);
-  const datesValid = pickupAt !== null && dropoffAt !== null && dropoffAt > pickupAt;
+  const dateWindowError =
+    !pickupAt || !dropoffAt
+      ? "Select valid pickup and return date/time."
+      : dropoffAt <= pickupAt
+        ? "Return date and time must be later than pickup date and time."
+        : null;
+  const datesValid = dateWindowError === null;
 
   const pickupLocationText = useMemo(
     () => getBookingLocationSnapshotText(pickupLocationConfig, "pickup", pickupLocationValues),
@@ -1002,6 +1034,40 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     pickupFieldSchema.some((field) => field.key === "address") ||
     dropoffFieldSchema.some((field) => field.key === "address");
   const deliveryZoneLabel = [pickupLocationText, dropoffLocationText].filter(Boolean).join(" → ");
+  const currentPricingQuoteKey = useMemo(() => {
+    if (!hasSelectedVehicleId || !pickupAt || !dropoffAt || !datesValid) return "";
+    return buildPricingQuoteKey({
+      vehicleId: selectedVehicleId,
+      startAt: pickupAt,
+      endAt: dropoffAt,
+      insuranceSelected: insuranceEnabled && insuranceSelected,
+      promoCode: couponAppliedCode,
+      paymentOption,
+      customPaymentAmount,
+      customerEmail: emailAddress,
+      deliverySelected,
+      deliveryZoneLabel: deliveryZoneLabel || null,
+    });
+  }, [
+    couponAppliedCode,
+    customPaymentAmount,
+    datesValid,
+    deliverySelected,
+    deliveryZoneLabel,
+    dropoffAt,
+    emailAddress,
+    hasSelectedVehicleId,
+    insuranceEnabled,
+    insuranceSelected,
+    paymentOption,
+    pickupAt,
+    selectedVehicleId,
+  ]);
+  const pricingQuoteReadyForCurrentSelection =
+    Boolean(pricingQuote) &&
+    Boolean(currentPricingQuoteKey) &&
+    pricingState.status === "ready" &&
+    lastQuoteSuccessKeyRef.current === currentPricingQuoteKey;
 
   const loadAvailableVehicles = useCallback(
     async (options?: {
@@ -1494,15 +1560,15 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
       return;
     }
 
-    const quoteKey = JSON.stringify({
+    const quoteKey = buildPricingQuoteKey({
       vehicleId: selectedVehicleId,
-      startAt: pickup.toISOString(),
-      endAt: dropoff.toISOString(),
+      startAt: pickup,
+      endAt: dropoff,
       insuranceSelected: insuranceEnabled && insuranceSelected,
       promoCode: couponAppliedCode,
       paymentOption,
-      customAmount: paymentOption === "CUSTOM" ? customPaymentAmount : null,
-      customerEmail: normalizeText(emailAddress),
+      customPaymentAmount,
+      customerEmail: emailAddress,
       deliverySelected,
       deliveryZoneLabel: deliveryZoneLabel || null,
     });
@@ -2033,7 +2099,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
   }
 
   const step1Complete =
-    datesValid &&
+    !dateWindowError &&
     Boolean(pickupLocationText) &&
     Boolean(dropoffLocationText) &&
     !validateBookingLocationSelection(pickupLocationConfig, "pickup", pickupLocationValues) &&
@@ -2089,8 +2155,8 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     resetMessages();
 
     if (stepToValidate === 1) {
-      if (!datesValid) {
-        setErrorMessage("Return date and time must be later than pickup date and time.");
+      if (dateWindowError) {
+        setErrorMessage(dateWindowError);
         return false;
       }
       if (!pickupLocationText) {
@@ -2180,6 +2246,10 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
       }
       if (!pricingQuote) {
         setErrorMessage("Live pricing is still refreshing. Please wait before continuing.");
+        return false;
+      }
+      if (!pricingQuoteReadyForCurrentSelection) {
+        setErrorMessage("Live pricing is still refreshing for these dates. Please wait before continuing.");
         return false;
       }
       if (paymentOption === "CUSTOM" && !customPaymentIsValid) {
@@ -2851,11 +2921,13 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
         ? "Refreshing selected vehicle..."
       : null;
   const step6PricingWarning =
-    hasSelectedVehicleId && !pricingQuote
-      ? pricingQuoteLoading || pricingQuoteUpdating
+    hasSelectedVehicleId && (!pricingQuote || !pricingQuoteReadyForCurrentSelection)
+      ? pricingQuoteLoading || pricingQuoteUpdating || pricingState.status === "loading"
         ? "Refreshing live pricing…"
         : pricingState.status === "error"
           ? "Live pricing could not be loaded. Return to Step 2 and reselect your vehicle."
+          : pricingQuote && !pricingQuoteReadyForCurrentSelection
+            ? "Live pricing is refreshing for these dates."
           : null
       : null;
   const step6SecurityHint = driversLicenseUploading
@@ -2870,6 +2942,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     !hasResolvedVehicle ||
     vehicleSelectionUnavailable ||
     !pricingQuote ||
+    !pricingQuoteReadyForCurrentSelection ||
     (paymentOption === "CUSTOM" && !customPaymentIsValid);
   const statusIsDraftRestoreNotice =
     draftWasRestored &&
@@ -3146,6 +3219,11 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                       />
                     </label>
                   </div>
+                  {dateWindowError ? (
+                    <p className="mt-3 rounded-[1rem] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                      {dateWindowError}
+                    </p>
+                  ) : null}
 
                   <div className="mt-4 grid min-w-0 gap-4 md:grid-cols-2">
                     <label className="block min-w-0">
