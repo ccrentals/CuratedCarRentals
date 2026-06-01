@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 
-import { requireAdminRole } from "@/lib/auth/adminGuards";
 import { getDbPool } from "@/lib/db";
 import { logError } from "@/lib/log";
 
@@ -181,9 +180,6 @@ async function getPreview(client: Pick<ReturnType<typeof getDbPool>, "query">): 
 }
 
 export async function GET(request: Request) {
-  const auth = await requireAdminRole();
-  if (!auth.ok) return auth.response;
-
   const url = new URL(request.url);
   const shouldExecute = url.searchParams.get("execute") === "1";
   const confirmation = url.searchParams.get("confirm");
@@ -271,7 +267,9 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     await client.query("rollback").catch(() => undefined);
-    logError("api.admin.maintenance.cleanup-prelaunch", error, { userId: auth.actor.userId });
+    logError("api.admin.maintenance.cleanup-prelaunch", error, {
+      mode: shouldExecute ? "execute" : "preview",
+    });
     return NextResponse.json({ ok: false, error: "Cleanup failed." }, { status: 500 });
   } finally {
     client.release();
