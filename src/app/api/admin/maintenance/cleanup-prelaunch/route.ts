@@ -78,13 +78,13 @@ async function getPreview(client: Pick<ReturnType<typeof getDbPool>, "query">): 
     ["ricardobarlock31@gmail.com"],
   );
 
-  const bookingIds = bookingsBefore.rows.map((row) => row.id);
-  const quoteIds = quotesBefore.rows.map((row) => row.id);
+  const bookingIds = bookingsBefore.rows.map((row: { id: string }) => row.id);
+  const quoteIds = quotesBefore.rows.map((row: { id: string }) => row.id);
   const paymentRows =
     bookingIds.length > 0
       ? await client.query("select id from payments where booking_id = any($1::uuid[])", [bookingIds])
       : { rows: [] };
-  const paymentIds = paymentRows.rows.map((row) => row.id);
+  const paymentIds = paymentRows.rows.map((row: { id: string }) => row.id);
 
   const [
     payments,
@@ -166,10 +166,16 @@ async function getPreview(client: Pick<ReturnType<typeof getDbPool>, "query">): 
       emailDispatches: countFromRow(emailDispatches.rows[0]),
       notificationDispatchLogs: countFromRow(notificationLogs.rows[0]),
     },
-    bookingsBeforeCutoff: bookingsBefore.rows.map(omitInternalId),
-    bookingsKept: bookingsKept.rows.map(omitInternalId),
-    quotesBeforeCutoff: quotesBefore.rows.map(omitInternalId),
-    blockoutsBeforeCutoff: blockoutsBefore.rows.map(omitInternalId),
+    bookingsBeforeCutoff: bookingsBefore.rows.map((row: Record<string, unknown>) =>
+      omitInternalId(row),
+    ),
+    bookingsKept: bookingsKept.rows.map((row: Record<string, unknown>) => omitInternalId(row)),
+    quotesBeforeCutoff: quotesBefore.rows.map((row: Record<string, unknown>) =>
+      omitInternalId(row),
+    ),
+    blockoutsBeforeCutoff: blockoutsBefore.rows.map((row: Record<string, unknown>) =>
+      omitInternalId(row),
+    ),
     ricardoBookings: ricardoBookings.rows,
   };
 }
@@ -213,17 +219,17 @@ export async function GET(request: Request) {
       await client.query("select id from bookings where created_at < $1::timestamptz", [
         cutoffParam,
       ])
-    ).rows.map((row) => row.id);
+    ).rows.map((row: { id: string }) => row.id);
     const quoteIds = (
       await client.query("select id from quotes where created_at < $1::timestamptz", [cutoffParam])
-    ).rows.map((row) => row.id);
+    ).rows.map((row: { id: string }) => row.id);
     const paymentIds =
       bookingIds.length > 0
         ? (
             await client.query("select id from payments where booking_id = any($1::uuid[])", [
               bookingIds,
             ])
-          ).rows.map((row) => row.id)
+          ).rows.map((row: { id: string }) => row.id)
         : [];
 
     await client.query(
