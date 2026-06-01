@@ -10,6 +10,7 @@ type InsurancePlanRow = {
   vehicle_id: string | null;
   is_enabled: boolean;
   price_per_day_cents: number;
+  coverage_cents: number;
   is_global_default: boolean;
   updated_at: string;
 };
@@ -44,7 +45,7 @@ export async function GET() {
   try {
     const [plans, vehicles] = await Promise.all([
       dbQuery<InsurancePlanRow>(
-        "select id, vehicle_id, is_enabled, price_per_day_cents, is_global_default, updated_at from insurance_plans order by is_global_default desc, updated_at desc",
+        "select id, vehicle_id, is_enabled, price_per_day_cents, coverage_cents, is_global_default, updated_at from insurance_plans order by is_global_default desc, updated_at desc",
       ),
       dbQuery<VehicleRow>(
         "select id, make, model, year, status from vehicles where deleted_at is null and status <> 'INACTIVE' order by make asc, model asc, year desc",
@@ -74,6 +75,7 @@ export async function PATCH(request: Request) {
   const scope = normalizeText(body?.scope).toUpperCase();
   const isEnabled = body?.isEnabled === true;
   const pricePerDayCents = parsePrice(body?.pricePerDayCents);
+  const coverageCents = parsePrice(body?.coverageCents);
 
   if (scope !== "GLOBAL" && scope !== "VEHICLE") {
     return NextResponse.json({ error: "scope must be GLOBAL or VEHICLE." }, { status: 400 });
@@ -82,8 +84,8 @@ export async function PATCH(request: Request) {
   if (scope === "GLOBAL") {
     try {
       await dbQuery(
-        "insert into insurance_plans (vehicle_id, is_enabled, price_per_day_cents, is_global_default, created_by) values (null, $1, $2, true, $3) on conflict (is_global_default) where is_global_default = true do update set is_enabled = excluded.is_enabled, price_per_day_cents = excluded.price_per_day_cents, updated_at = now()",
-        [isEnabled, pricePerDayCents, actor.userId],
+        "insert into insurance_plans (vehicle_id, is_enabled, price_per_day_cents, coverage_cents, is_global_default, created_by) values (null, $1, $2, $3, true, $4) on conflict (is_global_default) where is_global_default = true do update set is_enabled = excluded.is_enabled, price_per_day_cents = excluded.price_per_day_cents, coverage_cents = excluded.coverage_cents, updated_at = now()",
+        [isEnabled, pricePerDayCents, coverageCents, actor.userId],
       );
       return NextResponse.json({ ok: true });
     } catch (error) {
@@ -107,8 +109,8 @@ export async function PATCH(request: Request) {
     }
 
     await dbQuery(
-      "insert into insurance_plans (vehicle_id, is_enabled, price_per_day_cents, is_global_default, created_by) values ($1, $2, $3, false, $4) on conflict (vehicle_id) where vehicle_id is not null do update set is_enabled = excluded.is_enabled, price_per_day_cents = excluded.price_per_day_cents, updated_at = now()",
-      [vehicleId, isEnabled, pricePerDayCents, actor.userId],
+      "insert into insurance_plans (vehicle_id, is_enabled, price_per_day_cents, coverage_cents, is_global_default, created_by) values ($1, $2, $3, $4, false, $5) on conflict (vehicle_id) where vehicle_id is not null do update set is_enabled = excluded.is_enabled, price_per_day_cents = excluded.price_per_day_cents, coverage_cents = excluded.coverage_cents, updated_at = now()",
+      [vehicleId, isEnabled, pricePerDayCents, coverageCents, actor.userId],
     );
 
     return NextResponse.json({ ok: true });

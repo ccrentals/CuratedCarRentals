@@ -475,7 +475,7 @@ export function BookingLocationBuilder() {
                 {draft.fieldSchema.map((field, index) => (
                   <div
                     key={`${draft.draftKey}-${index}`}
-                    className="grid gap-2 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3 md:grid-cols-6"
+                    className="grid gap-2 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3 lg:grid-cols-[minmax(8rem,1fr)_minmax(14rem,2fr)_minmax(7rem,0.8fr)_minmax(7rem,0.8fr)_minmax(10rem,1fr)_auto]"
                   >
                     <input
                       type="text"

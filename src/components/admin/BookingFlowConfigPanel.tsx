@@ -11,6 +11,7 @@ type InsurancePlanRow = {
   vehicle_id: string | null;
   is_enabled: boolean;
   price_per_day_cents: number;
+  coverage_cents: number;
   is_global_default: boolean;
 };
 
@@ -25,6 +26,7 @@ type VehicleRow = {
 type VehicleInsuranceDraft = {
   isEnabled: boolean;
   pricePerDayCents: string;
+  coverageCents: string;
 };
 
 type InsurancePayload = {
@@ -46,6 +48,7 @@ export function BookingFlowConfigPanel() {
 
   const [globalEnabled, setGlobalEnabled] = useState(false);
   const [globalPricePerDay, setGlobalPricePerDay] = useState("0");
+  const [globalCoverage, setGlobalCoverage] = useState("155000");
   const [savingGlobalPlan, setSavingGlobalPlan] = useState(false);
 
   const [vehicles, setVehicles] = useState<VehicleRow[]>([]);
@@ -65,10 +68,12 @@ export function BookingFlowConfigPanel() {
         vehicle_id: null,
         is_enabled: false,
         price_per_day_cents: 0,
+        coverage_cents: 155000,
         is_global_default: true,
       } as InsurancePlanRow);
     setGlobalEnabled(globalPlan.is_enabled);
     setGlobalPricePerDay(String(globalPlan.price_per_day_cents ?? 0));
+    setGlobalCoverage(String(globalPlan.coverage_cents ?? 155000));
 
     const byVehicleId = new Map<string, InsurancePlanRow>();
     for (const plan of plans) {
@@ -85,6 +90,7 @@ export function BookingFlowConfigPanel() {
         pricePerDayCents: String(
           plan ? plan.price_per_day_cents : globalPlan.price_per_day_cents ?? 0,
         ),
+        coverageCents: String(plan ? plan.coverage_cents : globalPlan.coverage_cents ?? 155000),
       };
     }
     setVehicleDrafts(drafts);
@@ -153,6 +159,7 @@ export function BookingFlowConfigPanel() {
     setError(null);
     try {
       const normalizedPrice = Math.max(0, Math.round(Number(globalPricePerDay) || 0));
+      const normalizedCoverage = Math.max(0, Math.round(Number(globalCoverage) || 0));
       const effectiveEnabled = globalEnabled || normalizedPrice > 0;
       if (effectiveEnabled && !globalEnabled) {
         setGlobalEnabled(true);
@@ -168,6 +175,7 @@ export function BookingFlowConfigPanel() {
           scope: "GLOBAL",
           isEnabled: effectiveEnabled,
           pricePerDayCents: normalizedPrice,
+          coverageCents: normalizedCoverage,
         }),
       });
       const data = (await response.json().catch(() => ({}))) as { error?: string };
@@ -197,6 +205,7 @@ export function BookingFlowConfigPanel() {
     setError(null);
     try {
       const normalizedPrice = Math.max(0, Math.round(Number(draft.pricePerDayCents) || 0));
+      const normalizedCoverage = Math.max(0, Math.round(Number(draft.coverageCents) || 0));
       const effectiveEnabled = draft.isEnabled || normalizedPrice > 0;
       if (effectiveEnabled && !draft.isEnabled) {
         setVehicleDrafts((current) => ({
@@ -205,6 +214,7 @@ export function BookingFlowConfigPanel() {
             ...draft,
             isEnabled: true,
             pricePerDayCents: String(normalizedPrice),
+            coverageCents: String(normalizedCoverage),
           },
         }));
       }
@@ -220,6 +230,7 @@ export function BookingFlowConfigPanel() {
           vehicleId,
           isEnabled: effectiveEnabled,
           pricePerDayCents: normalizedPrice,
+          coverageCents: normalizedCoverage,
         }),
       });
       const data = (await response.json().catch(() => ({}))) as { error?: string };
@@ -253,9 +264,7 @@ export function BookingFlowConfigPanel() {
         {loading ? <span className="text-xs text-[var(--ccr-muted)]">Loading…</span> : null}
       </div>
 
-      <div className="mt-5 grid gap-6 lg:grid-cols-2">
-        <BookingLocationBuilder />
-
+      <div className="mt-5 space-y-6">
         <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
           <h3 className="text-sm font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
             Full Coverage Insurance
@@ -265,7 +274,7 @@ export function BookingFlowConfigPanel() {
             <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
               Global Default
             </p>
-            <div className="mt-2 flex items-center gap-3">
+            <div className="mt-2 grid gap-3 md:grid-cols-[auto_minmax(10rem,1fr)_minmax(10rem,1fr)_auto] md:items-end">
               <label className="flex items-center gap-2 text-xs text-[var(--ccr-muted)]">
                 <input
                   type="checkbox"
@@ -275,20 +284,33 @@ export function BookingFlowConfigPanel() {
                 />
                 Enabled
               </label>
-              <input
-                type="number"
-                min={0}
-                value={globalPricePerDay}
-                onChange={(event) => {
-                  const nextValue = event.target.value;
-                  setGlobalPricePerDay(nextValue);
-                  const parsed = Number(nextValue);
-                  if (!globalEnabled && Number.isFinite(parsed) && parsed > 0) {
-                    setGlobalEnabled(true);
-                  }
-                }}
-                className="w-36 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-sm text-[var(--ccr-text)]"
-              />
+              <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                Daily fee (JMD)
+                <input
+                  type="number"
+                  min={0}
+                  value={globalPricePerDay}
+                  onChange={(event) => {
+                    const nextValue = event.target.value;
+                    setGlobalPricePerDay(nextValue);
+                    const parsed = Number(nextValue);
+                    if (!globalEnabled && Number.isFinite(parsed) && parsed > 0) {
+                      setGlobalEnabled(true);
+                    }
+                  }}
+                  className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+                />
+              </label>
+              <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                Coverage (JMD)
+                <input
+                  type="number"
+                  min={0}
+                  value={globalCoverage}
+                  onChange={(event) => setGlobalCoverage(event.target.value)}
+                  className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+                />
+              </label>
               <button
                 type="button"
                 onClick={saveGlobalInsurancePlan}
@@ -305,6 +327,7 @@ export function BookingFlowConfigPanel() {
               const draft = vehicleDrafts[vehicle.id] ?? {
                 isEnabled: false,
                 pricePerDayCents: "0",
+                coverageCents: globalCoverage,
               };
               return (
                 <div
@@ -312,7 +335,7 @@ export function BookingFlowConfigPanel() {
                   className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3"
                 >
                   <p className="text-sm font-semibold text-[var(--ccr-text)]">{vehicleLabel(vehicle)}</p>
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <div className="mt-2 grid gap-2 md:grid-cols-[auto_minmax(9rem,1fr)_minmax(9rem,1fr)_auto] md:items-end">
                     <label className="flex items-center gap-2 text-xs text-[var(--ccr-muted)]">
                       <input
                         type="checkbox"
@@ -330,27 +353,48 @@ export function BookingFlowConfigPanel() {
                       />
                       Enabled
                     </label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={draft.pricePerDayCents}
-                      onChange={(event) =>
-                        setVehicleDrafts((current) => {
-                          const nextValue = event.target.value;
-                          const parsed = Number(nextValue);
-                          return {
+                    <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                      Daily fee (JMD)
+                      <input
+                        type="number"
+                        min={0}
+                        value={draft.pricePerDayCents}
+                        onChange={(event) =>
+                          setVehicleDrafts((current) => {
+                            const nextValue = event.target.value;
+                            const parsed = Number(nextValue);
+                            return {
+                              ...current,
+                              [vehicle.id]: {
+                                ...draft,
+                                pricePerDayCents: nextValue,
+                                isEnabled:
+                                  draft.isEnabled || (Number.isFinite(parsed) && parsed > 0),
+                              },
+                            };
+                          })
+                        }
+                        className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+                      />
+                    </label>
+                    <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                      Coverage (JMD)
+                      <input
+                        type="number"
+                        min={0}
+                        value={draft.coverageCents}
+                        onChange={(event) =>
+                          setVehicleDrafts((current) => ({
                             ...current,
                             [vehicle.id]: {
                               ...draft,
-                              pricePerDayCents: nextValue,
-                              isEnabled:
-                                draft.isEnabled || (Number.isFinite(parsed) && parsed > 0),
+                              coverageCents: event.target.value,
                             },
-                          };
-                        })
-                      }
-                      className="w-32 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-sm text-[var(--ccr-text)]"
-                    />
+                          }))
+                        }
+                        className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+                      />
+                    </label>
                     <button
                       type="button"
                       onClick={() => void saveVehicleInsurancePlan(vehicle.id)}
@@ -406,6 +450,8 @@ export function BookingFlowConfigPanel() {
             ) : null}
           </div>
         </div>
+
+        <BookingLocationBuilder />
       </div>
 
       {error ? <p className="mt-4 text-sm font-semibold text-red-500">{error}</p> : null}

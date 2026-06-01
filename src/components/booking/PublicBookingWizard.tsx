@@ -166,6 +166,7 @@ type PublicInsuranceResponse = {
     enabled?: boolean;
     planId?: string | null;
     pricePerDayCents?: number;
+    coverageCents?: number;
   };
 };
 
@@ -415,6 +416,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
   const [insuranceEnabled, setInsuranceEnabled] = useState(false);
   const [insurancePlanId, setInsurancePlanId] = useState<string | null>(null);
   const [insurancePricePerDay, setInsurancePricePerDay] = useState(0);
+  const [insuranceCoverage, setInsuranceCoverage] = useState(155000);
   const [insuranceLoading, setInsuranceLoading] = useState(false);
   const insuranceSelected = protectionChoice === "STANDARD";
 
@@ -1412,6 +1414,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
         setInsuranceEnabled(false);
         setInsurancePlanId(null);
         setInsurancePricePerDay(0);
+        setInsuranceCoverage(155000);
         setProtectionChoice(null);
         return;
       }
@@ -1419,6 +1422,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
         setInsuranceEnabled(false);
         setInsurancePlanId(null);
         setInsurancePricePerDay(0);
+        setInsuranceCoverage(155000);
         return;
       }
 
@@ -1435,6 +1439,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
 
         const enabled = data.insurance?.enabled === true;
         const price = Number(data.insurance?.pricePerDayCents ?? 0);
+        const coverage = Number(data.insurance?.coverageCents ?? 155000);
         if (cancelled) return;
 
         setInsuranceEnabled(enabled);
@@ -1446,6 +1451,9 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
         setInsurancePricePerDay(
           Number.isFinite(price) && price > 0 ? Math.round(price) : 0,
         );
+        setInsuranceCoverage(
+          Number.isFinite(coverage) && coverage > 0 ? Math.round(coverage) : 155000,
+        );
         if (!enabled) {
           setProtectionChoice((current) => (current === "STANDARD" ? null : current));
         }
@@ -1454,6 +1462,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
         setInsuranceEnabled(false);
         setInsurancePlanId(null);
         setInsurancePricePerDay(0);
+        setInsuranceCoverage(155000);
         setProtectionChoice((current) => (current === "STANDARD" ? null : current));
       } finally {
         if (!cancelled) setInsuranceLoading(false);
@@ -2003,6 +2012,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     setInsuranceEnabled(false);
     setInsurancePlanId(null);
     setInsurancePricePerDay(0);
+    setInsuranceCoverage(155000);
     if (shouldClearCouponCode) setCouponCode("");
     setCouponAppliedCode(null);
     setCouponDiscount(0);
@@ -2348,6 +2358,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     setInsuranceEnabled(false);
     setInsurancePlanId(null);
     setInsurancePricePerDay(0);
+    setInsuranceCoverage(155000);
     setCouponCode("");
     setCouponAppliedCode(null);
     setCouponDiscount(0);
@@ -3422,9 +3433,11 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                         </div>
 
                         <div className="mt-4 flex-1 border-t border-[var(--ccr-border)] pt-4">
-                          <p className="text-sm font-semibold text-[var(--ccr-text)]">Coverage: JMD 155,000.00</p>
+                          <p className="text-sm font-semibold text-[var(--ccr-text)]">
+                            Coverage: {formatJmd(insuranceCoverage)}
+                          </p>
                           <p className="mt-2 text-sm leading-7 text-[var(--ccr-muted)]">
-                            With this option, the renter pays an additional daily fee to reduce their financial exposure. If the vehicle is damaged, the renter&apos;s maximum out-of-pocket cost is capped at JMD 155,000.00.
+                            With this option, the renter pays an additional daily fee to reduce their financial exposure. If the vehicle is damaged, the renter&apos;s maximum out-of-pocket cost is capped at {formatJmd(insuranceCoverage)}.
                           </p>
                         </div>
                       </button>
