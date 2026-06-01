@@ -56,6 +56,7 @@ function formatDateLabel(value: string | null) {
 
 function formatGeneratedAt(now: Date) {
   return now.toLocaleString("en-JM", {
+    timeZone: "America/Jamaica",
     year: "numeric",
     month: "short",
     day: "numeric",

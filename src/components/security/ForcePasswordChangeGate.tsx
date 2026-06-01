@@ -24,6 +24,7 @@ function formatExpiry(value: string | null | undefined) {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return null;
   return new Intl.DateTimeFormat(undefined, {
+    timeZone: "America/Jamaica",
     dateStyle: "medium",
     timeStyle: "short",
   }).format(parsed);

@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import type { ClerkIdentitySyncReport } from "@/lib/auth/clerkIdentitySync";
+import { fmtAdminDateTimeNoSeconds } from "@/lib/dateFormat";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
 export function ClerkIdentitySyncPanel({
@@ -77,7 +78,7 @@ export function ClerkIdentitySyncPanel({
             Clerk is the identity source of truth. This report shows local drift and safe repair options.
           </p>
           <p className="mt-2 text-xs text-[var(--ccr-muted)]">
-            Generated: {new Date(initialReport.generatedAt).toLocaleString()}
+            Generated: {fmtAdminDateTimeNoSeconds(initialReport.generatedAt)}
           </p>
         </div>
         <button

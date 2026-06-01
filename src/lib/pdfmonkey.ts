@@ -233,7 +233,13 @@ function formatJmd(value: number) {
 }
 
 function formatDateLabel(value: unknown) {
-  const dateFormatter = new Intl.DateTimeFormat("en-JM", {
+  const jamaicaFormatter = new Intl.DateTimeFormat("en-JM", {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    timeZone: "America/Jamaica",
+  });
+  const dateOnlyFormatter = new Intl.DateTimeFormat("en-JM", {
     year: "numeric",
     month: "short",
     day: "2-digit",
@@ -241,26 +247,26 @@ function formatDateLabel(value: unknown) {
   });
 
   if (value instanceof Date && Number.isFinite(value.getTime())) {
-    return dateFormatter.format(value);
+    return jamaicaFormatter.format(value);
   }
 
   const trimmed = String(value ?? "").trim();
   if (!trimmed) return "—";
 
-  const isoDateMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  const isoDateMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (isoDateMatch) {
     const year = Number(isoDateMatch[1]);
     const month = Number(isoDateMatch[2]);
     const day = Number(isoDateMatch[3]);
     const utcDate = new Date(Date.UTC(year, month - 1, day));
     if (Number.isFinite(utcDate.getTime())) {
-      return dateFormatter.format(utcDate);
+      return dateOnlyFormatter.format(utcDate);
     }
   }
 
   const parsed = new Date(trimmed);
   if (!Number.isFinite(parsed.getTime())) return trimmed;
-  return dateFormatter.format(parsed);
+  return jamaicaFormatter.format(parsed);
 }
 
 function computeRentalDays(start: string, end: string) {
