@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { POST as postPublicBooking } from "@/app/api/public/bookings/route";
+import {
+  isValidBookingDateTimeWindow,
+  POST as postPublicBooking,
+} from "@/app/api/public/bookings/route";
 import { MAX_BOOKING_PRIVATE_IMAGE_BYTES } from "@/lib/bookings/privateFiles";
 
 function setEnv(name: string, value: string | undefined) {
@@ -11,6 +14,27 @@ function setEnv(name: string, value: string | undefined) {
   }
   process.env[name] = value;
 }
+
+test("public bookings date window allows same-day rentals when return time is later", () => {
+  assert.equal(
+    isValidBookingDateTimeWindow({
+      startDate: "2026-06-01",
+      endDate: "2026-06-01",
+      pickupTime: "11:00",
+      dropoffTime: "23:00",
+    }),
+    true,
+  );
+  assert.equal(
+    isValidBookingDateTimeWindow({
+      startDate: "2026-06-01",
+      endDate: "2026-06-01",
+      pickupTime: "23:00",
+      dropoffTime: "11:00",
+    }),
+    false,
+  );
+});
 
 test("public bookings API blocks missing turnstile token", { concurrency: false }, async () => {
   const originalNodeEnv = process.env.NODE_ENV;

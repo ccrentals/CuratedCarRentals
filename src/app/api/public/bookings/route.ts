@@ -76,6 +76,17 @@ function parseOptionalDate(value: unknown) {
   return isISODate(normalized) ? normalized : null;
 }
 
+export function isValidBookingDateTimeWindow(input: {
+  startDate: string;
+  endDate: string;
+  pickupTime: string;
+  dropoffTime: string;
+}) {
+  const startAt = new Date(`${input.startDate}T${input.pickupTime}:00`);
+  const endAt = new Date(`${input.endDate}T${input.dropoffTime}:00`);
+  return !Number.isNaN(startAt.getTime()) && !Number.isNaN(endAt.getTime()) && endAt > startAt;
+}
+
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
   const clientIp = getClientIpFromRequest(request);
@@ -238,8 +249,11 @@ export async function POST(request: Request) {
   if (start < today) {
     return NextResponse.json({ error: "startDate must be today or later" }, { status: 400 });
   }
-  if (!(end > start)) {
-    return NextResponse.json({ error: "endDate must be after startDate" }, { status: 400 });
+  if (end < start) {
+    return NextResponse.json(
+      { error: "Return date must be the same day or later than pickup date" },
+      { status: 400 },
+    );
   }
 
   // Pricing/UI treats end_date as inclusive (e.g. 3/19 -> 3/20 is 2 days).
@@ -249,7 +263,7 @@ export async function POST(request: Request) {
 
   const startAt = new Date(`${startDate}T${pickupTime}:00`);
   const endAt = new Date(`${endDate}T${dropoffTime}:00`);
-  if (Number.isNaN(startAt.getTime()) || Number.isNaN(endAt.getTime()) || endAt <= startAt) {
+  if (!isValidBookingDateTimeWindow({ startDate, endDate, pickupTime, dropoffTime })) {
     return NextResponse.json(
       { error: "Return date and time must be later than pickup date and time" },
       { status: 400 },
