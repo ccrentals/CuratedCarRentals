@@ -316,7 +316,7 @@ export default async function AdminCustomersPage({
                       </td>
                       <td className="px-4 py-3 text-[var(--ccr-muted)]">
                         {customer.last_booked_at ? (
-                          <TableDateTime value={customer.last_booked_at} />
+                          <TableDateTime value={customer.last_booked_at} preset="admin" />
                         ) : (
                           "No bookings yet"
                         )}
