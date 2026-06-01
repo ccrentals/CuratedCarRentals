@@ -284,7 +284,15 @@ function encodeEmailRecordId(kind: AdminEmailRecordKind, rawId: string) {
 }
 
 export function decodeEmailRecordId(value: string) {
-  const [kind, ...rest] = String(value || "").split(":");
+  const rawValue = String(value || "");
+  let decodedValue = rawValue;
+  try {
+    decodedValue = decodeURIComponent(rawValue);
+  } catch {
+    decodedValue = rawValue;
+  }
+
+  const [kind, ...rest] = decodedValue.split(":");
   const rawId = rest.join(":").trim();
   if (!rawId) return null;
   if (kind === "dispatch" || kind === "quote_legacy" || kind === "notification_dispatch_legacy") {

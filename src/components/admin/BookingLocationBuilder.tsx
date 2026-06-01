@@ -475,7 +475,7 @@ export function BookingLocationBuilder() {
                 {draft.fieldSchema.map((field, index) => (
                   <div
                     key={`${draft.draftKey}-${index}`}
-                    className="grid gap-2 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3 lg:grid-cols-[minmax(8rem,1fr)_minmax(14rem,2fr)_minmax(7rem,0.8fr)_minmax(7rem,0.8fr)_minmax(10rem,1fr)_auto]"
+                    className="grid gap-2 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3 lg:grid-cols-[minmax(8rem,1fr)_minmax(14rem,2fr)_minmax(7rem,0.8fr)_minmax(7rem,0.8fr)_minmax(10rem,1fr)]"
                   >
                     <input
                       type="text"
@@ -552,7 +552,7 @@ export function BookingLocationBuilder() {
                         </option>
                       ))}
                     </select>
-                    <div className="flex items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2 lg:col-span-5">
                       <label className="flex items-center gap-2 text-xs text-[var(--ccr-muted)]">
                         <input
                           type="checkbox"

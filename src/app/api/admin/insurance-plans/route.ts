@@ -48,7 +48,7 @@ export async function GET() {
         "select id, vehicle_id, is_enabled, price_per_day_cents, coverage_cents, is_global_default, updated_at from insurance_plans order by is_global_default desc, updated_at desc",
       ),
       dbQuery<VehicleRow>(
-        "select id, make, model, year, status from vehicles where deleted_at is null and status <> 'INACTIVE' order by make asc, model asc, year desc",
+        "select id, make, model, year, status from vehicles where deleted_at is null and coalesce(status, '') <> 'INACTIVE' order by make asc, model asc, year desc",
       ),
     ]);
 
