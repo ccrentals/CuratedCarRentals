@@ -30,6 +30,51 @@ function safeBackHref(value: string | undefined) {
   return value;
 }
 
+function formatDetailLabel(value: string) {
+  const normalized = value
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_.-]+/g, " ")
+    .trim()
+    .toLowerCase();
+  if (!normalized) return "Detail";
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
+function formatDetailValue(value: unknown): string {
+  if (value === null) return "null";
+  if (value === undefined) return "—";
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (typeof value === "number") return String(value);
+  if (typeof value === "string") return value || "—";
+  return JSON.stringify(value, null, 2);
+}
+
+function DetailObjectList({
+  value,
+  emptyLabel = "No details recorded.",
+}: {
+  value: Record<string, unknown> | null | undefined;
+  emptyLabel?: string;
+}) {
+  const entries = Object.entries(value ?? {});
+  if (entries.length === 0) {
+    return <p className="text-sm text-[var(--ccr-muted)]">{emptyLabel}</p>;
+  }
+
+  return (
+    <dl className="mt-3 divide-y divide-[var(--ccr-border)] rounded-lg bg-[var(--ccr-bg)] text-xs">
+      {entries.map(([key, detailValue]) => (
+        <div key={key} className="grid gap-1 px-3 py-2 sm:grid-cols-[minmax(8rem,0.8fr)_minmax(0,1.8fr)]">
+          <dt className="font-semibold text-[var(--ccr-muted)]">{formatDetailLabel(key)}</dt>
+          <dd className="whitespace-pre-wrap break-words font-mono text-[var(--ccr-text)]">
+            {formatDetailValue(detailValue)}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 export default async function AdminEmailDetailPage({
   params,
   searchParams,
@@ -152,9 +197,7 @@ export default async function AdminEmailDetailPage({
                       {formatAdminEmailLabel(event.source)}
                       {event.status ? ` • ${formatAdminEmailLabel(event.status)}` : ""}
                     </p>
-                    <pre className="mt-3 overflow-x-auto whitespace-pre-wrap break-words rounded-lg bg-[var(--ccr-bg)] p-3 text-xs text-[var(--ccr-text)]">
-                      {JSON.stringify(event.details, null, 2)}
-                    </pre>
+                    <DetailObjectList value={event.details} />
                   </div>
                 ))}
               </div>
@@ -173,9 +216,7 @@ export default async function AdminEmailDetailPage({
 
             <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-4">
               <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">Metadata</p>
-              <pre className="overflow-x-auto whitespace-pre-wrap break-words text-xs text-[var(--ccr-text)]">
-                {JSON.stringify(item.metadata, null, 2)}
-              </pre>
+              <DetailObjectList value={item.metadata} emptyLabel="No metadata recorded." />
             </div>
 
             {item.lastError ? (
