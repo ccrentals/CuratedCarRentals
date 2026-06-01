@@ -35,11 +35,13 @@ create table if not exists insurance_plans (
   vehicle_id uuid references vehicles(id) on delete cascade,
   is_enabled boolean not null default false,
   price_per_day_cents int not null default 0,
+  coverage_cents int not null default 155000,
   is_global_default boolean not null default false,
   created_by uuid references users(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint insurance_plans_price_check check (price_per_day_cents >= 0)
+  constraint insurance_plans_price_check check (price_per_day_cents >= 0),
+  constraint insurance_plans_coverage_check check (coverage_cents >= 0)
 );
 
 create unique index if not exists insurance_plans_vehicle_unique_idx
