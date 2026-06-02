@@ -23,6 +23,8 @@ type VehicleRow = {
   status: string;
 };
 
+export const dynamic = "force-dynamic";
+
 function normalizeText(value: unknown) {
   if (typeof value !== "string") return "";
   return value.trim();
@@ -37,6 +39,44 @@ function parsePrice(value: unknown) {
   return 0;
 }
 
+function isUndefinedColumn(error: unknown, column: string) {
+  const code = (error as { code?: string } | null)?.code;
+  const message = String((error as { message?: unknown } | null)?.message ?? "");
+  return code === "42703" && message.includes(`"${column}"`) && message.includes("does not exist");
+}
+
+async function loadInsurancePlans() {
+  try {
+    return await dbQuery<InsurancePlanRow>(
+      "select id, vehicle_id, is_enabled, price_per_day_cents, coverage_cents, is_global_default, updated_at from insurance_plans order by is_global_default desc, updated_at desc",
+    );
+  } catch (error) {
+    if (!isUndefinedColumn(error, "coverage_cents")) {
+      throw error;
+    }
+
+    return await dbQuery<InsurancePlanRow>(
+      "select id, vehicle_id, is_enabled, price_per_day_cents, 155000::int as coverage_cents, is_global_default, updated_at from insurance_plans order by is_global_default desc, updated_at desc",
+    );
+  }
+}
+
+async function loadVehiclesForInsurance() {
+  try {
+    return await dbQuery<VehicleRow>(
+      "select id, make, model, year, status from vehicles where deleted_at is null order by make asc, model asc, year desc",
+    );
+  } catch (error) {
+    if (!isUndefinedColumn(error, "deleted_at")) {
+      throw error;
+    }
+
+    return await dbQuery<VehicleRow>(
+      "select id, make, model, year, status from vehicles order by make asc, model asc, year desc",
+    );
+  }
+}
+
 export async function GET() {
   const auth = await requireAdminRole();
   if (!auth.ok) return auth.response;
@@ -44,17 +84,17 @@ export async function GET() {
 
   try {
     const [plans, vehicles] = await Promise.all([
-      dbQuery<InsurancePlanRow>(
-        "select id, vehicle_id, is_enabled, price_per_day_cents, coverage_cents, is_global_default, updated_at from insurance_plans order by is_global_default desc, updated_at desc",
-      ),
-      dbQuery<VehicleRow>(
-        "select id, make, model, year, status from vehicles where deleted_at is null order by make asc, model asc, year desc",
-      ),
+      loadInsurancePlans(),
+      loadVehiclesForInsurance(),
     ]);
 
     return NextResponse.json({
       plans: plans.rows,
       vehicles: vehicles.rows,
+    }, {
+      headers: {
+        "Cache-Control": "no-store",
+      },
     });
   } catch (error) {
     logError("api.admin.insurance-plans.GET", error, { userId: actor.userId });

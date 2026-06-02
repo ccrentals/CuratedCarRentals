@@ -2203,7 +2203,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
         setErrorMessage("Choose a protection option to continue.");
         return false;
       }
-      if (protectionChoice === "STANDARD" && (!insuranceEnabled || !insurancePlanId)) {
+      if (protectionChoice === "STANDARD" && !insuranceEnabled) {
         setErrorMessage("Standard Protection is unavailable for this vehicle. Choose No Protection to continue.");
         return false;
       }
