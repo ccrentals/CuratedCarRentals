@@ -1,7 +1,7 @@
 import { dbQuery } from "@/lib/db";
 import {
   normalizeAdminSettingsValue,
-  resolveMinimumRentalDaysForVehicle,
+  resolveMinimumRentalDays as resolveGlobalMinimumRentalDays,
 } from "@/lib/adminSettings";
 import { computeQuotePrice, getVehiclePricingProfile } from "@/lib/bookings/pricingRules";
 import { validateMinimumRentalDays } from "@/lib/bookings/minimumRentalDays";
@@ -189,10 +189,7 @@ async function resolveInsurancePlan(input: {
   );
 }
 
-async function resolveMinimumRentalDays(input: {
-  db: Queryable;
-  vehicleId: string;
-}) {
+async function resolveMinimumRentalDays(input: { db: Queryable }) {
   const result = await input.db.query(
     "select content from admin_documents where key = 'settings' limit 1",
   );
@@ -206,7 +203,7 @@ async function resolveMinimumRentalDays(input: {
     }
   }
   const settings = normalizeAdminSettingsValue(parsedSettings);
-  return resolveMinimumRentalDaysForVehicle(settings, input.vehicleId);
+  return resolveGlobalMinimumRentalDays(settings);
 }
 
 export async function buildQuotePricingSnapshot(
@@ -230,7 +227,7 @@ export async function buildQuotePricingSnapshot(
     throw new QuotePricingError("VEHICLE_NOT_FOUND", "Vehicle not found.", 404);
   }
 
-  const minimumDays = await resolveMinimumRentalDays({ db, vehicleId: input.vehicleId });
+  const minimumDays = await resolveMinimumRentalDays({ db });
   const minimumValidation = validateMinimumRentalDays({
     start: startAt,
     end: endAt,

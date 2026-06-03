@@ -13,7 +13,7 @@ import { normalizeCountryName, normalizeRegionForCountry } from "@/lib/jamaicaPa
 import { normalizeLegalIdType } from "@/lib/customers/legalId";
 import {
   loadAdminSettings,
-  resolveMinimumRentalDaysForVehicle,
+  resolveMinimumRentalDays,
 } from "@/lib/adminSettings";
 import { validateMinimumRentalDays } from "@/lib/bookings/minimumRentalDays";
 import { isPublicVehicleUnavailableForWindow } from "@/lib/publicVehicles";
@@ -276,7 +276,7 @@ export async function POST(request: Request) {
   }
 
   const { settings } = await loadAdminSettings();
-  const minimumDays = resolveMinimumRentalDaysForVehicle(settings, vehicleId);
+  const minimumDays = resolveMinimumRentalDays(settings);
   const minimumValidation = validateMinimumRentalDays({
     start,
     end,

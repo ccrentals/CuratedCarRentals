@@ -21,7 +21,7 @@ import { logError } from "@/lib/log";
 import { CustomerBlockedError, upsertCustomerForBooking } from "@/lib/customers";
 import {
   loadAdminSettings,
-  resolveMinimumRentalDaysForVehicle,
+  resolveMinimumRentalDays,
 } from "@/lib/adminSettings";
 import { validateMinimumRentalDays } from "@/lib/bookings/minimumRentalDays";
 import { normalizePromoInputCode, validatePromoForBooking } from "@/lib/promos";
@@ -213,7 +213,7 @@ export async function handleAdminBookingsPost(
   }
 
   const { settings } = await loadAdminSettings();
-  const minimumDays = resolveMinimumRentalDaysForVehicle(settings, vehicleId);
+  const minimumDays = resolveMinimumRentalDays(settings);
   const minimumValidation = validateMinimumRentalDays({
     start,
     end,
