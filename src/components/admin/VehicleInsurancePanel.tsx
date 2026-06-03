@@ -67,8 +67,7 @@ export function VehicleInsurancePanel({ vehicleId, vehicleLabel }: VehicleInsura
     setMessage(null);
     try {
       const normalizedPrice = Math.max(0, Math.round(Number(pricePerDay) || 0));
-      const effectiveEnabled = enabled || normalizedPrice > 0;
-      if (effectiveEnabled && !enabled) setEnabled(true);
+      const effectiveEnabled = enabled;
 
       const csrfToken = await ensureCsrfToken();
       const response = await fetch("/api/admin/insurance-plans", {
@@ -89,11 +88,7 @@ export function VehicleInsurancePanel({ vehicleId, vehicleLabel }: VehicleInsura
         throw new Error(payload.error ?? "Failed to save insurance.");
       }
       setPricePerDay(String(normalizedPrice));
-      setMessage(
-        effectiveEnabled && !enabled
-          ? "Insurance saved (auto-enabled because price is greater than zero)."
-          : "Insurance saved.",
-      );
+      setMessage("Insurance saved.");
       await loadPlan();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Failed to save insurance.");
@@ -127,14 +122,7 @@ export function VehicleInsurancePanel({ vehicleId, vehicleLabel }: VehicleInsura
               type="number"
               min={0}
               value={pricePerDay}
-              onChange={(event) => {
-                const nextValue = event.target.value;
-                setPricePerDay(nextValue);
-                const parsed = Number(nextValue);
-                if (!enabled && Number.isFinite(parsed) && parsed > 0) {
-                  setEnabled(true);
-                }
-              }}
+              onChange={(event) => setPricePerDay(event.target.value)}
               className="w-44 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-sm text-[var(--ccr-text)]"
             />
             <button
