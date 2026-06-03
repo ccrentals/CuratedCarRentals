@@ -62,6 +62,23 @@ export function defaultBookingDateTime(input?: {
   };
 }
 
+export function restoredPickupIsBeforeDefault(input: {
+  pickupDate: string;
+  pickupTime: string;
+  now?: Date;
+  minimumDays?: number;
+}) {
+  const restoredPickup = new Date(`${input.pickupDate}T${input.pickupTime}:00`);
+  if (Number.isNaN(restoredPickup.getTime())) return true;
+  const defaultDateTime = defaultBookingDateTime({
+    now: input.now,
+    minimumDays: input.minimumDays,
+  });
+  const defaultPickup = new Date(`${defaultDateTime.pickupDate}T${defaultDateTime.pickupTime}:00`);
+  if (Number.isNaN(defaultPickup.getTime())) return false;
+  return restoredPickup < defaultPickup;
+}
+
 export function calcElapsedCalendarDays(start: unknown, end: unknown) {
   const normalizedStart = dateOnlyUtc(start);
   const normalizedEnd = dateOnlyUtc(end);

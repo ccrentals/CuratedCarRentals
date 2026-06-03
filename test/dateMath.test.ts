@@ -6,6 +6,7 @@ import { normalizeAdminSettingsValue } from "@/lib/adminSettings";
 import {
   calcElapsedCalendarDays,
   defaultBookingDateTime,
+  restoredPickupIsBeforeDefault,
   validateMinimumRentalDays,
 } from "@/lib/bookings/minimumRentalDays";
 
@@ -101,6 +102,30 @@ test("defaultBookingDateTime: after 3 PM Jamaica defaults to next day at 11 AM",
     dropoffDate: "2026-06-07",
     dropoffTime: "11:00",
   });
+});
+
+test("restoredPickupIsBeforeDefault: rejects stale draft pickup before Jamaica default", () => {
+  assert.equal(
+    restoredPickupIsBeforeDefault({
+      pickupDate: "2026-06-02",
+      pickupTime: "11:00",
+      now: new Date("2026-06-03T03:52:00.000Z"),
+      minimumDays: 2,
+    }),
+    true,
+  );
+});
+
+test("restoredPickupIsBeforeDefault: accepts draft pickup at current Jamaica default", () => {
+  assert.equal(
+    restoredPickupIsBeforeDefault({
+      pickupDate: "2026-06-03",
+      pickupTime: "11:00",
+      now: new Date("2026-06-03T03:52:00.000Z"),
+      minimumDays: 2,
+    }),
+    false,
+  );
 });
 
 test("normalizeAdminSettingsValue: ignores legacy per-vehicle minimum rental day overrides", () => {
