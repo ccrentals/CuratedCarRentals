@@ -160,10 +160,7 @@ export function BookingFlowConfigPanel() {
     try {
       const normalizedPrice = Math.max(0, Math.round(Number(globalPricePerDay) || 0));
       const normalizedCoverage = Math.max(0, Math.round(Number(globalCoverage) || 0));
-      const effectiveEnabled = globalEnabled || normalizedPrice > 0;
-      if (effectiveEnabled && !globalEnabled) {
-        setGlobalEnabled(true);
-      }
+      const effectiveEnabled = globalEnabled;
       const csrfToken = await ensureCsrfToken();
       const response = await fetch("/api/admin/insurance-plans", {
         method: "PATCH",
@@ -183,11 +180,7 @@ export function BookingFlowConfigPanel() {
         throw new Error(data.error ?? "Failed to save global insurance plan.");
       }
       await reloadInsuranceConfiguration();
-      setStatus(
-        effectiveEnabled && !globalEnabled
-          ? "Global insurance plan saved (auto-enabled because price is greater than zero)."
-          : "Global insurance plan saved.",
-      );
+      setStatus("Global insurance plan saved.");
     } catch (saveError) {
       setError(
         saveError instanceof Error ? saveError.message : "Failed to save global insurance plan.",
@@ -206,18 +199,7 @@ export function BookingFlowConfigPanel() {
     try {
       const normalizedPrice = Math.max(0, Math.round(Number(draft.pricePerDayCents) || 0));
       const normalizedCoverage = Math.max(0, Math.round(Number(draft.coverageCents) || 0));
-      const effectiveEnabled = draft.isEnabled || normalizedPrice > 0;
-      if (effectiveEnabled && !draft.isEnabled) {
-        setVehicleDrafts((current) => ({
-          ...current,
-          [vehicleId]: {
-            ...draft,
-            isEnabled: true,
-            pricePerDayCents: String(normalizedPrice),
-            coverageCents: String(normalizedCoverage),
-          },
-        }));
-      }
+      const effectiveEnabled = draft.isEnabled;
       const csrfToken = await ensureCsrfToken();
       const response = await fetch("/api/admin/insurance-plans", {
         method: "PATCH",
@@ -238,11 +220,7 @@ export function BookingFlowConfigPanel() {
         throw new Error(data.error ?? "Failed to save vehicle insurance plan.");
       }
       await reloadInsuranceConfiguration();
-      setStatus(
-        effectiveEnabled && !draft.isEnabled
-          ? "Vehicle insurance plan saved (auto-enabled because price is greater than zero)."
-          : "Vehicle insurance plan saved.",
-      );
+      setStatus("Vehicle insurance plan saved.");
     } catch (saveError) {
       setError(
         saveError instanceof Error ? saveError.message : "Failed to save vehicle insurance plan.",
@@ -290,14 +268,7 @@ export function BookingFlowConfigPanel() {
                   type="number"
                   min={0}
                   value={globalPricePerDay}
-                  onChange={(event) => {
-                    const nextValue = event.target.value;
-                    setGlobalPricePerDay(nextValue);
-                    const parsed = Number(nextValue);
-                    if (!globalEnabled && Number.isFinite(parsed) && parsed > 0) {
-                      setGlobalEnabled(true);
-                    }
-                  }}
+                  onChange={(event) => setGlobalPricePerDay(event.target.value)}
                   className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-sm text-[var(--ccr-text)]"
                 />
               </label>
@@ -362,14 +333,11 @@ export function BookingFlowConfigPanel() {
                         onChange={(event) =>
                           setVehicleDrafts((current) => {
                             const nextValue = event.target.value;
-                            const parsed = Number(nextValue);
                             return {
                               ...current,
                               [vehicle.id]: {
                                 ...draft,
                                 pricePerDayCents: nextValue,
-                                isEnabled:
-                                  draft.isEnabled || (Number.isFinite(parsed) && parsed > 0),
                               },
                             };
                           })
@@ -451,11 +419,11 @@ export function BookingFlowConfigPanel() {
           </div>
         </div>
 
+        {error ? <p className="text-sm font-semibold text-red-500">{error}</p> : null}
+        {status ? <p className="text-sm font-semibold text-[var(--ccr-text)]">{status}</p> : null}
+
         <BookingLocationBuilder />
       </div>
-
-      {error ? <p className="mt-4 text-sm font-semibold text-red-500">{error}</p> : null}
-      {status ? <p className="mt-4 text-sm font-semibold text-[var(--ccr-text)]">{status}</p> : null}
     </section>
   );
 }
