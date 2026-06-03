@@ -2,6 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { calcDaysInclusive, dateOnlyUtc } from "@/lib/payments/dateMath";
+import {
+  calcElapsedCalendarDays,
+  validateMinimumRentalDays,
+} from "@/lib/bookings/minimumRentalDays";
 
 test("dateOnlyUtc normalizes to T00:00:00Z", () => {
   const d = dateOnlyUtc("2026-03-19T18:22:10.000Z");
@@ -27,3 +31,30 @@ test("calcDaysInclusive: crossing month boundary stays consistent", () => {
   assert.equal(calcDaysInclusive("2026-02-28", "2026-03-01"), 2);
 });
 
+test("calcElapsedCalendarDays: consecutive dates count as 1 elapsed rental day", () => {
+  assert.equal(calcElapsedCalendarDays("2026-06-03", "2026-06-04"), 1);
+});
+
+test("validateMinimumRentalDays: rejects one elapsed day when minimum is 2", () => {
+  const result = validateMinimumRentalDays({
+    start: "2026-06-03T06:00:00.000Z",
+    end: "2026-06-04T06:00:00.000Z",
+    minimumDays: 2,
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.elapsedDays, 1);
+  assert.equal(result.message, "Minimum rental period is 2 days.");
+});
+
+test("validateMinimumRentalDays: accepts two elapsed days when minimum is 2", () => {
+  const result = validateMinimumRentalDays({
+    start: "2026-06-03T06:00:00.000Z",
+    end: "2026-06-05T06:00:00.000Z",
+    minimumDays: 2,
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.elapsedDays, 2);
+  assert.equal(result.message, null);
+});

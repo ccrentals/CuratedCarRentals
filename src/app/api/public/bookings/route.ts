@@ -11,6 +11,11 @@ import { calcDaysInclusive, dateOnlyUtc } from "@/lib/payments/dateMath";
 import { CustomerBlockedError, upsertCustomerForBooking } from "@/lib/customers";
 import { normalizeCountryName, normalizeRegionForCountry } from "@/lib/jamaicaParishes";
 import { normalizeLegalIdType } from "@/lib/customers/legalId";
+import {
+  loadAdminSettings,
+  resolveMinimumRentalDaysForVehicle,
+} from "@/lib/adminSettings";
+import { validateMinimumRentalDays } from "@/lib/bookings/minimumRentalDays";
 import { isPublicVehicleUnavailableForWindow } from "@/lib/publicVehicles";
 import {
   createBookingAccessToken,
@@ -273,6 +278,20 @@ export async function POST(request: Request) {
   if (!isValidBookingDateTimeWindow({ startDate, endDate, pickupTime, dropoffTime })) {
     return NextResponse.json(
       { error: "Return date and time must be later than pickup date and time" },
+      { status: 400 },
+    );
+  }
+
+  const { settings } = await loadAdminSettings();
+  const minimumDays = resolveMinimumRentalDaysForVehicle(settings, vehicleId);
+  const minimumValidation = validateMinimumRentalDays({
+    start,
+    end,
+    minimumDays,
+  });
+  if (!minimumValidation.ok) {
+    return NextResponse.json(
+      { error: minimumValidation.message ?? "Selected rental window is too short." },
       { status: 400 },
     );
   }
