@@ -2,8 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { calcDaysInclusive, dateOnlyUtc } from "@/lib/payments/dateMath";
+import { normalizeAdminSettingsValue } from "@/lib/adminSettings";
 import {
   calcElapsedCalendarDays,
+  defaultBookingDateTime,
   validateMinimumRentalDays,
 } from "@/lib/bookings/minimumRentalDays";
 
@@ -57,4 +59,61 @@ test("validateMinimumRentalDays: accepts two elapsed days when minimum is 2", ()
   assert.equal(result.ok, true);
   assert.equal(result.elapsedDays, 2);
   assert.equal(result.message, null);
+});
+
+test("defaultBookingDateTime: before 11 AM Jamaica defaults to today at 11 AM", () => {
+  const result = defaultBookingDateTime({
+    now: new Date("2026-06-03T15:59:00.000Z"),
+    minimumDays: 2,
+  });
+
+  assert.deepEqual(result, {
+    pickupDate: "2026-06-03",
+    pickupTime: "11:00",
+    dropoffDate: "2026-06-05",
+    dropoffTime: "11:00",
+  });
+});
+
+test("defaultBookingDateTime: after 11 AM through 3 PM Jamaica defaults to today at 3 PM", () => {
+  const result = defaultBookingDateTime({
+    now: new Date("2026-06-03T16:01:00.000Z"),
+    minimumDays: 2,
+  });
+
+  assert.deepEqual(result, {
+    pickupDate: "2026-06-03",
+    pickupTime: "15:00",
+    dropoffDate: "2026-06-05",
+    dropoffTime: "15:00",
+  });
+});
+
+test("defaultBookingDateTime: after 3 PM Jamaica defaults to next day at 11 AM", () => {
+  const result = defaultBookingDateTime({
+    now: new Date("2026-06-03T20:01:00.000Z"),
+    minimumDays: 3,
+  });
+
+  assert.deepEqual(result, {
+    pickupDate: "2026-06-04",
+    pickupTime: "11:00",
+    dropoffDate: "2026-06-07",
+    dropoffTime: "11:00",
+  });
+});
+
+test("normalizeAdminSettingsValue: ignores legacy per-vehicle minimum rental day overrides", () => {
+  const settings = normalizeAdminSettingsValue({
+    bookingMinimumRentalDays: {
+      globalDefaultDays: 4,
+      vehicleOverrides: {
+        "legacy-vehicle": 1,
+      },
+    },
+  });
+
+  assert.deepEqual(settings.bookingMinimumRentalDays, {
+    globalDefaultDays: 4,
+  });
 });

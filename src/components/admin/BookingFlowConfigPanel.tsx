@@ -37,12 +37,10 @@ type InsurancePayload = {
 
 type MinimumRentalDaysSettings = {
   globalDefaultDays: number;
-  vehicleOverrides: Record<string, number>;
 };
 
 type MinimumRentalDaysPayload = {
   minimumRentalDays?: MinimumRentalDaysSettings;
-  vehicles?: VehicleRow[];
   error?: string;
 };
 
@@ -67,9 +65,7 @@ export function BookingFlowConfigPanel() {
   const [vehicleDrafts, setVehicleDrafts] = useState<Record<string, VehicleInsuranceDraft>>({});
   const [savingVehicleId, setSavingVehicleId] = useState<string | null>(null);
   const [minimumGlobalDays, setMinimumGlobalDays] = useState("2");
-  const [minimumVehicleDrafts, setMinimumVehicleDrafts] = useState<Record<string, string>>({});
   const [savingMinimumGlobal, setSavingMinimumGlobal] = useState(false);
-  const [savingMinimumVehicleId, setSavingMinimumVehicleId] = useState<string | null>(null);
 
   const applyInsurancePayload = useCallback((payload: InsurancePayload) => {
     const plans = Array.isArray(payload.plans) ? payload.plans : [];
@@ -125,21 +121,8 @@ export function BookingFlowConfigPanel() {
   const applyMinimumRentalDaysPayload = useCallback((payload: MinimumRentalDaysPayload) => {
     const minimumRentalDays = payload.minimumRentalDays ?? {
       globalDefaultDays: 2,
-      vehicleOverrides: {},
     };
     setMinimumGlobalDays(String(minimumRentalDays.globalDefaultDays ?? 2));
-
-    const drafts: Record<string, string> = {};
-    const nextVehicles = Array.isArray(payload.vehicles) ? payload.vehicles : [];
-    for (const vehicle of nextVehicles) {
-      drafts[vehicle.id] = Object.prototype.hasOwnProperty.call(
-        minimumRentalDays.vehicleOverrides,
-        vehicle.id,
-      )
-        ? String(minimumRentalDays.vehicleOverrides[vehicle.id])
-        : "";
-    }
-    setMinimumVehicleDrafts(drafts);
   }, []);
 
   const reloadMinimumRentalDaysConfiguration = useCallback(async () => {
@@ -312,46 +295,6 @@ export function BookingFlowConfigPanel() {
       );
     } finally {
       setSavingMinimumGlobal(false);
-    }
-  }
-
-  async function saveVehicleMinimumRentalDays(vehicleId: string, inheritGlobal: boolean) {
-    setSavingMinimumVehicleId(vehicleId);
-    setStatus(null);
-    setError(null);
-    try {
-      const csrfToken = await ensureCsrfToken();
-      const response = await fetch("/api/admin/minimum-rental-days", {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          "x-csrf-token": csrfToken ?? "",
-        },
-        body: JSON.stringify({
-          scope: "VEHICLE",
-          vehicleId,
-          minimumDays: minimumVehicleDrafts[vehicleId] || minimumGlobalDays,
-          inheritGlobal,
-        }),
-      });
-      const data = (await response.json().catch(() => ({}))) as { error?: string };
-      if (!response.ok) {
-        throw new Error(data.error ?? "Failed to save vehicle minimum rental days.");
-      }
-      await reloadMinimumRentalDaysConfiguration();
-      setStatus(
-        inheritGlobal
-          ? "Vehicle minimum rental days reset to global default."
-          : "Vehicle minimum rental days saved.",
-      );
-    } catch (saveError) {
-      setError(
-        saveError instanceof Error
-          ? saveError.message
-          : "Failed to save vehicle minimum rental days.",
-      );
-    } finally {
-      setSavingMinimumVehicleId(null);
     }
   }
 
@@ -579,59 +522,6 @@ export function BookingFlowConfigPanel() {
                 {savingMinimumGlobal ? "Saving..." : "Save"}
               </button>
             </div>
-          </div>
-
-          <div className="mt-3 space-y-2">
-            {pagedVehicles.map((vehicle) => {
-              const draft = minimumVehicleDrafts[vehicle.id] ?? "";
-              const inherited = draft.trim().length === 0;
-              return (
-                <div
-                  key={`minimum-${vehicle.id}`}
-                  className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3"
-                >
-                  <p className="text-sm font-semibold text-[var(--ccr-text)]">{vehicleLabel(vehicle)}</p>
-                  <div className="mt-2 grid gap-2 md:grid-cols-[minmax(9rem,1fr)_auto_auto] md:items-end">
-                    <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-                      Minimum days
-                      <input
-                        type="number"
-                        min={1}
-                        max={30}
-                        placeholder={`Global: ${minimumGlobalDays || "2"}`}
-                        value={draft}
-                        onChange={(event) =>
-                          setMinimumVehicleDrafts((current) => ({
-                            ...current,
-                            [vehicle.id]: event.target.value,
-                          }))
-                        }
-                        className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-sm text-[var(--ccr-text)]"
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => void saveVehicleMinimumRentalDays(vehicle.id, false)}
-                      disabled={savingMinimumVehicleId === vehicle.id || inherited}
-                      className={buttonStyles({ variant: "secondary", size: "xs" })}
-                    >
-                      {savingMinimumVehicleId === vehicle.id ? "Saving..." : "Save"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void saveVehicleMinimumRentalDays(vehicle.id, true)}
-                      disabled={savingMinimumVehicleId === vehicle.id || inherited}
-                      className={buttonStyles({ variant: "secondary", size: "xs" })}
-                    >
-                      Use global
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-            {pagedVehicles.length === 0 ? (
-              <p className="text-xs text-[var(--ccr-muted)]">No vehicles found.</p>
-            ) : null}
           </div>
         </div>
       </div>

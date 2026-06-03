@@ -38,7 +38,10 @@ import {
   startPricingLifecycleRefresh,
   type WizardStep,
 } from "@/lib/bookings/publicBookingWizardState";
-import { validateMinimumRentalDays } from "@/lib/bookings/minimumRentalDays";
+import {
+  defaultBookingDateTime,
+  validateMinimumRentalDays,
+} from "@/lib/bookings/minimumRentalDays";
 import {
   JAMAICA_PARISHES,
   isJamaicaCountry,
@@ -135,7 +138,6 @@ type PricingQuoteResponse = {
 type MinimumRentalDaysResponse = {
   minimumDays?: number;
   globalDefaultDays?: number;
-  vehicleOverrides?: Record<string, number>;
   error?: string;
 };
 
@@ -259,9 +261,18 @@ function pad(value: number) {
 }
 
 function dateInputForOffset(days: number) {
-  const date = new Date();
-  date.setDate(date.getDate() + days);
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Jamaica",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const parts = Object.fromEntries(
+    formatter.formatToParts(new Date()).map((part) => [part.type, part.value]),
+  );
+  const date = new Date(`${parts.year}-${parts.month}-${parts.day}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}`;
 }
 
 function addDaysToDateInput(value: string, days: number) {
@@ -413,8 +424,11 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
   const [requestedVehicleFromQuery, setRequestedVehicleFromQuery] = useState("");
   const draftHydratedRef = useRef(false);
   const preselectedVehicleIdRef = useRef("");
-  const initialPickupDateRef = useRef(dateInputForOffset(0));
-  const initialDropoffDateRef = useRef(dateInputForOffset(2));
+  const initialBookingDateTimeRef = useRef(defaultBookingDateTime());
+  const initialPickupDateRef = useRef(initialBookingDateTimeRef.current.pickupDate);
+  const initialDropoffDateRef = useRef(initialBookingDateTimeRef.current.dropoffDate);
+  const initialPickupTimeRef = useRef(initialBookingDateTimeRef.current.pickupTime);
+  const initialDropoffTimeRef = useRef(initialBookingDateTimeRef.current.dropoffTime);
 
   const [step, setStep] = useState<WizardStep>(1);
   const [maxStepCompleted, setMaxStepCompleted] = useState<WizardStep>(1);
@@ -424,9 +438,9 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
   const [showStartOverConfirm, setShowStartOverConfirm] = useState(false);
 
   const [pickupDate, setPickupDate] = useState(() => initialPickupDateRef.current);
-  const [pickupTime, setPickupTime] = useState("11:00");
+  const [pickupTime, setPickupTime] = useState(() => initialPickupTimeRef.current);
   const [dropoffDate, setDropoffDate] = useState(() => initialDropoffDateRef.current);
-  const [dropoffTime, setDropoffTime] = useState("11:00");
+  const [dropoffTime, setDropoffTime] = useState(() => initialDropoffTimeRef.current);
 
   const [locationOptions, setLocationOptions] = useState<BookingLocationConfig[]>(DEFAULT_LOCATIONS);
   const [locationsLoading, setLocationsLoading] = useState(false);
@@ -446,7 +460,6 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
   const [vehicleSelectionUnavailable, setVehicleSelectionUnavailable] = useState(false);
   const [vehicleRefreshWarning, setVehicleRefreshWarning] = useState<string | null>(null);
   const [minimumRentalGlobalDays, setMinimumRentalGlobalDays] = useState(2);
-  const [minimumRentalVehicleOverrides, setMinimumRentalVehicleOverrides] = useState<Record<string, number>>({});
 
   const [protectionChoice, setProtectionChoice] = useState<"NONE" | "STANDARD" | null>(null);
   const [insuranceEnabled, setInsuranceEnabled] = useState(false);
@@ -815,9 +828,9 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     const shouldPersistDraft =
       step > 1 ||
       pickupDate !== initialPickupDateRef.current ||
-      pickupTime !== "11:00" ||
+      pickupTime !== initialPickupTimeRef.current ||
       dropoffDate !== initialDropoffDateRef.current ||
-      dropoffTime !== "11:00" ||
+      dropoffTime !== initialDropoffTimeRef.current ||
       Object.values(pickupLocationValues).some((value) => normalizeText(value ?? "").length > 0) ||
       Object.values(dropoffLocationValues).some((value) => normalizeText(value ?? "").length > 0) ||
       normalizeText(selectedVehicleId).length > 0 ||
@@ -924,10 +937,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     () => vehicleOptions.find((vehicle) => vehicle.id === selectedVehicleId) ?? null,
     [vehicleOptions, selectedVehicleId],
   );
-  const effectiveMinimumRentalDays =
-    selectedVehicleId && Object.prototype.hasOwnProperty.call(minimumRentalVehicleOverrides, selectedVehicleId)
-      ? minimumRentalVehicleOverrides[selectedVehicleId]
-      : minimumRentalGlobalDays;
+  const effectiveMinimumRentalDays = minimumRentalGlobalDays;
   const hasSelectedVehicleId = normalizeText(selectedVehicleId).length > 0;
   const hasResolvedVehicle =
     hasSelectedVehicleId && selectedVehicle !== null && !vehicleSelectionUnavailable;
@@ -959,20 +969,9 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
         setMinimumRentalGlobalDays(
           Number.isFinite(globalDefaultDays) ? Math.max(1, Math.floor(globalDefaultDays)) : 2,
         );
-        const overrides: Record<string, number> = {};
-        if (data.vehicleOverrides && typeof data.vehicleOverrides === "object") {
-          for (const [vehicleId, days] of Object.entries(data.vehicleOverrides)) {
-            const parsedDays = Number(days);
-            if (vehicleId && Number.isFinite(parsedDays)) {
-              overrides[vehicleId] = Math.max(1, Math.floor(parsedDays));
-            }
-          }
-        }
-        setMinimumRentalVehicleOverrides(overrides);
       } catch {
         if (!cancelled) {
           setMinimumRentalGlobalDays(2);
-          setMinimumRentalVehicleOverrides({});
         }
       }
     }
@@ -982,6 +981,43 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!hydrated || draftWasRestored || step !== 1) return;
+    const stillUsingInitialDefaults =
+      pickupDate === initialPickupDateRef.current &&
+      pickupTime === initialPickupTimeRef.current &&
+      dropoffDate === initialDropoffDateRef.current &&
+      dropoffTime === initialDropoffTimeRef.current;
+    if (!stillUsingInitialDefaults) return;
+
+    const defaultDateTime = defaultBookingDateTime({ minimumDays: minimumRentalGlobalDays });
+    const unchanged =
+      defaultDateTime.pickupDate === initialPickupDateRef.current &&
+      defaultDateTime.pickupTime === initialPickupTimeRef.current &&
+      defaultDateTime.dropoffDate === initialDropoffDateRef.current &&
+      defaultDateTime.dropoffTime === initialDropoffTimeRef.current;
+    if (unchanged) return;
+
+    initialBookingDateTimeRef.current = defaultDateTime;
+    initialPickupDateRef.current = defaultDateTime.pickupDate;
+    initialDropoffDateRef.current = defaultDateTime.dropoffDate;
+    initialPickupTimeRef.current = defaultDateTime.pickupTime;
+    initialDropoffTimeRef.current = defaultDateTime.dropoffTime;
+    setPickupDate(defaultDateTime.pickupDate);
+    setPickupTime(defaultDateTime.pickupTime);
+    setDropoffDate(defaultDateTime.dropoffDate);
+    setDropoffTime(defaultDateTime.dropoffTime);
+  }, [
+    draftWasRestored,
+    dropoffDate,
+    dropoffTime,
+    hydrated,
+    minimumRentalGlobalDays,
+    pickupDate,
+    pickupTime,
+    step,
+  ]);
 
   const destroyVehicleLightbox = useCallback(() => {
     if (!vehicleLightboxRef.current) return;
@@ -2431,10 +2467,12 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     setDraftWasRestored(false);
     wizardContainerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
 
-    const defaultPickupDate = dateInputForOffset(0);
-    const defaultDropoffDate = dateInputForOffset(2);
-    initialPickupDateRef.current = defaultPickupDate;
-    initialDropoffDateRef.current = defaultDropoffDate;
+    const defaultDateTime = defaultBookingDateTime({ minimumDays: minimumRentalGlobalDays });
+    initialBookingDateTimeRef.current = defaultDateTime;
+    initialPickupDateRef.current = defaultDateTime.pickupDate;
+    initialDropoffDateRef.current = defaultDateTime.dropoffDate;
+    initialPickupTimeRef.current = defaultDateTime.pickupTime;
+    initialDropoffTimeRef.current = defaultDateTime.dropoffTime;
     const defaultPickupLocation =
       getBookingLocationConfigsForSide(locationOptions, "pickup")[0]?.locationTypeKey ?? "OFFICE";
     const defaultDropoffLocation =
@@ -2443,10 +2481,10 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
 
     setStep(1);
     setMaxStepCompleted(1);
-    setPickupDate(defaultPickupDate);
-    setPickupTime("11:00");
-    setDropoffDate(defaultDropoffDate);
-    setDropoffTime("11:00");
+    setPickupDate(defaultDateTime.pickupDate);
+    setPickupTime(defaultDateTime.pickupTime);
+    setDropoffDate(defaultDateTime.dropoffDate);
+    setDropoffTime(defaultDateTime.dropoffTime);
     setPickupLocationId(defaultPickupLocation);
     setDropoffLocationId(defaultDropoffLocation);
     setPickupLocationValues(
@@ -2457,10 +2495,10 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
         pickupValues: {},
         dropoffValues: {},
         context: {
-          pickupDate: defaultPickupDate,
-          pickupTime: "11:00",
-          dropoffDate: defaultDropoffDate,
-          dropoffTime: "11:00",
+          pickupDate: defaultDateTime.pickupDate,
+          pickupTime: defaultDateTime.pickupTime,
+          dropoffDate: defaultDateTime.dropoffDate,
+          dropoffTime: defaultDateTime.dropoffTime,
         },
       }).pickupValues,
     );
@@ -2472,10 +2510,10 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
         pickupValues: {},
         dropoffValues: {},
         context: {
-          pickupDate: defaultPickupDate,
-          pickupTime: "11:00",
-          dropoffDate: defaultDropoffDate,
-          dropoffTime: "11:00",
+          pickupDate: defaultDateTime.pickupDate,
+          pickupTime: defaultDateTime.pickupTime,
+          dropoffDate: defaultDateTime.dropoffDate,
+          dropoffTime: defaultDateTime.dropoffTime,
         },
       }).dropoffValues,
     );
