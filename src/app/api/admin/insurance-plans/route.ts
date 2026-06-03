@@ -39,6 +39,16 @@ function parsePrice(value: unknown) {
   return 0;
 }
 
+function parseUuidOrNull(value: unknown) {
+  const text = normalizeText(value);
+  if (
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(text)
+  ) {
+    return text;
+  }
+  return null;
+}
+
 function isUndefinedColumn(error: unknown, column: string) {
   const code = (error as { code?: string } | null)?.code;
   const message = String((error as { message?: unknown } | null)?.message ?? "");
@@ -75,6 +85,54 @@ async function loadVehiclesForInsurance() {
       "select id, make, model, year, status from vehicles order by make asc, model asc, year desc",
     );
   }
+}
+
+async function saveGlobalInsurancePlan({
+  isEnabled,
+  pricePerDayCents,
+  coverageCents,
+  actorUserId,
+}: {
+  isEnabled: boolean;
+  pricePerDayCents: number;
+  coverageCents: number;
+  actorUserId: string | null;
+}) {
+  const updateResult = await dbQuery(
+    "update insurance_plans set is_enabled = $1, price_per_day_cents = $2, coverage_cents = $3, updated_at = now() where is_global_default = true",
+    [isEnabled, pricePerDayCents, coverageCents],
+  );
+  if (updateResult.rowCount > 0) return;
+
+  await dbQuery(
+    "insert into insurance_plans (vehicle_id, is_enabled, price_per_day_cents, coverage_cents, is_global_default, created_by) values (null, $1, $2, $3, true, $4::uuid)",
+    [isEnabled, pricePerDayCents, coverageCents, actorUserId],
+  );
+}
+
+async function saveVehicleInsurancePlan({
+  vehicleId,
+  isEnabled,
+  pricePerDayCents,
+  coverageCents,
+  actorUserId,
+}: {
+  vehicleId: string;
+  isEnabled: boolean;
+  pricePerDayCents: number;
+  coverageCents: number;
+  actorUserId: string | null;
+}) {
+  const updateResult = await dbQuery(
+    "update insurance_plans set is_enabled = $2, price_per_day_cents = $3, coverage_cents = $4, updated_at = now() where vehicle_id = $1::uuid",
+    [vehicleId, isEnabled, pricePerDayCents, coverageCents],
+  );
+  if (updateResult.rowCount > 0) return;
+
+  await dbQuery(
+    "insert into insurance_plans (vehicle_id, is_enabled, price_per_day_cents, coverage_cents, is_global_default, created_by) values ($1::uuid, $2, $3, $4, false, $5::uuid)",
+    [vehicleId, isEnabled, pricePerDayCents, coverageCents, actorUserId],
+  );
 }
 
 export async function GET() {
@@ -116,6 +174,7 @@ export async function PATCH(request: Request) {
   const isEnabled = body?.isEnabled === true;
   const pricePerDayCents = parsePrice(body?.pricePerDayCents);
   const coverageCents = parsePrice(body?.coverageCents);
+  const actorUserId = parseUuidOrNull(actor.userId);
 
   if (scope !== "GLOBAL" && scope !== "VEHICLE") {
     return NextResponse.json({ error: "scope must be GLOBAL or VEHICLE." }, { status: 400 });
@@ -123,10 +182,7 @@ export async function PATCH(request: Request) {
 
   if (scope === "GLOBAL") {
     try {
-      await dbQuery(
-        "insert into insurance_plans (vehicle_id, is_enabled, price_per_day_cents, coverage_cents, is_global_default, created_by) values (null, $1, $2, $3, true, $4) on conflict (is_global_default) where is_global_default = true do update set is_enabled = excluded.is_enabled, price_per_day_cents = excluded.price_per_day_cents, coverage_cents = excluded.coverage_cents, updated_at = now()",
-        [isEnabled, pricePerDayCents, coverageCents, actor.userId],
-      );
+      await saveGlobalInsurancePlan({ isEnabled, pricePerDayCents, coverageCents, actorUserId });
       return NextResponse.json({ ok: true });
     } catch (error) {
       logError("api.admin.insurance-plans.PATCH.global", error, { userId: actor.userId });
@@ -148,10 +204,13 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "Vehicle not found." }, { status: 404 });
     }
 
-    await dbQuery(
-      "insert into insurance_plans (vehicle_id, is_enabled, price_per_day_cents, coverage_cents, is_global_default, created_by) values ($1, $2, $3, $4, false, $5) on conflict (vehicle_id) where vehicle_id is not null do update set is_enabled = excluded.is_enabled, price_per_day_cents = excluded.price_per_day_cents, coverage_cents = excluded.coverage_cents, updated_at = now()",
-      [vehicleId, isEnabled, pricePerDayCents, coverageCents, actor.userId],
-    );
+    await saveVehicleInsurancePlan({
+      vehicleId,
+      isEnabled,
+      pricePerDayCents,
+      coverageCents,
+      actorUserId,
+    });
 
     return NextResponse.json({ ok: true });
   } catch (error) {
