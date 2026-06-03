@@ -55,6 +55,103 @@ function isUndefinedColumn(error: unknown, column: string) {
   return code === "42703" && message.includes(`"${column}"`) && message.includes("does not exist");
 }
 
+async function insertGlobalInsurancePlanWithoutCoverage({
+  isEnabled,
+  pricePerDayCents,
+  actorUserId,
+}: {
+  isEnabled: boolean;
+  pricePerDayCents: number;
+  actorUserId: string | null;
+}) {
+  try {
+    await dbQuery(
+      "insert into insurance_plans (vehicle_id, is_enabled, price_per_day_cents, is_global_default, created_by) values (null, $1, $2, true, $3::uuid)",
+      [isEnabled, pricePerDayCents, actorUserId],
+    );
+  } catch (error) {
+    if (!isUndefinedColumn(error, "created_by")) {
+      throw error;
+    }
+
+    await dbQuery(
+      "insert into insurance_plans (vehicle_id, is_enabled, price_per_day_cents, is_global_default) values (null, $1, $2, true)",
+      [isEnabled, pricePerDayCents],
+    );
+  }
+}
+
+async function insertVehicleInsurancePlanWithoutCoverage({
+  vehicleId,
+  isEnabled,
+  pricePerDayCents,
+  actorUserId,
+}: {
+  vehicleId: string;
+  isEnabled: boolean;
+  pricePerDayCents: number;
+  actorUserId: string | null;
+}) {
+  try {
+    await dbQuery(
+      "insert into insurance_plans (vehicle_id, is_enabled, price_per_day_cents, is_global_default, created_by) values ($1::uuid, $2, $3, false, $4::uuid)",
+      [vehicleId, isEnabled, pricePerDayCents, actorUserId],
+    );
+  } catch (error) {
+    if (!isUndefinedColumn(error, "created_by")) {
+      throw error;
+    }
+
+    await dbQuery(
+      "insert into insurance_plans (vehicle_id, is_enabled, price_per_day_cents, is_global_default) values ($1::uuid, $2, $3, false)",
+      [vehicleId, isEnabled, pricePerDayCents],
+    );
+  }
+}
+
+async function saveGlobalInsurancePlanWithoutCoverage({
+  isEnabled,
+  pricePerDayCents,
+  actorUserId,
+}: {
+  isEnabled: boolean;
+  pricePerDayCents: number;
+  actorUserId: string | null;
+}) {
+  const updateResult = await dbQuery(
+    "update insurance_plans set is_enabled = $1, price_per_day_cents = $2, updated_at = now() where is_global_default = true",
+    [isEnabled, pricePerDayCents],
+  );
+  if (updateResult.rowCount > 0) return;
+
+  await insertGlobalInsurancePlanWithoutCoverage({ isEnabled, pricePerDayCents, actorUserId });
+}
+
+async function saveVehicleInsurancePlanWithoutCoverage({
+  vehicleId,
+  isEnabled,
+  pricePerDayCents,
+  actorUserId,
+}: {
+  vehicleId: string;
+  isEnabled: boolean;
+  pricePerDayCents: number;
+  actorUserId: string | null;
+}) {
+  const updateResult = await dbQuery(
+    "update insurance_plans set is_enabled = $2, price_per_day_cents = $3, updated_at = now() where vehicle_id = $1::uuid",
+    [vehicleId, isEnabled, pricePerDayCents],
+  );
+  if (updateResult.rowCount > 0) return;
+
+  await insertVehicleInsurancePlanWithoutCoverage({
+    vehicleId,
+    isEnabled,
+    pricePerDayCents,
+    actorUserId,
+  });
+}
+
 async function loadInsurancePlans() {
   try {
     return await dbQuery<InsurancePlanRow>(
@@ -98,16 +195,41 @@ async function saveGlobalInsurancePlan({
   coverageCents: number;
   actorUserId: string | null;
 }) {
-  const updateResult = await dbQuery(
-    "update insurance_plans set is_enabled = $1, price_per_day_cents = $2, coverage_cents = $3, updated_at = now() where is_global_default = true",
-    [isEnabled, pricePerDayCents, coverageCents],
-  );
+  let updateResult;
+  try {
+    updateResult = await dbQuery(
+      "update insurance_plans set is_enabled = $1, price_per_day_cents = $2, coverage_cents = $3, updated_at = now() where is_global_default = true",
+      [isEnabled, pricePerDayCents, coverageCents],
+    );
+  } catch (error) {
+    if (!isUndefinedColumn(error, "coverage_cents")) {
+      throw error;
+    }
+
+    await saveGlobalInsurancePlanWithoutCoverage({ isEnabled, pricePerDayCents, actorUserId });
+    return;
+  }
   if (updateResult.rowCount > 0) return;
 
-  await dbQuery(
-    "insert into insurance_plans (vehicle_id, is_enabled, price_per_day_cents, coverage_cents, is_global_default, created_by) values (null, $1, $2, $3, true, $4::uuid)",
-    [isEnabled, pricePerDayCents, coverageCents, actorUserId],
-  );
+  try {
+    await dbQuery(
+      "insert into insurance_plans (vehicle_id, is_enabled, price_per_day_cents, coverage_cents, is_global_default, created_by) values (null, $1, $2, $3, true, $4::uuid)",
+      [isEnabled, pricePerDayCents, coverageCents, actorUserId],
+    );
+  } catch (error) {
+    if (isUndefinedColumn(error, "coverage_cents")) {
+      await insertGlobalInsurancePlanWithoutCoverage({ isEnabled, pricePerDayCents, actorUserId });
+      return;
+    }
+    if (isUndefinedColumn(error, "created_by")) {
+      await dbQuery(
+        "insert into insurance_plans (vehicle_id, is_enabled, price_per_day_cents, coverage_cents, is_global_default) values (null, $1, $2, $3, true)",
+        [isEnabled, pricePerDayCents, coverageCents],
+      );
+      return;
+    }
+    throw error;
+  }
 }
 
 async function saveVehicleInsurancePlan({
@@ -123,16 +245,51 @@ async function saveVehicleInsurancePlan({
   coverageCents: number;
   actorUserId: string | null;
 }) {
-  const updateResult = await dbQuery(
-    "update insurance_plans set is_enabled = $2, price_per_day_cents = $3, coverage_cents = $4, updated_at = now() where vehicle_id = $1::uuid",
-    [vehicleId, isEnabled, pricePerDayCents, coverageCents],
-  );
+  let updateResult;
+  try {
+    updateResult = await dbQuery(
+      "update insurance_plans set is_enabled = $2, price_per_day_cents = $3, coverage_cents = $4, updated_at = now() where vehicle_id = $1::uuid",
+      [vehicleId, isEnabled, pricePerDayCents, coverageCents],
+    );
+  } catch (error) {
+    if (!isUndefinedColumn(error, "coverage_cents")) {
+      throw error;
+    }
+
+    await saveVehicleInsurancePlanWithoutCoverage({
+      vehicleId,
+      isEnabled,
+      pricePerDayCents,
+      actorUserId,
+    });
+    return;
+  }
   if (updateResult.rowCount > 0) return;
 
-  await dbQuery(
-    "insert into insurance_plans (vehicle_id, is_enabled, price_per_day_cents, coverage_cents, is_global_default, created_by) values ($1::uuid, $2, $3, $4, false, $5::uuid)",
-    [vehicleId, isEnabled, pricePerDayCents, coverageCents, actorUserId],
-  );
+  try {
+    await dbQuery(
+      "insert into insurance_plans (vehicle_id, is_enabled, price_per_day_cents, coverage_cents, is_global_default, created_by) values ($1::uuid, $2, $3, $4, false, $5::uuid)",
+      [vehicleId, isEnabled, pricePerDayCents, coverageCents, actorUserId],
+    );
+  } catch (error) {
+    if (isUndefinedColumn(error, "coverage_cents")) {
+      await insertVehicleInsurancePlanWithoutCoverage({
+        vehicleId,
+        isEnabled,
+        pricePerDayCents,
+        actorUserId,
+      });
+      return;
+    }
+    if (isUndefinedColumn(error, "created_by")) {
+      await dbQuery(
+        "insert into insurance_plans (vehicle_id, is_enabled, price_per_day_cents, coverage_cents, is_global_default) values ($1::uuid, $2, $3, $4, false)",
+        [vehicleId, isEnabled, pricePerDayCents, coverageCents],
+      );
+      return;
+    }
+    throw error;
+  }
 }
 
 export async function GET() {
