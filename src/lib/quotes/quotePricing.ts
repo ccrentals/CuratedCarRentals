@@ -1,5 +1,10 @@
 import { dbQuery } from "@/lib/db";
+import {
+  normalizeAdminSettingsValue,
+  resolveMinimumRentalDaysForVehicle,
+} from "@/lib/adminSettings";
 import { computeQuotePrice, getVehiclePricingProfile } from "@/lib/bookings/pricingRules";
+import { validateMinimumRentalDays } from "@/lib/bookings/minimumRentalDays";
 import { normalizePromoInputCode, validatePromoForBooking } from "@/lib/promos";
 
 type Queryable = {
@@ -14,12 +19,17 @@ type InsurancePlanRow = {
   is_global_default: boolean;
 };
 
+type SettingsRow = {
+  content: string | null;
+};
+
 export class QuotePricingError extends Error {
   code:
     | "INVALID_WINDOW"
     | "VEHICLE_NOT_FOUND"
     | "INSURANCE_UNAVAILABLE"
     | "INSURANCE_PLAN_INVALID"
+    | "MINIMUM_RENTAL_DAYS"
     | "PROMO_INVALID";
   status: number;
 
@@ -29,6 +39,7 @@ export class QuotePricingError extends Error {
       | "VEHICLE_NOT_FOUND"
       | "INSURANCE_UNAVAILABLE"
       | "INSURANCE_PLAN_INVALID"
+      | "MINIMUM_RENTAL_DAYS"
       | "PROMO_INVALID",
     message: string,
     status: number,
@@ -178,6 +189,26 @@ async function resolveInsurancePlan(input: {
   );
 }
 
+async function resolveMinimumRentalDays(input: {
+  db: Queryable;
+  vehicleId: string;
+}) {
+  const result = await input.db.query(
+    "select content from admin_documents where key = 'settings' limit 1",
+  );
+  const content = (result.rows[0] as SettingsRow | undefined)?.content;
+  let parsedSettings: unknown = {};
+  if (typeof content === "string" && content.trim()) {
+    try {
+      parsedSettings = JSON.parse(content);
+    } catch {
+      parsedSettings = {};
+    }
+  }
+  const settings = normalizeAdminSettingsValue(parsedSettings);
+  return resolveMinimumRentalDaysForVehicle(settings, input.vehicleId);
+}
+
 export async function buildQuotePricingSnapshot(
   input: QuotePricingInput,
   options: { client?: Queryable } = {},
@@ -197,6 +228,20 @@ export async function buildQuotePricingSnapshot(
   const pricingProfile = await getVehiclePricingProfile(input.vehicleId, { client: db });
   if (!pricingProfile) {
     throw new QuotePricingError("VEHICLE_NOT_FOUND", "Vehicle not found.", 404);
+  }
+
+  const minimumDays = await resolveMinimumRentalDays({ db, vehicleId: input.vehicleId });
+  const minimumValidation = validateMinimumRentalDays({
+    start: startAt,
+    end: endAt,
+    minimumDays,
+  });
+  if (!minimumValidation.ok) {
+    throw new QuotePricingError(
+      "MINIMUM_RENTAL_DAYS",
+      minimumValidation.message ?? "Selected rental window is too short.",
+      400,
+    );
   }
 
   const insurance = await resolveInsurancePlan({

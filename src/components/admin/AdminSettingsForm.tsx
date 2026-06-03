@@ -134,6 +134,7 @@ const SETTINGS_FIELD_TAB_LABELS: Record<
   maintenancePriorities: { key: "maintenance", label: "Maintenance" },
   depreciationDefaultUsefulLifeMonths: { key: "depreciation", label: "Depreciation" },
   depreciationDefaultResidualPercent: { key: "depreciation", label: "Depreciation" },
+  bookingMinimumRentalDays: { key: "general", label: "Booking Flow" },
 };
 
 const UNSAVED_SETTINGS_MESSAGE =

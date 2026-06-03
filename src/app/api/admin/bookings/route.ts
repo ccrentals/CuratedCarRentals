@@ -19,6 +19,11 @@ import { requireCsrf } from "@/lib/security/csrf";
 import { isEmail, isISODate, isNonEmptyString } from "@/lib/validators";
 import { logError } from "@/lib/log";
 import { CustomerBlockedError, upsertCustomerForBooking } from "@/lib/customers";
+import {
+  loadAdminSettings,
+  resolveMinimumRentalDaysForVehicle,
+} from "@/lib/adminSettings";
+import { validateMinimumRentalDays } from "@/lib/bookings/minimumRentalDays";
 import { normalizePromoInputCode, validatePromoForBooking } from "@/lib/promos";
 import { writeAuditLog } from "@/lib/audit";
 import {
@@ -205,6 +210,20 @@ export async function handleAdminBookingsPost(
   const days = calcDaysInclusive(start, end);
   if (days <= 0) {
     return NextResponse.json({ error: "Invalid rental duration" }, { status: 400 });
+  }
+
+  const { settings } = await loadAdminSettings();
+  const minimumDays = resolveMinimumRentalDaysForVehicle(settings, vehicleId);
+  const minimumValidation = validateMinimumRentalDays({
+    start,
+    end,
+    minimumDays,
+  });
+  if (!minimumValidation.ok) {
+    return NextResponse.json(
+      { error: minimumValidation.message ?? "Selected rental window is too short." },
+      { status: 400 },
+    );
   }
 
   let bookingLocationConfigs;

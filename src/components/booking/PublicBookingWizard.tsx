@@ -38,6 +38,7 @@ import {
   startPricingLifecycleRefresh,
   type WizardStep,
 } from "@/lib/bookings/publicBookingWizardState";
+import { validateMinimumRentalDays } from "@/lib/bookings/minimumRentalDays";
 import {
   JAMAICA_PARISHES,
   isJamaicaCountry,
@@ -129,6 +130,13 @@ type PricingQuoteResponse = {
   ok?: boolean;
   error?: string;
   summary?: PricingQuoteSummary;
+};
+
+type MinimumRentalDaysResponse = {
+  minimumDays?: number;
+  globalDefaultDays?: number;
+  vehicleOverrides?: Record<string, number>;
+  error?: string;
 };
 
 type BookingCreateResponse = {
@@ -437,6 +445,8 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
   const [selectedVehicleId, setSelectedVehicleId] = useState("");
   const [vehicleSelectionUnavailable, setVehicleSelectionUnavailable] = useState(false);
   const [vehicleRefreshWarning, setVehicleRefreshWarning] = useState<string | null>(null);
+  const [minimumRentalGlobalDays, setMinimumRentalGlobalDays] = useState(2);
+  const [minimumRentalVehicleOverrides, setMinimumRentalVehicleOverrides] = useState<Record<string, number>>({});
 
   const [protectionChoice, setProtectionChoice] = useState<"NONE" | "STANDARD" | null>(null);
   const [insuranceEnabled, setInsuranceEnabled] = useState(false);
@@ -914,6 +924,10 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     () => vehicleOptions.find((vehicle) => vehicle.id === selectedVehicleId) ?? null,
     [vehicleOptions, selectedVehicleId],
   );
+  const effectiveMinimumRentalDays =
+    selectedVehicleId && Object.prototype.hasOwnProperty.call(minimumRentalVehicleOverrides, selectedVehicleId)
+      ? minimumRentalVehicleOverrides[selectedVehicleId]
+      : minimumRentalGlobalDays;
   const hasSelectedVehicleId = normalizeText(selectedVehicleId).length > 0;
   const hasResolvedVehicle =
     hasSelectedVehicleId && selectedVehicle !== null && !vehicleSelectionUnavailable;
@@ -929,6 +943,45 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
   useEffect(() => {
     vehicleOptionsRef.current = vehicleOptions;
   }, [vehicleOptions]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadMinimumRentalDays() {
+      try {
+        const response = await fetch("/api/public/minimum-rental-days", { cache: "no-store" });
+        const data = (await response.json().catch(() => ({}))) as MinimumRentalDaysResponse;
+        if (!response.ok) {
+          throw new Error(data.error ?? "Unable to load minimum rental days.");
+        }
+        if (cancelled) return;
+
+        const globalDefaultDays = Number(data.globalDefaultDays ?? data.minimumDays ?? 2);
+        setMinimumRentalGlobalDays(
+          Number.isFinite(globalDefaultDays) ? Math.max(1, Math.floor(globalDefaultDays)) : 2,
+        );
+        const overrides: Record<string, number> = {};
+        if (data.vehicleOverrides && typeof data.vehicleOverrides === "object") {
+          for (const [vehicleId, days] of Object.entries(data.vehicleOverrides)) {
+            const parsedDays = Number(days);
+            if (vehicleId && Number.isFinite(parsedDays)) {
+              overrides[vehicleId] = Math.max(1, Math.floor(parsedDays));
+            }
+          }
+        }
+        setMinimumRentalVehicleOverrides(overrides);
+      } catch {
+        if (!cancelled) {
+          setMinimumRentalGlobalDays(2);
+          setMinimumRentalVehicleOverrides({});
+        }
+      }
+    }
+
+    void loadMinimumRentalDays();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const destroyVehicleLightbox = useCallback(() => {
     if (!vehicleLightboxRef.current) return;
@@ -1018,7 +1071,14 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
       ? "Select valid pickup and return date/time."
       : dropoffAt <= pickupAt
         ? "Return date and time must be later than pickup date and time."
-        : null;
+        : (() => {
+            const minimumValidation = validateMinimumRentalDays({
+              start: pickupAt,
+              end: dropoffAt,
+              minimumDays: effectiveMinimumRentalDays,
+            });
+            return minimumValidation.ok ? null : minimumValidation.message;
+          })();
   const datesValid = dateWindowError === null;
 
   const pickupLocationText = useMemo(

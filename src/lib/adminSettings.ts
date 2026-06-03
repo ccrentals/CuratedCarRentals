@@ -11,6 +11,11 @@ export type VehicleChecklistTemplateSetting = {
   isActive: boolean;
 };
 
+export type BookingMinimumRentalDaysSettings = {
+  globalDefaultDays: number;
+  vehicleOverrides: Record<string, number>;
+};
+
 export const ADMIN_LOGIN_METHODS = ["clerk", "legacy"] as const;
 export type AdminLoginMethod = (typeof ADMIN_LOGIN_METHODS)[number];
 export const DEFAULT_ADMIN_LOGIN_METHOD: AdminLoginMethod = "clerk";
@@ -43,6 +48,7 @@ export type AdminSettings = {
   depreciationDefaultMethod: "STRAIGHT_LINE";
   depreciationDefaultUsefulLifeMonths: number;
   depreciationDefaultResidualPercent: number;
+  bookingMinimumRentalDays: BookingMinimumRentalDaysSettings;
 };
 
 export type AdminSettingsField =
@@ -63,7 +69,8 @@ export type AdminSettingsField =
   | "maintenanceCategories"
   | "maintenancePriorities"
   | "depreciationDefaultUsefulLifeMonths"
-  | "depreciationDefaultResidualPercent";
+  | "depreciationDefaultResidualPercent"
+  | "bookingMinimumRentalDays";
 
 export type AdminSettingsFieldErrors = Partial<Record<AdminSettingsField, string>>;
 
@@ -153,6 +160,10 @@ export const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
   depreciationDefaultMethod: "STRAIGHT_LINE",
   depreciationDefaultUsefulLifeMonths: 60,
   depreciationDefaultResidualPercent: 20,
+  bookingMinimumRentalDays: {
+    globalDefaultDays: 2,
+    vehicleOverrides: {},
+  },
 };
 
 export function normalizeAdminLoginMethod(value: unknown): AdminLoginMethod {
@@ -174,6 +185,10 @@ function cloneDefaultAdminSettings(): AdminSettings {
     vehicleChecklistTemplateItems: [...DEFAULT_ADMIN_SETTINGS.vehicleChecklistTemplateItems],
     maintenanceCategories: [...DEFAULT_ADMIN_SETTINGS.maintenanceCategories],
     maintenancePriorities: [...DEFAULT_ADMIN_SETTINGS.maintenancePriorities],
+    bookingMinimumRentalDays: {
+      globalDefaultDays: DEFAULT_ADMIN_SETTINGS.bookingMinimumRentalDays.globalDefaultDays,
+      vehicleOverrides: { ...DEFAULT_ADMIN_SETTINGS.bookingMinimumRentalDays.vehicleOverrides },
+    },
   };
 }
 
@@ -284,6 +299,59 @@ function normalizeDepreciationDefaultResidualPercent(value: unknown) {
     return DEFAULT_ADMIN_SETTINGS.depreciationDefaultResidualPercent;
   }
   return Math.min(95, Math.max(0, Math.floor(parsed)));
+}
+
+export function normalizeMinimumRentalDays(value: unknown) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return DEFAULT_ADMIN_SETTINGS.bookingMinimumRentalDays.globalDefaultDays;
+  }
+  return Math.min(30, Math.max(1, Math.floor(parsed)));
+}
+
+function normalizeBookingMinimumRentalDays(
+  value: unknown,
+): BookingMinimumRentalDaysSettings {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {
+      globalDefaultDays: DEFAULT_ADMIN_SETTINGS.bookingMinimumRentalDays.globalDefaultDays,
+      vehicleOverrides: {},
+    };
+  }
+
+  const raw = value as Record<string, unknown>;
+  const rawOverrides =
+    raw.vehicleOverrides && typeof raw.vehicleOverrides === "object" && !Array.isArray(raw.vehicleOverrides)
+      ? (raw.vehicleOverrides as Record<string, unknown>)
+      : {};
+  const vehicleOverrides: Record<string, number> = {};
+  for (const [vehicleId, days] of Object.entries(rawOverrides)) {
+    const id = vehicleId.trim();
+    if (!id) continue;
+    vehicleOverrides[id] = normalizeMinimumRentalDays(days);
+  }
+
+  return {
+    globalDefaultDays: normalizeMinimumRentalDays(raw.globalDefaultDays),
+    vehicleOverrides,
+  };
+}
+
+export function resolveMinimumRentalDaysForVehicle(
+  settings: Pick<AdminSettings, "bookingMinimumRentalDays">,
+  vehicleId?: string | null,
+) {
+  const normalizedVehicleId = typeof vehicleId === "string" ? vehicleId.trim() : "";
+  if (
+    normalizedVehicleId &&
+    Object.prototype.hasOwnProperty.call(
+      settings.bookingMinimumRentalDays.vehicleOverrides,
+      normalizedVehicleId,
+    )
+  ) {
+    return settings.bookingMinimumRentalDays.vehicleOverrides[normalizedVehicleId];
+  }
+  return settings.bookingMinimumRentalDays.globalDefaultDays;
 }
 
 function normalizeStringList(value: unknown, fallback: string[]) {
@@ -551,6 +619,9 @@ export function normalizeAdminSettingsValue(raw: unknown): AdminSettings {
       normalizeDepreciationDefaultResidualPercent(
         value.depreciationDefaultResidualPercent,
       ),
+    bookingMinimumRentalDays: normalizeBookingMinimumRentalDays(
+      value.bookingMinimumRentalDays,
+    ),
   };
 }
 
@@ -751,6 +822,50 @@ export function validateAdminSettingsValue(raw: unknown): AdminSettingsValidatio
       );
       if (error) {
         fieldErrors.depreciationDefaultResidualPercent = error;
+      }
+    }
+
+    if (value.bookingMinimumRentalDays !== undefined) {
+      if (
+        !value.bookingMinimumRentalDays ||
+        typeof value.bookingMinimumRentalDays !== "object" ||
+        Array.isArray(value.bookingMinimumRentalDays)
+      ) {
+        fieldErrors.bookingMinimumRentalDays =
+          "Minimum rental days settings must include a global default and vehicle overrides.";
+      } else {
+        const minimumSettings = value.bookingMinimumRentalDays as Record<string, unknown>;
+        const globalError = validateIntegerRange(
+          minimumSettings.globalDefaultDays,
+          1,
+          30,
+          "Global minimum rental days",
+        );
+        if (globalError) {
+          fieldErrors.bookingMinimumRentalDays = globalError;
+        }
+
+        const overrides = minimumSettings.vehicleOverrides;
+        if (
+          overrides !== undefined &&
+          (!overrides || typeof overrides !== "object" || Array.isArray(overrides))
+        ) {
+          fieldErrors.bookingMinimumRentalDays =
+            "Vehicle minimum rental days overrides must be a vehicle-to-days map.";
+        } else if (overrides && typeof overrides === "object") {
+          for (const [vehicleId, days] of Object.entries(overrides as Record<string, unknown>)) {
+            const overrideError = validateIntegerRange(
+              days,
+              1,
+              30,
+              `Minimum rental days for vehicle ${vehicleId}`,
+            );
+            if (overrideError) {
+              fieldErrors.bookingMinimumRentalDays = overrideError;
+              break;
+            }
+          }
+        }
       }
     }
   }
