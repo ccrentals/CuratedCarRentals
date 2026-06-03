@@ -15,6 +15,10 @@ export type BookingMinimumRentalDaysSettings = {
   globalDefaultDays: number;
 };
 
+export type BookingVehicleSecurityDepositsSettings = {
+  vehicleDepositsJmd: Record<string, number | null>;
+};
+
 export const ADMIN_LOGIN_METHODS = ["clerk", "legacy"] as const;
 export type AdminLoginMethod = (typeof ADMIN_LOGIN_METHODS)[number];
 export const DEFAULT_ADMIN_LOGIN_METHOD: AdminLoginMethod = "clerk";
@@ -48,6 +52,7 @@ export type AdminSettings = {
   depreciationDefaultUsefulLifeMonths: number;
   depreciationDefaultResidualPercent: number;
   bookingMinimumRentalDays: BookingMinimumRentalDaysSettings;
+  bookingVehicleSecurityDeposits: BookingVehicleSecurityDepositsSettings;
 };
 
 export type AdminSettingsField =
@@ -69,7 +74,8 @@ export type AdminSettingsField =
   | "maintenancePriorities"
   | "depreciationDefaultUsefulLifeMonths"
   | "depreciationDefaultResidualPercent"
-  | "bookingMinimumRentalDays";
+  | "bookingMinimumRentalDays"
+  | "bookingVehicleSecurityDeposits";
 
 export type AdminSettingsFieldErrors = Partial<Record<AdminSettingsField, string>>;
 
@@ -162,6 +168,9 @@ export const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
   bookingMinimumRentalDays: {
     globalDefaultDays: 2,
   },
+  bookingVehicleSecurityDeposits: {
+    vehicleDepositsJmd: {},
+  },
 };
 
 export function normalizeAdminLoginMethod(value: unknown): AdminLoginMethod {
@@ -185,6 +194,11 @@ function cloneDefaultAdminSettings(): AdminSettings {
     maintenancePriorities: [...DEFAULT_ADMIN_SETTINGS.maintenancePriorities],
     bookingMinimumRentalDays: {
       globalDefaultDays: DEFAULT_ADMIN_SETTINGS.bookingMinimumRentalDays.globalDefaultDays,
+    },
+    bookingVehicleSecurityDeposits: {
+      vehicleDepositsJmd: {
+        ...DEFAULT_ADMIN_SETTINGS.bookingVehicleSecurityDeposits.vehicleDepositsJmd,
+      },
     },
   };
 }
@@ -321,10 +335,90 @@ function normalizeBookingMinimumRentalDays(
   };
 }
 
+function normalizeVehicleSecurityDepositJmd(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return null;
+  const normalized = Math.round(parsed);
+  if (normalized <= 0) return null;
+  return Math.min(1000000, normalized);
+}
+
+function normalizeBookingVehicleSecurityDeposits(
+  value: unknown,
+): BookingVehicleSecurityDepositsSettings {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {
+      vehicleDepositsJmd: {
+        ...DEFAULT_ADMIN_SETTINGS.bookingVehicleSecurityDeposits.vehicleDepositsJmd,
+      },
+    };
+  }
+
+  const raw = value as Record<string, unknown>;
+  const source =
+    raw.vehicleDepositsJmd && typeof raw.vehicleDepositsJmd === "object" && !Array.isArray(raw.vehicleDepositsJmd)
+      ? (raw.vehicleDepositsJmd as Record<string, unknown>)
+      : {};
+  const vehicleDepositsJmd: Record<string, number | null> = {};
+
+  for (const [vehicleId, amount] of Object.entries(source)) {
+    const normalizedVehicleId = vehicleId.trim();
+    if (!normalizedVehicleId) continue;
+    vehicleDepositsJmd[normalizedVehicleId] = normalizeVehicleSecurityDepositJmd(amount);
+  }
+
+  return { vehicleDepositsJmd };
+}
+
 export function resolveMinimumRentalDays(
   settings: Pick<AdminSettings, "bookingMinimumRentalDays">,
 ) {
   return settings.bookingMinimumRentalDays.globalDefaultDays;
+}
+
+export type VehicleSecurityDepositLookup = {
+  id: string;
+  make?: string | null;
+  model?: string | null;
+  name?: string | null;
+};
+
+function normalizeVehicleDepositLabel(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function getDefaultVehicleSecurityDepositJmd(
+  vehicle: Omit<VehicleSecurityDepositLookup, "id">,
+): number | null {
+  const label = normalizeVehicleDepositLabel(
+    `${vehicle.name ?? ""} ${vehicle.make ?? ""} ${vehicle.model ?? ""}`,
+  );
+
+  if (label.includes("daihatsu mira es")) return 20000;
+  if (label.includes("subaru impreza sport")) return 20000;
+  if (label.includes("subaru xv")) return 25000;
+  if (label.includes("nissan x trail") || label.includes("nissan xtrail")) return 30000;
+  if (label.includes("bmw 218i") || label.includes("bmw 2 series active tourer")) {
+    return 30000;
+  }
+
+  return null;
+}
+
+export function resolveVehicleSecurityDepositJmd(
+  settings: Pick<AdminSettings, "bookingVehicleSecurityDeposits">,
+  vehicle: VehicleSecurityDepositLookup,
+): number | null {
+  const deposits = settings.bookingVehicleSecurityDeposits.vehicleDepositsJmd;
+  if (Object.prototype.hasOwnProperty.call(deposits, vehicle.id)) {
+    return normalizeVehicleSecurityDepositJmd(deposits[vehicle.id]);
+  }
+  return getDefaultVehicleSecurityDepositJmd(vehicle);
 }
 
 function normalizeStringList(value: unknown, fallback: string[]) {
@@ -595,6 +689,9 @@ export function normalizeAdminSettingsValue(raw: unknown): AdminSettings {
     bookingMinimumRentalDays: normalizeBookingMinimumRentalDays(
       value.bookingMinimumRentalDays,
     ),
+    bookingVehicleSecurityDeposits: normalizeBookingVehicleSecurityDeposits(
+      value.bookingVehicleSecurityDeposits,
+    ),
   };
 }
 
@@ -816,6 +913,24 @@ export function validateAdminSettingsValue(raw: unknown): AdminSettingsValidatio
         );
         if (globalError) {
           fieldErrors.bookingMinimumRentalDays = globalError;
+        }
+      }
+    }
+
+    if (value.bookingVehicleSecurityDeposits !== undefined) {
+      if (
+        !value.bookingVehicleSecurityDeposits ||
+        typeof value.bookingVehicleSecurityDeposits !== "object" ||
+        Array.isArray(value.bookingVehicleSecurityDeposits)
+      ) {
+        fieldErrors.bookingVehicleSecurityDeposits =
+          "Security deposit settings must be grouped by vehicle.";
+      } else {
+        const securitySettings = value.bookingVehicleSecurityDeposits as Record<string, unknown>;
+        const deposits = securitySettings.vehicleDepositsJmd;
+        if (deposits !== undefined && (!deposits || typeof deposits !== "object" || Array.isArray(deposits))) {
+          fieldErrors.bookingVehicleSecurityDeposits =
+            "Vehicle security deposits must be saved as vehicle amounts.";
         }
       }
     }

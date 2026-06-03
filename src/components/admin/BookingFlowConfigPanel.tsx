@@ -44,6 +44,13 @@ type MinimumRentalDaysPayload = {
   error?: string;
 };
 
+type SecurityDepositsPayload = {
+  securityDeposits?: {
+    vehicleDepositsJmd?: Record<string, number | null>;
+  };
+  error?: string;
+};
+
 function vehicleLabel(vehicle: VehicleRow) {
   return `${vehicle.year} ${vehicle.make} ${vehicle.model}`.trim();
 }
@@ -66,6 +73,10 @@ export function BookingFlowConfigPanel() {
   const [savingVehicleId, setSavingVehicleId] = useState<string | null>(null);
   const [minimumGlobalDays, setMinimumGlobalDays] = useState("2");
   const [savingMinimumGlobal, setSavingMinimumGlobal] = useState(false);
+  const [securityDepositDrafts, setSecurityDepositDrafts] = useState<Record<string, string>>({});
+  const [savingSecurityDepositVehicleId, setSavingSecurityDepositVehicleId] = useState<string | null>(
+    null,
+  );
 
   const applyInsurancePayload = useCallback((payload: InsurancePayload) => {
     const plans = Array.isArray(payload.plans) ? payload.plans : [];
@@ -134,6 +145,25 @@ export function BookingFlowConfigPanel() {
     applyMinimumRentalDaysPayload(payload);
   }, [applyMinimumRentalDaysPayload]);
 
+  const applySecurityDepositsPayload = useCallback((payload: SecurityDepositsPayload) => {
+    const deposits = payload.securityDeposits?.vehicleDepositsJmd ?? {};
+    const drafts: Record<string, string> = {};
+    for (const vehicleId of Object.keys(deposits)) {
+      const amount = deposits[vehicleId];
+      drafts[vehicleId] = typeof amount === "number" && amount > 0 ? String(amount) : "";
+    }
+    setSecurityDepositDrafts(drafts);
+  }, []);
+
+  const reloadSecurityDepositsConfiguration = useCallback(async () => {
+    const response = await fetch("/api/admin/security-deposits", { cache: "no-store" });
+    const payload = (await response.json().catch(() => ({}))) as SecurityDepositsPayload;
+    if (!response.ok) {
+      throw new Error(payload.error ?? "Failed to load security deposits.");
+    }
+    applySecurityDepositsPayload(payload);
+  }, [applySecurityDepositsPayload]);
+
   const insurancePageCount = Math.max(1, Math.ceil(vehicles.length / PAGE_SIZE));
   const effectiveInsurancePage = Math.min(insurancePage, insurancePageCount);
   const pagedVehicles = useMemo(() => {
@@ -154,12 +184,16 @@ export function BookingFlowConfigPanel() {
       setLoading(true);
       setError(null);
       try {
-        const [insuranceResponse, minimumResponse] = await Promise.all([
+        const [insuranceResponse, minimumResponse, securityDepositsResponse] = await Promise.all([
           fetch("/api/admin/insurance-plans", { cache: "no-store" }),
           fetch("/api/admin/minimum-rental-days", { cache: "no-store" }),
+          fetch("/api/admin/security-deposits", { cache: "no-store" }),
         ]);
         const insurancePayload = (await insuranceResponse.json().catch(() => ({}))) as InsurancePayload;
         const minimumPayload = (await minimumResponse.json().catch(() => ({}))) as MinimumRentalDaysPayload;
+        const securityDepositsPayload = (await securityDepositsResponse.json().catch(
+          () => ({}),
+        )) as SecurityDepositsPayload;
 
         if (!insuranceResponse.ok) {
           throw new Error(insurancePayload.error ?? "Failed to load insurance plans.");
@@ -167,10 +201,14 @@ export function BookingFlowConfigPanel() {
         if (!minimumResponse.ok) {
           throw new Error(minimumPayload.error ?? "Failed to load minimum rental days.");
         }
+        if (!securityDepositsResponse.ok) {
+          throw new Error(securityDepositsPayload.error ?? "Failed to load security deposits.");
+        }
         if (!active) return;
 
         applyInsurancePayload(insurancePayload);
         applyMinimumRentalDaysPayload(minimumPayload);
+        applySecurityDepositsPayload(securityDepositsPayload);
       } catch (loadError) {
         if (!active) return;
         setError(loadError instanceof Error ? loadError.message : "Failed to load configuration.");
@@ -183,7 +221,7 @@ export function BookingFlowConfigPanel() {
     return () => {
       active = false;
     };
-  }, [applyInsurancePayload, applyMinimumRentalDaysPayload]);
+  }, [applyInsurancePayload, applyMinimumRentalDaysPayload, applySecurityDepositsPayload]);
 
   async function saveGlobalInsurancePlan() {
     if (savingGlobalPlan) return;
@@ -295,6 +333,44 @@ export function BookingFlowConfigPanel() {
       );
     } finally {
       setSavingMinimumGlobal(false);
+    }
+  }
+
+  async function saveVehicleSecurityDeposit(vehicleId: string) {
+    if (savingSecurityDepositVehicleId) return;
+    setSavingSecurityDepositVehicleId(vehicleId);
+    setStatus(null);
+    setError(null);
+    try {
+      const draft = securityDepositDrafts[vehicleId] ?? "";
+      const normalizedDeposit =
+        draft.trim() === "" ? null : Math.max(0, Math.round(Number(draft) || 0));
+      const csrfToken = await ensureCsrfToken();
+      const response = await fetch("/api/admin/security-deposits", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "x-csrf-token": csrfToken ?? "",
+        },
+        body: JSON.stringify({
+          vehicleId,
+          securityDepositJmd: normalizedDeposit,
+        }),
+      });
+      const data = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) {
+        throw new Error(data.error ?? "Failed to save vehicle security deposit.");
+      }
+      await reloadSecurityDepositsConfiguration();
+      setStatus("Vehicle security deposit saved.");
+    } catch (saveError) {
+      setError(
+        saveError instanceof Error
+          ? saveError.message
+          : "Failed to save vehicle security deposit.",
+      );
+    } finally {
+      setSavingSecurityDepositVehicleId(null);
     }
   }
 
@@ -491,6 +567,60 @@ export function BookingFlowConfigPanel() {
         {status ? <p className="text-sm font-semibold text-[var(--ccr-text)]">{status}</p> : null}
 
         <BookingLocationBuilder />
+
+        <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+            Refundable Security Deposits
+          </h3>
+          <p className="mt-1 text-xs text-[var(--ccr-muted)]">
+            Informational amount shown during booking. It is collected at pickup and is not added to
+            online payment totals.
+          </p>
+
+          <div className="mt-3 space-y-2">
+            {vehicles.map((vehicle) => {
+              const draft = securityDepositDrafts[vehicle.id] ?? "";
+              return (
+                <div
+                  key={vehicle.id}
+                  className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3"
+                >
+                  <p className="text-sm font-semibold text-[var(--ccr-text)]">{vehicleLabel(vehicle)}</p>
+                  <div className="mt-2 grid gap-2 md:grid-cols-[minmax(10rem,1fr)_auto] md:items-end">
+                    <label className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                      Refundable deposit (JMD)
+                      <input
+                        type="number"
+                        min={0}
+                        step={1}
+                        value={draft}
+                        placeholder="Leave blank for no message"
+                        onChange={(event) =>
+                          setSecurityDepositDrafts((current) => ({
+                            ...current,
+                            [vehicle.id]: event.target.value,
+                          }))
+                        }
+                        className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => void saveVehicleSecurityDeposit(vehicle.id)}
+                      disabled={savingSecurityDepositVehicleId === vehicle.id}
+                      className={buttonStyles({ variant: "secondary", size: "xs" })}
+                    >
+                      {savingSecurityDepositVehicleId === vehicle.id ? "Saving..." : "Save"}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+            {vehicles.length === 0 ? (
+              <p className="text-xs text-[var(--ccr-muted)]">No vehicles found.</p>
+            ) : null}
+          </div>
+        </div>
 
         <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
           <h3 className="text-sm font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">

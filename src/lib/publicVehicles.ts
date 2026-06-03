@@ -1,6 +1,11 @@
 import { dbQuery } from "@/lib/db";
 import type { Vehicle } from "@/data/vehicles";
 import {
+  loadAdminSettings,
+  resolveVehicleSecurityDepositJmd,
+  type AdminSettings,
+} from "@/lib/adminSettings";
+import {
   isVehicleUnavailableWithAvailabilityRules,
   listAvailableVehiclesWithAvailabilityRules,
 } from "@/lib/bookings/availabilityRules";
@@ -11,6 +16,7 @@ export type PublicVehicle = Vehicle & {
   year: number;
   daily_rate_cents: number;
   deposit_cents: number;
+  security_deposit_jmd: number | null;
   status: string;
   slug: string;
   legacyId: string | null;
@@ -171,7 +177,10 @@ function toNormalizedAvailabilityWindow(
   };
 }
 
-function mapRowToPublicVehicle(row: VehicleRow): PublicVehicle | null {
+function mapRowToPublicVehicle(
+  row: VehicleRow,
+  settings: Pick<AdminSettings, "bookingVehicleSecurityDeposits">,
+): PublicVehicle | null {
   if (!Number.isFinite(row.daily_rate_cents) || row.daily_rate_cents <= 0) {
     return null;
   }
@@ -220,6 +229,12 @@ function mapRowToPublicVehicle(row: VehicleRow): PublicVehicle | null {
     year: row.year,
     daily_rate_cents: row.daily_rate_cents,
     deposit_cents: row.deposit_cents,
+    security_deposit_jmd: resolveVehicleSecurityDepositJmd(settings, {
+      id: row.id,
+      make: row.make,
+      model: row.model,
+      name,
+    }),
     status: row.status,
     slug,
     legacyId: legacyId || null,
@@ -233,12 +248,15 @@ function mapRowToPublicVehicle(row: VehicleRow): PublicVehicle | null {
 }
 
 export async function getPublicVehicles(): Promise<PublicVehicle[]> {
-  const result = await dbQuery<VehicleRow>(
-    "select id, make, model, year, seat_count, daily_rate_cents, deposit_cents, status, created_at, features_json, image_urls_json from vehicles where deleted_at is null and upper(coalesce(status, '')) not in ('INACTIVE', 'UNAVAILABLE', 'MAINTENANCE') and lower(coalesce(features_json->>'public_visible', 'false')) in ('true','1','yes') order by case when (features_json->>'public_order') ~ '^[0-9]+$' then (features_json->>'public_order')::int else 9999 end asc, created_at desc",
-  );
+  const [{ settings }, result] = await Promise.all([
+    loadAdminSettings(),
+    dbQuery<VehicleRow>(
+      "select id, make, model, year, seat_count, daily_rate_cents, deposit_cents, status, created_at, features_json, image_urls_json from vehicles where deleted_at is null and upper(coalesce(status, '')) not in ('INACTIVE', 'UNAVAILABLE', 'MAINTENANCE') and lower(coalesce(features_json->>'public_visible', 'false')) in ('true','1','yes') order by case when (features_json->>'public_order') ~ '^[0-9]+$' then (features_json->>'public_order')::int else 9999 end asc, created_at desc",
+    ),
+  ]);
 
   const mapped: Array<PublicVehicle | null> = result.rows.map((row: VehicleRow) =>
-    mapRowToPublicVehicle(row),
+    mapRowToPublicVehicle(row, settings),
   );
   return mapped.filter((vehicle): vehicle is PublicVehicle => vehicle !== null);
 }
@@ -280,11 +298,14 @@ export async function getPublicVehicleByIdentifier(identifier: string): Promise<
   const normalized = identifier.trim();
   if (!normalized) return null;
 
-  const result = await dbQuery<VehicleRow>(
-    "select id, make, model, year, seat_count, daily_rate_cents, deposit_cents, status, created_at, features_json, image_urls_json from vehicles where deleted_at is null and upper(coalesce(status, '')) not in ('INACTIVE', 'UNAVAILABLE', 'MAINTENANCE') and lower(coalesce(features_json->>'public_visible', 'false')) in ('true','1','yes') and (id::text = $1 or features_json->>'slug' = $1 or features_json->>'legacy_id' = $1) order by created_at desc limit 1",
-    [normalized],
-  );
+  const [{ settings }, result] = await Promise.all([
+    loadAdminSettings(),
+    dbQuery<VehicleRow>(
+      "select id, make, model, year, seat_count, daily_rate_cents, deposit_cents, status, created_at, features_json, image_urls_json from vehicles where deleted_at is null and upper(coalesce(status, '')) not in ('INACTIVE', 'UNAVAILABLE', 'MAINTENANCE') and lower(coalesce(features_json->>'public_visible', 'false')) in ('true','1','yes') and (id::text = $1 or features_json->>'slug' = $1 or features_json->>'legacy_id' = $1) order by created_at desc limit 1",
+      [normalized],
+    ),
+  ]);
 
   if (result.rows.length === 0) return null;
-  return mapRowToPublicVehicle(result.rows[0]);
+  return mapRowToPublicVehicle(result.rows[0], settings);
 }

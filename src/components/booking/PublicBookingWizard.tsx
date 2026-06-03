@@ -63,6 +63,7 @@ type PublicVehicle = {
   year: number;
   daily_rate_cents: number;
   deposit_cents: number;
+  security_deposit_jmd?: number | null;
   images?: string[];
   category?: string;
   seats?: number;
@@ -1096,6 +1097,10 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
   const discountTotal = pricingQuote?.discountTotal ?? Math.max(0, Math.min(baseTotal + insuranceTotal, couponDiscount));
   const amountDue = pricingQuote?.amountDue ?? Math.max(0, baseTotal + insuranceTotal - discountTotal);
   const depositRequired = pricingQuote?.depositRequired ?? (selectedVehicle ? selectedVehicle.deposit_cents : 0);
+  const refundableSecurityDepositJmd =
+    selectedVehicle && typeof selectedVehicle.security_deposit_jmd === "number"
+      ? selectedVehicle.security_deposit_jmd
+      : 0;
 
   const customPaymentNumber = Number(customPaymentAmount);
   const customPaymentIsValid =
@@ -1281,6 +1286,10 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
             daily_rate_cents:
               typeof vehicle.daily_rate_cents === "number" ? vehicle.daily_rate_cents : 0,
             deposit_cents: typeof vehicle.deposit_cents === "number" ? vehicle.deposit_cents : 0,
+            security_deposit_jmd:
+              typeof vehicle.security_deposit_jmd === "number"
+                ? vehicle.security_deposit_jmd
+                : null,
             images: Array.isArray(vehicle.images)
               ? vehicle.images.filter((image): image is string => typeof image === "string")
               : [],
@@ -4009,6 +4018,17 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                   {paymentWarning ? (
                     <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                       {paymentWarning}
+                    </div>
+                  ) : null}
+
+                  {refundableSecurityDepositJmd > 0 ? (
+                    <div
+                      className="mt-4 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-4 py-3 text-sm text-[var(--ccr-text)]"
+                      data-testid="booking-refundable-security-deposit"
+                    >
+                      This vehicle requires a refundable security deposit of JMD{" "}
+                      {formatJmd(refundableSecurityDepositJmd)}. This amount is collected at pickup
+                      and is not charged during online booking.
                     </div>
                   ) : null}
 
