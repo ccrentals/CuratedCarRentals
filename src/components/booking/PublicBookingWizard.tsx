@@ -40,6 +40,7 @@ import {
 } from "@/lib/bookings/publicBookingWizardState";
 import {
   defaultBookingDateTime,
+  restoredPickupIsBeforeDefault,
   validateMinimumRentalDays,
 } from "@/lib/bookings/minimumRentalDays";
 import {
@@ -660,6 +661,17 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
           paymentOption,
         },
       );
+      if (
+        restoredPickupIsBeforeDefault({
+          pickupDate: restoredSelections.pickupDate,
+          pickupTime: restoredSelections.pickupTime,
+          minimumDays: minimumRentalGlobalDays,
+        })
+      ) {
+        clearWizardDraft();
+        setStatusMessage("Saved booking draft expired. Start again with current dates.");
+        return;
+      }
       const restoredProtectionChoice =
         draft.protectionChoice === "NONE" || draft.protectionChoice === "STANDARD"
           ? draft.protectionChoice
@@ -775,9 +787,11 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
       setHydrated(true);
     }
   }, [
+    clearWizardDraft,
     dropoffDate,
     dropoffLocationId,
     dropoffTime,
+    minimumRentalGlobalDays,
     paymentOption,
     protectionChoice,
     pickupDate,
