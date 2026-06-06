@@ -5,6 +5,11 @@ import { dbQuery } from "@/lib/db";
 import { logError } from "@/lib/log";
 import { requireCsrf } from "@/lib/security/csrf";
 import {
+  extractUploadcareFileId,
+  getUploadcareFileMetadata,
+  UploadcareFileValidationError,
+} from "@/lib/uploads/uploadcare";
+import {
   BOOKING_VEHICLE_INSPECTION_TYPES,
   archiveBookingVehicleInspectionImage,
   isBookingVehicleInspectionMissingTableError,
@@ -28,6 +33,13 @@ export type AdminBookingInspectionImageRouteDeps = {
   getBookingStatus: (bookingId: string) => Promise<string | null>;
   loadInspections: typeof loadBookingVehicleInspectionSummaries;
   archiveImage: typeof archiveBookingVehicleInspectionImage;
+  getImage: (bookingId: string, imageId: string) => Promise<{
+    storageKey: string;
+    mimeType: string | null;
+    fileName: string | null;
+  } | null>;
+  getFileMetadata: typeof getUploadcareFileMetadata;
+  fetchFile: typeof fetch;
 };
 
 const DEFAULT_DEPS: AdminBookingInspectionImageRouteDeps = {
@@ -42,6 +54,31 @@ const DEFAULT_DEPS: AdminBookingInspectionImageRouteDeps = {
   },
   loadInspections: loadBookingVehicleInspectionSummaries,
   archiveImage: archiveBookingVehicleInspectionImage,
+  getImage: async (bookingId, imageId) => {
+    const result = await dbQuery<{
+      storage_key: string;
+      mime_type: string | null;
+      generated_file_name: string | null;
+      original_file_name: string | null;
+    }>(
+      `select storage_key, mime_type, generated_file_name, original_file_name
+       from booking_vehicle_inspection_images
+       where id = $1::uuid
+         and booking_id = $2::uuid
+         and archived_at is null
+       limit 1`,
+      [imageId, bookingId],
+    );
+    const row = result.rows[0];
+    if (!row) return null;
+    return {
+      storageKey: row.storage_key,
+      mimeType: row.mime_type,
+      fileName: row.generated_file_name ?? row.original_file_name,
+    };
+  },
+  getFileMetadata: getUploadcareFileMetadata,
+  fetchFile: fetch,
 };
 
 function normalizeText(value: unknown) {
@@ -74,6 +111,75 @@ function getInspectionImageLockMessage(
     return "Return inspection images become available after pickup is confirmed.";
   }
   return "Return inspection images are locked after booking completion.";
+}
+
+export async function handleAdminBookingInspectionImageGet(
+  _request: Request,
+  context: ImageItemRouteContext,
+  deps: Partial<AdminBookingInspectionImageRouteDeps> = {},
+) {
+  const resolvedDeps = { ...DEFAULT_DEPS, ...deps };
+  const auth = await resolvedDeps.requireAdminAccess();
+  if (!auth.ok) return auth.response;
+
+  const { id, imageId } = await context.params;
+  if (!UUID_REGEX.test(id) || !UUID_REGEX.test(imageId)) {
+    return NextResponse.json({ error: "Invalid request." }, { status: 400 });
+  }
+
+  try {
+    const image = await resolvedDeps.getImage(id, imageId);
+    if (!image) {
+      return NextResponse.json({ error: "Inspection image not found." }, { status: 404 });
+    }
+
+    const fileId = extractUploadcareFileId(image.storageKey);
+    if (!fileId) {
+      return NextResponse.json({ error: "Invalid inspection image reference." }, { status: 400 });
+    }
+
+    const metadata = await resolvedDeps.getFileMetadata(fileId);
+    if (!metadata.originalFileUrl) {
+      return NextResponse.json({ error: "Inspection image delivery URL is unavailable." }, { status: 502 });
+    }
+
+    const upstream = await resolvedDeps.fetchFile(metadata.originalFileUrl, {
+      cache: "no-store",
+    });
+    if (!upstream.ok || !upstream.body) {
+      return NextResponse.json({ error: "Inspection image could not be loaded." }, { status: 502 });
+    }
+
+    const headers = new Headers({
+      "Cache-Control": "private, max-age=300",
+      "Content-Type":
+        upstream.headers.get("content-type") ??
+        image.mimeType ??
+        metadata.mimeType ??
+        "application/octet-stream",
+      "X-Content-Type-Options": "nosniff",
+    });
+    const contentLength = upstream.headers.get("content-length");
+    if (contentLength) headers.set("Content-Length", contentLength);
+    if (image.fileName) {
+      headers.set(
+        "Content-Disposition",
+        `inline; filename="${image.fileName.replace(/["\r\n]/g, "_")}"`,
+      );
+    }
+
+    return new Response(upstream.body, { status: 200, headers });
+  } catch (error) {
+    if (error instanceof UploadcareFileValidationError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+    logError("admin.booking-inspections.images.GET", error, {
+      bookingId: id,
+      imageId,
+      actorUserId: auth.actor.userId,
+    });
+    return NextResponse.json({ error: "Failed to load inspection image." }, { status: 500 });
+  }
 }
 
 export async function handleAdminBookingInspectionImageDelete(
@@ -174,4 +280,8 @@ export async function handleAdminBookingInspectionImageDelete(
 
 export async function DELETE(request: Request, context: ImageItemRouteContext) {
   return handleAdminBookingInspectionImageDelete(request, context);
+}
+
+export async function GET(request: Request, context: ImageItemRouteContext) {
+  return handleAdminBookingInspectionImageGet(request, context);
 }

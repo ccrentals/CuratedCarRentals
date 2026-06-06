@@ -127,12 +127,10 @@ export function normalizeUploadcareDeliveryUrl(value: unknown) {
   const fileId = extractUploadcareFileId(value);
   if (!fileId) return null;
 
-  const configuredBase = resolveConfiguredUploadcareBaseUrl();
-  if (configuredBase) {
-    return `${configuredBase.replace(/\/+$/, "")}/${encodeURIComponent(fileId)}/`;
-  }
+  const directUrl = extractUploadcareDeliveryUrl(value);
+  if (directUrl) return directUrl;
 
-  return extractUploadcareDeliveryUrl(value) ?? buildUploadcareCdnUrl(fileId);
+  return buildUploadcareCdnUrl(fileId);
 }
 
 function decodeDataUrl(dataUrl: string) {
