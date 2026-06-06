@@ -13,7 +13,10 @@ import {
   handleAdminBookingInspectionsPut,
 } from "@/app/api/admin/bookings/[id]/inspections/route";
 import { handleAdminBookingInspectionImagesPost } from "@/app/api/admin/bookings/[id]/inspections/images/route";
-import { handleAdminBookingInspectionImageDelete } from "@/app/api/admin/bookings/[id]/inspections/images/[imageId]/route";
+import {
+  handleAdminBookingInspectionImageDelete,
+  handleAdminBookingInspectionImageGet,
+} from "@/app/api/admin/bookings/[id]/inspections/images/[imageId]/route";
 import { handleAdminBookingInspectionImagesArchivePost } from "@/app/api/admin/bookings/[id]/inspections/images/archive/route";
 import { BookingVehicleInspectionPanel } from "@/components/admin/BookingVehicleInspectionPanel";
 import type { RequireAdminApiSessionResult } from "@/lib/auth/adminGuards";
@@ -423,6 +426,10 @@ test("booking vehicle inspection image helper: stores upload metadata with booki
   assert.equal(created.length, 1);
   assert.equal(created[0]?.category, "ODOMETER");
   assert.match(created[0]?.generatedFileName ?? "", /^BK000334-pickup-odometer-/);
+  assert.equal(
+    created[0]?.previewUrl,
+    `/api/admin/bookings/${BOOKING_ID}/inspections/images/${PICKUP_IMAGE_ID}`,
+  );
   const metadata = inserts[0]?.[12] as Record<string, unknown>;
   assert.equal(metadata.bookingPublicId, "BK000334");
   assert.equal(metadata.inspectionType, "PICKUP");
@@ -1710,6 +1717,69 @@ test("booking vehicle inspection image route: locked inspections reject image ch
   assert.equal(response.status, 400);
   const payload = (await response.json()) as { error?: string };
   assert.match(payload.error ?? "", /locked after pickup is confirmed/i);
+});
+
+test("booking vehicle inspection image route: GET streams the verified Uploadcare file", async () => {
+  const fileId = "f5a4c5f0-1234-4d1d-9ef5-000000001113";
+  const response = await handleAdminBookingInspectionImageGet(
+    new Request(
+      `http://localhost/api/admin/bookings/${BOOKING_ID}/inspections/images/${PICKUP_IMAGE_ID}`,
+    ),
+    { params: Promise.resolve({ id: BOOKING_ID, imageId: PICKUP_IMAGE_ID }) },
+    {
+      requireAdminAccess: async () => authorizedStaffResult(),
+      getImage: async () => ({
+        storageKey: `https://wrong-project.ucarecd.net/${fileId}/`,
+        mimeType: "image/png",
+        fileName: "pickup.png",
+      }),
+      getFileMetadata: async () => ({
+        uuid: fileId,
+        originalFileUrl: `https://correct-project.ucarecd.net/${fileId}/`,
+        size: 7,
+        mimeType: "image/png",
+        isImage: true,
+        isReady: true,
+        isStored: true,
+        isRemoved: false,
+        originalFilename: "original.png",
+      }),
+      fetchFile: async (input) => {
+        assert.equal(String(input), `https://correct-project.ucarecd.net/${fileId}/`);
+        return new Response("PNGDATA", {
+          status: 200,
+          headers: {
+            "Content-Type": "image/png",
+            "Content-Length": "7",
+          },
+        });
+      },
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("Content-Type"), "image/png");
+  assert.match(response.headers.get("Content-Disposition") ?? "", /pickup\.png/);
+  assert.equal(await response.text(), "PNGDATA");
+});
+
+test("booking vehicle inspection image route: GET requires admin access", async () => {
+  const response = await handleAdminBookingInspectionImageGet(
+    new Request(
+      `http://localhost/api/admin/bookings/${BOOKING_ID}/inspections/images/${PICKUP_IMAGE_ID}`,
+    ),
+    { params: Promise.resolve({ id: BOOKING_ID, imageId: PICKUP_IMAGE_ID }) },
+    {
+      requireAdminAccess: async () =>
+        ({
+          ok: false,
+          reason: "unauthorized",
+          response: new Response("Unauthorized", { status: 401 }),
+        }) as RequireAdminApiSessionResult,
+    },
+  );
+
+  assert.equal(response.status, 401);
 });
 
 test("booking vehicle inspection image route: delete archives image and returns updated summaries", async () => {

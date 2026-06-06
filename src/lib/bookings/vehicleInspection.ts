@@ -628,7 +628,12 @@ async function listInspectionRows(
 }
 
 function mapInspectionImage(row: BookingVehicleInspectionImageRow): BookingVehicleInspectionImageSummary {
-  const previewUrl = resolveInspectionImageUrl(row.storage_provider, row.storage_key);
+  const hasValidStorage = Boolean(
+    resolveInspectionImageUrl(row.storage_provider, row.storage_key),
+  );
+  const previewUrl = hasValidStorage
+    ? `/api/admin/bookings/${encodeURIComponent(row.booking_id)}/inspections/images/${encodeURIComponent(row.id)}`
+    : null;
   return {
     id: row.id,
     inspectionId: row.inspection_id,

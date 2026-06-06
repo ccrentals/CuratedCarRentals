@@ -184,14 +184,14 @@ test("uploadcare helper: buildUploadcareCdnUrl ignores untrusted CDN base hosts"
   }
 });
 
-test("uploadcare helper: configured project CDN repairs generic stored delivery URLs", () => {
+test("uploadcare helper: preserves a verified direct delivery URL over a configured fallback", () => {
   const previous = process.env.UPLOADCARE_CDN_BASE_URL;
   process.env.UPLOADCARE_CDN_BASE_URL = "https://project-files.ucarecd.net";
 
   try {
     assert.equal(
       normalizeUploadcareDeliveryUrl(`https://ucarecdn.com/${FILE_ID}/`),
-      `https://project-files.ucarecd.net/${FILE_ID}/`,
+      `https://ucarecdn.com/${FILE_ID}/`,
     );
   } finally {
     if (previous === undefined) {
