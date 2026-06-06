@@ -193,7 +193,7 @@ export async function handleAdminBookingInspectionImagesPost(
   }
 
   try {
-    await resolvedDeps.validateUploads(
+    const verifiedFiles = await resolvedDeps.validateUploads(
       files.map((file) => file.storageKey),
       INSPECTION_IMAGE_POLICY,
     );
@@ -226,7 +226,16 @@ export async function handleAdminBookingInspectionImagesPost(
       inspectionId,
       inspectionType,
       category,
-      files,
+      files: files.map((file, index) => {
+        const verified = verifiedFiles[index];
+        return {
+          ...file,
+          storageKey: verified?.originalFileUrl ?? verified?.uuid ?? file.storageKey,
+          originalFileName: verified?.originalFilename ?? file.originalFileName,
+          mimeType: verified?.mimeType || file.mimeType,
+          sizeBytes: verified?.size ?? file.sizeBytes,
+        };
+      }),
       uploadedByUserId: auth.actor.userId,
     });
     const nextInspections = await resolvedDeps.loadInspections(id);

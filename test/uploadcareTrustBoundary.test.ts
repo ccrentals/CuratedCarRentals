@@ -7,6 +7,7 @@ import {
   extractUploadcareDeliveryUrl,
   extractUploadcareFileId,
   getUploadcareFileMetadata,
+  normalizeUploadcareDeliveryUrl,
   resolveUploadcareCdnUrl,
   validateUploadcareFiles,
 } from "@/lib/uploads/uploadcare";
@@ -56,6 +57,7 @@ test("uploadcare helper: verifies file ownership and metadata with server creden
           datetime_stored: "2026-06-06T12:00:00.000Z",
           datetime_removed: null,
           original_filename: "vehicle.jpg",
+          original_file_url: `https://project-files.ucarecd.net/${FILE_ID}/`,
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       );
@@ -66,6 +68,7 @@ test("uploadcare helper: verifies file ownership and metadata with server creden
   assert.equal(metadata.uuid, FILE_ID);
   assert.equal(metadata.isStored, true);
   assert.equal(metadata.originalFilename, "vehicle.jpg");
+  assert.equal(metadata.originalFileUrl, `https://project-files.ucarecd.net/${FILE_ID}/`);
 });
 
 test("uploadcare helper: treats missing project files as foreign or invalid references", async () => {
@@ -172,6 +175,24 @@ test("uploadcare helper: buildUploadcareCdnUrl ignores untrusted CDN base hosts"
 
   try {
     assert.equal(buildUploadcareCdnUrl(FILE_ID), `https://ucarecdn.com/${FILE_ID}/`);
+  } finally {
+    if (previous === undefined) {
+      delete process.env.UPLOADCARE_CDN_BASE_URL;
+    } else {
+      process.env.UPLOADCARE_CDN_BASE_URL = previous;
+    }
+  }
+});
+
+test("uploadcare helper: configured project CDN repairs generic stored delivery URLs", () => {
+  const previous = process.env.UPLOADCARE_CDN_BASE_URL;
+  process.env.UPLOADCARE_CDN_BASE_URL = "https://project-files.ucarecd.net";
+
+  try {
+    assert.equal(
+      normalizeUploadcareDeliveryUrl(`https://ucarecdn.com/${FILE_ID}/`),
+      `https://project-files.ucarecd.net/${FILE_ID}/`,
+    );
   } finally {
     if (previous === undefined) {
       delete process.env.UPLOADCARE_CDN_BASE_URL;

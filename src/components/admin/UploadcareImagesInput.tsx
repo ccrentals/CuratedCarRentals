@@ -29,6 +29,7 @@ declare global {
 }
 
 const WIDGET_SRC = "https://ucarecdn.com/libs/widget/3.x/uploadcare.full.min.js";
+const MAX_IMAGE_COUNT = 20;
 
 type UploadcareFileInfo = {
   cdnUrl?: string;
@@ -169,6 +170,14 @@ export async function openUploadcareImagesDialog(input: {
   });
 }
 
+export function mergeUploadcareImageUrls(
+  currentUrls: readonly string[],
+  uploadedUrls: readonly string[],
+  maxCount = MAX_IMAGE_COUNT,
+) {
+  return Array.from(new Set([...currentUrls, ...uploadedUrls])).slice(0, maxCount);
+}
+
 export function UploadcareImagesInput({
   label = "Vehicle Images",
   helperText = "Upload multiple photos. Drag order in the list to reorder later if needed.",
@@ -250,8 +259,9 @@ export function UploadcareImagesInput({
         multiple: true,
         imagesOnly: true,
       });
-      setUrls(nextUrls);
-      setCurrentIndex(0);
+      const mergedUrls = mergeUploadcareImageUrls(urls, nextUrls);
+      setUrls(mergedUrls);
+      setCurrentIndex(Math.max(0, mergedUrls.length - nextUrls.length));
       destroyLightbox();
       setLoading(false);
     } catch (err) {
