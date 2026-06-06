@@ -5,6 +5,11 @@ import { dbQuery } from "@/lib/db";
 import { logError } from "@/lib/log";
 import { requireCsrf } from "@/lib/security/csrf";
 import {
+  UPLOADCARE_ALLOWED_RASTER_IMAGE_MIME_TYPES,
+  UploadcareFileValidationError,
+  validateUploadcareFiles,
+} from "@/lib/uploads/uploadcare";
+import {
   BOOKING_VEHICLE_INSPECTION_IMAGE_CATEGORIES,
   BOOKING_VEHICLE_INSPECTION_TYPES,
   createBookingVehicleInspectionImages,
@@ -19,6 +24,13 @@ import {
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const INSPECTION_IMAGE_POLICY = {
+  label: "Inspection image",
+  maxCount: 20,
+  maxBytes: 10 * 1024 * 1024,
+  imagesOnly: true,
+  allowedMimeTypes: UPLOADCARE_ALLOWED_RASTER_IMAGE_MIME_TYPES,
+} as const;
 
 type ImageRouteContext = {
   params: Promise<{ id: string }>;
@@ -30,6 +42,7 @@ export type AdminBookingInspectionImagesRouteDeps = {
   getBookingStatus: (bookingId: string) => Promise<string | null>;
   loadInspections: typeof loadBookingVehicleInspectionSummaries;
   createImages: typeof createBookingVehicleInspectionImages;
+  validateUploads: typeof validateUploadcareFiles;
 };
 
 const DEFAULT_DEPS: AdminBookingInspectionImagesRouteDeps = {
@@ -44,6 +57,7 @@ const DEFAULT_DEPS: AdminBookingInspectionImagesRouteDeps = {
   },
   loadInspections: loadBookingVehicleInspectionSummaries,
   createImages: createBookingVehicleInspectionImages,
+  validateUploads: validateUploadcareFiles,
 };
 
 function normalizeText(value: unknown) {
@@ -179,6 +193,10 @@ export async function handleAdminBookingInspectionImagesPost(
   }
 
   try {
+    await resolvedDeps.validateUploads(
+      files.map((file) => file.storageKey),
+      INSPECTION_IMAGE_POLICY,
+    );
     const bookingStatus = await resolvedDeps.getBookingStatus(id);
     if (!bookingStatus) {
       return NextResponse.json({ ok: false, error: "Booking not found" }, { status: 404 });
@@ -224,6 +242,12 @@ export async function handleAdminBookingInspectionImagesPost(
       createdImages,
     });
   } catch (error) {
+    if (error instanceof UploadcareFileValidationError) {
+      return NextResponse.json(
+        { ok: false, error: error.message },
+        { status: error.status },
+      );
+    }
     if (isBookingVehicleInspectionMissingTableError(error)) {
       return NextResponse.json(
         { ok: false, error: "Booking inspection tables are not installed." },

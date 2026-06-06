@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { handleAdminVehiclePost } from "@/app/api/admin/vehicles/route";
 import { handleAdminVehiclePatch } from "@/app/api/admin/vehicles/[id]/route";
+import { UploadcareFileValidationError } from "@/lib/uploads/uploadcare";
 
 const VEHICLE_ID = "11111111-1111-4111-8111-111111111111";
 
@@ -93,6 +94,41 @@ test("admin vehicle create API defaults vehicles to private and stores gallery m
       position: 1,
     },
   ]);
+});
+
+test("admin vehicle create API rejects gallery files that fail Uploadcare verification", async () => {
+  const response = await handleAdminVehiclePost(
+    new Request("http://localhost/api/admin/vehicles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-csrf-token": "token" },
+      body: JSON.stringify({
+        make: "Subaru",
+        model: "Impreza Sport",
+        year: 2018,
+        daily_rate_jmd: 7200,
+        deposit_jmd: 7000,
+        image_urls_json: ["https://ucarecdn.com/11111111-1111-4111-8111-111111111111/"],
+        csrfToken: "token",
+      }),
+    }),
+    {
+      authorize: async () => authorizedActor(),
+      requireCsrfCheck: async () => true,
+      consumeRateLimitCheck: async () => allowRateLimit(),
+      validateUploads: async () => {
+        throw new UploadcareFileValidationError(
+          "The uploaded file was not found in this Uploadcare project.",
+        );
+      },
+      connect: async () => {
+        throw new Error("Database should not be reached");
+      },
+    },
+  );
+
+  assert.equal(response.status, 400);
+  const body = (await response.json()) as { error?: string };
+  assert.match(body.error ?? "", /not found in this Uploadcare project/i);
 });
 
 test("admin vehicle patch API toggles public visibility and refreshes gallery metadata", async () => {

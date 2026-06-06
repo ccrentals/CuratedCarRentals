@@ -7,11 +7,20 @@ import { requireCsrf } from "@/lib/security/csrf";
 import {
   extractUploadcareDeliveryUrl,
   extractUploadcareFileId,
+  UPLOADCARE_ALLOWED_RASTER_IMAGE_MIME_TYPES,
+  UploadcareFileValidationError,
+  validateUploadcareFiles,
 } from "@/lib/uploads/uploadcare";
 import { isVehicleExtensionsMissingTableError } from "@/lib/vehicles/extensionTables";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const VEHICLE_DOCUMENT_POLICY = {
+  label: "Vehicle document",
+  maxCount: 1,
+  maxBytes: 20 * 1024 * 1024,
+  allowedMimeTypes: ["application/pdf", ...UPLOADCARE_ALLOWED_RASTER_IMAGE_MIME_TYPES],
+} as const;
 
 type VehicleDocumentRow = {
   id: string;
@@ -63,6 +72,7 @@ export type AdminVehicleDocumentsRouteDeps = {
     options: { folder?: string | null; includeArchived?: boolean },
   ) => Promise<VehicleDocumentRow[]>;
   createDocument: (vehicleId: string, input: CreateVehicleDocumentInput) => Promise<VehicleDocumentRow>;
+  validateUploads?: typeof validateUploadcareFiles;
 };
 
 function normalizeText(value: unknown) {
@@ -304,6 +314,7 @@ const DEFAULT_DEPS: AdminVehicleDocumentsRouteDeps = {
 
     return result.rows[0];
   },
+  validateUploads: validateUploadcareFiles,
 };
 
 export async function handleAdminVehicleDocumentsGet(
@@ -401,6 +412,7 @@ export async function handleAdminVehicleDocumentsPost(
   }
 
   try {
+    await deps.validateUploads?.([normalizedStorageKey], VEHICLE_DOCUMENT_POLICY);
     const row = await deps.createDocument(id, {
       folder,
       maintenanceRecordId,
@@ -419,6 +431,12 @@ export async function handleAdminVehicleDocumentsPost(
 
     return NextResponse.json({ ok: true, item: mapDocument(row) });
   } catch (error) {
+    if (error instanceof UploadcareFileValidationError) {
+      return NextResponse.json(
+        { ok: false, error: error.message },
+        { status: error.status },
+      );
+    }
     const message = String((error as Error | null)?.message ?? "");
     if (message === "VEHICLE_NOT_FOUND") {
       return NextResponse.json({ ok: false, error: "Vehicle not found." }, { status: 404 });

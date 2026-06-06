@@ -1647,6 +1647,7 @@ test("booking vehicle inspection image route: upload saves images with category 
     {
       requireAdminAccess: async () => authorizedStaffResult(),
       requireCsrfCheck: async () => true,
+      validateUploads: async () => [],
       getBookingStatus: async () => "CONFIRMED",
       loadInspections: async () => sampleInspectionSet(),
       createImages: async (_bookingId, input) => {
@@ -1686,6 +1687,7 @@ test("booking vehicle inspection image route: locked inspections reject image ch
     {
       requireAdminAccess: async () => authorizedStaffResult(),
       requireCsrfCheck: async () => true,
+      validateUploads: async () => [],
       getBookingStatus: async () => "PICKED_UP",
     },
   );

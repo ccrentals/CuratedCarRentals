@@ -556,8 +556,6 @@ export function BookingVehicleInspectionPanel({
     returnInspection: returnSummary,
   };
   const issueFlags = getBookingVehicleInspectionIssueFlags(currentInspections);
-  const uploadcarePublicKey = process.env.NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY ?? "";
-
   function applyInspectionSet(
     nextInspections: Pick<
       LoadedBookingVehicleInspections,
@@ -780,7 +778,6 @@ export function BookingVehicleInspectionPanel({
       }
 
       const uploadedUrls = await openUploadcareImagesDialog({
-        publicKey: uploadcarePublicKey,
         multiple: true,
         imagesOnly: true,
       });

@@ -7,6 +7,7 @@ import {
 } from "@/app/api/admin/vehicles/[id]/documents/route";
 import { handleAdminVehicleDocumentDownload } from "@/app/api/admin/vehicles/[id]/documents/[docId]/download/route";
 import { handleAdminVehicleDocumentPatch } from "@/app/api/admin/vehicles/[id]/documents/[docId]/route";
+import { UploadcareFileValidationError } from "@/lib/uploads/uploadcare";
 
 const VEHICLE_ID = "11111111-1111-4111-8111-111111111111";
 const DOC_ID = "22222222-2222-4222-8222-222222222222";
@@ -129,6 +130,49 @@ test("admin vehicle documents API: POST stores opaque Uploadcare id", async () =
   assert.equal(body.ok, true);
   assert.equal(body.item.storageProvider, "UPLOADCARE_FILE_ID");
   assert.equal("storageKey" in body.item, false);
+});
+
+test("admin vehicle documents API: POST rejects unsupported provider file metadata", async () => {
+  const response = await handleAdminVehicleDocumentsPost(
+    new Request(`http://localhost/api/admin/vehicles/${VEHICLE_ID}/documents`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-csrf-token": "token",
+      },
+      body: JSON.stringify({
+        folder: "Paperwork",
+        title: "Registration",
+        document_type: "Registration Card",
+        uploadcare_file_id: FILE_ID,
+        storage_provider: "UPLOADCARE_FILE_ID",
+        csrfToken: "token",
+      }),
+    }),
+    { params: Promise.resolve({ id: VEHICLE_ID }) },
+    {
+      getSession: async () => ({
+        userId: "admin-user-id",
+        role: "ADMIN",
+        issuedAt: Date.now(),
+        expiresAt: Date.now() + 60_000,
+      }),
+      requireCsrfCheck: async () => true,
+      listDocuments: async () => [],
+      validateUploads: async () => {
+        throw new UploadcareFileValidationError(
+          "Vehicle document does not support the uploaded file type.",
+        );
+      },
+      createDocument: async () => {
+        throw new Error("Document should not be created");
+      },
+    },
+  );
+
+  assert.equal(response.status, 400);
+  const body = (await response.json()) as { error?: string };
+  assert.match(body.error ?? "", /does not support/i);
 });
 
 test("admin vehicle documents API: POST forwards checklist link selection", async () => {
