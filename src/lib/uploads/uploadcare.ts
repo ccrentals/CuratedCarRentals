@@ -1,6 +1,47 @@
+import { createHmac } from "node:crypto";
+
 const UPLOADCARE_FILE_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}(?:~\d+)?$/i;
 const TRUSTED_UPLOADCARE_HOSTS = ["ucarecdn.com", "ucarecd.net"] as const;
+const DEFAULT_SIGNED_UPLOAD_LIFETIME_SECONDS = 10 * 60;
+const UPLOADCARE_REST_ACCEPT = "application/vnd.uploadcare-v0.7+json";
 let cachedUploadcareCdnBaseUrl: string | null = null;
+
+export const UPLOADCARE_ALLOWED_RASTER_IMAGE_MIME_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/heic",
+  "image/heif",
+] as const;
+
+export type UploadcareFileMetadata = {
+  uuid: string;
+  size: number;
+  mimeType: string;
+  isImage: boolean;
+  isReady: boolean;
+  isStored: boolean;
+  isRemoved: boolean;
+  originalFilename: string | null;
+};
+
+export type UploadcareFilePolicy = {
+  label: string;
+  maxCount: number;
+  maxBytes: number;
+  imagesOnly?: boolean;
+  allowedMimeTypes?: readonly string[];
+};
+
+export class UploadcareFileValidationError extends Error {
+  status: number;
+
+  constructor(message: string, status = 400) {
+    super(message);
+    this.name = "UploadcareFileValidationError";
+    this.status = status;
+  }
+}
 
 function normalizeText(value: unknown) {
   if (typeof value !== "string") return "";
@@ -101,6 +142,190 @@ function resolveUploadcarePublicKey(options: { publicKey?: string } = {}) {
   return options.publicKey?.trim() || process.env.NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY?.trim() || "";
 }
 
+function resolveUploadcareSecretKey(options: { secretKey?: string } = {}) {
+  return options.secretKey?.trim() || process.env.UPLOADCARE_SECRET_KEY?.trim() || "";
+}
+
+export function createUploadcareSignedUploadCredentials(
+  options: {
+    publicKey?: string;
+    secretKey?: string;
+    now?: Date;
+    lifetimeSeconds?: number;
+  } = {},
+) {
+  const publicKey = resolveUploadcarePublicKey(options);
+  const secretKey = resolveUploadcareSecretKey(options);
+  if (!publicKey || !secretKey) {
+    throw new Error("Uploadcare signed uploads are not configured.");
+  }
+
+  const lifetimeSeconds = Math.max(
+    60,
+    Math.min(
+      60 * 60,
+      Math.trunc(options.lifetimeSeconds ?? DEFAULT_SIGNED_UPLOAD_LIFETIME_SECONDS),
+    ),
+  );
+  const secureExpire = String(
+    Math.floor((options.now ?? new Date()).getTime() / 1000) + lifetimeSeconds,
+  );
+  const secureSignature = createHmac("sha256", secretKey)
+    .update(secureExpire)
+    .digest("hex");
+
+  return {
+    publicKey,
+    secureSignature,
+    secureExpire,
+  };
+}
+
+export async function getUploadcareFileMetadata(
+  fileId: string,
+  options: {
+    publicKey?: string;
+    secretKey?: string;
+    fetchFn?: typeof fetch;
+  } = {},
+): Promise<UploadcareFileMetadata> {
+  const normalizedFileId = extractUploadcareFileId(fileId);
+  if (!normalizedFileId) {
+    throw new UploadcareFileValidationError("Invalid Uploadcare file reference.");
+  }
+
+  const publicKey = resolveUploadcarePublicKey(options);
+  const secretKey = resolveUploadcareSecretKey(options);
+  if (!publicKey || !secretKey) {
+    throw new UploadcareFileValidationError(
+      "Uploadcare file verification is not configured.",
+      503,
+    );
+  }
+
+  const response = await (options.fetchFn ?? fetch)(
+    `https://api.uploadcare.com/files/${encodeURIComponent(normalizedFileId)}/`,
+    {
+      headers: {
+        Accept: UPLOADCARE_REST_ACCEPT,
+        Authorization: `Uploadcare.Simple ${publicKey}:${secretKey}`,
+      },
+      cache: "no-store",
+    },
+  );
+  const payload = (await response.json().catch(() => null)) as
+    | {
+        uuid?: unknown;
+        size?: unknown;
+        mime_type?: unknown;
+        is_image?: unknown;
+        is_ready?: unknown;
+        datetime_stored?: unknown;
+        datetime_removed?: unknown;
+        original_filename?: unknown;
+      }
+    | null;
+
+  if (response.status === 404) {
+    throw new UploadcareFileValidationError(
+      "The uploaded file was not found in this Uploadcare project.",
+    );
+  }
+  if (!response.ok || !payload) {
+    throw new UploadcareFileValidationError(
+      "Uploadcare could not verify the uploaded file.",
+      502,
+    );
+  }
+
+  const uuid = extractUploadcareFileId(payload.uuid);
+  if (!uuid || uuid !== normalizedFileId) {
+    throw new UploadcareFileValidationError(
+      "Uploadcare returned invalid file metadata.",
+      502,
+    );
+  }
+
+  return {
+    uuid,
+    size:
+      typeof payload.size === "number" && Number.isFinite(payload.size)
+        ? Math.max(0, Math.round(payload.size))
+        : 0,
+    mimeType: typeof payload.mime_type === "string" ? payload.mime_type.trim().toLowerCase() : "",
+    isImage: payload.is_image === true,
+    isReady: payload.is_ready === true,
+    isStored: typeof payload.datetime_stored === "string" && Boolean(payload.datetime_stored.trim()),
+    isRemoved: Boolean(payload.datetime_removed),
+    originalFilename:
+      typeof payload.original_filename === "string" && payload.original_filename.trim()
+        ? payload.original_filename.trim()
+        : null,
+  };
+}
+
+export async function validateUploadcareFiles(
+  references: readonly string[],
+  policy: UploadcareFilePolicy,
+  options: {
+    publicKey?: string;
+    secretKey?: string;
+    fetchFn?: typeof fetch;
+  } = {},
+) {
+  const fileIds = references.map((reference) => extractUploadcareFileId(reference));
+  if (fileIds.some((fileId) => !fileId)) {
+    throw new UploadcareFileValidationError(`Invalid ${policy.label} upload reference.`);
+  }
+
+  const normalizedFileIds = fileIds.filter((fileId): fileId is string => Boolean(fileId));
+  if (normalizedFileIds.length > policy.maxCount) {
+    throw new UploadcareFileValidationError(
+      `${policy.label} allows a maximum of ${policy.maxCount} file${policy.maxCount === 1 ? "" : "s"}.`,
+    );
+  }
+  if (new Set(normalizedFileIds).size !== normalizedFileIds.length) {
+    throw new UploadcareFileValidationError(`Duplicate ${policy.label} uploads are not allowed.`);
+  }
+
+  const metadata = await Promise.all(
+    normalizedFileIds.map((fileId) => getUploadcareFileMetadata(fileId, options)),
+  );
+  for (const file of metadata) {
+    if (file.isRemoved) {
+      throw new UploadcareFileValidationError(`A ${policy.label} upload has been deleted.`);
+    }
+    if (!file.isReady) {
+      throw new UploadcareFileValidationError(`A ${policy.label} upload is not ready yet.`);
+    }
+    if (!file.isStored) {
+      throw new UploadcareFileValidationError(`A ${policy.label} upload is not stored permanently.`);
+    }
+    if (file.size > policy.maxBytes) {
+      throw new UploadcareFileValidationError(
+        `${policy.label} files must be ${Math.floor(policy.maxBytes / (1024 * 1024))} MB or smaller.`,
+      );
+    }
+    if (policy.imagesOnly && (!file.isImage || !file.mimeType.startsWith("image/"))) {
+      throw new UploadcareFileValidationError(`${policy.label} accepts image files only.`);
+    }
+    if (
+      policy.allowedMimeTypes &&
+      !policy.allowedMimeTypes.some((allowed) =>
+        allowed.endsWith("/*")
+          ? file.mimeType.startsWith(allowed.slice(0, -1))
+          : file.mimeType === allowed,
+      )
+    ) {
+      throw new UploadcareFileValidationError(
+        `${policy.label} does not support the uploaded file type.`,
+      );
+    }
+  }
+
+  return metadata;
+}
+
 async function discoverUploadcareCdnBaseUrl(
   fileId: string,
   options: { publicKey?: string; fetchFn?: typeof fetch } = {},
@@ -122,6 +347,12 @@ async function discoverUploadcareCdnBaseUrl(
   const body = new FormData();
   body.set("pub_key", publicKey);
   body.append("files[]", fileId);
+  const secretKey = resolveUploadcareSecretKey();
+  if (secretKey) {
+    const credentials = createUploadcareSignedUploadCredentials({ publicKey, secretKey });
+    body.set("signature", credentials.secureSignature);
+    body.set("expire", credentials.secureExpire);
+  }
 
   const response = await fetchFn("https://upload.uploadcare.com/group/", {
     method: "POST",
@@ -149,9 +380,10 @@ async function discoverUploadcareCdnBaseUrl(
 
 async function uploadBlobToUploadcareFileId(
   blob: Blob,
-  options: { fileName?: string; publicKey?: string } = {},
+  options: { fileName?: string; publicKey?: string; secretKey?: string } = {},
 ) {
   const publicKey = resolveUploadcarePublicKey(options);
+  const secretKey = resolveUploadcareSecretKey(options);
   if (!publicKey) {
     throw new Error("Uploadcare public key is not configured.");
   }
@@ -159,6 +391,11 @@ async function uploadBlobToUploadcareFileId(
   const formData = new FormData();
   formData.set("UPLOADCARE_PUB_KEY", publicKey);
   formData.set("UPLOADCARE_STORE", "1");
+  if (secretKey) {
+    const credentials = createUploadcareSignedUploadCredentials({ publicKey, secretKey });
+    formData.set("signature", credentials.secureSignature);
+    formData.set("expire", credentials.secureExpire);
+  }
   formData.set("file", blob, options.fileName?.trim() || "upload.bin");
 
   const response = await fetch("https://upload.uploadcare.com/base/", {
@@ -186,7 +423,7 @@ async function uploadBlobToUploadcareFileId(
 
 export async function uploadDataUrlToUploadcareFileId(
   dataUrl: string,
-  options: { fileName?: string; publicKey?: string } = {},
+  options: { fileName?: string; publicKey?: string; secretKey?: string } = {},
 ) {
   const decoded = decodeDataUrl(dataUrl);
   if (!decoded) {
@@ -214,7 +451,12 @@ function fileNameFromRemoteUrl(remoteUrl: string, fallback = "upload.bin") {
 
 export async function uploadRemoteFileUrlToUploadcareFileId(
   remoteUrl: string,
-  options: { fileName?: string; publicKey?: string; fetchFn?: typeof fetch } = {},
+  options: {
+    fileName?: string;
+    publicKey?: string;
+    secretKey?: string;
+    fetchFn?: typeof fetch;
+  } = {},
 ) {
   const fetchFn = options.fetchFn ?? fetch;
   const response = await fetchFn(remoteUrl);
@@ -226,6 +468,7 @@ export async function uploadRemoteFileUrlToUploadcareFileId(
   const bytes = Buffer.from(await response.arrayBuffer());
   return uploadBlobToUploadcareFileId(new Blob([bytes], { type: contentType }), {
     publicKey: options.publicKey,
+    secretKey: options.secretKey,
     fileName: options.fileName?.trim() || fileNameFromRemoteUrl(remoteUrl),
   });
 }

@@ -13,6 +13,7 @@ import type { SortState } from "@/components/admin/tableSort";
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { TableDateTime } from "@/components/shared/TableDateTime";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
+import { getUploadcareSignedOptions } from "@/lib/uploads/uploadcare-client";
 
 const DEFAULT_FOLDERS = ["Paperwork", "Insurance", "Registration", "Other"] as const;
 const CUSTOM_DOCUMENT_TYPE_VALUE = "__custom__";
@@ -79,7 +80,13 @@ type UploadcareDialog = {
 type UploadcareApi = {
   openDialog: (
     _file: null,
-    options: { publicKey: string; multiple: boolean; imagesOnly: boolean },
+    options: {
+      publicKey: string;
+      multiple: boolean;
+      imagesOnly: boolean;
+      secureSignature: string;
+      secureExpire: string;
+    },
   ) => UploadcareDialog | null;
 };
 
@@ -151,7 +158,6 @@ export function VehicleFilesPanel({
   initialDocumentId,
   initialChecklistItemId,
 }: VehicleFilesPanelProps) {
-  const publicKey = process.env.NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY ?? "";
   const folders = useMemo(() => normalizeFolders(configuredFolders), [configuredFolders]);
   const documentTypes = useMemo(
     () => normalizeDocumentTypes(configuredDocumentTypes),
@@ -505,21 +511,17 @@ export function VehicleFilesPanel({
     setError(null);
     setMessage(null);
 
-    if (!publicKey) {
-      setError("Uploadcare is not configured.");
-      return;
-    }
-
     try {
+      const signedOptions = await getUploadcareSignedOptions();
       await loadUploadcareScript();
       const uploadWindow = window as Window & {
         uploadcare?: UploadcareApi;
         UPLOADCARE_PUBLIC_KEY?: string;
       };
 
-      uploadWindow.UPLOADCARE_PUBLIC_KEY = publicKey;
+      uploadWindow.UPLOADCARE_PUBLIC_KEY = signedOptions.publicKey;
       const dialog = uploadWindow.uploadcare?.openDialog(null, {
-        publicKey,
+        ...signedOptions,
         multiple: false,
         imagesOnly: false,
       });

@@ -5,10 +5,22 @@ import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery, getDbPool } from "@/lib/db";
 import { isNonEmptyString, parseIntSafe, parseMoneyToCents, parseImageUrls } from "@/lib/validators";
 import { requireCsrf } from "@/lib/security/csrf";
+import {
+  UPLOADCARE_ALLOWED_RASTER_IMAGE_MIME_TYPES,
+  UploadcareFileValidationError,
+  validateUploadcareFiles,
+} from "@/lib/uploads/uploadcare";
 import { buildVehicleGalleryEntries } from "@/lib/vehicles/gallery";
 
 const allowedStatuses = ["AVAILABLE", "UNAVAILABLE", "RESERVED", "RENTED", "MAINTENANCE", "INACTIVE"];
 const INVALID_SEAT_COUNT = Symbol("INVALID_SEAT_COUNT");
+const VEHICLE_GALLERY_POLICY = {
+  label: "Vehicle gallery",
+  maxCount: 20,
+  maxBytes: 10 * 1024 * 1024,
+  imagesOnly: true,
+  allowedMimeTypes: UPLOADCARE_ALLOWED_RASTER_IMAGE_MIME_TYPES,
+} as const;
 
 function validateStatus(value: unknown) {
   return typeof value === "string" && allowedStatuses.includes(value);
@@ -101,6 +113,7 @@ type AdminVehiclePostDeps = {
   authorize: () => Promise<AdminAccessResult>;
   requireCsrfCheck: (request: Request, bodyToken?: string | null) => Promise<boolean>;
   connect: () => Promise<VehicleMutationClient>;
+  validateUploads?: typeof validateUploadcareFiles;
 };
 
 const DEFAULT_GET_DEPS: AdminVehiclesGetDeps = {
@@ -121,6 +134,7 @@ const DEFAULT_POST_DEPS: AdminVehiclePostDeps = {
   authorize: () => requireAdminAccess(),
   requireCsrfCheck: (request, bodyToken) => requireCsrf(request, bodyToken),
   connect: async () => getDbPool().connect(),
+  validateUploads: validateUploadcareFiles,
 };
 
 export async function handleAdminVehiclesGet(
@@ -200,6 +214,15 @@ export async function handleAdminVehiclePost(
       { error: "Invalid seat count. Number of seats must be an integer between 1 and 60." },
       { status: 400 },
     );
+  }
+
+  try {
+    await deps.validateUploads?.(imageUrls, VEHICLE_GALLERY_POLICY);
+  } catch (error) {
+    if (error instanceof UploadcareFileValidationError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+    return NextResponse.json({ error: "Unable to verify vehicle gallery uploads." }, { status: 502 });
   }
 
   const makeValue = String(make).trim();

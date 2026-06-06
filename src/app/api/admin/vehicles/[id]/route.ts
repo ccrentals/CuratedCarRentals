@@ -5,6 +5,11 @@ import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery, getDbPool } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
 import { requireCsrf } from "@/lib/security/csrf";
+import {
+  UPLOADCARE_ALLOWED_RASTER_IMAGE_MIME_TYPES,
+  UploadcareFileValidationError,
+  validateUploadcareFiles,
+} from "@/lib/uploads/uploadcare";
 import { parseMoneyToCents, parseImageUrls } from "@/lib/validators";
 import { buildVehicleGalleryEntries } from "@/lib/vehicles/gallery";
 
@@ -27,6 +32,13 @@ const INVALID_SEAT_COUNT = Symbol("INVALID_SEAT_COUNT");
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const CURRENT_VEHICLE_YEAR_LIMIT = new Date().getFullYear() + 1;
+const VEHICLE_GALLERY_POLICY = {
+  label: "Vehicle gallery",
+  maxCount: 20,
+  maxBytes: 10 * 1024 * 1024,
+  imagesOnly: true,
+  allowedMimeTypes: UPLOADCARE_ALLOWED_RASTER_IMAGE_MIME_TYPES,
+} as const;
 
 type VehicleRouteContext = { params: Promise<{ id: string }> };
 type AdminAccessResult = Awaited<ReturnType<typeof requireAdminAccess>>;
@@ -74,6 +86,7 @@ type AdminVehiclePatchDeps = {
   requireCsrfCheck: (request: Request, bodyToken?: string | null) => Promise<boolean>;
   connect: () => Promise<VehicleMutationClient>;
   writeAudit: typeof writeAuditLog;
+  validateUploads?: typeof validateUploadcareFiles;
 };
 
 const DEFAULT_DELETE_DEPS: AdminVehicleDeleteDeps = {
@@ -143,6 +156,7 @@ const DEFAULT_PATCH_DEPS: AdminVehiclePatchDeps = {
   requireCsrfCheck: (request, bodyToken) => requireCsrf(request, bodyToken),
   connect: async () => getDbPool().connect(),
   writeAudit: writeAuditLog,
+  validateUploads: validateUploadcareFiles,
 };
 
 function isRestoreRequest(body: Record<string, unknown> | null) {
@@ -390,6 +404,17 @@ export async function handleAdminVehiclePatch(
     values.push(parsedSeatCount);
     auditFields.push("seat_count");
     index += 1;
+  }
+
+  if (body?.image_urls_json !== undefined) {
+    try {
+      await deps.validateUploads?.(imageUrls, VEHICLE_GALLERY_POLICY);
+    } catch (error) {
+      if (error instanceof UploadcareFileValidationError) {
+        return NextResponse.json({ error: error.message }, { status: error.status });
+      }
+      return NextResponse.json({ error: "Unable to verify vehicle gallery uploads." }, { status: 502 });
+    }
   }
 
   const profileYear = profilePatch?.year;

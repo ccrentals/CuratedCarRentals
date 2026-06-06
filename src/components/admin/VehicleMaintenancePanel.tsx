@@ -17,6 +17,7 @@ import { buttonStyles } from "@/components/ui/Button";
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { fmtDateNoSeconds } from "@/lib/dateFormat";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
+import { getUploadcareSignedOptions } from "@/lib/uploads/uploadcare-client";
 
 const WIDGET_SRC = "https://ucarecdn.com/libs/widget/3.x/uploadcare.full.min.js";
 
@@ -147,7 +148,13 @@ type UploadcareDialog = {
 type UploadcareApi = {
   openDialog: (
     _file: null,
-    options: { publicKey: string; multiple: boolean; imagesOnly: boolean },
+    options: {
+      publicKey: string;
+      multiple: boolean;
+      imagesOnly: boolean;
+      secureSignature: string;
+      secureExpire: string;
+    },
   ) => UploadcareDialog | null;
 };
 
@@ -380,7 +387,6 @@ function defaultFormState() {
 }
 
 export function VehicleMaintenancePanel({ vehicleId, initialRecordId }: VehicleMaintenancePanelProps) {
-  const publicKey = process.env.NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY ?? "";
 
   const [items, setItems] = useState<MaintenanceRecord[]>([]);
   const [summary, setSummary] = useState<MaintenanceSummary | null>(null);
@@ -1017,25 +1023,21 @@ function startEdit(item: MaintenanceRecord) {
       return;
     }
 
-    if (!publicKey) {
-      setError("Uploadcare is not configured.");
-      return;
-    }
-
     setSaving(true);
     setError(null);
     setMessage(null);
 
     try {
+      const signedOptions = await getUploadcareSignedOptions();
       await loadUploadcareScript();
       const uploadWindow = window as Window & {
         uploadcare?: UploadcareApi;
         UPLOADCARE_PUBLIC_KEY?: string;
       };
-      uploadWindow.UPLOADCARE_PUBLIC_KEY = publicKey;
+      uploadWindow.UPLOADCARE_PUBLIC_KEY = signedOptions.publicKey;
 
       const dialog = uploadWindow.uploadcare?.openDialog(null, {
-        publicKey,
+        ...signedOptions,
         multiple: false,
         imagesOnly: false,
       });

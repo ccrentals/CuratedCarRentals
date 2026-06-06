@@ -1,8 +1,9 @@
 "use client";
 
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 
 import { buttonStyles } from "@/components/ui/Button";
+import { getUploadcareSignedOptions } from "@/lib/uploads/uploadcare-client";
 
 type UploadcareImagesInputProps = {
   label?: string;
@@ -50,7 +51,13 @@ type UploadcareDialog = {
 type UploadcareApi = {
   openDialog: (
     _file: null,
-    options: { publicKey: string; multiple: boolean; imagesOnly: boolean },
+    options: {
+      publicKey: string;
+      multiple: boolean;
+      imagesOnly: boolean;
+      secureSignature: string;
+      secureExpire: string;
+    },
   ) => UploadcareDialog | null;
 };
 
@@ -129,21 +136,16 @@ export async function resolveUploadcareUrls(file: UploadcareSingleFile | Uploadc
 }
 
 export async function openUploadcareImagesDialog(input: {
-  publicKey: string;
   multiple?: boolean;
   imagesOnly?: boolean;
 }) {
-  const publicKey = input.publicKey.trim();
-  if (!publicKey) {
-    throw new Error("Uploadcare is not configured. Add NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY.");
-  }
-
+  const signedOptions = await getUploadcareSignedOptions();
   await loadUploadcareScript();
-  window.UPLOADCARE_PUBLIC_KEY = publicKey;
+  window.UPLOADCARE_PUBLIC_KEY = signedOptions.publicKey;
 
   return new Promise<string[]>((resolve, reject) => {
     const dialog = window.uploadcare?.openDialog(null, {
-      publicKey,
+      ...signedOptions,
       multiple: input.multiple ?? true,
       imagesOnly: input.imagesOnly ?? true,
     });
@@ -185,10 +187,6 @@ export function UploadcareImagesInput({
 
   const urls = value ?? internal;
   const setUrls = onChange ?? ((nextUrls: string[]) => setInternal(nextUrls));
-  const publicKey = process.env.NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY ?? "";
-
-  const canUpload = useMemo(() => Boolean(publicKey), [publicKey]);
-
   const destroyLightbox = useCallback(() => {
     if (!lightboxRef.current) return;
     lightboxRef.current.destroy();
@@ -245,15 +243,10 @@ export function UploadcareImagesInput({
 
   const handleUpload = async () => {
     if (disabled) return;
-    if (!canUpload) {
-      setError("Uploadcare is not configured. Add NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY.");
-      return;
-    }
     setLoading(true);
     setError(null);
     try {
       const nextUrls = await openUploadcareImagesDialog({
-        publicKey,
         multiple: true,
         imagesOnly: true,
       });
