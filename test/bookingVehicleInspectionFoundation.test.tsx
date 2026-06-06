@@ -1642,12 +1642,32 @@ test("booking vehicle inspection image route: upload saves images with category 
     {
       requireAdminAccess: async () => authorizedStaffResult(),
       requireCsrfCheck: async () => true,
-      validateUploads: async () => [],
+      validateUploads: async () => [
+        {
+          uuid: "f5a4c5f0-1234-4d1d-9ef5-000000001111",
+          originalFileUrl:
+            "https://project-files.ucarecd.net/f5a4c5f0-1234-4d1d-9ef5-000000001111/",
+          size: 2048,
+          mimeType: "image/jpeg",
+          isImage: true,
+          isReady: true,
+          isStored: true,
+          isRemoved: false,
+          originalFilename: "inspection.jpg",
+        },
+      ],
       getBookingStatus: async () => "CONFIRMED",
       loadInspections: async () => sampleInspectionSet(),
       createImages: async (_bookingId, input) => {
         assert.equal(input.category, "ODOMETER");
         assert.equal(input.files.length, 1);
+        assert.equal(
+          input.files[0]?.storageKey,
+          "https://project-files.ucarecd.net/f5a4c5f0-1234-4d1d-9ef5-000000001111/",
+        );
+        assert.equal(input.files[0]?.originalFileName, "inspection.jpg");
+        assert.equal(input.files[0]?.mimeType, "image/jpeg");
+        assert.equal(input.files[0]?.sizeBytes, 2048);
         return sampleInspectionSet().pickup.images.slice(0, 1);
       },
     },

@@ -16,6 +16,7 @@ export const UPLOADCARE_ALLOWED_RASTER_IMAGE_MIME_TYPES = [
 
 export type UploadcareFileMetadata = {
   uuid: string;
+  originalFileUrl: string | null;
   size: number;
   mimeType: string;
   isImage: boolean;
@@ -122,6 +123,18 @@ export function buildUploadcareCdnUrl(fileId: string) {
   return `${normalizedBase}/${encodeURIComponent(fileId)}/`;
 }
 
+export function normalizeUploadcareDeliveryUrl(value: unknown) {
+  const fileId = extractUploadcareFileId(value);
+  if (!fileId) return null;
+
+  const configuredBase = resolveConfiguredUploadcareBaseUrl();
+  if (configuredBase) {
+    return `${configuredBase.replace(/\/+$/, "")}/${encodeURIComponent(fileId)}/`;
+  }
+
+  return extractUploadcareDeliveryUrl(value) ?? buildUploadcareCdnUrl(fileId);
+}
+
 function decodeDataUrl(dataUrl: string) {
   const match = dataUrl.match(/^data:([^;,]+)?(;base64)?,(.*)$/i);
   if (!match) return null;
@@ -223,6 +236,7 @@ export async function getUploadcareFileMetadata(
         datetime_stored?: unknown;
         datetime_removed?: unknown;
         original_filename?: unknown;
+        original_file_url?: unknown;
       }
     | null;
 
@@ -248,6 +262,7 @@ export async function getUploadcareFileMetadata(
 
   return {
     uuid,
+    originalFileUrl: extractUploadcareDeliveryUrl(payload.original_file_url),
     size:
       typeof payload.size === "number" && Number.isFinite(payload.size)
         ? Math.max(0, Math.round(payload.size))

@@ -3,9 +3,9 @@ import { createHash } from "node:crypto";
 import { dbQuery, getDbPool } from "@/lib/db";
 import { loadAdminSettings } from "@/lib/adminSettings";
 import {
-  buildUploadcareCdnUrl,
   extractUploadcareDeliveryUrl,
   extractUploadcareFileId,
+  normalizeUploadcareDeliveryUrl,
 } from "@/lib/uploads/uploadcare";
 import {
   BOOKING_VEHICLE_INSPECTION_IMAGE_CATEGORIES,
@@ -413,17 +413,12 @@ function resolveInspectionImageUrl(storageProvider: unknown, storageKey: unknown
   const normalizedStorageKey = normalizeText(storageKey);
   if (!normalizedStorageKey) return null;
 
-  const directUrl = extractUploadcareDeliveryUrl(normalizedStorageKey);
-  if (directUrl) return directUrl;
-
   const provider = normalizeStorageProvider(storageProvider);
   if (!["UPLOADCARE_FILE_ID", "UPLOADCARE", "UPLOADCARE_TOKEN"].includes(provider)) {
     return null;
   }
 
-  const fileId = extractUploadcareFileId(normalizedStorageKey);
-  if (!fileId) return null;
-  return buildUploadcareCdnUrl(fileId);
+  return normalizeUploadcareDeliveryUrl(normalizedStorageKey);
 }
 
 function inferImageExtension(input: { mimeType?: string | null; originalFileName?: string | null }) {
