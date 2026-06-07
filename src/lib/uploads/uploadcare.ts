@@ -277,6 +277,53 @@ export async function getUploadcareFileMetadata(
   };
 }
 
+export async function deleteUploadcareFile(
+  fileId: string,
+  options: {
+    publicKey?: string;
+    secretKey?: string;
+    fetchFn?: typeof fetch;
+  } = {},
+) {
+  const normalizedFileId = extractUploadcareFileId(fileId);
+  if (!normalizedFileId) {
+    throw new UploadcareFileValidationError("Invalid Uploadcare file reference.");
+  }
+
+  const publicKey = resolveUploadcarePublicKey(options);
+  const secretKey = resolveUploadcareSecretKey(options);
+  if (!publicKey || !secretKey) {
+    throw new UploadcareFileValidationError(
+      "Uploadcare file deletion is not configured.",
+      503,
+    );
+  }
+
+  const response = await (options.fetchFn ?? fetch)(
+    `https://api.uploadcare.com/files/${encodeURIComponent(normalizedFileId)}/storage/`,
+    {
+      method: "DELETE",
+      headers: {
+        Accept: UPLOADCARE_REST_ACCEPT,
+        Authorization: `Uploadcare.Simple ${publicKey}:${secretKey}`,
+      },
+      cache: "no-store",
+    },
+  );
+
+  if (response.status === 404) {
+    return { fileId: normalizedFileId, alreadyDeleted: true };
+  }
+  if (!response.ok) {
+    throw new UploadcareFileValidationError(
+      "Uploadcare could not delete the uploaded file.",
+      502,
+    );
+  }
+
+  return { fileId: normalizedFileId, alreadyDeleted: false };
+}
+
 export async function validateUploadcareFiles(
   references: readonly string[],
   policy: UploadcareFilePolicy,

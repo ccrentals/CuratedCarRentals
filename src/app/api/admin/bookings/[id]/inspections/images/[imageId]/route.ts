@@ -5,6 +5,7 @@ import { dbQuery } from "@/lib/db";
 import { logError } from "@/lib/log";
 import { requireCsrf } from "@/lib/security/csrf";
 import {
+  deleteUploadcareFile,
   extractUploadcareFileId,
   getUploadcareFileMetadata,
   UploadcareFileValidationError,
@@ -39,6 +40,8 @@ export type AdminBookingInspectionImageRouteDeps = {
     fileName: string | null;
   } | null>;
   getFileMetadata: typeof getUploadcareFileMetadata;
+  deleteFile: typeof deleteUploadcareFile;
+  countActiveFileReferences: (fileId: string) => Promise<number>;
   fetchFile: typeof fetch;
 };
 
@@ -78,6 +81,26 @@ const DEFAULT_DEPS: AdminBookingInspectionImageRouteDeps = {
     };
   },
   getFileMetadata: getUploadcareFileMetadata,
+  deleteFile: deleteUploadcareFile,
+  countActiveFileReferences: async (fileId) => {
+    const result = await dbQuery<{ reference_count: number }>(
+      `select (
+         (select count(*) from booking_vehicle_inspection_images
+          where archived_at is null and storage_key ilike $1)
+         +
+         (select count(*) from booking_private_files
+          where storage_key ilike $1)
+         +
+         (select count(*) from vehicle_documents
+          where archived_at is null and storage_key ilike $1)
+         +
+         (select count(*) from vehicles
+          where image_urls_json::text ilike $1)
+       )::int as reference_count`,
+      [`%${fileId}%`],
+    );
+    return Number(result.rows[0]?.reference_count ?? 0);
+  },
   fetchFile: fetch,
 };
 
@@ -236,6 +259,12 @@ export async function handleAdminBookingInspectionImageDelete(
       return NextResponse.json({ ok: false, error: "Inspection record not found." }, { status: 404 });
     }
 
+    const image = await resolvedDeps.getImage(id, imageId);
+    if (!image) {
+      return NextResponse.json({ ok: false, error: "Inspection image not found." }, { status: 404 });
+    }
+    const fileId = extractUploadcareFileId(image.storageKey);
+
     const deleted = await resolvedDeps.archiveImage(id, {
       imageId,
       inspectionId,
@@ -243,6 +272,28 @@ export async function handleAdminBookingInspectionImageDelete(
     });
     if (!deleted) {
       return NextResponse.json({ ok: false, error: "Inspection image not found." }, { status: 404 });
+    }
+
+    let providerFileDeleted = false;
+    let providerFileShared = false;
+    let cleanupWarning: string | null = null;
+    if (fileId) {
+      try {
+        providerFileShared = (await resolvedDeps.countActiveFileReferences(fileId)) > 0;
+        if (!providerFileShared) {
+          await resolvedDeps.deleteFile(fileId);
+          providerFileDeleted = true;
+        }
+      } catch (error) {
+        cleanupWarning =
+          "The image was removed from this inspection, but permanent storage cleanup failed.";
+        logError("admin.booking-inspections.images.provider-delete", error, {
+          bookingId: id,
+          imageId,
+          fileId,
+          actorUserId: auth.actor.userId,
+        });
+      }
     }
 
     const nextInspections = await resolvedDeps.loadInspections(id);
@@ -256,6 +307,9 @@ export async function handleAdminBookingInspectionImageDelete(
       bookingPublicId: nextInspections.bookingPublicId,
       inspections: nextInspections,
       deletedImageId: imageId,
+      providerFileDeleted,
+      providerFileShared,
+      cleanupWarning,
     });
   } catch (error) {
     if (isBookingVehicleInspectionMissingTableError(error)) {

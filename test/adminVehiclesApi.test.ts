@@ -216,6 +216,87 @@ test("admin vehicle patch API toggles public visibility and refreshes gallery me
   ]);
 });
 
+test("admin vehicle patch API deletes an orphaned Uploadcare gallery file after save", async () => {
+  const removedFileId = "33333333-3333-4333-8333-333333333333";
+  let deletedFileId = "";
+
+  const response = await handleAdminVehiclePatch(
+    new Request(`http://localhost/api/admin/vehicles/${VEHICLE_ID}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", "x-csrf-token": "token" },
+      body: JSON.stringify({
+        image_urls_json: [],
+        csrfToken: "token",
+      }),
+    }),
+    { params: Promise.resolve({ id: VEHICLE_ID }) },
+    {
+      authorize: async () => authorizedActor(),
+      requireCsrfCheck: async () => true,
+      consumeRateLimitCheck: async () => allowRateLimit(),
+      connect: async () =>
+        ({
+          async query(text: string) {
+            if (text === "begin" || text === "commit" || text === "rollback") {
+              return { rows: [] };
+            }
+            if (text.includes("from vehicles where id = $1::uuid for update")) {
+              return {
+                rowCount: 1,
+                rows: [
+                  {
+                    id: VEHICLE_ID,
+                    public_id: "VE000222",
+                    make: "Subaru",
+                    model: "Impreza Sport",
+                    year: 2018,
+                    features_json: {
+                      slug: "subaru-impreza-sport",
+                      gallery_images: [],
+                    },
+                    image_urls_json: [`https://ucarecdn.com/${removedFileId}/`],
+                  },
+                ],
+              };
+            }
+            if (text.startsWith("update vehicles set")) {
+              return {
+                rows: [
+                  {
+                    id: VEHICLE_ID,
+                    public_id: "VE000222",
+                    make: "Subaru",
+                    model: "Impreza Sport",
+                    year: 2018,
+                    seat_count: 5,
+                    daily_rate_cents: 7200,
+                    deposit_cents: 7000,
+                    status: "AVAILABLE",
+                  },
+                ],
+              };
+            }
+            throw new Error(`Unexpected query: ${text}`);
+          },
+          release() {},
+        }),
+      writeAudit: async () => undefined,
+      countActiveFileReferences: async () => 0,
+      deleteFile: async (fileId) => {
+        deletedFileId = fileId;
+        return { fileId, alreadyDeleted: false };
+      },
+    },
+  );
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as {
+    galleryCleanup?: { deletedCount?: number };
+  };
+  assert.equal(body.galleryCleanup?.deletedCount, 1);
+  assert.equal(deletedFileId, removedFileId);
+});
+
 test("admin vehicle patch API updates title fields used by public vehicle displays", async () => {
   let updateValues: unknown[] = [];
   let auditFields: unknown[] = [];

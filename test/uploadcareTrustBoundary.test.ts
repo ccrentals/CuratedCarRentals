@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   buildUploadcareCdnUrl,
   createUploadcareSignedUploadCredentials,
+  deleteUploadcareFile,
   extractUploadcareDeliveryUrl,
   extractUploadcareFileId,
   getUploadcareFileMetadata,
@@ -81,6 +82,47 @@ test("uploadcare helper: treats missing project files as foreign or invalid refe
       }),
     /not found in this Uploadcare project/i,
   );
+});
+
+test("uploadcare helper: permanently deletes a file using REST credentials", async () => {
+  let requestUrl = "";
+  let requestMethod = "";
+  let requestHeaders: Headers | null = null;
+
+  const result = await deleteUploadcareFile(FILE_ID, {
+    publicKey: "public-key",
+    secretKey: "secret-key",
+    fetchFn: async (input, init) => {
+      requestUrl = String(input);
+      requestMethod = init?.method ?? "";
+      requestHeaders = new Headers(init?.headers);
+      return new Response(JSON.stringify({ uuid: FILE_ID }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    },
+  });
+
+  assert.equal(
+    requestUrl,
+    `https://api.uploadcare.com/files/${FILE_ID}/storage/`,
+  );
+  assert.equal(requestMethod, "DELETE");
+  assert.equal(
+    requestHeaders?.get("Authorization"),
+    "Uploadcare.Simple public-key:secret-key",
+  );
+  assert.deepEqual(result, { fileId: FILE_ID, alreadyDeleted: false });
+});
+
+test("uploadcare helper: treats an already deleted file as a successful cleanup", async () => {
+  const result = await deleteUploadcareFile(FILE_ID, {
+    publicKey: "public-key",
+    secretKey: "secret-key",
+    fetchFn: async () => new Response(null, { status: 404 }),
+  });
+
+  assert.deepEqual(result, { fileId: FILE_ID, alreadyDeleted: true });
 });
 
 test("uploadcare helper: enforces image type, size, readiness, and permanent storage", async () => {

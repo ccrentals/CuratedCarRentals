@@ -13,7 +13,10 @@ import type { SortState } from "@/components/admin/tableSort";
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { TableDateTime } from "@/components/shared/TableDateTime";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
-import { getUploadcareSignedOptions } from "@/lib/uploads/uploadcare-client";
+import {
+  getUploadcareClientErrorMessage,
+  getUploadcareSignedOptions,
+} from "@/lib/uploads/uploadcare-client";
 
 const DEFAULT_FOLDERS = ["Paperwork", "Insurance", "Registration", "Other"] as const;
 const CUSTOM_DOCUMENT_TYPE_VALUE = "__custom__";
@@ -558,13 +561,19 @@ export function VehicleFilesPanel({
           sizeBytes: typeof info?.size === "number" && Number.isFinite(info.size) ? Math.round(info.size) : null,
         });
         setTitle(fileName);
+        setMessage("Upload complete. Review the document details, then save the file.");
       });
 
       dialog.fail((requestError) => {
-        setError(requestError?.message ?? "Upload cancelled.");
+        setError(getUploadcareClientErrorMessage(requestError));
       });
-    } catch {
-      setError("Unable to open upload dialog.");
+    } catch (requestError) {
+      setError(
+        getUploadcareClientErrorMessage(
+          requestError,
+          "Unable to open the upload dialog. Refresh the page and try again.",
+        ),
+      );
     }
   };
 

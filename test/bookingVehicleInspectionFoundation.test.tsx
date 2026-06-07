@@ -1787,6 +1787,7 @@ test("booking vehicle inspection image route: GET requires admin access", async 
 });
 
 test("booking vehicle inspection image route: delete archives image and returns updated summaries", async () => {
+  let deletedProviderFileId = "";
   const response = await handleAdminBookingInspectionImageDelete(
     new Request(
       `http://localhost/api/admin/bookings/${BOOKING_ID}/inspections/images/${PICKUP_IMAGE_ID}`,
@@ -1817,6 +1818,16 @@ test("booking vehicle inspection image route: delete archives image and returns 
         assert.equal(input.imageId, PICKUP_IMAGE_ID);
         return true;
       },
+      getImage: async () => ({
+        storageKey: "f5a4c5f0-1234-4d1d-9ef5-000000000111",
+        mimeType: "image/png",
+        fileName: "pickup.png",
+      }),
+      countActiveFileReferences: async () => 0,
+      deleteFile: async (fileId) => {
+        deletedProviderFileId = fileId;
+        return { fileId, alreadyDeleted: false };
+      },
     },
   );
 
@@ -1825,10 +1836,58 @@ test("booking vehicle inspection image route: delete archives image and returns 
     ok?: boolean;
     deletedImageId?: string;
     inspections?: { pickup?: { imageCount?: number } };
+    providerFileDeleted?: boolean;
   };
   assert.equal(payload.ok, true);
   assert.equal(payload.deletedImageId, PICKUP_IMAGE_ID);
   assert.equal(payload.inspections?.pickup?.imageCount, 1);
+  assert.equal(payload.providerFileDeleted, true);
+  assert.equal(deletedProviderFileId, "f5a4c5f0-1234-4d1d-9ef5-000000000111");
+});
+
+test("booking vehicle inspection image route: preserves provider file while another active record uses it", async () => {
+  let providerDeleteCalled = false;
+  const response = await handleAdminBookingInspectionImageDelete(
+    new Request(
+      `http://localhost/api/admin/bookings/${BOOKING_ID}/inspections/images/${PICKUP_IMAGE_ID}`,
+      {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          inspectionId: PICKUP_INSPECTION_ID,
+          inspectionType: "pickup",
+          csrfToken: "token",
+        }),
+      },
+    ),
+    { params: Promise.resolve({ id: BOOKING_ID, imageId: PICKUP_IMAGE_ID }) },
+    {
+      requireAdminAccess: async () => authorizedStaffResult(),
+      requireCsrfCheck: async () => true,
+      getBookingStatus: async () => "CONFIRMED",
+      loadInspections: async () => sampleInspectionSet(),
+      archiveImage: async () => true,
+      getImage: async () => ({
+        storageKey: "f5a4c5f0-1234-4d1d-9ef5-000000000111",
+        mimeType: "image/png",
+        fileName: "pickup.png",
+      }),
+      countActiveFileReferences: async () => 1,
+      deleteFile: async (fileId) => {
+        providerDeleteCalled = true;
+        return { fileId, alreadyDeleted: false };
+      },
+    },
+  );
+
+  assert.equal(response.status, 200);
+  const payload = (await response.json()) as {
+    providerFileDeleted?: boolean;
+    providerFileShared?: boolean;
+  };
+  assert.equal(payload.providerFileDeleted, false);
+  assert.equal(payload.providerFileShared, true);
+  assert.equal(providerDeleteCalled, false);
 });
 
 test("booking vehicle inspection archive route: requires admin access", async () => {

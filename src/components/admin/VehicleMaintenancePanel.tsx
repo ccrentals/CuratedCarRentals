@@ -17,7 +17,10 @@ import { buttonStyles } from "@/components/ui/Button";
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { fmtDateNoSeconds } from "@/lib/dateFormat";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
-import { getUploadcareSignedOptions } from "@/lib/uploads/uploadcare-client";
+import {
+  getUploadcareClientErrorMessage,
+  getUploadcareSignedOptions,
+} from "@/lib/uploads/uploadcare-client";
 
 const WIDGET_SRC = "https://ucarecdn.com/libs/widget/3.x/uploadcare.full.min.js";
 
@@ -1063,7 +1066,9 @@ function startEdit(item: MaintenanceRecord) {
             reject(error);
           }
         });
-        dialog.fail((dialogError) => reject(new Error(dialogError?.message ?? "Upload cancelled.")));
+        dialog.fail((dialogError) =>
+          reject(new Error(getUploadcareClientErrorMessage(dialogError))),
+        );
       });
 
       const reference = String(fileInfo.cdnUrl ?? fileInfo.uuid ?? "").trim();
@@ -1086,9 +1091,14 @@ function startEdit(item: MaintenanceRecord) {
         mimeType: typeof fileInfo.mimeType === "string" ? fileInfo.mimeType : null,
         sizeBytes,
       });
-      setMessage(`Document ready to save: ${fileName}`);
+      setMessage(`Upload complete. Review and save: ${fileName}`);
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Unable to upload document.");
+      setError(
+        getUploadcareClientErrorMessage(
+          requestError,
+          "Unable to upload the document. Please try again.",
+        ),
+      );
     } finally {
       setSaving(false);
     }
