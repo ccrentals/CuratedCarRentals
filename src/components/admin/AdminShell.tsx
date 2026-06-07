@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarCheck, FileText, type LucideIcon } from "lucide-react";
+import { CalendarCheck, FileText, Images, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -295,6 +295,11 @@ const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    label: "Media Library",
+    href: "/admin/media",
+    icon: (className: string) => <Images className={className} aria-hidden="true" />,
+  },
+  {
     label: "Maintenance",
     href: "/admin/maintenance",
     icon: (className: string) => (
@@ -529,6 +534,7 @@ const NAV_GROUPS: NavGroup[] = [
       "/admin/promo-codes",
       "/admin/calendar",
       "/admin/vehicles",
+      "/admin/media",
       "/admin/maintenance",
       "/admin/settings",
       "/admin/users",

@@ -14,6 +14,7 @@ const PRIVILEGED_ADMIN_ONLY_BASE_PATHS = [
   "/admin/payments",
   "/admin/promo-codes",
   "/admin/vehicles",
+  "/admin/media",
   "/admin/maintenance",
   "/admin/depreciation",
   "/admin/reports",
