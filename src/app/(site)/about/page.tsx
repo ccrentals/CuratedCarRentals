@@ -3,6 +3,14 @@ import Link from "next/link";
 
 import { Container } from "@/components/site/Container";
 import { aboutFeatures, siteContent } from "@/data/content";
+import { publicPageMetadata } from "@/lib/seo";
+
+export const metadata = publicPageMetadata({
+  title: "About Curated Car Rentals",
+  description:
+    "Learn about Curated Car Rentals, a Kingston-based car rental team focused on reliable vehicles, transparent service, and Jamaica travel support.",
+  path: "/about",
+});
 
 export default function AboutPage() {
   return (

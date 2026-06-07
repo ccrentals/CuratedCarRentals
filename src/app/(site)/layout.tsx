@@ -1,3 +1,14 @@
+import { JsonLd } from "@/components/seo/JsonLd";
+import {
+  businessStructuredData,
+  websiteStructuredData,
+} from "@/lib/structuredData";
+
 export default function SiteLayout({ children }: { children: React.ReactNode }) {
-  return children;
+  return (
+    <>
+      <JsonLd data={[businessStructuredData(), websiteStructuredData()]} />
+      {children}
+    </>
+  );
 }

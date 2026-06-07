@@ -2,6 +2,14 @@ import Link from "next/link";
 
 import { Container } from "@/components/site/Container";
 import { drivingTips } from "@/data/content";
+import { publicPageMetadata } from "@/lib/seo";
+
+export const metadata = publicPageMetadata({
+  title: "Driving in Jamaica Guide",
+  description:
+    "Review practical driving tips for Jamaica, including road conditions, left-side driving, speed limits, maps, and safe travel planning.",
+  path: "/driving-in-jamaica",
+});
 
 export default function DrivingInJamaicaPage() {
   return (

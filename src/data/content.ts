@@ -224,3 +224,30 @@ export const reservationOptions = {
   recommendation:
     "To avoid inconvenience, we strongly recommend making a paid reservation to guarantee your booking.",
 };
+
+export const rentalFaqs = [
+  {
+    question: "What is the minimum age to rent a vehicle?",
+    answer: "Drivers must be 23 years or older to rent a vehicle from Curated Car Rentals.",
+  },
+  {
+    question: "How long must my driver's license have been valid?",
+    answer:
+      "Your driver's license must have been valid for at least one year and must be in good standing.",
+  },
+  {
+    question: "Is a security deposit required?",
+    answer:
+      "Yes. Every rental requires a refundable security deposit. The amount depends on the vehicle class and starts at JMD 15,000.",
+  },
+  {
+    question: "Does an unpaid reservation guarantee the vehicle?",
+    answer:
+      "No. Vehicle availability is not guaranteed until the required reservation payment has been completed.",
+  },
+  {
+    question: "When is airport pickup available?",
+    answer:
+      "Airport pickup from Norman Manley International Airport is available with a paid reservation.",
+  },
+] as const;

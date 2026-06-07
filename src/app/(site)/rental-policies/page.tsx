@@ -1,13 +1,36 @@
+import { JsonLd } from "@/components/seo/JsonLd";
 import { Container } from "@/components/site/Container";
 import {
+  rentalFaqs,
   rentalPolicyDeposit,
   rentalPolicyRequirements,
   reservationOptions,
 } from "@/data/content";
+import { publicPageMetadata } from "@/lib/seo";
+import {
+  breadcrumbStructuredData,
+  faqStructuredData,
+} from "@/lib/structuredData";
+
+export const metadata = publicPageMetadata({
+  title: "Rental Policies and Requirements",
+  description:
+    "Review Curated Car Rentals requirements, security deposit terms, insurance coverage notes, reservation options, and airport pickup policy.",
+  path: "/rental-policies",
+});
 
 export default function RentalPoliciesPage() {
   return (
     <>
+      <JsonLd
+        data={[
+          faqStructuredData(rentalFaqs),
+          breadcrumbStructuredData([
+            { name: "Home", path: "/" },
+            { name: "Rental Policies", path: "/rental-policies" },
+          ]),
+        ]}
+      />
       <section className="bg-[var(--ccr-surface-soft)]/65 py-14 md:py-20 min-[1160px]:pt-44">
         <Container>
           <div className="min-[1160px]:translate-y-4">
@@ -154,6 +177,35 @@ export default function RentalPoliciesPage() {
                 </article>
               </div>
             </article>
+
+            <section aria-labelledby="rental-faq-heading">
+              <div className="mb-6">
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--ccr-accent-strong)]">
+                  Frequently Asked Questions
+                </p>
+                <h2
+                  id="rental-faq-heading"
+                  className="mt-3 font-display text-3xl font-bold text-[var(--ccr-light-surface-text)]"
+                >
+                  Rental questions, answered clearly
+                </h2>
+              </div>
+              <div className="space-y-3">
+                {rentalFaqs.map((item) => (
+                  <details
+                    key={item.question}
+                    className="group rounded-[1.4rem] border border-[var(--ccr-border)] bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.04)]"
+                  >
+                    <summary className="cursor-pointer list-none pr-8 text-base font-semibold text-[var(--ccr-light-surface-text)] marker:content-none">
+                      {item.question}
+                    </summary>
+                    <p className="mt-3 text-base leading-7 text-[var(--ccr-light-surface-muted)]">
+                      {item.answer}
+                    </p>
+                  </details>
+                ))}
+              </div>
+            </section>
           </div>
         </Container>
       </section>

@@ -11,6 +11,9 @@ import {
 import { isClerkEnabled } from "@/lib/security/clerk";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { ForcePasswordChangeGate } from "@/components/security/ForcePasswordChangeGate";
+import { privatePageMetadata } from "@/lib/seo";
+
+export const metadata = privatePageMetadata;
 
 function isUndefinedColumn(error: unknown, column: string) {
   const code = (error as { code?: string } | null)?.code;
