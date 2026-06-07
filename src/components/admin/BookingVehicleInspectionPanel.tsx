@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
+import { ChevronDown } from "lucide-react";
 
 import { openUploadcareImagesDialog } from "@/components/admin/UploadcareImagesInput";
 import { MediaActivityPanel } from "@/components/admin/MediaActivityPanel";
@@ -257,11 +258,11 @@ function InspectionImagesSection({
       ) : null}
 
       {summary.images.length > 0 ? (
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="mt-4 grid gap-3 xl:grid-cols-2">
           {summary.images.map((image) => (
             <article
               key={image.id}
-              className="overflow-hidden rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)]"
+              className="min-w-0 overflow-hidden rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)]"
             >
               {image.previewUrl && !failedPreviewIds.includes(image.id) ? (
                 <a href={image.previewUrl} target="_blank" rel="noreferrer">
@@ -274,36 +275,49 @@ function InspectionImagesSection({
                         current.includes(image.id) ? current : [...current, image.id],
                       )
                     }
-                    className="h-40 w-full object-cover"
+                    className="h-28 w-full object-cover sm:h-32"
                   />
                 </a>
               ) : (
-                <div className="flex h-40 items-center justify-center bg-[var(--ccr-surface-soft)] px-3 text-center text-sm text-[var(--ccr-muted)]">
+                <div className="flex h-28 items-center justify-center bg-[var(--ccr-surface-soft)] px-3 text-center text-sm text-[var(--ccr-muted)] sm:h-32">
                   Preview unavailable
                 </div>
               )}
-              <div className="space-y-3 p-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="inline-flex items-center rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-text)]">
+              <div className="space-y-2.5 p-3">
+                <div className="flex min-w-0 items-center justify-between gap-2">
+                  <span
+                    title={`Image category: ${image.categoryLabel}`}
+                    className="inline-flex shrink-0 items-center gap-1 rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-[var(--ccr-text)]"
+                  >
                     {image.categoryLabel}
+                    <ChevronDown aria-hidden="true" size={12} />
                   </span>
-                  <span className="text-xs text-[var(--ccr-muted)]">{bookingPublicId}</span>
+                  <span className="truncate text-xs text-[var(--ccr-muted)]">
+                    {bookingPublicId}
+                  </span>
                 </div>
-                <div className="space-y-1">
-                  <p className="break-all text-sm font-medium text-[var(--ccr-text)]">
+                <div className="min-w-0 space-y-1">
+                  <p
+                    title={image.generatedFileName ?? image.originalFileName ?? "Inspection image"}
+                    className="truncate text-sm font-medium text-[var(--ccr-text)]"
+                  >
                     {image.generatedFileName ?? image.originalFileName ?? "Inspection image"}
                   </p>
                   <p className="text-xs text-[var(--ccr-muted)]">
                     {image.createdAt ? <DateTimeInline value={image.createdAt} /> : "Uploaded"}
                   </p>
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   {image.previewUrl ? (
                     <a
                       href={image.previewUrl}
                       target="_blank"
                       rel="noreferrer"
-                      className={buttonStyles({ variant: "secondary", size: "xs" })}
+                      className={buttonStyles({
+                        variant: "secondary",
+                        size: "xs",
+                        className: "flex-1 sm:flex-none",
+                      })}
                     >
                       Open
                     </a>
@@ -312,7 +326,11 @@ function InspectionImagesSection({
                     <button
                       type="button"
                       onClick={() => onDelete(image)}
-                      className={buttonStyles({ variant: "secondary", size: "xs" })}
+                      className={buttonStyles({
+                        variant: "secondary",
+                        size: "xs",
+                        className: "flex-1 sm:flex-none",
+                      })}
                     >
                       Remove
                     </button>
