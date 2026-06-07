@@ -31,6 +31,7 @@ import {
   loadBookingVehicleInspectionSummaries,
 } from "@/lib/bookings/vehicleInspection";
 import { loadBookingIncidents } from "@/lib/bookings/bookingIncidents";
+import { loadMediaAuditHistory } from "@/lib/uploads/mediaAudit";
 
 type BookingDetails = {
   id: string;
@@ -593,6 +594,11 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
     },
   });
 
+  const mediaActivities = await loadMediaAuditHistory({
+    entityType: "booking",
+    entityId: booking.id,
+  });
+
   return (
     <div className="mx-auto w-full max-w-5xl px-6 py-10">
       <RefundRequiredToast refundRequired={refundRequired} />
@@ -611,6 +617,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
             bookingStatus={booking.status}
             bookingPublicId={bookingPublicId}
             inspections={vehicleInspections}
+            mediaActivities={mediaActivities}
             tablesUnavailable={vehicleInspectionTablesUnavailable}
             canCorrectOdometer={canAdmin}
           />

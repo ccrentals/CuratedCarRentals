@@ -8,6 +8,7 @@ import {
   extractUploadcareDeliveryUrl,
   extractUploadcareFileId,
   getUploadcareFileMetadata,
+  listUploadcareFiles,
   normalizeUploadcareDeliveryUrl,
   resolveUploadcareCdnUrl,
   validateUploadcareFiles,
@@ -123,6 +124,53 @@ test("uploadcare helper: treats an already deleted file as a successful cleanup"
   });
 
   assert.deepEqual(result, { fileId: FILE_ID, alreadyDeleted: true });
+});
+
+test("uploadcare helper: lists stored files with REST credentials", async () => {
+  let requestUrl = "";
+  let requestHeaders: Headers | null = null;
+
+  const files = await listUploadcareFiles({
+    publicKey: "public-key",
+    secretKey: "secret-key",
+    stored: true,
+    limit: 25,
+    ordering: "-datetime_uploaded",
+    fetchFn: async (input, init) => {
+      requestUrl = String(input);
+      requestHeaders = new Headers(init?.headers);
+      return new Response(
+        JSON.stringify({
+          results: [
+            {
+              uuid: FILE_ID,
+              datetime_uploaded: "2026-06-06T12:00:00.000Z",
+              datetime_stored: "2026-06-06T12:00:01.000Z",
+              datetime_removed: null,
+              original_filename: "vehicle.jpg",
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    },
+  });
+
+  const parsedUrl = new URL(requestUrl);
+  assert.equal(parsedUrl.origin + parsedUrl.pathname, "https://api.uploadcare.com/files/");
+  assert.equal(parsedUrl.searchParams.get("stored"), "true");
+  assert.equal(parsedUrl.searchParams.get("limit"), "25");
+  assert.equal(parsedUrl.searchParams.get("ordering"), "-datetime_uploaded");
+  assert.equal(requestHeaders?.get("Authorization"), "Uploadcare.Simple public-key:secret-key");
+  assert.deepEqual(files, [
+    {
+      uuid: FILE_ID,
+      datetimeUploaded: "2026-06-06T12:00:00.000Z",
+      datetimeStored: "2026-06-06T12:00:01.000Z",
+      datetimeRemoved: null,
+      originalFilename: "vehicle.jpg",
+    },
+  ]);
 });
 
 test("uploadcare helper: enforces image type, size, readiness, and permanent storage", async () => {

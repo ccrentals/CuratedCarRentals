@@ -12,6 +12,7 @@ import {
   validateUploadcareFiles,
 } from "@/lib/uploads/uploadcare";
 import { buildVehicleGalleryEntries } from "@/lib/vehicles/gallery";
+import { writeMediaAudit } from "@/lib/uploads/mediaAudit";
 
 const allowedStatuses = ["AVAILABLE", "UNAVAILABLE", "RESERVED", "RENTED", "MAINTENANCE", "INACTIVE"];
 const INVALID_SEAT_COUNT = Symbol("INVALID_SEAT_COUNT");
@@ -118,6 +119,7 @@ type AdminVehiclePostDeps = {
   consumeRateLimitCheck?: typeof consumeRouteRateLimit;
   connect: () => Promise<VehicleMutationClient>;
   validateUploads?: typeof validateUploadcareFiles;
+  writeMediaAudit?: typeof writeMediaAudit;
 };
 
 const DEFAULT_GET_DEPS: AdminVehiclesGetDeps = {
@@ -140,6 +142,7 @@ const DEFAULT_POST_DEPS: AdminVehiclePostDeps = {
   consumeRateLimitCheck: consumeRouteRateLimit,
   connect: async () => getDbPool().connect(),
   validateUploads: validateUploadcareFiles,
+  writeMediaAudit,
 };
 
 export async function handleAdminVehiclesGet(
@@ -310,6 +313,22 @@ export async function handleAdminVehiclePost(
       created.id,
     ]);
     await client.query("commit");
+    for (const [index, file] of imageUrls.entries()) {
+      try {
+        await deps.writeMediaAudit?.({
+          userId: auth.actor.userId,
+          action: "MEDIA_UPLOAD",
+          entityType: "vehicle",
+          entityId: created.id,
+          fileId: file,
+          context: "vehicle gallery",
+          label: nextFeatures.gallery_images[index]?.name ?? null,
+          outcome: index === 0 ? "Saved as primary image" : "Saved to gallery",
+        });
+      } catch {
+        // Vehicle creation remains successful when audit logging is unavailable.
+      }
+    }
     return NextResponse.json({ vehicle: created }, { status: 201 });
   } catch {
     await client.query("rollback");

@@ -6,8 +6,10 @@ import { useEffect, useState } from "react";
 
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { UploadcareImagesInput } from "@/components/admin/UploadcareImagesInput";
+import { MediaActivityPanel } from "@/components/admin/MediaActivityPanel";
 import { buttonStyles } from "@/components/ui/Button";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
+import type { MediaAuditActivity } from "@/lib/uploads/mediaAudit";
 
 const VEHICLE_SAVE_TIMEOUT_MS = 15000;
 
@@ -55,6 +57,7 @@ type VehicleDetailFormProps = {
   vehicle: VehicleDetail;
   profile: VehicleProfile | null;
   initialNotes: VehicleNote[];
+  mediaActivities?: MediaAuditActivity[];
   initialDerivedStatus: "AVAILABLE" | "UPCOMING" | "ON_RENT" | "DIRTY" | "UNAVAILABLE";
 };
 
@@ -160,6 +163,7 @@ export function VehicleDetailForm({
   vehicle,
   profile,
   initialNotes,
+  mediaActivities = [],
   initialDerivedStatus,
 }: VehicleDetailFormProps) {
   const router = useRouter();
@@ -783,6 +787,7 @@ export function VehicleDetailForm({
             ) : null
           }
         />
+        <MediaActivityPanel activities={mediaActivities} title="Vehicle image activity" />
       </div>
 
       <div className="mt-6 border-t border-[var(--ccr-border)] pt-5">

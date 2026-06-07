@@ -4,6 +4,7 @@ import { requireOperationsAccess } from "@/lib/auth/adminGuards";
 import { dbQuery } from "@/lib/db";
 import { logError } from "@/lib/log";
 import { requireCsrf } from "@/lib/security/csrf";
+import { writeMediaAudit } from "@/lib/uploads/mediaAudit";
 import {
   UPLOADCARE_ALLOWED_RASTER_IMAGE_MIME_TYPES,
   UploadcareFileValidationError,
@@ -43,6 +44,7 @@ export type AdminBookingInspectionImagesRouteDeps = {
   loadInspections: typeof loadBookingVehicleInspectionSummaries;
   createImages: typeof createBookingVehicleInspectionImages;
   validateUploads: typeof validateUploadcareFiles;
+  writeMediaAudit: typeof writeMediaAudit;
 };
 
 const DEFAULT_DEPS: AdminBookingInspectionImagesRouteDeps = {
@@ -58,6 +60,7 @@ const DEFAULT_DEPS: AdminBookingInspectionImagesRouteDeps = {
   loadInspections: loadBookingVehicleInspectionSummaries,
   createImages: createBookingVehicleInspectionImages,
   validateUploads: validateUploadcareFiles,
+  writeMediaAudit,
 };
 
 function normalizeText(value: unknown) {
@@ -238,6 +241,27 @@ export async function handleAdminBookingInspectionImagesPost(
       }),
       uploadedByUserId: auth.actor.userId,
     });
+    for (const [index, verifiedFile] of verifiedFiles.entries()) {
+      try {
+        await resolvedDeps.writeMediaAudit({
+          userId: auth.actor.userId,
+          action: "MEDIA_UPLOAD",
+          entityType: "booking",
+          entityId: id,
+          fileId: verifiedFile.uuid,
+          context: `${inspectionType.toLowerCase()} inspection`,
+          label: files[index]?.originalFileName ?? verifiedFile.originalFilename,
+          outcome: "Saved to inspection",
+          details: { inspectionId, category },
+        });
+      } catch (auditError) {
+        logError("admin.booking-inspections.images.audit-upload", auditError, {
+          bookingId: id,
+          inspectionId,
+          fileId: verifiedFile.uuid,
+        });
+      }
+    }
     const nextInspections = await resolvedDeps.loadInspections(id);
     if (!nextInspections) {
       return NextResponse.json({ ok: false, error: "Booking not found" }, { status: 404 });

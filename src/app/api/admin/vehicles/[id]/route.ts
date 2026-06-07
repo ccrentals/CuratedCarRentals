@@ -15,6 +15,7 @@ import {
 } from "@/lib/uploads/uploadcare";
 import { parseMoneyToCents, parseImageUrls } from "@/lib/validators";
 import { buildVehicleGalleryEntries } from "@/lib/vehicles/gallery";
+import { writeMediaAudit } from "@/lib/uploads/mediaAudit";
 
 const STATUS_MAP: Record<string, string> = {
   available: "AVAILABLE",
@@ -97,6 +98,7 @@ type AdminVehiclePatchDeps = {
   validateUploads?: typeof validateUploadcareFiles;
   deleteFile?: typeof deleteUploadcareFile;
   countActiveFileReferences?: (fileId: string) => Promise<number>;
+  writeMediaAudit?: typeof writeMediaAudit;
 };
 
 const DEFAULT_DELETE_DEPS: AdminVehicleDeleteDeps = {
@@ -171,6 +173,7 @@ const DEFAULT_PATCH_DEPS: AdminVehiclePatchDeps = {
   writeAudit: writeAuditLog,
   validateUploads: validateUploadcareFiles,
   deleteFile: deleteUploadcareFile,
+  writeMediaAudit,
   countActiveFileReferences: async (fileId) => {
     const result = await dbQuery<{ reference_count: number }>(
       `select (
@@ -487,6 +490,7 @@ export async function handleAdminVehiclePatch(
   const client = await deps.connect();
   let vehicle: Record<string, unknown> | null = null;
   let removedGalleryFileIds: string[] = [];
+  let addedGalleryFileIds: string[] = [];
 
   try {
     await client.query("begin");
@@ -522,6 +526,7 @@ export async function handleAdminVehiclePatch(
           .filter((value): value is string => Boolean(value)),
       );
       removedGalleryFileIds = [...currentFileIds].filter((fileId) => !nextFileIds.has(fileId));
+      addedGalleryFileIds = [...nextFileIds].filter((fileId) => !currentFileIds.has(fileId));
     }
     const currentFeatures = toObject(currentVehicle.features_json);
     const currentSlug = normalizeText(currentFeatures.slug) || `${currentVehicle.make}-${currentVehicle.model}-${currentVehicle.year}`;
@@ -683,10 +688,36 @@ export async function handleAdminVehiclePatch(
         const referenceCount = await deps.countActiveFileReferences(fileId);
         if (referenceCount > 0) {
           galleryCleanup.preservedCount += 1;
+          try {
+            await deps.writeMediaAudit?.({
+              userId: actor.userId,
+              action: "MEDIA_SHARED_PRESERVE",
+              entityType: "vehicle",
+              entityId: id,
+              fileId,
+              context: "vehicle gallery",
+              outcome: "Removed from gallery; shared provider file preserved",
+            });
+          } catch {
+            // Preserve the successful vehicle update when audit logging fails.
+          }
           continue;
         }
         await deps.deleteFile(fileId);
         galleryCleanup.deletedCount += 1;
+        try {
+          await deps.writeMediaAudit?.({
+            userId: actor.userId,
+            action: "MEDIA_PROVIDER_DELETE",
+            entityType: "vehicle",
+            entityId: id,
+            fileId,
+            context: "vehicle gallery",
+            outcome: "Removed from gallery and deleted from Uploadcare",
+          });
+        } catch {
+          // Preserve the successful vehicle update when audit logging fails.
+        }
       } catch (error) {
         galleryCleanup.failedCount += 1;
         console.warn("vehicle.gallery.provider_delete_failed", {
@@ -694,7 +725,38 @@ export async function handleAdminVehiclePatch(
           fileId,
           error: error instanceof Error ? error.message : "unknown_error",
         });
+        try {
+          await deps.writeMediaAudit?.({
+            userId: actor.userId,
+            action: "MEDIA_CLEANUP_FAILED",
+            entityType: "vehicle",
+            entityId: id,
+            fileId,
+            context: "vehicle gallery",
+            outcome: "Removed from gallery; provider cleanup failed",
+          });
+        } catch {
+          // Preserve the successful vehicle update even when audit logging fails.
+        }
       }
+    }
+  }
+
+  for (const fileId of addedGalleryFileIds) {
+    try {
+      await deps.writeMediaAudit?.({
+        userId: actor.userId,
+        action: "MEDIA_UPLOAD",
+        entityType: "vehicle",
+        entityId: id,
+        fileId,
+        context: "vehicle gallery",
+        outcome: imageUrls[0] && extractUploadcareFileId(imageUrls[0]) === fileId
+          ? "Saved as primary image"
+          : "Saved to gallery",
+      });
+    } catch {
+      // Preserve the successful vehicle update even when audit logging fails.
     }
   }
 

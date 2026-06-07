@@ -4,6 +4,7 @@ import { requireOperationsAccess } from "@/lib/auth/adminGuards";
 import { dbQuery } from "@/lib/db";
 import { logError } from "@/lib/log";
 import { requireCsrf } from "@/lib/security/csrf";
+import { writeMediaAudit } from "@/lib/uploads/mediaAudit";
 import {
   deleteUploadcareFile,
   extractUploadcareFileId,
@@ -42,6 +43,7 @@ export type AdminBookingInspectionImageRouteDeps = {
   getFileMetadata: typeof getUploadcareFileMetadata;
   deleteFile: typeof deleteUploadcareFile;
   countActiveFileReferences: (fileId: string) => Promise<number>;
+  writeMediaAudit: typeof writeMediaAudit;
   fetchFile: typeof fetch;
 };
 
@@ -101,6 +103,7 @@ const DEFAULT_DEPS: AdminBookingInspectionImageRouteDeps = {
     );
     return Number(result.rows[0]?.reference_count ?? 0);
   },
+  writeMediaAudit,
   fetchFile: fetch,
 };
 
@@ -294,6 +297,49 @@ export async function handleAdminBookingInspectionImageDelete(
           actorUserId: auth.actor.userId,
         });
       }
+    }
+
+    try {
+      await resolvedDeps.writeMediaAudit({
+        userId: auth.actor.userId,
+        action: "MEDIA_REMOVE",
+        entityType: "booking",
+        entityId: id,
+        fileId,
+        context: `${inspectionType.toLowerCase()} inspection`,
+        label: image.fileName,
+        outcome: cleanupWarning
+          ? "Removed; provider cleanup failed"
+          : providerFileShared
+            ? "Removed; shared provider file preserved"
+            : providerFileDeleted
+              ? "Removed and deleted from Uploadcare"
+              : "Removed",
+        details: { inspectionId, imageId },
+      });
+      if (cleanupWarning || providerFileShared || providerFileDeleted) {
+        await resolvedDeps.writeMediaAudit({
+          userId: auth.actor.userId,
+          action: cleanupWarning
+            ? "MEDIA_CLEANUP_FAILED"
+            : providerFileShared
+              ? "MEDIA_SHARED_PRESERVE"
+              : "MEDIA_PROVIDER_DELETE",
+          entityType: "booking",
+          entityId: id,
+          fileId,
+          context: `${inspectionType.toLowerCase()} inspection`,
+          label: image.fileName,
+          outcome: cleanupWarning ?? (providerFileShared ? "File remains referenced" : "Deleted"),
+          details: { inspectionId, imageId },
+        });
+      }
+    } catch (auditError) {
+      logError("admin.booking-inspections.images.audit-delete", auditError, {
+        bookingId: id,
+        imageId,
+        fileId,
+      });
     }
 
     const nextInspections = await resolvedDeps.loadInspections(id);

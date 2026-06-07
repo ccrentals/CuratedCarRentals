@@ -26,6 +26,14 @@ export type UploadcareFileMetadata = {
   originalFilename: string | null;
 };
 
+export type UploadcareListedFile = {
+  uuid: string;
+  datetimeUploaded: string | null;
+  datetimeStored: string | null;
+  datetimeRemoved: string | null;
+  originalFilename: string | null;
+};
+
 export type UploadcareFilePolicy = {
   label: string;
   maxCount: number;
@@ -322,6 +330,77 @@ export async function deleteUploadcareFile(
   }
 
   return { fileId: normalizedFileId, alreadyDeleted: false };
+}
+
+export async function listUploadcareFiles(
+  options: {
+    publicKey?: string;
+    secretKey?: string;
+    fetchFn?: typeof fetch;
+    stored?: boolean;
+    limit?: number;
+    ordering?: "datetime_uploaded" | "-datetime_uploaded";
+  } = {},
+): Promise<UploadcareListedFile[]> {
+  const publicKey = resolveUploadcarePublicKey(options);
+  const secretKey = resolveUploadcareSecretKey(options);
+  if (!publicKey || !secretKey) {
+    throw new UploadcareFileValidationError(
+      "Uploadcare file listing is not configured.",
+      503,
+    );
+  }
+
+  const url = new URL("https://api.uploadcare.com/files/");
+  url.searchParams.set("limit", String(Math.max(1, Math.min(1000, options.limit ?? 1000))));
+  url.searchParams.set("ordering", options.ordering ?? "datetime_uploaded");
+  if (options.stored !== undefined) {
+    url.searchParams.set("stored", String(options.stored));
+  }
+
+  const response = await (options.fetchFn ?? fetch)(url, {
+    headers: {
+      Accept: UPLOADCARE_REST_ACCEPT,
+      Authorization: `Uploadcare.Simple ${publicKey}:${secretKey}`,
+    },
+    cache: "no-store",
+  });
+  const payload = (await response.json().catch(() => null)) as
+    | {
+        results?: Array<{
+          uuid?: unknown;
+          datetime_uploaded?: unknown;
+          datetime_stored?: unknown;
+          datetime_removed?: unknown;
+          original_filename?: unknown;
+        }>;
+      }
+    | null;
+
+  if (!response.ok || !payload || !Array.isArray(payload.results)) {
+    throw new UploadcareFileValidationError(
+      "Uploadcare could not list stored files.",
+      502,
+    );
+  }
+
+  return payload.results.flatMap((file) => {
+    const uuid = extractUploadcareFileId(file.uuid);
+    if (!uuid) return [];
+    return [{
+      uuid,
+      datetimeUploaded:
+        typeof file.datetime_uploaded === "string" ? file.datetime_uploaded : null,
+      datetimeStored:
+        typeof file.datetime_stored === "string" ? file.datetime_stored : null,
+      datetimeRemoved:
+        typeof file.datetime_removed === "string" ? file.datetime_removed : null,
+      originalFilename:
+        typeof file.original_filename === "string" && file.original_filename.trim()
+          ? file.original_filename.trim()
+          : null,
+    }];
+  });
 }
 
 export async function validateUploadcareFiles(
