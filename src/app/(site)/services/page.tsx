@@ -1,11 +1,33 @@
 import Image from "next/image";
 
+import { JsonLd } from "@/components/seo/JsonLd";
 import { Container } from "@/components/site/Container";
 import { services } from "@/data/services";
+import { publicPageMetadata } from "@/lib/seo";
+import {
+  breadcrumbStructuredData,
+  servicesStructuredData,
+} from "@/lib/structuredData";
+
+export const metadata = publicPageMetadata({
+  title: "Car Rental Services in Jamaica",
+  description:
+    "Explore airport pickup, chauffeur service, wedding vehicle packages, corporate rentals, and long-term car rental services in Jamaica.",
+  path: "/services",
+});
 
 export default function ServicesPage() {
   return (
     <>
+      <JsonLd
+        data={[
+          servicesStructuredData(),
+          breadcrumbStructuredData([
+            { name: "Home", path: "/" },
+            { name: "Services", path: "/services" },
+          ]),
+        ]}
+      />
       <section className="bg-[var(--ccr-surface-soft)]/65 py-14 md:py-20 min-[1160px]:pt-44">
         <Container>
           <div className="min-[1160px]:translate-y-4">

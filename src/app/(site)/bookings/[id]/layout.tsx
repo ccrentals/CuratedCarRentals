@@ -1,3 +1,7 @@
+import { privatePageMetadata } from "@/lib/seo";
+
+export const metadata = privatePageMetadata;
+
 export default function PublicBookingLayout({
   children,
 }: {

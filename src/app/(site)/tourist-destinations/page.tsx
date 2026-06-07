@@ -2,6 +2,14 @@ import Image from "next/image";
 
 import { Container } from "@/components/site/Container";
 import { destinations } from "@/data/content";
+import { publicPageMetadata } from "@/lib/seo";
+
+export const metadata = publicPageMetadata({
+  title: "Jamaica Tourist Destinations by Rental Car",
+  description:
+    "Plan Jamaica road trips from Kingston to beaches, waterfalls, mountains, historic sites, and scenic destinations with a rental vehicle.",
+  path: "/tourist-destinations",
+});
 
 export default function TouristDestinationsPage() {
   return (

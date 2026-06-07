@@ -3,8 +3,16 @@ import Link from "next/link";
 import { VehicleCard } from "@/components/sections/VehicleCard";
 import { Container } from "@/components/site/Container";
 import { getPublicVehicles } from "@/lib/publicVehicles";
+import { publicPageMetadata } from "@/lib/seo";
 
 export const dynamic = "force-dynamic";
+
+export const metadata = publicPageMetadata({
+  title: "Rental Car Fleet in Kingston, Jamaica",
+  description:
+    "Browse Curated Car Rentals vehicles for Kingston and Jamaica travel, including daily rates, deposits, passenger capacity, and booking options.",
+  path: "/fleet",
+});
 
 export default async function FleetPage() {
   const vehicles = await getPublicVehicles();

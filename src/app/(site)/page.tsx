@@ -11,8 +11,16 @@ import {
   testimonials,
 } from "@/data/content";
 import { getPublicVehicles } from "@/lib/publicVehicles";
+import { publicPageMetadata } from "@/lib/seo";
 
 export const dynamic = "force-dynamic";
+
+export const metadata = publicPageMetadata({
+  title: "Car Rentals in Kingston, Jamaica",
+  description:
+    "Book reliable rental vehicles in Kingston, Jamaica with transparent pricing, airport pickup options, and local support from Curated Car Rentals.",
+  path: "/",
+});
 
 export default async function HomePage() {
   const vehicles = await getPublicVehicles();

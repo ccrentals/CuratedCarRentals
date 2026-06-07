@@ -1,4 +1,12 @@
 import { PublicBookingWizard } from "@/components/booking/PublicBookingWizard";
+import { publicPageMetadata } from "@/lib/seo";
+
+export const metadata = publicPageMetadata({
+  title: "Book a Rental Car in Jamaica",
+  description:
+    "Choose pickup and dropoff dates, compare available vehicles, review pricing, and reserve a Curated Car Rentals vehicle online.",
+  path: "/book",
+});
 
 export default function BookPage() {
   const turnstileDevBypassEnabled =

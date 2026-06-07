@@ -1,7 +1,9 @@
 import Image from "next/image";
 import Link from "next/link";
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
+import { JsonLd } from "@/components/seo/JsonLd";
 import { PublicCtaBand } from "@/components/site/PublicCtaBand";
 import { PublicSection } from "@/components/site/PublicSection";
 import { Container } from "@/components/site/Container";
@@ -9,8 +11,40 @@ import { Button } from "@/components/ui/Button";
 import { siteContent } from "@/data/content";
 import { formatJmd, formatPublicJmd } from "@/lib/money";
 import { getPublicVehicleByIdentifier } from "@/lib/publicVehicles";
+import { publicPageMetadata } from "@/lib/seo";
+import {
+  breadcrumbStructuredData,
+  vehicleStructuredData,
+} from "@/lib/structuredData";
 
 export const dynamic = "force-dynamic";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}): Promise<Metadata> {
+  const { id } = await params;
+  const vehicle = await getPublicVehicleByIdentifier(id);
+
+  if (!vehicle) {
+    return {
+      title: "Vehicle Not Found",
+      robots: {
+        index: false,
+        follow: false,
+      },
+    };
+  }
+
+  const image = vehicle.images.find((item) => item !== "/window.svg");
+  return publicPageMetadata({
+    title: `${vehicle.name} Rental in Jamaica`,
+    description: `${vehicle.name} rental from Curated Car Rentals in Kingston, Jamaica. Review daily pricing, deposit, seats, luggage capacity, and booking details.`,
+    path: `/fleet/${encodeURIComponent(vehicle.slug || vehicle.id)}`,
+    image,
+  });
+}
 
 export default async function FleetVehicleDetailPage({
   params,
@@ -45,6 +79,16 @@ export default async function FleetVehicleDetailPage({
 
   return (
     <div className="pb-6">
+      <JsonLd
+        data={[
+          vehicleStructuredData(vehicle),
+          breadcrumbStructuredData([
+            { name: "Home", path: "/" },
+            { name: "Fleet", path: "/fleet" },
+            { name: vehicle.name, path: `/fleet/${vehicle.slug || vehicle.id}` },
+          ]),
+        ]}
+      />
       <section className="relative overflow-hidden border-b border-[var(--ccr-border)] bg-[var(--ccr-primary)] text-white">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.14),transparent_38%),radial-gradient(circle_at_bottom_right,rgba(255,207,109,0.18),transparent_32%)]" />
         <Container className="relative py-8 sm:py-10 md:py-16">
