@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from "react";
 
 import { openUploadcareImagesDialog } from "@/components/admin/UploadcareImagesInput";
+import { MediaActivityPanel } from "@/components/admin/MediaActivityPanel";
 import { buttonStyles } from "@/components/ui/Button";
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { DateRangeArrow } from "@/components/shared/DateRangeArrow";
@@ -25,12 +26,14 @@ import {
 } from "@/lib/bookings/vehicleInspectionShared";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 import { getUploadcareClientErrorMessage } from "@/lib/uploads/uploadcare-client";
+import type { MediaAuditActivity } from "@/lib/uploads/mediaAudit";
 
 type BookingVehicleInspectionPanelProps = {
   bookingId: string;
   bookingStatus: string;
   bookingPublicId: string;
   inspections: LoadedBookingVehicleInspections;
+  mediaActivities?: MediaAuditActivity[];
   tablesUnavailable?: boolean;
   canCorrectOdometer?: boolean;
 };
@@ -510,6 +513,7 @@ export function BookingVehicleInspectionPanel({
   bookingStatus,
   bookingPublicId,
   inspections,
+  mediaActivities = [],
   tablesUnavailable = false,
   canCorrectOdometer = false,
 }: BookingVehicleInspectionPanelProps) {
@@ -1394,6 +1398,7 @@ export function BookingVehicleInspectionPanel({
           </div>
         </section>
       </div>
+      <MediaActivityPanel activities={mediaActivities} title="Inspection image activity" />
     </section>
   );
 }

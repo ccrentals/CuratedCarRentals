@@ -1,6 +1,7 @@
 "use client";
 
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { ChevronLeft, ChevronRight, Star, Trash2 } from "lucide-react";
 
 import { buttonStyles } from "@/components/ui/Button";
 import {
@@ -181,6 +182,30 @@ export function mergeUploadcareImageUrls(
   return Array.from(new Set([...currentUrls, ...uploadedUrls])).slice(0, maxCount);
 }
 
+export function moveUploadcareImage(
+  urls: readonly string[],
+  fromIndex: number,
+  toIndex: number,
+) {
+  if (
+    fromIndex < 0 ||
+    fromIndex >= urls.length ||
+    toIndex < 0 ||
+    toIndex >= urls.length ||
+    fromIndex === toIndex
+  ) {
+    return [...urls];
+  }
+  const next = [...urls];
+  const [moved] = next.splice(fromIndex, 1);
+  next.splice(toIndex, 0, moved);
+  return next;
+}
+
+export function setPrimaryUploadcareImage(urls: readonly string[], targetIndex: number) {
+  return moveUploadcareImage(urls, targetIndex, 0);
+}
+
 export function UploadcareImagesInput({
   label = "Vehicle Images",
   helperText = "Upload multiple photos. Drag order in the list to reorder later if needed.",
@@ -292,6 +317,20 @@ export function UploadcareImagesInput({
     setCurrentIndex((index) => Math.min(index, nextUrls.length - 1));
   };
 
+  const moveUrl = (fromIndex: number, toIndex: number) => {
+    setUrls(moveUploadcareImage(urls, fromIndex, toIndex));
+    setCurrentIndex(toIndex);
+    destroyLightbox();
+    setMessage("Gallery order updated. Save changes to publish the new order.");
+  };
+
+  const setPrimaryUrl = (targetIndex: number) => {
+    setUrls(setPrimaryUploadcareImage(urls, targetIndex));
+    setCurrentIndex(0);
+    destroyLightbox();
+    setMessage("Primary image updated. Save changes to publish it.");
+  };
+
   const activeIndex = urls.length === 0 ? 0 : Math.min(currentIndex, urls.length - 1);
 
   return (
@@ -344,12 +383,17 @@ export function UploadcareImagesInput({
                       void openLightbox(index);
                     }}
                     aria-label={`Open image ${index + 1}`}
-                    className={`shrink-0 overflow-hidden rounded-md border ${
+                    className={`relative shrink-0 overflow-hidden rounded-md border ${
                       index === activeIndex
                         ? "border-[var(--ccr-accent)]"
                         : "border-[var(--ccr-border)]"
                     }`}
                   >
+                    {index === 0 ? (
+                      <span className="absolute left-1 top-1 z-10 rounded bg-[var(--ccr-accent)] px-1.5 py-0.5 text-[9px] font-bold uppercase text-black">
+                        Primary
+                      </span>
+                    ) : null}
                     {failedPreviewUrls.includes(url) ? (
                       <span className="flex h-14 w-20 items-center justify-center px-2 text-center text-[10px] text-[var(--ccr-muted)]">
                         Preview unavailable
@@ -374,13 +418,47 @@ export function UploadcareImagesInput({
               </div>
               <div className="flex shrink-0 flex-wrap items-center gap-2">
                 {!disabled ? (
-                  <button
-                    type="button"
-                    onClick={() => removeUrlAtIndex(activeIndex)}
-                    className={buttonStyles({ variant: "secondary", size: "sm" })}
-                  >
-                    Remove
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => moveUrl(activeIndex, activeIndex - 1)}
+                      disabled={activeIndex === 0}
+                      aria-label="Move image left"
+                      title="Move image left"
+                      className={buttonStyles({ variant: "secondary", size: "xs" })}
+                    >
+                      <ChevronLeft size={16} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => moveUrl(activeIndex, activeIndex + 1)}
+                      disabled={activeIndex >= urls.length - 1}
+                      aria-label="Move image right"
+                      title="Move image right"
+                      className={buttonStyles({ variant: "secondary", size: "xs" })}
+                    >
+                      <ChevronRight size={16} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPrimaryUrl(activeIndex)}
+                      disabled={activeIndex === 0}
+                      aria-label="Set as primary image"
+                      title="Set as primary image"
+                      className={buttonStyles({ variant: "secondary", size: "xs" })}
+                    >
+                      <Star size={16} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => removeUrlAtIndex(activeIndex)}
+                      aria-label="Remove image"
+                      title="Remove image"
+                      className={buttonStyles({ variant: "secondary", size: "xs" })}
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </>
                 ) : null}
                 {actionSlot}
               </div>
@@ -389,7 +467,12 @@ export function UploadcareImagesInput({
         ) : (
           <div className="mt-3 grid gap-2 sm:grid-cols-3">
             {urls.map((url, index) => (
-              <div key={`${url}-${index}`} className="overflow-hidden rounded-lg border border-[var(--ccr-border)]">
+              <div key={`${url}-${index}`} className="relative overflow-hidden rounded-lg border border-[var(--ccr-border)]">
+                {index === 0 ? (
+                  <span className="absolute left-2 top-2 z-10 rounded bg-[var(--ccr-accent)] px-2 py-1 text-[10px] font-bold uppercase text-black">
+                    Primary
+                  </span>
+                ) : null}
                 {failedPreviewUrls.includes(url) ? (
                   <div className="flex h-24 items-center justify-center bg-[var(--ccr-surface)] px-3 text-center text-xs text-[var(--ccr-muted)]">
                     Preview unavailable
@@ -409,18 +492,65 @@ export function UploadcareImagesInput({
                     />
                   </>
                 )}
-                <button
-                  type="button"
-                  onClick={() => removeUrlAtIndex(index)}
-                  disabled={disabled}
-                  className={buttonStyles({
-                    variant: "secondary",
-                    size: "xs",
-                    className: "w-full rounded-none border-x-0 border-b-0 border-t",
-                  })}
-                >
-                  Remove
-                </button>
+                {!disabled ? (
+                  <div className="grid grid-cols-4 border-t border-[var(--ccr-border)]">
+                    <button
+                      type="button"
+                      onClick={() => moveUrl(index, index - 1)}
+                      disabled={index === 0}
+                      aria-label={`Move image ${index + 1} left`}
+                      title="Move image left"
+                      className={buttonStyles({
+                        variant: "secondary",
+                        size: "xs",
+                        className: "w-full rounded-none border-0",
+                      })}
+                    >
+                      <ChevronLeft size={15} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => moveUrl(index, index + 1)}
+                      disabled={index >= urls.length - 1}
+                      aria-label={`Move image ${index + 1} right`}
+                      title="Move image right"
+                      className={buttonStyles({
+                        variant: "secondary",
+                        size: "xs",
+                        className: "w-full rounded-none border-0",
+                      })}
+                    >
+                      <ChevronRight size={15} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPrimaryUrl(index)}
+                      disabled={index === 0}
+                      aria-label={`Set image ${index + 1} as primary`}
+                      title="Set as primary image"
+                      className={buttonStyles({
+                        variant: "secondary",
+                        size: "xs",
+                        className: "w-full rounded-none border-0",
+                      })}
+                    >
+                      <Star size={15} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => removeUrlAtIndex(index)}
+                      aria-label={`Remove image ${index + 1}`}
+                      title="Remove image"
+                      className={buttonStyles({
+                        variant: "secondary",
+                        size: "xs",
+                        className: "w-full rounded-none border-0",
+                      })}
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                ) : null}
               </div>
             ))}
           </div>

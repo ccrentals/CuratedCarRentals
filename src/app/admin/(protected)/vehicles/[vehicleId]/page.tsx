@@ -17,6 +17,7 @@ import { AdminPillTabs } from "@/components/admin/AdminPillTabs";
 import { resolveAdminActor } from "@/lib/auth/adminGuards";
 import { DEFAULT_ADMIN_SETTINGS, loadAdminSettings } from "@/lib/adminSettings";
 import { dbQuery } from "@/lib/db";
+import { loadMediaAuditHistory } from "@/lib/uploads/mediaAudit";
 import { isVehicleExtensionsMissingTableError } from "@/lib/vehicles/extensionTables";
 import {
   deriveVehicleStatus,
@@ -274,7 +275,13 @@ export default async function AdminVehicleDetailPage({
     notFound();
   }
 
-  const overviewData = activeTab === "overview" ? await loadOverviewData(vehicle) : null;
+  const [overviewData, mediaActivities] =
+    activeTab === "overview"
+      ? await Promise.all([
+          loadOverviewData(vehicle),
+          loadMediaAuditHistory({ entityType: "vehicle", entityId: vehicle.id }),
+        ])
+      : [null, []];
   const documentSettings =
     activeTab === "files" || activeTab === "checklist" ? await loadVehicleDocumentSettings() : null;
 
@@ -302,6 +309,7 @@ export default async function AdminVehicleDetailPage({
             vehicle={vehicle}
             profile={overviewData?.profile ?? null}
             initialNotes={overviewData?.initialNotes ?? []}
+            mediaActivities={mediaActivities}
             initialDerivedStatus={overviewData?.derivedStatus ?? "AVAILABLE"}
           />
         ) : null}

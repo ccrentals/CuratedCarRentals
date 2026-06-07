@@ -19,12 +19,14 @@ test("vehicle gallery entries derive Uploadcare ownership metadata and sequentia
       uploadcareFileId: "11111111-1111-4111-8111-111111111111",
       url: "https://ucarecdn.com/11111111-1111-4111-8111-111111111111/",
       position: 1,
+      isPrimary: true,
     },
     {
       name: "VE000321-nissan-x-trail-gallery-02",
       uploadcareFileId: "22222222-2222-4222-8222-222222222222",
       url: "https://ucarecdn.com/22222222-2222-4222-8222-222222222222/",
       position: 2,
+      isPrimary: false,
     },
   ]);
 });

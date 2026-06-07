@@ -80,6 +80,7 @@ test("admin vehicle create API defaults vehicles to private and stores gallery m
       uploadcareFileId: "11111111-1111-4111-8111-111111111111",
       url: "https://ucarecdn.com/11111111-1111-4111-8111-111111111111/",
       position: 1,
+      isPrimary: true,
     },
   ]);
 });
@@ -199,6 +200,7 @@ test("admin vehicle patch API toggles public visibility and refreshes gallery me
       uploadcareFileId: "22222222-2222-4222-8222-222222222222",
       url: "https://ucarecdn.com/22222222-2222-4222-8222-222222222222/",
       position: 1,
+      isPrimary: true,
     },
   ]);
 });

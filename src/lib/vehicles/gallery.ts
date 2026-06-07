@@ -5,6 +5,7 @@ export type VehicleGalleryEntry = {
   uploadcareFileId: string | null;
   url: string;
   position: number;
+  isPrimary: boolean;
 };
 
 function toObject(value: unknown): Record<string, unknown> {
@@ -59,6 +60,7 @@ export function buildVehicleGalleryEntries(input: {
       uploadcareFileId,
       url,
       position,
+      isPrimary: zeroIndex === 0,
     } satisfies VehicleGalleryEntry;
   });
 }

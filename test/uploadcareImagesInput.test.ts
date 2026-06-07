@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { mergeUploadcareImageUrls } from "@/components/admin/UploadcareImagesInput";
+import {
+  mergeUploadcareImageUrls,
+  moveUploadcareImage,
+  setPrimaryUploadcareImage,
+} from "@/components/admin/UploadcareImagesInput";
 import { getUploadcareClientErrorMessage } from "@/lib/uploads/uploadcare-client";
 
 test("Uploadcare image input appends new vehicle images without replacing existing images", () => {
@@ -47,4 +51,13 @@ test("Uploadcare client errors provide actionable upload guidance", () => {
     getUploadcareClientErrorMessage(new Error("Upload cancelled by user")),
     "Upload cancelled.",
   );
+});
+
+test("Uploadcare image ordering moves images without losing entries", () => {
+  assert.deepEqual(moveUploadcareImage(["a", "b", "c"], 2, 1), ["a", "c", "b"]);
+  assert.deepEqual(moveUploadcareImage(["a", "b", "c"], 0, 2), ["b", "c", "a"]);
+});
+
+test("Uploadcare primary selection moves the selected image to the first position", () => {
+  assert.deepEqual(setPrimaryUploadcareImage(["a", "b", "c"], 2), ["c", "a", "b"]);
 });

@@ -11,6 +11,7 @@ import {
   UploadcareFileValidationError,
   validateUploadcareFiles,
 } from "@/lib/uploads/uploadcare";
+import { writeMediaAudit } from "@/lib/uploads/mediaAudit";
 import { isVehicleExtensionsMissingTableError } from "@/lib/vehicles/extensionTables";
 
 const UUID_REGEX =
@@ -73,6 +74,7 @@ export type AdminVehicleDocumentsRouteDeps = {
   ) => Promise<VehicleDocumentRow[]>;
   createDocument: (vehicleId: string, input: CreateVehicleDocumentInput) => Promise<VehicleDocumentRow>;
   validateUploads?: typeof validateUploadcareFiles;
+  writeMediaAudit?: typeof writeMediaAudit;
 };
 
 function normalizeText(value: unknown) {
@@ -315,6 +317,7 @@ const DEFAULT_DEPS: AdminVehicleDocumentsRouteDeps = {
     return result.rows[0];
   },
   validateUploads: validateUploadcareFiles,
+  writeMediaAudit,
 };
 
 export async function handleAdminVehicleDocumentsGet(
@@ -428,6 +431,21 @@ export async function handleAdminVehicleDocumentsPost(
       tags,
       uploadedByUserId: session.userId,
     });
+    try {
+      await deps.writeMediaAudit?.({
+        userId: session.userId,
+        action: "MEDIA_UPLOAD",
+        entityType: "vehicle",
+        entityId: id,
+        fileId: normalizedStorageKey,
+        context: maintenanceRecordId ? "maintenance document" : "vehicle document",
+        label: title,
+        outcome: "Saved to vehicle files",
+        details: { documentId: row.id, folder, documentType },
+      });
+    } catch {
+      // Document creation remains successful when audit logging is unavailable.
+    }
 
     return NextResponse.json({ ok: true, item: mapDocument(row) });
   } catch (error) {
