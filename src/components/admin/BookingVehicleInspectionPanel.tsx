@@ -1092,7 +1092,7 @@ export function BookingVehicleInspectionPanel({
             />
 
             {pickupEditable ? (
-              <div className="flex flex-wrap gap-3 pt-2">
+              <div className="flex flex-wrap gap-3 pb-5 pt-2">
                 <button
                   type="button"
                   disabled={pickupLoading !== null}
@@ -1308,7 +1308,7 @@ export function BookingVehicleInspectionPanel({
           </div>
 
           {returnEditable ? (
-            <div className="mt-4 flex flex-wrap gap-3 pt-2">
+            <div className="mt-4 flex flex-wrap gap-3 pb-5 pt-2">
               <button
                 type="button"
                 disabled={returnLoading !== null}
