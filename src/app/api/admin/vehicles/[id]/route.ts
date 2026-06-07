@@ -7,6 +7,8 @@ import { writeAuditLog } from "@/lib/audit";
 import { requireCsrf } from "@/lib/security/csrf";
 import {
   UPLOADCARE_ALLOWED_RASTER_IMAGE_MIME_TYPES,
+  deleteUploadcareFile,
+  extractUploadcareFileId,
   UploadcareFileValidationError,
   validateUploadcareFiles,
 } from "@/lib/uploads/uploadcare";
@@ -87,6 +89,8 @@ type AdminVehiclePatchDeps = {
   connect: () => Promise<VehicleMutationClient>;
   writeAudit: typeof writeAuditLog;
   validateUploads?: typeof validateUploadcareFiles;
+  deleteFile?: typeof deleteUploadcareFile;
+  countActiveFileReferences?: (fileId: string) => Promise<number>;
 };
 
 const DEFAULT_DELETE_DEPS: AdminVehicleDeleteDeps = {
@@ -157,6 +161,26 @@ const DEFAULT_PATCH_DEPS: AdminVehiclePatchDeps = {
   connect: async () => getDbPool().connect(),
   writeAudit: writeAuditLog,
   validateUploads: validateUploadcareFiles,
+  deleteFile: deleteUploadcareFile,
+  countActiveFileReferences: async (fileId) => {
+    const result = await dbQuery<{ reference_count: number }>(
+      `select (
+         (select count(*) from booking_vehicle_inspection_images
+          where archived_at is null and storage_key ilike $1)
+         +
+         (select count(*) from booking_private_files
+          where storage_key ilike $1)
+         +
+         (select count(*) from vehicle_documents
+          where archived_at is null and storage_key ilike $1)
+         +
+         (select count(*) from vehicles
+          where image_urls_json::text ilike $1)
+       )::int as reference_count`,
+      [`%${fileId}%`],
+    );
+    return Number(result.rows[0]?.reference_count ?? 0);
+  },
 };
 
 function isRestoreRequest(body: Record<string, unknown> | null) {
@@ -440,6 +464,7 @@ export async function handleAdminVehiclePatch(
 
   const client = await deps.connect();
   let vehicle: Record<string, unknown> | null = null;
+  let removedGalleryFileIds: string[] = [];
 
   try {
     await client.query("begin");
@@ -463,6 +488,19 @@ export async function handleAdminVehiclePatch(
       return NextResponse.json({ error: "Vehicle not found" }, { status: 404 });
     }
     const currentVehicle = lockedVehicle.rows[0];
+    if (body?.image_urls_json !== undefined) {
+      const currentFileIds = new Set(
+        (Array.isArray(currentVehicle.image_urls_json) ? currentVehicle.image_urls_json : [])
+          .map((value) => extractUploadcareFileId(value))
+          .filter((value): value is string => Boolean(value)),
+      );
+      const nextFileIds = new Set(
+        imageUrls
+          .map((value) => extractUploadcareFileId(value))
+          .filter((value): value is string => Boolean(value)),
+      );
+      removedGalleryFileIds = [...currentFileIds].filter((fileId) => !nextFileIds.has(fileId));
+    }
     const currentFeatures = toObject(currentVehicle.features_json);
     const currentSlug = normalizeText(currentFeatures.slug) || `${currentVehicle.make}-${currentVehicle.model}-${currentVehicle.year}`;
     const nextMake = nextMakeValue ?? currentVehicle.make;
@@ -608,6 +646,36 @@ export async function handleAdminVehiclePatch(
     client.release();
   }
 
+  const galleryCleanup = {
+    deletedCount: 0,
+    preservedCount: 0,
+    failedCount: 0,
+  };
+  if (
+    removedGalleryFileIds.length > 0 &&
+    deps.countActiveFileReferences &&
+    deps.deleteFile
+  ) {
+    for (const fileId of removedGalleryFileIds) {
+      try {
+        const referenceCount = await deps.countActiveFileReferences(fileId);
+        if (referenceCount > 0) {
+          galleryCleanup.preservedCount += 1;
+          continue;
+        }
+        await deps.deleteFile(fileId);
+        galleryCleanup.deletedCount += 1;
+      } catch (error) {
+        galleryCleanup.failedCount += 1;
+        console.warn("vehicle.gallery.provider_delete_failed", {
+          vehicleId: id,
+          fileId,
+          error: error instanceof Error ? error.message : "unknown_error",
+        });
+      }
+    }
+  }
+
   try {
     await deps.writeAudit({
       userId: actor.userId,
@@ -624,7 +692,7 @@ export async function handleAdminVehiclePatch(
     });
   }
 
-  return NextResponse.json({ vehicle });
+  return NextResponse.json({ vehicle, galleryCleanup });
 }
 
 export async function PATCH(

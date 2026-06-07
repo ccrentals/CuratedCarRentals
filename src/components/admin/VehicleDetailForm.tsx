@@ -255,6 +255,13 @@ export function VehicleDetailForm({
         setError(data.error ?? "Failed to update vehicle profile.");
         return;
       }
+      const data = (await vehicleResponse.json().catch(() => ({}))) as {
+        galleryCleanup?: {
+          deletedCount?: number;
+          preservedCount?: number;
+          failedCount?: number;
+        };
+      };
 
       const nextBaseline: OverviewFormState = {
         ...form,
@@ -263,7 +270,15 @@ export function VehicleDetailForm({
       setBaseline(nextBaseline);
       setForm(nextBaseline);
       setIsEditing(false);
-      setMessage("Vehicle profile changes saved.");
+      setMessage(
+        data.galleryCleanup?.failedCount
+          ? "Vehicle changes saved. One or more removed gallery files still need storage cleanup."
+          : data.galleryCleanup?.preservedCount
+            ? "Vehicle changes saved. Shared gallery files were preserved."
+            : data.galleryCleanup?.deletedCount
+              ? "Vehicle changes saved and removed gallery files were permanently deleted."
+              : "Vehicle profile changes saved.",
+      );
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
         setError("Vehicle save timed out. Please try again.");

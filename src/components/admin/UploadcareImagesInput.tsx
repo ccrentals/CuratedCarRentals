@@ -3,7 +3,10 @@
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 
 import { buttonStyles } from "@/components/ui/Button";
-import { getUploadcareSignedOptions } from "@/lib/uploads/uploadcare-client";
+import {
+  getUploadcareClientErrorMessage,
+  getUploadcareSignedOptions,
+} from "@/lib/uploads/uploadcare-client";
 
 type UploadcareImagesInputProps = {
   label?: string;
@@ -192,6 +195,8 @@ export function UploadcareImagesInput({
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [failedPreviewUrls, setFailedPreviewUrls] = useState<string[]>([]);
   const lightboxRef = useRef<GlightboxInstance | null>(null);
 
   const urls = value ?? internal;
@@ -254,6 +259,7 @@ export function UploadcareImagesInput({
     if (disabled) return;
     setLoading(true);
     setError(null);
+    setMessage(null);
     try {
       const nextUrls = await openUploadcareImagesDialog({
         multiple: true,
@@ -263,9 +269,14 @@ export function UploadcareImagesInput({
       setUrls(mergedUrls);
       setCurrentIndex(Math.max(0, mergedUrls.length - nextUrls.length));
       destroyLightbox();
+      setMessage(
+        nextUrls.length === 1
+          ? "1 image uploaded and ready to save."
+          : `${nextUrls.length} images uploaded and ready to save.`,
+      );
       setLoading(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Upload failed.");
+      setError(getUploadcareClientErrorMessage(err));
       setLoading(false);
     }
   };
@@ -296,7 +307,7 @@ export function UploadcareImagesInput({
           disabled={loading || disabled}
           className={buttonStyles({ variant: "secondary", size: "sm" })}
         >
-          {loading ? "Opening..." : disabled ? "View mode" : "Upload Images"}
+          {loading ? "Uploading..." : disabled ? "View mode" : "Upload Images"}
         </button>
       </div>
 
@@ -304,7 +315,17 @@ export function UploadcareImagesInput({
         <input type="hidden" name={name} value={JSON.stringify(urls)} />
       ) : null}
 
-      {error ? <p className="mt-2 text-xs text-red-600">{error}</p> : null}
+      {message ? (
+        <p className="mt-3 rounded-lg border border-[var(--ccr-status-success-border)] bg-[var(--ccr-status-success-bg)] px-3 py-2 text-xs text-[var(--ccr-status-success-text)]">
+          {message}
+        </p>
+      ) : null}
+
+      {error ? (
+        <p className="mt-3 rounded-lg border border-[var(--ccr-status-danger-border)] bg-[var(--ccr-status-danger-bg)] px-3 py-2 text-xs text-[var(--ccr-status-danger-text)]">
+          {error}
+        </p>
+      ) : null}
 
       {urls.length > 0 ? (
         displayMode === "carousel" ? (
@@ -329,8 +350,25 @@ export function UploadcareImagesInput({
                         : "border-[var(--ccr-border)]"
                     }`}
                   >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={url} alt={`Vehicle thumbnail ${index + 1}`} className="h-14 w-20 object-cover" />
+                    {failedPreviewUrls.includes(url) ? (
+                      <span className="flex h-14 w-20 items-center justify-center px-2 text-center text-[10px] text-[var(--ccr-muted)]">
+                        Preview unavailable
+                      </span>
+                    ) : (
+                      <>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={url}
+                          alt={`Vehicle thumbnail ${index + 1}`}
+                          onError={() =>
+                            setFailedPreviewUrls((current) =>
+                              current.includes(url) ? current : [...current, url],
+                            )
+                          }
+                          className="h-14 w-20 object-cover"
+                        />
+                      </>
+                    )}
                   </button>
                 ))}
               </div>
@@ -352,8 +390,25 @@ export function UploadcareImagesInput({
           <div className="mt-3 grid gap-2 sm:grid-cols-3">
             {urls.map((url, index) => (
               <div key={`${url}-${index}`} className="overflow-hidden rounded-lg border border-[var(--ccr-border)]">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={url} alt="Vehicle upload" className="h-24 w-full object-cover" />
+                {failedPreviewUrls.includes(url) ? (
+                  <div className="flex h-24 items-center justify-center bg-[var(--ccr-surface)] px-3 text-center text-xs text-[var(--ccr-muted)]">
+                    Preview unavailable
+                  </div>
+                ) : (
+                  <>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={url}
+                      alt="Vehicle upload"
+                      onError={() =>
+                        setFailedPreviewUrls((current) =>
+                          current.includes(url) ? current : [...current, url],
+                        )
+                      }
+                      className="h-24 w-full object-cover"
+                    />
+                  </>
+                )}
                 <button
                   type="button"
                   onClick={() => removeUrlAtIndex(index)}

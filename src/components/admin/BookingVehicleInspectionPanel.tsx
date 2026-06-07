@@ -24,6 +24,7 @@ import {
   type LoadedBookingVehicleInspections,
 } from "@/lib/bookings/vehicleInspectionShared";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
+import { getUploadcareClientErrorMessage } from "@/lib/uploads/uploadcare-client";
 
 type BookingVehicleInspectionPanelProps = {
   bookingId: string;
@@ -50,6 +51,7 @@ type CorrectionFormState = {
 type ImageUploadState = {
   category: BookingVehicleInspectionImageCategory;
   loading: boolean;
+  operation: "idle" | "uploading" | "saving" | "deleting";
   error: string | null;
   message: string | null;
 };
@@ -126,6 +128,7 @@ function createImageUploadState(): ImageUploadState {
   return {
     category: "EXTERIOR",
     loading: false,
+    operation: "idle",
     error: null,
     message: null,
   };
@@ -148,6 +151,7 @@ function InspectionImagesSection({
   onUpload: () => void;
   onDelete: (image: BookingVehicleInspectionImageSummary) => void;
 }) {
+  const [failedPreviewIds, setFailedPreviewIds] = useState<string[]>([]);
   const needsDraftBeforeUpload = editable && !summary.inspectionId;
   const emptyStateText = needsDraftBeforeUpload
     ? "Save a draft first, then upload odometer, fuel, exterior, or damage photos for this inspection."
@@ -194,7 +198,13 @@ function InspectionImagesSection({
               onClick={onUpload}
               className={buttonStyles({ variant: "secondary", size: "sm" })}
             >
-              {uploadState.loading ? "Uploading..." : "Upload selected category"}
+              {uploadState.loading
+                ? uploadState.operation === "saving"
+                  ? "Verifying & saving..."
+                  : uploadState.operation === "deleting"
+                    ? "Removing..."
+                    : "Uploading..."
+                : "Upload selected category"}
             </button>
         </div>
       </div>
@@ -208,6 +218,16 @@ function InspectionImagesSection({
       {!editable ? (
         <div className="mt-3 rounded-xl border border-dashed border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-sm text-[var(--ccr-muted)]">
           Inspection images are read-only while this inspection is locked.
+        </div>
+      ) : null}
+
+      {uploadState.loading ? (
+        <div className="mt-3 rounded-xl border border-[var(--ccr-status-accent-border)] bg-[var(--ccr-status-accent-bg)] px-3 py-2 text-sm text-[var(--ccr-status-accent-text)]">
+          {uploadState.operation === "saving"
+            ? "Upload complete. Verifying the file and saving it to this inspection."
+            : uploadState.operation === "deleting"
+              ? "Removing the image and checking whether the Uploadcare file is still referenced."
+              : "Uploading selected files to Uploadcare."}
         </div>
       ) : null}
 
@@ -230,12 +250,17 @@ function InspectionImagesSection({
               key={image.id}
               className="overflow-hidden rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)]"
             >
-              {image.previewUrl ? (
+              {image.previewUrl && !failedPreviewIds.includes(image.id) ? (
                 <a href={image.previewUrl} target="_blank" rel="noreferrer">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={image.previewUrl}
                     alt={image.generatedFileName ?? image.label ?? "Inspection image"}
+                    onError={() =>
+                      setFailedPreviewIds((current) =>
+                        current.includes(image.id) ? current : [...current, image.id],
+                      )
+                    }
                     className="h-40 w-full object-cover"
                   />
                 </a>
@@ -743,6 +768,7 @@ export function BookingVehicleInspectionPanel({
     setUploadState((current) => ({
       ...current,
       loading: true,
+      operation: "uploading",
       error: null,
       message: null,
     }));
@@ -761,11 +787,16 @@ export function BookingVehicleInspectionPanel({
         setUploadState((current) => ({
           ...current,
           loading: false,
+          operation: "idle",
           message: null,
         }));
         return;
       }
 
+      setUploadState((current) => ({
+        ...current,
+        operation: "saving",
+      }));
       const csrfToken = await ensureCsrfToken();
       const response = await fetch(`/api/admin/bookings/${bookingId}/inspections/images`, {
         method: "POST",
@@ -801,6 +832,7 @@ export function BookingVehicleInspectionPanel({
       setUploadState((current) => ({
         ...current,
         loading: false,
+        operation: "idle",
         message:
           uploadedUrls.length === 1
             ? `${isPickup ? "Pickup" : "Return"} image uploaded.`
@@ -810,7 +842,8 @@ export function BookingVehicleInspectionPanel({
       setUploadState((current) => ({
         ...current,
         loading: false,
-        error: error instanceof Error ? error.message : "Upload failed.",
+        operation: "idle",
+        error: getUploadcareClientErrorMessage(error),
       }));
     }
   }
@@ -831,9 +864,15 @@ export function BookingVehicleInspectionPanel({
       return;
     }
 
+    const confirmed = window.confirm(
+      "Remove this inspection image? It will be permanently deleted from Uploadcare when no other record uses it. This cannot be undone.",
+    );
+    if (!confirmed) return;
+
     setUploadState((current) => ({
       ...current,
       loading: true,
+      operation: "deleting",
       error: null,
       message: null,
     }));
@@ -862,6 +901,9 @@ export function BookingVehicleInspectionPanel({
           LoadedBookingVehicleInspections,
           "vehicleOdometerValue" | "vehicleOdometerUnit" | "pickup" | "returnInspection"
         >;
+        providerFileDeleted?: boolean;
+        providerFileShared?: boolean;
+        cleanupWarning?: string | null;
       };
 
       if (!response.ok || !payload.ok || !payload.inspections) {
@@ -872,12 +914,20 @@ export function BookingVehicleInspectionPanel({
       setUploadState((current) => ({
         ...current,
         loading: false,
-        message: "Inspection image removed.",
+        operation: "idle",
+        message:
+          payload.cleanupWarning ??
+          (payload.providerFileShared
+            ? "Inspection image removed. The Uploadcare file was preserved because another record uses it."
+            : payload.providerFileDeleted
+              ? "Inspection image removed and permanently deleted from Uploadcare."
+              : "Inspection image removed."),
       }));
     } catch (error) {
       setUploadState((current) => ({
         ...current,
         loading: false,
+        operation: "idle",
         error: error instanceof Error ? error.message : "Unable to remove inspection image.",
       }));
     }
