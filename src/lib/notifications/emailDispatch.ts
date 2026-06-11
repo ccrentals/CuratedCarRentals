@@ -364,7 +364,10 @@ export async function applyProviderEventToEmailDispatch(
     eventType: string;
     occurredAt: string;
     providerMessageId?: string | null;
-    status: Extract<EmailDispatchStatus, "FAILED" | "BOUNCED" | "DELIVERY_ISSUE">;
+    status: Extract<
+      EmailDispatchStatus,
+      "SENT" | "FAILED" | "BOUNCED" | "DELIVERY_ISSUE"
+    >;
     error?: string | null;
     providerErrorCategory?: string | null;
     providerErrorReason?: string | null;

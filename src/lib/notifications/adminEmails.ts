@@ -99,6 +99,8 @@ export type AdminEmailEventItem = {
 export type AdminEmailDetail = AdminEmailListItem & {
   metadata: Record<string, unknown>;
   events: AdminEmailEventItem[];
+  providerLastEvent: string | null;
+  providerStatusError: string | null;
 };
 
 type FetchAdminEmailsInput = {
@@ -253,6 +255,58 @@ function normalizeNumber(value: unknown, fallback = 0) {
   return Number.isFinite(numeric) ? numeric : fallback;
 }
 
+function statusFromResendLastEvent(lastEvent: string | null) {
+  if (lastEvent === "delivered") return "DELIVERED";
+  if (lastEvent === "bounced") return "BOUNCED";
+  if (lastEvent === "failed" || lastEvent === "suppressed") return "FAILED";
+  if (lastEvent === "delivery_delayed" || lastEvent === "complained") {
+    return "DELIVERY_ISSUE";
+  }
+  return null;
+}
+
+async function fetchResendLastEvent(providerMessageId: string | null) {
+  const apiKey = process.env.RESEND_API_KEY?.trim();
+  if (!providerMessageId || !apiKey) {
+    return { lastEvent: null, error: null };
+  }
+
+  try {
+    const response = await fetch(
+      `https://api.resend.com/emails/${encodeURIComponent(providerMessageId)}`,
+      {
+        headers: { Authorization: `Bearer ${apiKey}` },
+        cache: "no-store",
+        signal: AbortSignal.timeout(4000),
+      },
+    );
+    const payload = (await response.json().catch(() => null)) as
+      | { last_event?: unknown; message?: unknown }
+      | null;
+    if (!response.ok) {
+      return {
+        lastEvent: null,
+        error:
+          typeof payload?.message === "string"
+            ? payload.message
+            : `Resend status check failed with HTTP ${response.status}.`,
+      };
+    }
+    return {
+      lastEvent:
+        typeof payload?.last_event === "string"
+          ? payload.last_event.trim().toLowerCase() || null
+          : null,
+      error: null,
+    };
+  } catch {
+    return {
+      lastEvent: null,
+      error: "Resend status check was unavailable.",
+    };
+  }
+}
+
 function normalizeSortBy(value: string | null | undefined): AdminEmailSortBy {
   return ADMIN_EMAIL_SORT_COLUMNS.includes(value as AdminEmailSortBy)
     ? (value as AdminEmailSortBy)
@@ -335,7 +389,16 @@ function baseCombinedSql() {
         'dispatch:' || ed.id::text as id,
         'dispatch'::text as kind,
         ed.id::text as raw_id,
-        ed.status,
+        case
+          when ed.status = 'SENT' and exists (
+            select 1
+              from email_dispatch_events ede
+             where ede.email_dispatch_id = ed.id
+               and ede.source = 'provider_webhook'
+               and ede.event_type = 'email.delivered'
+          ) then 'DELIVERED'
+          else ed.status
+        end as status,
         ed.sent_at::text as sent_at,
         ed.last_event_at::text as last_event_at,
         ed.created_at::text as created_at,
@@ -542,7 +605,7 @@ export async function fetchAdminEmailsPage(input: FetchAdminEmailsInput): Promis
 
 async function fetchDispatchDetail(rawId: string): Promise<AdminEmailDetail | null> {
   const detailResult = await dbQuery<DispatchDetailRow>(
-    "select ed.id::text as raw_id, ed.status, ed.sent_at::text as sent_at, ed.last_event_at::text as last_event_at, ed.created_at::text as created_at, ed.recipient_name, ed.to_email as recipient_email, ed.subject, ed.email_type, ed.entity_type, ed.entity_id::text as entity_id, ed.entity_public_id, ed.trigger_source, ed.related_transaction_type, ed.related_transaction_id, ed.provider_message_id, ed.triggered_by_user_id::text as triggered_by_user_id, u.full_name as triggered_by_name, coalesce(ed.provider_error_reason, ed.error) as last_error, ed.manual_resend_allowed, ed.metadata_json from email_dispatches ed left join users u on u.id = ed.triggered_by_user_id where ed.id = $1::uuid limit 1",
+    "select ed.id::text as raw_id, case when ed.status = 'SENT' and exists (select 1 from email_dispatch_events ede where ede.email_dispatch_id = ed.id and ede.source = 'provider_webhook' and ede.event_type = 'email.delivered') then 'DELIVERED' else ed.status end as status, ed.sent_at::text as sent_at, ed.last_event_at::text as last_event_at, ed.created_at::text as created_at, ed.recipient_name, ed.to_email as recipient_email, ed.subject, ed.email_type, ed.entity_type, ed.entity_id::text as entity_id, ed.entity_public_id, ed.trigger_source, ed.related_transaction_type, ed.related_transaction_id, ed.provider_message_id, ed.triggered_by_user_id::text as triggered_by_user_id, u.full_name as triggered_by_name, coalesce(ed.provider_error_reason, ed.error) as last_error, ed.manual_resend_allowed, ed.metadata_json from email_dispatches ed left join users u on u.id = ed.triggered_by_user_id where ed.id = $1::uuid limit 1",
     [rawId],
   );
   const row = detailResult.rows[0];
@@ -552,12 +615,14 @@ async function fetchDispatchDetail(rawId: string): Promise<AdminEmailDetail | nu
     "select id::text, source, event_type, status, occurred_at, created_at, details_json from email_dispatch_events where email_dispatch_id = $1::uuid order by occurred_at desc, created_at desc",
     [rawId],
   );
+  const providerStatus = await fetchResendLastEvent(row.provider_message_id);
+  const providerDerivedStatus = statusFromResendLastEvent(providerStatus.lastEvent);
 
   return {
     id: encodeEmailRecordId("dispatch", rawId),
     kind: "dispatch",
     rawId,
-    status: row.status,
+    status: providerDerivedStatus ?? row.status,
     sentAt: row.sent_at,
     lastEventAt: row.last_event_at,
     createdAt: row.created_at,
@@ -577,6 +642,8 @@ async function fetchDispatchDetail(rawId: string): Promise<AdminEmailDetail | nu
     lastError: row.last_error,
     manualResendAllowed: row.manual_resend_allowed,
     metadata: row.metadata_json ?? {},
+    providerLastEvent: providerStatus.lastEvent,
+    providerStatusError: providerStatus.error,
     events: eventsResult.rows.map((event: EmailDispatchEventRow) => ({
       id: event.id,
       source: event.source,
@@ -621,6 +688,8 @@ async function fetchQuoteLegacyDetail(rawId: string): Promise<AdminEmailDetail |
     lastError: row.error,
     manualResendAllowed: true,
     metadata: {},
+    providerLastEvent: null,
+    providerStatusError: null,
     events: [],
   };
 }
@@ -659,6 +728,8 @@ async function fetchLegacyNotificationDispatchDetail(rawId: string): Promise<Adm
     metadata: {
       provider: row.provider,
     },
+    providerLastEvent: null,
+    providerStatusError: null,
     events: [],
   };
 }

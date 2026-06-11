@@ -28,8 +28,11 @@ function formatAdminEmailLabel(value: string | null | undefined) {
 
 function statusBadgeClass(status: string) {
   const normalized = String(status ?? "").trim().toUpperCase();
-  if (normalized === "SENT") {
+  if (normalized === "DELIVERED") {
     return "border border-emerald-400/40 bg-emerald-500/10 text-emerald-200";
+  }
+  if (normalized === "SENT") {
+    return "border border-sky-400/40 bg-sky-500/10 text-sky-200";
   }
   if (normalized === "BOUNCED" || normalized === "DELIVERY_ISSUE") {
     return "border border-amber-400/40 bg-amber-500/10 text-amber-200";
@@ -41,6 +44,12 @@ function statusBadgeClass(status: string) {
     return "border border-slate-400/40 bg-slate-500/10 text-slate-200";
   }
   return "border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] text-[var(--ccr-text)]";
+}
+
+function statusBadgeLabel(status: string) {
+  return String(status ?? "").trim().toUpperCase() === "SENT"
+    ? "ACCEPTED"
+    : status;
 }
 
 function summaryCard(label: string, value: number, tone?: string) {
@@ -226,7 +235,7 @@ export async function AdminEmailsPageContent({
                   <tr key={item.id} className="align-top">
                     <td className="px-4 py-3">
                       <span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wide ${statusBadgeClass(item.status)}`}>
-                        {item.status}
+                        {statusBadgeLabel(item.status)}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-[var(--ccr-text)]">

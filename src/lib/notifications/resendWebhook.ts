@@ -95,7 +95,22 @@ type ResendWebhookProcessDeps = {
   getDbPoolFn?: () => DbPoolLike;
 };
 
-const SUPPORTED_RESEND_EVENT_TYPES = new Set(["email.bounced", "email.failed"]);
+const SUPPORTED_RESEND_EVENT_TYPES = new Set([
+  "email.delivered",
+  "email.delivery_delayed",
+  "email.bounced",
+  "email.failed",
+  "email.suppressed",
+  "email.complained",
+]);
+
+const RESEND_ISSUE_EVENT_TYPES = new Set([
+  "email.delivery_delayed",
+  "email.bounced",
+  "email.failed",
+  "email.suppressed",
+  "email.complained",
+]);
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -187,9 +202,22 @@ function readTag(tags: Record<string, string>, keys: string[]) {
 }
 
 function humanizeEventType(eventType: string) {
+  if (eventType === "email.delivered") return "Email delivered";
+  if (eventType === "email.delivery_delayed") return "Email delivery delayed";
   if (eventType === "email.bounced") return "Email bounced";
   if (eventType === "email.failed") return "Email failed";
+  if (eventType === "email.suppressed") return "Email suppressed";
+  if (eventType === "email.complained") return "Email marked as spam";
   return eventType;
+}
+
+function dispatchStatusForResendEvent(eventType: string) {
+  if (eventType === "email.delivered") return "SENT" as const;
+  if (eventType === "email.bounced") return "BOUNCED" as const;
+  if (eventType === "email.failed" || eventType === "email.suppressed") {
+    return "FAILED" as const;
+  }
+  return "DELIVERY_ISSUE" as const;
 }
 
 function buildSyntheticEventId(event: ResendWebhookEvent) {
@@ -648,16 +676,17 @@ export async function processResendWebhookEvent(
 
     const correlation = await correlateResendWebhookEvent(client, event);
     if (correlation.emailDispatchId) {
+      const status = dispatchStatusForResendEvent(event.eventType);
       await applyProviderEventToEmailDispatch(
         {
           id: correlation.emailDispatchId,
           eventType: event.eventType,
           occurredAt: event.occurredAt,
           providerMessageId: event.providerEmailId,
-          status: event.eventType === "email.bounced" ? "BOUNCED" : "FAILED",
-          error: event.reason,
-          providerErrorCategory: event.category,
-          providerErrorReason: event.reason,
+          status,
+          error: event.eventType === "email.delivered" ? null : event.reason,
+          providerErrorCategory: event.eventType === "email.delivered" ? null : event.category,
+          providerErrorReason: event.eventType === "email.delivered" ? null : event.reason,
           details: {
             webhookMessageId: event.webhookMessageId,
             primaryRecipient: event.primaryRecipient,
@@ -668,6 +697,17 @@ export async function processResendWebhookEvent(
         },
         client.query.bind(client),
       );
+    }
+
+    if (!RESEND_ISSUE_EVENT_TYPES.has(event.eventType)) {
+      await client.query("commit");
+      return {
+        handled: true,
+        duplicate: false,
+        eventType: event.eventType,
+        notificationId: null,
+        correlation,
+      };
     }
 
     const notification = await insertAdminNotificationMessage(client, {

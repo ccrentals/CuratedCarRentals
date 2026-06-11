@@ -139,6 +139,9 @@ test("Resend delivery issue processing creates an admin notification and audit e
         if (text.startsWith("insert into webhook_events")) {
           return { rows: [{ id: "webhook-row-1" }], rowCount: 1 };
         }
+        if (text.includes("from information_schema.columns")) {
+          return { rows: [], rowCount: 0 };
+        }
         if (text.startsWith("insert into contact_messages")) {
           return {
             rows: [{ id: "contact-message-1", created_at: "2026-03-15T12:01:00.000Z" }],
@@ -192,7 +195,10 @@ test("Resend delivery issue processing correlates quote emails by provider messa
         if (text.startsWith("insert into webhook_events")) {
           return { rows: [{ id: "webhook-row-2" }], rowCount: 1 };
         }
-        if (text.startsWith("select qe.quote_id")) {
+        if (text.startsWith("select id, entity_type")) {
+          return { rows: [], rowCount: 0 };
+        }
+        if (text.startsWith("select qe.id, qe.quote_id")) {
           return {
             rows: [
               {
@@ -204,6 +210,9 @@ test("Resend delivery issue processing correlates quote emails by provider messa
             ],
             rowCount: 1,
           };
+        }
+        if (text.includes("from information_schema.columns")) {
+          return { rows: [], rowCount: 0 };
         }
         if (text.startsWith("insert into contact_messages")) {
           return {
@@ -255,7 +264,8 @@ test("Resend delivery issue processing short-circuits duplicate webhook deliveri
   );
 });
 
-test("Resend delivery issue processing ignores unrelated event types", async () => {
+test("Resend delivery processing records provider confirmation without creating an issue", async () => {
+  const queries: Array<{ text: string; params: unknown[] }> = [];
   const event = normalizeResendWebhookEvent(
     {
       type: "email.delivered",
@@ -269,7 +279,49 @@ test("Resend delivery issue processing ignores unrelated event types", async () 
   );
 
   assert.ok(event);
-  const result = await processResendWebhookEvent(event!);
-  assert.equal(result.handled, false);
+  const result = await processResendWebhookEvent(event!, {
+    getDbPoolFn: () =>
+      createDbPoolStub(async (text, params) => {
+        queries.push({ text, params });
+        if (text === "begin" || text === "commit" || text === "rollback") {
+          return { rows: [], rowCount: 0 };
+        }
+        if (text.startsWith("insert into webhook_events")) {
+          return { rows: [{ id: "webhook-row-delivered" }], rowCount: 1 };
+        }
+        if (text.startsWith("select id, entity_type")) {
+          return {
+            rows: [
+              {
+                id: "5baa780b-d921-4a2b-99d2-147b82429191",
+                entity_type: "booking",
+                entity_id: "60eb4ea5-6df8-4234-83bf-569c95df0bb9",
+                entity_public_id: "BK000023",
+                email_type: "booking_created",
+              },
+            ],
+            rowCount: 1,
+          };
+        }
+        if (text.startsWith("update email_dispatches")) {
+          return { rows: [], rowCount: 1 };
+        }
+        if (text.startsWith("insert into email_dispatch_events")) {
+          return { rows: [], rowCount: 1 };
+        }
+        throw new Error(`Unexpected query: ${text}`);
+      }),
+  });
+  assert.equal(result.handled, true);
+  assert.equal(result.duplicate, false);
   assert.equal(result.eventType, "email.delivered");
+  assert.equal(result.notificationId, null);
+
+  const dispatchUpdate = queries.find((entry) => entry.text.startsWith("update email_dispatches"));
+  assert.ok(dispatchUpdate);
+  assert.equal(dispatchUpdate?.params[1], "SENT");
+  assert.equal(
+    queries.some((entry) => entry.text.startsWith("insert into contact_messages")),
+    false,
+  );
 });
