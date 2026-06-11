@@ -352,7 +352,7 @@ const SUBTOTAL_SQL = `coalesce(
     when coalesce(b.pricing_json->>'subtotal_cents', '') ~ '${NUMERIC_PATTERN}' then (b.pricing_json->>'subtotal_cents')::numeric
     else null
   end,
-  (v.daily_rate_cents::numeric * greatest((b.end_date - b.start_date + 1), 1))
+  (v.daily_rate_cents::numeric * greatest((b.end_date - b.start_date), 1))
 )`;
 
 const TOTAL_SQL = `greatest(
@@ -1133,7 +1133,7 @@ async function buildUtilizationReport(db: Queryable, filters: ReportsFilters): P
       ") " +
       "select b.vehicle_id, count(distinct d.day)::int as booked_days " +
       "from bookings b " +
-      "join range_days d on d.day between b.start_date and b.end_date " +
+      "join range_days d on d.day >= b.start_date and d.day < b.end_date " +
       "where b.status not in ('CANCELLED','OVERRIDDEN') " +
       "and coalesce(b.pricing_json->>'overridden_by_booking_id', '') = '' " +
       bookedVehicleClause +

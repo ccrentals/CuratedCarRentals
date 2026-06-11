@@ -13,7 +13,7 @@ import {
   sendBookingCreatedEmail,
   sendInternalBookingCreatedNotifications,
 } from "@/lib/notifications/email";
-import { calcDaysInclusive, dateOnlyUtc } from "@/lib/payments/dateMath";
+import { calcRentalDays, dateOnlyUtc } from "@/lib/payments/dateMath";
 import { isVehicleUnavailableEntitlementBased } from "@/lib/availability/entitlement";
 import { requireCsrf } from "@/lib/security/csrf";
 import { isEmail, isISODate, isNonEmptyString } from "@/lib/validators";
@@ -207,7 +207,7 @@ export async function handleAdminBookingsPost(
     return NextResponse.json({ error: "endDate must be after startDate" }, { status: 400 });
   }
 
-  const days = calcDaysInclusive(start, end);
+  const days = calcRentalDays(start, end);
   if (days <= 0) {
     return NextResponse.json({ error: "Invalid rental duration" }, { status: 400 });
   }

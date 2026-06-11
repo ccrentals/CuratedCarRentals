@@ -1,6 +1,6 @@
 import { dbQuery } from "@/lib/db";
 import { type OverlapWindowInput, listAvailableVehiclesEntitlementBased } from "@/lib/availability/entitlement";
-import { calcDaysInclusive } from "@/lib/payments/dateMath";
+import { calcRentalDays } from "@/lib/payments/dateMath";
 import { isISODate } from "@/lib/validators";
 import type { Queryable } from "@/lib/payments/pricing";
 
@@ -85,7 +85,6 @@ export function buildAdminCreateBookingWindow(
   const endAt = new Date(`${endDate}T00:00:00.000Z`);
   if (Number.isNaN(startAt.getTime()) || Number.isNaN(endAt.getTime())) return null;
 
-  endAt.setUTCDate(endAt.getUTCDate() + 1);
   if (endAt <= startAt) return null;
 
   return {
@@ -102,7 +101,7 @@ export function computeAdminCreateBookingPricingPreview(input: {
   promoDiscountCents?: number;
 }): AdminCreateBookingPricingPreview | null {
   const { dailyRateCents, depositCents, startDate, endDate, promoDiscountCents = 0 } = input;
-  const days = calcDaysInclusive(startDate, endDate);
+  const days = calcRentalDays(startDate, endDate);
   if (days <= 0) return null;
 
   const normalizedDailyRate = Math.max(0, Math.round(Number(dailyRateCents || 0)));

@@ -7,7 +7,7 @@ import {
 import { getDbPool } from "@/lib/db";
 import { logError, logWarn } from "@/lib/log";
 import { isEmail, isISODate, isNonEmptyString } from "@/lib/validators";
-import { calcDaysInclusive, dateOnlyUtc } from "@/lib/payments/dateMath";
+import { calcRentalDays, dateOnlyUtc } from "@/lib/payments/dateMath";
 import { CustomerBlockedError, upsertCustomerForBooking } from "@/lib/customers";
 import { normalizeCountryName, normalizeRegionForCountry } from "@/lib/jamaicaParishes";
 import { normalizeLegalIdType } from "@/lib/customers/legalId";
@@ -261,8 +261,7 @@ export async function POST(request: Request) {
     );
   }
 
-  // Pricing/UI treats end_date as inclusive (e.g. 3/19 -> 3/20 is 2 days).
-  if (calcDaysInclusive(start, end) <= 0) {
+  if (calcRentalDays(start, end) <= 0) {
     return NextResponse.json({ error: "Invalid rental duration" }, { status: 400 });
   }
 

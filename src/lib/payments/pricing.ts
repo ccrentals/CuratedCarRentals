@@ -1,5 +1,5 @@
 import { dbQuery } from "@/lib/db";
-import { calcDaysInclusive, dateOnlyUtc } from "@/lib/payments/dateMath";
+import { calcDaysInclusive, calcRentalDays, dateOnlyUtc } from "@/lib/payments/dateMath";
 import { logWarn } from "@/lib/log";
 
 export type Queryable = {
@@ -35,7 +35,7 @@ export type BookingPricingSummary = {
   paymentStatus: PaymentStatus;
   refundRequired: boolean;
 };
-export { calcDaysInclusive, dateOnlyUtc };
+export { calcDaysInclusive, calcRentalDays, dateOnlyUtc };
 
 const NON_BLOCKING_PAYMENT_STATUSES = new Set<PaymentStatus>([
   "UNPAID",
@@ -183,6 +183,7 @@ export function computeBookingPricing(input: {
   endDate?: unknown;
   startAt?: unknown;
   endAt?: unknown;
+  days?: number | null | undefined;
   dailyRate: number;
   deposit: number;
   baseTotal?: number | null | undefined;
@@ -197,7 +198,11 @@ export function computeBookingPricing(input: {
 }): Omit<BookingPricingSummary, "startDate" | "endDate"> & { startDate: string; endDate: string } {
   const startForDays = input.startDate ?? input.startAt;
   const endForDays = input.endDate ?? input.endAt;
-  const days = calcDaysInclusive(startForDays, endForDays);
+  const explicitDays = Number(input.days);
+  const days =
+    Number.isFinite(explicitDays) && explicitDays > 0
+      ? Math.floor(explicitDays)
+      : calcRentalDays(startForDays, endForDays);
   const dailyRate = Number.isFinite(input.dailyRate) ? Number(input.dailyRate) : 0;
   const deposit = Number.isFinite(input.deposit) ? Number(input.deposit) : 0;
   const netPaidToDate = Number.isFinite(input.netPaidToDate) ? Number(input.netPaidToDate) : 0;
@@ -318,6 +323,7 @@ export function computeBookingPricingFromStoredSnapshot(input: {
     endDate: input.endDate,
     startAt: input.startAt,
     endAt: input.endAt,
+    days: readExplicitMoney(pricing.days),
     dailyRate: toMoneyLike(pricing.daily_rate_cents ?? input.fallbackDailyRate ?? 0),
     deposit: toMoneyLike(
       pricing.deposit_required_cents ?? pricing.deposit_cents ?? input.fallbackDeposit ?? 0,

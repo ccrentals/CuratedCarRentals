@@ -340,6 +340,7 @@ export async function loadBookingRentalAgreementPayload(
     paymentMethod,
     signatureDataUrl: signature.signatureDataUrl,
     signedAt: signature.signedAt || undefined,
+    rentalDays: summary.days,
   });
 
   return {

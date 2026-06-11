@@ -562,7 +562,7 @@ test("PDFMonkey rental agreement parity helpers keep core agreement structure an
   assert.equal(payload.booking.display_end_date, "17 Mar 2026");
   assert.equal(payload.vehicle.display_label, "Honda Fit");
   assert.match(payload.vehicle.display_daily_rate, /6,200\.00/);
-  assert.equal(payload.vehicle.display_rental_days, "3");
+  assert.equal(payload.vehicle.display_rental_days, "2");
   assert.match(payload.charges.display_total, /18,600\.00/);
   assert.match(payload.charges.display_balance_due, /16,740\.00/);
   assert.equal(payload.signature.has_image, true);

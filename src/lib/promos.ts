@@ -1,4 +1,4 @@
-import { calcDaysInclusive, dateOnlyUtc } from "@/lib/payments/dateMath";
+import { calcRentalDays, dateOnlyUtc } from "@/lib/payments/dateMath";
 import { fetchNetPaidToDate, readPromoPricingFields } from "@/lib/payments/pricing";
 import { dbQuery } from "@/lib/db";
 
@@ -350,7 +350,7 @@ export async function validatePromoForBooking(
     return { ok: false, reason: "invalid_code", message: "Enter a promo code." };
   }
 
-  const days = calcDaysInclusive(input.startDate, input.endDate);
+  const days = calcRentalDays(input.startDate, input.endDate);
   if (days <= 0) {
     return { ok: false, reason: "invalid_dates", message: "Invalid booking dates for promo." };
   }

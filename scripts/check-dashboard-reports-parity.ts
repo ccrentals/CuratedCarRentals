@@ -43,7 +43,7 @@ async function fetchDashboardOutstandingAllTime(): Promise<ParitySnapshot> {
       "        case when coalesce(b.pricing_json->>'total_cents', '') ~ '^-?[0-9]+(\\\\.[0-9]+)?$' then (b.pricing_json->>'total_cents')::numeric else null end, " +
       "        coalesce(" +
       "          case when coalesce(b.pricing_json->>'subtotal_cents', '') ~ '^-?[0-9]+(\\\\.[0-9]+)?$' then (b.pricing_json->>'subtotal_cents')::numeric else null end, " +
-      "          (v.daily_rate_cents::numeric * greatest((b.end_date - b.start_date + 1), 1))" +
+      "          (v.daily_rate_cents::numeric * greatest((b.end_date - b.start_date), 1))" +
       "        ) - coalesce(" +
       "          case when coalesce(b.pricing_json->>'promo_discount_cents', '') ~ '^-?[0-9]+(\\\\.[0-9]+)?$' then (b.pricing_json->>'promo_discount_cents')::numeric else 0 end, " +
       "          0" +
