@@ -9,11 +9,48 @@ import { fetchAdminEmailDetail } from "@/lib/notifications/adminEmails";
 
 function statusBadgeClass(status: string) {
   const normalized = String(status ?? "").trim().toUpperCase();
-  if (normalized === "SENT") return "border border-emerald-400/40 bg-emerald-500/10 text-emerald-200";
+  if (normalized === "DELIVERED") return "border border-emerald-400/40 bg-emerald-500/10 text-emerald-200";
+  if (normalized === "SENT") return "border border-sky-400/40 bg-sky-500/10 text-sky-200";
   if (normalized === "BOUNCED" || normalized === "DELIVERY_ISSUE") return "border border-amber-400/40 bg-amber-500/10 text-amber-200";
   if (normalized === "FAILED") return "border border-red-400/40 bg-red-500/10 text-red-200";
   if (normalized === "SKIPPED") return "border border-slate-400/40 bg-slate-500/10 text-slate-200";
   return "border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] text-[var(--ccr-text)]";
+}
+
+function statusBadgeLabel(status: string) {
+  return String(status ?? "").trim().toUpperCase() === "SENT"
+    ? "ACCEPTED"
+    : status;
+}
+
+function deliveryConfirmation(status: string) {
+  const normalized = String(status ?? "").trim().toUpperCase();
+  if (normalized === "DELIVERED") {
+    return {
+      title: "Delivery confirmed",
+      body: "Resend confirmed that the recipient's mail server accepted this email.",
+      className: "border-emerald-400/40 bg-emerald-500/10 text-emerald-100",
+    };
+  }
+  if (normalized === "SENT") {
+    return {
+      title: "Delivery not yet confirmed",
+      body: "Resend accepted the send request, but no delivery confirmation has been recorded.",
+      className: "border-sky-400/40 bg-sky-500/10 text-sky-100",
+    };
+  }
+  if (normalized === "FAILED" || normalized === "BOUNCED" || normalized === "DELIVERY_ISSUE") {
+    return {
+      title: "Delivery issue recorded",
+      body: "Resend reported a problem after the send request was submitted. Review the event history and error details.",
+      className: "border-amber-400/40 bg-amber-500/10 text-amber-100",
+    };
+  }
+  return {
+    title: "Delivery status unavailable",
+    body: "No recipient mail-server confirmation has been recorded for this email.",
+    className: "border-slate-400/40 bg-slate-500/10 text-slate-100",
+  };
 }
 
 function formatAdminEmailLabel(value: string | null | undefined) {
@@ -100,6 +137,7 @@ export default async function AdminEmailDetailPage({
   const item = await fetchAdminEmailDetail(id);
 
   if (!item) notFound();
+  const confirmation = deliveryConfirmation(item.status);
 
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
@@ -131,8 +169,13 @@ export default async function AdminEmailDetailPage({
             </p>
           </div>
           <span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wide ${statusBadgeClass(item.status)}`}>
-            {item.status}
+            {statusBadgeLabel(item.status)}
           </span>
+        </div>
+
+        <div className={`mt-5 rounded-xl border p-4 ${confirmation.className}`}>
+          <p className="text-sm font-semibold">{confirmation.title}</p>
+          <p className="mt-1 text-sm opacity-90">{confirmation.body}</p>
         </div>
 
         <dl className="mt-5 grid gap-3 text-sm text-[var(--ccr-muted)] sm:grid-cols-2 xl:grid-cols-3">
@@ -169,12 +212,22 @@ export default async function AdminEmailDetailPage({
             <dd className="mt-1 break-all text-[var(--ccr-text)]">{item.providerMessageId || "—"}</dd>
           </div>
           <div>
-            <dt className="text-xs font-semibold uppercase tracking-wide">Sent At</dt>
+            <dt className="text-xs font-semibold uppercase tracking-wide">Accepted At</dt>
             <dd className="mt-1 text-[var(--ccr-text)]"><DateTimeInline value={item.sentAt} preset="admin" /></dd>
           </div>
           <div>
             <dt className="text-xs font-semibold uppercase tracking-wide">Last Event</dt>
             <dd className="mt-1 text-[var(--ccr-text)]"><DateTimeInline value={item.lastEventAt} preset="admin" /></dd>
+          </div>
+          <div>
+            <dt className="text-xs font-semibold uppercase tracking-wide">Provider Delivery Event</dt>
+            <dd className="mt-1 text-[var(--ccr-text)]">
+              {item.providerLastEvent
+                ? formatAdminEmailLabel(item.providerLastEvent)
+                : item.providerStatusError
+                  ? "Status check unavailable"
+                  : "No provider event recorded"}
+            </dd>
           </div>
         </dl>
 
@@ -223,6 +276,15 @@ export default async function AdminEmailDetailPage({
               <div className="rounded-xl border border-red-400/40 bg-red-500/10 p-4">
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-red-200">Last Error</p>
                 <p className="text-sm text-red-100">{item.lastError}</p>
+              </div>
+            ) : null}
+
+            {item.providerStatusError ? (
+              <div className="rounded-xl border border-slate-400/40 bg-slate-500/10 p-4">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-200">
+                  Provider Status Check
+                </p>
+                <p className="text-sm text-slate-100">{item.providerStatusError}</p>
               </div>
             ) : null}
           </div>
