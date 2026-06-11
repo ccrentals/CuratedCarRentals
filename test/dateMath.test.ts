@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { calcDaysInclusive, dateOnlyUtc } from "@/lib/payments/dateMath";
+import { calcDaysInclusive, calcRentalDays, dateOnlyUtc } from "@/lib/payments/dateMath";
 import { normalizeAdminSettingsValue } from "@/lib/adminSettings";
 import {
   calcElapsedCalendarDays,
@@ -32,6 +32,15 @@ test("calcDaysInclusive: works with Date objects (DB driver often returns Date f
 
 test("calcDaysInclusive: crossing month boundary stays consistent", () => {
   assert.equal(calcDaysInclusive("2026-02-28", "2026-03-01"), 2);
+});
+
+test("calcRentalDays: return date is exclusive for billing", () => {
+  assert.equal(calcRentalDays("2026-06-26", "2026-06-28"), 2);
+});
+
+test("calcRentalDays: same-day is one day and reversed ranges are invalid", () => {
+  assert.equal(calcRentalDays("2026-06-26", "2026-06-26"), 1);
+  assert.equal(calcRentalDays("2026-06-28", "2026-06-26"), 0);
 });
 
 test("calcElapsedCalendarDays: consecutive dates count as 1 elapsed rental day", () => {

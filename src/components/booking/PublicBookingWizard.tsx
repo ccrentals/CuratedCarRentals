@@ -49,7 +49,7 @@ import {
   normalizeCountryName,
   normalizeJamaicaParish,
 } from "@/lib/jamaicaParishes";
-import { calcDaysInclusive } from "@/lib/payments/dateMath";
+import { calcRentalDays } from "@/lib/payments/dateMath";
 import { formatJmd } from "@/lib/money";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 import { cn } from "@/lib/utils";
@@ -1089,7 +1089,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     destroyVehicleLightbox();
   }, [destroyVehicleLightbox]);
 
-  const rentalDays = pricingQuote?.days ?? calcDaysInclusive(pickupDate, dropoffDate);
+  const rentalDays = pricingQuote?.days ?? calcRentalDays(pickupDate, dropoffDate);
   const standardProtectionAvailable = insuranceEnabled && !insuranceLoading;
   const standardProtectionTotal = rentalDays * insurancePricePerDay;
   const baseTotal = pricingQuote?.baseTotal ?? (selectedVehicle ? selectedVehicle.daily_rate_cents * rentalDays : 0);

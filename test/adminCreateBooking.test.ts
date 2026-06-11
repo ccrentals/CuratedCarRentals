@@ -64,7 +64,7 @@ test("admin create booking helper: builds full-day window from date-only inputs"
 
   assert.deepEqual(window, {
     startAt: "2026-04-10T00:00:00.000Z",
-    endAt: "2026-04-13T00:00:00.000Z",
+    endAt: "2026-04-12T00:00:00.000Z",
   });
 });
 
@@ -95,11 +95,11 @@ test("admin create booking helper: computes pricing preview once dates and vehic
   });
 
   assert.deepEqual(preview, {
-    days: 3,
+    days: 2,
     dailyRateCents: 15000,
-    subtotalCents: 45000,
+    subtotalCents: 30000,
     promoDiscountCents: 0,
-    totalCents: 45000,
+    totalCents: 30000,
     depositRequiredCents: 50000,
     currency: "JMD",
   });

@@ -19,7 +19,7 @@ import { loadOperationalNotificationRoutingSummary } from "@/lib/notifications/o
 import { readInsurancePricingFields, readPromoPricingFields } from "@/lib/payments/pricing";
 import { dbQuery } from "@/lib/db";
 import { formatPaymentStatus } from "@/lib/payments/formatPaymentStatus";
-import { calcDaysInclusive } from "@/lib/payments/dateMath";
+import { calcRentalDays } from "@/lib/payments/dateMath";
 import { resolveStoredRegionCountry } from "@/lib/jamaicaParishes";
 import {
   sendTrackedResendEmail,
@@ -365,6 +365,7 @@ async function loadInvoiceContext(bookingId: string) {
   const depositAmount = readMoneyFromPricing(pricing, ["deposit_cents"]);
   const paidToDateAmount = readMoneyFromPricing(pricing, ["paid_to_date", "amount_paid"]);
   const balanceDueAmount = readMoneyFromPricing(pricing, ["balance_due"]);
+  const rentalDays = readMoneyFromPricing(pricing, ["days"]);
   const customerAddress = buildCustomerAddress(bookingRow);
   const bookingPublicId = normalizeText(bookingRow?.public_id);
   const bookingLocationDetails = readBookingLocationDetails(pricing, {
@@ -423,6 +424,7 @@ async function loadInvoiceContext(bookingId: string) {
     depositAmount,
     paidToDateAmount,
     balanceDueAmount,
+    rentalDays,
     pickupLocationDisplay,
     dropoffLocationDisplay,
     payments,
@@ -632,6 +634,7 @@ type EmailFinancialSummary = {
   depositRequired: number;
   paidToDate: number;
   balanceDue: number;
+  rentalDays: number;
   pickupLocationDisplay: string;
   dropoffLocationDisplay: string;
 };
@@ -645,6 +648,8 @@ type EmailFinancialSummaryInput = {
   promoCode?: string | null;
   promoDiscount?: number;
   insuranceTotal?: number;
+  startDate?: string;
+  endDate?: string;
 };
 
 type EmailDispatchOverrides = Partial<Omit<EmailDispatchContext, "emailType">> & {
@@ -696,6 +701,13 @@ async function resolveEmailFinancialSummary(
     readOptionalMoney(input.balanceDue) ??
     context?.balanceDueAmount ??
     Math.max(0, totalAfterDiscount - paidToDate);
+  const rentalDays = Math.max(
+    1,
+    Math.floor(
+      context?.rentalDays ??
+        calcRentalDays(input.startDate, input.endDate),
+    ),
+  );
   const baseTotal = Math.max(0, subtotal - insuranceTotal);
   const pickupLocationDisplay = context?.pickupLocationDisplay || "";
   const dropoffLocationDisplay = context?.dropoffLocationDisplay || pickupLocationDisplay;
@@ -711,6 +723,7 @@ async function resolveEmailFinancialSummary(
     depositRequired,
     paidToDate,
     balanceDue,
+    rentalDays,
     pickupLocationDisplay,
     dropoffLocationDisplay,
   };
@@ -907,13 +920,14 @@ export async function sendBookingCreatedEmail(input: {
   const recipientType = input.recipientType ?? "customer";
   const isInternal = recipientType === "internal";
   const recipientEmail = isInternal ? input.recipientEmail ?? input.customerEmail : input.customerEmail;
-  const days = Math.max(1, calcDaysInclusive(input.startDate, input.endDate));
   const summary = await resolveEmailFinancialSummary({
     bookingId: input.bookingId,
     deposit: input.deposit,
     promoCode: input.promoCode ?? null,
     promoDiscount: input.promoDiscount ?? 0,
     paidToDate: 0,
+    startDate: input.startDate,
+    endDate: input.endDate,
   });
   const bookingLink = isInternal
     ? `${baseUrl()}/admin/bookings/${input.bookingId}`
@@ -965,7 +979,7 @@ export async function sendBookingCreatedEmail(input: {
       <p><strong>Email:</strong> ${input.customerEmail}</p>
       ${input.customerPhone ? `<p><strong>Phone:</strong> ${input.customerPhone}</p>` : ""}
       <p><strong>Vehicle:</strong> ${input.vehicleLabel}</p>
-      <p><strong>Dates:</strong> ${formatDateOnly(input.startDate)} → ${formatDateOnly(input.endDate)} (${days} days)</p>
+      <p><strong>Dates:</strong> ${formatDateOnly(input.startDate)} → ${formatDateOnly(input.endDate)} (${summary.rentalDays} days)</p>
       ${renderEmailLocationSection({
         pickupLocation: pickupLocationDisplay,
         dropoffLocation: dropoffLocationDisplay,
@@ -987,7 +1001,7 @@ export async function sendBookingCreatedEmail(input: {
       <p>${customerIntro}</p>
       <p><strong>Booking reference:</strong> ${summary.bookingReference}</p>
       <p><strong>Vehicle:</strong> ${input.vehicleLabel}</p>
-      <p><strong>Dates:</strong> ${formatDateOnly(input.startDate)} → ${formatDateOnly(input.endDate)} (${days} days)</p>
+      <p><strong>Dates:</strong> ${formatDateOnly(input.startDate)} → ${formatDateOnly(input.endDate)} (${summary.rentalDays} days)</p>
       ${renderEmailLocationSection({
         pickupLocation: pickupLocationDisplay,
         dropoffLocation: dropoffLocationDisplay,
@@ -1097,13 +1111,14 @@ export async function sendDepositReceiptEmail(input: {
   const recipientType = input.recipientType ?? "customer";
   const isInternal = recipientType === "internal";
   const recipientEmail = isInternal ? input.recipientEmail ?? input.customerEmail : input.customerEmail;
-  const days = Math.max(1, calcDaysInclusive(input.startDate, input.endDate));
   const summary = await resolveEmailFinancialSummary({
     bookingId: input.bookingId,
     deposit: input.deposit,
     paidToDate: input.paidToDate,
     promoCode: input.promoCode ?? null,
     promoDiscount: input.promoDiscount ?? 0,
+    startDate: input.startDate,
+    endDate: input.endDate,
   });
   const bookingLink = isInternal
     ? `${baseUrl()}/admin/bookings/${input.bookingId}`
@@ -1126,7 +1141,7 @@ export async function sendDepositReceiptEmail(input: {
       <p><strong>Email:</strong> ${input.customerEmail}</p>
       ${input.customerPhone ? `<p><strong>Phone:</strong> ${input.customerPhone}</p>` : ""}
       <p><strong>Vehicle:</strong> ${input.vehicleLabel}</p>
-      <p><strong>Dates:</strong> ${formatDateOnly(input.startDate)} → ${formatDateOnly(input.endDate)} (${days} days)</p>
+      <p><strong>Dates:</strong> ${formatDateOnly(input.startDate)} → ${formatDateOnly(input.endDate)} (${summary.rentalDays} days)</p>
       ${renderEmailLocationSection({
         pickupLocation: pickupLocationDisplay,
         dropoffLocation: dropoffLocationDisplay,
@@ -1160,7 +1175,7 @@ export async function sendDepositReceiptEmail(input: {
       <p>Your deposit payment was received and your booking is confirmed.</p>
       <p><strong>Booking reference:</strong> ${summary.bookingReference}</p>
       <p><strong>Vehicle:</strong> ${input.vehicleLabel}</p>
-      <p><strong>Dates:</strong> ${formatDateOnly(input.startDate)} → ${formatDateOnly(input.endDate)} (${days} days)</p>
+      <p><strong>Dates:</strong> ${formatDateOnly(input.startDate)} → ${formatDateOnly(input.endDate)} (${summary.rentalDays} days)</p>
       ${renderEmailLocationSection({
         pickupLocation: pickupLocationDisplay,
         dropoffLocation: dropoffLocationDisplay,

@@ -125,6 +125,7 @@ export async function loadAdminBookingInvoicePayload(
     promoDiscount: summary.promoDiscount,
     promoCode: summary.promoCode,
     payments,
+    rentalDays: summary.days,
   });
 
   return {

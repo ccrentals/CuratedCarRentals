@@ -25,3 +25,12 @@ export function calcDaysInclusive(start: unknown, end: unknown) {
   return diff >= 0 ? diff + 1 : 0;
 }
 
+// Rental end dates represent the return date, so billable days are elapsed
+// calendar days: 2026-06-26 -> 2026-06-28 == 2 rental days.
+export function calcRentalDays(start: unknown, end: unknown) {
+  const s = dateOnlyUtc(start);
+  const e = dateOnlyUtc(end);
+  if (!s || !e) return 0;
+  const diff = Math.floor((e.getTime() - s.getTime()) / MS_PER_DAY);
+  return diff >= 0 ? Math.max(1, diff) : 0;
+}

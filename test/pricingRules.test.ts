@@ -44,13 +44,13 @@ test("pricing rules: base rate/deposit overrides apply", () => {
     insurancePricePerDayCents: 0,
   });
 
-  assert.equal(result.days, 2);
-  assert.equal(result.baseTotalCents, 25000);
+  assert.equal(result.days, 1);
+  assert.equal(result.baseTotalCents, 12500);
   assert.equal(result.depositRequiredCents, 260000);
-  assert.equal(result.totalCents, 25000);
+  assert.equal(result.totalCents, 12500);
 });
 
-test("pricing rules: weekend override applies to Saturday and Sunday", () => {
+test("pricing rules: weekend override applies to occupied weekend days", () => {
   const profile = buildProfile({
     baseDailyRateCents: 10000,
     weekendDailyRateCents: 15000,
@@ -64,11 +64,10 @@ test("pricing rules: weekend override applies to Saturday and Sunday", () => {
     insurancePricePerDayCents: 0,
   });
 
-  assert.equal(result.days, 3);
-  assert.equal(result.baseTotalCents, 40000);
+  assert.equal(result.days, 2);
+  assert.equal(result.baseTotalCents, 25000);
   assert.equal(result.rateBreakdown[0]?.source, "base");
   assert.equal(result.rateBreakdown[1]?.source, "weekend");
-  assert.equal(result.rateBreakdown[2]?.source, "weekend");
 });
 
 test("pricing rules: date override has highest precedence", () => {
@@ -119,10 +118,10 @@ test("pricing rules: delivery fee uses matching zone when delivery selected", ()
     deliveryZoneLabel: "airport",
   });
 
-  assert.equal(result.baseTotalCents, 20000);
+  assert.equal(result.baseTotalCents, 10000);
   assert.equal(result.deliveryFeeCents, 5500);
   assert.equal(result.extraFeesTotalCents, 5500);
-  assert.equal(result.totalCents, 25500);
+  assert.equal(result.totalCents, 15500);
 });
 
 test("pricing rules: pricing snapshot contains stable keys", () => {
@@ -146,7 +145,7 @@ test("pricing rules: pricing snapshot contains stable keys", () => {
   const snapshot = result.pricingSnapshotJson as Record<string, unknown>;
   assert.ok(Array.isArray(snapshot.rate_breakdown));
   assert.equal(snapshot.delivery_fee_cents, 2000);
-  assert.equal(snapshot.insurance_total_cents, 2000);
+  assert.equal(snapshot.insurance_total_cents, 1000);
   assert.equal(snapshot.promo_discount_cents, 1500);
   assert.equal(snapshot.total_cents, result.totalCents);
 });

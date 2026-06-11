@@ -1,5 +1,5 @@
 import { dbQuery } from "@/lib/db";
-import { calcDaysInclusive, dateOnlyUtc } from "@/lib/payments/dateMath";
+import { dateOnlyUtc } from "@/lib/payments/dateMath";
 import type { Queryable } from "@/lib/payments/pricing";
 
 type VehiclePricingRulesRow = {
@@ -518,7 +518,7 @@ export function computeQuotePrice(input: {
     throw new Error("Invalid rental dates.");
   }
 
-  const days = calcDaysInclusive(startDateUtc, endDateUtc);
+  const days = Math.ceil((endDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000));
   if (days <= 0) {
     throw new Error("Invalid rental duration.");
   }

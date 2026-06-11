@@ -379,10 +379,10 @@ test("applying a promo updates payable total used by final payment step", async 
     promoDiscount: 2000,
   });
 
-  assert.equal(base.total, 30000);
-  assert.equal(discounted.total, 28000);
+  assert.equal(base.total, 20000);
+  assert.equal(discounted.total, 18000);
   // Pay-in-full route charges summary.total from server-side pricing.
-  assert.equal(discounted.total, 28000);
+  assert.equal(discounted.total, 18000);
 });
 
 test("switching promo code on the same booking replaces prior redemption instead of stacking", async () => {

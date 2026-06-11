@@ -9,7 +9,7 @@ import {
 } from "@/lib/invoices/ledger";
 import { getInvoiceProvider } from "@/lib/env";
 import { logError, redactText } from "@/lib/log";
-import { calcDaysInclusive } from "@/lib/payments/dateMath";
+import { calcRentalDays } from "@/lib/payments/dateMath";
 
 const PDFMONKEY_BASE_URL = "https://api.pdfmonkey.io/api/v1";
 const DEFAULT_GOTENBERG_URL = "http://localhost:3001";
@@ -51,6 +51,7 @@ export type InvoicePayloadInput = {
   paidToDate: number;
   balanceDue: number;
   payments: InvoicePaymentLine[];
+  rentalDays?: number;
 };
 
 export type RentalAgreementPayloadInput = {
@@ -75,6 +76,7 @@ export type RentalAgreementPayloadInput = {
   paymentMethod?: string;
   signatureDataUrl?: string | null;
   signedAt?: string;
+  rentalDays?: number;
 };
 
 export type GenerateInvoicePdfOptions = {
@@ -270,7 +272,7 @@ function formatDateLabel(value: unknown) {
 }
 
 function computeRentalDays(start: string, end: string) {
-  const days = calcDaysInclusive(start, end);
+  const days = calcRentalDays(start, end);
   return Math.max(1, days);
 }
 
@@ -418,7 +420,9 @@ function renderGotenbergInvoiceHtml(
   const startDateRaw = asString(booking.start_date);
   const endDateRaw = asString(booking.end_date);
   const dueDate = formatDateLabel(startDateRaw);
-  const rentalDays = computeRentalDays(startDateRaw, endDateRaw);
+  const rentalDays =
+    Math.max(0, Math.floor(asNumber(charges.rental_days))) ||
+    computeRentalDays(startDateRaw, endDateRaw);
 
   const paymentsRows = payments.length
     ? payments
@@ -722,7 +726,9 @@ export async function buildPdfMonkeyInvoiceDocumentPayload(payload: Record<strin
     asString(booking.invoice_number) || asString(booking.reference) || bookingPublicIdRaw;
   const startDateRaw = asString(booking.start_date);
   const endDateRaw = asString(booking.end_date);
-  const rentalDays = computeRentalDays(startDateRaw, endDateRaw);
+  const rentalDays =
+    Math.max(0, Math.floor(asNumber(charges.rental_days))) ||
+    computeRentalDays(startDateRaw, endDateRaw);
   const dailyRateValue = asNumber(vehicle.daily_rate);
   const baseTotalRaw = asNumber(charges.base_total);
   const baseTotalValue = baseTotalRaw > 0 ? baseTotalRaw : Math.max(0, dailyRateValue * rentalDays);
@@ -1100,7 +1106,9 @@ export async function buildPdfMonkeyRentalAgreementDocumentPayload(payload: Reco
   const bookingDisplayId = bookingPublicIdRaw || bookingRefRaw || bookingIdRaw;
   const startDateRaw = asString(booking.start_date);
   const endDateRaw = asString(booking.end_date);
-  const days = computeRentalDays(startDateRaw, endDateRaw);
+  const days =
+    Math.max(0, Math.floor(asNumber(charges.rental_days))) ||
+    computeRentalDays(startDateRaw, endDateRaw);
   const customerAddressLines = asString(customer.address)
     .split(/,|\r?\n/)
     .map((part) => part.trim())
@@ -1512,7 +1520,9 @@ function renderGotenbergRentalAgreementHtml(
   const bookingRefRaw = asString(booking.reference) || bookingIdRaw.slice(0, 8);
   const startDateRaw = asString(booking.start_date);
   const endDateRaw = asString(booking.end_date);
-  const days = computeRentalDays(startDateRaw, endDateRaw);
+  const days =
+    Math.max(0, Math.floor(asNumber(charges.rental_days))) ||
+    computeRentalDays(startDateRaw, endDateRaw);
   const startDate = escapeHtml(formatDateLabel(startDateRaw));
   const endDate = escapeHtml(formatDateLabel(endDateRaw));
   const bookingRef = escapeHtml(bookingRefRaw);
@@ -1914,6 +1924,7 @@ export function buildInvoicePayload(input: InvoicePayloadInput) {
       promo_code: input.promoCode ?? null,
       paid_to_date: input.paidToDate,
       balance_due: input.balanceDue,
+      rental_days: input.rentalDays ?? computeRentalDays(input.startDate, input.endDate),
     },
     payments: input.payments,
     issued_at: new Date().toISOString(),
@@ -1949,6 +1960,7 @@ export function buildRentalAgreementPayload(input: RentalAgreementPayloadInput) 
       paid_to_date: input.paidToDate,
       balance_due: input.balanceDue,
       payment_method: input.paymentMethod ?? "",
+      rental_days: input.rentalDays ?? computeRentalDays(input.startDate, input.endDate),
     },
     signature: {
       image_data_url: input.signatureDataUrl ?? "",

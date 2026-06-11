@@ -10,7 +10,7 @@ import {
   parsePaymentOptionInput,
 } from "@/lib/payments/pricing";
 
-test("computeBookingPricing: totals align with inclusive days * daily rate", () => {
+test("computeBookingPricing: totals align with elapsed rental days * daily rate", () => {
   const summary = computeBookingPricing({
     bookingId: "b1",
     bookingStatus: "PENDING_PAYMENT",
@@ -21,11 +21,11 @@ test("computeBookingPricing: totals align with inclusive days * daily rate", () 
     netPaidToDate: 0,
   });
 
-  assert.equal(summary.days, 2);
-  assert.equal(summary.baseTotal, 19000);
+  assert.equal(summary.days, 1);
+  assert.equal(summary.baseTotal, 9500);
   assert.equal(summary.insuranceTotal, 0);
-  assert.equal(summary.total, 19000);
-  assert.equal(summary.balanceDue, 19000);
+  assert.equal(summary.total, 9500);
+  assert.equal(summary.balanceDue, 9500);
   assert.equal(summary.paymentStatus, "UNPAID");
   assert.equal(summary.refundRequired, false);
 });
@@ -43,11 +43,11 @@ test("computeBookingPricing: insurance is included in subtotal and total", () =>
     netPaidToDate: 0,
   });
 
-  assert.equal(summary.days, 3);
-  assert.equal(summary.baseTotal, 30000);
-  assert.equal(summary.insuranceTotal, 3600);
-  assert.equal(summary.subtotal, 33600);
-  assert.equal(summary.total, 33600);
+  assert.equal(summary.days, 2);
+  assert.equal(summary.baseTotal, 20000);
+  assert.equal(summary.insuranceTotal, 2400);
+  assert.equal(summary.subtotal, 22400);
+  assert.equal(summary.total, 22400);
 });
 
 test("computeBookingPricing: deposit paid drives DEPOSIT_PAID until balance reaches 0", () => {
@@ -61,9 +61,9 @@ test("computeBookingPricing: deposit paid drives DEPOSIT_PAID until balance reac
     netPaidToDate: 3000,
   });
 
-  assert.equal(summary.total, 19000);
+  assert.equal(summary.total, 9500);
   assert.equal(summary.netPaidToDate, 3000);
-  assert.equal(summary.balanceDue, 16000);
+  assert.equal(summary.balanceDue, 6500);
   assert.equal(summary.paymentStatus, "DEPOSIT_PAID");
   assert.equal(summary.refundRequired, false);
 });
@@ -76,7 +76,7 @@ test("computeBookingPricing: paid-in-full results in PAID_IN_FULL + zero balance
     endDate: "2026-03-20",
     dailyRate: 9500,
     deposit: 3000,
-    netPaidToDate: 19000,
+    netPaidToDate: 9500,
   });
 
   assert.equal(summary.balanceDue, 0);
@@ -95,7 +95,7 @@ test("computeBookingPricing: refunds/overpayments trigger refundRequired", () =>
     netPaidToDate: 20000,
   });
 
-  assert.equal(summary.total, 19000);
+  assert.equal(summary.total, 9500);
   assert.equal(summary.refundRequired, true);
 });
 
@@ -125,9 +125,9 @@ test("computeBookingPricing: no payment keeps booking unpaid with full balance d
     netPaidToDate: 0,
   });
 
-  assert.equal(summary.total, 30000);
+  assert.equal(summary.total, 20000);
   assert.equal(summary.netPaidToDate, 0);
-  assert.equal(summary.balanceDue, 30000);
+  assert.equal(summary.balanceDue, 20000);
   assert.equal(summary.paymentOption, "NONE");
   assert.equal(summary.paymentStatus, "DUE_ON_PICKUP");
 });
@@ -148,12 +148,12 @@ test("computeBookingPricing: promo discount is applied against subtotal includin
     netPaidToDate: 0,
   });
 
-  assert.equal(summary.baseTotal, 30000);
-  assert.equal(summary.insuranceTotal, 4500);
-  assert.equal(summary.subtotal, 34500);
+  assert.equal(summary.baseTotal, 20000);
+  assert.equal(summary.insuranceTotal, 3000);
+  assert.equal(summary.subtotal, 23000);
   assert.equal(summary.discountTotal, 4500);
-  assert.equal(summary.total, 30000);
-  assert.equal(summary.amountDue, 30000);
+  assert.equal(summary.total, 18500);
+  assert.equal(summary.amountDue, 18500);
 });
 
 test("computeBookingPricing: explicit base total and extra fees are preserved", () => {
@@ -171,7 +171,7 @@ test("computeBookingPricing: explicit base total and extra fees are preserved", 
     netPaidToDate: 0,
   });
 
-  assert.equal(summary.days, 3);
+  assert.equal(summary.days, 2);
   assert.equal(summary.baseTotal, 42000);
   assert.equal(summary.extraFeesTotal, 5000);
   assert.equal(summary.subtotal, 47000);
@@ -186,6 +186,7 @@ test("computeBookingPricingFromStoredSnapshot: stored pricing drives totals", ()
     startDate: "2026-03-19",
     endDate: "2026-03-21",
     pricing: {
+      days: 3,
       daily_rate_cents: 14000,
       deposit_required_cents: 12000,
       base_total_cents: 42000,
@@ -203,6 +204,7 @@ test("computeBookingPricingFromStoredSnapshot: stored pricing drives totals", ()
   });
 
   assert.equal(summary.dailyRate, 14000);
+  assert.equal(summary.days, 3);
   assert.equal(summary.baseTotal, 42000);
   assert.equal(summary.extraFeesTotal, 6000);
   assert.equal(summary.insuranceTotal, 4500);
