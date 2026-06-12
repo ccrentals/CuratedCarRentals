@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { UserRoundPen } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { BookingActions } from "@/components/admin/BookingActions";
@@ -11,6 +12,7 @@ import { ManualPaymentForm } from "@/components/admin/ManualPaymentForm";
 import { PaymentRowActions } from "@/components/admin/PaymentRowActions";
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { TableDateTime } from "@/components/shared/TableDateTime";
+import { buttonStyles } from "@/components/ui/Button";
 import { formatJmd } from "@/lib/money";
 import { formatPaymentStatus } from "@/lib/payments/formatPaymentStatus";
 import { refundRequiredStyles } from "@/lib/refundRequiredStyles";
@@ -39,6 +41,7 @@ type AdminBookingActionInsuranceOption = {
 
 type AdminBookingDetailClientProps = {
   initialDetail: AdminBookingDetailViewModel;
+  customerId: string;
   canAdmin: boolean;
   requireRestoreReason: boolean;
   promoOptions: AdminBookingActionPromoOption[];
@@ -125,6 +128,7 @@ function StructuredLocationSide({
 
 export function AdminBookingDetailClient({
   initialDetail,
+  customerId,
   canAdmin,
   requireRestoreReason,
   promoOptions,
@@ -317,17 +321,30 @@ export function AdminBookingDetailClient({
         </section>
 
         <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-sm">
-          <h2 className="text-lg font-bold text-[var(--ccr-text)]">Customer & Vehicle</h2>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-lg font-bold text-[var(--ccr-text)]">Customer & Vehicle</h2>
+            <Link
+              href={`/admin/customers/${customerId}`}
+              className={buttonStyles({
+                variant: "secondary",
+                size: "xs",
+                className: "gap-2",
+              })}
+            >
+              <UserRoundPen aria-hidden="true" className="h-4 w-4" />
+              Update customer
+            </Link>
+          </div>
           <div className="mt-4 space-y-3 text-sm">
             <div>
-              <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Customer</p>
-              <p className="font-semibold text-[var(--ccr-text)]">{detail.customer.name}</p>
+              <p className="text-xs font-bold uppercase text-[var(--ccr-text)]">Customer</p>
+              <p className="font-normal text-[var(--ccr-muted)]">{detail.customer.name}</p>
               <p className="text-[var(--ccr-muted)]">{detail.customer.email}</p>
               <p className="text-[var(--ccr-muted)]">{detail.customer.phone}</p>
-              <p className="mt-2 text-xs uppercase tracking-wide text-[var(--ccr-muted)]">
+              <p className="mt-2 text-xs font-bold uppercase text-[var(--ccr-text)]">
                 Driver&apos;s License Number
               </p>
-              <p className="font-semibold text-[var(--ccr-text)]">
+              <p className="font-normal text-[var(--ccr-muted)]">
                 {detail.customer.driversLicenseNumber}
               </p>
               {detail.customer.hasDriversLicenseDoc || detail.customer.hasSignatureDoc ? (
@@ -356,8 +373,8 @@ export function AdminBookingDetailClient({
               ) : null}
             </div>
             <div>
-              <p className="text-xs uppercase tracking-wide text-[var(--ccr-muted)]">Vehicle</p>
-              <p className="font-semibold text-[var(--ccr-text)]">{detail.vehicleLabel}</p>
+              <p className="text-xs font-bold uppercase text-[var(--ccr-text)]">Vehicle</p>
+              <p className="font-normal text-[var(--ccr-muted)]">{detail.vehicleLabel}</p>
             </div>
           </div>
         </section>
