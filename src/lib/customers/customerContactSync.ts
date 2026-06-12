@@ -49,8 +49,7 @@ export async function synchronizeCustomerContact(
        '{customer_phone_snapshot}',
        to_jsonb($4::text),
        true
-     ),
-     customer_phone_snapshot = $4
+     )
      where customer_id = $1`,
     [customerId, contact.fullName, contact.email, contact.phone],
   );

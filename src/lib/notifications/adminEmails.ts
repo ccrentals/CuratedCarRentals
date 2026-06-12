@@ -209,7 +209,7 @@ type BookingEmailContextRow = {
   start_date: string;
   end_date: string;
   pickup_location: string;
-  customer_phone_snapshot: string | null;
+  customer_phone: string;
   payment_option: string | null;
   pricing_json: Record<string, unknown> | null;
   customer_name: string;
@@ -745,7 +745,7 @@ export async function fetchAdminEmailDetail(recordId: string): Promise<AdminEmai
 
 async function loadBookingEmailContext(bookingId: string) {
   const result = await dbQuery<BookingEmailContextRow>(
-    "select b.id, b.public_id, b.start_date, b.end_date, b.pickup_location, b.customer_phone_snapshot, b.payment_option, b.pricing_json, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model, v.year as vehicle_year, v.daily_rate_cents, v.deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.id = $1::uuid limit 1",
+    "select b.id, b.public_id, b.start_date, b.end_date, b.pickup_location, b.payment_option, b.pricing_json, c.full_name as customer_name, c.email as customer_email, c.phone as customer_phone, v.make as vehicle_make, v.model as vehicle_model, v.year as vehicle_year, v.daily_rate_cents, v.deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.id = $1::uuid limit 1",
     [bookingId],
   );
   return result.rows[0] ?? null;
@@ -1029,7 +1029,7 @@ export async function resendAdminEmail(recordId: string, actorUserId: string) {
         bookingId: booking.id,
         customerEmail: booking.customer_email,
         customerName: booking.customer_name,
-        customerPhone: booking.customer_phone_snapshot ?? "",
+        customerPhone: booking.customer_phone,
         vehicleLabel,
         startDate: booking.start_date,
         endDate: booking.end_date,
@@ -1049,7 +1049,7 @@ export async function resendAdminEmail(recordId: string, actorUserId: string) {
         bookingId: booking.id,
         customerEmail: booking.customer_email,
         customerName: booking.customer_name,
-        customerPhone: booking.customer_phone_snapshot ?? "",
+        customerPhone: booking.customer_phone,
         vehicleLabel,
         startDate: booking.start_date,
         endDate: booking.end_date,
@@ -1073,7 +1073,7 @@ export async function resendAdminEmail(recordId: string, actorUserId: string) {
         bookingId: booking.id,
         customerEmail: booking.customer_email,
         customerName: booking.customer_name,
-        customerPhone: booking.customer_phone_snapshot ?? "",
+        customerPhone: booking.customer_phone,
         vehicleLabel,
         startDate: booking.start_date,
         endDate: booking.end_date,
@@ -1101,7 +1101,7 @@ export async function resendAdminEmail(recordId: string, actorUserId: string) {
         bookingId: booking.id,
         customerEmail: booking.customer_email,
         customerName: booking.customer_name,
-        customerPhone: booking.customer_phone_snapshot ?? "",
+        customerPhone: booking.customer_phone,
         vehicleLabel,
         startDate: booking.start_date,
         endDate: booking.end_date,

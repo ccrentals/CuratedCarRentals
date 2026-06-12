@@ -39,7 +39,7 @@ test("customer contact sync updates the customer and every booking linked by cus
   assert.match(calls[1]?.text ?? "", /\{customer_name_snapshot\}/);
   assert.match(calls[1]?.text ?? "", /\{customer_email_snapshot\}/);
   assert.match(calls[1]?.text ?? "", /\{customer_phone_snapshot\}/);
-  assert.match(calls[1]?.text ?? "", /customer_phone_snapshot = \$4/);
+  assert.doesNotMatch(calls[1]?.text ?? "", /customer_phone_snapshot\s*=/);
 });
 
 test("customer contact sync stops before changing bookings when the customer does not exist", async () => {
