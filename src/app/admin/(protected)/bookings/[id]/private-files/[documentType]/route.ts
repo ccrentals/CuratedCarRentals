@@ -20,6 +20,9 @@ type BookingFileRow = {
   mime_type: string | null;
 };
 
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 function normalizeDocumentType(value: string) {
   const normalized = value.trim().toUpperCase().replace(/-/g, "_");
   if (normalized === "DRIVERS_LICENSE") return "DRIVERS_LICENSE";
@@ -37,7 +40,7 @@ function jsonNoStore(payload: Record<string, unknown>, status: number) {
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string; documentType: string }> },
 ) {
   const auth = await requireOperationsAccess();
@@ -51,11 +54,15 @@ export async function GET(
   if (!documentType) {
     return jsonNoStore({ error: "Invalid document type." }, 400);
   }
+  const fileId = new URL(request.url).searchParams.get("fileId")?.trim() ?? "";
+  if (fileId && !UUID_REGEX.test(fileId)) {
+    return jsonNoStore({ error: "Invalid file ID." }, 400);
+  }
 
   try {
     const fileResult = await dbQuery<BookingFileRow>(
-      "select id, booking_id, document_type, storage_provider, storage_key, original_file_name, mime_type from booking_private_files where booking_id = $1 and document_type = $2 order by created_at desc limit 1",
-      [bookingId, documentType],
+      "select id, booking_id, document_type, storage_provider, storage_key, original_file_name, mime_type from booking_private_files where booking_id = $1 and document_type = $2 and ($3::uuid is null or id = $3::uuid) order by created_at desc limit 1",
+      [bookingId, documentType, fileId || null],
     );
 
     const file = fileResult.rows[0] ?? null;
@@ -127,6 +134,7 @@ export async function GET(
     logError("admin.bookings.private-files.GET", error, {
       bookingId,
       documentType,
+      fileId: fileId || null,
       userId: actor.userId,
     });
     return jsonNoStore({ error: "Failed to load booking file." }, 500);
