@@ -36,6 +36,7 @@ import { loadMediaAuditHistory } from "@/lib/uploads/mediaAudit";
 type BookingDetails = {
   id: string;
   public_id: string;
+  customer_id: string;
   start_date: string;
   end_date: string;
   start_at: string | null;
@@ -173,7 +174,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
   let bookingResult;
   try {
     bookingResult = await dbQuery<BookingDetails>(
-      "select b.id, b.public_id, b.start_date, b.end_date, b.start_at, b.end_at, b.pickup_time::text as pickup_time, b.dropoff_time::text as dropoff_time, b.pickup_location, b.dropoff_location, b.pickup_location_text_snapshot, b.dropoff_location_text_snapshot, b.vehicle_id, b.insurance_selected, b.insurance_price_per_day_cents, b.insurance_total_cents, b.payment_option, b.custom_payment_amount_cents, b.drivers_license_number, b.drivers_license_expiration_date::text as drivers_license_expiration_date, b.status, b.pricing_json, c.full_name as customer_name, c.email as customer_email, c.phone as customer_phone, c.legal_id_type as customer_legal_id_type, c.legal_id_number as customer_legal_id_number, v.make as vehicle_make, v.model as vehicle_model, v.year as vehicle_year, v.daily_rate_cents, v.deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.id = $1",
+      "select b.id, b.public_id, b.customer_id, b.start_date, b.end_date, b.start_at, b.end_at, b.pickup_time::text as pickup_time, b.dropoff_time::text as dropoff_time, b.pickup_location, b.dropoff_location, b.pickup_location_text_snapshot, b.dropoff_location_text_snapshot, b.vehicle_id, b.insurance_selected, b.insurance_price_per_day_cents, b.insurance_total_cents, b.payment_option, b.custom_payment_amount_cents, b.drivers_license_number, b.drivers_license_expiration_date::text as drivers_license_expiration_date, b.status, b.pricing_json, c.full_name as customer_name, c.email as customer_email, c.phone as customer_phone, c.legal_id_type as customer_legal_id_type, c.legal_id_number as customer_legal_id_number, v.make as vehicle_make, v.model as vehicle_model, v.year as vehicle_year, v.daily_rate_cents, v.deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.id = $1",
       [id],
     );
   } catch (error) {
@@ -221,7 +222,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
         | "customer_legal_id_number"
       >
     >(
-      "select b.id, b.id as public_id, b.start_date, b.end_date, b.pickup_location, b.status, b.pricing_json, c.full_name as customer_name, c.email as customer_email, c.phone as customer_phone, v.make as vehicle_make, v.model as vehicle_model, v.year as vehicle_year, v.daily_rate_cents, v.deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.id = $1",
+      "select b.id, b.id as public_id, b.customer_id, b.start_date, b.end_date, b.pickup_location, b.status, b.pricing_json, c.full_name as customer_name, c.email as customer_email, c.phone as customer_phone, v.make as vehicle_make, v.model as vehicle_model, v.year as vehicle_year, v.daily_rate_cents, v.deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.id = $1",
       [id],
     );
     bookingResult = {
@@ -607,6 +608,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
       </Link>
       <AdminBookingDetailClient
         initialDetail={initialDetail}
+        customerId={booking.customer_id}
         canAdmin={canAdmin}
         requireRestoreReason={requireRestoreReason}
         promoOptions={promoOptions}
