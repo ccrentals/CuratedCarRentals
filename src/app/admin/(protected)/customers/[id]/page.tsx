@@ -42,8 +42,11 @@ type CustomerRow = {
 };
 
 type CustomerPrivateDocRow = {
+  id: string;
   booking_id: string;
+  booking_public_id: string | null;
   document_type: string;
+  created_at: string;
 };
 
 function isMissingColumn(error: unknown, column: string) {
@@ -150,21 +153,20 @@ export default async function AdminCustomerDetailPage({
     notFound();
   }
 
-  let latestDriversLicenseBookingId: string | null = null;
+  const driversLicenseDocuments: CustomerPrivateDocRow[] = [];
   let latestSignatureBookingId: string | null = null;
   try {
     const privateDocsResult = await dbQuery<CustomerPrivateDocRow>(
-      "select bpf.booking_id, bpf.document_type from booking_private_files bpf join bookings b on b.id = bpf.booking_id where b.customer_id = $1 and bpf.document_type in ('DRIVERS_LICENSE', 'SIGNATURE') order by bpf.created_at desc",
+      "select bpf.id, bpf.booking_id, b.public_id as booking_public_id, bpf.document_type, bpf.created_at from booking_private_files bpf join bookings b on b.id = bpf.booking_id where b.customer_id = $1 and bpf.document_type in ('DRIVERS_LICENSE', 'SIGNATURE') order by bpf.created_at desc",
       [id],
     );
     for (const row of privateDocsResult.rows as CustomerPrivateDocRow[]) {
-      if (row.document_type === "DRIVERS_LICENSE" && !latestDriversLicenseBookingId) {
-        latestDriversLicenseBookingId = row.booking_id;
+      if (row.document_type === "DRIVERS_LICENSE") {
+        driversLicenseDocuments.push(row);
       }
       if (row.document_type === "SIGNATURE" && !latestSignatureBookingId) {
         latestSignatureBookingId = row.booking_id;
       }
-      if (latestDriversLicenseBookingId && latestSignatureBookingId) break;
     }
   } catch (error) {
     const code = (error as { code?: string } | null)?.code;
@@ -253,20 +255,32 @@ export default async function AdminCustomerDetailPage({
             </p>
             <p className="mt-1">Number: {customerRow.legal_id_number || "Not provided"}</p>
             <p className="mt-1">Driver&apos;s License Number: {customerRow.drivers_license_number || "Not provided"}</p>
-            {latestDriversLicenseBookingId || latestSignatureBookingId ? (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {latestDriversLicenseBookingId ? (
-                  <a
-                    href={`/admin/bookings/${latestDriversLicenseBookingId}/private-files/DRIVERS_LICENSE`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className={buttonStyles({
-                      variant: "secondary",
-                      size: "sm",
-                    })}
-                  >
-                    View secure driver&apos;s license file
-                  </a>
+            {driversLicenseDocuments.length > 0 || latestSignatureBookingId ? (
+              <div className="mt-3 space-y-3">
+                {driversLicenseDocuments.length > 0 ? (
+                  <div>
+                    <p className="font-semibold text-[var(--ccr-text)]">
+                      Driver&apos;s license images ({driversLicenseDocuments.length})
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {driversLicenseDocuments.map((document, index) => (
+                        <a
+                          key={document.id}
+                          href={`/admin/bookings/${document.booking_id}/private-files/DRIVERS_LICENSE?fileId=${document.id}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          title={`Uploaded ${new Date(document.created_at).toLocaleString()}`}
+                          className={buttonStyles({
+                            variant: "secondary",
+                            size: "sm",
+                          })}
+                        >
+                          License image {driversLicenseDocuments.length - index}
+                          {document.booking_public_id ? ` · ${document.booking_public_id}` : ""}
+                        </a>
+                      ))}
+                    </div>
+                  </div>
                 ) : null}
                 {latestSignatureBookingId ? (
                   <a

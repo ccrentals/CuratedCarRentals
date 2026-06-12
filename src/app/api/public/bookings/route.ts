@@ -34,6 +34,7 @@ import {
   validateBookingLocationSelection,
 } from "@/lib/bookings/locationConfigRuntime";
 import {
+  MAX_DRIVERS_LICENSE_IMAGES,
   parseSafePrivateBookingImageDataUrl,
   MAX_BOOKING_PRIVATE_IMAGE_BYTES,
 } from "@/lib/bookings/privateFiles";
@@ -177,15 +178,22 @@ export async function POST(request: Request) {
     : null;
   const legalIdImageReference =
     normalizeText(body?.legalIdImageUploadToken) || normalizeText(body?.legalIdImageUrl);
-  const driversLicenseDataUrl = normalizeText(body?.driversLicenseDataUrl);
+  const legacyDriversLicenseDataUrl = normalizeText(body?.driversLicenseDataUrl);
+  const driversLicenseDataUrls: string[] = Array.isArray(body?.driversLicenseDataUrls)
+    ? body.driversLicenseDataUrls
+        .map((value: unknown) => normalizeText(value))
+        .filter((value: string) => Boolean(value))
+    : legacyDriversLicenseDataUrl
+      ? [legacyDriversLicenseDataUrl]
+      : [];
   const driversLicenseFileId = extractUploadcareFileId(legalIdImageReference);
-  const parsedDriversLicenseImage = driversLicenseDataUrl
-    ? parseSafePrivateBookingImageDataUrl(driversLicenseDataUrl)
-    : null;
+  const parsedDriversLicenseImages = driversLicenseDataUrls.map((dataUrl) =>
+    parseSafePrivateBookingImageDataUrl(dataUrl),
+  );
   const parsedSignatureImage = signatureDataUrl
     ? parseSafePrivateBookingImageDataUrl(signatureDataUrl)
     : null;
-  const hasDriversLicenseDataUrl = Boolean(parsedDriversLicenseImage);
+  const hasDriversLicenseDataUrl = parsedDriversLicenseImages.length > 0;
 
   if (!UUID_REGEX.test(vehicleId)) {
     return NextResponse.json({ error: "Invalid vehicleId" }, { status: 400 });
@@ -224,7 +232,15 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
-  if (driversLicenseDataUrl && !parsedDriversLicenseImage) {
+  if (driversLicenseDataUrls.length > MAX_DRIVERS_LICENSE_IMAGES) {
+    return NextResponse.json(
+      {
+        error: `A maximum of ${MAX_DRIVERS_LICENSE_IMAGES} driver's license images can be uploaded.`,
+      },
+      { status: 400 },
+    );
+  }
+  if (parsedDriversLicenseImages.some((image) => !image)) {
     return NextResponse.json(
       {
         error: `Driver's license upload must be a supported image under ${Math.floor(
@@ -684,19 +700,26 @@ export async function POST(request: Request) {
     );
 
     if (hasDriversLicenseDataUrl) {
-      await client.query(
-        "insert into booking_private_files (booking_id, document_type, storage_provider, storage_key, mime_type, metadata_json) values ($1, 'DRIVERS_LICENSE', 'DATA_URL', $2, $3, $4::jsonb)",
-        [
-          bookingInsert.rows[0].id,
-          parsedDriversLicenseImage?.normalizedDataUrl,
-          parsedDriversLicenseImage?.mimeType || "image/jpeg",
-          JSON.stringify({
-            source: "public_booking_wizard",
-            fallback: "inline_data_url",
-            driversLicenseNumberTail: hasDriversLicenseNumber ? driversLicenseNumber.slice(-4) : null,
-          }),
-        ],
-      );
+      for (const [index, parsedDriversLicenseImage] of parsedDriversLicenseImages.entries()) {
+        if (!parsedDriversLicenseImage) continue;
+        await client.query(
+          "insert into booking_private_files (booking_id, document_type, storage_provider, storage_key, mime_type, metadata_json) values ($1, 'DRIVERS_LICENSE', 'DATA_URL', $2, $3, $4::jsonb)",
+          [
+            bookingInsert.rows[0].id,
+            parsedDriversLicenseImage.normalizedDataUrl,
+            parsedDriversLicenseImage.mimeType,
+            JSON.stringify({
+              source: "public_booking_wizard",
+              fallback: "inline_data_url",
+              imageIndex: index + 1,
+              imageCount: parsedDriversLicenseImages.length,
+              driversLicenseNumberTail: hasDriversLicenseNumber
+                ? driversLicenseNumber.slice(-4)
+                : null,
+            }),
+          ],
+        );
+      }
     } else if (driversLicenseFileId) {
       await client.query(
         "insert into booking_private_files (booking_id, document_type, storage_provider, storage_key, mime_type, metadata_json) values ($1, 'DRIVERS_LICENSE', 'UPLOADCARE_FILE_ID', $2, null, $3::jsonb)",

@@ -107,7 +107,7 @@ test("draft restore security state keeps license upload optional and re-requires
 
   assert.equal(security.requiresDriversLicenseUpload, false);
   assert.equal(security.requiresSignatureUpload, true);
-  assert.equal(security.driversLicenseImageUrl, "");
+  assert.deepEqual(security.driversLicenseImageUrls, []);
   assert.equal(security.signatureDataUrl, "");
   assert.match(security.notice, /Draft restored\./i);
 });

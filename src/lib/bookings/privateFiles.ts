@@ -8,6 +8,7 @@ const SAFE_BOOKING_PRIVATE_IMAGE_MIME_TYPES = new Set([
 ]);
 
 export const MAX_BOOKING_PRIVATE_IMAGE_BYTES = 10 * 1024 * 1024;
+export const MAX_DRIVERS_LICENSE_IMAGES = 4;
 
 function normalizeText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";

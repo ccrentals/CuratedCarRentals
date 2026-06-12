@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import NextImage from "next/image";
 import { useRouter } from "next/navigation";
 
 import { TurnstileWidget } from "@/components/security/TurnstileWidget";
@@ -9,6 +10,7 @@ import { Container } from "@/components/site/Container";
 import { PublicPageIntro } from "@/components/site/PublicPageIntro";
 import { siteContent } from "@/data/content";
 import { clearBookingDraft } from "@/lib/bookings/draft";
+import { MAX_DRIVERS_LICENSE_IMAGES } from "@/lib/bookings/privateFiles";
 import {
   buildBookingLocationConfigs,
   type BookingLocationConfig,
@@ -507,7 +509,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
 
   const [driversLicenseNumber, setDriversLicenseNumber] = useState("");
   const [driversLicenseExpirationDate, setDriversLicenseExpirationDate] = useState("");
-  const [driversLicenseImageUrl, setDriversLicenseImageUrl] = useState("");
+  const [driversLicenseImageUrls, setDriversLicenseImageUrls] = useState<string[]>([]);
   const [driversLicenseUploading, setDriversLicenseUploading] = useState(false);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
@@ -775,7 +777,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
 
       // For security, DL uploads and signatures are never restored from browser storage.
       const security = draftRestoreSecurityState();
-      setDriversLicenseImageUrl(security.driversLicenseImageUrl);
+      setDriversLicenseImageUrls(security.driversLicenseImageUrls);
       setSignatureDataUrl(security.signatureDataUrl);
       if (security.requiresDriversLicenseUpload || security.requiresSignatureUpload) {
         setStatusMessage(security.notice);
@@ -2567,7 +2569,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     setBirthday("");
     setDriversLicenseNumber("");
     setDriversLicenseExpirationDate("");
-    setDriversLicenseImageUrl("");
+    setDriversLicenseImageUrls([]);
     setCustomerId(null);
     setAcceptTerms(false);
     setSignatureDataUrl("");
@@ -2601,26 +2603,47 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
     router.replace("/book");
   }
 
-  async function uploadDriversLicenseFile(file: File) {
+  async function uploadDriversLicenseFiles(files: File[]) {
+    if (files.length === 0) return;
     setErrorMessage(null);
     setDriversLicenseUploading(true);
     try {
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onerror = () => reject(new Error("Unable to read driver's license image."));
-        reader.onload = () => {
-          if (typeof reader.result === "string" && reader.result.startsWith("data:image/")) {
-            resolve(reader.result);
-            return;
-          }
-          reject(new Error("Driver's license image must be a valid image file."));
-        };
-        reader.readAsDataURL(file);
-      });
-      setDriversLicenseImageUrl(dataUrl);
+      const availableSlots = Math.max(
+        0,
+        MAX_DRIVERS_LICENSE_IMAGES - driversLicenseImageUrls.length,
+      );
+      if (availableSlots === 0) {
+        throw new Error(
+          `You can upload up to ${MAX_DRIVERS_LICENSE_IMAGES} driver's license images.`,
+        );
+      }
+      const selectedFiles = files.slice(0, availableSlots);
+      const dataUrls = await Promise.all(
+        selectedFiles.map(
+          (file) =>
+            new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onerror = () => reject(new Error("Unable to read driver's license image."));
+              reader.onload = () => {
+                if (typeof reader.result === "string" && reader.result.startsWith("data:image/")) {
+                  resolve(reader.result);
+                  return;
+                }
+                reject(new Error("Driver's license image must be a valid image file."));
+              };
+              reader.readAsDataURL(file);
+            }),
+        ),
+      );
+      setDriversLicenseImageUrls((current) => [...current, ...dataUrls]);
+      if (files.length > availableSlots) {
+        setStatusMessage(
+          `Only ${MAX_DRIVERS_LICENSE_IMAGES} driver's license images can be attached.`,
+        );
+      }
     } catch (error) {
       setErrorMessage(
-        error instanceof Error ? error.message : "Unable to upload driver's license image.",
+        error instanceof Error ? error.message : "Unable to upload driver's license images.",
       );
     } finally {
       setDriversLicenseUploading(false);
@@ -2628,10 +2651,9 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
   }
 
   async function onDriversLicenseFilePicked(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
+    const files = Array.from(event.target.files ?? []);
     event.target.value = "";
-    if (!file) return;
-    await uploadDriversLicenseFile(file);
+    await uploadDriversLicenseFiles(files);
   }
 
   async function applyCoupon() {
@@ -2949,8 +2971,9 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
           customPaymentAmountCents: normalizedCustomAmount,
           legalIdType: "DRIVERS_LICENSE",
           legalIdNumber: normalizeText(driversLicenseNumber),
-          legalIdImageUploadToken: driversLicenseImageUrl,
-          driversLicenseDataUrl: driversLicenseImageUrl,
+          legalIdImageUploadToken: driversLicenseImageUrls[0] ?? "",
+          driversLicenseDataUrl: driversLicenseImageUrls[0] ?? "",
+          driversLicenseDataUrls: driversLicenseImageUrls,
           driversLicenseNumber: normalizeText(driversLicenseNumber),
           driversLicenseExpirationDate: normalizeText(driversLicenseExpirationDate) || null,
           signatureDataUrl,
@@ -3814,6 +3837,7 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                         ref={uploadInputRef}
                         type="file"
                         accept="image/*"
+                        multiple
                         onChange={onDriversLicenseFilePicked}
                         className="hidden"
                       />
@@ -3826,13 +3850,47 @@ export function PublicBookingWizard({ turnstileDevBypassEnabled = false }: Publi
                         className="hidden"
                       />
                     </div>
-                    {driversLicenseImageUrl ? (
-                      <p className="mt-2 text-sm text-emerald-700">
-                        Driver&apos;s license image uploaded.
-                      </p>
+                    {driversLicenseImageUrls.length > 0 ? (
+                      <div className="mt-3">
+                        <p className="text-sm text-emerald-700">
+                          {driversLicenseImageUrls.length} driver&apos;s license{" "}
+                          {driversLicenseImageUrls.length === 1 ? "image" : "images"} attached.
+                        </p>
+                        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                          {driversLicenseImageUrls.map((imageUrl, index) => (
+                            <div
+                              key={`${imageUrl.slice(-24)}-${index}`}
+                              className="overflow-hidden rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)]"
+                            >
+                              <NextImage
+                                src={imageUrl}
+                                alt={`Driver's license image ${index + 1}`}
+                                width={240}
+                                height={144}
+                                unoptimized
+                                className="aspect-[5/3] w-full object-cover"
+                              />
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setDriversLicenseImageUrls((current) =>
+                                    current.filter((_, imageIndex) => imageIndex !== index),
+                                  )
+                                }
+                                className="w-full border-t border-[var(--ccr-border)] px-2 py-2 text-xs font-semibold text-[var(--ccr-text)]"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                        <p className="mt-2 text-xs text-[var(--ccr-muted)]">
+                          Up to {MAX_DRIVERS_LICENSE_IMAGES} images can be attached.
+                        </p>
+                      </div>
                     ) : (
                       <p className="mt-2 text-sm text-[var(--ccr-muted)]">
-                        Optional: upload a driver&apos;s license image.
+                        Optional: upload front, back, or supporting driver&apos;s license images.
                       </p>
                     )}
                   </div>
