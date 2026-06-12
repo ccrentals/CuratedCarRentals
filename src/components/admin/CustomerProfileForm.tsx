@@ -125,7 +125,10 @@ export function CustomerProfileForm({
       }),
     });
 
-    const data = (await response.json().catch(() => ({}))) as { error?: string };
+    const data = (await response.json().catch(() => ({}))) as {
+      error?: string;
+      synchronizedBookingCount?: number;
+    };
     setLoading(false);
 
     if (!response.ok) {
@@ -133,7 +136,12 @@ export function CustomerProfileForm({
       return;
     }
 
-    setMessage("Customer profile updated.");
+    const bookingCount = Number(data.synchronizedBookingCount ?? 0);
+    setMessage(
+      bookingCount === 1
+        ? "Customer profile and 1 related booking updated."
+        : `Customer profile and ${bookingCount} related bookings updated.`,
+    );
     router.refresh();
   }
 

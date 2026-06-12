@@ -54,6 +54,7 @@ import {
 import { formatBookingStatusLabel } from "@/lib/bookings/formatBookingStatusLabel";
 import { isEntitledBooking, isVehicleUnavailableEntitlementBased } from "@/lib/availability/entitlement";
 import { requireCsrf } from "@/lib/security/csrf";
+import { synchronizeCustomerContact } from "@/lib/customers/customerContactSync";
 
 function isUndefinedColumn(error: unknown, column: string) {
   const code = (error as { code?: string } | null)?.code;
@@ -1000,10 +1001,11 @@ export async function PATCH(
         ? appendBookingLocationNote(nextPricingBase, nextLocationDetails)
         : nextPricingBase;
 
-      await client.query(
-        "update customers set full_name = $2, email = $3, phone = $4 where id = $1",
-        [booking.customer_id, customerName, customerEmail, customerPhone],
-      );
+      const customerSyncResult = await synchronizeCustomerContact(client, booking.customer_id, {
+        fullName: customerName,
+        email: customerEmail,
+        phone: customerPhone,
+      });
 
       await client.query(
         "update bookings set start_date = $2, end_date = $3, pickup_time = $4::time, dropoff_time = $5::time, start_at = $6::timestamptz, end_at = $7::timestamptz, pickup_location = $8, dropoff_location = $9, pickup_location_id = $10::uuid, dropoff_location_id = $11::uuid, pickup_location_text_snapshot = $12, dropoff_location_text_snapshot = $13, pricing_json = $14::jsonb, updated_at = now() where id = $1",
@@ -1092,6 +1094,7 @@ export async function PATCH(
           next_customer_name: customerName,
           next_customer_email: customerEmail,
           next_customer_phone: customerPhone,
+          synchronized_booking_count: customerSyncResult.synchronizedBookingCount,
           total: pricingSummary.total,
           balance_due: pricingSummary.balanceDue,
           refund_required: pricingSummary.refundRequired,
