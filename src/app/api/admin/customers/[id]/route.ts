@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 
 import { requireOperationsAccess } from "@/lib/auth/adminGuards";
-import { dbQuery } from "@/lib/db";
+import { dbQuery, getDbPool } from "@/lib/db";
 import { requireCsrf } from "@/lib/security/csrf";
 import { writeAuditLog } from "@/lib/audit";
 import { isEmail, isNonEmptyString } from "@/lib/validators";
 import { logError } from "@/lib/log";
 import { normalizeLegalIdType } from "@/lib/customers/legalId";
+import { synchronizeCustomerContact } from "@/lib/customers/customerContactSync";
 import { normalizeCountryName, normalizeRegionForCountry } from "@/lib/jamaicaParishes";
 
 type CustomerRow = {
@@ -343,58 +344,85 @@ export async function PATCH(
       return NextResponse.json({ error: "Customer not found" }, { status: 404 });
     }
 
-    await dbQuery(
-      "update customers set full_name = $2, email = $3, phone = $4, address = $5, notes = $6 where id = $1",
-      [id, fullName, email, phone, address, notes],
-    );
-
+    const pool = getDbPool();
+    const client = await pool.connect();
+    let synchronizedBookingCount = 0;
     try {
-      await dbQuery(
-        "update customers set legal_id_type = $2, legal_id_number = $3 where id = $1",
-        [id, legalIdType, legalIdNumber],
-      );
-    } catch (error) {
-      if (!isAnyMissingColumn(error, ["legal_id_type", "legal_id_number"])) {
-        throw error;
-      }
-    }
+      await client.query("begin");
 
-    try {
-      await dbQuery(
-        "update customers set first_name = $2, last_name = $3, street = $4, street2 = $5, city = $6, state = $7, zip = $8, country = $9, birthday = $10::date, drivers_license_number = $11 where id = $1",
-        [
-          id,
-          firstName,
-          lastName,
-          street,
-          street2,
-          city,
-          state,
-          null,
-          country || null,
-          birthday,
-          driversLicenseNumber,
-        ],
+      const syncResult = await synchronizeCustomerContact(client, id, {
+        fullName,
+        email,
+        phone,
+      });
+      synchronizedBookingCount = syncResult.synchronizedBookingCount;
+
+      await client.query(
+        "update customers set address = $2, notes = $3 where id = $1",
+        [id, address, notes],
       );
-    } catch (error) {
-      if (
-        isAnyMissingColumn(error, [
-          "first_name",
-          "last_name",
-          "street",
-          "street2",
-          "city",
-          "state",
-          "zip",
-          "country",
-          "birthday",
-          "drivers_license_number",
-        ])
-      ) {
-        // Optional fields depend on the booking revamp migration; skip silently for older schemas.
-      } else {
-        throw error;
+
+      await client.query("savepoint customer_legal_fields");
+      try {
+        await client.query(
+          "update customers set legal_id_type = $2, legal_id_number = $3 where id = $1",
+          [id, legalIdType, legalIdNumber],
+        );
+        await client.query("release savepoint customer_legal_fields");
+      } catch (error) {
+        await client.query("rollback to savepoint customer_legal_fields");
+        await client.query("release savepoint customer_legal_fields");
+        if (!isAnyMissingColumn(error, ["legal_id_type", "legal_id_number"])) {
+          throw error;
+        }
       }
+
+      await client.query("savepoint customer_extended_fields");
+      try {
+        await client.query(
+          "update customers set first_name = $2, last_name = $3, street = $4, street2 = $5, city = $6, state = $7, zip = $8, country = $9, birthday = $10::date, drivers_license_number = $11 where id = $1",
+          [
+            id,
+            firstName,
+            lastName,
+            street,
+            street2,
+            city,
+            state,
+            null,
+            country || null,
+            birthday,
+            driversLicenseNumber,
+          ],
+        );
+        await client.query("release savepoint customer_extended_fields");
+      } catch (error) {
+        await client.query("rollback to savepoint customer_extended_fields");
+        await client.query("release savepoint customer_extended_fields");
+        if (
+          !isAnyMissingColumn(error, [
+            "first_name",
+            "last_name",
+            "street",
+            "street2",
+            "city",
+            "state",
+            "zip",
+            "country",
+            "birthday",
+            "drivers_license_number",
+          ])
+        ) {
+          throw error;
+        }
+      }
+
+      await client.query("commit");
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
     }
 
     await writeAuditLog({
@@ -409,10 +437,11 @@ export async function PATCH(
         next_full_name: fullName,
         next_email: email,
         next_phone: phone,
+        synchronized_booking_count: synchronizedBookingCount,
       },
     });
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, synchronizedBookingCount });
   } catch (error) {
     if (isUniqueDriversLicenseError(error)) {
       return NextResponse.json(
