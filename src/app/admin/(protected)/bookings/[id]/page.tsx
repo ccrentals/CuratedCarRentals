@@ -32,6 +32,7 @@ import {
 } from "@/lib/bookings/vehicleInspection";
 import { loadBookingIncidents } from "@/lib/bookings/bookingIncidents";
 import { loadMediaAuditHistory } from "@/lib/uploads/mediaAudit";
+import type { CustomerPrivateFileItem } from "@/lib/customers/privateFiles";
 
 type BookingDetails = {
   id: string;
@@ -99,6 +100,19 @@ type OverriddenByThisBooking = {
 
 type BookingPrivateDocRow = {
   document_type: string;
+};
+
+type CustomerPrivateDocRow = {
+  id: string;
+  customer_id: string;
+  booking_id: string | null;
+  booking_public_id: string | null;
+  document_type: string;
+  original_file_name: string | null;
+  mime_type: string | null;
+  byte_size: number | null;
+  metadata_json: Record<string, unknown> | null;
+  created_at: string;
 };
 
 type PromoOptionRow = {
@@ -313,6 +327,50 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
   const hasSignatureDoc = privateDocs.rows.some(
     (row: BookingPrivateDocRow) => row.document_type === "SIGNATURE",
   );
+  let customerIdImages: CustomerPrivateFileItem[] = [];
+  try {
+    const customerFiles = await dbQuery<CustomerPrivateDocRow>(
+      `select
+         bpf.id,
+         bpf.customer_id,
+         bpf.booking_id,
+         b.public_id as booking_public_id,
+         bpf.document_type,
+         bpf.original_file_name,
+         bpf.mime_type,
+         bpf.byte_size,
+         bpf.metadata_json,
+         bpf.created_at
+       from booking_private_files bpf
+       left join bookings b on b.id = bpf.booking_id
+       where bpf.customer_id = $1
+         and bpf.document_type = 'DRIVERS_LICENSE'
+       order by bpf.created_at desc`,
+      [booking.customer_id],
+    );
+    customerIdImages = customerFiles.rows.map((row: CustomerPrivateDocRow) => ({
+      id: row.id,
+      customerId: row.customer_id,
+      bookingId: row.booking_id,
+      bookingPublicId: row.booking_public_id,
+      documentType: row.document_type,
+      originalFileName: row.original_file_name,
+      mimeType: row.mime_type,
+      byteSize: row.byte_size,
+      source:
+        typeof row.metadata_json?.source === "string"
+          ? row.metadata_json.source
+          : row.booking_id
+            ? "booking"
+            : "profile",
+      createdAt: row.created_at,
+      openUrl: `/api/admin/customers/${row.customer_id}/private-files/${row.id}`,
+    }));
+  } catch (error) {
+    if (!isUndefinedColumn(error, "customer_id")) {
+      throw error;
+    }
+  }
 
   const pricing = booking.pricing_json ?? {};
   const customerNameSnapshot =
@@ -561,7 +619,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
     customerEmail: customerEmailSnapshot,
     customerPhone: customerPhoneSnapshot,
     driversLicenseNumber: booking.drivers_license_number || booking.customer_legal_id_number,
-    hasDriversLicenseDoc,
+    hasDriversLicenseDoc: hasDriversLicenseDoc || customerIdImages.length > 0,
     hasSignatureDoc,
     days,
     paidToDate,
@@ -609,6 +667,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
       <AdminBookingDetailClient
         initialDetail={initialDetail}
         customerId={booking.customer_id}
+        customerIdImages={customerIdImages}
         canAdmin={canAdmin}
         requireRestoreReason={requireRestoreReason}
         promoOptions={promoOptions}

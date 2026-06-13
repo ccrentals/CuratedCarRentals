@@ -49,8 +49,11 @@ test("secure private-file routes scope reads to an optional file ID", () => {
 test("customer profile exposes every driver's license image independently", () => {
   const page = read("src/app/admin/(protected)/customers/[id]/page.tsx");
 
-  assert.match(page, /bpf\.id, bpf\.booking_id/);
-  assert.match(page, /driversLicenseDocuments\.push\(row\)/);
-  assert.match(page, /Driver&apos;s license images \(\{driversLicenseDocuments\.length\}\)/);
-  assert.match(page, /DRIVERS_LICENSE\?fileId=\$\{document\.id\}/);
+  assert.match(page, /bpf\.customer_id/);
+  assert.match(page, /driversLicenseDocuments\.push\(\{/);
+  assert.match(page, /CustomerLegalIdImagesManager/);
+  assert.match(
+    page,
+    /openUrl: `\/api\/admin\/customers\/\$\{row\.customer_id\}\/private-files\/\$\{row\.id\}`/,
+  );
 });
