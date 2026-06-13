@@ -4,6 +4,10 @@ import { calcRentalDays } from "@/lib/payments/dateMath";
 import { isISODate } from "@/lib/validators";
 import type { Queryable } from "@/lib/payments/pricing";
 import { bookingDateTimeToUtcIso } from "@/lib/bookings/bookingDateTime";
+import {
+  buildQuotePricingSnapshot,
+  type QuotePricingSnapshot,
+} from "@/lib/quotes/quotePricing";
 
 type AdminCreateBookingVehicleRow = {
   id: string;
@@ -27,10 +31,24 @@ export type AdminCreateBookingVehicleOption = {
 export type AdminCreateBookingPricingPreview = {
   days: number;
   dailyRateCents: number;
+  baseTotalCents: number;
+  insuranceSelected: boolean;
+  insurancePlanId: string | null;
+  insurancePricePerDayCents: number;
+  insuranceTotalCents: number;
   subtotalCents: number;
+  promoCode: string | null;
   promoDiscountCents: number;
   totalCents: number;
   depositRequiredCents: number;
+  amountDueCents: number;
+  dueNowCents: number;
+  balanceDueCents: number;
+  rateBreakdown: Array<{
+    date: string;
+    dailyRateCents: number;
+    source: "base" | "weekend" | "date_override";
+  }>;
   currency: "JMD";
 };
 
@@ -113,10 +131,74 @@ export function computeAdminCreateBookingPricingPreview(input: {
   return {
     days,
     dailyRateCents: normalizedDailyRate,
+    baseTotalCents: subtotalCents,
+    insuranceSelected: false,
+    insurancePlanId: null,
+    insurancePricePerDayCents: 0,
+    insuranceTotalCents: 0,
     subtotalCents,
+    promoCode: null,
     promoDiscountCents: normalizedPromoDiscount,
     totalCents,
     depositRequiredCents: normalizedDeposit,
+    amountDueCents: totalCents,
+    dueNowCents: Math.min(totalCents, normalizedDeposit),
+    balanceDueCents: Math.max(0, totalCents - normalizedDeposit),
+    rateBreakdown: [],
+    currency: "JMD",
+  };
+}
+
+function mapQuoteSnapshotToAdminPreview(
+  snapshot: QuotePricingSnapshot,
+): AdminCreateBookingPricingPreview {
+  const pricing = snapshot.pricingJson;
+  const days = Math.max(0, Number(pricing.days ?? 0));
+  const dailyRateCents = Math.max(0, Number(pricing.daily_rate_cents ?? 0));
+  const insurancePricePerDayCents = Math.max(
+    0,
+    Number(pricing.insurance_price_per_day_cents ?? 0),
+  );
+  const rateBreakdown = Array.isArray(pricing.rate_breakdown)
+    ? pricing.rate_breakdown.flatMap((entry) => {
+        if (!entry || typeof entry !== "object") return [];
+        const value = entry as Record<string, unknown>;
+        const source = value.source;
+        if (
+          typeof value.date !== "string" ||
+          !["base", "weekend", "date_override"].includes(String(source))
+        ) {
+          return [];
+        }
+        return [{
+          date: value.date,
+          dailyRateCents: Math.max(0, Number(value.dailyRateCents ?? value.daily_rate_cents ?? 0)),
+          source: source as "base" | "weekend" | "date_override",
+        }];
+      })
+    : [];
+  const dueNowCents = Math.min(
+    snapshot.summary.amountDueCents,
+    snapshot.summary.depositRequiredCents,
+  );
+
+  return {
+    days,
+    dailyRateCents,
+    baseTotalCents: snapshot.summary.baseTotalCents,
+    insuranceSelected: snapshot.insuranceEnabled,
+    insurancePlanId: snapshot.insurancePlanId,
+    insurancePricePerDayCents,
+    insuranceTotalCents: snapshot.summary.insuranceTotalCents,
+    subtotalCents: snapshot.summary.subtotalCents,
+    promoCode: snapshot.promoCode,
+    promoDiscountCents: snapshot.summary.discountTotalCents,
+    totalCents: snapshot.summary.totalCents,
+    depositRequiredCents: snapshot.summary.depositRequiredCents,
+    amountDueCents: snapshot.summary.amountDueCents,
+    dueNowCents,
+    balanceDueCents: Math.max(0, snapshot.summary.amountDueCents - dueNowCents),
+    rateBreakdown,
     currency: "JMD",
   };
 }
@@ -149,15 +231,33 @@ export async function getAdminCreateBookingPricingPreview(
   vehicleId: string,
   startDate: string,
   endDate: string,
+  input: {
+    insuranceSelected?: boolean;
+    insurancePlanId?: string | null;
+    promoCode?: string | null;
+    customerId?: string | null;
+    customerEmail?: string | null;
+  } = {},
   options: { client?: Queryable } = {},
 ): Promise<AdminCreateBookingPricingPreview | null> {
+  const window = buildAdminCreateBookingWindow(startDate, endDate);
+  if (!window) return null;
   const vehicle = await getAdminCreateBookingVehicleById(vehicleId, options);
   if (!vehicle) return null;
 
-  return computeAdminCreateBookingPricingPreview({
-    dailyRateCents: vehicle.dailyRateCents,
-    depositCents: vehicle.depositCents,
-    startDate,
-    endDate,
-  });
+  const snapshot = await buildQuotePricingSnapshot(
+    {
+      vehicleId,
+      startAt: window.startAt,
+      endAt: window.endAt,
+      insuranceEnabled: input.insuranceSelected === true,
+      insurancePlanId: input.insurancePlanId,
+      promoCode: input.promoCode,
+      customerId: input.customerId,
+      customerEmail: input.customerEmail,
+    },
+    options,
+  );
+
+  return mapQuoteSnapshotToAdminPreview(snapshot);
 }

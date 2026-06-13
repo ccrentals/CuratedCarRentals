@@ -147,6 +147,7 @@ export type PromoValidationInput = {
   baseTotalCents: number;
   customerId?: string | null;
   customerEmail?: string | null;
+  excludeBookingId?: string | null;
   now?: Date;
   client?: Queryable;
 };
@@ -428,10 +429,15 @@ export async function validatePromoForBooking(
   }
 
   if (promo.max_redemptions !== null) {
-    const totalUseResult = await db.query(
-      "select count(*)::int as count from promo_redemptions where promo_code_id = $1",
-      [promo.id],
-    );
+    const totalUseResult = input.excludeBookingId
+      ? await db.query(
+          "select count(*)::int as count from promo_redemptions where promo_code_id = $1 and booking_id <> $2",
+          [promo.id, input.excludeBookingId],
+        )
+      : await db.query(
+          "select count(*)::int as count from promo_redemptions where promo_code_id = $1",
+          [promo.id],
+        );
     const totalCount = Number((totalUseResult.rows[0] as { count?: number }).count ?? 0);
     if (totalCount >= promo.max_redemptions) {
       return {
@@ -445,16 +451,26 @@ export async function validatePromoForBooking(
   if (promo.max_redemptions_per_customer !== null) {
     let perCustomerCount = 0;
     if (input.customerId) {
-      const perCustomerResult = await db.query(
-        "select count(*)::int as count from promo_redemptions where promo_code_id = $1 and customer_id = $2",
-        [promo.id, input.customerId],
-      );
+      const perCustomerResult = input.excludeBookingId
+        ? await db.query(
+            "select count(*)::int as count from promo_redemptions where promo_code_id = $1 and customer_id = $2 and booking_id <> $3",
+            [promo.id, input.customerId, input.excludeBookingId],
+          )
+        : await db.query(
+            "select count(*)::int as count from promo_redemptions where promo_code_id = $1 and customer_id = $2",
+            [promo.id, input.customerId],
+          );
       perCustomerCount = Number((perCustomerResult.rows[0] as { count?: number }).count ?? 0);
     } else if (input.customerEmail) {
-      const perEmailResult = await db.query(
-        "select count(*)::int as count from promo_redemptions where promo_code_id = $1 and lower(customer_email) = lower($2)",
-        [promo.id, input.customerEmail.trim().toLowerCase()],
-      );
+      const perEmailResult = input.excludeBookingId
+        ? await db.query(
+            "select count(*)::int as count from promo_redemptions where promo_code_id = $1 and lower(customer_email) = lower($2) and booking_id <> $3",
+            [promo.id, input.customerEmail.trim().toLowerCase(), input.excludeBookingId],
+          )
+        : await db.query(
+            "select count(*)::int as count from promo_redemptions where promo_code_id = $1 and lower(customer_email) = lower($2)",
+            [promo.id, input.customerEmail.trim().toLowerCase()],
+          );
       perCustomerCount = Number((perEmailResult.rows[0] as { count?: number }).count ?? 0);
     }
 

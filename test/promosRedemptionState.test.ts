@@ -176,10 +176,33 @@ class PromoSyncDb implements Queryable {
     }
 
     if (
+      normalized ===
+      "select count(*)::int as count from promo_redemptions where promo_code_id = $1 and booking_id <> $2"
+    ) {
+      const count = this.currentRedemptions.filter(
+        (row) => row.promo_code_id === params[0] && row.booking_id !== params[1],
+      ).length;
+      return { rowCount: 1, rows: [{ count }] };
+    }
+
+    if (
       normalized === "select count(*)::int as count from promo_redemptions where promo_code_id = $1 and customer_id = $2"
     ) {
       const count = this.currentRedemptions.filter(
         (row) => row.promo_code_id === params[0] && row.customer_id === params[1],
+      ).length;
+      return { rowCount: 1, rows: [{ count }] };
+    }
+
+    if (
+      normalized ===
+      "select count(*)::int as count from promo_redemptions where promo_code_id = $1 and customer_id = $2 and booking_id <> $3"
+    ) {
+      const count = this.currentRedemptions.filter(
+        (row) =>
+          row.promo_code_id === params[0] &&
+          row.customer_id === params[1] &&
+          row.booking_id !== params[2],
       ).length;
       return { rowCount: 1, rows: [{ count }] };
     }
@@ -191,6 +214,20 @@ class PromoSyncDb implements Queryable {
       const email = String(params[1] ?? "").toLowerCase();
       const count = this.currentRedemptions.filter(
         (row) => row.promo_code_id === params[0] && String(row.customer_email ?? "").toLowerCase() === email,
+      ).length;
+      return { rowCount: 1, rows: [{ count }] };
+    }
+
+    if (
+      normalized ===
+      "select count(*)::int as count from promo_redemptions where promo_code_id = $1 and lower(customer_email) = lower($2) and booking_id <> $3"
+    ) {
+      const email = String(params[1] ?? "").toLowerCase();
+      const count = this.currentRedemptions.filter(
+        (row) =>
+          row.promo_code_id === params[0] &&
+          String(row.customer_email ?? "").toLowerCase() === email &&
+          row.booking_id !== params[2],
       ).length;
       return { rowCount: 1, rows: [{ count }] };
     }
@@ -419,4 +456,33 @@ test("validatePromoForBooking enforces per-customer limits from current paid row
     assert.fail("Expected max per customer failure");
   }
   assert.equal(result.reason, "max_per_customer");
+});
+
+test("validatePromoForBooking excludes the current booking from redemption limits during repricing", async () => {
+  const db = new PromoSyncDb();
+  db.promoCodes[0].max_redemptions = 1;
+  db.promoCodes[0].max_redemptions_per_customer = 1;
+  db.currentRedemptions.push({
+    id: "current-1",
+    promo_code_id: "promo-1",
+    booking_id: "booking-1",
+    customer_id: "customer-1",
+    customer_email: "promo@example.com",
+    discount_amount_cents: 5000,
+  });
+
+  const result = await validatePromoForBooking({
+    code: "SAVE5",
+    vehicleId: "vehicle-1",
+    startDate: "2026-04-10",
+    endDate: "2026-04-12",
+    subtotalCents: 30000,
+    baseTotalCents: 30000,
+    customerId: "customer-1",
+    customerEmail: "promo@example.com",
+    excludeBookingId: "booking-1",
+    client: db,
+  });
+
+  assert.equal(result.ok, true);
 });

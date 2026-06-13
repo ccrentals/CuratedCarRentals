@@ -79,6 +79,7 @@ export function BookingActions({
     null,
   );
   const [pricingLoading, setPricingLoading] = useState<"promo" | "insurance" | null>(null);
+  const [showPricingEmailAction, setShowPricingEmailAction] = useState(false);
   const [activePanel, setActivePanel] = useState<
     "booking" | "email" | "pricing" | "changes" | "inspection"
   >("booking");
@@ -284,19 +285,66 @@ export function BookingActions({
     setPricingLoading("promo");
 
     const csrfToken = await ensureCsrfToken();
-    const response = await fetch(`/api/public/bookings/${bookingId}/promo`, {
-      method: "POST",
+    const previewResponse = await fetch(`/api/admin/bookings/${bookingId}`, {
+      method: "PATCH",
       headers: {
         "Content-Type": "application/json",
         "x-csrf-token": csrfToken ?? "",
       },
-      body: JSON.stringify({ code: selectedPromoCode.trim() }),
+      body: JSON.stringify({
+        action: "apply_promo",
+        code: selectedPromoCode.trim(),
+        previewOnly: true,
+      }),
     });
+    const previewData = (await previewResponse.json().catch(() => ({}))) as {
+      ok?: boolean;
+      error?: string;
+      beforeSummary?: { total?: number; netPaidToDate?: number };
+      summary?: { total?: number; balanceDue?: number; refundRequired?: boolean };
+    };
+    if (!previewResponse.ok || !previewData.ok) {
+      setPricingLoading(null);
+      setError(previewData.error ?? "Unable to preview promo code.");
+      return;
+    }
 
+    const confirmed = window.confirm(
+      [
+        `Apply promo ${selectedPromoCode.trim().toUpperCase()}?`,
+        `Current total: ${formatJmd(Number(previewData.beforeSummary?.total ?? 0))}`,
+        `New total: ${formatJmd(Number(previewData.summary?.total ?? 0))}`,
+        `Paid to date: ${formatJmd(Number(previewData.beforeSummary?.netPaidToDate ?? 0))}`,
+        `New balance: ${formatJmd(Number(previewData.summary?.balanceDue ?? 0))}`,
+        previewData.summary?.refundRequired
+          ? "This change will mark the booking as refund required. No refund will be issued automatically."
+          : "",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+    if (!confirmed) {
+      setPricingLoading(null);
+      return;
+    }
+
+    const response = await fetch(`/api/admin/bookings/${bookingId}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "x-csrf-token": csrfToken ?? "",
+      },
+      body: JSON.stringify({
+        action: "apply_promo",
+        code: selectedPromoCode.trim(),
+        confirmed: true,
+      }),
+    });
     const data = (await response.json().catch(() => ({}))) as {
       ok?: boolean;
       error?: string;
-      promo?: { code?: string };
+      message?: string;
+      summary?: { promoCode?: string | null };
     };
     setPricingLoading(null);
 
@@ -305,10 +353,11 @@ export function BookingActions({
       return;
     }
 
-    const normalizedCode = String(data.promo?.code ?? selectedPromoCode).trim().toUpperCase();
+    const normalizedCode = String(data.summary?.promoCode ?? selectedPromoCode).trim().toUpperCase();
     setAppliedPromoCode(normalizedCode);
     setSelectedPromoCode(normalizedCode);
-    setMessage(`Promo ${normalizedCode} applied.`);
+    setMessage(data.message ?? `Promo ${normalizedCode} applied.`);
+    setShowPricingEmailAction(true);
     router.refresh();
   }
 
@@ -318,16 +367,57 @@ export function BookingActions({
     setPricingLoading("promo");
 
     const csrfToken = await ensureCsrfToken();
-    const response = await fetch(`/api/public/bookings/${bookingId}/promo`, {
-      method: "DELETE",
+    const previewResponse = await fetch(`/api/admin/bookings/${bookingId}`, {
+      method: "PATCH",
       headers: {
+        "Content-Type": "application/json",
         "x-csrf-token": csrfToken ?? "",
       },
+      body: JSON.stringify({ action: "remove_promo", previewOnly: true }),
     });
+    const previewData = (await previewResponse.json().catch(() => ({}))) as {
+      ok?: boolean;
+      error?: string;
+      beforeSummary?: { total?: number; netPaidToDate?: number };
+      summary?: { total?: number; balanceDue?: number; refundRequired?: boolean };
+    };
+    if (!previewResponse.ok || !previewData.ok) {
+      setPricingLoading(null);
+      setError(previewData.error ?? "Unable to preview promo removal.");
+      return;
+    }
 
+    const confirmed = window.confirm(
+      [
+        `Remove promo ${appliedPromoCode}?`,
+        `Current total: ${formatJmd(Number(previewData.beforeSummary?.total ?? 0))}`,
+        `New total: ${formatJmd(Number(previewData.summary?.total ?? 0))}`,
+        `Paid to date: ${formatJmd(Number(previewData.beforeSummary?.netPaidToDate ?? 0))}`,
+        `New balance: ${formatJmd(Number(previewData.summary?.balanceDue ?? 0))}`,
+        previewData.summary?.refundRequired
+          ? "This change will mark the booking as refund required. No refund will be issued automatically."
+          : "",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+    if (!confirmed) {
+      setPricingLoading(null);
+      return;
+    }
+
+    const response = await fetch(`/api/admin/bookings/${bookingId}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "x-csrf-token": csrfToken ?? "",
+      },
+      body: JSON.stringify({ action: "remove_promo", confirmed: true }),
+    });
     const data = (await response.json().catch(() => ({}))) as {
       ok?: boolean;
       error?: string;
+      message?: string;
     };
     setPricingLoading(null);
 
@@ -337,7 +427,9 @@ export function BookingActions({
     }
 
     setAppliedPromoCode("");
-    setMessage("Promo removed.");
+    setSelectedPromoCode("");
+    setMessage(data.message ?? "Promo removed.");
+    setShowPricingEmailAction(true);
     router.refresh();
   }
 
@@ -347,18 +439,78 @@ export function BookingActions({
     setPricingLoading("insurance");
 
     const csrfToken = await ensureCsrfToken();
+    const requestBody = {
+      action: "set_insurance",
+      enabled,
+      insurancePlanId: enabled ? insuranceOption.planId : null,
+    };
+    const previewResponse = await fetch(`/api/admin/bookings/${bookingId}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "x-csrf-token": csrfToken ?? "",
+      },
+      body: JSON.stringify({ ...requestBody, previewOnly: true }),
+    });
+
+    const previewData = (await previewResponse.json().catch(() => ({}))) as {
+      ok?: boolean;
+      error?: string;
+      beforeSummary?: {
+        total?: number;
+        netPaidToDate?: number;
+        promoCode?: string | null;
+      };
+      summary?: {
+        total?: number;
+        balanceDue?: number;
+        refundRequired?: boolean;
+        promoCode?: string | null;
+      };
+    };
+
+    if (!previewResponse.ok || !previewData.ok) {
+      setPricingLoading(null);
+      setError(previewData.error ?? "Unable to preview the insurance change.");
+      return;
+    }
+
+    const previousPromo = previewData.beforeSummary?.promoCode ?? null;
+    const nextPromo = previewData.summary?.promoCode ?? null;
+    const promoChange =
+      previousPromo !== nextPromo
+        ? nextPromo
+          ? `Promo will change from ${previousPromo ?? "none"} to ${nextPromo}.`
+          : `Promo ${previousPromo ?? ""} will be removed because it is no longer valid.`
+        : "";
+    const confirmed = window.confirm(
+      [
+        enabled ? "Apply insurance to this booking?" : "Remove insurance from this booking?",
+        `Current total: ${formatJmd(Number(previewData.beforeSummary?.total ?? 0))}`,
+        `New total: ${formatJmd(Number(previewData.summary?.total ?? 0))}`,
+        `Paid to date: ${formatJmd(Number(previewData.beforeSummary?.netPaidToDate ?? 0))}`,
+        `New balance: ${formatJmd(Number(previewData.summary?.balanceDue ?? 0))}`,
+        promoChange,
+        previewData.summary?.refundRequired
+          ? "This change will mark the booking as refund required. No refund will be issued automatically."
+          : "",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+    if (!confirmed) {
+      setPricingLoading(null);
+      return;
+    }
+
     const response = await fetch(`/api/admin/bookings/${bookingId}`, {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
         "x-csrf-token": csrfToken ?? "",
       },
-      body: JSON.stringify({
-        action: "set_insurance",
-        enabled,
-      }),
+      body: JSON.stringify({ ...requestBody, confirmed: true }),
     });
-
     const data = (await response.json().catch(() => ({}))) as {
       ok?: boolean;
       error?: string;
@@ -374,6 +526,7 @@ export function BookingActions({
 
     setInsuranceSelected(data.summary?.insuranceSelected === true);
     setMessage(data.message ?? (enabled ? "Insurance applied." : "Insurance removed."));
+    setShowPricingEmailAction(true);
     router.refresh();
   }
 
@@ -657,9 +810,21 @@ export function BookingActions({
       )}
 
       {message ? (
-        <p data-testid="booking-actions-message" className="text-xs font-semibold text-[var(--ccr-text)]">
-          {message}
-        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <p data-testid="booking-actions-message" className="text-xs font-semibold text-[var(--ccr-text)]">
+            {message}
+          </p>
+          {showPricingEmailAction ? (
+            <button
+              type="button"
+              onClick={() => resendEmail("booking_created")}
+              disabled={emailLoading === "booking_created"}
+              className={emailButtonClass}
+            >
+              {emailLoading === "booking_created" ? "Sending..." : "Resend updated booking email"}
+            </button>
+          ) : null}
+        </div>
       ) : null}
       {error ? (
         <p data-testid="booking-actions-error" className="text-xs text-red-600">

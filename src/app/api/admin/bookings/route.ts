@@ -5,7 +5,6 @@ import { getSessionFromRequest } from "@/lib/auth/session";
 import { fetchAdminBookingsPage } from "@/lib/bookings/adminBookingsList";
 import {
   buildAdminCreateBookingWindow,
-  computeAdminCreateBookingPricingPreview,
   getAdminCreateBookingVehicleById,
 } from "@/lib/bookings/adminCreateBooking";
 import { bookingDateTimeToUtcIso } from "@/lib/bookings/bookingDateTime";
@@ -15,6 +14,7 @@ import {
   sendInternalBookingCreatedNotifications,
 } from "@/lib/notifications/email";
 import { calcRentalDays, dateOnlyUtc } from "@/lib/payments/dateMath";
+import { computeBookingPricingFromStoredSnapshot } from "@/lib/payments/pricing";
 import { isVehicleUnavailableEntitlementBased } from "@/lib/availability/entitlement";
 import { requireCsrf } from "@/lib/security/csrf";
 import { isEmail, isISODate, isNonEmptyString } from "@/lib/validators";
@@ -25,7 +25,14 @@ import {
   resolveMinimumRentalDays,
 } from "@/lib/adminSettings";
 import { validateMinimumRentalDays } from "@/lib/bookings/minimumRentalDays";
-import { normalizePromoInputCode, validatePromoForBooking } from "@/lib/promos";
+import {
+  syncPromoRedemptionStateForBooking,
+  validatePromoForBooking,
+} from "@/lib/promos";
+import {
+  buildQuotePricingSnapshot,
+  QuotePricingError,
+} from "@/lib/quotes/quotePricing";
 import { writeAuditLog } from "@/lib/audit";
 import {
   appendBookingLocationNote,
@@ -95,6 +102,8 @@ export type AdminBookingsPostRouteDeps = {
   isVehicleUnavailable: typeof isVehicleUnavailableEntitlementBased;
   upsertCustomer: typeof upsertCustomerForBooking;
   validatePromo: typeof validatePromoForBooking;
+  syncPromoRedemption: typeof syncPromoRedemptionStateForBooking;
+  buildPricingSnapshot: typeof buildQuotePricingSnapshot;
   writeAudit: typeof writeAuditLog;
   sendCreatedEmail: typeof sendBookingCreatedEmail;
   sendInternalCreatedNotifications: typeof sendInternalBookingCreatedNotifications;
@@ -109,6 +118,8 @@ const DEFAULT_BOOKINGS_POST_DEPS: AdminBookingsPostRouteDeps = {
   isVehicleUnavailable: isVehicleUnavailableEntitlementBased,
   upsertCustomer: upsertCustomerForBooking,
   validatePromo: validatePromoForBooking,
+  syncPromoRedemption: syncPromoRedemptionStateForBooking,
+  buildPricingSnapshot: buildQuotePricingSnapshot,
   writeAudit: writeAuditLog,
   sendCreatedEmail: sendBookingCreatedEmail,
   sendInternalCreatedNotifications: sendInternalBookingCreatedNotifications,
@@ -168,12 +179,24 @@ export async function handleAdminBookingsPost(
       : null;
   const customerId = body?.customerId;
   const promoCodeRaw = body?.promoCode;
+  const insuranceSelected = body?.insuranceSelected === true;
+  const insurancePlanId =
+    typeof body?.insurancePlanId === "string" ? body.insurancePlanId.trim() : "";
 
   if (!UUID_REGEX.test(vehicleId ?? "")) {
     return NextResponse.json({ error: "Invalid vehicleId" }, { status: 400 });
   }
   if (customerId && !UUID_REGEX.test(customerId ?? "")) {
     return NextResponse.json({ error: "Invalid customerId" }, { status: 400 });
+  }
+  if (insurancePlanId && !UUID_REGEX.test(insurancePlanId)) {
+    return NextResponse.json({ error: "Invalid insurancePlanId" }, { status: 400 });
+  }
+  if (typeof body?.insuranceSelected !== "boolean") {
+    return NextResponse.json(
+      { error: "Select an insurance option." },
+      { status: 400 },
+    );
   }
   if (!isNonEmptyString(fullName, 2)) {
     return NextResponse.json({ error: "Invalid fullName" }, { status: 400 });
@@ -338,6 +361,9 @@ export async function handleAdminBookingsPost(
       await client.query("rollback");
       return NextResponse.json({ error: "Vehicle not found" }, { status: 404 });
     }
+    await client.query("select pg_advisory_xact_lock(hashtext($1))", [
+      `admin-booking-vehicle:${vehicleId}`,
+    ]);
 
     const availabilityWindow = buildAdminCreateBookingWindow(startDate, endDate);
     if (!availabilityWindow) {
@@ -382,61 +408,59 @@ export async function handleAdminBookingsPost(
       throw error;
     }
 
-    const dailyRate = Number(vehicle.dailyRateCents || 0);
-    const depositAmount = Number(vehicle.depositCents || 0);
-    const subtotalAmount = dailyRate * days;
-
-    const promoCode = typeof promoCodeRaw === "string" ? normalizePromoInputCode(promoCodeRaw) : "";
-    let promoDiscount = 0;
-    let promoId: string | null = null;
-
-    if (promoCode) {
-      const promoValidation = await deps.validatePromo({
-        code: promoCode,
+    const promoCode = typeof promoCodeRaw === "string" ? promoCodeRaw.trim() : "";
+    const quoteSnapshot = await deps.buildPricingSnapshot(
+      {
         vehicleId,
-        startDate: String(startDate),
-        endDate: String(endDate),
-        subtotalCents: subtotalAmount,
-        baseTotalCents: subtotalAmount,
+        startAt: availabilityWindow.startAt,
+        endAt: availabilityWindow.endAt,
+        insuranceEnabled: insuranceSelected,
+        insurancePlanId: insuranceSelected ? insurancePlanId || null : null,
+        promoCode: promoCode || null,
         customerId: customerUpsert.customerId,
         customerEmail: normalizedEmail,
-        client,
-      });
-      if (!promoValidation.ok) {
-        await client.query("rollback");
-        return NextResponse.json({ error: promoValidation.message }, { status: 400 });
-      }
-      promoDiscount = promoValidation.discountAmountCents;
-      promoId = promoValidation.promoId;
-    }
-
-    const pricingPreview = computeAdminCreateBookingPricingPreview({
-      dailyRateCents: dailyRate,
-      depositCents: depositAmount,
-      startDate: String(startDate),
-      endDate: String(endDate),
-      promoDiscountCents: promoDiscount,
+      },
+      { client },
+    );
+    const pricingSummary = computeBookingPricingFromStoredSnapshot({
+      bookingId: "draft",
+      bookingStatus: "PENDING_PAYMENT",
+      startDate,
+      endDate,
+      pricing: quoteSnapshot.pricingJson,
+      paymentOption: "DEPOSIT",
+      netPaidToDate: 0,
+      promoCode: quoteSnapshot.promoCode,
+      promoDiscount: quoteSnapshot.summary.discountTotalCents,
+      insuranceSelected: quoteSnapshot.insuranceEnabled,
+      insurancePricePerDay: Number(
+        quoteSnapshot.pricingJson.insurance_price_per_day_cents ?? 0,
+      ),
+      insuranceTotal: quoteSnapshot.summary.insuranceTotalCents,
     });
-    const totalAmount = pricingPreview?.totalCents ?? Math.max(0, subtotalAmount - promoDiscount);
-
     const pricingBase = {
-      daily_rate_cents: dailyRate,
-      deposit_cents: depositAmount,
-      days: pricingPreview?.days ?? days,
+      ...quoteSnapshot.pricingJson,
+      days: pricingSummary.days,
       customer_name_snapshot: String(fullName).trim(),
       customer_email_snapshot: normalizedEmail,
       customer_phone_snapshot: String(phone).trim(),
-      subtotal_cents: pricingPreview?.subtotalCents ?? subtotalAmount,
-      promo_code: promoCode || null,
-      promo_code_id: promoId,
-      promo_discount_cents: promoDiscount,
-      total_amount: totalAmount,
-      total_cents: totalAmount,
+      insurance_plan_id: quoteSnapshot.insurancePlanId,
+      promo_code: pricingSummary.promoCode,
+      promo_code_id: quoteSnapshot.promoId,
+      base_total_cents: pricingSummary.baseTotal,
+      extra_fees_cents: pricingSummary.extraFeesTotal,
+      subtotal_cents: pricingSummary.subtotal,
+      promo_discount_cents: pricingSummary.discountTotal,
+      discount_total_cents: pricingSummary.discountTotal,
+      total_amount: pricingSummary.total,
+      total_cents: pricingSummary.total,
+      amount_due_cents: pricingSummary.amountDue,
       amount_paid: 0,
-      balance_due: totalAmount,
-      payment_status: "UNPAID",
-      payment_option_selected: "DEPOSIT",
-      currency: pricingPreview?.currency ?? "JMD",
+      balance_due: pricingSummary.balanceDue,
+      payment_status: pricingSummary.paymentStatus,
+      payment_option_selected: pricingSummary.paymentOption,
+      refund_required: false,
+      currency: String(quoteSnapshot.pricingJson.currency ?? "JMD"),
     };
     const pricing = appendBookingLocationNote(pricingBase, bookingLocationDetails);
     const pickupTime = "11:00";
@@ -449,7 +473,7 @@ export async function handleAdminBookingsPost(
     }
 
     const bookingInsert = await client.query(
-      "insert into bookings (vehicle_id, customer_id, start_date, end_date, start_at, end_at, pickup_time, dropoff_time, pickup_location, dropoff_location, pickup_location_id, dropoff_location_id, pickup_location_text_snapshot, dropoff_location_text_snapshot, status, pricing_json) values ($1, $2, $3, $4, $5::timestamptz, $6::timestamptz, $7::time, $8::time, $9, $10, $11::uuid, $12::uuid, $13, $14, 'PENDING_PAYMENT', $15) returning id, status",
+      "insert into bookings (vehicle_id, customer_id, start_date, end_date, start_at, end_at, pickup_time, dropoff_time, pickup_location, dropoff_location, pickup_location_id, dropoff_location_id, pickup_location_text_snapshot, dropoff_location_text_snapshot, insurance_selected, insurance_plan_id, insurance_price_per_day_cents, insurance_total_cents, payment_option, status, pricing_json) values ($1, $2, $3, $4, $5::timestamptz, $6::timestamptz, $7::time, $8::time, $9, $10, $11::uuid, $12::uuid, $13, $14, $15, $16::uuid, $17, $18, 'DEPOSIT', 'PENDING_PAYMENT', $19) returning id, status",
       [
         vehicleId,
         customerUpsert.customerId,
@@ -465,9 +489,17 @@ export async function handleAdminBookingsPost(
         dropoffLocationId || null,
         pickupLocationTextSnapshot,
         dropoffLocationTextSnapshot,
+        quoteSnapshot.insuranceEnabled,
+        quoteSnapshot.insurancePlanId,
+        pricingSummary.insurancePricePerDay,
+        pricingSummary.insuranceTotal,
         pricing,
       ],
     );
+    await deps.syncPromoRedemption(bookingInsert.rows[0].id, {
+      client,
+      source: "admin_booking_create",
+    });
 
     await client.query("commit");
 
@@ -486,8 +518,12 @@ export async function handleAdminBookingsPost(
           end_date: String(endDate),
           pickup_location_type: pickupLocationType,
           dropoff_location_type: dropoffLocationType,
-          promo_code: promoCode || null,
-          promo_discount_cents: promoDiscount,
+          promo_code: pricingSummary.promoCode,
+          promo_discount_cents: pricingSummary.promoDiscount,
+          insurance_selected: pricingSummary.insuranceSelected,
+          insurance_plan_id: quoteSnapshot.insurancePlanId,
+          insurance_total_cents: pricingSummary.insuranceTotal,
+          total_cents: pricingSummary.total,
         },
       });
     } catch (error) {
@@ -509,11 +545,11 @@ export async function handleAdminBookingsPost(
         startDate: String(startDate),
         endDate: String(endDate),
         pickupLocation: pickupLocationTextSnapshot,
-        dailyRate,
-        deposit: depositAmount,
+        dailyRate: pricingSummary.dailyRate,
+        deposit: pricingSummary.deposit,
         paymentOption: "DEPOSIT",
-        promoCode: promoCode || null,
-        promoDiscount,
+        promoCode: pricingSummary.promoCode,
+        promoDiscount: pricingSummary.promoDiscount,
         dispatch: {
           triggerSource: "admin_booking",
           triggeredByUserId: actor.userId,
@@ -531,11 +567,11 @@ export async function handleAdminBookingsPost(
         startDate: String(startDate),
         endDate: String(endDate),
         pickupLocation: pickupLocationTextSnapshot,
-        dailyRate,
-        deposit: depositAmount,
+        dailyRate: pricingSummary.dailyRate,
+        deposit: pricingSummary.deposit,
         paymentOption: "DEPOSIT",
-        promoCode: promoCode || null,
-        promoDiscount,
+        promoCode: pricingSummary.promoCode,
+        promoDiscount: pricingSummary.promoDiscount,
         dispatch: {
           triggerSource: "admin_booking",
           triggeredByUserId: actor.userId,
@@ -557,10 +593,17 @@ export async function handleAdminBookingsPost(
     return NextResponse.json({
       bookingId: bookingInsert.rows[0].id,
       status: bookingInsert.rows[0].status,
-      promoApplied: promoId ? true : false,
+      promoApplied: quoteSnapshot.promoId ? true : false,
+      insuranceSelected: quoteSnapshot.insuranceEnabled,
     });
   } catch (error) {
     await client.query("rollback");
+    if (error instanceof QuotePricingError) {
+      return NextResponse.json(
+        { error: error.message, reason: error.code },
+        { status: error.status },
+      );
+    }
     deps.log("admin_booking_create_failed", error, {
       userId: actor.userId,
       vehicleId: String(vehicleId ?? ""),

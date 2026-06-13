@@ -59,6 +59,55 @@ function createMockDb(responses: MockResponse[]) {
   return { db, calls };
 }
 
+const buildMockPricingSnapshot: AdminBookingsPostRouteDeps["buildPricingSnapshot"] = async (
+  input,
+) => {
+  const insuranceEnabled = input.insuranceEnabled === true;
+  const insurancePricePerDayCents = insuranceEnabled ? 2000 : 0;
+  const insuranceTotalCents = insurancePricePerDayCents * 2;
+  const baseTotalCents = 24000;
+  const subtotalCents = baseTotalCents + insuranceTotalCents;
+  const promoCode = input.promoCode ? String(input.promoCode).trim().toUpperCase() : null;
+  const discountTotalCents = promoCode ? 1000 : 0;
+  const totalCents = subtotalCents - discountTotalCents;
+
+  return {
+    vehicleLabel: "2026 Toyota Corolla",
+    vehicleClass: null,
+    insuranceEnabled,
+    insurancePlanId: insuranceEnabled
+      ? input.insurancePlanId ?? "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+      : null,
+    promoCode,
+    promoId: promoCode ? "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee" : null,
+    rackPriceCents: baseTotalCents,
+    pricingJson: {
+      days: 2,
+      daily_rate_cents: 12000,
+      base_total_cents: baseTotalCents,
+      insurance_selected: insuranceEnabled,
+      insurance_price_per_day_cents: insurancePricePerDayCents,
+      insurance_total_cents: insuranceTotalCents,
+      subtotal_cents: subtotalCents,
+      promo_code: promoCode,
+      promo_discount_cents: discountTotalCents,
+      discount_total_cents: discountTotalCents,
+      total_cents: totalCents,
+      deposit_required_cents: 25000,
+      currency: "JMD",
+    },
+    summary: {
+      baseTotalCents,
+      insuranceTotalCents,
+      discountTotalCents,
+      subtotalCents,
+      totalCents,
+      depositRequiredCents: 25000,
+      amountDueCents: totalCents,
+    },
+  };
+};
+
 test("admin create booking helper: builds full-day window from date-only inputs", () => {
   const window = buildAdminCreateBookingWindow("2026-04-10", "2026-04-12");
 
@@ -97,10 +146,20 @@ test("admin create booking helper: computes pricing preview once dates and vehic
   assert.deepEqual(preview, {
     days: 2,
     dailyRateCents: 15000,
+    baseTotalCents: 30000,
+    insuranceSelected: false,
+    insurancePlanId: null,
+    insurancePricePerDayCents: 0,
+    insuranceTotalCents: 0,
     subtotalCents: 30000,
+    promoCode: null,
     promoDiscountCents: 0,
     totalCents: 30000,
     depositRequiredCents: 50000,
+    amountDueCents: 30000,
+    dueNowCents: 30000,
+    balanceDueCents: 0,
+    rateBreakdown: [],
     currency: "JMD",
   });
 });
@@ -234,11 +293,58 @@ test("admin create booking helper: preview ignores soft-deleted vehicles", async
     "11111111-1111-4111-8111-111111111111",
     "2026-04-10",
     "2026-04-12",
+    {},
     { client: db },
   );
 
   assert.equal(preview, null);
   assert.ok(calls[0]?.text.includes("deleted_at is null"));
+});
+
+test("admin bookings API: requires an explicit insurance selection", async () => {
+  const deps = {
+    requireAdmin: async () => ({
+      ok: true,
+      actor: {
+        userId: "91c7c89a-9f07-4d59-b79b-f92d55f0cf8b",
+        role: "ADMIN",
+        appRole: "ADMIN",
+        authSource: "legacy",
+        clerkUserId: null,
+        issuedAt: 999999000,
+        expiresAt: 999999999,
+      },
+      session: {
+        userId: "91c7c89a-9f07-4d59-b79b-f92d55f0cf8b",
+        role: "ADMIN",
+        issuedAt: 999999000,
+        expiresAt: 999999999,
+      },
+    }),
+    requireCsrfToken: async () => true,
+  } as AdminBookingsPostRouteDeps;
+
+  const response = await handleAdminBookingsPost(
+    new Request("http://localhost/api/admin/bookings", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-csrf-token": "token",
+      },
+      body: JSON.stringify({
+        vehicleId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        fullName: "Admin Booking Tester",
+        email: "admin-booking@example.com",
+        phone: "+18765550144",
+        startDate: "2099-04-10",
+        endDate: "2099-04-12",
+      }),
+    }),
+    deps,
+  );
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: "Select an insurance option." });
 });
 
 test("admin bookings API: submit still rejects unavailable vehicles after UI prefiltering", async () => {
@@ -248,6 +354,7 @@ test("admin bookings API: submit still rejects unavailable vehicles after UI pre
       queries.push(text);
       if (text === "begin") return { rowCount: 0, rows: [] };
       if (text === "rollback") return { rowCount: 0, rows: [] };
+      if (text.startsWith("select pg_advisory_xact_lock")) return { rowCount: 1, rows: [{}] };
       if (text.includes("select id, year, make, model, daily_rate_cents, deposit_cents")) {
         return {
           rowCount: 1,
@@ -303,6 +410,8 @@ test("admin bookings API: submit still rejects unavailable vehicles after UI pre
     validatePromo: async () => {
       throw new Error("validatePromo should not be reached when vehicle is unavailable");
     },
+    syncPromoRedemption: async () => undefined,
+    buildPricingSnapshot: buildMockPricingSnapshot,
     writeAudit: async () => undefined,
     sendCreatedEmail: async () => undefined,
     sendInternalCreatedNotifications: async () => ({ ok: true, skipped: false, delivered: 0, errors: [] }),
@@ -325,6 +434,7 @@ test("admin bookings API: submit still rejects unavailable vehicles after UI pre
         endDate: "2099-04-12",
         pickupLocation: "Norman Manley Airport",
         dropoffLocation: "Norman Manley Airport",
+        insuranceSelected: false,
       }),
     }),
     deps,
@@ -386,6 +496,8 @@ test("admin bookings API: submit rejects soft-deleted vehicles even if posted di
     validatePromo: async () => {
       throw new Error("validatePromo should not be reached when vehicle is not bookable");
     },
+    syncPromoRedemption: async () => undefined,
+    buildPricingSnapshot: buildMockPricingSnapshot,
     writeAudit: async () => undefined,
     sendCreatedEmail: async () => undefined,
     sendInternalCreatedNotifications: async () => ({ ok: true, skipped: false, delivered: 0, errors: [] }),
@@ -408,6 +520,7 @@ test("admin bookings API: submit rejects soft-deleted vehicles even if posted di
         endDate: "2099-04-12",
         pickupLocation: "Norman Manley Airport",
         dropoffLocation: "Norman Manley Airport",
+        insuranceSelected: false,
       }),
     }),
     deps,
@@ -424,6 +537,7 @@ test("admin bookings API: create still succeeds when audit logging fails after c
     async query(text: string, params?: unknown[]) {
       queries.push(text);
       if (text === "begin" || text === "commit") return { rowCount: 0, rows: [] };
+      if (text.startsWith("select pg_advisory_xact_lock")) return { rowCount: 1, rows: [{}] };
       if (text.includes("select id, year, make, model, daily_rate_cents, deposit_cents")) {
         return {
           rowCount: 1,
@@ -484,6 +598,8 @@ test("admin bookings API: create still succeeds when audit logging fails after c
       created: true,
     }),
     validatePromo: async () => ({ ok: true, discountAmountCents: 0, promoId: null }),
+    syncPromoRedemption: async () => undefined,
+    buildPricingSnapshot: buildMockPricingSnapshot,
     writeAudit: async () => {
       throw new Error("audit unavailable");
     },
@@ -508,6 +624,7 @@ test("admin bookings API: create still succeeds when audit logging fails after c
         endDate: "2099-04-12",
         pickupLocation: "Norman Manley Airport",
         dropoffLocation: "Norman Manley Airport",
+        insuranceSelected: false,
       }),
     }),
     deps,
@@ -521,9 +638,12 @@ test("admin bookings API: create still succeeds when audit logging fails after c
 
 test("admin bookings API: persists structured pickup and dropoff location details", async () => {
   let insertParams: unknown[] | undefined;
+  let pricingInput: Parameters<AdminBookingsPostRouteDeps["buildPricingSnapshot"]>[0] | null =
+    null;
   const client = {
     async query(text: string, params?: unknown[]) {
       if (text === "begin" || text === "commit") return { rowCount: 0, rows: [] };
+      if (text.startsWith("select pg_advisory_xact_lock")) return { rowCount: 1, rows: [{}] };
       if (text.includes("select id, year, make, model, daily_rate_cents, deposit_cents")) {
         return {
           rowCount: 1,
@@ -660,6 +780,11 @@ test("admin bookings API: persists structured pickup and dropoff location detail
       created: true,
     }),
     validatePromo: async () => ({ ok: true, discountAmountCents: 0, promoId: null }),
+    syncPromoRedemption: async () => undefined,
+    buildPricingSnapshot: async (input, options) => {
+      pricingInput = input;
+      return buildMockPricingSnapshot(input, options);
+    },
     writeAudit: async () => undefined,
     sendCreatedEmail: async () => undefined,
     sendInternalCreatedNotifications: async () => ({ ok: true, skipped: false, delivered: 0, errors: [] }),
@@ -703,6 +828,9 @@ test("admin bookings API: persists structured pickup and dropoff location detail
             address: "Return Address entered",
           },
         },
+        insuranceSelected: true,
+        insurancePlanId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        promoCode: "SAVE10",
       }),
     }),
     deps,
@@ -720,8 +848,17 @@ test("admin bookings API: persists structured pickup and dropoff location detail
   assert.equal(insertParams?.[11], null);
   assert.equal(insertParams?.[12], "Norman Manley Airport");
   assert.equal(insertParams?.[13], "Return Address entered");
+  assert.equal(insertParams?.[14], true);
+  assert.equal(insertParams?.[15], "dddddddd-dddd-4ddd-8ddd-dddddddddddd");
+  assert.equal(insertParams?.[16], 2000);
+  assert.equal(insertParams?.[17], 4000);
+  assert.equal(pricingInput?.customerId, "cccccccc-cccc-4ccc-8ccc-cccccccccccc");
+  assert.equal(pricingInput?.customerEmail, "admin-booking@example.com");
+  assert.equal(pricingInput?.insuranceEnabled, true);
+  assert.equal(pricingInput?.insurancePlanId, "dddddddd-dddd-4ddd-8ddd-dddddddddddd");
+  assert.equal(pricingInput?.promoCode, "SAVE10");
 
-  const pricing = insertParams?.[14] as Record<string, unknown>;
+  const pricing = insertParams?.[18] as Record<string, unknown>;
   const details = pricing.booking_location_details as {
     pickup: Record<string, unknown>;
     dropoff: Record<string, unknown>;
@@ -731,6 +868,10 @@ test("admin bookings API: persists structured pickup and dropoff location detail
   assert.equal(details.pickup.flightNumber, "JM201");
   assert.equal(details.dropoff.type, "CUSTOM_ADDRESS");
   assert.equal(details.dropoff.address, "Return Address entered");
+  assert.equal(pricing.insurance_selected, true);
+  assert.equal(pricing.insurance_total_cents, 4000);
+  assert.equal(pricing.promo_code, "SAVE10");
+  assert.equal(pricing.promo_discount_cents, 1000);
   assert.match(String(notes[0]?.message ?? ""), /Booking location details/i);
 });
 
