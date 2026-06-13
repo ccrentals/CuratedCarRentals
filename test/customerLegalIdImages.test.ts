@@ -61,6 +61,7 @@ test("customer private-file APIs require auth, CSRF, ownership scoping, and safe
 
 test("customer profile appends uploads and related bookings show the shared library", () => {
   const manager = read("src/components/admin/CustomerLegalIdImagesManager.tsx");
+  const profileForm = read("src/components/admin/CustomerProfileForm.tsx");
   const customerPage = read("src/app/admin/(protected)/customers/[id]/page.tsx");
   const bookingPage = read("src/app/admin/(protected)/bookings/[id]/page.tsx");
   const bookingClient = read("src/components/admin/AdminBookingDetailClient.tsx");
@@ -69,8 +70,34 @@ test("customer profile appends uploads and related bookings show the shared libr
   assert.match(manager, /Upload ID images/);
   assert.match(manager, /window\.confirm/);
   assert.match(customerPage, /CustomerLegalIdImagesManager/);
+  assert.ok(profileForm.indexOf("{children}") < profileForm.indexOf("Save profile"));
+  assert.ok(
+    customerPage.indexOf("<CustomerProfileForm") <
+      customerPage.indexOf("<CustomerLegalIdImagesManager"),
+  );
+  assert.ok(
+    customerPage.indexOf("Last booked:") <
+      customerPage.indexOf("</CustomerProfileForm>"),
+  );
   assert.match(bookingPage, /where bpf\.customer_id = \$1/);
   assert.match(bookingClient, /initialItems=\{customerIdImages\}/);
+});
+
+test("Netlify runs migrations only for production deploys", () => {
+  const config = read("netlify.toml");
+
+  assert.match(
+    config,
+    /\[context\.production\]\s+command = "npm run migrate && npm run build"/,
+  );
+  assert.match(
+    config,
+    /\[context\.deploy-preview\]\s+command = "npm run build"/,
+  );
+  assert.match(
+    config,
+    /\[context\.branch-deploy\]\s+command = "npm run build"/,
+  );
 });
 
 test("future booking wizard private files store customer ownership and normalized tags", () => {
