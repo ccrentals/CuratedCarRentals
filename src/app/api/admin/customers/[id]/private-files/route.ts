@@ -1,0 +1,294 @@
+import { NextResponse } from "next/server";
+
+import { writeAuditLog } from "@/lib/audit";
+import { requireOperationsAccess } from "@/lib/auth/adminGuards";
+import {
+  CUSTOMER_ID_IMAGE_POLICY,
+  CUSTOMER_PRIVATE_FILE_DOCUMENT_TYPE,
+  type CustomerPrivateFileRow,
+} from "@/lib/customers/privateFiles";
+import { dbQuery, getDbPool } from "@/lib/db";
+import { logError } from "@/lib/log";
+import { requireCsrf } from "@/lib/security/csrf";
+import {
+  extractUploadcareFileId,
+  UploadcareFileValidationError,
+  validateUploadcareFiles,
+} from "@/lib/uploads/uploadcare";
+import { writeMediaAudit } from "@/lib/uploads/mediaAudit";
+
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+type CustomerRow = {
+  id: string;
+  public_id: string | null;
+};
+
+function jsonNoStore(payload: Record<string, unknown>, status = 200) {
+  return NextResponse.json(payload, {
+    status,
+    headers: { "cache-control": "no-store" },
+  });
+}
+
+function mapFile(row: CustomerPrivateFileRow) {
+  const metadata = row.metadata_json ?? {};
+  return {
+    id: row.id,
+    customerId: row.customer_id,
+    bookingId: row.booking_id,
+    bookingPublicId: row.booking_public_id,
+    documentType: row.document_type,
+    originalFileName: row.original_file_name,
+    mimeType: row.mime_type,
+    byteSize: row.byte_size,
+    source:
+      typeof metadata.source === "string" ? metadata.source : row.booking_id ? "booking" : "profile",
+    createdAt: row.created_at,
+    openUrl: `/api/admin/customers/${encodeURIComponent(row.customer_id)}/private-files/${encodeURIComponent(row.id)}`,
+  };
+}
+
+async function loadCustomerFiles(customerId: string) {
+  const result = await dbQuery<CustomerPrivateFileRow>(
+    `select
+       bpf.id,
+       bpf.customer_id,
+       bpf.booking_id,
+       b.public_id as booking_public_id,
+       bpf.document_type,
+       bpf.storage_provider,
+       bpf.storage_key,
+       bpf.original_file_name,
+       bpf.mime_type,
+       bpf.byte_size,
+       bpf.metadata_json,
+       bpf.created_by_user_id,
+       bpf.created_at
+     from booking_private_files bpf
+     left join bookings b on b.id = bpf.booking_id
+     where bpf.customer_id = $1::uuid
+       and bpf.document_type = $2
+     order by bpf.created_at desc, bpf.id desc`,
+    [customerId, CUSTOMER_PRIVATE_FILE_DOCUMENT_TYPE],
+  );
+  return result.rows;
+}
+
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const auth = await requireOperationsAccess();
+  if (!auth.ok) return auth.response;
+
+  const { id: customerId } = await params;
+  if (!UUID_REGEX.test(customerId)) {
+    return jsonNoStore({ ok: false, error: "Invalid customer ID." }, 400);
+  }
+
+  try {
+    const customer = await dbQuery<{ id: string }>(
+      "select id from customers where id = $1::uuid limit 1",
+      [customerId],
+    );
+    if (!customer.rows[0]) {
+      return jsonNoStore({ ok: false, error: "Customer not found." }, 404);
+    }
+    const files = await loadCustomerFiles(customerId);
+    return jsonNoStore({ ok: true, items: files.map(mapFile) });
+  } catch (error) {
+    logError("api.admin.customers.private-files.GET", error, {
+      customerId,
+      userId: auth.actor.userId,
+    });
+    return jsonNoStore({ ok: false, error: "Failed to load customer ID images." }, 500);
+  }
+}
+
+export async function POST(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const auth = await requireOperationsAccess();
+  if (!auth.ok) return auth.response;
+
+  const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+  if (!(await requireCsrf(request, typeof body?.csrfToken === "string" ? body.csrfToken : null))) {
+    return jsonNoStore({ ok: false, error: "Invalid CSRF token." }, 403);
+  }
+
+  const { id: customerId } = await params;
+  if (!UUID_REGEX.test(customerId)) {
+    return jsonNoStore({ ok: false, error: "Invalid customer ID." }, 400);
+  }
+
+  const rawReferences = Array.isArray(body?.files)
+    ? body.files
+    : Array.isArray(body?.fileIds)
+      ? body.fileIds
+      : [];
+  const references = rawReferences
+    .map((value) => extractUploadcareFileId(value))
+    .filter((value): value is string => Boolean(value));
+  if (references.length === 0 || references.length !== rawReferences.length) {
+    return jsonNoStore({ ok: false, error: "Select at least one valid ID image." }, 400);
+  }
+
+  try {
+    const metadata = await validateUploadcareFiles(references, CUSTOMER_ID_IMAGE_POLICY);
+    const pool = getDbPool();
+    const client = await pool.connect();
+    const insertedRows: CustomerPrivateFileRow[] = [];
+    let customerPublicId: string | null = null;
+    try {
+      await client.query("begin");
+      const customerResult = (await client.query(
+        "select id, public_id from customers where id = $1::uuid for update",
+        [customerId],
+      )) as { rows: CustomerRow[] };
+      const customer = customerResult.rows[0];
+      if (!customer) {
+        await client.query("rollback");
+        return jsonNoStore({ ok: false, error: "Customer not found." }, 404);
+      }
+      customerPublicId = customer.public_id;
+
+      const duplicateResult = (await client.query(
+        `select storage_key
+         from booking_private_files
+         where customer_id = $1::uuid
+           and document_type = $2
+           and storage_key = any($3::text[])`,
+        [customerId, CUSTOMER_PRIVATE_FILE_DOCUMENT_TYPE, references],
+      )) as { rows: Array<{ storage_key: string }> };
+      if (duplicateResult.rows.length > 0) {
+        await client.query("rollback");
+        return jsonNoStore(
+          { ok: false, error: "One or more selected images are already attached to this customer." },
+          409,
+        );
+      }
+
+      for (const file of metadata) {
+        const uploadedAt = new Date().toISOString();
+        const insertResult = (await client.query(
+          `insert into booking_private_files (
+             customer_id,
+             booking_id,
+             document_type,
+             storage_provider,
+             storage_key,
+             original_file_name,
+             mime_type,
+             byte_size,
+             metadata_json,
+             created_by_user_id
+           ) values (
+             $1::uuid,
+             null,
+             $2,
+             'UPLOADCARE_FILE_ID',
+             $3,
+             $4,
+             $5,
+             $6,
+             $7::jsonb,
+             $8::uuid
+           )
+           returning
+             id,
+             customer_id,
+             booking_id,
+             null::text as booking_public_id,
+             document_type,
+             storage_provider,
+             storage_key,
+             original_file_name,
+             mime_type,
+             byte_size,
+             metadata_json,
+             created_by_user_id,
+             created_at`,
+          [
+            customerId,
+            CUSTOMER_PRIVATE_FILE_DOCUMENT_TYPE,
+            file.uuid,
+            file.originalFilename,
+            file.mimeType,
+            file.size,
+            JSON.stringify({
+              customerId,
+              customerPublicId,
+              documentType: CUSTOMER_PRIVATE_FILE_DOCUMENT_TYPE,
+              source: "admin_customer_profile",
+              bookingId: null,
+              bookingPublicId: null,
+              uploadedByUserId: auth.actor.userId,
+              uploadedAt,
+              originalFileName: file.originalFilename,
+              mimeType: file.mimeType,
+              byteSize: file.size,
+            }),
+            auth.actor.userId,
+          ],
+        )) as { rows: CustomerPrivateFileRow[] };
+        insertedRows.push(insertResult.rows[0]);
+      }
+      await client.query("commit");
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    for (const row of insertedRows) {
+      try {
+        await writeMediaAudit({
+          userId: auth.actor.userId,
+          action: "MEDIA_UPLOAD",
+          entityType: "customer",
+          entityId: customerId,
+          fileId: row.storage_key,
+          context: "customer legal identification",
+          label: row.original_file_name,
+          outcome: "Saved to customer profile",
+          details: {
+            privateFileId: row.id,
+            customerPublicId,
+            documentType: CUSTOMER_PRIVATE_FILE_DOCUMENT_TYPE,
+          },
+        });
+      } catch (auditError) {
+        logError("api.admin.customers.private-files.POST.audit", auditError, {
+          customerId,
+          privateFileId: row.id,
+        });
+      }
+    }
+
+    return jsonNoStore({ ok: true, items: insertedRows.map(mapFile) }, 201);
+  } catch (error) {
+    if (error instanceof UploadcareFileValidationError) {
+      return jsonNoStore({ ok: false, error: error.message }, error.status);
+    }
+    logError("api.admin.customers.private-files.POST", error, {
+      customerId,
+      userId: auth.actor.userId,
+    });
+    try {
+      await writeAuditLog({
+        userId: auth.actor.userId,
+        action: "CUSTOMER_PRIVATE_FILE_UPLOAD_FAILED",
+        entityType: "customer",
+        entityId: customerId,
+        details: { documentType: CUSTOMER_PRIVATE_FILE_DOCUMENT_TYPE },
+      });
+    } catch {
+      // Preserve the primary upload error.
+    }
+    return jsonNoStore({ ok: false, error: "Failed to save customer ID images." }, 500);
+  }
+}

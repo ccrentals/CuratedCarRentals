@@ -11,7 +11,9 @@ import { formatJmd } from "@/lib/money";
 import { CustomerProfileForm } from "@/components/admin/CustomerProfileForm";
 import { formatLegalIdTypeLabel } from "@/lib/customers/legalId";
 import { CustomerBlockToggleButton } from "@/components/admin/CustomerBlockToggleButton";
+import { CustomerLegalIdImagesManager } from "@/components/admin/CustomerLegalIdImagesManager";
 import { buttonStyles } from "@/components/ui/Button";
+import type { CustomerPrivateFileItem } from "@/lib/customers/privateFiles";
 
 type CustomerRow = {
   id: string;
@@ -43,9 +45,14 @@ type CustomerRow = {
 
 type CustomerPrivateDocRow = {
   id: string;
-  booking_id: string;
+  customer_id: string;
+  booking_id: string | null;
   booking_public_id: string | null;
   document_type: string;
+  original_file_name: string | null;
+  mime_type: string | null;
+  byte_size: number | null;
+  metadata_json: Record<string, unknown> | null;
   created_at: string;
 };
 
@@ -153,18 +160,50 @@ export default async function AdminCustomerDetailPage({
     notFound();
   }
 
-  const driversLicenseDocuments: CustomerPrivateDocRow[] = [];
+  const driversLicenseDocuments: CustomerPrivateFileItem[] = [];
   let latestSignatureBookingId: string | null = null;
   try {
     const privateDocsResult = await dbQuery<CustomerPrivateDocRow>(
-      "select bpf.id, bpf.booking_id, b.public_id as booking_public_id, bpf.document_type, bpf.created_at from booking_private_files bpf join bookings b on b.id = bpf.booking_id where b.customer_id = $1 and bpf.document_type in ('DRIVERS_LICENSE', 'SIGNATURE') order by bpf.created_at desc",
+      `select
+         bpf.id,
+         bpf.customer_id,
+         bpf.booking_id,
+         b.public_id as booking_public_id,
+         bpf.document_type,
+         bpf.original_file_name,
+         bpf.mime_type,
+         bpf.byte_size,
+         bpf.metadata_json,
+         bpf.created_at
+       from booking_private_files bpf
+       left join bookings b on b.id = bpf.booking_id
+       where bpf.customer_id = $1
+         and bpf.document_type in ('DRIVERS_LICENSE', 'SIGNATURE')
+       order by bpf.created_at desc`,
       [id],
     );
     for (const row of privateDocsResult.rows as CustomerPrivateDocRow[]) {
       if (row.document_type === "DRIVERS_LICENSE") {
-        driversLicenseDocuments.push(row);
+        driversLicenseDocuments.push({
+          id: row.id,
+          customerId: row.customer_id,
+          bookingId: row.booking_id,
+          bookingPublicId: row.booking_public_id,
+          documentType: row.document_type,
+          originalFileName: row.original_file_name,
+          mimeType: row.mime_type,
+          byteSize: row.byte_size,
+          source:
+            typeof row.metadata_json?.source === "string"
+              ? row.metadata_json.source
+              : row.booking_id
+                ? "booking"
+                : "profile",
+          createdAt: row.created_at,
+          openUrl: `/api/admin/customers/${row.customer_id}/private-files/${row.id}`,
+        });
       }
-      if (row.document_type === "SIGNATURE" && !latestSignatureBookingId) {
+      if (row.document_type === "SIGNATURE" && row.booking_id && !latestSignatureBookingId) {
         latestSignatureBookingId = row.booking_id;
       }
     }
@@ -255,46 +294,23 @@ export default async function AdminCustomerDetailPage({
             </p>
             <p className="mt-1">Number: {customerRow.legal_id_number || "Not provided"}</p>
             <p className="mt-1">Driver&apos;s License Number: {customerRow.drivers_license_number || "Not provided"}</p>
-            {driversLicenseDocuments.length > 0 || latestSignatureBookingId ? (
-              <div className="mt-3 space-y-3">
-                {driversLicenseDocuments.length > 0 ? (
-                  <div>
-                    <p className="font-semibold text-[var(--ccr-text)]">
-                      Driver&apos;s license images ({driversLicenseDocuments.length})
-                    </p>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {driversLicenseDocuments.map((document, index) => (
-                        <a
-                          key={document.id}
-                          href={`/admin/bookings/${document.booking_id}/private-files/DRIVERS_LICENSE?fileId=${document.id}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          title={`Uploaded ${new Date(document.created_at).toLocaleString()}`}
-                          className={buttonStyles({
-                            variant: "secondary",
-                            size: "sm",
-                          })}
-                        >
-                          License image {driversLicenseDocuments.length - index}
-                          {document.booking_public_id ? ` · ${document.booking_public_id}` : ""}
-                        </a>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-                {latestSignatureBookingId ? (
-                  <a
-                    href={`/admin/bookings/${latestSignatureBookingId}/private-files/SIGNATURE`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className={buttonStyles({
-                      variant: "secondary",
-                      size: "sm",
-                    })}
-                  >
-                    View secure signature file
-                  </a>
-                ) : null}
+            <CustomerLegalIdImagesManager
+              customerId={customerRow.id}
+              initialItems={driversLicenseDocuments}
+            />
+            {latestSignatureBookingId ? (
+              <div className="mt-3">
+                <a
+                  href={`/admin/bookings/${latestSignatureBookingId}/private-files/SIGNATURE`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className={buttonStyles({
+                    variant: "secondary",
+                    size: "sm",
+                  })}
+                >
+                  View secure signature file
+                </a>
               </div>
             ) : null}
           </div>

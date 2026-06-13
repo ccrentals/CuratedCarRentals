@@ -624,7 +624,7 @@ export async function POST(request: Request) {
     const pricing = appendBookingLocationNote(pricingBase, bookingLocationDetails);
 
     const bookingInsert = await client.query(
-      "insert into bookings (vehicle_id, customer_id, start_date, end_date, start_at, end_at, pickup_time, dropoff_time, pickup_location, dropoff_location, pickup_location_id, dropoff_location_id, pickup_location_text_snapshot, dropoff_location_text_snapshot, insurance_selected, insurance_plan_id, insurance_price_per_day_cents, insurance_total_cents, payment_option, custom_payment_amount_cents, drivers_license_number, drivers_license_expiration_date, drivers_license_uploaded_at, signature_signed_at, status, pricing_json) values ($1, $2, $3, $4, $5, $6, $7::time, $8::time, $9, $10, $11::uuid, $12::uuid, $13, $14, $15, $16::uuid, $17, $18, $19, $20, $21, $22::date, $23, $24, 'PENDING_PAYMENT', $25) returning id, status",
+      "insert into bookings (vehicle_id, customer_id, start_date, end_date, start_at, end_at, pickup_time, dropoff_time, pickup_location, dropoff_location, pickup_location_id, dropoff_location_id, pickup_location_text_snapshot, dropoff_location_text_snapshot, insurance_selected, insurance_plan_id, insurance_price_per_day_cents, insurance_total_cents, payment_option, custom_payment_amount_cents, drivers_license_number, drivers_license_expiration_date, drivers_license_uploaded_at, signature_signed_at, status, pricing_json) values ($1, $2, $3, $4, $5, $6, $7::time, $8::time, $9, $10, $11::uuid, $12::uuid, $13, $14, $15, $16::uuid, $17, $18, $19, $20, $21, $22::date, $23, $24, 'PENDING_PAYMENT', $25) returning id, public_id, status",
       [
         vehicleId,
         customerUpsert.customerId,
@@ -653,18 +653,37 @@ export async function POST(request: Request) {
         pricing,
       ],
     );
+    const customerPublicId =
+      (
+        await client.query(
+          "select public_id from customers where id = $1::uuid limit 1",
+          [customerUpsert.customerId],
+        )
+      ).rows[0]?.public_id ?? null;
+    const privateFileUploadedAt = new Date().toISOString();
 
     if (hasDriversLicenseDataUrl) {
       for (const [index, parsedDriversLicenseImage] of parsedDriversLicenseImages.entries()) {
         if (!parsedDriversLicenseImage) continue;
         await client.query(
-          "insert into booking_private_files (booking_id, document_type, storage_provider, storage_key, mime_type, metadata_json) values ($1, 'DRIVERS_LICENSE', 'DATA_URL', $2, $3, $4::jsonb)",
+          "insert into booking_private_files (customer_id, booking_id, document_type, storage_provider, storage_key, mime_type, metadata_json) values ($1, $2, 'DRIVERS_LICENSE', 'DATA_URL', $3, $4, $5::jsonb)",
           [
+            customerUpsert.customerId,
             bookingInsert.rows[0].id,
             parsedDriversLicenseImage.normalizedDataUrl,
             parsedDriversLicenseImage.mimeType,
             JSON.stringify({
+              customerId: customerUpsert.customerId,
+              customerPublicId,
+              documentType: "DRIVERS_LICENSE",
               source: "public_booking_wizard",
+              bookingId: bookingInsert.rows[0].id,
+              bookingPublicId: bookingInsert.rows[0].public_id,
+              uploadedByUserId: null,
+              uploadedAt: privateFileUploadedAt,
+              originalFileName: null,
+              mimeType: parsedDriversLicenseImage.mimeType,
+              byteSize: parsedDriversLicenseImage.bytes.length,
               fallback: "inline_data_url",
               imageIndex: index + 1,
               imageCount: parsedDriversLicenseImages.length,
@@ -677,12 +696,20 @@ export async function POST(request: Request) {
       }
     } else if (driversLicenseFileId) {
       await client.query(
-        "insert into booking_private_files (booking_id, document_type, storage_provider, storage_key, mime_type, metadata_json) values ($1, 'DRIVERS_LICENSE', 'UPLOADCARE_FILE_ID', $2, null, $3::jsonb)",
+        "insert into booking_private_files (customer_id, booking_id, document_type, storage_provider, storage_key, mime_type, metadata_json) values ($1, $2, 'DRIVERS_LICENSE', 'UPLOADCARE_FILE_ID', $3, null, $4::jsonb)",
         [
+          customerUpsert.customerId,
           bookingInsert.rows[0].id,
           driversLicenseFileId,
           JSON.stringify({
+            customerId: customerUpsert.customerId,
+            customerPublicId,
+            documentType: "DRIVERS_LICENSE",
             source: "public_booking_wizard",
+            bookingId: bookingInsert.rows[0].id,
+            bookingPublicId: bookingInsert.rows[0].public_id,
+            uploadedByUserId: null,
+            uploadedAt: privateFileUploadedAt,
             driversLicenseNumberTail: hasDriversLicenseNumber ? driversLicenseNumber.slice(-4) : null,
           }),
         ],
@@ -691,14 +718,22 @@ export async function POST(request: Request) {
 
     if (signatureDataUrl) {
       await client.query(
-        "insert into booking_private_files (booking_id, document_type, storage_provider, storage_key, mime_type, metadata_json) values ($1, 'SIGNATURE', 'DATA_URL', $2, $3, $4::jsonb)",
+        "insert into booking_private_files (customer_id, booking_id, document_type, storage_provider, storage_key, mime_type, metadata_json) values ($1, $2, 'SIGNATURE', 'DATA_URL', $3, $4, $5::jsonb)",
         [
+          customerUpsert.customerId,
           bookingInsert.rows[0].id,
           parsedSignatureImage.normalizedDataUrl,
           parsedSignatureImage.mimeType,
           JSON.stringify({
+            customerId: customerUpsert.customerId,
+            customerPublicId,
+            documentType: "SIGNATURE",
             source: "public_booking_wizard",
-            capturedAt: new Date().toISOString(),
+            bookingId: bookingInsert.rows[0].id,
+            bookingPublicId: bookingInsert.rows[0].public_id,
+            uploadedByUserId: null,
+            uploadedAt: privateFileUploadedAt,
+            capturedAt: privateFileUploadedAt,
           }),
         ],
       );

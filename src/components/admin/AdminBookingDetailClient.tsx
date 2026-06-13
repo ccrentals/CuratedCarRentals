@@ -8,6 +8,7 @@ import { BookingActions } from "@/components/admin/BookingActions";
 import { BookingNotes } from "@/components/admin/BookingNotes";
 import { BookingUpdateForm } from "@/components/admin/BookingUpdateForm";
 import { InfoTooltipIcon } from "@/components/admin/InfoTooltipIcon";
+import { CustomerLegalIdImagesManager } from "@/components/admin/CustomerLegalIdImagesManager";
 import { ManualPaymentForm } from "@/components/admin/ManualPaymentForm";
 import { PaymentRowActions } from "@/components/admin/PaymentRowActions";
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
@@ -20,6 +21,7 @@ import type {
   AdminBookingDetailViewModel,
   AdminBookingPaymentRow,
 } from "@/lib/bookings/adminBookingDetailView";
+import type { CustomerPrivateFileItem } from "@/lib/customers/privateFiles";
 
 type AdminBookingActionPromoOption = {
   id: string;
@@ -42,6 +44,7 @@ type AdminBookingActionInsuranceOption = {
 type AdminBookingDetailClientProps = {
   initialDetail: AdminBookingDetailViewModel;
   customerId: string;
+  customerIdImages: CustomerPrivateFileItem[];
   canAdmin: boolean;
   requireRestoreReason: boolean;
   promoOptions: AdminBookingActionPromoOption[];
@@ -129,6 +132,7 @@ function StructuredLocationSide({
 export function AdminBookingDetailClient({
   initialDetail,
   customerId,
+  customerIdImages,
   canAdmin,
   requireRestoreReason,
   promoOptions,
@@ -347,18 +351,8 @@ export function AdminBookingDetailClient({
               <p className="font-normal text-[var(--ccr-muted)]">
                 {detail.customer.driversLicenseNumber}
               </p>
-              {detail.customer.hasDriversLicenseDoc || detail.customer.hasSignatureDoc ? (
+              {detail.customer.hasSignatureDoc ? (
                 <div className="mt-2 flex flex-wrap items-center gap-4 text-xs font-semibold">
-                  {detail.customer.hasDriversLicenseDoc ? (
-                    <a
-                      href={`/admin/bookings/${detail.bookingId}/private-files/DRIVERS_LICENSE`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-[var(--ccr-accent)] transition-colors hover:text-[var(--ccr-text)]"
-                    >
-                      View ID
-                    </a>
-                  ) : null}
                   {detail.customer.hasSignatureDoc ? (
                     <a
                       href={`/admin/bookings/${detail.bookingId}/private-files/SIGNATURE`}
@@ -371,6 +365,12 @@ export function AdminBookingDetailClient({
                   ) : null}
                 </div>
               ) : null}
+              <CustomerLegalIdImagesManager
+                customerId={customerId}
+                initialItems={customerIdImages}
+                readOnly
+                compact
+              />
             </div>
             <div>
               <p className="text-xs font-bold uppercase text-[var(--ccr-text)]">Vehicle</p>

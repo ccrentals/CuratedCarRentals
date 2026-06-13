@@ -38,7 +38,7 @@ type MediaAuditRow = {
 export async function writeMediaAudit(input: {
   userId?: string | null;
   action: MediaAuditAction;
-  entityType: "vehicle" | "booking" | "uploadcare_file";
+  entityType: "vehicle" | "booking" | "customer" | "uploadcare_file";
   entityId?: string;
   fileId?: string | null;
   context: string;
@@ -63,7 +63,7 @@ export async function writeMediaAudit(input: {
 }
 
 export async function loadMediaAuditHistory(input: {
-  entityType: "vehicle" | "booking";
+  entityType: "vehicle" | "booking" | "customer";
   entityId: string;
   limit?: number;
 }): Promise<MediaAuditActivity[]> {
