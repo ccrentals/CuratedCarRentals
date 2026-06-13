@@ -146,6 +146,7 @@ export async function POST(
       baseTotalCents: currentSummary.baseTotal,
       customerId: booking.customer_id,
       customerEmail: booking.customer_email,
+      excludeBookingId: booking.id,
       client,
     });
 

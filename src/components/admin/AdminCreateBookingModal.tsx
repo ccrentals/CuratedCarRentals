@@ -39,11 +39,32 @@ type VehicleOption = {
 type PricingPreview = {
   days: number;
   dailyRateCents: number;
+  baseTotalCents: number;
+  insuranceSelected: boolean;
+  insurancePlanId: string | null;
+  insurancePricePerDayCents: number;
+  insuranceTotalCents: number;
   subtotalCents: number;
+  promoCode: string | null;
   promoDiscountCents: number;
   totalCents: number;
   depositRequiredCents: number;
+  amountDueCents: number;
+  dueNowCents: number;
+  balanceDueCents: number;
+  rateBreakdown: Array<{
+    date: string;
+    dailyRateCents: number;
+    source: "base" | "weekend" | "date_override";
+  }>;
   currency: "JMD";
+};
+
+type InsuranceOption = {
+  enabled: boolean;
+  planId: string | null;
+  pricePerDayCents: number;
+  coverageCents: number;
 };
 
 type AdminCreateBookingModalProps = {
@@ -101,6 +122,17 @@ export function AdminCreateBookingModal({
   const [dropoffLocationValues, setDropoffLocationValues] = useState<BookingLocationFieldValueMap>({});
   const [dropoffLocationManuallyEdited, setDropoffLocationManuallyEdited] = useState(false);
   const [vehicleId, setVehicleId] = useState("");
+  const [protectionChoice, setProtectionChoice] = useState<"" | "NONE" | "STANDARD">("");
+  const [insuranceOption, setInsuranceOption] = useState<InsuranceOption>({
+    enabled: false,
+    planId: null,
+    pricePerDayCents: 0,
+    coverageCents: 0,
+  });
+  const [insuranceLoading, setInsuranceLoading] = useState(false);
+  const [insuranceError, setInsuranceError] = useState<string | null>(null);
+  const [promoCodeInput, setPromoCodeInput] = useState("");
+  const [appliedPromoCode, setAppliedPromoCode] = useState("");
   const [fullName, setFullName] = useState(initialCustomer?.fullName ?? "");
   const [email, setEmail] = useState(initialCustomer?.email ?? "");
   const [phone, setPhone] = useState(initialCustomer?.phone ?? "");
@@ -449,7 +481,71 @@ export function AdminCreateBookingModal({
   }, [datesValid, endDate, open, startDate]);
 
   useEffect(() => {
-    if (!open || !datesValid || !vehicleId) {
+    if (!open || !vehicleId) {
+      setInsuranceOption({
+        enabled: false,
+        planId: null,
+        pricePerDayCents: 0,
+        coverageCents: 0,
+      });
+      setInsuranceError(null);
+      setInsuranceLoading(false);
+      setProtectionChoice("");
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadInsurance() {
+      setInsuranceLoading(true);
+      setInsuranceError(null);
+
+      try {
+        const response = await fetch(
+          `/api/public/insurance?vehicleId=${encodeURIComponent(vehicleId)}`,
+          { cache: "no-store" },
+        );
+        const payload = (await response.json().catch(() => ({}))) as {
+          insurance?: InsuranceOption;
+          error?: string;
+        };
+        if (!response.ok || !payload.insurance) {
+          throw new Error(payload.error ?? "Unable to load insurance options.");
+        }
+
+        if (cancelled) return;
+        setInsuranceOption(payload.insurance);
+        setProtectionChoice("");
+      } catch (requestError) {
+        if (cancelled) return;
+        setInsuranceOption({
+          enabled: false,
+          planId: null,
+          pricePerDayCents: 0,
+          coverageCents: 0,
+        });
+        setProtectionChoice("");
+        setInsuranceError(
+          requestError instanceof Error
+            ? requestError.message
+            : "Unable to load insurance options.",
+        );
+      } finally {
+        if (!cancelled) {
+          setInsuranceLoading(false);
+        }
+      }
+    }
+
+    void loadInsurance();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, vehicleId]);
+
+  useEffect(() => {
+    if (!open || !datesValid || !vehicleId || !protectionChoice) {
       setPreview(null);
       setPreviewError(null);
       setPreviewLoading(false);
@@ -463,7 +559,24 @@ export function AdminCreateBookingModal({
       setPreviewError(null);
 
       try {
-        const params = new URLSearchParams({ vehicleId, startDate, endDate });
+        const params = new URLSearchParams({
+          vehicleId,
+          startDate,
+          endDate,
+          insuranceSelected: String(protectionChoice === "STANDARD"),
+        });
+        if (protectionChoice === "STANDARD" && insuranceOption.planId) {
+          params.set("insurancePlanId", insuranceOption.planId);
+        }
+        if (appliedPromoCode) {
+          params.set("promoCode", appliedPromoCode);
+        }
+        if (selectedCustomerId) {
+          params.set("customerId", selectedCustomerId);
+        }
+        if (email.trim()) {
+          params.set("customerEmail", email.trim().toLowerCase());
+        }
         const response = await fetch(`/api/admin/bookings/preview?${params.toString()}`, {
           cache: "no-store",
         });
@@ -496,7 +609,18 @@ export function AdminCreateBookingModal({
     return () => {
       cancelled = true;
     };
-  }, [datesValid, endDate, open, startDate, vehicleId]);
+  }, [
+    appliedPromoCode,
+    datesValid,
+    email,
+    endDate,
+    insuranceOption.planId,
+    open,
+    protectionChoice,
+    selectedCustomerId,
+    startDate,
+    vehicleId,
+  ]);
 
   useEffect(() => {
     if (!preview) {
@@ -640,6 +764,23 @@ export function AdminCreateBookingModal({
     setPaymentAmountManuallyEdited(true);
   }
 
+  function handleApplyPromo() {
+    const normalizedCode = promoCodeInput.trim().toUpperCase();
+    if (!normalizedCode) {
+      setPreviewError("Enter a promo code.");
+      return;
+    }
+    setPreviewError(null);
+    setAppliedPromoCode(normalizedCode);
+    setPromoCodeInput(normalizedCode);
+  }
+
+  function handleClearPromo() {
+    setAppliedPromoCode("");
+    setPromoCodeInput("");
+    setPreviewError(null);
+  }
+
   function updatePickupLocationValue(fieldKey: string, value: string) {
     setPickupLocationValues((current) => ({
       ...current,
@@ -663,6 +804,12 @@ export function AdminCreateBookingModal({
     setError(null);
     setPaymentWarning(null);
     setCreatedBookingId(null);
+
+    if (!protectionChoice) {
+      setError("Select No Protection or Standard Protection.");
+      setLoading(false);
+      return;
+    }
 
     const csrfToken = await ensureCsrfToken();
     const pickupLocationError = validateBookingLocationSelection(
@@ -721,6 +868,10 @@ export function AdminCreateBookingModal({
         pickupLocationTextSnapshot: locationSelection.pickupLocationTextSnapshot,
         dropoffLocationTextSnapshot: locationSelection.dropoffLocationTextSnapshot,
         bookingLocationDetails: locationSelection.details,
+        insuranceSelected: protectionChoice === "STANDARD",
+        insurancePlanId:
+          protectionChoice === "STANDARD" ? insuranceOption.planId : null,
+        promoCode: appliedPromoCode || null,
       }),
     });
 
@@ -999,6 +1150,114 @@ export function AdminCreateBookingModal({
                   ) : null}
                 </section>
 
+                <section className="grid gap-4 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                      Insurance coverage
+                    </p>
+                    <p className="mt-1 text-xs text-[var(--ccr-muted)]">
+                      Select a coverage option before creating the booking.
+                    </p>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      onClick={() => setProtectionChoice("NONE")}
+                      aria-pressed={protectionChoice === "NONE"}
+                      className={`min-h-24 rounded-lg border p-3 text-left ${
+                        protectionChoice === "NONE"
+                          ? "border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)]"
+                          : "border-[var(--ccr-border)] bg-[var(--ccr-surface)]"
+                      }`}
+                    >
+                      <span className="block text-sm font-semibold text-[var(--ccr-text)]">
+                        No Protection
+                      </span>
+                      <span className="mt-2 block text-lg font-bold text-[var(--ccr-text)]">
+                        {formatJmd(0)}
+                      </span>
+                      <span className="mt-1 block text-xs text-[var(--ccr-muted)]">
+                        No additional charge
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setProtectionChoice("STANDARD")}
+                      disabled={insuranceLoading || !insuranceOption.enabled}
+                      aria-pressed={protectionChoice === "STANDARD"}
+                      className={`min-h-24 rounded-lg border p-3 text-left disabled:cursor-not-allowed disabled:opacity-60 ${
+                        protectionChoice === "STANDARD"
+                          ? "border-[var(--ccr-accent)] bg-[var(--ccr-surface-soft)]"
+                          : "border-[var(--ccr-border)] bg-[var(--ccr-surface)]"
+                      }`}
+                    >
+                      <span className="block text-sm font-semibold text-[var(--ccr-text)]">
+                        Standard Protection
+                      </span>
+                      <span className="mt-2 block text-lg font-bold text-[var(--ccr-text)]">
+                        {insuranceLoading
+                          ? "Loading..."
+                          : insuranceOption.enabled
+                            ? `${formatJmd(insuranceOption.pricePerDayCents)} / day`
+                            : "Not configured"}
+                      </span>
+                      {insuranceOption.enabled && insuranceOption.coverageCents > 0 ? (
+                        <span className="mt-1 block text-xs text-[var(--ccr-muted)]">
+                          Coverage: {formatJmd(insuranceOption.coverageCents)}
+                        </span>
+                      ) : null}
+                    </button>
+                  </div>
+                  {insuranceError ? <p className="text-xs text-red-600">{insuranceError}</p> : null}
+                </section>
+
+                <section className="grid gap-3 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+                      Promo code
+                    </p>
+                    <p className="mt-1 text-xs text-[var(--ccr-muted)]">
+                      Promo rules are validated against this customer, vehicle, and rental window.
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <input
+                      value={promoCodeInput}
+                      onChange={(event) => setPromoCodeInput(event.target.value.toUpperCase())}
+                      type="text"
+                      placeholder="Enter promo code"
+                      className="min-w-0 flex-1 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleApplyPromo}
+                      className={buttonStyles({ variant: "secondary", size: "sm" })}
+                    >
+                      Apply
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleClearPromo}
+                      disabled={!promoCodeInput && !appliedPromoCode}
+                      className={buttonStyles({ variant: "ghost", size: "sm" })}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                  {appliedPromoCode &&
+                  !previewLoading &&
+                  !previewError &&
+                  preview?.promoCode === appliedPromoCode ? (
+                    <p className="text-xs font-semibold text-[var(--ccr-text)]">
+                      Applied to preview: {appliedPromoCode}
+                    </p>
+                  ) : appliedPromoCode && previewLoading ? (
+                    <p className="text-xs font-semibold text-[var(--ccr-muted)]">
+                      Validating promo: {appliedPromoCode}
+                    </p>
+                  ) : null}
+                </section>
+
                 <section className="grid gap-3 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3 sm:grid-cols-2">
                   <label className="text-xs text-[var(--ccr-muted)] sm:col-span-2">
                     Full name
@@ -1121,9 +1380,9 @@ export function AdminCreateBookingModal({
                     </p>
                   </div>
 
-                  {!vehicleId || !datesValid ? (
+                  {!vehicleId || !datesValid || !protectionChoice ? (
                     <p className="text-sm text-[var(--ccr-muted)]">
-                      Select valid dates and a vehicle to preview pricing.
+                      Select valid dates, a vehicle, and insurance coverage to preview pricing.
                     </p>
                   ) : previewLoading ? (
                     <p className="text-sm text-[var(--ccr-muted)]">Calculating total…</p>
@@ -1144,9 +1403,27 @@ export function AdminCreateBookingModal({
                         <dd className="font-semibold text-[var(--ccr-text)]">{preview.days}</dd>
                       </div>
                       <div className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2">
-                        <dt>Daily rate</dt>
+                        <dt>Average daily rate</dt>
                         <dd className="font-semibold text-[var(--ccr-text)]">
                           {formatJmd(preview.dailyRateCents)}
+                        </dd>
+                      </div>
+                      <div className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2">
+                        <dt>Base rental</dt>
+                        <dd className="font-semibold text-[var(--ccr-text)]">
+                          {formatJmd(preview.baseTotalCents)}
+                        </dd>
+                      </div>
+                      <div className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2">
+                        <dt>Insurance</dt>
+                        <dd className="font-semibold text-[var(--ccr-text)]">
+                          {formatJmd(preview.insuranceTotalCents)}
+                        </dd>
+                      </div>
+                      <div className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2">
+                        <dt>Promo discount{preview.promoCode ? ` (${preview.promoCode})` : ""}</dt>
+                        <dd className="font-semibold text-[var(--ccr-text)]">
+                          -{formatJmd(preview.promoDiscountCents)}
                         </dd>
                       </div>
                       <div className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2">
@@ -1161,12 +1438,42 @@ export function AdminCreateBookingModal({
                           {formatJmd(preview.depositRequiredCents)}
                         </dd>
                       </div>
+                      <div className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2">
+                        <dt>Due now</dt>
+                        <dd className="font-semibold text-[var(--ccr-text)]">
+                          {formatJmd(preview.dueNowCents)}
+                        </dd>
+                      </div>
+                      <div className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2">
+                        <dt>Balance on pickup</dt>
+                        <dd className="font-semibold text-[var(--ccr-text)]">
+                          {formatJmd(preview.balanceDueCents)}
+                        </dd>
+                      </div>
                       <div className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 sm:col-span-2">
                         <dt>Total</dt>
                         <dd className="text-base font-semibold text-[var(--ccr-text)]">
                           {formatJmd(preview.totalCents)}
                         </dd>
                       </div>
+                      {preview.rateBreakdown.length > 0 ? (
+                        <div className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 sm:col-span-2">
+                          <dt>Daily rate breakdown</dt>
+                          <dd className="mt-2 grid gap-1">
+                            {preview.rateBreakdown.map((rate) => (
+                              <span
+                                key={`${rate.date}-${rate.source}`}
+                                className="flex justify-between gap-3 text-xs"
+                              >
+                                <span>{rate.date} · {rate.source.replace("_", " ")}</span>
+                                <span className="font-semibold text-[var(--ccr-text)]">
+                                  {formatJmd(rate.dailyRateCents)}
+                                </span>
+                              </span>
+                            ))}
+                          </dd>
+                        </div>
+                      ) : null}
                     </dl>
                   ) : null}
                 </section>
