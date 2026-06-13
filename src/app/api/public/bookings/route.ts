@@ -16,6 +16,7 @@ import {
   resolveMinimumRentalDays,
 } from "@/lib/adminSettings";
 import { validateMinimumRentalDays } from "@/lib/bookings/minimumRentalDays";
+import { bookingDateTimeToUtcIso } from "@/lib/bookings/bookingDateTime";
 import { isPublicVehicleUnavailableForWindow } from "@/lib/publicVehicles";
 import {
   createBookingAccessToken,
@@ -95,9 +96,9 @@ export function isValidBookingDateTimeWindow(input: {
   pickupTime: string;
   dropoffTime: string;
 }) {
-  const startAt = new Date(`${input.startDate}T${input.pickupTime}:00`);
-  const endAt = new Date(`${input.endDate}T${input.dropoffTime}:00`);
-  return !Number.isNaN(startAt.getTime()) && !Number.isNaN(endAt.getTime()) && endAt > startAt;
+  const startAt = bookingDateTimeToUtcIso(input.startDate, input.pickupTime);
+  const endAt = bookingDateTimeToUtcIso(input.endDate, input.dropoffTime);
+  return Boolean(startAt && endAt && endAt > startAt);
 }
 
 export async function POST(request: Request) {
@@ -288,13 +289,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid rental duration" }, { status: 400 });
   }
 
-  const startAt = new Date(`${startDate}T${pickupTime}:00`);
-  const endAt = new Date(`${endDate}T${dropoffTime}:00`);
+  const startAt = bookingDateTimeToUtcIso(startDate, pickupTime);
+  const endAt = bookingDateTimeToUtcIso(endDate, dropoffTime);
   if (!isValidBookingDateTimeWindow({ startDate, endDate, pickupTime, dropoffTime })) {
     return NextResponse.json(
       { error: "Return date and time must be later than pickup date and time" },
       { status: 400 },
     );
+  }
+  if (!startAt || !endAt) {
+    return NextResponse.json({ error: "Invalid booking date or time" }, { status: 400 });
   }
 
   const { settings } = await loadAdminSettings();
@@ -675,8 +679,8 @@ export async function POST(request: Request) {
         customerUpsert.customerId,
         startDate,
         endDate,
-        startAt.toISOString(),
-        endAt.toISOString(),
+        startAt,
+        endAt,
         pickupTime,
         dropoffTime,
         pickupLocation,

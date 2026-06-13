@@ -1,4 +1,5 @@
 import { dateOnlyUtc } from "@/lib/payments/dateMath";
+import { bookingDateTimeToUtcIso } from "@/lib/bookings/bookingDateTime";
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
 const JAMAICA_TIME_ZONE = "America/Jamaica";
@@ -68,14 +69,17 @@ export function restoredPickupIsBeforeDefault(input: {
   now?: Date;
   minimumDays?: number;
 }) {
-  const restoredPickup = new Date(`${input.pickupDate}T${input.pickupTime}:00`);
-  if (Number.isNaN(restoredPickup.getTime())) return true;
+  const restoredPickup = bookingDateTimeToUtcIso(input.pickupDate, input.pickupTime);
+  if (!restoredPickup) return true;
   const defaultDateTime = defaultBookingDateTime({
     now: input.now,
     minimumDays: input.minimumDays,
   });
-  const defaultPickup = new Date(`${defaultDateTime.pickupDate}T${defaultDateTime.pickupTime}:00`);
-  if (Number.isNaN(defaultPickup.getTime())) return false;
+  const defaultPickup = bookingDateTimeToUtcIso(
+    defaultDateTime.pickupDate,
+    defaultDateTime.pickupTime,
+  );
+  if (!defaultPickup) return false;
   return restoredPickup < defaultPickup;
 }
 

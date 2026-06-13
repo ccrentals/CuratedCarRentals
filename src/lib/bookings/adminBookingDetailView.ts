@@ -1,4 +1,4 @@
-import { fmtDateNoSeconds, fmtDateOnly } from "@/lib/dateFormat";
+import { buildBookingDateTimeLabel } from "@/lib/bookings/bookingDateTime";
 import {
   getBookingLocationAdminBadgeLabel,
   getBookingLocationDetailLines,
@@ -164,12 +164,7 @@ export function buildAdminBookingDateTimeLabel(input: {
   time: string | null | undefined;
   at: string | null | undefined;
 }) {
-  if (input.at) {
-    return fmtDateNoSeconds(input.at);
-  }
-
-  const normalizedTime = String(input.time ?? "").trim().replace(/:(\d{2})(?:\.\d+)?$/, "");
-  return `${fmtDateOnly(input.date)}, ${normalizedTime || "12:00 AM"}`;
+  return buildBookingDateTimeLabel(input);
 }
 
 export function buildAdminBookingDetailView(input: {

@@ -10,7 +10,7 @@ import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { InlineDateTimeRange } from "@/components/shared/InlineDateTimeRange";
 import { loadAdminSettings } from "@/lib/adminSettings";
 import { getSessionFromRequest } from "@/lib/auth/session";
-import { fmtDate } from "@/lib/dateFormat";
+import { formatBookingDateOnly } from "@/lib/bookings/bookingDateTime";
 import {
   computeBookingPricingFromStoredSnapshot,
   fetchNetPaidToDate,
@@ -692,8 +692,8 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
                       <p className="mt-1 text-[var(--ccr-text)]">{item.customer_name}</p>
                       <p className="text-[var(--ccr-muted)]">
                         <InlineDateTimeRange
-                          startLabel={fmtDate(item.start_date)}
-                          endLabel={fmtDate(item.end_date)}
+                          startLabel={formatBookingDateOnly(item.start_date)}
+                          endLabel={formatBookingDateOnly(item.end_date)}
                         />
                       </p>
                     </li>

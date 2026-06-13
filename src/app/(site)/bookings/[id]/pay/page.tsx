@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { readBookingOverrideInfo } from "@/lib/bookings/holds";
 import { hasPublicBookingAccessForPage } from "@/lib/bookings/publicAccess";
 import { dbQuery } from "@/lib/db";
-import { fmtDateOnly } from "@/lib/dateFormat";
+import { formatBookingDateOnly } from "@/lib/bookings/bookingDateTime";
 import {
   computeBookingPricingFromStoredSnapshot,
   fetchNetPaidToDate,
@@ -93,8 +93,8 @@ export default async function BookingPayPage({
     <BookingPayPanel
       bookingId={booking.id}
       vehicleLabel={`${booking.vehicle_make} ${booking.vehicle_model}`}
-      startDateLabel={fmtDateOnly(booking.start_date)}
-      endDateLabel={fmtDateOnly(booking.end_date)}
+      startDateLabel={formatBookingDateOnly(booking.start_date)}
+      endDateLabel={formatBookingDateOnly(booking.end_date)}
       initialSummary={{
         days: summary.days,
         subtotal: summary.subtotal,

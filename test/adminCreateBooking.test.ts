@@ -63,8 +63,8 @@ test("admin create booking helper: builds full-day window from date-only inputs"
   const window = buildAdminCreateBookingWindow("2026-04-10", "2026-04-12");
 
   assert.deepEqual(window, {
-    startAt: "2026-04-10T00:00:00.000Z",
-    endAt: "2026-04-12T00:00:00.000Z",
+    startAt: "2026-04-10T16:00:00.000Z",
+    endAt: "2026-04-12T16:00:00.000Z",
   });
 });
 
@@ -710,14 +710,18 @@ test("admin bookings API: persists structured pickup and dropoff location detail
 
   assert.equal(response.status, 200);
   assert.ok(insertParams);
-  assert.equal(insertParams?.[4], "Norman Manley Airport");
-  assert.equal(insertParams?.[5], "Return Address entered");
-  assert.equal(insertParams?.[6], "dddddddd-dddd-4ddd-8ddd-dddddddddddd");
-  assert.equal(insertParams?.[7], null);
+  assert.equal(insertParams?.[4], "2099-04-10T16:00:00.000Z");
+  assert.equal(insertParams?.[5], "2099-04-12T16:00:00.000Z");
+  assert.equal(insertParams?.[6], "11:00");
+  assert.equal(insertParams?.[7], "11:00");
   assert.equal(insertParams?.[8], "Norman Manley Airport");
   assert.equal(insertParams?.[9], "Return Address entered");
+  assert.equal(insertParams?.[10], "dddddddd-dddd-4ddd-8ddd-dddddddddddd");
+  assert.equal(insertParams?.[11], null);
+  assert.equal(insertParams?.[12], "Norman Manley Airport");
+  assert.equal(insertParams?.[13], "Return Address entered");
 
-  const pricing = insertParams?.[10] as Record<string, unknown>;
+  const pricing = insertParams?.[14] as Record<string, unknown>;
   const details = pricing.booking_location_details as {
     pickup: Record<string, unknown>;
     dropoff: Record<string, unknown>;

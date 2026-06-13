@@ -8,6 +8,7 @@ import {
   computeAdminCreateBookingPricingPreview,
   getAdminCreateBookingVehicleById,
 } from "@/lib/bookings/adminCreateBooking";
+import { bookingDateTimeToUtcIso } from "@/lib/bookings/bookingDateTime";
 import { getDbPool } from "@/lib/db";
 import {
   sendBookingCreatedEmail,
@@ -438,14 +439,26 @@ export async function handleAdminBookingsPost(
       currency: pricingPreview?.currency ?? "JMD",
     };
     const pricing = appendBookingLocationNote(pricingBase, bookingLocationDetails);
+    const pickupTime = "11:00";
+    const dropoffTime = "11:00";
+    const startAt = bookingDateTimeToUtcIso(startDate, pickupTime);
+    const endAt = bookingDateTimeToUtcIso(endDate, dropoffTime);
+    if (!startAt || !endAt) {
+      await client.query("rollback");
+      return NextResponse.json({ error: "Invalid booking date or time." }, { status: 400 });
+    }
 
     const bookingInsert = await client.query(
-      "insert into bookings (vehicle_id, customer_id, start_date, end_date, pickup_location, dropoff_location, pickup_location_id, dropoff_location_id, pickup_location_text_snapshot, dropoff_location_text_snapshot, status, pricing_json) values ($1, $2, $3, $4, $5, $6, $7::uuid, $8::uuid, $9, $10, 'PENDING_PAYMENT', $11) returning id, status",
+      "insert into bookings (vehicle_id, customer_id, start_date, end_date, start_at, end_at, pickup_time, dropoff_time, pickup_location, dropoff_location, pickup_location_id, dropoff_location_id, pickup_location_text_snapshot, dropoff_location_text_snapshot, status, pricing_json) values ($1, $2, $3, $4, $5::timestamptz, $6::timestamptz, $7::time, $8::time, $9, $10, $11::uuid, $12::uuid, $13, $14, 'PENDING_PAYMENT', $15) returning id, status",
       [
         vehicleId,
         customerUpsert.customerId,
         startDate,
         endDate,
+        startAt,
+        endAt,
+        pickupTime,
+        dropoffTime,
         String(pickupLocation).trim(),
         String(dropoffLocation).trim(),
         pickupLocationId || null,

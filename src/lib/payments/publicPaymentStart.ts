@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 
+import {
+  addBookingCalendarDays,
+  bookingDateTimeToUtcIso,
+} from "@/lib/bookings/bookingDateTime";
 import { hasPublicBookingAccessForRequest } from "@/lib/bookings/publicAccess";
 import { getDbPool } from "@/lib/db";
 import { logError, logWarn } from "@/lib/log";
@@ -382,10 +386,16 @@ export async function startPublicWipayPayment({
 
     const netPaidToDate = await fetchNetPaidToDate(booking.id, { client });
     if (!(mode === "balance" || netPaidToDate > 0)) {
-      const startAt = booking.start_at ?? `${booking.start_date}T00:00:00.000Z`;
-      const fallbackEndAt = new Date(`${booking.end_date}T00:00:00.000Z`);
-      fallbackEndAt.setUTCDate(fallbackEndAt.getUTCDate() + 1);
-      const endAt = booking.end_at ?? fallbackEndAt.toISOString();
+      const fallbackEndDate = addBookingCalendarDays(booking.end_date, 1);
+      const startAt =
+        booking.start_at ?? bookingDateTimeToUtcIso(booking.start_date, "00:00");
+      const endAt =
+        booking.end_at ??
+        (fallbackEndDate ? bookingDateTimeToUtcIso(fallbackEndDate, "00:00") : null);
+      if (!startAt || !endAt) {
+        await client.query("rollback");
+        return jsonError(400, "invalid_booking_window", "Booking dates are invalid");
+      }
       const unavailable = await isVehicleUnavailableEntitlementBased(
         booking.vehicle_id,
         { startAt, endAt },

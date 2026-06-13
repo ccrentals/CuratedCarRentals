@@ -1,5 +1,9 @@
 import { fmtDate } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
+import {
+  formatBookingDateOnly,
+  toBookingDateOnly,
+} from "@/lib/bookings/bookingDateTime";
 
 export type CustomerSnapshotBookingSource = {
   id: string;
@@ -101,10 +105,10 @@ export function mapCustomerSnapshotBookingRow(
     id: row.id,
     publicId: String(row.public_id ?? "").trim() || row.id,
     vehicleLabel: `${row.vehicle_make} ${row.vehicle_model}`.trim(),
-    startDateValue: typeof row.start_date === "string" ? row.start_date : row.start_date.toISOString(),
-    startDateLabel: fmtDate(row.start_date),
-    endDateValue: typeof row.end_date === "string" ? row.end_date : row.end_date.toISOString(),
-    endDateLabel: fmtDate(row.end_date),
+    startDateValue: toBookingDateOnly(row.start_date) ?? String(row.start_date),
+    startDateLabel: formatBookingDateOnly(row.start_date),
+    endDateValue: toBookingDateOnly(row.end_date) ?? String(row.end_date),
+    endDateLabel: formatBookingDateOnly(row.end_date),
     status: row.status,
     statusLabel: formatStatusLabel(row.status),
     totalAmount: total,

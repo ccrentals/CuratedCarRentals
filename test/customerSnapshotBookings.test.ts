@@ -54,6 +54,25 @@ test("customer snapshot booking mapping: uses public_id and falls back to id", (
   assert.equal(withPublicId.createdAtValue, "2026-03-01T08:30:00.000Z");
 });
 
+test("customer snapshot booking mapping preserves database DATE objects", () => {
+  const row = mapCustomerSnapshotBookingRow({
+    id: "33333333-3333-4333-8333-333333333333",
+    public_id: "BK000335",
+    start_date: new Date(2026, 6, 6),
+    end_date: new Date(2026, 6, 15),
+    created_at: "2026-03-01T08:30:00.000Z",
+    status: "CONFIRMED",
+    pricing_json: {},
+    vehicle_make: "Nissan",
+    vehicle_model: "X-Trail",
+  });
+
+  assert.equal(row.startDateValue, "2026-07-06");
+  assert.equal(row.startDateLabel, "7/6/2026");
+  assert.equal(row.endDateValue, "2026-07-15");
+  assert.equal(row.endDateLabel, "7/15/2026");
+});
+
 test("customer snapshot booking sorting: supports booking, dates, totals, and created order", () => {
   const rows: CustomerSnapshotBookingItem[] = [
     {
