@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { handleVehicleReservationsGet } from "@/app/api/admin/vehicles/[id]/reservations/route";
-import { requireAdminAccess } from "@/lib/auth/adminGuards";
+import { requireOperationsAccess } from "@/lib/auth/adminGuards";
 import { getSessionFromRequest } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
@@ -12,13 +12,19 @@ type RouteContext = {
 
 type ReservationExportRow = {
   id: string;
-  customerName: string;
+  publicId: string | null;
+  eventType: string;
+  customerName: string | null;
   customerEmail: string | null;
   pickupAt: string;
   returnAt: string;
   status: string;
   totalCents: number | null;
   depositCents: number | null;
+  source: string;
+  activeNow: boolean;
+  impactsAvailability: boolean;
+  actionHref: string;
   createdAt: string;
 };
 
@@ -51,7 +57,7 @@ function formatMoney(cents: number | null | undefined) {
 
 const DEFAULT_DEPS: VehicleReservationsExportRouteDeps = {
   authorize: async () => {
-    const auth = await requireAdminAccess({ getSession: () => getSessionFromRequest() });
+    const auth = await requireOperationsAccess({ getSession: () => getSessionFromRequest() });
     return auth.ok ? null : auth.response;
   },
   fetchPage: (request, context) => handleVehicleReservationsGet(request, context),
@@ -118,7 +124,9 @@ export async function handleVehicleReservationsExportGet(
   if (errorResponse) return errorResponse;
 
   const header = [
-    "reservation_id",
+    "event_id",
+    "public_id",
+    "event_type",
     "customer_name",
     "customer_email",
     "pickup_at",
@@ -126,6 +134,10 @@ export async function handleVehicleReservationsExportGet(
     "status",
     "total_jmd",
     "deposit_jmd",
+    "source",
+    "active_now",
+    "impacts_availability",
+    "action_href",
     "created_at",
   ];
   const lines = [header.join(",")];
@@ -134,6 +146,8 @@ export async function handleVehicleReservationsExportGet(
     lines.push(
       [
         csvEscape(row.id),
+        csvEscape(row.publicId ?? ""),
+        csvEscape(row.eventType),
         csvEscape(row.customerName),
         csvEscape(row.customerEmail ?? ""),
         csvEscape(row.pickupAt),
@@ -141,6 +155,10 @@ export async function handleVehicleReservationsExportGet(
         csvEscape(row.status),
         formatMoney(row.totalCents),
         formatMoney(row.depositCents),
+        csvEscape(row.source),
+        row.activeNow ? "yes" : "no",
+        row.impactsAvailability ? "yes" : "no",
+        csvEscape(row.actionHref),
         csvEscape(row.createdAt),
       ].join(","),
     );
@@ -151,7 +169,7 @@ export async function handleVehicleReservationsExportGet(
     headers: {
       "content-type": "text/csv; charset=utf-8",
       "cache-control": "no-store",
-      "content-disposition": 'attachment; filename="vehicle-reservations-export.csv"',
+      "content-disposition": 'attachment; filename="vehicle-history-export.csv"',
     },
   });
 }

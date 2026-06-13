@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { AdminVehicleForm } from "@/components/admin/AdminVehicleForm";
+import { VehicleAvailabilityChecker } from "@/components/admin/VehicleAvailabilityChecker";
 import { SortableTh } from "@/components/admin/SortableTh";
 import { TableDateTime } from "@/components/shared/TableDateTime";
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
@@ -11,7 +12,7 @@ import {
   nextSort,
   type SortDir,
 } from "@/components/admin/tableSort";
-import { isAdminRole } from "@/lib/auth/roles";
+import { canAccessAdmin } from "@/lib/auth/roles";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery } from "@/lib/db";
 import { formatJmd } from "@/lib/money";
@@ -80,7 +81,7 @@ export default async function AdminVehiclesPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const session = await getSessionFromRequest();
-  if (!isAdminRole(session?.role)) {
+  if (!canAccessAdmin(session?.role)) {
     return (
       <div className="mx-auto w-full max-w-4xl px-6 py-10">
         <h1 className="text-2xl font-bold text-[var(--ccr-text)]">Vehicles</h1>
@@ -298,6 +299,15 @@ export default async function AdminVehiclesPage({
           <AdminVehicleForm />
         </SlideDownPanel>
       </div>
+
+      {!includeDeleted ? (
+        <VehicleAvailabilityChecker
+          initialPickupDate={typeof params.pickupDate === "string" ? params.pickupDate : undefined}
+          initialPickupTime={typeof params.pickupTime === "string" ? params.pickupTime : undefined}
+          initialDropoffDate={typeof params.dropoffDate === "string" ? params.dropoffDate : undefined}
+          initialDropoffTime={typeof params.dropoffTime === "string" ? params.dropoffTime : undefined}
+        />
+      ) : null}
 
       <VehiclesFilters
         initialQuery={q}

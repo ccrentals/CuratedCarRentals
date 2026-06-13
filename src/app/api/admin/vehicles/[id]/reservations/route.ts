@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 
-import { requireAdminAccess } from "@/lib/auth/adminGuards";
+import { requireOperationsAccess } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
+import {
+  AVAILABILITY_ACTIVE_BOOKING_SQL,
+  AVAILABILITY_ENTITLED_SQL,
+} from "@/lib/availability/entitlement";
 import { dbQuery } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
@@ -9,109 +13,100 @@ export const dynamic = "force-dynamic";
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const DATE_ONLY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
-
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
 
-const ACTIVE_STATUSES = ["CONFIRMED", "ACTIVE", "IN_PROGRESS", "PICKED_UP"];
-const COMPLETED_STATUSES = ["RETURNED", "COMPLETED"];
-const CANCELLED_STATUSES = ["CANCELLED", "NO_SHOW", "VOID"];
-
 type ReservationView = "upcoming" | "history";
+type EventType = "ALL" | "BOOKING" | "BLOCKOUT" | "MAINTENANCE";
+type RouteContext = { params: Promise<{ id: string }> };
 
-type RouteContext = {
-  params: Promise<{ id: string }>;
-};
-
-type VehicleReservationRowDb = {
+type VehicleHistoryRowDb = {
   id: string;
-  customer_name: string;
+  public_id: string | null;
+  event_type: "BOOKING" | "BLOCKOUT" | "MAINTENANCE";
+  customer_name: string | null;
   customer_email: string | null;
   pickup_at: string | Date;
   return_at: string | Date;
   status: string;
   total_cents: number | null;
   deposit_cents: number | null;
+  source: string;
+  active_now: boolean;
+  impacts_availability: boolean;
+  action_href: string;
   created_at: string | Date;
 };
 
-type VehicleReservationSummaryDb = {
+type VehicleHistorySummaryDb = {
   upcoming_count: number;
-  active_count: number;
+  on_rent_count?: number;
+  active_count?: number;
   completed_count: number;
   cancelled_count: number;
+  active_blockout_count: number;
 };
 
 export type VehicleReservationsQueryInput = {
   vehicleId: string;
   view: ReservationView;
+  eventType: EventType;
   status: string | null;
   search: string | null;
-  startDate: string;
-  endDate: string;
-  startAtIso: string;
-  endExclusiveIso: string;
+  startDate: string | null;
+  endDate: string | null;
+  startAtIso: string | null;
+  endExclusiveIso: string | null;
   limit: number;
   offset: number;
 };
 
-type VehicleReservationsQueryResult = {
-  rows: VehicleReservationRowDb[];
+type VehicleHistoryQueryResult = {
+  rows: VehicleHistoryRowDb[];
   statuses: string[];
   total: number;
-  summary: VehicleReservationSummaryDb;
+  summary: VehicleHistorySummaryDb;
 };
 
 export type VehicleReservationsRouteDeps = {
   getSession: () => Promise<AdminSession | null>;
   vehicleExists: (vehicleId: string) => Promise<boolean>;
-  fetchReservations: (input: VehicleReservationsQueryInput) => Promise<VehicleReservationsQueryResult>;
+  fetchReservations: (input: VehicleReservationsQueryInput) => Promise<VehicleHistoryQueryResult>;
 };
-
-type WhereSql = {
-  whereSql: string;
-  values: Array<string | number>;
-  nextIndex: number;
-};
-
-const PICKUP_AT_SQL = "coalesce(b.start_at, b.start_date::timestamptz)";
-const RETURN_AT_SQL = "coalesce(b.end_at, (b.end_date::timestamptz + interval '1 day'))";
 
 function normalizeView(raw: string | null): ReservationView {
   return raw?.toLowerCase() === "history" ? "history" : "upcoming";
 }
 
+function normalizeEventType(raw: string | null): EventType {
+  const value = String(raw ?? "ALL").trim().toUpperCase();
+  return ["BOOKING", "BLOCKOUT", "MAINTENANCE"].includes(value)
+    ? (value as EventType)
+    : "ALL";
+}
+
 function normalizeStatus(raw: string | null) {
-  const normalized = String(raw ?? "")
-    .trim()
-    .toUpperCase();
-  if (!normalized || normalized === "ALL") return null;
-  return normalized;
+  const value = String(raw ?? "").trim().toUpperCase();
+  return !value || value === "ALL" ? null : value;
 }
 
 function normalizeSearch(raw: string | null) {
-  const normalized = String(raw ?? "").trim();
-  if (!normalized) return null;
-  return normalized.slice(0, 120);
+  const value = String(raw ?? "").trim();
+  return value ? value.slice(0, 120) : null;
 }
 
 function normalizeLimit(raw: string | null) {
   const parsed = Number.parseInt(String(raw ?? ""), 10);
-  if (!Number.isFinite(parsed)) return DEFAULT_LIMIT;
-  return Math.min(MAX_LIMIT, Math.max(1, parsed));
+  return Number.isFinite(parsed) ? Math.min(MAX_LIMIT, Math.max(1, parsed)) : DEFAULT_LIMIT;
 }
 
 function normalizeOffset(raw: string | null) {
   const parsed = Number.parseInt(String(raw ?? ""), 10);
-  if (!Number.isFinite(parsed)) return 0;
-  return Math.max(0, parsed);
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
 }
 
-function toDateOnlyUtc(input: Date) {
-  const year = input.getUTCFullYear();
-  const month = `${input.getUTCMonth() + 1}`.padStart(2, "0");
-  const day = `${input.getUTCDate()}`.padStart(2, "0");
-  return `${year}-${month}-${day}`;
+function dateOnlyUtc(input: Date) {
+  return input.toISOString().slice(0, 10);
 }
 
 function addUtcDays(input: Date, days: number) {
@@ -120,228 +115,196 @@ function addUtcDays(input: Date, days: number) {
   return next;
 }
 
-function dateDefaults(view: ReservationView) {
-  const today = new Date();
-  today.setUTCHours(0, 0, 0, 0);
-  if (view === "history") {
-    return {
-      startDate: toDateOnlyUtc(addUtcDays(today, -90)),
-      endDate: toDateOnlyUtc(today),
-    };
-  }
-  return {
-    startDate: toDateOnlyUtc(today),
-    endDate: toDateOnlyUtc(addUtcDays(today, 30)),
-  };
-}
-
 function parseDateOnly(value: string) {
   if (!DATE_ONLY_REGEX.test(value)) return null;
   const parsed = new Date(`${value}T00:00:00.000Z`);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return parsed;
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
 function dateRangeFromQuery(view: ReservationView, startRaw: string | null, endRaw: string | null) {
-  const defaults = dateDefaults(view);
-  const startDate = startRaw?.trim() ? startRaw.trim() : defaults.startDate;
-  const endDate = endRaw?.trim() ? endRaw.trim() : defaults.endDate;
-
-  const startParsed = parseDateOnly(startDate);
-  if (!startParsed) {
-    return { error: "Invalid start date. Use YYYY-MM-DD." } as const;
+  if (view === "history" && !startRaw && !endRaw) {
+    return {
+      startDate: null,
+      endDate: null,
+      startAtIso: null,
+      endExclusiveIso: null,
+    } as const;
   }
 
-  const endParsed = parseDateOnly(endDate);
-  if (!endParsed) {
-    return { error: "Invalid end date. Use YYYY-MM-DD." } as const;
-  }
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  const startDate = startRaw?.trim() || dateOnlyUtc(today);
+  const endDate = endRaw?.trim() || dateOnlyUtc(addUtcDays(today, 30));
+  const start = parseDateOnly(startDate);
+  const end = parseDateOnly(endDate);
+  if (!start || !end) return { error: "Invalid date. Use YYYY-MM-DD." } as const;
+  if (start > end) return { error: "Start date must be on or before end date." } as const;
 
-  if (startParsed.getTime() > endParsed.getTime()) {
-    return { error: "Start date must be on or before end date." } as const;
-  }
-
-  const endExclusive = addUtcDays(endParsed, 1);
   return {
     startDate,
     endDate,
-    startAtIso: startParsed.toISOString(),
-    endExclusiveIso: endExclusive.toISOString(),
+    startAtIso: start.toISOString(),
+    endExclusiveIso: addUtcDays(end, 1).toISOString(),
   } as const;
 }
 
 function toIsoString(value: string | Date) {
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    return value.toISOString();
-  }
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString();
   const parsed = new Date(String(value));
-  if (!Number.isNaN(parsed.getTime())) {
-    return parsed.toISOString();
-  }
-  return String(value);
+  return Number.isNaN(parsed.getTime()) ? String(value) : parsed.toISOString();
 }
 
-function buildReservationsWhere(input: VehicleReservationsQueryInput, options: {
-  includeView: boolean;
-  includeStatus: boolean;
-  includeSearch: boolean;
-}): WhereSql {
-  const values: Array<string | number> = [input.vehicleId, input.startAtIso, input.endExclusiveIso];
-  const clauses = [
-    "b.vehicle_id = $1::uuid",
-    "b.archived_at is null",
-    `${PICKUP_AT_SQL} >= $2::timestamptz`,
-    `${PICKUP_AT_SQL} < $3::timestamptz`,
-  ];
+function buildHistorySql(input: VehicleReservationsQueryInput) {
+  const values: Array<string | number> = [input.vehicleId];
+  const clauses: string[] = [];
+  let index = 2;
 
-  let nextIndex = 4;
-
-  if (options.includeView) {
-    clauses.push(input.view === "upcoming" ? `${RETURN_AT_SQL} >= now()` : `${RETURN_AT_SQL} < now()`);
+  if (input.view === "upcoming") clauses.push("events.return_at >= now()");
+  if (input.startAtIso && input.endExclusiveIso) {
+    clauses.push(`events.pickup_at < $${index + 1}::timestamptz`);
+    clauses.push(`events.return_at > $${index}::timestamptz`);
+    values.push(input.startAtIso, input.endExclusiveIso);
+    index += 2;
   }
-
-  if (options.includeStatus && input.status) {
-    clauses.push(`upper(trim(b.status)) = $${nextIndex}`);
+  if (input.eventType !== "ALL") {
+    clauses.push(`events.event_type = $${index}`);
+    values.push(input.eventType);
+    index += 1;
+  }
+  if (input.status) {
+    clauses.push(`events.status = $${index}`);
     values.push(input.status);
-    nextIndex += 1;
+    index += 1;
   }
-
-  if (options.includeSearch && input.search) {
+  if (input.search) {
     clauses.push(
-      `(b.id::text ilike $${nextIndex} or coalesce(c.full_name, '') ilike $${nextIndex} or coalesce(c.email, '') ilike $${nextIndex})`,
+      `(events.id ilike $${index} or coalesce(events.public_id, '') ilike $${index} or coalesce(events.customer_name, '') ilike $${index} or coalesce(events.customer_email, '') ilike $${index} or coalesce(events.source, '') ilike $${index})`,
     );
     values.push(`%${input.search}%`);
-    nextIndex += 1;
+    index += 1;
   }
 
   return {
-    whereSql: clauses.join(" and "),
+    whereSql: clauses.length ? `where ${clauses.join(" and ")}` : "",
     values,
-    nextIndex,
+    nextIndex: index,
   };
 }
 
-function buildSummaryWhere(input: VehicleReservationsQueryInput): WhereSql {
-  const values: Array<string | number> = [input.vehicleId, input.startAtIso, input.endExclusiveIso];
-  const clauses = [
-    "b.vehicle_id = $1::uuid",
-    "b.archived_at is null",
-    `${PICKUP_AT_SQL} >= $2::timestamptz`,
-    `${PICKUP_AT_SQL} < $3::timestamptz`,
-  ];
+const EVENTS_CTE = `
+  with booking_events as (
+    select
+      b.id::text as id,
+      nullif(trim(b.public_id), '') as public_id,
+      'BOOKING'::text as event_type,
+      coalesce(nullif(trim(c.full_name), ''), 'Unknown customer') as customer_name,
+      nullif(trim(c.email), '') as customer_email,
+      coalesce(b.start_at, b.start_date::timestamptz) as pickup_at,
+      coalesce(b.end_at, (b.end_date::timestamptz + interval '1 day')) as return_at,
+      upper(trim(b.status)) as status,
+      case when coalesce(b.pricing_json->>'total_cents', '') ~ '^[0-9]+$' then (b.pricing_json->>'total_cents')::int end as total_cents,
+      case when coalesce(b.pricing_json->>'deposit_cents', '') ~ '^[0-9]+$' then (b.pricing_json->>'deposit_cents')::int end as deposit_cents,
+      'BOOKING'::text as source,
+      (
+        now() >= coalesce(b.start_at, b.start_date::timestamptz)
+        and now() < coalesce(b.end_at, (b.end_date::timestamptz + interval '1 day'))
+        and ${AVAILABILITY_ACTIVE_BOOKING_SQL}
+        and ${AVAILABILITY_ENTITLED_SQL}
+      ) as active_now,
+      (${AVAILABILITY_ACTIVE_BOOKING_SQL} and ${AVAILABILITY_ENTITLED_SQL}) as impacts_availability,
+      '/admin/bookings/' || b.id::text as action_href,
+      b.created_at
+    from bookings b
+    join vehicles v on v.id = b.vehicle_id
+    left join customers c on c.id = b.customer_id
+    where b.vehicle_id = $1::uuid and b.archived_at is null
+  ),
+  blockout_events as (
+    select
+      bo.id::text as id,
+      null::text as public_id,
+      case
+        when coalesce(to_jsonb(bo)->>'source', '') = 'MAINTENANCE'
+          or nullif(to_jsonb(bo)->>'linked_maintenance_id', '') is not null
+        then 'MAINTENANCE'
+        else 'BLOCKOUT'
+      end::text as event_type,
+      null::text as customer_name,
+      null::text as customer_email,
+      bo.start_at as pickup_at,
+      bo.end_at as return_at,
+      case when now() < bo.start_at then 'UPCOMING' when now() < bo.end_at then 'ACTIVE' else 'COMPLETED' end::text as status,
+      null::int as total_cents,
+      null::int as deposit_cents,
+      coalesce(nullif(to_jsonb(bo)->>'source', ''), 'MANUAL')::text as source,
+      (now() >= bo.start_at and now() < bo.end_at) as active_now,
+      (now() < bo.end_at) as impacts_availability,
+      case
+        when nullif(to_jsonb(bo)->>'linked_maintenance_id', '') is not null
+        then '/admin/vehicles/' || bo.vehicle_id::text || '?tab=maintenance&recordId=' || (to_jsonb(bo)->>'linked_maintenance_id')
+        else '/admin/vehicles/' || bo.vehicle_id::text || '?tab=blockouts'
+      end as action_href,
+      bo.created_at
+    from blockouts bo
+    where bo.vehicle_id = $1::uuid
+  ),
+  events as (
+    select * from booking_events
+    union all
+    select * from blockout_events
+  )
+`;
 
-  return {
-    whereSql: clauses.join(" and "),
-    values,
-    nextIndex: 4,
-  };
-}
-
-async function queryVehicleReservations(input: VehicleReservationsQueryInput): Promise<VehicleReservationsQueryResult> {
-  const filteredWhere = buildReservationsWhere(input, {
-    includeView: true,
-    includeStatus: true,
-    includeSearch: true,
-  });
-
-  const orderDirection = input.view === "upcoming" ? "asc" : "desc";
-
-  const rowsResult = await dbQuery<VehicleReservationRowDb>(
-    `select
-       b.id::text as id,
-       coalesce(nullif(trim(c.full_name), ''), 'Unknown customer') as customer_name,
-       nullif(trim(c.email), '') as customer_email,
-       ${PICKUP_AT_SQL} as pickup_at,
-       ${RETURN_AT_SQL} as return_at,
-       upper(trim(b.status)) as status,
-       case
-         when coalesce(b.pricing_json->>'total_cents', '') ~ '^[0-9]+$' then (b.pricing_json->>'total_cents')::int
-         else null
-       end as total_cents,
-       case
-         when coalesce(b.pricing_json->>'deposit_cents', '') ~ '^[0-9]+$' then (b.pricing_json->>'deposit_cents')::int
-         else null
-       end as deposit_cents,
-       b.created_at
-     from bookings b
-     left join customers c on c.id = b.customer_id
-     where ${filteredWhere.whereSql}
-     order by ${PICKUP_AT_SQL} ${orderDirection}, b.created_at desc
-     limit $${filteredWhere.nextIndex}
-     offset $${filteredWhere.nextIndex + 1}`,
-    [...filteredWhere.values, input.limit, input.offset],
+async function queryVehicleHistory(input: VehicleReservationsQueryInput): Promise<VehicleHistoryQueryResult> {
+  const filtered = buildHistorySql(input);
+  const direction = input.view === "upcoming" ? "asc" : "desc";
+  const rows = await dbQuery<VehicleHistoryRowDb>(
+    `${EVENTS_CTE}
+     select * from events
+     ${filtered.whereSql}
+     order by events.pickup_at ${direction}, events.created_at desc
+     limit $${filtered.nextIndex} offset $${filtered.nextIndex + 1}`,
+    [...filtered.values, input.limit, input.offset],
   );
-
-  const countResult = await dbQuery<{ total: number }>(
-    `select count(*)::int as total
-     from bookings b
-     left join customers c on c.id = b.customer_id
-     where ${filteredWhere.whereSql}`,
-    filteredWhere.values,
+  const count = await dbQuery<{ total: number }>(
+    `${EVENTS_CTE} select count(*)::int as total from events ${filtered.whereSql}`,
+    filtered.values,
   );
-
-  const statusesWhere = buildReservationsWhere(input, {
-    includeView: true,
-    includeStatus: false,
-    includeSearch: false,
-  });
-
-  const statusesResult = await dbQuery<{ status: string }>(
-    `select distinct upper(trim(b.status)) as status
-     from bookings b
-     where ${statusesWhere.whereSql}
-     order by 1 asc`,
-    statusesWhere.values,
+  const statuses = await dbQuery<{ status: string }>(
+    `${EVENTS_CTE} select distinct status from events order by status`,
+    [input.vehicleId],
   );
-
-  const summaryWhere = buildSummaryWhere(input);
-  const summaryResult = await dbQuery<VehicleReservationSummaryDb>(
-    `select
-       count(*) filter (
-         where ${RETURN_AT_SQL} >= now()
-           and upper(trim(b.status)) <> all($${summaryWhere.nextIndex}::text[])
-       )::int as upcoming_count,
-       count(*) filter (
-         where upper(trim(b.status)) = any($${summaryWhere.nextIndex + 1}::text[])
-       )::int as active_count,
-       count(*) filter (
-         where upper(trim(b.status)) = any($${summaryWhere.nextIndex + 2}::text[])
-       )::int as completed_count,
-       count(*) filter (
-         where upper(trim(b.status)) = any($${summaryWhere.nextIndex}::text[])
-       )::int as cancelled_count
-     from bookings b
-     where ${summaryWhere.whereSql}`,
-    [
-      ...summaryWhere.values,
-      CANCELLED_STATUSES,
-      ACTIVE_STATUSES,
-      COMPLETED_STATUSES,
-    ],
+  const summary = await dbQuery<VehicleHistorySummaryDb>(
+    `${EVENTS_CTE}
+     select
+       count(*) filter (where event_type = 'BOOKING' and return_at >= now() and status not in ('CANCELLED','OVERRIDDEN','NO_SHOW','VOID'))::int as upcoming_count,
+       count(*) filter (where event_type = 'BOOKING' and active_now)::int as on_rent_count,
+       count(*) filter (where event_type = 'BOOKING' and status in ('RETURNED','COMPLETED'))::int as completed_count,
+       count(*) filter (where event_type = 'BOOKING' and status in ('CANCELLED','OVERRIDDEN','NO_SHOW','VOID'))::int as cancelled_count,
+       count(*) filter (where event_type in ('BLOCKOUT','MAINTENANCE') and active_now)::int as active_blockout_count
+     from events`,
+    [input.vehicleId],
   );
 
   return {
-    rows: rowsResult.rows,
-    statuses: statusesResult.rows
-      .map((row: { status: string }) => String(row.status ?? "").trim().toUpperCase())
-      .filter(Boolean),
-    total: Number(countResult.rows[0]?.total ?? 0),
-    summary: summaryResult.rows[0] ?? {
+    rows: rows.rows,
+    statuses: statuses.rows.map((row: { status: string }) => row.status).filter(Boolean),
+    total: Number(count.rows[0]?.total ?? 0),
+    summary: summary.rows[0] ?? {
       upcoming_count: 0,
-      active_count: 0,
+      on_rent_count: 0,
       completed_count: 0,
       cancelled_count: 0,
+      active_blockout_count: 0,
     },
   };
 }
 
 const DEFAULT_DEPS: VehicleReservationsRouteDeps = {
   getSession: () => getSessionFromRequest(),
-  vehicleExists: async (vehicleId: string) => {
-    const result = await dbQuery<{ id: string }>("select id from vehicles where id = $1::uuid limit 1", [vehicleId]);
-    return result.rowCount > 0;
-  },
-  fetchReservations: queryVehicleReservations,
+  vehicleExists: async (vehicleId) =>
+    (await dbQuery("select id from vehicles where id = $1::uuid limit 1", [vehicleId])).rowCount > 0,
+  fetchReservations: queryVehicleHistory,
 };
 
 export async function handleVehicleReservationsGet(
@@ -349,49 +312,42 @@ export async function handleVehicleReservationsGet(
   context: RouteContext,
   deps: VehicleReservationsRouteDeps = DEFAULT_DEPS,
 ) {
-  const auth = await requireAdminAccess({ getSession: deps.getSession });
+  const auth = await requireOperationsAccess({ getSession: deps.getSession });
   if (!auth.ok) return auth.response;
-
   const { id } = await context.params;
   if (!UUID_REGEX.test(id)) {
     return NextResponse.json({ ok: false, error: "Invalid vehicle id." }, { status: 400 });
   }
-
-  const vehicleExists = await deps.vehicleExists(id);
-  if (!vehicleExists) {
+  if (!(await deps.vehicleExists(id))) {
     return NextResponse.json({ ok: false, error: "Vehicle not found." }, { status: 404 });
   }
 
-  const searchParams = new URL(request.url).searchParams;
-  const view = normalizeView(searchParams.get("view"));
-  const status = normalizeStatus(searchParams.get("status"));
-  const search = normalizeSearch(searchParams.get("q"));
-  const dateRange = dateRangeFromQuery(view, searchParams.get("start"), searchParams.get("end"));
-  if ("error" in dateRange) {
-    return NextResponse.json({ ok: false, error: dateRange.error }, { status: 400 });
+  const params = new URL(request.url).searchParams;
+  const view = normalizeView(params.get("view"));
+  const range = dateRangeFromQuery(view, params.get("start"), params.get("end"));
+  if ("error" in range) {
+    return NextResponse.json({ ok: false, error: range.error }, { status: 400 });
   }
 
-  const limit = normalizeLimit(searchParams.get("limit"));
-  const offset = normalizeOffset(searchParams.get("offset"));
-
   try {
+    const limit = normalizeLimit(params.get("limit"));
+    const offset = normalizeOffset(params.get("offset"));
     const result = await deps.fetchReservations({
       vehicleId: id,
       view,
-      status,
-      search,
-      startDate: dateRange.startDate,
-      endDate: dateRange.endDate,
-      startAtIso: dateRange.startAtIso,
-      endExclusiveIso: dateRange.endExclusiveIso,
+      eventType: normalizeEventType(params.get("eventType")),
+      status: normalizeStatus(params.get("status")),
+      search: normalizeSearch(params.get("q")),
+      ...range,
       limit,
       offset,
     });
-
     return NextResponse.json({
       ok: true,
       rows: result.rows.map((row) => ({
         id: row.id,
+        publicId: row.public_id,
+        eventType: row.event_type,
         customerName: row.customer_name,
         customerEmail: row.customer_email,
         pickupAt: toIsoString(row.pickup_at),
@@ -399,26 +355,25 @@ export async function handleVehicleReservationsGet(
         status: row.status,
         totalCents: Number.isFinite(Number(row.total_cents)) ? Number(row.total_cents) : null,
         depositCents: Number.isFinite(Number(row.deposit_cents)) ? Number(row.deposit_cents) : null,
+        source: row.source,
+        activeNow: Boolean(row.active_now),
+        impactsAvailability: Boolean(row.impacts_availability),
+        actionHref: row.action_href,
         createdAt: toIsoString(row.created_at),
       })),
       summary: {
         upcomingCount: Number(result.summary.upcoming_count ?? 0),
-        activeCount: Number(result.summary.active_count ?? 0),
+        onRentCount: Number(result.summary.on_rent_count ?? result.summary.active_count ?? 0),
+        activeCount: Number(result.summary.on_rent_count ?? result.summary.active_count ?? 0),
         completedCount: Number(result.summary.completed_count ?? 0),
         cancelledCount: Number(result.summary.cancelled_count ?? 0),
+        activeBlockoutCount: Number(result.summary.active_blockout_count ?? 0),
       },
-      paging: {
-        limit,
-        offset,
-        total: Number(result.total ?? 0),
-      },
+      paging: { limit, offset, total: result.total },
       statuses: result.statuses,
     });
   } catch {
-    return NextResponse.json(
-      { ok: false, error: "Failed to load vehicle reservations." },
-      { status: 500 },
-    );
+    return NextResponse.json({ ok: false, error: "Failed to load vehicle history." }, { status: 500 });
   }
 }
 

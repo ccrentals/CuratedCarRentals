@@ -50,8 +50,11 @@ const DEPOSIT_REQUIRED_SQL = `coalesce(
 )`;
 
 const PAYMENT_STATUS_SQL = `upper(coalesce(b.pricing_json->>'payment_status', 'UNPAID'))`;
-const ACTIVE_BOOKING_SQL = "upper(coalesce(b.status, '')) not in ('CANCELLED', 'RETURNED', 'OVERRIDDEN')";
-const ENTITLED_SQL = `(${PAYMENT_STATUS_SQL} = 'PAID_IN_FULL' or ${AMOUNT_PAID_SQL} >= ${DEPOSIT_REQUIRED_SQL})`;
+export const AVAILABILITY_ACTIVE_BOOKING_SQL =
+  "upper(coalesce(b.status, '')) not in ('CANCELLED', 'RETURNED', 'OVERRIDDEN')";
+export const AVAILABILITY_ENTITLED_SQL = `(${PAYMENT_STATUS_SQL} = 'PAID_IN_FULL' or ${AMOUNT_PAID_SQL} >= ${DEPOSIT_REQUIRED_SQL})`;
+const ACTIVE_BOOKING_SQL = AVAILABILITY_ACTIVE_BOOKING_SQL;
+const ENTITLED_SQL = AVAILABILITY_ENTITLED_SQL;
 const TENTATIVE_SQL = `(not ${ENTITLED_SQL})`;
 const ENTITLED_AT_SQL = `(
   case
@@ -79,6 +82,25 @@ export type OverlapWindowInput = {
   startAt: string | Date;
   endAt: string | Date;
 };
+
+export type VehicleAvailabilityConflict =
+  | {
+      type: "BOOKING";
+      id: string;
+      publicId: string | null;
+      status: string;
+      startAt: string;
+      endAt: string;
+    }
+  | {
+      type: "BLOCKOUT";
+      id: string;
+      reason: string;
+      source: string;
+      maintenanceRecordId: string | null;
+      startAt: string;
+      endAt: string;
+    };
 
 export type EntitledOverlapBooking = {
   id: string;
@@ -242,6 +264,99 @@ async function hasOverlappingBlockout(
     [vehicleId, normalized.startAt, normalized.endAt],
   );
   return result.rowCount > 0;
+}
+
+export async function findVehicleAvailabilityConflict(
+  vehicleId: string,
+  window: OverlapWindowInput,
+  options: {
+    client?: Queryable;
+    includeBlockouts?: boolean;
+    excludeBookingId?: string | null;
+  } = {},
+): Promise<VehicleAvailabilityConflict | null> {
+  if (!UUID_REGEX.test(vehicleId)) return null;
+  const normalized = normalizeWindow(window);
+  if (!normalized) return null;
+  const db = options.client ?? {
+    query: (text: string, params: unknown[] = []) => dbQuery(text, params),
+  };
+
+  const bookingResult = await db.query(
+    `select
+       b.id::text as id,
+       nullif(trim(b.public_id), '') as public_id,
+       upper(coalesce(b.status, '')) as status,
+       coalesce(b.start_at, b.start_date::timestamptz) as start_at,
+       coalesce(b.end_at, (b.end_date::timestamptz + interval '1 day')) as end_at
+     from bookings b
+     join vehicles v on v.id = b.vehicle_id
+     where b.vehicle_id = $1::uuid
+       and ${ACTIVE_BOOKING_SQL}
+       and coalesce(b.start_at, b.start_date::timestamptz) < $3::timestamptz
+       and coalesce(b.end_at, (b.end_date::timestamptz + interval '1 day')) > $2::timestamptz
+       and ($4::uuid is null or b.id <> $4::uuid)
+       and ${ENTITLED_SQL}
+     order by ${ENTITLEMENT_SORT_SQL} asc, b.created_at asc, b.id asc
+     limit 1`,
+    [vehicleId, normalized.startAt, normalized.endAt, options.excludeBookingId ?? null],
+  );
+
+  if (bookingResult.rowCount > 0) {
+    const row = bookingResult.rows[0] as {
+      id: string;
+      public_id: string | null;
+      status: string;
+      start_at: string | Date;
+      end_at: string | Date;
+    };
+    return {
+      type: "BOOKING",
+      id: row.id,
+      publicId: row.public_id,
+      status: row.status,
+      startAt: toIso(row.start_at) ?? normalized.startAt,
+      endAt: toIso(row.end_at) ?? normalized.endAt,
+    };
+  }
+
+  if (options.includeBlockouts === false) return null;
+
+  const blockoutResult = await db.query(
+    `select
+       bo.id::text as id,
+       coalesce(nullif(trim(bo.reason), ''), 'Unavailable') as reason,
+       coalesce(nullif(trim(to_jsonb(bo)->>'source'), ''), 'MANUAL') as source,
+       nullif(to_jsonb(bo)->>'linked_maintenance_id', '') as maintenance_record_id,
+       bo.start_at,
+       bo.end_at
+     from blockouts bo
+     where bo.vehicle_id = $1::uuid
+       and bo.start_at < $3::timestamptz
+       and bo.end_at > $2::timestamptz
+     order by bo.start_at asc, bo.id asc
+     limit 1`,
+    [vehicleId, normalized.startAt, normalized.endAt],
+  );
+
+  if (blockoutResult.rowCount === 0) return null;
+  const row = blockoutResult.rows[0] as {
+    id: string;
+    reason: string;
+    source: string;
+    maintenance_record_id: string | null;
+    start_at: string | Date;
+    end_at: string | Date;
+  };
+  return {
+    type: "BLOCKOUT",
+    id: row.id,
+    reason: row.reason,
+    source: row.source,
+    maintenanceRecordId: row.maintenance_record_id,
+    startAt: toIso(row.start_at) ?? normalized.startAt,
+    endAt: toIso(row.end_at) ?? normalized.endAt,
+  };
 }
 
 export async function findOverlappingEntitledBooking(
