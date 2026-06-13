@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 
 import { buttonStyles } from "@/components/ui/Button";
@@ -30,6 +30,7 @@ type CustomerProfileFormProps = {
   driversLicenseNumber: string | null;
   address: string | null;
   notes: string | null;
+  children?: ReactNode;
 };
 
 function normalizeDateInput(value: string | null) {
@@ -55,6 +56,7 @@ export function CustomerProfileForm({
   driversLicenseNumber,
   address,
   notes,
+  children,
 }: CustomerProfileFormProps) {
   const router = useRouter();
   const [nextFullName, setNextFullName] = useState(fullName);
@@ -317,6 +319,7 @@ export function CustomerProfileForm({
           className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
         />
       </label>
+      {children}
       <div className="flex items-center gap-2">
         <button
           type="submit"

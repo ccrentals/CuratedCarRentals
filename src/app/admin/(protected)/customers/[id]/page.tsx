@@ -286,54 +286,55 @@ export default async function AdminCustomerDetailPage({
             driversLicenseNumber={customerRow.drivers_license_number}
             address={customerRow.address}
             notes={customerRow.notes}
-          />
-          <div className="mt-4 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3 text-xs text-[var(--ccr-muted)]">
-            <p className="font-semibold text-[var(--ccr-text)]">Legal Identification</p>
-            <p className="mt-1">
-              Type: {customerRow.legal_id_type ? formatLegalIdTypeLabel(customerRow.legal_id_type) : "Not provided"}
-            </p>
-            <p className="mt-1">Number: {customerRow.legal_id_number || "Not provided"}</p>
-            <p className="mt-1">Driver&apos;s License Number: {customerRow.drivers_license_number || "Not provided"}</p>
-            <CustomerLegalIdImagesManager
-              customerId={customerRow.id}
-              initialItems={driversLicenseDocuments}
-            />
-            {latestSignatureBookingId ? (
-              <div className="mt-3">
-                <a
-                  href={`/admin/bookings/${latestSignatureBookingId}/private-files/SIGNATURE`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className={buttonStyles({
-                    variant: "secondary",
-                    size: "sm",
-                  })}
-                >
-                  View secure signature file
-                </a>
-              </div>
-            ) : null}
-          </div>
-          <div className="mt-5 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3 text-xs text-[var(--ccr-muted)]">
-            <p>
-              Created:{" "}
-              <DateTimeInline
-                value={customerRow.created_at}
-                className="inline-flex text-[var(--ccr-text)]"
+          >
+            <div className="mt-4 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3 text-xs text-[var(--ccr-muted)]">
+              <p className="font-semibold text-[var(--ccr-text)]">Legal Identification</p>
+              <p className="mt-1">
+                Type: {customerRow.legal_id_type ? formatLegalIdTypeLabel(customerRow.legal_id_type) : "Not provided"}
+              </p>
+              <p className="mt-1">Number: {customerRow.legal_id_number || "Not provided"}</p>
+              <p className="mt-1">Driver&apos;s License Number: {customerRow.drivers_license_number || "Not provided"}</p>
+              <CustomerLegalIdImagesManager
+                customerId={customerRow.id}
+                initialItems={driversLicenseDocuments}
               />
-            </p>
-            <p className="mt-1">
-              Last booked:{" "}
-              {customerRow.last_booked_at ? (
+              {latestSignatureBookingId ? (
+                <div className="mt-3">
+                  <a
+                    href={`/admin/bookings/${latestSignatureBookingId}/private-files/SIGNATURE`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className={buttonStyles({
+                      variant: "secondary",
+                      size: "sm",
+                    })}
+                  >
+                    View secure signature file
+                  </a>
+                </div>
+              ) : null}
+            </div>
+            <div className="mt-5 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3 text-xs text-[var(--ccr-muted)]">
+              <p>
+                Created:{" "}
                 <DateTimeInline
-                  value={customerRow.last_booked_at}
+                  value={customerRow.created_at}
                   className="inline-flex text-[var(--ccr-text)]"
                 />
-              ) : (
-                "No bookings yet"
-              )}
-            </p>
-          </div>
+              </p>
+              <p className="mt-1">
+                Last booked:{" "}
+                {customerRow.last_booked_at ? (
+                  <DateTimeInline
+                    value={customerRow.last_booked_at}
+                    className="inline-flex text-[var(--ccr-text)]"
+                  />
+                ) : (
+                  "No bookings yet"
+                )}
+              </p>
+            </div>
+          </CustomerProfileForm>
         </section>
 
         <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-5">
