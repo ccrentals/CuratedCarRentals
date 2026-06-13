@@ -1,4 +1,5 @@
 import { dbQuery } from "@/lib/db";
+import { toBookingDateOnly } from "@/lib/bookings/bookingDateTime";
 import { resolveStoredRegionCountry } from "@/lib/jamaicaParishes";
 import {
   formatBookingLocationDisplayText,
@@ -103,20 +104,14 @@ function normalizeText(value: unknown) {
 }
 
 function toDateString(value: string | Date) {
-  if (value instanceof Date) {
-    return value.toISOString();
-  }
-  return String(value);
+  return toBookingDateOnly(value) ?? String(value);
 }
 
 function toIsoDateOnly(value: string | Date | null | undefined) {
-  if (value instanceof Date && Number.isFinite(value.getTime())) {
-    return value.toISOString().slice(0, 10);
-  }
+  const bookingDate = toBookingDateOnly(value);
+  if (bookingDate) return bookingDate;
   const text = String(value ?? "").trim();
   if (!text) return "";
-  const dateMatch = text.match(/^(\d{4}-\d{2}-\d{2})/);
-  if (dateMatch?.[1]) return dateMatch[1];
   const parsed = new Date(text);
   if (!Number.isFinite(parsed.getTime())) return "";
   return parsed.toISOString().slice(0, 10);

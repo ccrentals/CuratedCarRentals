@@ -3,6 +3,7 @@ import { type OverlapWindowInput, listAvailableVehiclesEntitlementBased } from "
 import { calcRentalDays } from "@/lib/payments/dateMath";
 import { isISODate } from "@/lib/validators";
 import type { Queryable } from "@/lib/payments/pricing";
+import { bookingDateTimeToUtcIso } from "@/lib/bookings/bookingDateTime";
 
 type AdminCreateBookingVehicleRow = {
   id: string;
@@ -81,15 +82,13 @@ export function buildAdminCreateBookingWindow(
 ): OverlapWindowInput | null {
   if (!isISODate(startDate) || !isISODate(endDate)) return null;
 
-  const startAt = new Date(`${startDate}T00:00:00.000Z`);
-  const endAt = new Date(`${endDate}T00:00:00.000Z`);
-  if (Number.isNaN(startAt.getTime()) || Number.isNaN(endAt.getTime())) return null;
-
-  if (endAt <= startAt) return null;
+  const startAt = bookingDateTimeToUtcIso(startDate, "11:00");
+  const endAt = bookingDateTimeToUtcIso(endDate, "11:00");
+  if (!startAt || !endAt || endAt <= startAt) return null;
 
   return {
-    startAt: startAt.toISOString(),
-    endAt: endAt.toISOString(),
+    startAt,
+    endAt,
   };
 }
 

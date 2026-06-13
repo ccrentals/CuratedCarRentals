@@ -3,8 +3,8 @@ import { isAdminRole } from "@/lib/auth/roles";
 
 import { TableDateTime } from "@/components/shared/TableDateTime";
 import { StackedDateTimeRange } from "@/components/shared/StackedDateTimeRange";
+import { formatBookingDateOnly } from "@/lib/bookings/bookingDateTime";
 import { dbQuery } from "@/lib/db";
-import { fmtDate } from "@/lib/dateFormat";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { PaymentRowActions } from "@/components/admin/PaymentRowActions";
 import { UnarchiveBookingButton } from "@/components/admin/UnarchiveBookingButton";
@@ -168,7 +168,10 @@ export default async function AdminBookingsArchivePage() {
                       {booking.vehicle_make} {booking.vehicle_model}
                     </td>
                     <td className="px-4 py-3 text-[var(--ccr-muted)]">
-                      <StackedDateTimeRange startLabel={fmtDate(booking.start_date)} endLabel={fmtDate(booking.end_date)} />
+                      <StackedDateTimeRange
+                        startLabel={formatBookingDateOnly(booking.start_date)}
+                        endLabel={formatBookingDateOnly(booking.end_date)}
+                      />
                     </td>
                     <td className="px-4 py-3 text-[var(--ccr-text)]">{booking.status}</td>
                     <td className="px-4 py-3 text-[var(--ccr-muted)]">

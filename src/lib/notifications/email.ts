@@ -15,6 +15,7 @@ import {
 } from "@/lib/bookings/privateAccess";
 import { loadAdminSettings } from "@/lib/adminSettings";
 import { logError, logWarn } from "@/lib/log";
+import { formatBookingDateOnly } from "@/lib/bookings/bookingDateTime";
 import { loadOperationalNotificationRoutingSummary } from "@/lib/notifications/operationalRouting";
 import { readInsurancePricingFields, readPromoPricingFields } from "@/lib/payments/pricing";
 import { dbQuery } from "@/lib/db";
@@ -40,9 +41,7 @@ function formatAmount(amount: number) {
 }
 
 function formatDateOnly(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString("en-JM", { timeZone: "America/Jamaica" });
+  return formatBookingDateOnly(value, "en-JM");
 }
 
 function formatDateTime(value: string) {

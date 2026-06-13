@@ -9,8 +9,12 @@ import {
   type AdminBookingListItem,
 } from "@/lib/bookings/adminBookingsList";
 import { bookingStartSqlExpr, buildUpcomingWhereSql, getStartOfToday } from "@/lib/bookings/upcoming";
+import {
+  buildBookingDateTimeLabel,
+  formatBookingDateOnly,
+} from "@/lib/bookings/bookingDateTime";
 import { dbQuery } from "@/lib/db";
-import { fmtDate, fmtDateOnly } from "@/lib/dateFormat";
+import { fmtDateOnly } from "@/lib/dateFormat";
 import { formatJmd } from "@/lib/money";
 import { paginateRows } from "@/lib/pagination/sharedPagination";
 import {
@@ -312,8 +316,11 @@ export default async function AdminDashboardPage({
                           </p>
                           <p className="text-xs text-[var(--ccr-muted)]">
                             <InlineDateTimeRange
-                              startLabel={fmtDate(booking.start_date)}
-                              endLabel={fmtDate(booking.end_date)}
+                              startLabel={buildBookingDateTimeLabel({
+                                date: booking.start_date,
+                                at: booking.start_at,
+                              })}
+                              endLabel={formatBookingDateOnly(booking.end_date)}
                             />
                           </p>
                         </div>
@@ -397,8 +404,8 @@ export default async function AdminDashboardPage({
                           </p>
                           <p className="mt-1 text-xs text-[var(--ccr-muted)]">
                             <InlineDateTimeRange
-                              startLabel={fmtDate(booking.start_date)}
-                              endLabel={fmtDate(booking.end_date)}
+                              startLabel={formatBookingDateOnly(booking.start_date)}
+                              endLabel={formatBookingDateOnly(booking.end_date)}
                             />
                           </p>
                           <Link

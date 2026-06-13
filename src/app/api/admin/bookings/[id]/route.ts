@@ -22,6 +22,7 @@ import {
   type AdminBookingNote,
   type AdminBookingPaymentRow,
 } from "@/lib/bookings/adminBookingDetailView";
+import { bookingDateTimeToUtcIso } from "@/lib/bookings/bookingDateTime";
 import {
   appendBookingLocationNote,
   readBookingLocationDetails,
@@ -90,9 +91,7 @@ function normalizeTimeInput(value: unknown): string | null {
 }
 
 function buildDateTimeIso(date: string, time: string) {
-  const parsed = new Date(`${date}T${time}:00-05:00`);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return parsed.toISOString();
+  return bookingDateTimeToUtcIso(date, time);
 }
 
 function asObject(value: unknown): Record<string, unknown> | null {
@@ -200,14 +199,18 @@ async function resolveValidatedPromoForBookingUpdate(input: {
   };
 }
 
-function buildWindowFromDates(startDate: string, endDate: string) {
-  const startAt = new Date(`${startDate}T00:00:00.000Z`);
-  const endAt = new Date(`${endDate}T00:00:00.000Z`);
-  if (Number.isNaN(startAt.getTime()) || Number.isNaN(endAt.getTime())) return null;
-  endAt.setUTCDate(endAt.getUTCDate() + 1);
+function buildWindowFromDates(
+  startDate: string,
+  endDate: string,
+  pickupTime = "11:00",
+  dropoffTime = "11:00",
+) {
+  const startAt = bookingDateTimeToUtcIso(startDate, pickupTime);
+  const endAt = bookingDateTimeToUtcIso(endDate, dropoffTime);
+  if (!startAt || !endAt || endAt <= startAt) return null;
   return {
-    startAt: startAt.toISOString(),
-    endAt: endAt.toISOString(),
+    startAt,
+    endAt,
   };
 }
 
@@ -909,7 +912,12 @@ export async function PATCH(
         return NextResponse.json({ error: dropoffLocationError }, { status: 400 });
       }
 
-      const availabilityWindow = buildWindowFromDates(startDate, endDate);
+      const availabilityWindow = buildWindowFromDates(
+        startDate,
+        endDate,
+        pickupTime,
+        dropoffTime,
+      );
       if (!availabilityWindow) {
         await client.query("rollback");
         return NextResponse.json(

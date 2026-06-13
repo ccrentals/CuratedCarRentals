@@ -7,6 +7,7 @@ import { hasPublicBookingAccessForPage } from "@/lib/bookings/publicAccess";
 import { DateRangeArrow } from "@/components/shared/DateRangeArrow";
 import { dbQuery } from "@/lib/db";
 import { fmtDateOnly } from "@/lib/dateFormat";
+import { formatBookingDateOnly } from "@/lib/bookings/bookingDateTime";
 import { formatJmd } from "@/lib/money";
 import { formatPaymentStatus } from "@/lib/payments/formatPaymentStatus";
 import {
@@ -155,9 +156,9 @@ export default async function BookingInvoicePage({
               <p className="text-xs uppercase text-[var(--ccr-muted)]">Rental</p>
               <p>
                 <span className="inline-flex items-center">
-                  {fmtDateOnly(booking.start_date)}
+                  {formatBookingDateOnly(booking.start_date)}
                   <DateRangeArrow />
-                  {fmtDateOnly(booking.end_date)}
+                  {formatBookingDateOnly(booking.end_date)}
                 </span>{" "}
                 ({summary.days} days)
               </p>

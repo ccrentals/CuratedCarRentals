@@ -4,6 +4,7 @@ import {
   computeBookingPricingFromStoredSnapshot,
   fetchNetPaidToDate,
 } from "@/lib/payments/pricing";
+import { toBookingDateOnly } from "@/lib/bookings/bookingDateTime";
 
 type DbQueryFn = typeof dbQuery;
 type FetchNetPaidToDateFn = typeof fetchNetPaidToDate;
@@ -35,10 +36,7 @@ type PaymentLine = {
 };
 
 function toDateString(value: string | Date) {
-  if (value instanceof Date) {
-    return value.toISOString();
-  }
-  return String(value);
+  return toBookingDateOnly(value) ?? String(value);
 }
 
 export async function loadAdminBookingInvoicePayload(

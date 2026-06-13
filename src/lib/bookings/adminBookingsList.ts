@@ -8,7 +8,7 @@ import {
 import { buildBookingRangeWhere, buildRange, type BookingDateRange } from "@/lib/bookings/dateRangeFilter";
 import { buildUpcomingWhereSql } from "@/lib/bookings/upcoming";
 import { dbQuery } from "@/lib/db";
-import { fmtAdminDateTimeNoSeconds, fmtDateNoSeconds } from "@/lib/dateFormat";
+import { fmtAdminDateTimeNoSeconds } from "@/lib/dateFormat";
 import {
   isNonBlockingBookingHold,
   readAmountPaid,
@@ -17,6 +17,10 @@ import {
 } from "@/lib/payments/pricing";
 import { formatBookingStatusLabel } from "@/lib/bookings/formatBookingStatusLabel";
 import { deriveBookingPhase, type DerivedBookingPhase } from "@/lib/vehicles/vehicleStatus";
+import {
+  buildBookingDateTimeLabel,
+  toBookingDateOnly,
+} from "@/lib/bookings/bookingDateTime";
 
 type BookingDbRow = {
   id: string;
@@ -26,6 +30,8 @@ type BookingDbRow = {
   end_at: string | Date | null;
   start_date: string | Date;
   end_date: string | Date;
+  pickup_time: string | null;
+  dropoff_time: string | null;
   created_at: string | Date;
   status: string;
   pricing_json: Record<string, unknown> | null;
@@ -199,15 +205,7 @@ function asIsoTimestamp(value: unknown) {
 }
 
 function asIsoDateOnly(value: unknown) {
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    return value.toISOString().slice(0, 10);
-  }
-  if (typeof value === "string" && DATE_RE.test(value)) {
-    return value;
-  }
-  const date = new Date(String(value ?? ""));
-  if (!Number.isNaN(date.getTime())) return date.toISOString().slice(0, 10);
-  return String(value ?? "");
+  return toBookingDateOnly(value) ?? String(value ?? "");
 }
 
 function asMoneyLike(value: unknown) {
@@ -454,7 +452,7 @@ function buildBookingsQuery(input: {
   values.push(Math.max(0, input.offset));
   const offsetIndex = values.length;
   const text =
-    `select b.id, b.public_id, b.archived_at, b.start_at, b.end_at, b.start_date, b.end_date, b.created_at, b.status, b.pricing_json, ${customerNameExpr} as customer_name, ${customerEmailExpr} as customer_email, v.make as vehicle_make, v.model as vehicle_model, v.deposit_cents as vehicle_deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id ` +
+    `select b.id, b.public_id, b.archived_at, b.start_at, b.end_at, b.start_date, b.end_date, b.pickup_time::text as pickup_time, b.dropoff_time::text as dropoff_time, b.created_at, b.status, b.pricing_json, ${customerNameExpr} as customer_name, ${customerEmailExpr} as customer_email, v.make as vehicle_make, v.model as vehicle_model, v.deposit_cents as vehicle_deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id ` +
     whereSql +
     ` ${orderBySql} limit $${limitIndex} offset $${offsetIndex}`;
 
@@ -732,8 +730,16 @@ export async function fetchAdminBookingsPage(input: AdminBookingListQueryInput):
       customerName: row.customer_name,
       customerEmail: row.customer_email,
       vehicleLabel: `${row.vehicle_make} ${row.vehicle_model}`.trim(),
-      startDateLabel: fmtDateNoSeconds(row.start_date),
-      endDateLabel: fmtDateNoSeconds(row.end_date),
+      startDateLabel: buildBookingDateTimeLabel({
+        date: row.start_date,
+        time: row.pickup_time,
+        at: row.start_at,
+      }),
+      endDateLabel: buildBookingDateTimeLabel({
+        date: row.end_date,
+        time: row.dropoff_time,
+        at: row.end_at,
+      }),
       startDateIso: asIsoDateOnly(row.start_date),
       endDateIso: asIsoDateOnly(row.end_date),
       createdAtIso: asIsoTimestamp(row.created_at),

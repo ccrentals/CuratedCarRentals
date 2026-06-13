@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { hasPublicBookingAccessForPage } from "@/lib/bookings/publicAccess";
 import { DateRangeArrow } from "@/components/shared/DateRangeArrow";
 import { dbQuery } from "@/lib/db";
-import { fmtDateOnly } from "@/lib/dateFormat";
+import { formatBookingDateOnly } from "@/lib/bookings/bookingDateTime";
 import { formatJmd } from "@/lib/money";
 import { readBookingOverrideInfo } from "@/lib/bookings/holds";
 import {
@@ -108,9 +108,9 @@ export default async function BookingSummaryPage({
           <p>
             Dates:{" "}
             <span className="inline-flex items-center font-semibold text-[var(--ccr-text)]">
-              {fmtDateOnly(booking.start_date)}
+              {formatBookingDateOnly(booking.start_date)}
               <DateRangeArrow />
-              {fmtDateOnly(booking.end_date)}
+              {formatBookingDateOnly(booking.end_date)}
             </span>
           </p>
           <p>

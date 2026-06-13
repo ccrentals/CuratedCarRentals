@@ -9,6 +9,7 @@ import {
   isVehicleUnavailableWithAvailabilityRules,
   listAvailableVehiclesWithAvailabilityRules,
 } from "@/lib/bookings/availabilityRules";
+import { bookingDateTimeToUtcIso } from "@/lib/bookings/bookingDateTime";
 
 export type PublicVehicle = Vehicle & {
   make: string;
@@ -163,17 +164,17 @@ function toNormalizedAvailabilityWindow(
 
   const pickupTime = normalizeTimeOnly(input.pickupTime, "00:00");
   const dropoffTime = normalizeTimeOnly(input.dropoffTime, "23:59");
-  const start = new Date(`${pickupDate}T${pickupTime}:00`);
-  const end = new Date(`${dropoffDate}T${dropoffTime}:00`);
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) return null;
+  const startAtIso = bookingDateTimeToUtcIso(pickupDate, pickupTime);
+  const endAtIso = bookingDateTimeToUtcIso(dropoffDate, dropoffTime);
+  if (!startAtIso || !endAtIso || endAtIso <= startAtIso) return null;
 
   return {
     pickupDate,
     dropoffDate,
     pickupTime,
     dropoffTime,
-    startAtIso: start.toISOString(),
-    endAtIso: end.toISOString(),
+    startAtIso,
+    endAtIso,
   };
 }
 
