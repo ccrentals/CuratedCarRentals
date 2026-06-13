@@ -96,14 +96,7 @@ test("Pricing SSoT: insurance-aware pricing is wired into public quote and booki
 
 test("Entitlement SSoT wiring: public availability and payment reconciliation use entitlement helper", () => {
   const publicVehicles = read("src/lib/publicVehicles.ts");
-  assert.match(
-    publicVehicles,
-    /listAvailableVehiclesWithAvailabilityRules|listAvailableVehiclesEntitlementBased/,
-  );
-  assert.match(
-    publicVehicles,
-    /isVehicleUnavailableWithAvailabilityRules|isVehicleUnavailableEntitlementBased/,
-  );
+  assert.match(publicVehicles, /evaluateVehicleAvailability/);
 
   const publicBookingsCreate = read("src/app/api/public/bookings/route.ts");
   assert.match(publicBookingsCreate, /isPublicVehicleUnavailableForWindow/);

@@ -6,9 +6,8 @@ import {
   type AdminSettings,
 } from "@/lib/adminSettings";
 import {
-  isVehicleUnavailableWithAvailabilityRules,
-  listAvailableVehiclesWithAvailabilityRules,
-} from "@/lib/bookings/availabilityRules";
+  evaluateVehicleAvailability,
+} from "@/lib/bookings/vehicleAvailabilityDiagnostics";
 import { bookingDateTimeToUtcIso } from "@/lib/bookings/bookingDateTime";
 
 export type PublicVehicle = Vehicle & {
@@ -271,11 +270,16 @@ export async function getPublicVehiclesAvailableForWindow(
   const vehicles = await getPublicVehicles();
   if (vehicles.length === 0) return [];
 
-  return listAvailableVehiclesWithAvailabilityRules(
-    vehicles,
+  const decisions = await evaluateVehicleAvailability(
+    vehicles.map((vehicle) => ({
+      ...vehicle,
+      publicVisible: true,
+      dailyRateCents: vehicle.daily_rate_cents,
+    })),
     { startAt: window.startAtIso, endAt: window.endAtIso },
     { includeBlockouts: true },
   );
+  return decisions.filter((decision) => decision.available).map((decision) => decision.vehicle);
 }
 
 export async function isPublicVehicleUnavailableForWindow(
@@ -284,15 +288,18 @@ export async function isPublicVehicleUnavailableForWindow(
 ): Promise<boolean> {
   const window = toNormalizedAvailabilityWindow(input);
   if (!window || !UUID_REGEX.test(vehicleId)) return true;
-  const result = await isVehicleUnavailableWithAvailabilityRules(
-    {
-      vehicleId,
-      startAt: window.startAtIso,
-      endAt: window.endAtIso,
-    },
+  const vehicle = await getPublicVehicleByIdentifier(vehicleId);
+  if (!vehicle) return true;
+  const [decision] = await evaluateVehicleAvailability(
+    [{
+      ...vehicle,
+      publicVisible: true,
+      dailyRateCents: vehicle.daily_rate_cents,
+    }],
+    { startAt: window.startAtIso, endAt: window.endAtIso },
     { includeBlockouts: true },
   );
-  return result.unavailable;
+  return !decision?.available;
 }
 
 export async function getPublicVehicleByIdentifier(identifier: string): Promise<PublicVehicle | null> {

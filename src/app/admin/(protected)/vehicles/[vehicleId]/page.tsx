@@ -71,7 +71,7 @@ type VehicleBlockoutRow = VehicleStatusBlockoutLike;
 
 const VEHICLE_DETAIL_TABS = [
   { key: "overview", label: "Overview" },
-  { key: "reservations", label: "Reservations" },
+  { key: "reservations", label: "History" },
   { key: "performance", label: "Performance" },
   { key: "blockouts", label: "Blockouts" },
   { key: "availability", label: "Availability" },
@@ -224,7 +224,7 @@ export default async function AdminVehicleDetailPage({
 }) {
   const { vehicleId } = await params;
   const query = await searchParams;
-  const access = await resolveAdminActor({ requirement: "admin" });
+  const access = await resolveAdminActor({ requirement: "operations" });
   const canManageCommercial =
     access.ok && (access.actor.appRole === "ADMIN" || access.actor.appRole === "DEVELOPER");
   const visibleTabs = canManageCommercial
