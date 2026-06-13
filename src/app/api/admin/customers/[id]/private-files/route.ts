@@ -12,6 +12,7 @@ import { logError } from "@/lib/log";
 import { requireCsrf } from "@/lib/security/csrf";
 import {
   extractUploadcareFileId,
+  normalizeUploadcareDeliveryUrl,
   UploadcareFileValidationError,
   validateUploadcareFiles,
 } from "@/lib/uploads/uploadcare";
@@ -155,13 +156,18 @@ export async function POST(
       }
       customerPublicId = customer.public_id;
 
+      const fileIds = metadata.map((file) => file.uuid);
       const duplicateResult = (await client.query(
         `select storage_key
          from booking_private_files
          where customer_id = $1::uuid
            and document_type = $2
-           and storage_key = any($3::text[])`,
-        [customerId, CUSTOMER_PRIVATE_FILE_DOCUMENT_TYPE, references],
+           and exists (
+             select 1
+             from unnest($3::text[]) as candidate(file_id)
+             where storage_key ilike '%' || candidate.file_id || '%'
+           )`,
+        [customerId, CUSTOMER_PRIVATE_FILE_DOCUMENT_TYPE, fileIds],
       )) as { rows: Array<{ storage_key: string }> };
       if (duplicateResult.rows.length > 0) {
         await client.query("rollback");
@@ -171,8 +177,12 @@ export async function POST(
         );
       }
 
-      for (const file of metadata) {
+      for (const [index, file] of metadata.entries()) {
         const uploadedAt = new Date().toISOString();
+        const storageKey =
+          file.originalFileUrl ??
+          normalizeUploadcareDeliveryUrl(references[index]) ??
+          file.uuid;
         const insertResult = (await client.query(
           `insert into booking_private_files (
              customer_id,
@@ -214,7 +224,7 @@ export async function POST(
           [
             customerId,
             CUSTOMER_PRIVATE_FILE_DOCUMENT_TYPE,
-            file.uuid,
+            storageKey,
             file.originalFilename,
             file.mimeType,
             file.size,

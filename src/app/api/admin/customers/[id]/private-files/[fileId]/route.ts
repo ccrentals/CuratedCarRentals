@@ -14,7 +14,9 @@ import { requireCsrf } from "@/lib/security/csrf";
 import {
   buildUploadcareCdnUrl,
   deleteUploadcareFile,
+  extractUploadcareDeliveryUrl,
   extractUploadcareFileId,
+  getUploadcareFileMetadata,
 } from "@/lib/uploads/uploadcare";
 import { writeMediaAudit } from "@/lib/uploads/mediaAudit";
 
@@ -95,10 +97,33 @@ export async function GET(
       return jsonNoStore({ ok: false, error: "Unsupported storage reference." }, 500);
     }
 
-    const upstream = await fetch(buildUploadcareCdnUrl(uploadcareFileId), {
-      cache: "no-store",
-    });
-    if (!upstream.ok || !upstream.body) {
+    const candidateUrls = new Set<string>();
+    const storedDeliveryUrl = extractUploadcareDeliveryUrl(file.storage_key);
+    if (storedDeliveryUrl) candidateUrls.add(storedDeliveryUrl);
+
+    try {
+      const metadata = await getUploadcareFileMetadata(uploadcareFileId);
+      if (metadata.originalFileUrl) candidateUrls.add(metadata.originalFileUrl);
+    } catch (error) {
+      logError("api.admin.customers.private-files.file.metadata", error, {
+        customerId,
+        fileId,
+        uploadcareFileId,
+        userId: auth.actor.userId,
+      });
+    }
+
+    candidateUrls.add(buildUploadcareCdnUrl(uploadcareFileId));
+
+    let upstream: Response | null = null;
+    for (const candidateUrl of candidateUrls) {
+      const response = await fetch(candidateUrl, { cache: "no-store" });
+      if (response.ok && response.body) {
+        upstream = response;
+        break;
+      }
+    }
+    if (!upstream) {
       return jsonNoStore({ ok: false, error: "Unable to load file from storage." }, 502);
     }
     const mimeType = resolveCustomerPrivateFileMimeType(
