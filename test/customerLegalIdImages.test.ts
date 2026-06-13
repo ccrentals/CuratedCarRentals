@@ -48,11 +48,17 @@ test("customer private-file APIs require auth, CSRF, ownership scoping, and safe
   assert.match(collectionRoute, /requireCsrf/);
   assert.match(collectionRoute, /validateUploadcareFiles\(references, CUSTOMER_ID_IMAGE_POLICY\)/);
   assert.match(collectionRoute, /customer_id = \$1::uuid/);
+  assert.match(collectionRoute, /file\.originalFileUrl/);
+  assert.match(collectionRoute, /normalizeUploadcareDeliveryUrl\(references\[index\]\)/);
+  assert.match(collectionRoute, /storage_key ilike '%' \|\| candidate\.file_id \|\| '%'/);
   assert.match(collectionRoute, /already attached to this customer/);
   assert.match(collectionRoute, /source: "admin_customer_profile"/);
 
   assert.match(itemRoute, /bpf\.customer_id = \$2::uuid/);
   assert.match(itemRoute, /parseSafePrivateBookingImageDataUrl/);
+  assert.match(itemRoute, /extractUploadcareDeliveryUrl\(file\.storage_key\)/);
+  assert.match(itemRoute, /getUploadcareFileMetadata\(uploadcareFileId\)/);
+  assert.match(itemRoute, /candidateUrls\.add\(buildUploadcareCdnUrl\(uploadcareFileId\)\)/);
   assert.match(itemRoute, /x-content-type-options": "nosniff"/);
   assert.match(itemRoute, /count\(\*\) from booking_private_files/);
   assert.match(itemRoute, /deleteUploadcareFile/);
