@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { handleAdminQuoteConvertPost } from "@/app/api/admin/quotes/[id]/convert-to-booking/route";
-import { QuoteOpsError } from "@/lib/quotes/quoteOps";
+import {
+  buildQuoteConversionPricingSnapshot,
+  QuoteOpsError,
+  type QuoteOpsQuote,
+} from "@/lib/quotes/quoteOps";
 
 function adminSession() {
   return {
@@ -72,7 +76,7 @@ test("admin quotes convert API: converts quote and returns booking id", async ()
         publicId: "QU000123",
         createdAt: "2026-02-22T12:00:00.000Z",
         updatedAt: "2026-02-22T12:00:00.000Z",
-        status: "SENT",
+        status: "ACCEPTED",
         expiresAt: "2030-01-01T00:00:00.000Z",
         customerFullName: "Damian Thompson",
         customerEmail: "damian@example.com",
@@ -143,7 +147,7 @@ test("admin quotes convert API: blocks conversion when vehicle availability fail
         publicId: "QU000123",
         createdAt: "2026-02-22T12:00:00.000Z",
         updatedAt: "2026-02-22T12:00:00.000Z",
-        status: "SENT",
+        status: "ACCEPTED",
         expiresAt: "2030-01-01T00:00:00.000Z",
         customerFullName: "Damian Thompson",
         customerEmail: "damian@example.com",
@@ -262,4 +266,102 @@ test("admin quotes convert API: blocks expired quote before conversion", async (
   const body = (await response.json()) as { ok: boolean; code?: string };
   assert.equal(body.ok, false);
   assert.equal(body.code, "QUOTE_EXPIRED");
+});
+
+test("admin quotes convert API: blocks quotes that have not been accepted", async () => {
+  let convertCalled = false;
+  const quote = {
+    ...quoteFixtureForSnapshot(),
+    status: "SENT",
+  };
+
+  const response = await handleAdminQuoteConvertPost(
+    new Request(`http://localhost/api/admin/quotes/${quote.id}/convert-to-booking`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-csrf-token": "token" },
+      body: JSON.stringify({ csrfToken: "token" }),
+    }),
+    { params: Promise.resolve({ id: quote.id }) },
+    {
+      getSession: async () => adminSession(),
+      requireCsrfCheck: async () => true,
+      getQuote: async () => quote,
+      convertQuote: async () => {
+        convertCalled = true;
+        return { bookingId: "ignored", alreadyConverted: false };
+      },
+    },
+  );
+
+  assert.equal(response.status, 409);
+  assert.equal(convertCalled, false);
+  const body = (await response.json()) as { code?: string };
+  assert.equal(body.code, "QUOTE_NOT_ACCEPTED");
+});
+
+function quoteFixtureForSnapshot(): QuoteOpsQuote {
+  return {
+    id: "c3ad4e53-f14f-4ac9-98fd-f4bacf1ec3d2",
+    publicId: "QU000123",
+    createdAt: "2026-02-22T12:00:00.000Z",
+    updatedAt: "2026-02-22T12:00:00.000Z",
+    status: "ACCEPTED",
+    expiresAt: "2030-01-01T00:00:00.000Z",
+    customerFullName: "Damian Thompson",
+    customerEmail: "damian@example.com",
+    customerPhone: "+1 876 555 0144",
+    startAt: "2026-03-10T10:00:00.000Z",
+    endAt: "2026-03-12T10:00:00.000Z",
+    pickupLocationId: null,
+    dropoffLocationId: null,
+    pickupLocationText: "Norman Manley Airport",
+    dropoffLocationText: "Norman Manley Airport",
+    bookingLocationDetails: bookingLocationDetails(),
+    vehicleId: "6f11f0cf-cedf-4db3-a5fd-64bfe7fded1e",
+    vehicleLabel: "Nissan X-Trail",
+    vehicleClass: "SUV",
+    pricingJson: {
+      daily_rate_cents: 12000,
+      insurance_price_per_day_cents: 1200,
+      delivery_fee_cents: 2500,
+      payment_option_selected: "DEPOSIT",
+    },
+    baseTotalCents: 24000,
+    insuranceTotalCents: 2400,
+    discountTotalCents: 1000,
+    subtotalCents: 28900,
+    totalCents: 27900,
+    depositRequiredCents: 8000,
+    amountDueCents: 8000,
+    promoCode: "SAVE10",
+    insurancePlanId: null,
+    insuranceEnabled: true,
+    tags: [],
+    comments: null,
+    commissionPartnerName: null,
+    clientPaysAtPartner: false,
+    rackPriceCents: 30000,
+    createdByAdminUserId: null,
+    lastEmailedAt: null,
+    lastEmailedTo: null,
+    convertedBookingId: null,
+  };
+}
+
+test("quote conversion pricing uses the accepted quote snapshot without repricing", () => {
+  const quote = quoteFixtureForSnapshot();
+  const snapshot = buildQuoteConversionPricingSnapshot(quote);
+
+  assert.deepEqual(snapshot.summary, {
+    baseTotalCents: 24000,
+    insuranceTotalCents: 2400,
+    discountTotalCents: 1000,
+    subtotalCents: 28900,
+    totalCents: 27900,
+    depositRequiredCents: 8000,
+    amountDueCents: 8000,
+  });
+  assert.equal(snapshot.rackPriceCents, 30000);
+  assert.equal(snapshot.pricingJson.delivery_fee_cents, 2500);
+  assert.equal(snapshot.pricingJson.total_cents, 27900);
 });

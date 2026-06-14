@@ -5,6 +5,7 @@ import { handleAdminQuotePatch } from "@/app/api/admin/quotes/[id]/route";
 import { handleAdminQuotesGet, handleAdminQuotesPost } from "@/app/api/admin/quotes/route";
 import {
   AdminQuoteError,
+  assertAdminQuoteMutable,
   quoteWindowsOverlap,
   type AdminQuoteDetailItem,
   type FetchAdminQuotesInput,
@@ -277,4 +278,20 @@ test("admin quotes API: PATCH forwards status and repricing fields", async () =>
   const body = (await response.json()) as { ok: boolean; item: { status: string } };
   assert.equal(body.ok, true);
   assert.equal(body.item.status, "SENT");
+});
+
+test("admin quotes API: converted quotes are immutable", () => {
+  assert.throws(
+    () =>
+      assertAdminQuoteMutable({
+        status: "CONVERTED",
+        convertedBookingId: "f37f8ec6-0996-4143-b3e5-6fc06b6de99f",
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof AdminQuoteError);
+      assert.equal(error.code, "QUOTE_IMMUTABLE");
+      assert.equal(error.status, 409);
+      return true;
+    },
+  );
 });

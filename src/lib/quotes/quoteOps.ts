@@ -11,9 +11,8 @@ import { writeAuditLog } from "@/lib/audit";
 import { CustomerBlockedError, upsertCustomerForBooking } from "@/lib/customers";
 import { dbQuery, getDbPool } from "@/lib/db";
 import { logWarn } from "@/lib/log";
-import { validatePromoForBooking } from "@/lib/promos";
 import { resolveEffectiveQuoteStatus } from "@/lib/quotes/lifecycle";
-import { buildQuotePricingSnapshot } from "@/lib/quotes/quotePricing";
+import type { QuotePricingSnapshot } from "@/lib/quotes/quotePricing";
 import {
   sendTrackedResendEmail,
   type EmailDispatchContext,
@@ -352,7 +351,7 @@ export async function updateQuoteLastEmailed(
   };
 
   await db.query(
-    "update quotes set last_emailed_at = now(), last_emailed_to = $2, updated_at = now() where id = $1::uuid",
+    "update quotes set last_emailed_at = now(), last_emailed_to = $2, status = case when upper(status) = 'DRAFT' then 'SENT' else status end, updated_at = now() where id = $1::uuid",
     [input.quoteId, input.toEmail],
   );
 }
@@ -804,6 +803,44 @@ function readInsurancePricePerDay(pricingJson: Record<string, unknown>) {
   return normalizeInt(pricingJson.insurance_price_per_day_cents);
 }
 
+export function buildQuoteConversionPricingSnapshot(quote: QuoteOpsQuote): QuotePricingSnapshot {
+  const rackPriceCents = quote.rackPriceCents ?? quote.baseTotalCents;
+  return {
+    vehicleLabel: quote.vehicleLabel,
+    vehicleClass: quote.vehicleClass,
+    insuranceEnabled: quote.insuranceEnabled,
+    insurancePlanId: quote.insurancePlanId,
+    promoCode: quote.promoCode,
+    promoId: null,
+    rackPriceCents,
+    pricingJson: {
+      ...quote.pricingJson,
+      vehicle_label: quote.vehicleLabel,
+      vehicle_class: quote.vehicleClass,
+      insurance_selected: quote.insuranceEnabled,
+      insurance_plan_id: quote.insurancePlanId,
+      promo_code: quote.promoCode,
+      rack_price_cents: rackPriceCents,
+      base_total_cents: quote.baseTotalCents,
+      insurance_total_cents: quote.insuranceTotalCents,
+      discount_total_cents: quote.discountTotalCents,
+      subtotal_cents: quote.subtotalCents,
+      total_cents: quote.totalCents,
+      deposit_required_cents: quote.depositRequiredCents,
+      amount_due_cents: quote.amountDueCents,
+    },
+    summary: {
+      baseTotalCents: quote.baseTotalCents,
+      insuranceTotalCents: quote.insuranceTotalCents,
+      discountTotalCents: quote.discountTotalCents,
+      subtotalCents: quote.subtotalCents,
+      totalCents: quote.totalCents,
+      depositRequiredCents: quote.depositRequiredCents,
+      amountDueCents: quote.amountDueCents,
+    },
+  };
+}
+
 export async function convertQuoteToBooking(input: {
   quoteId: string;
   actorAdminUserId?: string | null;
@@ -835,6 +872,13 @@ export async function convertQuoteToBooking(input: {
 
     if (quote.status === "EXPIRED") {
       throw new QuoteOpsError("QUOTE_EXPIRED", "Quote is expired.", 409);
+    }
+    if (quote.status !== "ACCEPTED") {
+      throw new QuoteOpsError(
+        "QUOTE_NOT_ACCEPTED",
+        "Only accepted quotes can be converted to bookings.",
+        409,
+      );
     }
 
     if (!quote.vehicleId) {
@@ -895,23 +939,7 @@ export async function convertQuoteToBooking(input: {
       throw error;
     }
 
-    const pricingSnapshot = await buildQuotePricingSnapshot(
-      {
-        vehicleId: quote.vehicleId,
-        startAt,
-        endAt,
-        insuranceEnabled: quote.insuranceEnabled,
-        insurancePlanId: quote.insurancePlanId,
-        promoCode: quote.promoCode,
-        customerEmail: quote.customerEmail,
-        rackPriceCents: quote.rackPriceCents,
-        deliverySelected:
-          normalizeBoolean((quote.pricingJson ?? {})["delivery_selected"]) || false,
-        deliveryZoneLabel:
-          normalizeNullableText((quote.pricingJson ?? {})["delivery_zone_label"]) ?? null,
-      },
-      { client },
-    );
+    const pricingSnapshot = buildQuoteConversionPricingSnapshot(quote);
 
     const startDate = toDateOnly(startAt);
     const endDate = toDateOnly(endAt);
@@ -924,28 +952,15 @@ export async function convertQuoteToBooking(input: {
     }
 
     let promoId: string | null = null;
-    let promoDiscount = pricingSnapshot.summary.discountTotalCents;
+    const promoDiscount = pricingSnapshot.summary.discountTotalCents;
     const promoCode = pricingSnapshot.promoCode;
 
     if (promoCode) {
-      const promoValidation = await validatePromoForBooking({
-        code: promoCode,
-        vehicleId: quote.vehicleId,
-        startDate,
-        endDate,
-        subtotalCents: pricingSnapshot.summary.subtotalCents,
-        baseTotalCents: pricingSnapshot.summary.baseTotalCents,
-        customerId: customerUpsert.customerId,
-        customerEmail: quote.customerEmail,
-        client,
-      });
-
-      if (!promoValidation.ok) {
-        throw new QuoteOpsError("PROMO_INVALID", promoValidation.message, 400);
-      }
-
-      promoId = promoValidation.promoId;
-      promoDiscount = promoValidation.discountAmountCents;
+      const promoResult = await client.query(
+        "select id from promo_codes where lower(code) = lower($1) limit 1",
+        [promoCode],
+      );
+      promoId = normalizeNullableText((promoResult.rows[0] as { id?: unknown } | undefined)?.id);
     }
 
     const paymentOptionRaw = normalizeText(

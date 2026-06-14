@@ -282,6 +282,8 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
 
   const rackPrice = item.rackPriceCents ?? item.baseTotalCents;
   const isCancelled = item.status === "CANCELLED";
+  const isConverted = item.status === "CONVERTED" || Boolean(item.convertedBookingId);
+  const canConvert = item.status === "ACCEPTED" && !isConverted;
   const canToggleInvoiceCancellation = ["DRAFT", "SENT", "ACCEPTED", "CANCELLED"].includes(item.status);
 
   return (
@@ -341,11 +343,11 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
           </button>
           <button
             type="button"
-            disabled={converting || Boolean(item.convertedBookingId)}
+            disabled={converting || !canConvert}
             onClick={() => void convertQuote()}
             className={buttonStyles({ variant: "secondary", size: "sm" })}
           >
-            {item.convertedBookingId ? "Converted" : converting ? "Converting..." : "Convert to Booking"}
+            {isConverted ? "Converted" : converting ? "Converting..." : "Convert to Booking"}
           </button>
           <button
             type="button"
@@ -376,7 +378,7 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
             <button
               type="button"
               onClick={() => void patchQuote({ status: "SENT" })}
-              disabled={saving || item.status === "SENT"}
+              disabled={saving || isConverted || item.status === "SENT"}
               data-testid="quote-mark-sent"
               className={buttonStyles({ variant: "secondary", size: "sm", className: "rounded-lg" })}
             >
@@ -385,7 +387,7 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
             <button
               type="button"
               onClick={() => void patchQuote({ status: "ACCEPTED" })}
-              disabled={saving || item.status === "ACCEPTED"}
+              disabled={saving || isConverted || item.status === "ACCEPTED"}
               className={buttonStyles({ variant: "secondary", size: "sm", className: "rounded-lg" })}
             >
               Mark Accepted
@@ -393,7 +395,7 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
             <button
               type="button"
               onClick={() => void patchQuote({ status: "EXPIRED" })}
-              disabled={saving || item.status === "EXPIRED"}
+              disabled={saving || isConverted || item.status === "EXPIRED"}
               className={buttonStyles({ variant: "secondary", size: "sm", className: "rounded-lg" })}
             >
               Mark Expired
@@ -401,7 +403,7 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
             <button
               type="button"
               onClick={() => void patchQuote({ status: "CANCELLED" })}
-              disabled={saving || item.status === "CANCELLED"}
+              disabled={saving || isConverted || item.status === "CANCELLED"}
               className={buttonStyles({ variant: "secondary", size: "sm", className: "rounded-lg" })}
             >
               Mark Cancelled
@@ -523,6 +525,7 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
               type="datetime-local"
               value={expiresAtLocal}
               onChange={(event) => setExpiresAtLocal(event.target.value)}
+              disabled={isConverted}
               className="promo-date-time-input mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
             />
           </label>
@@ -535,6 +538,7 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
               step="1"
               value={rackPriceInput}
               onChange={(event) => setRackPriceInput(event.target.value)}
+              disabled={isConverted}
               className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
             />
           </label>
@@ -544,6 +548,7 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
             <input
               value={tagsInput}
               onChange={(event) => setTagsInput(event.target.value)}
+              disabled={isConverted}
               className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
               placeholder="vip, airport"
             />
@@ -555,6 +560,7 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
               rows={3}
               value={comments}
               onChange={(event) => setComments(event.target.value)}
+              disabled={isConverted}
               className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
             />
           </label>
@@ -564,6 +570,7 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
             <input
               value={commissionPartnerName}
               onChange={(event) => setCommissionPartnerName(event.target.value)}
+              disabled={isConverted}
               className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
             />
           </label>
@@ -573,6 +580,7 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
               type="checkbox"
               checked={clientPaysAtPartner}
               onChange={(event) => setClientPaysAtPartner(event.target.checked)}
+              disabled={isConverted}
               className="h-4 w-4"
             />
             Client pays at partner
@@ -582,7 +590,7 @@ export function QuoteDetailClient({ quoteId, canManage, createdFlag = false, ini
         <div className="mt-3 flex justify-end">
           <button
             type="button"
-            disabled={saving}
+            disabled={saving || isConverted}
             onClick={() =>
               void patchQuote({
                 expires_at: toIsoFromDateTimeLocal(expiresAtLocal),

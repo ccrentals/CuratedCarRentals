@@ -61,7 +61,7 @@ export type AdminQuoteEmailRouteDeps = {
   updateQuoteLastEmailedAt: (input: { quoteId: string; toEmail: string }) => Promise<void>;
   logQuoteEvent: (input: {
     quoteId: string;
-    eventType: "EMAILED";
+    eventType: "EMAILED" | "STATUS_CHANGED";
     actorAdminUserId?: string | null;
     meta?: Record<string, unknown>;
   }) => Promise<void>;
@@ -214,6 +214,19 @@ export async function handleAdminQuoteEmailPost(
     }
 
     await deps.updateQuoteLastEmailedAt({ quoteId: quote.id, toEmail });
+
+    if (quote.status === "DRAFT") {
+      await deps.logQuoteEvent({
+        quoteId: quote.id,
+        eventType: "STATUS_CHANGED",
+        actorAdminUserId: actor.userId,
+        meta: {
+          fromStatus: "DRAFT",
+          toStatus: "SENT",
+          source: "QUOTE_EMAIL",
+        },
+      });
+    }
 
     await deps.logQuoteEvent({
       quoteId: quote.id,

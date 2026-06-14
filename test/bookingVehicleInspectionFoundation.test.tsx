@@ -5,6 +5,7 @@ import test from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import {
+  handleAdminBookingConfirmAction,
   handleAdminBookingCompleteAction,
   handleAdminBookingPickupAction,
 } from "@/app/api/admin/bookings/[id]/route";
@@ -3333,7 +3334,7 @@ test("admin booking pickup action: succeeds when completed pickup inspection exi
       }
       if (text.startsWith("update bookings set status = 'PICKED_UP'")) {
         assert.deepEqual(params, [BOOKING_ID]);
-        return { rows: [] as T[], rowCount: 1 };
+        return { rows: [{ id: BOOKING_ID }] as T[], rowCount: 1 };
       }
       throw new Error(`Unexpected query: ${text}`);
     },
@@ -3345,6 +3346,50 @@ test("admin booking pickup action: succeeds when completed pickup inspection exi
 
   assert.equal(response.status, 200);
   assert.ok(queries.some((entry) => entry.startsWith("update bookings set status = 'PICKED_UP'")));
+});
+
+test("admin booking pickup action: concurrent status change does not duplicate side effects", async () => {
+  let auditCount = 0;
+  let emailCount = 0;
+  const response = await handleAdminBookingPickupAction(BOOKING_ID, authorizedStaffResult().session, {
+    query: async <T = unknown>(text: string) => {
+      if (text.startsWith("select b.status")) {
+        return {
+          rows: [{
+            status: "CONFIRMED",
+            start_date: "2026-03-15",
+            end_date: "2026-03-17",
+            pricing_json: {
+              total_cents: 18600,
+              paid_to_date: 18600,
+              balance_due: 0,
+              payment_status: "PAID_IN_FULL",
+            },
+            daily_rate_cents: 6200,
+            deposit_cents: 1860,
+          }] as T[],
+          rowCount: 1,
+        };
+      }
+      if (text.startsWith("update bookings set status = 'PICKED_UP'")) {
+        return { rows: [] as T[], rowCount: 0 };
+      }
+      throw new Error(`Unexpected query: ${text}`);
+    },
+    fetchNetPaid: async () => 18600,
+    hasCompletedPickupInspection: async () => true,
+    writeAudit: async () => {
+      auditCount += 1;
+    },
+    sendPickupConfirmed: async () => {
+      emailCount += 1;
+      return { ok: true };
+    },
+  });
+
+  assert.equal(response.status, 409);
+  assert.equal(auditCount, 0);
+  assert.equal(emailCount, 0);
 });
 
 test("admin booking complete action: blocks completion without completed return inspection", async () => {
@@ -3411,7 +3456,7 @@ test("admin booking complete action: succeeds when completed return inspection e
         }
         if (text.startsWith("update bookings set status = 'RETURNED'")) {
           assert.deepEqual(params, [BOOKING_ID, "admin-user-id", "Completed/Returned"]);
-          return { rows: [] as T[], rowCount: 1 };
+          return { rows: [{ id: BOOKING_ID }] as T[], rowCount: 1 };
         }
         throw new Error(`Unexpected query: ${text}`);
       },
@@ -3422,4 +3467,82 @@ test("admin booking complete action: succeeds when completed return inspection e
 
   assert.equal(response.status, 200);
   assert.ok(queries.some((entry) => entry.startsWith("update bookings set status = 'RETURNED'")));
+});
+
+test("admin booking complete action: concurrent status change does not duplicate audits", async () => {
+  let auditCount = 0;
+  const response = await handleAdminBookingCompleteAction(
+    BOOKING_ID,
+    authorizedStaffResult().session,
+    {
+      query: async <T = unknown>(text: string) => {
+        if (text.startsWith("select status from bookings")) {
+          return { rows: [{ status: "PICKED_UP" }] as T[], rowCount: 1 };
+        }
+        if (text.startsWith("update bookings set status = 'RETURNED'")) {
+          return { rows: [] as T[], rowCount: 0 };
+        }
+        throw new Error(`Unexpected query: ${text}`);
+      },
+      hasCompletedReturnInspection: async () => true,
+      writeAudit: async () => {
+        auditCount += 1;
+      },
+    },
+  );
+
+  assert.equal(response.status, 409);
+  assert.equal(auditCount, 0);
+});
+
+test("admin booking confirm action: uses a conditional transition and audits only the winner", async () => {
+  let auditCount = 0;
+  const response = await handleAdminBookingConfirmAction(
+    BOOKING_ID,
+    authorizedStaffResult().session,
+    {
+      query: async <T = unknown>(text: string, params?: unknown[]) => {
+        if (text.startsWith("select status from bookings")) {
+          return { rows: [{ status: "PENDING_PAYMENT" }] as T[], rowCount: 1 };
+        }
+        if (text.startsWith("update bookings set status = 'CONFIRMED'")) {
+          assert.match(text, /upper\(status\) in \('PENDING_PAYMENT', 'PENDING'\).*returning id/i);
+          assert.deepEqual(params, [BOOKING_ID]);
+          return { rows: [{ id: BOOKING_ID }] as T[], rowCount: 1 };
+        }
+        throw new Error(`Unexpected query: ${text}`);
+      },
+      writeAudit: async () => {
+        auditCount += 1;
+      },
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(auditCount, 1);
+});
+
+test("admin booking confirm action: concurrent status change does not write an audit", async () => {
+  let auditCount = 0;
+  const response = await handleAdminBookingConfirmAction(
+    BOOKING_ID,
+    authorizedStaffResult().session,
+    {
+      query: async <T = unknown>(text: string) => {
+        if (text.startsWith("select status from bookings")) {
+          return { rows: [{ status: "PENDING" }] as T[], rowCount: 1 };
+        }
+        if (text.startsWith("update bookings set status = 'CONFIRMED'")) {
+          return { rows: [] as T[], rowCount: 0 };
+        }
+        throw new Error(`Unexpected query: ${text}`);
+      },
+      writeAudit: async () => {
+        auditCount += 1;
+      },
+    },
+  );
+
+  assert.equal(response.status, 409);
+  assert.equal(auditCount, 0);
 });

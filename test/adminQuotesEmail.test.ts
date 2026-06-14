@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { handleAdminQuoteEmailPost } from "@/app/api/admin/quotes/[id]/email/route";
+import { updateQuoteLastEmailed } from "@/lib/quotes/quoteOps";
 
 function adminSession() {
   return {
@@ -148,10 +149,41 @@ test("admin quotes email API: sends email and writes event/email logs", async ()
   assert.equal(logs.some((entry) => entry.type === "event"), true);
   assert.equal(logs.some((entry) => entry.type === "email"), true);
 
+  const statusEvent = logs.find(
+    (entry) =>
+      entry.type === "event" &&
+      (entry.payload as { eventType?: string }).eventType === "STATUS_CHANGED",
+  ) as { payload: { meta?: { fromStatus?: string; toStatus?: string } } } | undefined;
+  assert.equal(statusEvent?.payload.meta?.fromStatus, "DRAFT");
+  assert.equal(statusEvent?.payload.meta?.toStatus, "SENT");
+
   const emailLog = logs.find((entry) => entry.type === "email") as
     | { type: string; payload: { status?: string } }
     | undefined;
   assert.equal(emailLog?.payload?.status, "SENT");
+});
+
+test("quote email persistence transitions only draft quotes to sent", async () => {
+  let capturedSql = "";
+  let capturedParams: unknown[] = [];
+
+  await updateQuoteLastEmailed({
+    quoteId: "c3ad4e53-f14f-4ac9-98fd-f4bacf1ec3d2",
+    toEmail: "damian@example.com",
+    client: {
+      query: async (text, params = []) => {
+        capturedSql = text;
+        capturedParams = params;
+        return { rows: [], rowCount: 1 };
+      },
+    },
+  });
+
+  assert.match(capturedSql, /case when upper\(status\) = 'DRAFT' then 'SENT' else status end/i);
+  assert.deepEqual(capturedParams, [
+    "c3ad4e53-f14f-4ac9-98fd-f4bacf1ec3d2",
+    "damian@example.com",
+  ]);
 });
 
 test("admin quotes email API: blocks the 4th quote email in an hour", async () => {

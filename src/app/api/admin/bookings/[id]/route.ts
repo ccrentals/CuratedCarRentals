@@ -408,9 +408,16 @@ export async function handleAdminBookingPickupAction(
     );
   }
 
-  await resolvedDeps.query("update bookings set status = 'PICKED_UP', updated_at = now() where id = $1", [
-    bookingId,
-  ]);
+  const transitionResult = await resolvedDeps.query<{ id: string }>(
+    "update bookings set status = 'PICKED_UP', updated_at = now() where id = $1 and upper(status) = 'CONFIRMED' returning id",
+    [bookingId],
+  );
+  if (transitionResult.rowCount === 0) {
+    return NextResponse.json(
+      { error: "Booking status changed before pickup could be confirmed. Refresh and try again." },
+      { status: 409 },
+    );
+  }
 
   await resolvedDeps.writeAudit({
     userId: session.userId,
@@ -510,19 +517,27 @@ export async function handleAdminBookingCompleteAction(
     );
   }
 
+  let transitionResult: Awaited<ReturnType<typeof resolvedDeps.query>>;
   try {
-    await resolvedDeps.query(
-      "update bookings set status = 'RETURNED', archived_at = now(), archived_by_user_id = $2, archived_reason = $3, updated_at = now() where id = $1",
+    transitionResult = await resolvedDeps.query(
+      "update bookings set status = 'RETURNED', archived_at = now(), archived_by_user_id = $2, archived_reason = $3, updated_at = now() where id = $1 and upper(status) = 'PICKED_UP' returning id",
       [bookingId, session.userId, "Completed/Returned"],
     );
   } catch (error) {
     if (isUndefinedColumn(error, "archived_at")) {
-      await resolvedDeps.query("update bookings set status = 'RETURNED', updated_at = now() where id = $1", [
-        bookingId,
-      ]);
+      transitionResult = await resolvedDeps.query(
+        "update bookings set status = 'RETURNED', updated_at = now() where id = $1 and upper(status) = 'PICKED_UP' returning id",
+        [bookingId],
+      );
     } else {
       throw error;
     }
+  }
+  if (transitionResult.rowCount === 0) {
+    return NextResponse.json(
+      { error: "Booking status changed before completion. Refresh and try again." },
+      { status: 409 },
+    );
   }
 
   await resolvedDeps.writeAudit({
@@ -547,6 +562,65 @@ export async function handleAdminBookingCompleteAction(
   return NextResponse.json({ ok: true, message: "Booking completed." });
 }
 
+type ConfirmActionBookingRow = {
+  status: string;
+};
+
+export type AdminBookingConfirmActionDeps = {
+  query: typeof dbQuery;
+  writeAudit: typeof writeAuditLog;
+};
+
+const DEFAULT_BOOKING_CONFIRM_ACTION_DEPS: AdminBookingConfirmActionDeps = {
+  query: dbQuery,
+  writeAudit: writeAuditLog,
+};
+
+export async function handleAdminBookingConfirmAction(
+  bookingId: string,
+  session: AdminSession,
+  deps: Partial<AdminBookingConfirmActionDeps> = {},
+) {
+  const resolvedDeps = { ...DEFAULT_BOOKING_CONFIRM_ACTION_DEPS, ...deps };
+  const bookingResult = await resolvedDeps.query<ConfirmActionBookingRow>(
+    "select status from bookings where id = $1",
+    [bookingId],
+  );
+
+  if (bookingResult.rowCount === 0) {
+    return NextResponse.json({ error: "Booking not found" }, { status: 404 });
+  }
+
+  const status = bookingResult.rows[0].status.toUpperCase();
+  if (status === "CONFIRMED") {
+    return NextResponse.json({ ok: true, message: "Booking is already confirmed." });
+  }
+  if (!["PENDING_PAYMENT", "PENDING"].includes(status)) {
+    return NextResponse.json({ error: "Booking cannot be confirmed" }, { status: 400 });
+  }
+
+  const transitionResult = await resolvedDeps.query<{ id: string }>(
+    "update bookings set status = 'CONFIRMED', updated_at = now() where id = $1 and upper(status) in ('PENDING_PAYMENT', 'PENDING') returning id",
+    [bookingId],
+  );
+  if (transitionResult.rowCount === 0) {
+    return NextResponse.json(
+      { error: "Booking status changed before it could be confirmed. Refresh and try again." },
+      { status: 409 },
+    );
+  }
+
+  await resolvedDeps.writeAudit({
+    userId: session.userId,
+    action: "BOOKING_CONFIRMED",
+    entityType: "booking",
+    entityId: bookingId,
+    details: { previous_status: status },
+  });
+
+  return NextResponse.json({ ok: true });
+}
+
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -567,33 +641,7 @@ export async function PATCH(
   }
 
   if (action === "confirm") {
-    const bookingResult = await dbQuery<{ status: string }>(
-      "select status from bookings where id = $1",
-      [id],
-    );
-
-    if (bookingResult.rowCount === 0) {
-      return NextResponse.json({ error: "Booking not found" }, { status: 404 });
-    }
-
-    const status = bookingResult.rows[0].status;
-    if (!["PENDING_PAYMENT", "PENDING"].includes(status)) {
-      return NextResponse.json({ error: "Booking cannot be confirmed" }, { status: 400 });
-    }
-
-    await dbQuery("update bookings set status = 'CONFIRMED', updated_at = now() where id = $1", [
-      id,
-    ]);
-
-    await writeAuditLog({
-      userId: session.userId,
-      action: "BOOKING_CONFIRMED",
-      entityType: "booking",
-      entityId: id,
-      details: { previous_status: status },
-    });
-
-    return NextResponse.json({ ok: true });
+    return handleAdminBookingConfirmAction(id, session);
   }
 
   if (action === "complete") {

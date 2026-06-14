@@ -965,6 +965,21 @@ function hasStatusChange(previousStatus: string, nextStatus: string) {
   return String(previousStatus).trim().toUpperCase() !== String(nextStatus).trim().toUpperCase();
 }
 
+export function assertAdminQuoteMutable(input: {
+  status: string;
+  expiresAt?: string | Date | null;
+  convertedBookingId?: string | null;
+}) {
+  const effectiveStatus = resolveEffectiveQuoteStatus(input.status, input.expiresAt);
+  if (input.convertedBookingId || effectiveStatus === "CONVERTED") {
+    throw new AdminQuoteError(
+      "QUOTE_IMMUTABLE",
+      "Converted quotes are read-only. Update the booking instead.",
+      409,
+    );
+  }
+}
+
 export async function updateAdminQuote(input: UpdateAdminQuoteInput) {
   if (!UUID_REGEX.test(input.id)) {
     throw new AdminQuoteError("INVALID_ID", "Invalid quote id.", 400);
@@ -989,6 +1004,11 @@ export async function updateAdminQuote(input: UpdateAdminQuoteInput) {
 
     const existingStatus = normalizeStatus(existing.status) ?? "DRAFT";
     const effectiveExistingStatus = resolveEffectiveQuoteStatus(existingStatus, existing.expires_at);
+    assertAdminQuoteMutable({
+      status: effectiveExistingStatus,
+      expiresAt: existing.expires_at,
+      convertedBookingId: existing.converted_booking_id,
+    });
     const requestedStatus = input.status !== undefined ? normalizeStatus(input.status) : null;
     if (input.status !== undefined && !requestedStatus) {
       throw new AdminQuoteError("INVALID_STATUS", "Invalid quote status.", 400);

@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { requireOperationsAccess } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import { logError } from "@/lib/log";
-import { isQuoteExpired } from "@/lib/quotes/lifecycle";
+import { isQuoteExpired, resolveEffectiveQuoteStatus } from "@/lib/quotes/lifecycle";
 import {
   convertQuoteToBooking,
   fetchQuoteByIdForOps,
@@ -58,6 +58,16 @@ export async function handleAdminQuoteConvertPost(
     if (isQuoteExpired(quote.expiresAt) && !quote.convertedBookingId) {
       return NextResponse.json(
         { ok: false, error: "Quote is expired", code: "QUOTE_EXPIRED" },
+        { status: 409 },
+      );
+    }
+    if (!quote.convertedBookingId && resolveEffectiveQuoteStatus(quote.status, quote.expiresAt) !== "ACCEPTED") {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Only accepted quotes can be converted to bookings.",
+          code: "QUOTE_NOT_ACCEPTED",
+        },
         { status: 409 },
       );
     }
