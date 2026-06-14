@@ -1157,28 +1157,30 @@ export function BookingVehicleInspectionPanel({
                 >
                   {pickupLoading === "draft" ? "Saving..." : "Save draft"}
                 </button>
-                <button
-                  type="button"
-                  disabled={pickupLoading !== null}
-                  onClick={() => void saveInspection("PICKUP", "COMPLETED")}
-                  className={buttonStyles({ variant: "primary", size: "sm" })}
-                >
-                  {pickupLoading === "complete" ? "Completing..." : "Complete pickup inspection"}
-                </button>
-                <button
-                  type="button"
-                  data-testid="inspection-action-pickup"
-                  disabled={
-                    pickupLoading !== null ||
-                    lifecycleLoading !== null ||
-                    !canConfirmPickup
-                  }
-                  title={confirmPickupDisabledReason ?? undefined}
-                  onClick={() => void runLifecycleAction("pickup")}
-                  className={buttonStyles({ variant: "secondary", size: "sm" })}
-                >
-                  {lifecycleLoading === "pickup" ? "Confirming pickup..." : "Confirm pickup"}
-                </button>
+                <div className="flex flex-nowrap gap-3">
+                  <button
+                    type="button"
+                    disabled={pickupLoading !== null}
+                    onClick={() => void saveInspection("PICKUP", "COMPLETED")}
+                    className={buttonStyles({ variant: "primary", size: "sm" })}
+                  >
+                    {pickupLoading === "complete" ? "Completing..." : "Complete pickup inspection"}
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="inspection-action-pickup"
+                    disabled={
+                      pickupLoading !== null ||
+                      lifecycleLoading !== null ||
+                      !canConfirmPickup
+                    }
+                    title={confirmPickupDisabledReason ?? undefined}
+                    onClick={() => void runLifecycleAction("pickup")}
+                    className={buttonStyles({ variant: "secondary", size: "sm" })}
+                  >
+                    {lifecycleLoading === "pickup" ? "Confirming pickup..." : "Confirm pickup"}
+                  </button>
+                </div>
               </div>
             ) : null}
 
@@ -1387,28 +1389,30 @@ export function BookingVehicleInspectionPanel({
               >
                 {returnLoading === "draft" ? "Saving..." : "Save draft"}
               </button>
-              <button
-                type="button"
-                disabled={returnLoading !== null}
-                onClick={() => void saveInspection("RETURN", "COMPLETED")}
-                className={buttonStyles({ variant: "primary", size: "sm" })}
-              >
-                {returnLoading === "complete" ? "Completing..." : "Complete return inspection"}
-              </button>
-              <button
-                type="button"
-                data-testid="inspection-action-complete"
-                disabled={
-                  returnLoading !== null ||
-                  lifecycleLoading !== null ||
-                  !canCompleteBooking
-                }
-                title={completeBookingDisabledReason ?? undefined}
-                onClick={() => void runLifecycleAction("complete")}
-                className={buttonStyles({ variant: "secondary", size: "sm" })}
-              >
-                {lifecycleLoading === "complete" ? "Completing booking..." : "Complete booking"}
-              </button>
+              <div className="flex flex-nowrap gap-3">
+                <button
+                  type="button"
+                  disabled={returnLoading !== null}
+                  onClick={() => void saveInspection("RETURN", "COMPLETED")}
+                  className={buttonStyles({ variant: "primary", size: "sm" })}
+                >
+                  {returnLoading === "complete" ? "Completing..." : "Complete return inspection"}
+                </button>
+                <button
+                  type="button"
+                  data-testid="inspection-action-complete"
+                  disabled={
+                    returnLoading !== null ||
+                    lifecycleLoading !== null ||
+                    !canCompleteBooking
+                  }
+                  title={completeBookingDisabledReason ?? undefined}
+                  onClick={() => void runLifecycleAction("complete")}
+                  className={buttonStyles({ variant: "secondary", size: "sm" })}
+                >
+                  {lifecycleLoading === "complete" ? "Completing booking..." : "Complete booking"}
+                </button>
+              </div>
             </div>
           ) : null}
 
