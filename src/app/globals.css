@@ -541,6 +541,36 @@ select option:checked {
   color: #334155;
 }
 
+[data-theme="sand"] .email-status-accepted {
+  border-color: #9d7b3f;
+  background-color: #ead8b8;
+  color: #5f3d00;
+}
+
+[data-theme="sand"] .email-status-delivered {
+  border-color: #6e9b78;
+  background-color: #d8eadb;
+  color: #234d2f;
+}
+
+[data-theme="sand"] .email-status-issue {
+  border-color: #c17c20;
+  background-color: #f4d8ad;
+  color: #693d00;
+}
+
+[data-theme="sand"] .email-status-failed {
+  border-color: #bd747e;
+  background-color: #f3d2d5;
+  color: #70212d;
+}
+
+[data-theme="sand"] .email-status-skipped {
+  border-color: #9f8d72;
+  background-color: #e2d8c8;
+  color: #4e412f;
+}
+
 input.promo-date-time-input {
   color-scheme: light;
   padding-right: 2.5rem;
