@@ -6,6 +6,11 @@ import { ChevronDown } from "lucide-react";
 import { openUploadcareImagesDialog } from "@/components/admin/UploadcareImagesInput";
 import { MediaActivityPanel } from "@/components/admin/MediaActivityPanel";
 import { buttonStyles } from "@/components/ui/Button";
+import {
+  getAdminBookingLifecycleEligibility,
+  runAdminBookingLifecycleAction,
+  type AdminBookingLifecycleAction,
+} from "@/lib/bookings/adminBookingLifecycleClient";
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { DateRangeArrow } from "@/components/shared/DateRangeArrow";
 import {
@@ -37,6 +42,9 @@ type BookingVehicleInspectionPanelProps = {
   mediaActivities?: MediaAuditActivity[];
   tablesUnavailable?: boolean;
   canCorrectOdometer?: boolean;
+  isPaidInFull?: boolean;
+  onInspectionCompleted?: (inspectionType: "PICKUP" | "RETURN") => void;
+  onBookingLifecycleCompleted?: (action: "pickup" | "complete") => void;
 };
 
 type InspectionFormState = {
@@ -544,6 +552,9 @@ export function BookingVehicleInspectionPanel({
   mediaActivities = [],
   tablesUnavailable = false,
   canCorrectOdometer = false,
+  isPaidInFull = false,
+  onInspectionCompleted,
+  onBookingLifecycleCompleted,
 }: BookingVehicleInspectionPanelProps) {
   const [pickupSummary, setPickupSummary] = useState(() => inspections.pickup);
   const [vehicleOdometerValue, setVehicleOdometerValue] = useState<number | null>(
@@ -585,12 +596,26 @@ export function BookingVehicleInspectionPanel({
   const [returnImageUpload, setReturnImageUpload] = useState<ImageUploadState>(() =>
     createImageUploadState(),
   );
+  const [lifecycleLoading, setLifecycleLoading] = useState<
+    Extract<AdminBookingLifecycleAction, "pickup" | "complete"> | null
+  >(null);
 
   const pickupEditable =
     !tablesUnavailable && isPickupInspectionEditableForStatus(bookingStatus);
   const returnInspectionEnabled = !tablesUnavailable && isReturnInspectionAvailableForStatus(bookingStatus);
   const returnEditable =
     !tablesUnavailable && isReturnInspectionEditableForStatus(bookingStatus);
+  const {
+    canPickup: canConfirmPickup,
+    canComplete: canCompleteBooking,
+    pickupDisabledReason: confirmPickupDisabledReason,
+    completeDisabledReason: completeBookingDisabledReason,
+  } = getAdminBookingLifecycleEligibility({
+    bookingStatus,
+    isPaidInFull,
+    isPickupInspectionComplete: pickupSummary.recordStatus === "COMPLETED",
+    isReturnInspectionComplete: returnSummary.recordStatus === "COMPLETED",
+  });
   const currentInspections: LoadedBookingVehicleInspections = {
     bookingId,
     bookingPublicId,
@@ -721,10 +746,41 @@ export function BookingVehicleInspectionPanel({
         ? `${isPickup ? "Pickup" : "Return"} inspection completed.`
         : `${isPickup ? "Pickup" : "Return"} inspection draft saved.`,
     );
+    if (status === "COMPLETED") {
+      onInspectionCompleted?.(inspectionType);
+    }
     return {
       inspection: payload.inspection,
       inspections: nextInspectionSet,
     };
+  }
+
+  async function runLifecycleAction(action: "pickup" | "complete") {
+    const setMessage = action === "pickup" ? setPickupMessage : setReturnMessage;
+    const setError = action === "pickup" ? setPickupError : setReturnError;
+
+    setMessage(null);
+    setError(null);
+    setLifecycleLoading(action);
+
+    const { response, data } = await runAdminBookingLifecycleAction({
+      bookingId,
+      action,
+    });
+    setLifecycleLoading(null);
+
+    if (!response.ok) {
+      setError(data.error ?? "Action failed.");
+      return;
+    }
+
+    setMessage(
+      data.message ??
+        (action === "pickup"
+          ? "Booking marked as picked up."
+          : "Booking completed."),
+    );
+    onBookingLifecycleCompleted?.(action);
   }
 
   async function correctInspectionOdometer(inspectionType: "PICKUP" | "RETURN") {
@@ -1133,6 +1189,20 @@ export function BookingVehicleInspectionPanel({
                 >
                   {pickupLoading === "complete" ? "Completing..." : "Complete pickup inspection"}
                 </button>
+                <button
+                  type="button"
+                  data-testid="inspection-action-pickup"
+                  disabled={
+                    pickupLoading !== null ||
+                    lifecycleLoading !== null ||
+                    !canConfirmPickup
+                  }
+                  title={confirmPickupDisabledReason ?? undefined}
+                  onClick={() => void runLifecycleAction("pickup")}
+                  className={buttonStyles({ variant: "secondary", size: "sm" })}
+                >
+                  {lifecycleLoading === "pickup" ? "Confirming pickup..." : "Confirm pickup"}
+                </button>
               </div>
             ) : null}
 
@@ -1348,6 +1418,20 @@ export function BookingVehicleInspectionPanel({
                 className={buttonStyles({ variant: "primary", size: "sm" })}
               >
                 {returnLoading === "complete" ? "Completing..." : "Complete return inspection"}
+              </button>
+              <button
+                type="button"
+                data-testid="inspection-action-complete"
+                disabled={
+                  returnLoading !== null ||
+                  lifecycleLoading !== null ||
+                  !canCompleteBooking
+                }
+                title={completeBookingDisabledReason ?? undefined}
+                onClick={() => void runLifecycleAction("complete")}
+                className={buttonStyles({ variant: "secondary", size: "sm" })}
+              >
+                {lifecycleLoading === "complete" ? "Completing booking..." : "Complete booking"}
               </button>
             </div>
           ) : null}

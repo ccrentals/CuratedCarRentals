@@ -1173,8 +1173,12 @@ export async function PATCH(
         (nextPricing as Record<string, unknown>).insurance_total_cents ?? 0,
       );
       let isPickupInspectionComplete = false;
+      let isReturnInspectionComplete = false;
       try {
-        isPickupInspectionComplete = await hasCompletedBookingVehicleInspection(booking.id, "PICKUP");
+        [isPickupInspectionComplete, isReturnInspectionComplete] = await Promise.all([
+          hasCompletedBookingVehicleInspection(booking.id, "PICKUP"),
+          hasCompletedBookingVehicleInspection(booking.id, "RETURN"),
+        ]);
       } catch (error) {
         if (!isBookingVehicleInspectionMissingTableError(error)) {
           throw error;
@@ -1193,6 +1197,7 @@ export async function PATCH(
         isPaidInFull: nextIsPaidInFull,
         isDepositPaid: nextIsDepositPaid,
         isPickupInspectionComplete,
+        isReturnInspectionComplete,
         vehicleId: booking.vehicle_id,
         vehicleLabel,
         initialPromoCode: pricingSummary.promoCode,
