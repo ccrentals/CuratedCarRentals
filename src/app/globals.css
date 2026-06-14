@@ -511,6 +511,36 @@ select option:checked {
   box-shadow: 0 0 0 999px var(--ccr-accent-soft) inset;
 }
 
+[data-theme="light"] .email-status-accepted {
+  border-color: rgb(2 132 199 / 55%);
+  background-color: rgb(14 165 233 / 14%);
+  color: #075985;
+}
+
+[data-theme="light"] .email-status-delivered {
+  border-color: rgb(5 150 105 / 55%);
+  background-color: rgb(16 185 129 / 14%);
+  color: #065f46;
+}
+
+[data-theme="light"] .email-status-issue {
+  border-color: rgb(217 119 6 / 58%);
+  background-color: rgb(245 158 11 / 16%);
+  color: #92400e;
+}
+
+[data-theme="light"] .email-status-failed {
+  border-color: rgb(220 38 38 / 55%);
+  background-color: rgb(239 68 68 / 13%);
+  color: #991b1b;
+}
+
+[data-theme="light"] .email-status-skipped {
+  border-color: rgb(71 85 105 / 48%);
+  background-color: rgb(100 116 139 / 13%);
+  color: #334155;
+}
+
 input.promo-date-time-input {
   color-scheme: light;
   padding-right: 2.5rem;

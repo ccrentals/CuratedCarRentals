@@ -9,11 +9,11 @@ import { fetchAdminEmailDetail } from "@/lib/notifications/adminEmails";
 
 function statusBadgeClass(status: string) {
   const normalized = String(status ?? "").trim().toUpperCase();
-  if (normalized === "DELIVERED") return "border border-emerald-400/40 bg-emerald-500/10 text-emerald-200";
-  if (normalized === "SENT") return "border border-sky-400/40 bg-sky-500/10 text-sky-200";
-  if (normalized === "BOUNCED" || normalized === "DELIVERY_ISSUE") return "border border-amber-400/40 bg-amber-500/10 text-amber-200";
-  if (normalized === "FAILED") return "border border-red-400/40 bg-red-500/10 text-red-200";
-  if (normalized === "SKIPPED") return "border border-slate-400/40 bg-slate-500/10 text-slate-200";
+  if (normalized === "DELIVERED") return "email-status-delivered border border-emerald-400/40 bg-emerald-500/10 text-emerald-200";
+  if (normalized === "SENT") return "email-status-accepted border border-sky-400/40 bg-sky-500/10 text-sky-200";
+  if (normalized === "BOUNCED" || normalized === "DELIVERY_ISSUE") return "email-status-issue border border-amber-400/40 bg-amber-500/10 text-amber-200";
+  if (normalized === "FAILED") return "email-status-failed border border-red-400/40 bg-red-500/10 text-red-200";
+  if (normalized === "SKIPPED") return "email-status-skipped border border-slate-400/40 bg-slate-500/10 text-slate-200";
   return "border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] text-[var(--ccr-text)]";
 }
 
