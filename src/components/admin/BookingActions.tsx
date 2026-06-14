@@ -5,6 +5,10 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { buttonStyles } from "@/components/ui/Button";
+import {
+  getAdminBookingLifecycleEligibility,
+  runAdminBookingLifecycleAction,
+} from "@/lib/bookings/adminBookingLifecycleClient";
 import { formatJmd } from "@/lib/money";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
@@ -29,6 +33,7 @@ type BookingActionsProps = {
   isPaidInFull?: boolean;
   isDepositPaid?: boolean;
   isPickupInspectionComplete?: boolean;
+  isReturnInspectionComplete?: boolean;
   canAdmin?: boolean;
   vehicleId: string;
   vehicleLabel?: string;
@@ -61,6 +66,7 @@ export function BookingActions({
   isPaidInFull,
   isDepositPaid,
   isPickupInspectionComplete,
+  isReturnInspectionComplete,
   canAdmin,
   vehicleId,
   vehicleLabel,
@@ -88,15 +94,17 @@ export function BookingActions({
   const [insuranceSelected, setInsuranceSelected] = useState<boolean>(initialInsuranceSelected === true);
   const normalizedStatus = bookingStatus?.trim().toUpperCase();
   const canConfirm = !normalizedStatus || ["PENDING_PAYMENT", "PENDING"].includes(normalizedStatus);
-  const pickupRequiresConfirmedStatus = normalizedStatus !== "CONFIRMED";
-  const pickupRequiresFullPayment = !isPaidInFull;
-  const pickupRequiresInspection = !isPickupInspectionComplete;
-  const canPickup =
-    Boolean(normalizedStatus) &&
-    normalizedStatus === "CONFIRMED" &&
-    Boolean(isPaidInFull) &&
-    Boolean(isPickupInspectionComplete);
-  const canComplete = !normalizedStatus || ["CONFIRMED", "PICKED_UP"].includes(normalizedStatus);
+  const {
+    canPickup,
+    canComplete,
+    pickupDisabledReason,
+    completeDisabledReason,
+  } = getAdminBookingLifecycleEligibility({
+    bookingStatus,
+    isPaidInFull,
+    isPickupInspectionComplete,
+    isReturnInspectionComplete,
+  });
   const canArchive = Boolean(canAdmin) && normalizedStatus === "RETURNED";
   const canCancel = !normalizedStatus || !["CANCELLED", "RETURNED"].includes(normalizedStatus);
   const actionButtonBaseClass = buttonStyles({
@@ -130,18 +138,6 @@ export function BookingActions({
     size: "sm",
     className: "uppercase tracking-wide text-[var(--ccr-muted)] hover:text-[var(--ccr-text)]",
   });
-  const pickupDisabledReason = !canPickup
-    ? pickupRequiresInspection
-      ? "Complete the pickup inspection before confirming pickup."
-      : pickupRequiresConfirmedStatus
-        ? normalizedStatus === "PICKED_UP"
-          ? "Pickup has already been confirmed."
-          : "Confirm the booking before confirming pickup."
-        : pickupRequiresFullPayment
-          ? "Booking must be fully paid before pickup."
-          : "Pickup cannot be confirmed yet."
-    : null;
-
   useEffect(() => {
     if (!error) return undefined;
 
@@ -208,30 +204,29 @@ export function BookingActions({
       }
     }
 
-    const csrfToken = await ensureCsrfToken();
-    const headers = {
-      "Content-Type": "application/json",
-      "x-csrf-token": csrfToken ?? "",
-    };
-
-    const response =
+    const lifecycleResult =
       actionKey === "confirm" ||
       actionKey === "pickup" ||
       actionKey === "complete" ||
       actionKey === "archive"
-        ? await fetch(`/api/admin/bookings/${bookingId}`, {
-            method: "PATCH",
-            headers,
-            body: JSON.stringify(
-              actionKey === "archive" ? { action: actionKey, reason: archiveReason } : { action: actionKey },
-            ),
+        ? await runAdminBookingLifecycleAction({
+            bookingId,
+            action: actionKey,
+            archiveReason,
           })
-        : await fetch(`/api/admin/bookings/${bookingId}/${actionKey === "full" ? "mark-fully-paid" : actionKey === "deposit" ? "mark-deposit-paid" : "cancel"}`, {
+        : null;
+    const response = lifecycleResult?.response ?? await (async () => {
+      const csrfToken = await ensureCsrfToken();
+      return fetch(`/api/admin/bookings/${bookingId}/${actionKey === "full" ? "mark-fully-paid" : actionKey === "deposit" ? "mark-deposit-paid" : "cancel"}`, {
             method: "POST",
-            headers,
+            headers: {
+              "Content-Type": "application/json",
+              "x-csrf-token": csrfToken ?? "",
+            },
           });
+    })();
 
-    const data = await response.json().catch(() => ({}));
+    const data = lifecycleResult?.data ?? (await response.json().catch(() => ({})));
     setLoadingKey(null);
 
     if (!response.ok) {
@@ -636,6 +631,7 @@ export function BookingActions({
                 data-testid="booking-action-complete"
                 onClick={() => runAction("complete")}
                 disabled={loadingKey === "complete" || !canComplete}
+                title={completeDisabledReason ?? undefined}
                 className={actionButtonBaseClass}
               >
                 {loadingKey === "complete" ? "Working..." : actionLabels.complete}

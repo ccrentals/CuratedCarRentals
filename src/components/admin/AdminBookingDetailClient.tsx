@@ -2,11 +2,13 @@
 
 import Link from "next/link";
 import { UserRoundPen } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { BookingActions } from "@/components/admin/BookingActions";
 import { BookingNotes } from "@/components/admin/BookingNotes";
 import { BookingUpdateForm } from "@/components/admin/BookingUpdateForm";
+import { BookingVehicleInspectionPanel } from "@/components/admin/BookingVehicleInspectionPanel";
 import { InfoTooltipIcon } from "@/components/admin/InfoTooltipIcon";
 import { CustomerLegalIdImagesManager } from "@/components/admin/CustomerLegalIdImagesManager";
 import { ManualPaymentForm } from "@/components/admin/ManualPaymentForm";
@@ -22,6 +24,8 @@ import type {
   AdminBookingPaymentRow,
 } from "@/lib/bookings/adminBookingDetailView";
 import type { CustomerPrivateFileItem } from "@/lib/customers/privateFiles";
+import type { LoadedBookingVehicleInspections } from "@/lib/bookings/vehicleInspectionShared";
+import type { MediaAuditActivity } from "@/lib/uploads/mediaAudit";
 
 type AdminBookingActionPromoOption = {
   id: string;
@@ -49,7 +53,12 @@ type AdminBookingDetailClientProps = {
   requireRestoreReason: boolean;
   promoOptions: AdminBookingActionPromoOption[];
   insuranceOption: AdminBookingActionInsuranceOption;
-  inspectionContent?: ReactNode;
+  inspection?: {
+    inspections: LoadedBookingVehicleInspections;
+    mediaActivities?: MediaAuditActivity[];
+    tablesUnavailable?: boolean;
+    canCorrectOdometer?: boolean;
+  };
   payments: AdminBookingPaymentRow[];
   refundedOriginalIds: string[];
   children?: ReactNode;
@@ -137,11 +146,12 @@ export function AdminBookingDetailClient({
   requireRestoreReason,
   promoOptions,
   insuranceOption,
-  inspectionContent,
+  inspection,
   payments,
   refundedOriginalIds,
   children,
 }: AdminBookingDetailClientProps) {
+  const router = useRouter();
   const [detail, setDetail] = useState(initialDetail);
 
   useEffect(() => {
@@ -196,6 +206,7 @@ export function AdminBookingDetailClient({
             isPaidInFull={detail.isPaidInFull}
             isDepositPaid={detail.isDepositPaid}
             isPickupInspectionComplete={detail.isPickupInspectionComplete}
+            isReturnInspectionComplete={detail.isReturnInspectionComplete}
             canAdmin={canAdmin}
             vehicleId={detail.vehicleId}
             vehicleLabel={detail.vehicleLabel}
@@ -221,7 +232,45 @@ export function AdminBookingDetailClient({
                 onBookingUpdated={setDetail}
               />
             }
-            inspectionContent={inspectionContent}
+            inspectionContent={
+              inspection ? (
+                <BookingVehicleInspectionPanel
+                  bookingId={detail.bookingId}
+                  bookingStatus={detail.bookingStatus}
+                  bookingPublicId={detail.bookingPublicId}
+                  inspections={inspection.inspections}
+                  mediaActivities={inspection.mediaActivities}
+                  tablesUnavailable={inspection.tablesUnavailable}
+                  canCorrectOdometer={inspection.canCorrectOdometer}
+                  isPaidInFull={detail.isPaidInFull}
+                  onInspectionCompleted={(inspectionType) => {
+                    setDetail((current) => ({
+                      ...current,
+                      isPickupInspectionComplete:
+                        inspectionType === "PICKUP"
+                          ? true
+                          : current.isPickupInspectionComplete,
+                      isReturnInspectionComplete:
+                        inspectionType === "RETURN"
+                          ? true
+                          : current.isReturnInspectionComplete,
+                    }));
+                  }}
+                  onBookingLifecycleCompleted={(action) => {
+                    setDetail((current) => ({
+                      ...current,
+                      bookingStatus: action === "pickup" ? "PICKED_UP" : "RETURNED",
+                      displayStatus: action === "pickup" ? "PICKED_UP" : "RETURNED",
+                      form: {
+                        ...current.form,
+                        disabled: action === "complete" ? true : current.form.disabled,
+                      },
+                    }));
+                    router.refresh();
+                  }}
+                />
+              ) : undefined
+            }
           />
         </div>
       </div>

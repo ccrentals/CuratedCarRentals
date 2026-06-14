@@ -49,6 +49,8 @@ test("admin booking detail view builds a complete mutable detail payload", () =>
     isOverridden: false,
     isPaidInFull: false,
     isDepositPaid: true,
+    isPickupInspectionComplete: true,
+    isReturnInspectionComplete: false,
     vehicleId: "vehicle-1",
     vehicleLabel: "2020 Subaru XV",
     initialPromoCode: "WELCOME",
@@ -150,4 +152,6 @@ test("admin booking detail view builds a complete mutable detail payload", () =>
   assert.equal(detail.customer.driversLicenseNumber, "DL12345");
   assert.equal(detail.chargesSummary.balanceDue, 17000);
   assert.equal(detail.form.dropoffLocationTypeKey, "CUSTOM_ADDRESS");
+  assert.equal(detail.isPickupInspectionComplete, true);
+  assert.equal(detail.isReturnInspectionComplete, false);
 });

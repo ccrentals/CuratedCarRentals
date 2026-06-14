@@ -62,6 +62,7 @@ export type AdminBookingDetailViewModel = {
   isPaidInFull: boolean;
   isDepositPaid: boolean;
   isPickupInspectionComplete: boolean;
+  isReturnInspectionComplete: boolean;
   vehicleId: string;
   vehicleLabel: string;
   initialPromoCode: string | null;
@@ -178,6 +179,7 @@ export function buildAdminBookingDetailView(input: {
   isPaidInFull: boolean;
   isDepositPaid: boolean;
   isPickupInspectionComplete: boolean;
+  isReturnInspectionComplete: boolean;
   vehicleId: string;
   vehicleLabel: string;
   initialPromoCode: string | null;
@@ -228,6 +230,7 @@ export function buildAdminBookingDetailView(input: {
     isPaidInFull: input.isPaidInFull,
     isDepositPaid: input.isDepositPaid,
     isPickupInspectionComplete: input.isPickupInspectionComplete,
+    isReturnInspectionComplete: input.isReturnInspectionComplete,
     vehicleId: input.vehicleId,
     vehicleLabel: input.vehicleLabel,
     initialPromoCode: input.initialPromoCode,

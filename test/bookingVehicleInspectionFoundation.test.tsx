@@ -2994,6 +2994,37 @@ test("booking vehicle inspection panel: pickup form renders existing values whil
   assert.match(html, /Minor dust on exterior\./);
 });
 
+test("booking vehicle inspection panel: inline pickup action follows inspection and payment eligibility", () => {
+  const disabledHtml = renderToStaticMarkup(
+    <BookingVehicleInspectionPanel
+      bookingId={BOOKING_ID}
+      bookingStatus="CONFIRMED"
+      bookingPublicId="BK000334"
+      inspections={sampleInspectionSet()}
+      isPaidInFull
+    />,
+  );
+  const enabledHtml = renderToStaticMarkup(
+    <BookingVehicleInspectionPanel
+      bookingId={BOOKING_ID}
+      bookingStatus="CONFIRMED"
+      bookingPublicId="BK000334"
+      inspections={sampleCompletedInspectionSet()}
+      isPaidInFull
+    />,
+  );
+
+  assert.match(
+    disabledHtml,
+    /data-testid="inspection-action-pickup" disabled=""/,
+  );
+  assert.match(enabledHtml, /data-testid="inspection-action-pickup"/);
+  assert.doesNotMatch(
+    enabledHtml,
+    /data-testid="inspection-action-pickup" disabled=""/,
+  );
+});
+
 test("booking vehicle inspection panel: return inspection prefills odometer from vehicle after pickup", () => {
   const html = renderToStaticMarkup(
     <BookingVehicleInspectionPanel
@@ -3016,6 +3047,45 @@ test("booking vehicle inspection panel: return inspection prefills odometer from
 
   assert.match(html, /Complete return inspection/);
   assert.match(html, /value="45231"/);
+});
+
+test("booking vehicle inspection panel: inline complete action requires completed return inspection", () => {
+  const incompleteHtml = renderToStaticMarkup(
+    <BookingVehicleInspectionPanel
+      bookingId={BOOKING_ID}
+      bookingStatus="PICKED_UP"
+      bookingPublicId="BK000334"
+      inspections={sampleCompletedInspectionSet({
+        returnInspection: {
+          ...sampleCompletedInspectionSet().returnInspection,
+          recordStatus: "DRAFT",
+          displayStatus: "IN_PROGRESS",
+          displayStatusLabel: "In progress",
+          completedAt: null,
+        },
+      })}
+      isPaidInFull
+    />,
+  );
+  const completeHtml = renderToStaticMarkup(
+    <BookingVehicleInspectionPanel
+      bookingId={BOOKING_ID}
+      bookingStatus="PICKED_UP"
+      bookingPublicId="BK000334"
+      inspections={sampleCompletedInspectionSet()}
+      isPaidInFull
+    />,
+  );
+
+  assert.match(
+    incompleteHtml,
+    /data-testid="inspection-action-complete" disabled=""/,
+  );
+  assert.match(completeHtml, /data-testid="inspection-action-complete"/);
+  assert.doesNotMatch(
+    completeHtml,
+    /data-testid="inspection-action-complete" disabled=""/,
+  );
 });
 
 test("booking vehicle inspection panel: locks pickup form and keeps return scaffold after pickup", () => {
@@ -3240,6 +3310,7 @@ test("admin booking pickup action: succeeds when completed pickup inspection exi
     fetchNetPaid: async () => 18600,
     hasCompletedPickupInspection: async () => true,
     writeAudit: async () => undefined,
+    sendPickupConfirmed: async () => ({ ok: true }),
   });
 
   assert.equal(response.status, 200);

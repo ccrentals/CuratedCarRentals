@@ -4,7 +4,6 @@ import { notFound } from "next/navigation";
 import { dbQuery } from "@/lib/db";
 import { AdminBookingDetailClient } from "@/components/admin/AdminBookingDetailClient";
 import { BookingIncidentsCard } from "@/components/admin/BookingIncidentsCard";
-import { BookingVehicleInspectionPanel } from "@/components/admin/BookingVehicleInspectionPanel";
 import { RefundRequiredToast } from "@/components/admin/RefundRequiredToast";
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { InlineDateTimeRange } from "@/components/shared/InlineDateTimeRange";
@@ -500,6 +499,8 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
     vehicleInspectionTablesUnavailable = true;
   }
   const isPickupInspectionComplete = vehicleInspections.pickup.recordStatus === "COMPLETED";
+  const isReturnInspectionComplete =
+    vehicleInspections.returnInspection.recordStatus === "COMPLETED";
   const bookingIncidents = await loadBookingIncidents(booking.id);
   let promoOptions: BookingActionPromoOption[] = [];
   try {
@@ -602,6 +603,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
     isPaidInFull,
     isDepositPaid,
     isPickupInspectionComplete,
+    isReturnInspectionComplete,
     vehicleId: booking.vehicle_id,
     vehicleLabel: `${booking.vehicle_year} ${booking.vehicle_make} ${booking.vehicle_model}`.trim(),
     initialPromoCode: summary.promoCode,
@@ -672,17 +674,12 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
         requireRestoreReason={requireRestoreReason}
         promoOptions={promoOptions}
         insuranceOption={insuranceOption}
-        inspectionContent={
-          <BookingVehicleInspectionPanel
-            bookingId={booking.id}
-            bookingStatus={booking.status}
-            bookingPublicId={bookingPublicId}
-            inspections={vehicleInspections}
-            mediaActivities={mediaActivities}
-            tablesUnavailable={vehicleInspectionTablesUnavailable}
-            canCorrectOdometer={canAdmin}
-          />
-        }
+        inspection={{
+          inspections: vehicleInspections,
+          mediaActivities,
+          tablesUnavailable: vehicleInspectionTablesUnavailable,
+          canCorrectOdometer: canAdmin,
+        }}
         payments={payments.rows}
         refundedOriginalIds={[...refundedOriginalIds]}
       >
