@@ -146,12 +146,15 @@ export default function ContactPage() {
                         {phone.label}
                       </a>
                     ))}
-                    <a
-                      href={siteContent.whatsapp.href}
-                      className="block transition hover:text-[var(--ccr-accent-strong)]"
-                    >
-                      WhatsApp: {siteContent.whatsapp.label}
-                    </a>
+                    {siteContent.whatsapps.map((whatsapp) => (
+                      <a
+                        key={whatsapp.href}
+                        href={whatsapp.href}
+                        className="block transition hover:text-[var(--ccr-accent-strong)]"
+                      >
+                        WhatsApp: {whatsapp.label}
+                      </a>
+                    ))}
                   </div>
                 </div>
                 <div>

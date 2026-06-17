@@ -131,14 +131,16 @@ function FooterContactColumn() {
             </a>
           </li>
         ))}
-        <li className="flex gap-3">
-          <span className="mt-1 text-white/48">
-            <MessageIcon className="h-4 w-4" />
-          </span>
-          <a href={siteContent.whatsapp.href} className="transition hover:text-white">
-            WhatsApp: {siteContent.whatsapp.label}
-          </a>
-        </li>
+        {siteContent.whatsapps.map((whatsapp) => (
+          <li key={whatsapp.href} className="flex gap-3">
+            <span className="mt-1 text-white/48">
+              <MessageIcon className="h-4 w-4" />
+            </span>
+            <a href={whatsapp.href} className="transition hover:text-white">
+              WhatsApp: {whatsapp.label}
+            </a>
+          </li>
+        ))}
         <li className="flex gap-3">
           <span className="mt-1 text-white/48">
             <MailIcon className="h-4 w-4" />
