@@ -137,12 +137,17 @@ export function HomeContactSection() {
                 <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--ccr-accent-strong)]">
                   WhatsApp
                 </p>
-                <a
-                  href={siteContent.whatsapp.href}
-                  className="mt-3 block text-sm leading-7 text-[var(--ccr-muted)] transition hover:text-[var(--ccr-text)]"
-                >
-                  {siteContent.whatsapp.label}
-                </a>
+                <div className="mt-3 space-y-1">
+                  {siteContent.whatsapps.map((whatsapp) => (
+                    <a
+                      key={whatsapp.href}
+                      href={whatsapp.href}
+                      className="block text-sm leading-7 text-[var(--ccr-muted)] transition hover:text-[var(--ccr-text)]"
+                    >
+                      {whatsapp.label}
+                    </a>
+                  ))}
+                </div>
               </article>
             </div>
           </div>
