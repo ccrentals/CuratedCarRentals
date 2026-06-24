@@ -215,6 +215,36 @@ test("computeBookingPricingFromStoredSnapshot: stored pricing drives totals", ()
   assert.equal(summary.balanceDue, 35500);
 });
 
+test("computeBookingPricingFromStoredSnapshot: explicit insurance removal clears the stored total", () => {
+  const summary = computeBookingPricingFromStoredSnapshot({
+    bookingId: "booking-insurance-removal",
+    bookingStatus: "BOOKED",
+    startDate: "2026-12-23",
+    endDate: "2027-01-09",
+    pricing: {
+      days: 18,
+      daily_rate_cents: 8500,
+      base_total_cents: 153000,
+      insurance_selected: true,
+      insurance_price_per_day_cents: 2800,
+      insurance_total_cents: 50400,
+      subtotal_cents: 203400,
+      total_cents: 203400,
+      deposit_cents: 3400,
+      payment_option_selected: "DEPOSIT",
+    },
+    netPaidToDate: 3400,
+    insuranceSelected: false,
+    insurancePricePerDay: 0,
+  });
+
+  assert.equal(summary.insuranceSelected, false);
+  assert.equal(summary.insurancePricePerDay, 0);
+  assert.equal(summary.insuranceTotal, 0);
+  assert.equal(summary.total, 153000);
+  assert.equal(summary.balanceDue, 149600);
+});
+
 test("payment options: CUSTOM/NONE are preserved and legacy pay-on-pickup maps to NONE", () => {
   assert.equal(parsePaymentOptionInput("CUSTOM"), "CUSTOM");
   assert.equal(parsePaymentOptionInput("NONE"), "NONE");

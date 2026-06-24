@@ -914,6 +914,10 @@ export async function sendBookingCreatedEmail(input: {
   recipientEmail?: string;
   promoCode?: string | null;
   promoDiscount?: number;
+  insuranceTotal?: number;
+  total?: number;
+  paidToDate?: number;
+  balanceDue?: number;
   dispatch?: EmailDispatchOverrides;
 }): Promise<SendEmailResult> {
   const recipientType = input.recipientType ?? "customer";
@@ -924,7 +928,10 @@ export async function sendBookingCreatedEmail(input: {
     deposit: input.deposit,
     promoCode: input.promoCode ?? null,
     promoDiscount: input.promoDiscount ?? 0,
-    paidToDate: 0,
+    insuranceTotal: input.insuranceTotal,
+    total: input.total,
+    paidToDate: input.paidToDate,
+    balanceDue: input.balanceDue,
     startDate: input.startDate,
     endDate: input.endDate,
   });

@@ -160,3 +160,93 @@ test("admin booking resend email API: rate limits repeated resend actions per us
   const payload = (await response.json()) as { error?: string };
   assert.match(String(payload.error), /too many resend email actions/i);
 });
+
+test("admin booking resend email API: sends the current repriced insurance and payment summary", async () => {
+  let sentInput: Parameters<
+    Parameters<typeof handleAdminBookingResendEmailPost>[2]["sendBookingCreated"]
+  >[0] | null = null;
+
+  const response = await handleAdminBookingResendEmailPost(
+    new Request("http://localhost/api/admin/bookings/booking-1/resend-email", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-csrf-token": "token",
+      },
+      body: JSON.stringify({ type: "booking_created" }),
+    }),
+    { params: Promise.resolve({ id: "booking-1" }) },
+    {
+      requireAdminAccess: async () => operationsAuth(),
+      requireCsrfCheck: async () => true,
+      consumeRateLimitCheck: async () => ({
+        count: 1,
+        limit: 10,
+        allowed: true,
+        remaining: 9,
+        resetAt: "2026-06-24T22:10:00.000Z",
+        retryAfterSeconds: 600,
+      }),
+      query: async (text: string) => {
+        if (text.includes("from bookings b join customers")) {
+          return {
+            rowCount: 1,
+            rows: [
+              {
+                id: "booking-1",
+                status: "BOOKED",
+                start_date: "2026-12-23",
+                end_date: "2027-01-09",
+                pickup_location: "41 Upper Waterloo Rd",
+                pricing_json: {
+                  days: 18,
+                  daily_rate_cents: 8500,
+                  base_total_cents: 153000,
+                  insurance_selected: false,
+                  insurance_price_per_day_cents: 0,
+                  insurance_total_cents: 0,
+                  subtotal_cents: 153000,
+                  total_cents: 153000,
+                  deposit_cents: 3400,
+                  amount_paid: 3400,
+                  balance_due: 149600,
+                  payment_option_selected: "DEPOSIT",
+                },
+                customer_name: "Anslem George",
+                customer_email: "anslem@example.com",
+                vehicle_make: "Subaru",
+                vehicle_model: "XV",
+                vehicle_year: 2018,
+                daily_rate_cents: 8500,
+                deposit_cents: 3400,
+              },
+            ],
+          };
+        }
+        throw new Error(`Unexpected query: ${text}`);
+      },
+      sendBookingCreated: async (input) => {
+        sentInput = input;
+        return {
+          ok: true,
+          skipped: false,
+          delivered: 1,
+          errors: [],
+          providerMessageId: "email-1",
+        };
+      },
+      sendDepositReceipt: async () => ({ ok: true, skipped: false, delivered: 1, errors: [] }),
+      acquireDedupe: async () => undefined,
+      finalizeDedupe: async () => undefined,
+      makeDedupeKey: () => "dedupe-key",
+      randomId: () => "uuid",
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(sentInput?.insuranceTotal, 0);
+  assert.equal(sentInput?.total, 153000);
+  assert.equal(sentInput?.paidToDate, 3400);
+  assert.equal(sentInput?.balanceDue, 149600);
+  assert.equal(sentInput?.paymentOption, "DEPOSIT");
+});

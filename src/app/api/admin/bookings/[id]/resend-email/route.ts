@@ -14,7 +14,12 @@ import {
   markDedupeResult,
   tryAcquireDedupe,
 } from "@/lib/notifications/dedupe";
-import { readPromoPricingFields } from "@/lib/payments/pricing";
+import {
+  computeBookingPricingFromStoredSnapshot,
+  readAmountPaid,
+  readPaymentOption,
+  readPromoPricingFields,
+} from "@/lib/payments/pricing";
 
 const ALLOWED_TYPES = ["booking_created", "deposit_receipt"] as const;
 
@@ -99,6 +104,7 @@ export async function handleAdminBookingResendEmailPost(
 
   const bookingResult = await deps.query<{
     id: string;
+    status: string;
     start_date: string;
     end_date: string;
     pickup_location: string;
@@ -111,7 +117,7 @@ export async function handleAdminBookingResendEmailPost(
     daily_rate_cents: number;
     deposit_cents: number;
   }>(
-    "select b.id, b.start_date, b.end_date, b.pickup_location, b.pricing_json, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model, v.year as vehicle_year, v.daily_rate_cents, v.deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.id = $1",
+    "select b.id, b.status, b.start_date, b.end_date, b.pickup_location, b.pricing_json, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model, v.year as vehicle_year, v.daily_rate_cents, v.deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.id = $1",
     [id],
   );
 
@@ -149,6 +155,16 @@ export async function handleAdminBookingResendEmailPost(
   );
 
   if (type === "booking_created") {
+    const summary = computeBookingPricingFromStoredSnapshot({
+      bookingId: booking.id,
+      bookingStatus: booking.status,
+      startDate: booking.start_date,
+      endDate: booking.end_date,
+      pricing,
+      fallbackDailyRate: booking.daily_rate_cents,
+      fallbackDeposit: booking.deposit_cents,
+      netPaidToDate: readAmountPaid(pricing),
+    });
     const result = await deps.sendBookingCreated({
       bookingId: booking.id,
       customerEmail: booking.customer_email,
@@ -159,8 +175,13 @@ export async function handleAdminBookingResendEmailPost(
       pickupLocation: booking.pickup_location,
       dailyRate: Number(booking.daily_rate_cents || 0),
       deposit: depositValue,
+      paymentOption: readPaymentOption(pricing),
       promoCode,
       promoDiscount,
+      insuranceTotal: summary.insuranceTotal,
+      total: summary.total,
+      paidToDate: summary.netPaidToDate,
+      balanceDue: summary.balanceDue,
       dispatch: {
         triggerSource: "admin_resend",
         triggeredByUserId: actor.userId,
