@@ -311,6 +311,8 @@ export function computeBookingPricingFromStoredSnapshot(input: {
   const pricing = input.pricing ?? {};
   const storedPromo = readPromoPricingFields(pricing);
   const storedInsurance = readInsurancePricingFields(pricing);
+  const hasInsuranceSelectionOverride =
+    input.insuranceSelected !== undefined && input.insuranceSelected !== null;
   const storedBaseTotal = readExplicitMoney(pricing.base_total_cents);
   const storedExtraFeesTotal = readExplicitMoney(
     pricing.extra_fees_cents ?? pricing.delivery_fee_cents,
@@ -337,7 +339,9 @@ export function computeBookingPricingFromStoredSnapshot(input: {
     insuranceSelected: input.insuranceSelected ?? storedInsurance.insuranceSelected,
     insurancePricePerDay:
       input.insurancePricePerDay ?? storedInsurance.insurancePricePerDay,
-    insuranceTotal: input.insuranceTotal ?? storedInsurance.insuranceTotal,
+    insuranceTotal:
+      input.insuranceTotal ??
+      (hasInsuranceSelectionOverride ? 0 : storedInsurance.insuranceTotal),
   });
 }
 
