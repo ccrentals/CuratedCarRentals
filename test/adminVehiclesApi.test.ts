@@ -205,6 +205,150 @@ test("admin vehicle patch API toggles public visibility and refreshes gallery me
   ]);
 });
 
+test("admin vehicle patch API updates a deposit without revalidating an unchanged legacy image", async () => {
+  const legacyFileId = "33333333-3333-4333-8333-333333333333";
+  const legacyImageUrl = `https://legacy-project.ucarecd.net/${legacyFileId}/`;
+  let trustedFileIds: string[] = [];
+
+  const response = await handleAdminVehiclePatch(
+    new Request(`http://localhost/api/admin/vehicles/${VEHICLE_ID}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", "x-csrf-token": "token" },
+      body: JSON.stringify({
+        deposit_jmd: 3800,
+        image_urls_json: [legacyImageUrl],
+        csrfToken: "token",
+      }),
+    }),
+    { params: Promise.resolve({ id: VEHICLE_ID }) },
+    {
+      authorize: async () => authorizedActor(),
+      requireCsrfCheck: async () => true,
+      consumeRateLimitCheck: async () => allowRateLimit(),
+      validateUploads: async (_references, _policy, options) => {
+        trustedFileIds = [...(options.trustedExistingFileIds ?? [])];
+        return [];
+      },
+      connect: async () =>
+        ({
+          async query(text: string, values?: unknown[]) {
+            if (text === "begin" || text === "commit" || text === "rollback") {
+              return { rows: [] };
+            }
+            if (text.includes("from vehicles where id = $1::uuid for update")) {
+              return {
+                rowCount: 1,
+                rows: [
+                  {
+                    id: VEHICLE_ID,
+                    public_id: "VE000005",
+                    make: "BMW",
+                    model: "2 Series Active Tourer",
+                    year: 2018,
+                    features_json: { gallery_images: [] },
+                    image_urls_json: [legacyImageUrl],
+                  },
+                ],
+              };
+            }
+            if (text.startsWith("update vehicles set")) {
+              assert.equal(values?.[0], 3800);
+              return {
+                rows: [
+                  {
+                    id: VEHICLE_ID,
+                    public_id: "VE000005",
+                    make: "BMW",
+                    model: "2 Series Active Tourer",
+                    year: 2018,
+                    seat_count: 5,
+                    daily_rate_cents: 9400,
+                    deposit_cents: 3800,
+                    status: "UNAVAILABLE",
+                  },
+                ],
+              };
+            }
+            throw new Error(`Unexpected query: ${text}`);
+          },
+          release() {},
+        }),
+      writeAudit: async () => undefined,
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(trustedFileIds, [legacyFileId]);
+  const payload = (await response.json()) as { vehicle?: { deposit_cents?: number } };
+  assert.equal(payload.vehicle?.deposit_cents, 3800);
+});
+
+test("admin vehicle patch API still rejects a newly added foreign-project image", async () => {
+  const legacyFileId = "33333333-3333-4333-8333-333333333333";
+  const newFileId = "44444444-4444-4444-8444-444444444444";
+  const legacyImageUrl = `https://legacy-project.ucarecd.net/${legacyFileId}/`;
+  const newImageUrl = `https://ucarecdn.com/${newFileId}/`;
+  let rolledBack = false;
+
+  const response = await handleAdminVehiclePatch(
+    new Request(`http://localhost/api/admin/vehicles/${VEHICLE_ID}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", "x-csrf-token": "token" },
+      body: JSON.stringify({
+        image_urls_json: [legacyImageUrl, newImageUrl],
+        csrfToken: "token",
+      }),
+    }),
+    { params: Promise.resolve({ id: VEHICLE_ID }) },
+    {
+      authorize: async () => authorizedActor(),
+      requireCsrfCheck: async () => true,
+      consumeRateLimitCheck: async () => allowRateLimit(),
+      validateUploads: async (references, _policy, options) => {
+        assert.deepEqual(references, [legacyImageUrl, newImageUrl]);
+        assert.deepEqual([...(options.trustedExistingFileIds ?? [])], [legacyFileId]);
+        throw new UploadcareFileValidationError(
+          "The uploaded file was not found in this Uploadcare project.",
+        );
+      },
+      connect: async () =>
+        ({
+          async query(text: string) {
+            if (text === "begin" || text === "commit") return { rows: [] };
+            if (text === "rollback") {
+              rolledBack = true;
+              return { rows: [] };
+            }
+            if (text.includes("from vehicles where id = $1::uuid for update")) {
+              return {
+                rowCount: 1,
+                rows: [
+                  {
+                    id: VEHICLE_ID,
+                    public_id: "VE000005",
+                    make: "BMW",
+                    model: "2 Series Active Tourer",
+                    year: 2018,
+                    features_json: { gallery_images: [] },
+                    image_urls_json: [legacyImageUrl],
+                  },
+                ],
+              };
+            }
+            throw new Error(`Unexpected query: ${text}`);
+          },
+          release() {},
+        }),
+      writeAudit: async () => undefined,
+    },
+  );
+
+  assert.equal(response.status, 400);
+  assert.equal(rolledBack, true);
+  const payload = (await response.json()) as { error?: string };
+  assert.match(payload.error ?? "", /not found in this Uploadcare project/i);
+});
+
 test("admin vehicle patch API deletes an orphaned Uploadcare gallery file after save", async () => {
   const removedFileId = "33333333-3333-4333-8333-333333333333";
   let deletedFileId = "";
