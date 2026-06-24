@@ -455,17 +455,6 @@ export async function handleAdminVehiclePatch(
     index += 1;
   }
 
-  if (body?.image_urls_json !== undefined) {
-    try {
-      await deps.validateUploads?.(imageUrls, VEHICLE_GALLERY_POLICY);
-    } catch (error) {
-      if (error instanceof UploadcareFileValidationError) {
-        return NextResponse.json({ error: error.message }, { status: error.status });
-      }
-      return NextResponse.json({ error: "Unable to verify vehicle gallery uploads." }, { status: 502 });
-    }
-  }
-
   const profileYear = profilePatch?.year;
   if (profileYear !== null && profileYear !== undefined && (profileYear < 1900 || profileYear > 2100)) {
     return NextResponse.json({ error: "Invalid profile year" }, { status: 400 });
@@ -520,6 +509,20 @@ export async function handleAdminVehiclePatch(
           .map((value) => extractUploadcareFileId(value))
           .filter((value): value is string => Boolean(value)),
       );
+      try {
+        await deps.validateUploads?.(imageUrls, VEHICLE_GALLERY_POLICY, {
+          trustedExistingFileIds: currentFileIds,
+        });
+      } catch (error) {
+        await client.query("rollback");
+        if (error instanceof UploadcareFileValidationError) {
+          return NextResponse.json({ error: error.message }, { status: error.status });
+        }
+        return NextResponse.json(
+          { error: "Unable to verify vehicle gallery uploads." },
+          { status: 502 },
+        );
+      }
       const nextFileIds = new Set(
         imageUrls
           .map((value) => extractUploadcareFileId(value))

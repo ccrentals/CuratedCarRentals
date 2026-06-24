@@ -245,6 +245,35 @@ test("uploadcare helper: rejects duplicate uploads before provider lookup", asyn
   );
 });
 
+test("uploadcare helper: trusts existing file metadata but still validates gallery structure", async () => {
+  let providerLookups = 0;
+  const options = {
+    publicKey: "public-key",
+    secretKey: "secret-key",
+    trustedExistingFileIds: [FILE_ID],
+    fetchFn: async () => {
+      providerLookups += 1;
+      throw new Error("Existing files should not be looked up again");
+    },
+  };
+  const policy = {
+    label: "Vehicle gallery",
+    maxCount: 20,
+    maxBytes: 10 * 1024 * 1024,
+    imagesOnly: true,
+  };
+
+  const metadata = await validateUploadcareFiles([FILE_ID], policy, options);
+
+  assert.deepEqual(metadata, []);
+  assert.equal(providerLookups, 0);
+  await assert.rejects(
+    () => validateUploadcareFiles([FILE_ID, FILE_ID], policy, options),
+    /duplicate/i,
+  );
+  assert.equal(providerLookups, 0);
+});
+
 test("uploadcare helper: accepts real Uploadcare delivery URLs and extracts opaque ids", () => {
   const signedUrl = `https://ucarecdn.com/${FILE_ID}/-/preview/?token=test-token`;
 

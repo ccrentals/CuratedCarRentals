@@ -410,6 +410,7 @@ export async function validateUploadcareFiles(
     publicKey?: string;
     secretKey?: string;
     fetchFn?: typeof fetch;
+    trustedExistingFileIds?: Iterable<string>;
   } = {},
 ) {
   const fileIds = references.map((reference) => extractUploadcareFileId(reference));
@@ -427,8 +428,11 @@ export async function validateUploadcareFiles(
     throw new UploadcareFileValidationError(`Duplicate ${policy.label} uploads are not allowed.`);
   }
 
+  const trustedExistingFileIds = new Set(options.trustedExistingFileIds ?? []);
   const metadata = await Promise.all(
-    normalizedFileIds.map((fileId) => getUploadcareFileMetadata(fileId, options)),
+    normalizedFileIds
+      .filter((fileId) => !trustedExistingFileIds.has(fileId))
+      .map((fileId) => getUploadcareFileMetadata(fileId, options)),
   );
   for (const file of metadata) {
     if (file.isRemoved) {
