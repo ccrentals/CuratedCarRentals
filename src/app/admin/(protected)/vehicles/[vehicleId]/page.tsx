@@ -118,8 +118,12 @@ async function loadVehicleProfile(vehicleId: string) {
 async function loadVehicleBlockouts(vehicleId: string, nowIso: string) {
   try {
     const blockoutsResult = await dbQuery<VehicleBlockoutRow>(
-      `select start_at, end_at
-       from blockouts
+      `select
+         bo.start_at,
+         bo.end_at,
+         coalesce(to_jsonb(bo)->>'source', 'MANUAL') as source,
+         to_jsonb(bo)->>'linked_maintenance_id' as linked_maintenance_id
+       from blockouts bo
        where vehicle_id = $1::uuid
          and end_at > $2::timestamptz
        order by start_at asc`,

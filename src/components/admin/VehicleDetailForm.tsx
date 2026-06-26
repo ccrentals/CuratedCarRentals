@@ -58,7 +58,14 @@ type VehicleDetailFormProps = {
   profile: VehicleProfile | null;
   initialNotes: VehicleNote[];
   mediaActivities?: MediaAuditActivity[];
-  initialDerivedStatus: "AVAILABLE" | "UPCOMING" | "ON_RENT" | "DIRTY" | "UNAVAILABLE";
+  initialDerivedStatus:
+    | "AVAILABLE"
+    | "UPCOMING"
+    | "ON_RENT"
+    | "MAINTENANCE"
+    | "BLOCKED_OUT"
+    | "DIRTY"
+    | "UNAVAILABLE";
 };
 
 type OverviewFormState = {
@@ -95,6 +102,10 @@ function statusBadge(status: string) {
       "border border-[var(--ccr-status-info-border)] bg-[var(--ccr-status-info-bg)] text-[var(--ccr-status-info-text)]",
     ON_RENT:
       "border border-[var(--ccr-status-info-border)] bg-[var(--ccr-status-info-bg)] text-[var(--ccr-status-info-text)]",
+    BLOCKED_OUT:
+      "border border-[var(--ccr-status-warning-border)] bg-[var(--ccr-status-warning-bg)] text-[var(--ccr-status-warning-text)]",
+    MAINTENANCE:
+      "border border-[var(--ccr-status-warning-border)] bg-[var(--ccr-status-warning-bg)] text-[var(--ccr-status-warning-text)]",
     DIRTY:
       "border border-[var(--ccr-status-warning-border)] bg-[var(--ccr-status-warning-bg)] text-[var(--ccr-status-warning-text)]",
     UNAVAILABLE:
@@ -109,6 +120,8 @@ function statusBadge(status: string) {
 function derivedStatusLabel(status: VehicleDetailFormProps["initialDerivedStatus"]) {
   if (status === "ON_RENT") return "On Rent";
   if (status === "UPCOMING") return "Upcoming";
+  if (status === "BLOCKED_OUT") return "Blocked Out";
+  if (status === "MAINTENANCE") return "Maintenance";
   if (status === "DIRTY") return "Dirty";
   if (status === "UNAVAILABLE") return "Unavailable";
   return "Available";

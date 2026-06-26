@@ -88,8 +88,13 @@ export async function hydrateVehiclesWithDerivedStatus<T extends AdminFleetVehic
 
     try {
       const blockoutsResult = await dbQuery<FleetVehicleBlockoutRow>(
-        `select vehicle_id, start_at, end_at
-         from blockouts
+        `select
+           bo.vehicle_id,
+           bo.start_at,
+           bo.end_at,
+           coalesce(to_jsonb(bo)->>'source', 'MANUAL') as source,
+           to_jsonb(bo)->>'linked_maintenance_id' as linked_maintenance_id
+         from blockouts bo
          where vehicle_id = any($1::uuid[])
            and end_at > $2::timestamptz
          order by start_at asc`,
@@ -194,7 +199,9 @@ export function summarizeActiveFleetSnapshot(
   return {
     totalVehicles: activeRows.length,
     availableVehicles: activeRows.filter((row) => row.derived_status === "AVAILABLE").length,
-    maintenanceVehicles: activeRows.filter((row) => row.derived_status === "DIRTY").length,
+    maintenanceVehicles: activeRows.filter(
+      (row) => row.derived_status === "MAINTENANCE" || row.derived_status === "DIRTY",
+    ).length,
     recentVehicles,
   };
 }

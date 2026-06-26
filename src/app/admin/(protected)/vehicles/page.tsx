@@ -246,7 +246,7 @@ export default async function AdminVehiclesPage({
     if (status === "ON_RENT") {
       return "border-[var(--ccr-status-info-border)] bg-[var(--ccr-status-info-bg)] text-[var(--ccr-status-info-text)]";
     }
-    if (status === "DIRTY") {
+    if (status === "DIRTY" || status === "MAINTENANCE" || status === "BLOCKED_OUT") {
       return "border-[var(--ccr-status-warning-border)] bg-[var(--ccr-status-warning-bg)] text-[var(--ccr-status-warning-text)]";
     }
     return "border-[var(--ccr-status-neutral-border)] bg-[var(--ccr-status-neutral-bg)] text-[var(--ccr-status-neutral-text)]";

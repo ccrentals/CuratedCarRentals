@@ -51,6 +51,12 @@ test("dashboard fleet summary excludes deleted vehicles and counts derived avail
       status: "MAINTENANCE",
     }),
     makeVehicle({
+      id: "maintenance-1",
+      created_at: "2026-03-12T11:00:00.000Z",
+      derived_status: "MAINTENANCE",
+      status: "MAINTENANCE",
+    }),
+    makeVehicle({
       id: "deleted-available",
       created_at: "2026-03-13T10:00:00.000Z",
       derived_status: "AVAILABLE",
@@ -59,9 +65,9 @@ test("dashboard fleet summary excludes deleted vehicles and counts derived avail
     }),
   ]);
 
-  assert.equal(summary.totalVehicles, 3);
+  assert.equal(summary.totalVehicles, 4);
   assert.equal(summary.availableVehicles, 1);
-  assert.equal(summary.maintenanceVehicles, 1);
+  assert.equal(summary.maintenanceVehicles, 2);
 });
 
 test("dashboard fleet summary recent vehicles stay active-only and newest-first", () => {
