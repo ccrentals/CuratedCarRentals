@@ -138,7 +138,10 @@ export default async function AdminDashboardPage({
   );
 
   const maintenanceVehicles = activeFleetRows
-    .filter((vehicle) => vehicle.derived_status === "DIRTY")
+    .filter(
+      (vehicle) =>
+        vehicle.derived_status === "DIRTY" || vehicle.derived_status === "MAINTENANCE",
+    )
     .sort((left, right) => {
       const leftTime = new Date(left.updated_at).getTime();
       const rightTime = new Date(right.updated_at).getTime();

@@ -19,7 +19,15 @@ export type VehicleSortState = {
   sortDir: SortDir;
 };
 
-export const VEHICLE_FILTER_OPTIONS = ["all", "available", "upcoming", "dirty", "on_rent"] as const;
+export const VEHICLE_FILTER_OPTIONS = [
+  "all",
+  "available",
+  "upcoming",
+  "on_rent",
+  "blocked_out",
+  "maintenance",
+  "dirty",
+] as const;
 export type VehicleFilterOption = (typeof VEHICLE_FILTER_OPTIONS)[number];
 
 export function normalizeVehicleFilter(value: unknown): VehicleFilterOption {
@@ -31,6 +39,8 @@ export function normalizeVehicleFilter(value: unknown): VehicleFilterOption {
   if (normalized === "upcoming") return "upcoming";
   if (normalized === "dirty") return "dirty";
   if (normalized === "on_rent") return "on_rent";
+  if (normalized === "blocked_out") return "blocked_out";
+  if (normalized === "maintenance") return "maintenance";
   return "all";
 }
 
@@ -108,7 +118,8 @@ export function vehicleStatusLabel(status: string) {
   if (normalized === "AVAILABLE") return "Available";
   if (normalized === "UPCOMING") return "Upcoming";
   if (normalized === "UNAVAILABLE") return "Unavailable";
-  if (normalized === "MAINTENANCE") return "Dirty";
+  if (normalized === "MAINTENANCE") return "Maintenance";
+  if (normalized === "BLOCKED_OUT") return "Blocked Out";
   if (normalized === "DIRTY") return "Dirty";
   if (normalized === "RENTED") return "On Rent";
   if (normalized === "ON_RENT") return "On Rent";
@@ -126,6 +137,8 @@ export function matchesVehicleFilter(
   if (filter === "upcoming") return status === "UPCOMING";
   if (filter === "dirty") return status === "DIRTY";
   if (filter === "on_rent") return status === "ON_RENT";
+  if (filter === "blocked_out") return status === "BLOCKED_OUT";
+  if (filter === "maintenance") return status === "MAINTENANCE";
   return true;
 }
 
@@ -133,8 +146,10 @@ export function vehicleStatusSortRank(status: DerivedVehicleStatus) {
   if (status === "AVAILABLE") return 1;
   if (status === "UPCOMING") return 2;
   if (status === "ON_RENT") return 3;
-  if (status === "DIRTY") return 4;
-  return 5;
+  if (status === "BLOCKED_OUT") return 4;
+  if (status === "MAINTENANCE") return 5;
+  if (status === "DIRTY") return 6;
+  return 7;
 }
 
 export function vehicleDerivedStatusLabel(status: DerivedVehicleStatus) {

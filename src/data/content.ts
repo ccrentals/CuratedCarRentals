@@ -4,8 +4,8 @@ export const siteContent = {
   location: "Kingston, Jamaica",
   phone: "+1 (876) 379-7163",
   phones: [
-    { label: "+1 (876) 372-6218 (Jamaica)", href: "tel:+18763726218" },
     { label: "+1 (876) 379-7163 (Jamaica)", href: "tel:+18763797163" },
+    { label: "+1 (876) 372-6218 (Jamaica)", href: "tel:+18763726218" },
     { label: "+1 (876) 533-9386 (Jamaica)", href: "tel:+18765339386" },
     { label: "+1 (561) 247-2653 (USA)", href: "tel:+15612472653" },
   ],
@@ -13,12 +13,12 @@ export const siteContent = {
   address: "166 Old Hope Road, Kingston, Jamaica",
   addressLines: ["166 Old Hope Road", "Kingston, Jamaica"],
   whatsapp: {
-    label: "+1 (876) 533-9386",
-    href: "https://wa.me/8765339386",
+    label: "+1 (876) 379-7163",
+    href: "https://wa.me/18763797163",
   },
   whatsapps: [
-    { label: "+1 (876) 533-9386", href: "https://wa.me/8765339386" },
     { label: "+1 (876) 379-7163", href: "https://wa.me/18763797163" },
+    { label: "+1 (876) 533-9386", href: "https://wa.me/8765339386" },
   ],
   heroHeadline: "Experience Jamaica's Beauty with Our Premium Car Collection",
   heroDescription:

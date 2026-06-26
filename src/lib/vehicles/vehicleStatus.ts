@@ -25,6 +25,8 @@ export type DerivedVehicleStatus =
   | "AVAILABLE"
   | "UPCOMING"
   | "ON_RENT"
+  | "MAINTENANCE"
+  | "BLOCKED_OUT"
   | "DIRTY"
   | "UNAVAILABLE";
 
@@ -52,6 +54,9 @@ export type VehicleStatusBlockoutLike = {
   startAt?: unknown;
   end_at?: unknown;
   endAt?: unknown;
+  source?: unknown;
+  linked_maintenance_id?: unknown;
+  linkedMaintenanceId?: unknown;
 };
 
 export type VehicleStatusContext = {
@@ -216,10 +221,12 @@ export function derivedBookingPhaseLabel(phase: DerivedBookingPhase) {
  *
  * Precedence order:
  * 1) ON_RENT: an active-window booking that is entitled or operationally active.
- * 2) DIRTY: profile needs_cleaning=true (or legacy MAINTENANCE manual status).
- * 3) UNAVAILABLE: currently blocked by blockout or manually unavailable/inactive.
- * 4) UPCOMING: at least one future or overdue pre-rental booking.
- * 5) AVAILABLE: none of the above.
+ * 2) MAINTENANCE: manual maintenance status or an active maintenance blockout.
+ * 3) DIRTY: profile needs_cleaning=true.
+ * 4) BLOCKED_OUT: an active non-maintenance blockout.
+ * 5) UNAVAILABLE: manually unavailable/inactive.
+ * 6) UPCOMING: at least one future or overdue pre-rental booking.
+ * 7) AVAILABLE: none of the above.
  *
  * Decision note: UPCOMING includes both future and overdue pre-rental bookings
  * so vehicles do not become available just because pickup time passed without confirmation.
@@ -240,16 +247,32 @@ export function deriveVehicleStatus(
   });
   if (hasActiveRental) return "ON_RENT";
 
-  if (context.needsCleaning === true || manualStatus === "MAINTENANCE") {
-    return "DIRTY";
-  }
-
-  const blockedNow = blockouts.some((blockout) => {
+  const activeBlockouts = blockouts.filter((blockout) => {
     const startAt = parseDate(blockout.start_at ?? blockout.startAt);
     const endAt = parseDate(blockout.end_at ?? blockout.endAt);
     return overlapsNow(startAt, endAt, now);
   });
-  if (blockedNow || manualStatus === "INACTIVE" || manualStatus === "UNAVAILABLE") {
+
+  const hasActiveMaintenanceBlockout = activeBlockouts.some((blockout) => {
+    const source = normalizeStatus(blockout.source);
+    const linkedMaintenanceId = String(
+      blockout.linked_maintenance_id ?? blockout.linkedMaintenanceId ?? "",
+    ).trim();
+    return source === "MAINTENANCE" || linkedMaintenanceId.length > 0;
+  });
+  if (manualStatus === "MAINTENANCE" || hasActiveMaintenanceBlockout) {
+    return "MAINTENANCE";
+  }
+
+  if (context.needsCleaning === true) {
+    return "DIRTY";
+  }
+
+  if (activeBlockouts.length > 0) {
+    return "BLOCKED_OUT";
+  }
+
+  if (manualStatus === "INACTIVE" || manualStatus === "UNAVAILABLE") {
     return "UNAVAILABLE";
   }
 
@@ -303,6 +326,8 @@ export function nextRelevantBookingWindowFromBookings(
 export function derivedVehicleStatusLabel(status: DerivedVehicleStatus) {
   if (status === "ON_RENT") return "On Rent";
   if (status === "UPCOMING") return "Upcoming";
+  if (status === "MAINTENANCE") return "Maintenance";
+  if (status === "BLOCKED_OUT") return "Blocked Out";
   if (status === "DIRTY") return "Dirty";
   if (status === "UNAVAILABLE") return "Unavailable";
   return "Available";

@@ -25,8 +25,10 @@ const FILTER_LABELS: Record<VehicleFilterOption, string> = {
   all: "All",
   available: "Available",
   upcoming: "Upcoming",
-  dirty: "Dirty",
   on_rent: "On Rent",
+  blocked_out: "Blocked Out",
+  maintenance: "Maintenance",
+  dirty: "Dirty",
 };
 
 const SORT_LABELS: Record<VehicleSortBy, string> = {

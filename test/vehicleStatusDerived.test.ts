@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import {
+  matchesVehicleFilter,
+  normalizeVehicleFilter,
+  vehicleDerivedStatusLabel,
+} from "@/lib/vehicles/adminVehicles";
 import { deriveBookingPhase, deriveVehicleStatus, getStartOfToday } from "@/lib/vehicles/vehicleStatus";
 
 const NOW = new Date("2026-02-23T15:30:00.000Z");
@@ -60,6 +65,56 @@ test("derive vehicle status: DIRTY from profile flag", () => {
   );
 
   assert.equal(status, "DIRTY");
+});
+
+test("derive vehicle status: active manual blockout is BLOCKED_OUT", () => {
+  const status = deriveVehicleStatus(
+    { status: "AVAILABLE" },
+    NOW,
+    {
+      blockouts: [
+        {
+          start_at: addHours(NOW, -1),
+          end_at: addHours(NOW, 2),
+          source: "MANUAL",
+        },
+      ],
+    },
+  );
+
+  assert.equal(status, "BLOCKED_OUT");
+});
+
+test("derive vehicle status: maintenance selection and blockouts are MAINTENANCE", () => {
+  assert.equal(
+    deriveVehicleStatus({ status: "MAINTENANCE" }, NOW),
+    "MAINTENANCE",
+  );
+  assert.equal(
+    deriveVehicleStatus(
+      { status: "AVAILABLE" },
+      NOW,
+      {
+        blockouts: [
+          {
+            start_at: addHours(NOW, -1),
+            end_at: addHours(NOW, 2),
+            source: "MAINTENANCE",
+          },
+        ],
+      },
+    ),
+    "MAINTENANCE",
+  );
+});
+
+test("vehicle status labels and filters expose blockout and maintenance states", () => {
+  assert.equal(vehicleDerivedStatusLabel("BLOCKED_OUT"), "Blocked Out");
+  assert.equal(vehicleDerivedStatusLabel("MAINTENANCE"), "Maintenance");
+  assert.equal(normalizeVehicleFilter("blocked_out"), "blocked_out");
+  assert.equal(normalizeVehicleFilter("maintenance"), "maintenance");
+  assert.equal(matchesVehicleFilter("blocked_out", "BLOCKED_OUT"), true);
+  assert.equal(matchesVehicleFilter("maintenance", "MAINTENANCE"), true);
 });
 
 test("derive vehicle status: UPCOMING when next booking exists", () => {
