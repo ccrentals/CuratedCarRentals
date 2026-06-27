@@ -2,7 +2,10 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { getDbPool } from "@/lib/db";
 import { redactText } from "@/lib/log";
-import { applyProviderEventToEmailDispatch } from "@/lib/notifications/emailDispatch";
+import {
+  applyProviderEventToEmailDispatch,
+  recordEmailDispatchEvent,
+} from "@/lib/notifications/emailDispatch";
 import { insertMailboxMessage } from "@/lib/messages/mailboxStore";
 
 type QueryResult<T = unknown> = Promise<{ rows: T[]; rowCount: number }>;
@@ -96,6 +99,7 @@ type ResendWebhookProcessDeps = {
 };
 
 const SUPPORTED_RESEND_EVENT_TYPES = new Set([
+  "email.sent",
   "email.delivered",
   "email.delivery_delayed",
   "email.bounced",
@@ -202,6 +206,7 @@ function readTag(tags: Record<string, string>, keys: string[]) {
 }
 
 function humanizeEventType(eventType: string) {
+  if (eventType === "email.sent") return "Email accepted";
   if (eventType === "email.delivered") return "Email delivered";
   if (eventType === "email.delivery_delayed") return "Email delivery delayed";
   if (eventType === "email.bounced") return "Email bounced";
@@ -676,27 +681,42 @@ export async function processResendWebhookEvent(
 
     const correlation = await correlateResendWebhookEvent(client, event);
     if (correlation.emailDispatchId) {
-      const status = dispatchStatusForResendEvent(event.eventType);
-      await applyProviderEventToEmailDispatch(
-        {
-          id: correlation.emailDispatchId,
-          eventType: event.eventType,
-          occurredAt: event.occurredAt,
-          providerMessageId: event.providerEmailId,
-          status,
-          error: event.eventType === "email.delivered" ? null : event.reason,
-          providerErrorCategory: event.eventType === "email.delivered" ? null : event.category,
-          providerErrorReason: event.eventType === "email.delivered" ? null : event.reason,
-          details: {
-            webhookMessageId: event.webhookMessageId,
-            primaryRecipient: event.primaryRecipient,
-            subject: event.subject,
-            tags: event.tags,
-            providerData: event.providerData,
+      const details = {
+        webhookMessageId: event.webhookMessageId,
+        primaryRecipient: event.primaryRecipient,
+        subject: event.subject,
+        tags: event.tags,
+        providerData: event.providerData,
+      };
+      if (event.eventType === "email.sent") {
+        await recordEmailDispatchEvent(
+          {
+            emailDispatchId: correlation.emailDispatchId,
+            source: "provider_webhook",
+            eventType: event.eventType,
+            status: "SENT",
+            occurredAt: event.occurredAt,
+            details,
           },
-        },
-        client.query.bind(client),
-      );
+          client.query.bind(client),
+        );
+      } else {
+        const status = dispatchStatusForResendEvent(event.eventType);
+        await applyProviderEventToEmailDispatch(
+          {
+            id: correlation.emailDispatchId,
+            eventType: event.eventType,
+            occurredAt: event.occurredAt,
+            providerMessageId: event.providerEmailId,
+            status,
+            error: event.eventType === "email.delivered" ? null : event.reason,
+            providerErrorCategory: event.eventType === "email.delivered" ? null : event.category,
+            providerErrorReason: event.eventType === "email.delivered" ? null : event.reason,
+            details,
+          },
+          client.query.bind(client),
+        );
+      }
     }
 
     if (!RESEND_ISSUE_EVENT_TYPES.has(event.eventType)) {

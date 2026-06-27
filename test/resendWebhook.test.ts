@@ -325,3 +325,71 @@ test("Resend delivery processing records provider confirmation without creating 
     false,
   );
 });
+
+test("Resend sent processing records acceptance without regressing dispatch status", async () => {
+  const queries: Array<{ text: string; params: unknown[] }> = [];
+  const event = normalizeResendWebhookEvent(
+    {
+      type: "email.sent",
+      created_at: "2026-03-15T11:59:00.000Z",
+      data: {
+        email_id: "re_sent_1",
+        to: ["customer@example.com"],
+      },
+    },
+    "msg_129",
+  );
+
+  assert.ok(event);
+  const result = await processResendWebhookEvent(event!, {
+    getDbPoolFn: () =>
+      createDbPoolStub(async (text, params) => {
+        queries.push({ text, params });
+        if (text === "begin" || text === "commit" || text === "rollback") {
+          return { rows: [], rowCount: 0 };
+        }
+        if (text.startsWith("insert into webhook_events")) {
+          return { rows: [{ id: "webhook-row-sent" }], rowCount: 1 };
+        }
+        if (text.startsWith("select id, entity_type")) {
+          return {
+            rows: [
+              {
+                id: "5baa780b-d921-4a2b-99d2-147b82429191",
+                entity_type: "booking",
+                entity_id: "60eb4ea5-6df8-4234-83bf-569c95df0bb9",
+                entity_public_id: "BK000023",
+                email_type: "booking_created",
+              },
+            ],
+            rowCount: 1,
+          };
+        }
+        if (text.startsWith("insert into email_dispatch_events")) {
+          return { rows: [], rowCount: 1 };
+        }
+        throw new Error(`Unexpected query: ${text}`);
+      }),
+  });
+
+  assert.equal(result.handled, true);
+  assert.equal(result.duplicate, false);
+  assert.equal(result.eventType, "email.sent");
+  assert.equal(result.notificationId, null);
+
+  const providerEvent = queries.find((entry) =>
+    entry.text.startsWith("insert into email_dispatch_events"),
+  );
+  assert.ok(providerEvent);
+  assert.equal(providerEvent?.params[1], "provider_webhook");
+  assert.equal(providerEvent?.params[2], "email.sent");
+  assert.equal(providerEvent?.params[3], "SENT");
+  assert.equal(
+    queries.some((entry) => entry.text.startsWith("update email_dispatches")),
+    false,
+  );
+  assert.equal(
+    queries.some((entry) => entry.text.startsWith("insert into contact_messages")),
+    false,
+  );
+});
