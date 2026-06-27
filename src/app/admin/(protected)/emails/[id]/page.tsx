@@ -29,27 +29,27 @@ function deliveryConfirmation(status: string) {
     return {
       title: "Delivery confirmed",
       body: "Resend confirmed that the recipient's mail server accepted this email.",
-      className: "border-emerald-400/40 bg-emerald-500/10 text-emerald-100",
+      className: "border-[var(--ccr-status-success-border)] bg-[var(--ccr-status-success-bg)] text-[var(--ccr-status-success-text)]",
     };
   }
   if (normalized === "SENT") {
     return {
       title: "Delivery not yet confirmed",
       body: "Resend accepted the send request, but no delivery confirmation has been recorded.",
-      className: "border-sky-400/40 bg-sky-500/10 text-sky-100",
+      className: "border-[var(--ccr-status-info-border)] bg-[var(--ccr-status-info-bg)] text-[var(--ccr-status-info-text)]",
     };
   }
   if (normalized === "FAILED" || normalized === "BOUNCED" || normalized === "DELIVERY_ISSUE") {
     return {
       title: "Delivery issue recorded",
       body: "Resend reported a problem after the send request was submitted. Review the event history and error details.",
-      className: "border-amber-400/40 bg-amber-500/10 text-amber-100",
+      className: "border-[var(--ccr-status-warning-border)] bg-[var(--ccr-status-warning-bg)] text-[var(--ccr-status-warning-text)]",
     };
   }
   return {
     title: "Delivery status unavailable",
     body: "No recipient mail-server confirmation has been recorded for this email.",
-    className: "border-slate-400/40 bg-slate-500/10 text-slate-100",
+    className: "border-[var(--ccr-status-neutral-border)] bg-[var(--ccr-status-neutral-bg)] text-[var(--ccr-status-neutral-text)]",
   };
 }
 

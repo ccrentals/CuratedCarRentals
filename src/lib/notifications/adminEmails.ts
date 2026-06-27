@@ -255,7 +255,7 @@ function normalizeNumber(value: unknown, fallback = 0) {
   return Number.isFinite(numeric) ? numeric : fallback;
 }
 
-function statusFromResendLastEvent(lastEvent: string | null) {
+export function statusFromResendLastEvent(lastEvent: string | null) {
   if (lastEvent === "delivered") return "DELIVERED";
   if (lastEvent === "bounced") return "BOUNCED";
   if (lastEvent === "failed" || lastEvent === "suppressed") return "FAILED";
@@ -663,12 +663,14 @@ async function fetchQuoteLegacyDetail(rawId: string): Promise<AdminEmailDetail |
   );
   const row = result.rows[0];
   if (!row) return null;
+  const providerStatus = await fetchResendLastEvent(row.provider_message_id);
+  const providerDerivedStatus = statusFromResendLastEvent(providerStatus.lastEvent);
 
   return {
     id: encodeEmailRecordId("quote_legacy", rawId),
     kind: "quote_legacy",
     rawId,
-    status: row.status,
+    status: providerDerivedStatus ?? row.status,
     sentAt: row.status === "SENT" ? new Date(row.created_at).toISOString() : null,
     lastEventAt: null,
     createdAt: new Date(row.created_at).toISOString(),
@@ -688,8 +690,8 @@ async function fetchQuoteLegacyDetail(rawId: string): Promise<AdminEmailDetail |
     lastError: row.error,
     manualResendAllowed: true,
     metadata: {},
-    providerLastEvent: null,
-    providerStatusError: null,
+    providerLastEvent: providerStatus.lastEvent,
+    providerStatusError: providerStatus.error,
     events: [],
   };
 }
@@ -701,12 +703,14 @@ async function fetchLegacyNotificationDispatchDetail(rawId: string): Promise<Adm
   );
   const row = result.rows[0];
   if (!row) return null;
+  const providerStatus = await fetchResendLastEvent(row.provider_message_id);
+  const providerDerivedStatus = statusFromResendLastEvent(providerStatus.lastEvent);
 
   return {
     id: encodeEmailRecordId("notification_dispatch_legacy", rawId),
     kind: "notification_dispatch_legacy",
     rawId,
-    status: row.status,
+    status: providerDerivedStatus ?? row.status,
     sentAt: row.status === "SENT" ? new Date(row.created_at).toISOString() : null,
     lastEventAt: null,
     createdAt: new Date(row.created_at).toISOString(),
@@ -728,8 +732,8 @@ async function fetchLegacyNotificationDispatchDetail(rawId: string): Promise<Adm
     metadata: {
       provider: row.provider,
     },
-    providerLastEvent: null,
-    providerStatusError: null,
+    providerLastEvent: providerStatus.lastEvent,
+    providerStatusError: providerStatus.error,
     events: [],
   };
 }
