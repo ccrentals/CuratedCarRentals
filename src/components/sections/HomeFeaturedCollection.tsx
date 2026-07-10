@@ -6,10 +6,12 @@ import { PublicSection } from "@/components/site/PublicSection";
 import { buttonStyles } from "@/components/ui/Button";
 import type { PublicVehicle } from "@/lib/publicVehicles";
 import { formatPublicJmd } from "@/lib/money";
+import type { LandingContent } from "@/lib/landingContent";
 
 type HomeFeaturedCollectionProps = {
   featuredVehicles: PublicVehicle[];
   vehicleCount: number;
+  content: LandingContent["home"];
 };
 
 function IconBase({ children }: { children: ReactNode }) {
@@ -68,20 +70,21 @@ function FuelIcon() {
 export function HomeFeaturedCollection({
   featuredVehicles,
   vehicleCount,
+  content,
 }: HomeFeaturedCollectionProps) {
   const collectionVehicles = featuredVehicles.slice(0, 3);
 
   return (
     <PublicSection
       eyebrow={undefined}
-      title="Our Curated Collection"
-      description="Discover our handpicked selection of premium vehicles that combine style, comfort, and reliability for your Jamaican adventure."
+      title={content.featuredTitle}
+      description={content.featuredDescription}
       className="bg-white"
     >
       <div className="grid gap-5 sm:gap-6 xl:grid-cols-3">
         {collectionVehicles.length === 0 ? (
           <article className="rounded-[1.8rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 text-sm leading-7 text-[var(--ccr-muted)] shadow-[0_18px_56px_rgba(15,23,42,0.08)] xl:col-span-3">
-            No vehicles are currently published. Add and publish vehicles from the Admin portal.
+                {content.featuredEmptyText}
           </article>
         ) : (
           collectionVehicles.map((vehicle) => {
@@ -150,7 +153,7 @@ export function HomeFeaturedCollection({
                   </div>
 
                   <p className="text-sm leading-7 text-[var(--ccr-muted)]">
-                    Our simple pricing includes all statutory fees and taxes - (only optional Insurance is extra)
+                    {content.featuredCardNote}
                   </p>
 
                   <Link
@@ -161,7 +164,7 @@ export function HomeFeaturedCollection({
                       className: "mt-auto w-full justify-center self-start rounded-full sm:w-auto",
                     })}
                   >
-                    Reserve Now
+                    {content.featuredCtaLabel}
                   </Link>
                 </div>
               </article>
@@ -175,7 +178,7 @@ export function HomeFeaturedCollection({
           href="/fleet"
           className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--ccr-light-surface-text)] transition hover:text-[var(--ccr-accent-strong)]"
         >
-          View our entire fleet
+          {content.featuredAllFleetLabel}
           <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
             <path d="M4.5 10h11" strokeLinecap="round" />
             <path d="M11 5.5L15.5 10 11 14.5" strokeLinecap="round" strokeLinejoin="round" />

@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { Container } from "@/components/site/Container";
-import { drivingTips } from "@/data/content";
+import { loadLandingContent } from "@/lib/landingContent";
 import { publicPageMetadata } from "@/lib/seo";
 
 export const metadata = publicPageMetadata({
@@ -11,17 +11,19 @@ export const metadata = publicPageMetadata({
   path: "/driving-in-jamaica",
 });
 
-export default function DrivingInJamaicaPage() {
+export default async function DrivingInJamaicaPage() {
+  const { content } = await loadLandingContent();
+  const page = content.driving;
   return (
     <>
       <section className="bg-[var(--ccr-surface-soft)]/65 py-14 md:py-20 min-[1160px]:pt-44">
         <Container>
           <div className="min-[1160px]:translate-y-4">
             <h1 className="font-display text-4xl font-bold text-[var(--ccr-text)] md:text-5xl">
-              Driving in Jamaica
+              {page.title}
             </h1>
             <p className="mt-4 max-w-3xl text-lg leading-8 text-[var(--ccr-muted)]">
-              Essential information for a safe and enjoyable driving experience on the island.
+              {page.description}
             </p>
           </div>
         </Container>
@@ -30,7 +32,7 @@ export default function DrivingInJamaicaPage() {
       <section className="bg-white py-16 md:py-24">
         <Container>
           <div className="grid gap-6 md:grid-cols-2">
-            {drivingTips.map((item) => (
+            {page.tips.map((item) => (
               <article
                 key={item.title}
                 className="flex h-full flex-col rounded-[1.9rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-7 shadow-[0_18px_56px_rgba(15,23,42,0.07)]"
@@ -50,23 +52,23 @@ export default function DrivingInJamaicaPage() {
         <Container>
           <div className="mx-auto max-w-3xl text-center">
             <h2 className="font-display text-4xl font-bold text-white md:text-5xl">
-              Ready for your Jamaican road trip?
+              {page.ctaTitle}
             </h2>
             <p className="mt-4 text-lg leading-8 text-white/76">
-              Let us help you select the perfect vehicle for your adventure.
+              {page.ctaDescription}
             </p>
             <div className="mt-8 flex flex-col justify-center gap-4 sm:flex-row">
               <Link
-                href="/book"
+                href={page.primaryCta.href}
                 className="inline-flex min-h-12 items-center justify-center rounded-full bg-[#2ea9f4] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#48b9fa]"
               >
-                Book Your Car Now
+                {page.primaryCta.label}
               </Link>
               <Link
-                href="/fleet"
+                href={page.secondaryCta.href}
                 className="inline-flex min-h-12 items-center justify-center rounded-full border border-white/20 bg-white/8 px-6 py-3 text-sm font-semibold text-white transition hover:bg-white/12"
               >
-                View Fleet
+                {page.secondaryCta.label}
               </Link>
             </div>
           </div>

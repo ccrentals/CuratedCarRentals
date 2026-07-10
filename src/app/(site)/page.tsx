@@ -5,11 +5,7 @@ import { HomeBookingSection } from "@/components/site/HomeBookingSection";
 import { HomeContactSection } from "@/components/site/HomeContactSection";
 import { Container } from "@/components/site/Container";
 import { Button } from "@/components/ui/Button";
-import {
-  aboutFeatures,
-  siteContent,
-  testimonials,
-} from "@/data/content";
+import { loadLandingContent } from "@/lib/landingContent";
 import { getPublicVehicles } from "@/lib/publicVehicles";
 import { publicPageMetadata } from "@/lib/seo";
 
@@ -23,6 +19,8 @@ export const metadata = publicPageMetadata({
 });
 
 export default async function HomePage() {
+  const { content } = await loadLandingContent();
+  const home = content.home;
   const vehicles = await getPublicVehicles();
   const explicitlyFeaturedVehicles = vehicles.filter((vehicle) => vehicle.featured);
   const fallbackVehicles = vehicles.filter((vehicle) => !vehicle.featured);
@@ -33,12 +31,13 @@ export default async function HomePage() {
       <section className="relative overflow-hidden bg-[#0a1323] text-white">
         <div className="absolute inset-0">
           <Image
-            src="/live-site/home/hero-tropical-car.jpg"
-            alt="Modern car driving down a palm tree lined coastal road in Jamaica"
+            src={home.heroImage.src}
+            alt={home.heroImage.alt}
             fill
             priority
             sizes="100vw"
             className="object-cover"
+            unoptimized={!home.heroImage.src.startsWith("/")}
           />
           <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(15,74,78,0.4),rgba(22,54,96,0.28),rgba(234,114,66,0.22))]" />
         </div>
@@ -46,29 +45,29 @@ export default async function HomePage() {
         <Container className="relative flex min-h-[calc(100svh-4.9rem)] items-center py-12 sm:py-14 md:py-20 min-[1160px]:pt-44 lg:min-h-[calc(100svh-6rem)]">
           <div className="max-w-3xl min-[1160px]:translate-y-4">
             <div className="inline-flex items-center rounded-full bg-[rgba(39,117,95,0.82)] px-3.5 py-2 text-xs font-medium text-white shadow-[0_18px_34px_rgba(0,0,0,0.18)] backdrop-blur-sm sm:px-4 sm:text-sm">
-              <span className="mr-2">🌴</span> Kingston, Jamaica
+              {home.heroEyebrow}
             </div>
 
             <h1 className="mt-5 max-w-[34rem] text-[2.45rem] font-semibold leading-[1.02] text-white sm:mt-6 sm:text-[3rem] md:text-5xl lg:text-6xl">
-              {siteContent.heroHeadline}
+              {home.heroHeadline}
             </h1>
             <p className="mt-5 max-w-[32rem] text-base leading-7 text-white/90 sm:mt-6 sm:text-lg sm:leading-8">
-              {siteContent.heroDescription}
+              {home.heroDescription}
             </p>
 
             <div className="mt-7 flex flex-col gap-3 sm:mt-8 sm:flex-row sm:gap-4">
               <Button
-                href="/book"
+                href={home.primaryCta.href}
                 className="w-full rounded-full bg-[#ea7242] px-6 py-3 text-white shadow-lg hover:bg-[#ef8257] sm:w-auto"
               >
-                Book Your Vehicle
+                {home.primaryCta.label}
               </Button>
               <Button
-                href="/fleet"
+                href={home.secondaryCta.href}
                 variant="outline"
                 className="w-full rounded-full !border-white/24 bg-[var(--ccr-primary)]/78 px-6 py-3 !text-white backdrop-blur-[2px] hover:bg-[var(--ccr-primary)]/88 sm:w-auto"
               >
-                Explore Our Fleet
+                {home.secondaryCta.label}
               </Button>
             </div>
           </div>
@@ -78,13 +77,17 @@ export default async function HomePage() {
       <section className="border-b border-[var(--ccr-border)] bg-[#f7e0b0] py-3 text-center sm:py-4">
         <Container>
           <p className="text-[13px] font-medium leading-6 text-[#4c3b16] sm:text-sm md:text-base">
-            🌺 Our Simple Pricing includes all fees and taxes - No Surprises!{" "}
-            <span className="text-[#7a6230]">(*optional insurance is extra)</span>
+            {home.pricingNote}{" "}
+            <span className="text-[#7a6230]">{home.pricingNoteEmphasis}</span>
           </p>
         </Container>
       </section>
 
-      <HomeFeaturedCollection featuredVehicles={featuredVehicles} vehicleCount={vehicles.length} />
+      <HomeFeaturedCollection
+        featuredVehicles={featuredVehicles}
+        vehicleCount={vehicles.length}
+        content={home}
+      />
 
       <section className="relative overflow-hidden bg-[linear-gradient(180deg,var(--ccr-bg),var(--ccr-surface))] py-12 sm:py-14 md:py-24">
         <Container>
@@ -92,39 +95,40 @@ export default async function HomePage() {
             <div className="overflow-hidden rounded-[2rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] shadow-[0_24px_80px_rgba(15,23,42,0.08)]">
               <div className="relative h-[18rem] sm:h-[21rem] md:h-[30rem]">
                 <Image
-                  src="/live-site/home/discover-jamaica.png"
-                  alt="Exploring Jamaica with Curated Car Rentals"
+                  src={home.discoverImage.src}
+                  alt={home.discoverImage.alt}
                   fill
                   sizes="(min-width: 1024px) 42vw, 100vw"
                   className="object-cover"
+                  unoptimized={!home.discoverImage.src.startsWith("/")}
                 />
               </div>
               <div className="border-t border-[var(--ccr-border)] p-5 sm:p-6">
                 <h3 className="font-display text-[1.75rem] font-bold text-[var(--ccr-text)] sm:text-2xl">
-                  Discover Jamaica
+                  {home.discoverTitle}
                 </h3>
                 <p className="mt-3 text-[0.98rem] leading-7 text-[var(--ccr-muted)] sm:text-base">
-                  From Kingston&apos;s vibrant streets to stunning coastal drives, our vehicles are your passport to Jamaica&apos;s wonders.
+                  {home.discoverDescription}
                 </p>
               </div>
             </div>
 
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--ccr-accent-strong)]">
-                About Us
+                {home.aboutEyebrow}
               </p>
               <h2 className="mt-4 font-display text-[2rem] font-bold leading-tight text-[var(--ccr-text)] sm:text-[2.4rem] md:text-5xl">
-                {siteContent.aboutHeading}
+                {home.aboutHeading}
               </h2>
               <p className="mt-4 text-base leading-7 text-[var(--ccr-muted)] sm:mt-5 sm:text-lg sm:leading-8">
-                {siteContent.aboutDescription}
+                {home.aboutDescription}
               </p>
               <p className="mt-4 text-base leading-7 text-[var(--ccr-muted)] sm:text-lg sm:leading-8">
-                {siteContent.aboutSupport}
+                {home.aboutSupport}
               </p>
 
               <div className="mt-7 grid gap-3 sm:mt-8 sm:gap-4 md:grid-cols-2">
-                {aboutFeatures.map((feature) => (
+                {home.aboutFeatures.map((feature) => (
                   <article
                     key={feature.title}
                     className="rounded-[1.4rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4 shadow-[0_14px_36px_rgba(15,23,42,0.05)] sm:p-5"
@@ -139,7 +143,7 @@ export default async function HomePage() {
         </Container>
       </section>
 
-      <HomeBookingSection />
+      <HomeBookingSection content={home} />
 
       <section className="relative overflow-hidden bg-[linear-gradient(135deg,var(--ccr-primary-soft),var(--ccr-primary))] py-12 text-[var(--ccr-on-primary)] sm:py-14 md:py-24">
         <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-16">
@@ -164,15 +168,15 @@ export default async function HomePage() {
         <Container>
           <div className="mx-auto max-w-3xl text-center">
             <h2 className="font-display text-[2rem] font-bold leading-tight text-[var(--ccr-on-primary)] sm:text-[2.4rem] md:text-5xl">
-              What Our Customers Say
+              {home.testimonialsTitle}
             </h2>
             <p className="mt-4 text-base leading-7 text-[var(--ccr-on-primary-muted)] sm:text-lg sm:leading-8">
-              Discover why travelers choose Curated Car Rentals for their Jamaican adventures.
+              {home.testimonialsDescription}
             </p>
           </div>
 
           <div className="mt-8 grid gap-5 sm:mt-10 sm:gap-6 lg:grid-cols-3">
-            {testimonials.map((testimonial) => (
+            {home.testimonials.map((testimonial) => (
               <article
                 key={testimonial.name}
                 className="rounded-[2rem] border border-white/12 bg-white/8 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.16)] backdrop-blur-sm sm:p-6"
@@ -185,6 +189,7 @@ export default async function HomePage() {
                       fill
                       sizes="64px"
                       className="object-cover"
+                      unoptimized={!testimonial.avatar.startsWith("/")}
                     />
                   </div>
                   <div className="flex gap-1 text-[#f5d277]" aria-hidden="true">
@@ -210,7 +215,7 @@ export default async function HomePage() {
         </Container>
       </section>
 
-      <HomeContactSection />
+      <HomeContactSection content={home} globalContent={content.global} />
     </>
   );
 }

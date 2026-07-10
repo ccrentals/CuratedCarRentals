@@ -8,19 +8,9 @@ import { Container } from "@/components/site/Container";
 import { SiteLogo } from "@/components/site/SiteLogo";
 import { ThemeToggle } from "@/components/site/ThemeToggle";
 import { buttonStyles } from "@/components/ui/Button";
-import { siteContent } from "@/data/content";
+import type { LandingContent } from "@/lib/landingContent";
 import { isStandaloneAuthRoute } from "@/lib/security/clerk";
 import { cn } from "@/lib/utils";
-
-const navLinks = [
-  { href: "/", label: "Home" },
-  { href: "/fleet", label: "Fleet" },
-  { href: "/services", label: "Services" },
-  { href: "/rental-policies", label: "Rental Policies" },
-  { href: "/driving-in-jamaica", label: "Driving in Jamaica" },
-  { href: "/about", label: "About" },
-  { href: "/contact", label: "Contact" },
-];
 
 function isDesktopNavItemActive(pathname: string | null | undefined, href: string) {
   if (!pathname) return false;
@@ -28,7 +18,15 @@ function isDesktopNavItemActive(pathname: string | null | undefined, href: strin
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-function MobileTopBar({ onOpen, isOpen }: { onOpen: () => void; isOpen: boolean }) {
+function MobileTopBar({
+  content,
+  onOpen,
+  isOpen,
+}: {
+  content: LandingContent["global"];
+  onOpen: () => void;
+  isOpen: boolean;
+}) {
   return (
     <div className="flex min-w-0 items-center gap-2 min-[1160px]:hidden">
       <button
@@ -53,7 +51,7 @@ function MobileTopBar({ onOpen, isOpen }: { onOpen: () => void; isOpen: boolean 
           <path d="M4 12h16" />
           <path d="M4 17h16" />
         </svg>
-        <span className="hidden min-[380px]:inline">Menu</span>
+        <span className="hidden min-[380px]:inline">{content.headerMenuLabel}</span>
       </button>
 
       <Link
@@ -64,10 +62,10 @@ function MobileTopBar({ onOpen, isOpen }: { onOpen: () => void; isOpen: boolean 
         <SiteLogo size={56} className="h-11 w-11 shrink-0 sm:h-12 sm:w-12" />
         <span className="min-w-0 self-end pb-[2px]">
           <span
-            className="ccr-wordmark-curated block whitespace-nowrap leading-[0.78] text-white"
-            style={{ fontSize: "1.45rem" }}
+            className="ccr-wordmark-curated block truncate whitespace-nowrap leading-[0.78] text-white"
+            style={{ fontSize: "1.2rem" }}
           >
-            CCR
+            {content.brand}
           </span>
         </span>
       </Link>
@@ -75,7 +73,13 @@ function MobileTopBar({ onOpen, isOpen }: { onOpen: () => void; isOpen: boolean 
   );
 }
 
-function MobileDrawerHeader({ onClose }: { onClose: () => void }) {
+function MobileDrawerHeader({
+  content,
+  onClose,
+}: {
+  content: LandingContent["global"];
+  onClose: () => void;
+}) {
   return (
     <div className="flex items-start justify-between gap-2.5">
       <Link
@@ -85,17 +89,11 @@ function MobileDrawerHeader({ onClose }: { onClose: () => void }) {
       >
         <SiteLogo size={40} className="h-8 w-8 shrink-0" />
         <span className="min-w-0 pt-[2px]">
-          <span className="block whitespace-nowrap text-[0.69rem] font-semibold tracking-tight leading-none">
-            <span
-              className="ccr-wordmark-curated align-middle"
-              style={{ fontSize: "0.92rem", lineHeight: 1 }}
-            >
-              Curated
-            </span>{" "}
-            <span className="align-middle">Car Rentals</span>
+          <span className="ccr-wordmark-curated block truncate whitespace-nowrap text-[0.8rem] font-semibold tracking-tight leading-none">
+            {content.brand}
           </span>
           <span className="mt-1 block text-[7px] uppercase tracking-[0.16em] text-white/60">
-            {siteContent.tagline}
+            {content.tagline}
           </span>
         </span>
       </Link>
@@ -106,13 +104,19 @@ function MobileDrawerHeader({ onClose }: { onClose: () => void }) {
         className="inline-flex min-h-10 shrink-0 items-center rounded-full border border-white/15 px-2.5 py-2 text-[9px] font-semibold uppercase tracking-[0.14em] text-white/70 transition hover:border-white/30 hover:text-white"
         aria-label="Close menu"
       >
-        Close
+        {content.headerCloseMenuLabel}
       </button>
     </div>
   );
 }
 
-function MobileDrawerFooter({ onClose }: { onClose: () => void }) {
+function MobileDrawerFooter({
+  content,
+  onClose,
+}: {
+  content: LandingContent["global"];
+  onClose: () => void;
+}) {
   return (
     <div className="space-y-3 border-t border-white/10 px-4 py-4">
       <div className="flex flex-nowrap items-center gap-2">
@@ -135,7 +139,7 @@ function MobileDrawerFooter({ onClose }: { onClose: () => void }) {
               "min-h-11 shrink-0 whitespace-nowrap rounded-full px-3 text-[13px] font-semibold",
           })}
         >
-          Book Now
+          {content.headerBookLabel}
         </Link>
       </div>
       <Link
@@ -143,13 +147,13 @@ function MobileDrawerFooter({ onClose }: { onClose: () => void }) {
         onClick={onClose}
         className="inline-flex min-h-11 items-center justify-center rounded-full border border-white/15 bg-white/6 px-4 py-2.5 text-sm font-semibold text-white/78 transition hover:bg-white/10 hover:text-white"
       >
-        Admin
+        {content.headerAdminLabel}
       </Link>
     </div>
   );
 }
 
-function DesktopBrand() {
+function DesktopBrand({ content }: { content: LandingContent["global"] }) {
   return (
     <Link
       href="/"
@@ -161,29 +165,29 @@ function DesktopBrand() {
         className="h-[3.15rem] w-[3.15rem] shrink-0 min-[1280px]:h-14 min-[1280px]:w-14"
       />
       <span className="flex min-w-0 flex-col justify-start pt-[2px]">
-        <span className="block whitespace-nowrap text-[0.9rem] font-semibold leading-none tracking-tight min-[1280px]:text-[0.98rem]">
-          <span
-            className="ccr-wordmark-curated align-middle"
-            style={{ fontSize: "1.28rem", lineHeight: 1 }}
-          >
-            Curated
-          </span>{" "}
-          <span className="align-middle">Car Rentals</span>
+        <span className="ccr-wordmark-curated block whitespace-nowrap text-[1.12rem] font-semibold leading-none tracking-tight min-[1280px]:text-[1.28rem]">
+          {content.brand}
         </span>
         <span className="mt-1 h-[0.75rem] text-[9px] uppercase tracking-[0.18em] text-white/62">
-          <span className="invisible min-[1280px]:visible">{siteContent.tagline}</span>
+          <span className="invisible min-[1280px]:visible">{content.tagline}</span>
         </span>
       </span>
     </Link>
   );
 }
 
-function DesktopNavShell({ pathname }: { pathname: string | null }) {
+function DesktopNavShell({
+  content,
+  pathname,
+}: {
+  content: LandingContent["global"];
+  pathname: string | null;
+}) {
   return (
     <div className="hidden min-[1160px]:flex min-w-0 flex-1 items-center justify-center px-3 min-[1280px]:px-4">
       <nav aria-label="Primary" className="min-w-0">
         <ul className="flex items-center gap-4 text-[0.88rem] font-medium text-white/82 min-[1280px]:gap-5 min-[1280px]:text-[0.94rem]">
-          {navLinks.map((item) => {
+          {content.navigation.map((item) => {
             const isActive = isDesktopNavItemActive(pathname, item.href);
 
             return (
@@ -209,7 +213,7 @@ function DesktopNavShell({ pathname }: { pathname: string | null }) {
   );
 }
 
-export function Header() {
+export function Header({ content }: { content: LandingContent["global"] }) {
   const pathname = usePathname();
   const isAdminRoute = pathname?.startsWith("/admin") ?? false;
   const isStandaloneAuth = pathname ? isStandaloneAuthRoute(pathname) : false;
@@ -270,12 +274,12 @@ export function Header() {
           )}
         >
           <div className="border-b border-white/10 px-4 py-4">
-            <MobileDrawerHeader onClose={() => setMobileNavOpen(false)} />
+            <MobileDrawerHeader content={content} onClose={() => setMobileNavOpen(false)} />
           </div>
 
           <nav className="flex-1 overflow-y-auto px-4 py-5">
             <ul className="space-y-1">
-              {navLinks.map((item) => {
+              {content.navigation.map((item) => {
                 const isActive = isDesktopNavItemActive(pathname, item.href);
 
                 return (
@@ -298,23 +302,23 @@ export function Header() {
 
             <div className="mt-7 rounded-[1.35rem] border border-white/10 bg-white/5 p-4">
               <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--ccr-accent)]">
-                Contact Us
+                {content.footerContactTitle}
               </p>
               <div className="mt-4 space-y-2 text-sm text-white/72">
-                {siteContent.phones.map((phone) => (
+                {content.phones.map((phone) => (
                   <a key={phone.href} href={phone.href} className="block hover:text-white">
                     {phone.label}
                   </a>
                 ))}
                 <Link href="/contact#contact-form" onClick={() => setMobileNavOpen(false)} className="block break-words hover:text-white">
-                  Send a tracked message
+                  {content.footerContactFormLabel}
                 </Link>
-                <p className="break-words text-white/56">{siteContent.email}</p>
+                <p className="break-words text-white/56">{content.email}</p>
               </div>
             </div>
           </nav>
 
-          <MobileDrawerFooter onClose={() => setMobileNavOpen(false)} />
+          <MobileDrawerFooter content={content} onClose={() => setMobileNavOpen(false)} />
         </aside>
       </div>
 
@@ -325,9 +329,9 @@ export function Header() {
         )}
       >
         <Container className="flex min-h-[4.9rem] items-center justify-between gap-3 py-3.5 min-[1160px]:min-h-[5.25rem] min-[1160px]:max-w-[86rem] min-[1160px]:gap-4 min-[1160px]:px-6 min-[1280px]:h-24 min-[1280px]:gap-5 min-[1280px]:px-8">
-          <MobileTopBar onOpen={() => setMobileNavOpen(true)} isOpen={mobileNavOpen} />
-          <DesktopBrand />
-          <DesktopNavShell pathname={pathname} />
+          <MobileTopBar content={content} onOpen={() => setMobileNavOpen(true)} isOpen={mobileNavOpen} />
+          <DesktopBrand content={content} />
+          <DesktopNavShell content={content} pathname={pathname} />
 
           <div className="flex items-center gap-2 min-[1160px]:ml-1 min-[1160px]:gap-2.5 min-[1280px]:gap-3">
             <div className="hidden min-[1160px]:block">
@@ -347,14 +351,14 @@ export function Header() {
                   "shrink-0 whitespace-nowrap rounded-full px-3.5 text-[13px] sm:px-5 sm:text-sm min-[1160px]:min-h-12 min-[1160px]:px-4 min-[1160px]:py-3 min-[1280px]:px-5",
               })}
             >
-              Book Now
+              {content.headerBookLabel}
             </Link>
             <Link
               href="/admin/auth"
               className="hidden min-h-12 items-center justify-center rounded-full border border-white/15 bg-white/6 px-4 py-3 text-sm font-semibold text-white/72 transition hover:bg-white/10 hover:text-white min-[1160px]:inline-flex min-[1280px]:px-5"
               aria-label="Admin sign in"
             >
-              Admin
+              {content.headerAdminLabel}
             </Link>
           </div>
         </Container>

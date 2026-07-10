@@ -3,8 +3,6 @@ import { Geist, Geist_Mono, Great_Vibes, Playfair_Display } from "next/font/goog
 
 import { BreakpointOverlay } from "@/components/dev/BreakpointOverlay";
 import { OptionalClerkProvider } from "@/components/security/OptionalClerkProvider";
-import { Footer } from "@/components/site/Footer";
-import { Header } from "@/components/site/Header";
 import { assertProductionEnv } from "@/lib/env";
 import { DEFAULT_OG_IMAGE, SITE_NAME, SITE_URL } from "@/lib/seo";
 import { APP_THEMES, THEME_COOKIE_NAME, THEME_STORAGE_KEY } from "@/lib/theme";
@@ -176,13 +174,7 @@ html[data-theme="forest"], html[data-theme="forest"] body {
       >
         <OptionalClerkProvider>
           <div className="flex min-h-screen flex-col">
-            <div data-site-header>
-              <Header />
-            </div>
             <main className="flex-1">{children}</main>
-            <div data-site-footer>
-              <Footer />
-            </div>
           </div>
         </OptionalClerkProvider>
         {showBreakpointOverlay ? <BreakpointOverlay /> : null}
