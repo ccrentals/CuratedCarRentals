@@ -3,8 +3,13 @@
 import Image from "next/image";
 import { useMemo, useState } from "react";
 
+import { LandingContentAddItemDialog } from "@/components/admin/LandingContentAddItemDialog";
 import { buttonStyles } from "@/components/ui/Button";
 import type { LandingContent } from "@/lib/landingContent";
+import {
+  MAX_LANDING_EDITOR_ITEMS,
+  type LandingEditableValue as EditableValue,
+} from "@/lib/landingContentEditor";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 import { openUploadcareImagesDialog } from "@/components/admin/UploadcareImagesInput";
 
@@ -17,14 +22,6 @@ type LandingContentManagerProps = {
 };
 
 type LandingContentPageKey = Exclude<keyof LandingContent, "global">;
-
-type EditableValue =
-  | string
-  | number
-  | boolean
-  | null
-  | EditableValue[]
-  | { [key: string]: EditableValue };
 
 type LandingContentPayload = {
   ok?: boolean;
@@ -117,20 +114,14 @@ function removeArrayItemAtPath(
   return setValueAtPath(root, path, value.filter((_, itemIndex) => itemIndex !== index));
 }
 
-function addArrayItemAtPath(
+function appendArrayItemAtPath(
   root: EditableValue,
-  defaultContent: EditableValue,
   path: Array<string | number>,
+  item: EditableValue,
 ): EditableValue {
   const value = getValueAtPath(root, path);
   if (!Array.isArray(value)) return root;
-  const defaultValue = getValueAtPath(defaultContent, path);
-  const template = value[0] ?? (Array.isArray(defaultValue) ? defaultValue[0] : undefined);
-  const nextItem =
-    template && typeof template === "object"
-      ? (JSON.parse(JSON.stringify(template)) as EditableValue)
-      : "";
-  return setValueAtPath(root, path, [...value, nextItem]);
+  return setValueAtPath(root, path, [...value, item]);
 }
 
 function FieldShell({
@@ -236,9 +227,12 @@ function LandingFieldEditor({
           <button
             type="button"
             onClick={() => onAddArrayItem(path)}
-            className="rounded-full border border-[var(--ccr-border)] px-3 py-1.5 text-xs font-semibold text-[var(--ccr-text)] transition hover:bg-[var(--ccr-surface)]"
+            disabled={value.length >= MAX_LANDING_EDITOR_ITEMS}
+            aria-haspopup="dialog"
+            data-testid={`landing-add-item-${path.map(String).join("-")}`}
+            className="rounded-full border border-[var(--ccr-border)] px-3 py-1.5 text-xs font-semibold text-[var(--ccr-text)] transition hover:bg-[var(--ccr-surface)] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Add item
+            {value.length >= MAX_LANDING_EDITOR_ITEMS ? "Item limit reached" : "Add item"}
           </button>
         </div>
         <div className="mt-4 space-y-4">
@@ -319,9 +313,23 @@ export function LandingContentManager({
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [savedSnapshot, setSavedSnapshot] = useState(() => JSON.stringify(initialContent));
+  const [addItemPath, setAddItemPath] = useState<Array<string | number> | null>(null);
 
   const dirty = useMemo(() => JSON.stringify(content) !== savedSnapshot, [content, savedSnapshot]);
   const activeContent = content[activeTab as keyof LandingContent] as EditableValue;
+  const addItemCollection = addItemPath
+    ? getValueAtPath(content as EditableValue, addItemPath)
+    : null;
+  const addItemDefaults = addItemPath
+    ? getValueAtPath(defaultContent as EditableValue, addItemPath)
+    : null;
+  const addItemTemplate: EditableValue | null = addItemPath
+    ? Array.isArray(addItemDefaults)
+      ? (addItemDefaults[0] ?? "")
+      : Array.isArray(addItemCollection)
+        ? (addItemCollection[0] ?? "")
+        : ""
+    : null;
 
   function handleChange(path: Array<string | number>, value: EditableValue) {
     setContent((current) => setValueAtPath(current as EditableValue, path, value) as LandingContent);
@@ -330,10 +338,18 @@ export function LandingContentManager({
   }
 
   function handleAddArrayItem(path: Array<string | number>) {
-    setContent((current) =>
-      addArrayItemAtPath(current as EditableValue, defaultContent as EditableValue, path) as LandingContent,
-    );
+    setAddItemPath(path);
     setMessage(null);
+    setError(null);
+  }
+
+  function handleConfirmAddItem(item: EditableValue) {
+    if (!addItemPath) return;
+    const label = String(addItemPath[addItemPath.length - 1] ?? "item");
+    setContent((current) =>
+      appendArrayItemAtPath(current as EditableValue, addItemPath, item) as LandingContent,
+    );
+    setMessage(`${labelize(label)} item added. Save landing content to publish it.`);
     setError(null);
   }
 
@@ -494,6 +510,17 @@ export function LandingContentManager({
             ))
           : null}
       </div>
+
+      {addItemPath && Array.isArray(addItemCollection) && addItemTemplate !== null ? (
+        <LandingContentAddItemDialog
+          open
+          collectionPath={addItemPath}
+          template={addItemTemplate}
+          existingItems={addItemCollection}
+          onClose={() => setAddItemPath(null)}
+          onAdd={handleConfirmAddItem}
+        />
+      ) : null}
     </section>
   );
 }
