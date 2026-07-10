@@ -2,7 +2,7 @@ import Image from "next/image";
 
 import { JsonLd } from "@/components/seo/JsonLd";
 import { Container } from "@/components/site/Container";
-import { services } from "@/data/services";
+import { loadLandingContent } from "@/lib/landingContent";
 import { publicPageMetadata } from "@/lib/seo";
 import {
   breadcrumbStructuredData,
@@ -16,15 +16,17 @@ export const metadata = publicPageMetadata({
   path: "/services",
 });
 
-export default function ServicesPage() {
+export default async function ServicesPage() {
+  const { content } = await loadLandingContent();
+  const page = content.services;
   return (
     <>
       <JsonLd
         data={[
-          servicesStructuredData(),
+          servicesStructuredData(page.items),
           breadcrumbStructuredData([
             { name: "Home", path: "/" },
-            { name: "Services", path: "/services" },
+            { name: page.title, path: "/services" },
           ]),
         ]}
       />
@@ -32,15 +34,15 @@ export default function ServicesPage() {
         <Container>
           <div className="min-[1160px]:translate-y-4">
             <h1 className="font-display text-4xl font-bold text-[var(--ccr-text)] md:text-5xl">
-              Our Services
+              {page.title}
             </h1>
             <p className="mt-4 max-w-3xl text-lg leading-8 text-[var(--ccr-muted)]">
-              At Curated Car Rentals, we offer more than just vehicles. Discover our premium services designed to make your Jamaican journey exceptional.
+              {page.description}
             </p>
           </div>
 
           <div className="mt-8 flex flex-wrap gap-3">
-            {services.map((service) => (
+            {page.items.map((service) => (
               <a
                 key={service.id}
                 href={`#${service.id}`}
@@ -56,7 +58,7 @@ export default function ServicesPage() {
       <section className="bg-white py-16 md:py-24">
         <Container>
           <div className="space-y-20">
-            {services.map((service, index) => (
+            {page.items.map((service, index) => (
               <article
                 key={service.id}
                 id={service.id}
@@ -70,6 +72,7 @@ export default function ServicesPage() {
                       fill
                       sizes="(min-width: 1024px) 42vw, 100vw"
                       className="object-cover"
+                      unoptimized={!service.imageSrc.startsWith("/")}
                     />
                   </div>
                 </div>
@@ -84,7 +87,7 @@ export default function ServicesPage() {
                     href="/contact"
                     className="mt-8 inline-flex min-h-12 items-center justify-center rounded-full bg-[#2ea9f4] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#48b9fa]"
                   >
-                    Book This Service
+                    {page.serviceCtaLabel}
                   </a>
                 </div>
               </article>

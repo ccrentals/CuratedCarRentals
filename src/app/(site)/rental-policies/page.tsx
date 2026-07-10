@@ -1,11 +1,6 @@
 import { JsonLd } from "@/components/seo/JsonLd";
 import { Container } from "@/components/site/Container";
-import {
-  rentalFaqs,
-  rentalPolicyDeposit,
-  rentalPolicyRequirements,
-  reservationOptions,
-} from "@/data/content";
+import { loadLandingContent } from "@/lib/landingContent";
 import { publicPageMetadata } from "@/lib/seo";
 import {
   breadcrumbStructuredData,
@@ -19,12 +14,14 @@ export const metadata = publicPageMetadata({
   path: "/rental-policies",
 });
 
-export default function RentalPoliciesPage() {
+export default async function RentalPoliciesPage() {
+  const { content } = await loadLandingContent();
+  const page = content.rentalPolicies;
   return (
     <>
       <JsonLd
         data={[
-          faqStructuredData(rentalFaqs),
+          faqStructuredData(page.faqs),
           breadcrumbStructuredData([
             { name: "Home", path: "/" },
             { name: "Rental Policies", path: "/rental-policies" },
@@ -35,10 +32,10 @@ export default function RentalPoliciesPage() {
         <Container>
           <div className="min-[1160px]:translate-y-4">
             <h1 className="font-display text-4xl font-bold text-[var(--ccr-text)] md:text-5xl">
-              Rental Policies
+              {page.title}
             </h1>
             <p className="mt-4 max-w-3xl text-lg leading-8 text-[var(--ccr-muted)]">
-              You can check available bookings, dates, and pricing directly on our website.
+              {page.description}
             </p>
           </div>
         </Container>
@@ -49,10 +46,10 @@ export default function RentalPoliciesPage() {
           <div className="mx-auto max-w-4xl space-y-8">
             <article className="rounded-[1.9rem] border border-[var(--ccr-border)] bg-white p-8 shadow-[0_18px_56px_rgba(15,23,42,0.07)]">
               <h2 className="font-display text-2xl font-bold text-[var(--ccr-light-surface-text)]">
-                Two Forms of ID Required
+                {page.requirementsTitle}
               </h2>
               <ul className="mt-6 space-y-4">
-                {rentalPolicyRequirements.map((item) => (
+                {page.requirements.map((item) => (
                   <li
                     key={item}
                     className="flex gap-3 text-base leading-7 text-[var(--ccr-light-surface-muted)]"
@@ -66,10 +63,10 @@ export default function RentalPoliciesPage() {
 
             <article className="rounded-[1.9rem] border border-[var(--ccr-border)] bg-white p-8 shadow-[0_18px_56px_rgba(15,23,42,0.07)]">
               <h2 className="font-display text-2xl font-bold text-[var(--ccr-light-surface-text)]">
-                Security Deposit
+                {page.depositTitle}
               </h2>
               <ul className="mt-6 space-y-4">
-                {rentalPolicyDeposit.map((item) => (
+                {page.deposit.map((item) => (
                   <li
                     key={item}
                     className="flex gap-3 text-base leading-7 text-[var(--ccr-light-surface-muted)]"
@@ -83,32 +80,28 @@ export default function RentalPoliciesPage() {
 
             <article className="rounded-[1.9rem] border border-[var(--ccr-border)] bg-white p-8 shadow-[0_18px_56px_rgba(15,23,42,0.07)]">
               <h2 className="font-display text-2xl font-bold text-[var(--ccr-light-surface-text)]">
-                Insurance Coverage Terms
+                {page.insuranceTitle}
               </h2>
               <p className="mt-5 text-base leading-7 text-[var(--ccr-light-surface-muted)]">
-                Customers must choose one of the following insurance options before taking possession of the
-                vehicle.
+                {page.insuranceDescription}
               </p>
 
               <div className="mt-8 grid gap-6 lg:grid-cols-2">
                 <article className="rounded-[1.5rem] border border-[var(--ccr-border)] border-l-4 border-l-[var(--ccr-status-warning-border)] bg-white p-6 shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
                   <h3 className="text-xl font-semibold text-[var(--ccr-light-surface-text)]">
-                    Decline CDW (Collision Damage Waiver)
+                    {page.declineTitle}
                   </h3>
                   <p className="mt-4 text-base leading-7 text-[var(--ccr-light-surface-muted)]">
-                    If you decline the CDW, you will be responsible for the full amount of any damage up to
-                    the total cost of the vehicle, along with any subsequent loss of use while the vehicle is
-                    out of service.
+                    {page.declineDescription}
                   </p>
                 </article>
 
                 <article className="rounded-[1.5rem] border border-[var(--ccr-border)] border-l-4 border-l-[var(--ccr-status-success-border)] bg-white p-6 shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
                   <h3 className="text-xl font-semibold text-[var(--ccr-light-surface-text)]">
-                    Choose Insurance Coverage
+                    {page.coverageTitle}
                   </h3>
                   <p className="mt-4 text-base leading-7 text-[var(--ccr-light-surface-muted)]">
-                    If you choose the insurance coverage, you will only be responsible for the deductible of
-                    the first JMD 155,000.00 in the event of damage.
+                    {page.coverageDescription}
                   </p>
                 </article>
               </div>
@@ -116,23 +109,23 @@ export default function RentalPoliciesPage() {
 
             <article className="rounded-[1.9rem] border border-[var(--ccr-border)] bg-white p-8 shadow-[0_18px_56px_rgba(15,23,42,0.07)]">
               <h2 className="font-display text-2xl font-bold text-[var(--ccr-accent-strong)]">
-                📢 Online Booking &amp; Reservation Notice
+                {page.reservationTitle}
               </h2>
               <p className="mt-5 text-base leading-7 text-[var(--ccr-light-surface-muted)]">
-                {reservationOptions.intro}
+                {page.reservationIntro}
               </p>
 
               <h3 className="mt-8 text-xl font-semibold text-[var(--ccr-light-surface-text)]">
-                Reservation Options ✨
+                {page.reservationOptionsTitle}
               </h3>
 
               <div className="mt-6 space-y-6">
                 <article className="rounded-[1.5rem] border border-[var(--ccr-border)] border-l-4 border-l-[var(--ccr-status-success-border)] bg-white p-6 shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
                   <h4 className="text-lg font-semibold text-[var(--ccr-status-success-border)]">
-                    ✅ Paid Reservation
+                    {page.paidTitle}
                   </h4>
                   <ul className="mt-4 space-y-3">
-                    {reservationOptions.paid.map((item) => (
+                    {page.paidItems.map((item) => (
                       <li
                         key={item}
                         className="flex gap-3 text-base leading-7 text-[var(--ccr-light-surface-muted)]"
@@ -146,10 +139,10 @@ export default function RentalPoliciesPage() {
 
                 <article className="rounded-[1.5rem] border border-[var(--ccr-border)] border-l-4 border-l-[var(--ccr-status-warning-border)] bg-white p-6 shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
                   <h4 className="text-lg font-semibold text-[var(--ccr-status-warning-border)]">
-                    ⚠️ Non-Paid Reservation
+                    {page.unpaidTitle}
                   </h4>
                   <ul className="mt-4 space-y-3">
-                    {reservationOptions.unpaid.map((item) => (
+                    {page.unpaidItems.map((item) => (
                       <li
                         key={item}
                         className="flex gap-3 text-base leading-7 text-[var(--ccr-light-surface-muted)]"
@@ -163,16 +156,16 @@ export default function RentalPoliciesPage() {
 
                 <article className="rounded-[1.5rem] border border-[var(--ccr-border)] border-l-4 border-l-[var(--ccr-status-info-border)] bg-white p-6 shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
                   <h4 className="text-lg font-semibold text-[var(--ccr-status-info-border)]">
-                    ✈️ Airport Pickup Policy
+                    {page.airportTitle}
                   </h4>
                   <p className="mt-3 text-base font-medium leading-7 text-[var(--ccr-light-surface-muted)]">
-                    Airport pickup is provided <strong>ONLY</strong> with a <strong>PAID reservation</strong>.
+                    {page.airportNote}
                   </p>
                 </article>
 
                 <article className="rounded-[1.5rem] border border-[var(--ccr-border)] border-l-4 border-l-[var(--ccr-status-accent-border)] bg-white p-6 text-center shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
                   <p className="text-base font-medium leading-7 text-[var(--ccr-light-surface-text)]">
-                    💡 To avoid inconvenience, we <strong>strongly recommend</strong> making a paid reservation to guarantee your booking.
+                    {page.recommendation}
                   </p>
                 </article>
               </div>
@@ -181,17 +174,17 @@ export default function RentalPoliciesPage() {
             <section aria-labelledby="rental-faq-heading">
               <div className="mb-6">
                 <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--ccr-accent-strong)]">
-                  Frequently Asked Questions
+                  {page.faqEyebrow}
                 </p>
                 <h2
                   id="rental-faq-heading"
                   className="mt-3 font-display text-3xl font-bold text-[var(--ccr-light-surface-text)]"
                 >
-                  Rental questions, answered clearly
+                  {page.faqTitle}
                 </h2>
               </div>
               <div className="space-y-3">
-                {rentalFaqs.map((item) => (
+                {page.faqs.map((item) => (
                   <details
                     key={item.question}
                     className="group rounded-[1.4rem] border border-[var(--ccr-border)] bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.04)]"

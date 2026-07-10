@@ -1,5 +1,4 @@
-import { siteContent } from "@/data/content";
-import { services } from "@/data/services";
+import { loadLandingContent } from "@/lib/landingContent";
 import { getPublicVehicles } from "@/lib/publicVehicles";
 import { absoluteUrl, SITE_NAME } from "@/lib/seo";
 
@@ -12,8 +11,12 @@ function formatJmd(value: number) {
 }
 
 export async function GET() {
-  const vehicles = await getPublicVehicles().catch(() => []);
-  const serviceLines = services.map(
+  const [vehicles, landingContent] = await Promise.all([
+    getPublicVehicles().catch(() => []),
+    loadLandingContent(),
+  ]);
+  const { global, services } = landingContent.content;
+  const serviceLines = services.items.map(
     (service) => `- [${service.title}](${absoluteUrl(`/services#${service.id}`)}): ${service.description}`,
   );
   const vehicleLines = vehicles.map(
@@ -24,7 +27,7 @@ export async function GET() {
   const body = [
     `# ${SITE_NAME}`,
     "",
-    `> ${siteContent.brandDescription}`,
+    `> ${global.brandDescription}`,
     "",
     "Curated Car Rentals is a car rental business based in Kingston, Jamaica. Public website information is intended for rental research and reservation planning. Vehicle availability and final totals depend on the dates, options, and live booking quote selected by the customer.",
     "",
@@ -46,9 +49,9 @@ export async function GET() {
       : ["- Refer to the fleet page for the current published vehicle list."]),
     "",
     "## Verified business details",
-    `- Location: ${siteContent.address}`,
-    `- Primary phone: ${siteContent.phone}`,
-    `- Email: ${siteContent.email}`,
+    `- Location: ${global.address}`,
+    `- Primary phone: ${global.phone}`,
+    `- Email: ${global.email}`,
     `- Currency: Jamaican dollars (JMD)`,
     "- Service area: Jamaica",
     "",

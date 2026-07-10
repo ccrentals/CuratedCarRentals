@@ -6,9 +6,15 @@ import { type FormEvent, useRef, useState } from "react";
 import { TurnstileWidget } from "@/components/security/TurnstileWidget";
 import { Container } from "@/components/site/Container";
 import { buttonStyles } from "@/components/ui/Button";
-import { siteContent } from "@/data/content";
+import type { LandingContent } from "@/lib/landingContent";
 
-export function HomeContactSection() {
+export function HomeContactSection({
+  content,
+  globalContent,
+}: {
+  content: LandingContent["home"];
+  globalContent: LandingContent["global"];
+}) {
   const startedAtRef = useRef<number>(Date.now());
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -93,26 +99,33 @@ export function HomeContactSection() {
       <Container>
         <div className="grid gap-8 lg:grid-cols-[1fr_1.02fr] lg:items-start lg:gap-10">
           <div className="overflow-hidden rounded-[2rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)]/55 shadow-[0_24px_80px_rgba(15,23,42,0.08)]">
-            <div className="h-56 bg-[linear-gradient(135deg,rgba(7,11,18,0.8),rgba(46,169,244,0.45)),url('/live-site/home/discover-jamaica.png')] bg-cover bg-center sm:h-64 lg:h-72" />
+            <div
+              className="h-56 bg-cover bg-center sm:h-64 lg:h-72"
+              style={{
+                backgroundImage: `linear-gradient(135deg,rgba(7,11,18,0.8),rgba(46,169,244,0.45)),url('${content.contactImage.src}')`,
+              }}
+              role="img"
+              aria-label={content.contactImage.alt}
+            />
 
             <div className="grid gap-3 p-4 sm:gap-4 sm:p-5 md:grid-cols-2 md:gap-5 md:p-6">
               <article className="rounded-[1.35rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4 sm:p-5">
                 <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--ccr-accent-strong)]">
-                  Visit Us
+                  {content.contactVisitLabel}
                 </p>
                 <p className="mt-3 text-sm leading-7 text-[var(--ccr-muted)]">
-                  {siteContent.addressLines[0]}
+                  {globalContent.addressLines[0]}
                   <br />
-                  {siteContent.addressLines[1]}
+                  {globalContent.addressLines[1]}
                 </p>
               </article>
 
               <article className="rounded-[1.35rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4 sm:p-5">
                 <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--ccr-accent-strong)]">
-                  Call Us
+                  {content.contactCallLabel}
                 </p>
                 <div className="mt-3 space-y-1 text-sm leading-7 text-[var(--ccr-muted)]">
-                  {siteContent.phones.map((item) => (
+                  {globalContent.phones.map((item) => (
                     <a key={item.href} href={item.href} className="block transition hover:text-[var(--ccr-text)]">
                       {item.label}
                     </a>
@@ -122,23 +135,23 @@ export function HomeContactSection() {
 
               <article className="rounded-[1.35rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4 sm:p-5">
                 <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--ccr-accent-strong)]">
-                  Email Us
+                  {content.contactEmailLabel}
                 </p>
                 <Link
                   href="/contact#contact-form"
                   className="mt-3 block text-sm leading-7 text-[var(--ccr-muted)] transition hover:text-[var(--ccr-text)]"
                 >
-                  Send a tracked message
+                  {content.contactEmailActionLabel}
                 </Link>
-                <p className="mt-1 break-words text-sm leading-7 text-[var(--ccr-muted)]">{siteContent.email}</p>
+                <p className="mt-1 break-words text-sm leading-7 text-[var(--ccr-muted)]">{globalContent.email}</p>
               </article>
 
               <article className="rounded-[1.35rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4 sm:p-5">
                 <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--ccr-accent-strong)]">
-                  WhatsApp
+                  {content.contactWhatsappLabel}
                 </p>
                 <div className="mt-3 space-y-1">
-                  {siteContent.whatsapps.map((whatsapp) => (
+                  {globalContent.whatsapps.map((whatsapp) => (
                     <a
                       key={whatsapp.href}
                       href={whatsapp.href}
@@ -154,13 +167,13 @@ export function HomeContactSection() {
 
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--ccr-accent-strong)]">
-              Get In Touch
+              {content.contactEyebrow}
             </p>
             <h2 className="mt-4 font-display text-[2rem] font-bold leading-tight text-[var(--ccr-light-surface-text)] sm:text-[2.35rem] md:text-5xl">
-              {siteContent.contactHeading}
+              {content.contactHeading}
             </h2>
             <p className="mt-4 text-base leading-7 text-[var(--ccr-light-surface-muted)] sm:text-lg sm:leading-8">
-              {siteContent.contactDescription}
+              {content.contactDescription}
             </p>
 
             <form className="mt-8 space-y-5 sm:mt-9 sm:space-y-6" onSubmit={handleSubmit}>
@@ -267,7 +280,7 @@ export function HomeContactSection() {
                   className: "w-full rounded-full disabled:cursor-not-allowed sm:w-auto",
                 })}
               >
-                {isSubmitting ? "Sending..." : "Send Message"}
+                {isSubmitting ? content.contactSubmittingLabel : content.contactSubmitLabel}
               </button>
             </form>
           </div>

@@ -5,11 +5,13 @@ import { AdminSettingsForm } from "@/components/admin/AdminSettingsForm";
 import type { AdminSettingsFormTab } from "@/components/admin/AdminSettingsForm";
 import { AdminPillTabs } from "@/components/admin/AdminPillTabs";
 import { BookingFlowConfigPanel } from "@/components/admin/BookingFlowConfigPanel";
+import { LandingContentManager } from "@/components/admin/LandingContentManager";
 import { SettingsVehiclesPanel } from "@/components/admin/SettingsVehiclesPanel";
 import { loadPrimaryAdminLoginMethodResolution } from "@/lib/auth/adminLoginMethod";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { DEFAULT_ADMIN_SETTINGS, normalizeAdminSettingsValue } from "@/lib/adminSettings";
 import { dbQuery } from "@/lib/db";
+import { loadLandingContent } from "@/lib/landingContent";
 import {
   buildNotificationConfigurationHealth,
   loadNotificationOwnershipDirectory,
@@ -29,6 +31,7 @@ const SETTINGS_TABS = [
   { key: "maintenance", label: "Maintenance" },
   { key: "documents", label: "Vehicle Docs" },
   { key: "vehicles", label: "Vehicles" },
+  { key: "landing", label: "Landing" },
   { key: "depreciation", label: "Depreciation" },
   { key: "booking-flow", label: "Booking Flow" },
 ] as const;
@@ -150,6 +153,7 @@ export default async function AdminSettingsPage({
     routing: operationalRouting,
     warningEmailsEnabled: settings.sendVehicleInspectionWarningEmails,
   });
+  const landingContent = activeTab === "landing" ? await loadLandingContent() : null;
 
   return (
     <div className="mx-auto w-full max-w-5xl px-6 py-10">
@@ -186,6 +190,13 @@ export default async function AdminSettingsPage({
           <BookingFlowConfigPanel />
         ) : activeTab === "vehicles" ? (
           <SettingsVehiclesPanel />
+        ) : activeTab === "landing" ? (
+          <LandingContentManager
+            initialContent={landingContent!.content}
+            updatedAt={landingContent?.updatedAt ?? null}
+            updatedByEmail={landingContent?.updatedByEmail ?? null}
+            source={landingContent?.source ?? "default"}
+          />
         ) : tableMissing ? (
           <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6">
             <p className="text-sm font-semibold text-[var(--ccr-text)]">Settings storage not configured.</p>

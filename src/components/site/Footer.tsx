@@ -5,49 +5,33 @@ import { usePathname } from "next/navigation";
 
 import { Container } from "@/components/site/Container";
 import { SiteLogo } from "@/components/site/SiteLogo";
-import { siteContent } from "@/data/content";
 import { services } from "@/data/services";
+import type { LandingContent, LandingSocialLink } from "@/lib/landingContent";
 import { isStandaloneAuthRoute } from "@/lib/security/clerk";
 
-const quickLinks = [
-  { href: "/", label: "Home" },
-  { href: "/fleet", label: "Our Fleet" },
-  { href: "/services", label: "Services" },
-  { href: "/tourist-destinations", label: "Tourist Destinations" },
-  { href: "/about", label: "About Us" },
-  { href: "/contact", label: "Contact" },
-  { href: "/book", label: "Book Now" },
-];
+const socialIcons: Record<LandingSocialLink["icon"], typeof FacebookIcon> = {
+  facebook: FacebookIcon,
+  instagram: InstagramIcon,
+  twitter: TwitterIcon,
+  youtube: YouTubeIcon,
+};
 
-const socialLinks = [
-  { href: "https://facebook.com", label: "Facebook", icon: FacebookIcon },
-  { href: "https://instagram.com", label: "Instagram", icon: InstagramIcon },
-  { href: "https://twitter.com", label: "Twitter", icon: TwitterIcon },
-  { href: "https://youtube.com", label: "YouTube", icon: YouTubeIcon },
-];
-
-const legalFooterItems = [
-  { href: "/rental-policies", label: "Privacy Policy" },
-  { href: "/rental-policies", label: "Terms & Conditions" },
-  { href: "/rental-policies", label: "FAQ" },
-] as const;
-
-function FooterBrand() {
+function FooterBrand({ content }: { content: LandingContent["global"] }) {
   return (
     <div className="col-span-2 xl:col-span-1">
       <div className="flex items-start gap-3">
         <SiteLogo size={56} className="h-12 w-12 shrink-0 text-white sm:h-14 sm:w-14" />
         <h2 className="font-display text-[1.65rem] font-bold leading-tight text-white sm:text-[1.9rem]">
-          Curated Car Rentals
+          {content.brand}
         </h2>
       </div>
       <p className="mt-4 max-w-md text-sm leading-7 text-white/68 sm:text-base">
-        {siteContent.brandDescription}
+        {content.brandDescription}
       </p>
 
       <div className="mt-6 flex flex-wrap gap-3">
-        {socialLinks.map((item) => {
-          const Icon = item.icon;
+        {content.socialLinks.map((item) => {
+          const Icon = socialIcons[item.icon] ?? FacebookIcon;
 
           return (
             <a
@@ -90,12 +74,20 @@ function FooterLinkColumn({
   );
 }
 
-function FooterServicesColumn() {
+function FooterServicesColumn({
+  content,
+  items,
+}: {
+  content: LandingContent["global"];
+  items: LandingContent["services"]["items"];
+}) {
   return (
     <div className="min-w-0">
-      <h3 className="font-display text-xl font-bold text-white sm:text-2xl">Our Services</h3>
+      <h3 className="font-display text-xl font-bold text-white sm:text-2xl">
+        {content.footerServicesTitle}
+      </h3>
       <ul className="mt-4 space-y-2.5 text-[13px] text-white/72 sm:mt-5 sm:space-y-3 sm:text-[15px]">
-        {services.map((service) => (
+        {items.map((service) => (
           <li key={service.id}>
             <Link href={`/services#${service.id}`} className="transition hover:text-white">
               {service.title}
@@ -107,21 +99,23 @@ function FooterServicesColumn() {
   );
 }
 
-function FooterContactColumn() {
+function FooterContactColumn({ content }: { content: LandingContent["global"] }) {
   return (
     <div className="col-span-2 xl:col-span-1">
-      <h3 className="font-display text-xl font-bold text-white sm:text-2xl">Contact Us</h3>
+      <h3 className="font-display text-xl font-bold text-white sm:text-2xl">
+        {content.footerContactTitle}
+      </h3>
       <ul className="mt-4 space-y-3.5 text-sm text-white/72 sm:mt-5 sm:space-y-4 sm:text-[15px]">
         <li className="flex gap-3">
           <span className="mt-1 text-white/48">
             <LocationIcon className="h-4 w-4" />
           </span>
           <span>
-            <span className="block">{siteContent.addressLines[0]}</span>
-            <span className="block">{siteContent.addressLines[1]}</span>
+            <span className="block">{content.addressLines[0]}</span>
+            <span className="block">{content.addressLines[1]}</span>
           </span>
         </li>
-        {siteContent.phones.map((phone) => (
+        {content.phones.map((phone) => (
           <li key={phone.href} className="flex gap-3">
             <span className="mt-1 text-white/48">
               <PhoneIcon className="h-4 w-4" />
@@ -131,7 +125,7 @@ function FooterContactColumn() {
             </a>
           </li>
         ))}
-        {siteContent.whatsapps.map((whatsapp) => (
+        {content.whatsapps.map((whatsapp) => (
           <li key={whatsapp.href} className="flex gap-3">
             <span className="mt-1 text-white/48">
               <MessageIcon className="h-4 w-4" />
@@ -147,9 +141,9 @@ function FooterContactColumn() {
           </span>
           <div>
             <Link href="/contact#contact-form" className="transition hover:text-white">
-              Send a tracked message
+              {content.footerContactFormLabel}
             </Link>
-            <p className="mt-1 break-words text-white/56">{siteContent.email}</p>
+            <p className="mt-1 break-words text-white/56">{content.email}</p>
           </div>
         </li>
       </ul>
@@ -157,12 +151,12 @@ function FooterContactColumn() {
   );
 }
 
-function FooterLegal() {
+function FooterLegal({ content }: { content: LandingContent["global"] }) {
   return (
     <div className="flex flex-col gap-4 pt-6 text-sm text-white/56 md:flex-row md:items-center md:justify-between">
-      <p>© {new Date().getFullYear()} Curated Car Rentals. All rights reserved.</p>
+      <p>© {new Date().getFullYear()} {content.footerCopyright}</p>
       <div className="flex flex-wrap gap-x-4 gap-y-2 sm:gap-x-5">
-        {legalFooterItems.map((item) => (
+        {content.footerLegalLinks.map((item) => (
           <Link
             key={item.label}
             href={item.href}
@@ -176,7 +170,13 @@ function FooterLegal() {
   );
 }
 
-export function Footer() {
+export function Footer({
+  content,
+  serviceItems = services,
+}: {
+  content: LandingContent["global"];
+  serviceItems?: LandingContent["services"]["items"];
+}) {
   const pathname = usePathname();
   if (pathname?.startsWith("/admin") || (pathname ? isStandaloneAuthRoute(pathname) : false)) {
     return null;
@@ -186,13 +186,13 @@ export function Footer() {
     <footer className="site-footer bg-[#070b12] text-white">
       <Container className="max-w-[86rem] px-4 py-12 min-[430px]:px-5 sm:px-8 sm:py-14 lg:px-10">
         <div className="grid grid-cols-2 gap-8 border-b border-white/10 pb-10 xl:grid-cols-[1.2fr_0.9fr_0.9fr_1.05fr]">
-          <FooterBrand />
-          <FooterLinkColumn title="Quick Links" items={quickLinks} />
-          <FooterServicesColumn />
-          <FooterContactColumn />
+          <FooterBrand content={content} />
+          <FooterLinkColumn title={content.footerQuickLinksTitle} items={content.footerQuickLinks} />
+          <FooterServicesColumn content={content} items={serviceItems} />
+          <FooterContactColumn content={content} />
         </div>
 
-        <FooterLegal />
+        <FooterLegal content={content} />
       </Container>
     </footer>
   );

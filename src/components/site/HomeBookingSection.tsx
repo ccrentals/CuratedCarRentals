@@ -2,9 +2,9 @@ import Link from "next/link";
 
 import { Container } from "@/components/site/Container";
 import { buttonStyles } from "@/components/ui/Button";
-import { siteContent } from "@/data/content";
+import type { LandingContent } from "@/lib/landingContent";
 
-export function HomeBookingSection() {
+export function HomeBookingSection({ content }: { content: LandingContent["home"] }) {
   return (
     <section className="bg-[var(--ccr-home-booking-section-bg)] py-12 sm:py-14 md:py-24">
       <Container>
@@ -26,11 +26,11 @@ export function HomeBookingSection() {
                   WebkitMaskPosition: "center",
                 }}
               />
-              <span>{siteContent.homeBookingTitle}</span>
+              <span>{content.bookingTitle}</span>
             </span>
           </h2>
           <p className="mt-4 text-base leading-7 text-[var(--ccr-home-booking-muted)] sm:text-lg sm:leading-8">
-            {siteContent.homeBookingDescription}
+            {content.bookingDescription}
           </p>
         </div>
 
@@ -38,10 +38,10 @@ export function HomeBookingSection() {
           <div className="grid gap-8 md:grid-cols-[1fr_auto] md:items-center">
             <div>
               <p className="text-sm font-semibold uppercase tracking-[0.24em] text-[var(--ccr-accent-strong)]">
-                Integrated Booking
+                {content.bookingCardEyebrow}
               </p>
               <p className="mt-4 max-w-2xl text-[0.98rem] leading-7 text-[var(--ccr-home-booking-muted)] sm:text-base sm:leading-8">
-                Reserve your perfect vehicle using our current booking flow. Vehicle inventory, published pricing, and backend-fed images remain connected to the live system.
+                {content.bookingCardDescription}
               </p>
             </div>
 
@@ -53,7 +53,7 @@ export function HomeBookingSection() {
                 className: "w-full justify-center rounded-full md:w-auto",
               })}
             >
-              Book Your Vehicle
+              {content.bookingCtaLabel}
             </Link>
           </div>
         </div>

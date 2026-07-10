@@ -1,7 +1,7 @@
 import Image from "next/image";
 
 import { Container } from "@/components/site/Container";
-import { destinations } from "@/data/content";
+import { loadLandingContent } from "@/lib/landingContent";
 import { publicPageMetadata } from "@/lib/seo";
 
 export const metadata = publicPageMetadata({
@@ -11,16 +11,18 @@ export const metadata = publicPageMetadata({
   path: "/tourist-destinations",
 });
 
-export default function TouristDestinationsPage() {
+export default async function TouristDestinationsPage() {
+  const { content } = await loadLandingContent();
+  const page = content.touristDestinations;
   return (
     <>
       <section className="bg-[var(--ccr-surface-soft)]/65 py-14 md:py-20 min-[1160px]:pt-44">
         <Container>
           <h1 className="font-display text-4xl font-bold text-[var(--ccr-text)] md:text-5xl">
-            Tourist Destinations
+            {page.title}
           </h1>
           <p className="mt-4 max-w-3xl text-lg leading-8 text-[var(--ccr-muted)]">
-            Discover Jamaica&apos;s most breathtaking locations, from pristine beaches to historic landmarks.
+            {page.description}
           </p>
         </Container>
       </section>
@@ -29,15 +31,15 @@ export default function TouristDestinationsPage() {
         <Container>
           <div className="mb-10 rounded-[2rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)]/55 p-6 md:p-8">
             <h2 className="font-display text-2xl font-bold text-[var(--ccr-text)]">
-              Plan your island route
+              {page.routeTitle}
             </h2>
             <p className="mt-3 max-w-3xl text-base leading-7 text-[var(--ccr-muted)]">
-              Explore the destinations below and use the fleet to build a route that fits your stay, whether you want scenic day drives, beach stops, mountain views, or historic tours.
+              {page.routeDescription}
             </p>
           </div>
 
           <div className="grid gap-8 md:grid-cols-2">
-            {destinations.map((destination) => (
+            {page.items.map((destination) => (
               <article
                 key={destination.name}
                 className="overflow-hidden rounded-[1.9rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] shadow-[0_18px_56px_rgba(15,23,42,0.07)]"
@@ -49,6 +51,7 @@ export default function TouristDestinationsPage() {
                     fill
                     sizes="(min-width: 768px) 50vw, 100vw"
                     className="object-cover"
+                    unoptimized={!destination.imageSrc.startsWith("/")}
                   />
                 </div>
                 <div className="p-6">
