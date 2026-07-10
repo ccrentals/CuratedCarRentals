@@ -5,6 +5,7 @@ import { requireAdminRole } from "@/lib/auth/adminGuards";
 import { dbQuery } from "@/lib/db";
 import {
   LANDING_CONTENT_DOCUMENT_KEY,
+  LANDING_CONTENT_MAX_BYTES,
   normalizeLandingContentValue,
   parseLandingContentDocument,
 } from "@/lib/landingContent";
@@ -14,6 +15,7 @@ import { consumeRouteRateLimit, withRateLimitHeaders } from "@/lib/security/rate
 
 const LANDING_CONTENT_LIMIT = 20;
 const LANDING_CONTENT_WINDOW_SECONDS = 10 * 60;
+const MAX_LANDING_CONTENT_REQUEST_BYTES = LANDING_CONTENT_MAX_BYTES + 10_000;
 
 type LandingContentRow = {
   content: string | null;
@@ -86,7 +88,28 @@ export async function PATCH(request: Request) {
   const auth = await requireAdminRole();
   if (!auth.ok) return auth.response;
 
-  const body = await request.json().catch(() => null);
+  const declaredLength = Number(request.headers.get("content-length") ?? 0);
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_LANDING_CONTENT_REQUEST_BYTES) {
+    return NextResponse.json(
+      { error: "Landing content request is too large. Reduce the amount of text or list items and try again." },
+      { status: 413 },
+    );
+  }
+
+  const rawBody = await request.text().catch(() => "");
+  if (new TextEncoder().encode(rawBody).byteLength > MAX_LANDING_CONTENT_REQUEST_BYTES) {
+    return NextResponse.json(
+      { error: "Landing content request is too large. Reduce the amount of text or list items and try again." },
+      { status: 413 },
+    );
+  }
+  const body = (() => {
+    try {
+      return rawBody ? JSON.parse(rawBody) : null;
+    } catch {
+      return null;
+    }
+  })();
   if (!(await requireCsrf(request, body?.csrfToken ?? null))) {
     return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
   }
@@ -145,6 +168,12 @@ export async function PATCH(request: Request) {
     }
 
     const serialized = JSON.stringify(nextContent);
+    if (new TextEncoder().encode(serialized).byteLength > LANDING_CONTENT_MAX_BYTES) {
+      return NextResponse.json(
+        { error: "Landing content is too large. Reduce the amount of text or list items and try again." },
+        { status: 413 },
+      );
+    }
     let savedRow: LandingContentRow | null = null;
 
     if (currentRow) {

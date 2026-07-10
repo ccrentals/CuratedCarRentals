@@ -1,5 +1,7 @@
 import "server-only";
 
+import { cache } from "react";
+
 import {
   aboutFeatures,
   destinations,
@@ -14,8 +16,14 @@ import {
 } from "@/data/content";
 import { services } from "@/data/services";
 import { dbQuery } from "@/lib/db";
+import { logError } from "@/lib/log";
 
 export const LANDING_CONTENT_DOCUMENT_KEY = "landing_content";
+export const LANDING_CONTENT_MAX_BYTES = 250_000;
+
+const MAX_LANDING_ARRAY_ITEMS = 50;
+const MAX_LANDING_TEXT_LENGTH = 20_000;
+const SAFE_SOCIAL_ICONS = new Set(["facebook", "instagram", "twitter", "youtube"]);
 
 export type LandingLink = {
   label: string;
@@ -140,11 +148,6 @@ export type LandingContent = {
     detailContinueDescription: string;
     detailContinuePrimaryCta: LandingLink;
     detailContinueSecondaryCta: LandingLink;
-  };
-  book: {
-    title: string;
-    description: string;
-    supportText: string;
   };
   services: {
     title: string;
@@ -392,12 +395,6 @@ export const DEFAULT_LANDING_CONTENT: LandingContent = {
     detailContinuePrimaryCta: { href: "/fleet", label: "Back to Fleet" },
     detailContinueSecondaryCta: { href: "/book", label: "Book This Vehicle" },
   },
-  book: {
-    title: "Reserve your Curated vehicle with guided steps and clear pricing.",
-    description:
-      "Choose your dates, review the right vehicle, confirm your details, and continue to secure checkout when you are ready.",
-    supportText: `Questions before checkout? Reach the Kingston team at ${siteContent.phones[0]?.label}.`,
-  },
   services: {
     title: "Our Services",
     description:
@@ -518,7 +515,7 @@ type LandingContentDocumentRow = {
   updated_by_email?: string | null;
 };
 
-function cloneDefaultLandingContent(): LandingContent {
+export function createDefaultLandingContent(): LandingContent {
   return JSON.parse(JSON.stringify(DEFAULT_LANDING_CONTENT)) as LandingContent;
 }
 
@@ -528,9 +525,50 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
-function mergeValue(defaultValue: unknown, inputValue: unknown): unknown {
+function isSafeHref(value: string) {
+  const trimmed = value.trim();
+  if (trimmed.startsWith("/") && !trimmed.startsWith("//")) return true;
+  if (trimmed.startsWith("#")) return true;
+  try {
+    const url = new URL(trimmed);
+    return ["https:", "mailto:", "tel:"].includes(url.protocol);
+  } catch {
+    return false;
+  }
+}
+
+function isSafeImageSource(value: string) {
+  const trimmed = value.trim();
+  if (trimmed.startsWith("/") && !trimmed.startsWith("//")) return true;
+  try {
+    const url = new URL(trimmed);
+    return (
+      url.protocol === "https:" &&
+      (url.hostname === "curatedcarrentals.com" ||
+        url.hostname === "ucarecdn.com" ||
+        url.hostname.endsWith(".ucarecdn.com") ||
+        url.hostname === "ucarecd.net" ||
+        url.hostname.endsWith(".ucarecd.net"))
+    );
+  } catch {
+    return false;
+  }
+}
+
+function mergeValue(defaultValue: unknown, inputValue: unknown, fieldName = ""): unknown {
   if (typeof defaultValue === "string") {
-    return typeof inputValue === "string" ? inputValue : defaultValue;
+    if (typeof inputValue !== "string" || inputValue.length > MAX_LANDING_TEXT_LENGTH) {
+      return defaultValue;
+    }
+    const trimmed = inputValue.trim();
+    if (fieldName === "href" && !isSafeHref(trimmed)) return defaultValue;
+    if (["src", "imageSrc", "avatar"].includes(fieldName) && !isSafeImageSource(trimmed)) {
+      return defaultValue;
+    }
+    if (fieldName === "icon" && !SAFE_SOCIAL_ICONS.has(inputValue)) return defaultValue;
+    return fieldName === "href" || ["src", "imageSrc", "avatar"].includes(fieldName)
+      ? trimmed
+      : inputValue;
   }
   if (typeof defaultValue === "number") {
     return typeof inputValue === "number" && Number.isFinite(inputValue)
@@ -543,15 +581,16 @@ function mergeValue(defaultValue: unknown, inputValue: unknown): unknown {
   if (Array.isArray(defaultValue)) {
     if (!Array.isArray(inputValue)) return defaultValue;
     const template = defaultValue[0];
-    if (template === undefined) return inputValue;
-    return inputValue.map((item) => mergeValue(template, item));
+    const values = inputValue.slice(0, MAX_LANDING_ARRAY_ITEMS);
+    if (template === undefined) return values;
+    return values.map((item) => mergeValue(template, item, fieldName));
   }
   const defaultRecord = asRecord(defaultValue);
   if (defaultRecord) {
     const inputRecord = asRecord(inputValue) ?? {};
     const merged: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(defaultRecord)) {
-      merged[key] = mergeValue(value, inputRecord[key]);
+      merged[key] = mergeValue(value, inputRecord[key], key);
     }
     return merged;
   }
@@ -559,21 +598,21 @@ function mergeValue(defaultValue: unknown, inputValue: unknown): unknown {
 }
 
 export function normalizeLandingContentValue(raw: unknown): LandingContent {
-  return mergeValue(cloneDefaultLandingContent(), raw) as LandingContent;
+  return mergeValue(createDefaultLandingContent(), raw) as LandingContent;
 }
 
 export function parseLandingContentDocument(content: unknown): LandingContent {
   if (typeof content !== "string" || !content.trim()) {
-    return cloneDefaultLandingContent();
+    return createDefaultLandingContent();
   }
   try {
     return normalizeLandingContentValue(JSON.parse(content));
   } catch {
-    return cloneDefaultLandingContent();
+    return createDefaultLandingContent();
   }
 }
 
-export async function loadLandingContent(): Promise<{
+async function loadLandingContentImpl(): Promise<{
   content: LandingContent;
   updatedAt: string | null;
   updatedByEmail: string | null;
@@ -591,7 +630,7 @@ export async function loadLandingContent(): Promise<{
     const row = result.rows[0] ?? null;
     if (!row?.content) {
       return {
-        content: cloneDefaultLandingContent(),
+        content: createDefaultLandingContent(),
         updatedAt: null,
         updatedByEmail: null,
         source: "default",
@@ -610,12 +649,20 @@ export async function loadLandingContent(): Promise<{
         : "";
     if (code === "42P01") {
       return {
-        content: cloneDefaultLandingContent(),
+        content: createDefaultLandingContent(),
         updatedAt: null,
         updatedByEmail: null,
         source: "default",
       };
     }
-    throw error;
+    logError("landing-content.load", error, {});
+    return {
+      content: createDefaultLandingContent(),
+      updatedAt: null,
+      updatedByEmail: null,
+      source: "default",
+    };
   }
 }
+
+export const loadLandingContent = cache(loadLandingContentImpl);

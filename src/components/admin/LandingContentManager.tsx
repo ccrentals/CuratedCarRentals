@@ -10,6 +10,7 @@ import { openUploadcareImagesDialog } from "@/components/admin/UploadcareImagesI
 
 type LandingContentManagerProps = {
   initialContent: LandingContent;
+  defaultContent: LandingContent;
   updatedAt: string | null;
   updatedByEmail: string | null;
   source: "db" | "default";
@@ -38,7 +39,6 @@ type LandingContentPayload = {
 const PAGE_TABS: Array<{ key: LandingContentPageKey; label: string }> = [
   { key: "home", label: "Home" },
   { key: "fleet", label: "Fleet" },
-  { key: "book", label: "Book" },
   { key: "services", label: "Services" },
   { key: "touristDestinations", label: "Tourist Destinations" },
   { key: "driving", label: "Driving in Jamaica" },
@@ -117,10 +117,15 @@ function removeArrayItemAtPath(
   return setValueAtPath(root, path, value.filter((_, itemIndex) => itemIndex !== index));
 }
 
-function addArrayItemAtPath(root: EditableValue, path: Array<string | number>): EditableValue {
+function addArrayItemAtPath(
+  root: EditableValue,
+  defaultContent: EditableValue,
+  path: Array<string | number>,
+): EditableValue {
   const value = getValueAtPath(root, path);
   if (!Array.isArray(value)) return root;
-  const template = value[0];
+  const defaultValue = getValueAtPath(defaultContent, path);
+  const template = value[0] ?? (Array.isArray(defaultValue) ? defaultValue[0] : undefined);
   const nextItem =
     template && typeof template === "object"
       ? (JSON.parse(JSON.stringify(template)) as EditableValue)
@@ -297,6 +302,7 @@ function LandingFieldEditor({
 
 export function LandingContentManager({
   initialContent,
+  defaultContent,
   updatedAt,
   updatedByEmail,
   source,
@@ -324,7 +330,9 @@ export function LandingContentManager({
   }
 
   function handleAddArrayItem(path: Array<string | number>) {
-    setContent((current) => addArrayItemAtPath(current as EditableValue, path) as LandingContent);
+    setContent((current) =>
+      addArrayItemAtPath(current as EditableValue, defaultContent as EditableValue, path) as LandingContent,
+    );
     setMessage(null);
     setError(null);
   }

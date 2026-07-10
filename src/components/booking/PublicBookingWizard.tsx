@@ -9,7 +9,6 @@ import { PublicVehicleOptionCard } from "@/components/booking/PublicVehicleOptio
 import { Container } from "@/components/site/Container";
 import { PublicPageIntro } from "@/components/site/PublicPageIntro";
 import { siteContent } from "@/data/content";
-import type { LandingContent } from "@/lib/landingContent";
 import { clearBookingDraft } from "@/lib/bookings/draft";
 import { MAX_DRIVERS_LICENSE_IMAGES } from "@/lib/bookings/privateFiles";
 import {
@@ -417,7 +416,6 @@ function draftContainsMeaningfulProgress(draft: BookingWizardDraft) {
 
 type PublicBookingWizardProps = {
   turnstileDevBypassEnabled?: boolean;
-  landingContent?: Pick<LandingContent, "book" | "global">;
 };
 
 type GlightboxInstance = {
@@ -427,11 +425,8 @@ type GlightboxInstance = {
 
 export function PublicBookingWizard({
   turnstileDevBypassEnabled = false,
-  landingContent,
 }: PublicBookingWizardProps) {
   const router = useRouter();
-  const bookContent = landingContent?.book;
-  const globalContent = landingContent?.global;
   const [requestedVehicleFromQuery, setRequestedVehicleFromQuery] = useState("");
   const draftHydratedRef = useRef(false);
   const preselectedVehicleIdRef = useRef("");
@@ -3122,8 +3117,7 @@ export function PublicBookingWizard({
           Local support
         </p>
         <p className="mt-3 text-sm leading-6 text-white/76">
-          {bookContent?.supportText ??
-            `Questions before checkout? Reach the Kingston team at ${globalContent?.phones[0]?.label ?? siteContent.phones[0]?.label}.`}
+          {`Questions before checkout? Reach the Kingston team at ${siteContent.phones[0]?.label}.`}
         </p>
       </article>
       <article className="rounded-[1.4rem] border border-white/12 bg-white/8 px-4 py-4 backdrop-blur-sm">
@@ -3158,11 +3152,8 @@ export function PublicBookingWizard({
       <div className="hidden sm:block">
         <PublicPageIntro
           eyebrow="Book"
-          title={bookContent?.title ?? "Reserve your Curated vehicle with guided steps and clear pricing."}
-          description={
-            bookContent?.description ??
-            "Choose your dates, review the right vehicle, confirm your details, and continue to secure checkout when you are ready."
-          }
+          title="Reserve your Curated vehicle with guided steps and clear pricing."
+          description="Choose your dates, review the right vehicle, confirm your details, and continue to secure checkout when you are ready."
           primaryAction={{ href: "/fleet", label: "Browse Fleet" }}
           secondaryAction={{ href: "/contact", label: "Need Help?" }}
         >
@@ -4330,7 +4321,7 @@ export function PublicBookingWizard({
                   Need assistance?
                 </p>
                 <p className="mt-3 break-words text-sm leading-6 text-[var(--ccr-on-primary-muted)]">
-                  Contact the Curated Car Rentals team at {globalContent?.phones[0]?.label ?? siteContent.phones[0]?.label} if you need help before checkout.
+                  Contact the Curated Car Rentals team at {siteContent.phones[0]?.label} if you need help before checkout.
                 </p>
               </div>
               </div>

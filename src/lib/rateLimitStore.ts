@@ -5,7 +5,8 @@ export type RateLimitScope =
   | "CONTACT_EMAIL"
   | "CONTACT_NOTIFY"
   | "QUOTE_EMAIL_QUOTE"
-  | "QUOTE_EMAIL_ADMIN";
+  | "QUOTE_EMAIL_ADMIN"
+  | "ADMIN_SETTINGS_USER";
 
 export type ConsumeRateLimitInput = {
   scope: RateLimitScope;
