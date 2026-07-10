@@ -11,7 +11,7 @@ import { loadPrimaryAdminLoginMethodResolution } from "@/lib/auth/adminLoginMeth
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { DEFAULT_ADMIN_SETTINGS, normalizeAdminSettingsValue } from "@/lib/adminSettings";
 import { dbQuery } from "@/lib/db";
-import { loadLandingContent } from "@/lib/landingContent";
+import { createDefaultLandingContent, loadLandingContent } from "@/lib/landingContent";
 import {
   buildNotificationConfigurationHealth,
   loadNotificationOwnershipDirectory,
@@ -193,6 +193,7 @@ export default async function AdminSettingsPage({
         ) : activeTab === "landing" ? (
           <LandingContentManager
             initialContent={landingContent!.content}
+            defaultContent={createDefaultLandingContent()}
             updatedAt={landingContent?.updatedAt ?? null}
             updatedByEmail={landingContent?.updatedByEmail ?? null}
             source={landingContent?.source ?? "default"}
