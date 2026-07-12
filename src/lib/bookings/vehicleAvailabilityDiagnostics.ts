@@ -54,6 +54,7 @@ export type VehicleAvailabilityDecision<T extends AvailabilityDiagnosticVehicle>
 
 type DecisionOptions = {
   client?: Queryable;
+  excludeBookingId?: string | null;
   includeBlockouts?: boolean;
   now?: Date;
   publicEligibility?: boolean;
@@ -164,6 +165,7 @@ export async function evaluateVehicleAvailability<T extends AvailabilityDiagnost
         },
         {
           client: options.client,
+          excludeBookingId: options.excludeBookingId ?? null,
           includeBlockouts: options.includeBlockouts,
         },
       );

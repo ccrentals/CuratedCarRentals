@@ -2212,6 +2212,67 @@ export function getInternalNotesRecipient() {
   );
 }
 
+export async function sendBookingItineraryUpdatedEmail(input: {
+  bookingId: string;
+  recipientEmail: string;
+  recipientType: "customer" | "internal";
+  customerName: string;
+  previousVehicleLabel: string;
+  nextVehicleLabel: string;
+  previousDates: string;
+  nextDates: string;
+  previousPickupLocation: string;
+  nextPickupLocation: string;
+  previousDropoffLocation: string;
+  nextDropoffLocation: string;
+  totalCents: number;
+  paidToDateCents: number;
+  balanceDueCents: number;
+  refundRequired: boolean;
+  actorUserId?: string | null;
+}) {
+  const bookingReference = await resolveBookingReference(input.bookingId);
+  const internal = input.recipientType === "internal";
+  const link = internal
+    ? `${baseUrl()}/admin/bookings/${input.bookingId}`
+    : `${baseUrl()}/bookings/${input.bookingId}`;
+  const html = `
+    <div style="font-family:Arial,sans-serif;color:#0f172a;line-height:1.5">
+      <h2>${internal ? "Internal: " : ""}Booking details updated</h2>
+      <p>${internal ? `Booking ${bookingReference} was updated by an administrator.` : `Hi ${input.customerName}, the details for booking ${bookingReference} have been updated.`}</p>
+      <table style="width:100%;border-collapse:collapse">
+        <tr><th style="text-align:left;padding:8px;border-bottom:1px solid #cbd5e1">Item</th><th style="text-align:left;padding:8px;border-bottom:1px solid #cbd5e1">Previous</th><th style="text-align:left;padding:8px;border-bottom:1px solid #cbd5e1">Updated</th></tr>
+        <tr><td style="padding:8px">Vehicle</td><td style="padding:8px">${input.previousVehicleLabel}</td><td style="padding:8px"><strong>${input.nextVehicleLabel}</strong></td></tr>
+        <tr><td style="padding:8px">Dates</td><td style="padding:8px">${input.previousDates}</td><td style="padding:8px"><strong>${input.nextDates}</strong></td></tr>
+        <tr><td style="padding:8px">Pickup</td><td style="padding:8px">${input.previousPickupLocation}</td><td style="padding:8px"><strong>${input.nextPickupLocation}</strong></td></tr>
+        <tr><td style="padding:8px">Drop-off</td><td style="padding:8px">${input.previousDropoffLocation}</td><td style="padding:8px"><strong>${input.nextDropoffLocation}</strong></td></tr>
+      </table>
+      <div style="margin-top:16px;padding:12px;border:1px solid #cbd5e1;border-radius:8px;background:#f8fafc">
+        <p><strong>Updated total:</strong> ${formatAmount(input.totalCents)}</p>
+        <p><strong>Paid to date:</strong> ${formatAmount(input.paidToDateCents)}</p>
+        <p><strong>Balance outstanding:</strong> ${formatAmount(input.balanceDueCents)}</p>
+        ${input.refundRequired ? '<p style="color:#b91c1c"><strong>Refund review required. No automatic refund has been issued.</strong></p>' : ""}
+      </div>
+      <p style="margin-top:16px"><a href="${link}" style="background:#1f2d4d;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none">View updated booking</a></p>
+    </div>`;
+  return sendResendEmail({
+    to: input.recipientEmail,
+    subject: `${internal ? "[Internal] " : ""}Booking updated — ${bookingReference}`,
+    html,
+    dispatch: {
+      entityType: "booking",
+      entityId: input.bookingId,
+      entityPublicId: bookingReference,
+      emailType: "booking_itinerary_updated",
+      recipientName: internal ? null : input.customerName,
+      triggeredByUserId: input.actorUserId ?? null,
+      triggerSource: "admin_booking",
+      manualResendAllowed: true,
+      metadata: { bookingId: input.bookingId, bookingReference, recipientType: input.recipientType },
+    },
+  });
+}
+
 export async function sendOperationalAlertEmail(input: {
   recipientEmails: string[];
   subject: string;
