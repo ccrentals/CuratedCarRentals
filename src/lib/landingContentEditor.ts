@@ -246,6 +246,11 @@ export function validateLandingItem(
   const errors: Record<string, string> = {};
 
   function visit(value: LandingEditableValue, key: string, path: string) {
+    if (value === null) {
+      errors[path] = `${labelizeLandingField(key)} is required.`;
+      return;
+    }
+
     if (typeof value === "string") {
       const trimmed = value.trim();
       if (!trimmed) {
@@ -275,11 +280,12 @@ export function validateLandingItem(
   visit(item, fieldName, isLandingEditableRecord(item) ? "" : "value");
 
   if (isLandingEditableRecord(item) && typeof item.id === "string" && item.id.trim()) {
+    const normalizedItemId = item.id.trim().toLowerCase();
     const duplicateId = existingItems.some(
       (existing) =>
         isLandingEditableRecord(existing) &&
         typeof existing.id === "string" &&
-        existing.id.trim().toLowerCase() === item.id.trim().toLowerCase(),
+        existing.id.trim().toLowerCase() === normalizedItemId,
     );
     if (duplicateId) errors.id = "This URL ID is already in use.";
   }

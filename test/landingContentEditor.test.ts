@@ -71,6 +71,9 @@ test("new item validation rejects incomplete, unsafe, and duplicate values", () 
     [{ id: "airport-pickup", title: "Existing" }],
   );
   assert.match(duplicate.id ?? "", /already in use/i);
+
+  const nullId = validateLandingItem({ id: null, title: "Airport pickup" }, []);
+  assert.match(nullId.id ?? "", /required/i);
 });
 
 test("new item validation accepts supported links and Uploadcare images", () => {
