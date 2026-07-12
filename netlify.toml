@@ -8,6 +8,9 @@
 [context.deploy-preview]
   command = "npm run build"
 
+[context.staging]
+  command = "npm run migrate && npm run build"
+
 [context.branch-deploy]
   command = "npm run build"
 
