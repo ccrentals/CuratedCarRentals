@@ -7,6 +7,7 @@ import { dbQuery, getDbPool } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
 import {
   getInternalNotesRecipient,
+  sendBookingItineraryUpdatedEmail,
   sendBookingNoteEmail,
   sendPickupConfirmedEmail,
 } from "@/lib/notifications/email";
@@ -57,6 +58,10 @@ import { formatBookingStatusLabel } from "@/lib/bookings/formatBookingStatusLabe
 import { isEntitledBooking, isVehicleUnavailableEntitlementBased } from "@/lib/availability/entitlement";
 import { requireCsrf } from "@/lib/security/csrf";
 import { synchronizeCustomerContact } from "@/lib/customers/customerContactSync";
+import {
+  BookingItineraryChangeError,
+  evaluateBookingItineraryChange,
+} from "@/lib/bookings/bookingItineraryChange";
 
 function isUndefinedColumn(error: unknown, column: string) {
   const code = (error as { code?: string } | null)?.code;
@@ -796,6 +801,10 @@ export async function PATCH(
   }
 
   if (action === "update_details") {
+    const requestedVehicleId =
+      typeof body?.vehicleId === "string" && /^[0-9a-f-]{36}$/i.test(body.vehicleId.trim())
+        ? body.vehicleId.trim()
+        : null;
     const startDate = normalizeDateInput(body?.startDate);
     const endDate = normalizeDateInput(body?.endDate);
     const pickupTime = normalizeTimeInput(body?.pickupTime) ?? "11:00";
@@ -895,10 +904,10 @@ export async function PATCH(
         customer_phone: string;
         customer_legal_id_number: string | null;
       };
-      if (["RETURNED", "CANCELLED"].includes(booking.status)) {
+      if (["PICKED_UP", "RETURNED", "CANCELLED"].includes(booking.status.toUpperCase())) {
         await client.query("rollback");
         return NextResponse.json(
-          { error: "Cancelled or returned bookings cannot be updated" },
+          { error: "Picked-up, cancelled, or returned bookings cannot be updated" },
           { status: 400 },
         );
       }
@@ -964,78 +973,21 @@ export async function PATCH(
         return NextResponse.json({ error: dropoffLocationError }, { status: 400 });
       }
 
-      const availabilityWindow = buildWindowFromDates(
-        startDate,
-        endDate,
-        pickupTime,
-        dropoffTime,
-      );
-      if (!availabilityWindow) {
-        await client.query("rollback");
-        return NextResponse.json(
-          { error: "Vehicle is no longer available for the updated dates" },
-          { status: 409 },
-        );
-      }
-
-      const isUnavailable = await isVehicleUnavailableEntitlementBased(
-        booking.vehicle_id,
-        availabilityWindow,
-        { client, excludeBookingId: booking.id },
-      );
-      if (isUnavailable) {
-        await client.query("rollback");
-        return NextResponse.json(
-          { error: "Vehicle is no longer available for the updated dates" },
-          { status: 409 },
-        );
-      }
-
-      const dailyRate = Number(currentPricing.daily_rate_cents ?? booking.daily_rate_cents ?? 0);
-      const deposit = Number(currentPricing.deposit_cents ?? booking.deposit_cents ?? 0);
-      const paymentOption = readPaymentOption(currentPricing);
-      const { promoCode: existingPromoCode } = readPromoPricingFields(currentPricing);
-      const netPaidToDate = await fetchNetPaidToDate(booking.id, { client });
-      const provisionalSummary = computeBookingPricing({
-        bookingId: booking.id,
-        bookingStatus: booking.status,
-        startDate,
-        endDate,
-        dailyRate,
-        deposit,
-        paymentOption,
-        netPaidToDate,
-        promoCode: null,
-        promoDiscount: 0,
-      });
-      const validatedPromo = await resolveValidatedPromoForBookingUpdate({
+      const evaluatedItinerary = await evaluateBookingItineraryChange({
         client,
-        existingPromoCode,
-        bookingId: booking.id,
-        vehicleId: booking.vehicle_id,
+        booking,
+        vehicleId: requestedVehicleId ?? booking.vehicle_id,
+        startAt: startAtIso,
+        endAt: endAtIso,
         startDate,
         endDate,
-        subtotalCents: provisionalSummary.subtotal,
-        baseTotalCents: provisionalSummary.baseTotal,
-        customerId: booking.customer_id,
         customerEmail,
       });
-      const pricingSummary = computeBookingPricing({
-        bookingId: booking.id,
-        bookingStatus: booking.status,
-        startDate,
-        endDate,
-        dailyRate,
-        deposit,
-        paymentOption,
-        netPaidToDate,
-        promoCode: validatedPromo.promoCode,
-        promoDiscount: validatedPromo.promoDiscount,
-      });
+      const pricingSummary = evaluatedItinerary.summary;
 
       const nextLocationDetails = locationSelection.details;
       const nextPricingBase = {
-        ...currentPricing,
+        ...evaluatedItinerary.pricingJson,
         customer_name_snapshot: customerName,
         customer_email_snapshot: customerEmail,
         customer_phone_snapshot: customerPhone,
@@ -1045,7 +997,7 @@ export async function PATCH(
         deposit_cents: pricingSummary.deposit,
         subtotal_cents: pricingSummary.subtotal,
         promo_code: pricingSummary.promoCode,
-        promo_code_id: validatedPromo.promoId,
+        promo_code_id: evaluatedItinerary.promoId,
         promo_discount_cents: pricingSummary.promoDiscount,
         total_cents: pricingSummary.total,
         total_amount: pricingSummary.total,
@@ -1069,7 +1021,7 @@ export async function PATCH(
       });
 
       await client.query(
-        "update bookings set start_date = $2, end_date = $3, pickup_time = $4::time, dropoff_time = $5::time, start_at = $6::timestamptz, end_at = $7::timestamptz, pickup_location = $8, dropoff_location = $9, pickup_location_id = $10::uuid, dropoff_location_id = $11::uuid, pickup_location_text_snapshot = $12, dropoff_location_text_snapshot = $13, pricing_json = $14::jsonb, updated_at = now() where id = $1",
+        "update bookings set start_date = $2, end_date = $3, pickup_time = $4::time, dropoff_time = $5::time, start_at = $6::timestamptz, end_at = $7::timestamptz, pickup_location = $8, dropoff_location = $9, pickup_location_id = $10::uuid, dropoff_location_id = $11::uuid, pickup_location_text_snapshot = $12, dropoff_location_text_snapshot = $13, pricing_json = $14::jsonb, vehicle_id = $15::uuid, insurance_selected = $16, insurance_plan_id = $17::uuid, insurance_price_per_day_cents = $18, insurance_total_cents = $19, updated_at = now() where id = $1",
         [
           booking.id,
           startDate,
@@ -1085,6 +1037,11 @@ export async function PATCH(
           locationSelection.pickupLocationTextSnapshot,
           locationSelection.dropoffLocationTextSnapshot,
           JSON.stringify(nextPricing),
+          evaluatedItinerary.vehicle.id,
+          pricingSummary.insuranceSelected,
+          evaluatedItinerary.insurancePlanId,
+          pricingSummary.insurancePricePerDay,
+          pricingSummary.insuranceTotal,
         ],
       );
       await syncPromoRedemptionStateForBooking(booking.id, {
@@ -1146,6 +1103,8 @@ export async function PATCH(
           previous_customer_name: booking.customer_name,
           previous_customer_email: booking.customer_email,
           previous_customer_phone: booking.customer_phone,
+          previous_vehicle_id: booking.vehicle_id,
+          previous_vehicle: `${booking.vehicle_year} ${booking.vehicle_make} ${booking.vehicle_model}`.trim(),
           next_start_date: startDate,
           next_end_date: endDate,
           next_pickup_time: pickupTime,
@@ -1155,12 +1114,56 @@ export async function PATCH(
           next_customer_name: customerName,
           next_customer_email: customerEmail,
           next_customer_phone: customerPhone,
+          next_vehicle_id: evaluatedItinerary.vehicle.id,
+          next_vehicle: evaluatedItinerary.vehicleLabel,
           synchronized_booking_count: customerSyncResult.synchronizedBookingCount,
           total: pricingSummary.total,
           balance_due: pricingSummary.balanceDue,
           refund_required: pricingSummary.refundRequired,
         },
       });
+
+      const notificationInput = {
+        bookingId: booking.id,
+        customerName,
+        previousVehicleLabel: `${booking.vehicle_year} ${booking.vehicle_make} ${booking.vehicle_model}`.trim(),
+        nextVehicleLabel: evaluatedItinerary.vehicleLabel,
+        previousDates: `${booking.start_date} ${booking.pickup_time ?? ""} - ${booking.end_date} ${booking.dropoff_time ?? ""}`,
+        nextDates: `${startDate} ${pickupTime} - ${endDate} ${dropoffTime}`,
+        previousPickupLocation: booking.pickup_location_text_snapshot || booking.pickup_location,
+        nextPickupLocation: locationSelection.pickupLocationTextSnapshot,
+        previousDropoffLocation:
+          booking.dropoff_location_text_snapshot || booking.dropoff_location || booking.pickup_location,
+        nextDropoffLocation: locationSelection.dropoffLocationTextSnapshot,
+        totalCents: pricingSummary.total,
+        paidToDateCents: pricingSummary.netPaidToDate,
+        balanceDueCents: pricingSummary.balanceDue,
+        refundRequired: pricingSummary.refundRequired,
+        actorUserId: session.userId,
+      };
+      const [customerNotification, internalNotification] = await Promise.allSettled([
+        sendBookingItineraryUpdatedEmail({
+          ...notificationInput,
+          recipientEmail: customerEmail,
+          recipientType: "customer",
+        }),
+        sendBookingItineraryUpdatedEmail({
+          ...notificationInput,
+          recipientEmail: getInternalNotesRecipient(),
+          recipientType: "internal",
+        }),
+      ]);
+      for (const notification of [customerNotification, internalNotification]) {
+        if (notification.status === "rejected") {
+          logWarn("admin.booking-itinerary.email_failed", {
+            bookingId: booking.id,
+            error:
+              notification.reason instanceof Error
+                ? notification.reason.message
+                : String(notification.reason),
+          });
+        }
+      }
 
       const payments = paymentsResult.rows as AdminBookingPaymentRow[];
       const hasDriversLicenseDoc = privateDocs.rows.some(
@@ -1233,7 +1236,7 @@ export async function PATCH(
         }
       }
       const bookingPublicId = String(booking.public_id ?? "").trim() || booking.id;
-      const vehicleLabel = `${booking.vehicle_year} ${booking.vehicle_make} ${booking.vehicle_model}`.trim();
+      const vehicleLabel = evaluatedItinerary.vehicleLabel;
       const bookingDetail = buildAdminBookingDetailView({
         versionKey: `${booking.id}:${Date.now()}`,
         bookingId: booking.id,
@@ -1246,7 +1249,7 @@ export async function PATCH(
         isDepositPaid: nextIsDepositPaid,
         isPickupInspectionComplete,
         isReturnInspectionComplete,
-        vehicleId: booking.vehicle_id,
+        vehicleId: evaluatedItinerary.vehicle.id,
         vehicleLabel,
         initialPromoCode: pricingSummary.promoCode,
         initialInsuranceSelected: pricingSummary.insuranceSelected,
@@ -1297,7 +1300,7 @@ export async function PATCH(
           dropoffLocationTypeKey: nextLocationDetails.dropoff.typeKey,
           pickupLocationValues: nextLocationDetails.pickup.values,
           dropoffLocationValues: nextLocationDetails.dropoff.values,
-          disabled: ["RETURNED", "CANCELLED"].includes(booking.status.toUpperCase()),
+          disabled: ["PICKED_UP", "RETURNED", "CANCELLED"].includes(booking.status.toUpperCase()),
         },
       });
 
@@ -1308,6 +1311,12 @@ export async function PATCH(
       });
     } catch (error) {
       await client.query("rollback");
+      if (error instanceof BookingItineraryChangeError) {
+        return NextResponse.json(
+          { error: error.message, code: error.code },
+          { status: error.status },
+        );
+      }
       const schemaError = toBookingLocationConfigSchemaError(error);
       if (schemaError) {
         return NextResponse.json(

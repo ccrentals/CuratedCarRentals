@@ -24,6 +24,8 @@ import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
 type BookingUpdateFormProps = {
   bookingId: string;
+  vehicleId: string;
+  vehicleOptions: Array<{ id: string; label: string }>;
   startDate: string | Date;
   endDate: string | Date;
   pickupTime: string | null;
@@ -65,6 +67,14 @@ type BookingLocationApiRow = {
 };
 
 const DEFAULT_BOOKING_LOCATIONS = buildBookingLocationConfigs();
+
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat("en-JM", {
+    style: "currency",
+    currency: "JMD",
+    maximumFractionDigits: 2,
+  }).format(Math.max(0, Number(value ?? 0)) / 100);
+}
 
 function toDateInputValue(value: string | Date) {
   if (value instanceof Date) {
@@ -232,6 +242,8 @@ function renderLocationFieldInput(input: {
 
 export function BookingUpdateForm({
   bookingId,
+  vehicleId,
+  vehicleOptions,
   startDate,
   endDate,
   pickupTime,
@@ -253,12 +265,27 @@ export function BookingUpdateForm({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<{
+    vehicleLabel: string;
+    days: number;
+    baseTotal: number;
+    insuranceTotal: number;
+    promoDiscount: number;
+    total: number;
+    depositRequired: number;
+    paidToDate: number;
+    balanceDue: number;
+    refundRequired: boolean;
+  } | null>(null);
 
   const [locations, setLocations] = useState<BookingLocationConfig[]>(DEFAULT_BOOKING_LOCATIONS);
   const [locationsLoading, setLocationsLoading] = useState(false);
   const [locationsError, setLocationsError] = useState<string | null>(null);
 
   const [nextStartDate, setNextStartDate] = useState(toDateInputValue(startDate));
+  const [nextVehicleId, setNextVehicleId] = useState(vehicleId);
   const [nextEndDate, setNextEndDate] = useState(toDateInputValue(endDate));
   const [nextPickupTime, setNextPickupTime] = useState(toTimeInputValue(pickupTime));
   const [nextDropoffTime, setNextDropoffTime] = useState(toTimeInputValue(dropoffTime));
@@ -363,6 +390,53 @@ export function BookingUpdateForm({
   }, [open]);
 
   useEffect(() => {
+    if (!open || !nextVehicleId || !nextStartDate || !nextEndDate || !nextPickupTime || !nextDropoffTime) {
+      setPreview(null);
+      return;
+    }
+    let cancelled = false;
+    const controller = new AbortController();
+    async function loadPreview() {
+      setPreviewLoading(true);
+      setPreviewError(null);
+      try {
+        const response = await fetch(`/api/admin/bookings/${bookingId}/itinerary-preview`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
+          body: JSON.stringify({
+            vehicleId: nextVehicleId,
+            startDate: nextStartDate,
+            endDate: nextEndDate,
+            pickupTime: nextPickupTime,
+            dropoffTime: nextDropoffTime,
+            customerEmail: nextCustomerEmail,
+          }),
+        });
+        const payload = (await response.json().catch(() => ({}))) as {
+          preview?: typeof preview;
+          error?: string;
+        };
+        if (!response.ok || !payload.preview) throw new Error(payload.error ?? "Unable to preview booking changes.");
+        if (!cancelled) setPreview(payload.preview);
+      } catch (requestError) {
+        if (!cancelled && !controller.signal.aborted) {
+          setPreview(null);
+          setPreviewError(requestError instanceof Error ? requestError.message : "Unable to preview booking changes.");
+        }
+      } finally {
+        if (!cancelled) setPreviewLoading(false);
+      }
+    }
+    const timeout = window.setTimeout(() => void loadPreview(), 250);
+    return () => {
+      cancelled = true;
+      controller.abort();
+      window.clearTimeout(timeout);
+    };
+  }, [bookingId, nextCustomerEmail, nextDropoffTime, nextEndDate, nextPickupTime, nextStartDate, nextVehicleId, open]);
+
+  useEffect(() => {
     setNextPickupLocationValues((current) =>
       coerceBookingLocationFieldValues(
         selectedPickupLocation,
@@ -416,6 +490,7 @@ export function BookingUpdateForm({
     const normalizedPickupValues = normalizeBookingLocationFieldValuesInput(pickupLocationValues);
     const normalizedDropoffValues = normalizeBookingLocationFieldValuesInput(dropoffLocationValues);
     setNextStartDate(toDateInputValue(startDate));
+    setNextVehicleId(vehicleId);
     setNextEndDate(toDateInputValue(endDate));
     setNextPickupTime(toTimeInputValue(pickupTime));
     setNextDropoffTime(toTimeInputValue(dropoffTime));
@@ -432,6 +507,8 @@ export function BookingUpdateForm({
     );
     setError(null);
     setMessage(null);
+    setPreview(null);
+    setPreviewError(null);
     setOpen(true);
   }
 
@@ -499,6 +576,10 @@ export function BookingUpdateForm({
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (loading || disabled) return;
+    if (!preview || previewError) {
+      setError(previewError ?? "Wait for a valid booking change preview before saving.");
+      return;
+    }
 
     const pickupLocationError = validateBookingLocationSelection(
       selectedPickupLocation,
@@ -525,6 +606,10 @@ export function BookingUpdateForm({
     setMessage(null);
 
     try {
+      const confirmed = window.confirm(
+        `Update this booking?\nVehicle: ${preview.vehicleLabel}\nNew total: ${formatCurrency(preview.total)}\nPaid to date: ${formatCurrency(preview.paidToDate)}\nNew balance: ${formatCurrency(preview.balanceDue)}${preview.refundRequired ? "\nRefund review will be required." : ""}`,
+      );
+      if (!confirmed) return;
       const csrfToken = await ensureCsrfToken();
       const locationSelection = buildBookingLocationSelectionPayload({
         configs: locations,
@@ -545,6 +630,7 @@ export function BookingUpdateForm({
         },
         body: JSON.stringify({
           action: "update_details",
+          vehicleId: nextVehicleId,
           startDate: nextStartDate,
           endDate: nextEndDate,
           pickupTime: nextPickupTime,
@@ -620,6 +706,19 @@ export function BookingUpdateForm({
 
       {open ? (
         <form className="mt-4 grid gap-4 md:grid-cols-2" onSubmit={onSubmit}>
+          <label className="text-xs text-[var(--ccr-muted)] md:col-span-2">
+            Vehicle
+            <select
+              value={nextVehicleId}
+              onChange={(event) => setNextVehicleId(event.target.value)}
+              required
+              className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+            >
+              {vehicleOptions.map((vehicle) => (
+                <option key={vehicle.id} value={vehicle.id}>{vehicle.label}</option>
+              ))}
+            </select>
+          </label>
           <label className="text-xs text-[var(--ccr-muted)]">
             Start date
             <div className="relative mt-1">
@@ -834,6 +933,25 @@ export function BookingUpdateForm({
               className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
             />
           </label>
+
+          <section className="md:col-span-2 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-3">
+            <p className="text-xs font-semibold uppercase text-[var(--ccr-muted)]">Change preview</p>
+            {previewLoading ? <p className="mt-2 text-sm text-[var(--ccr-muted)]">Checking availability and pricing...</p> : null}
+            {previewError ? <p className="mt-2 text-sm text-red-500">{previewError}</p> : null}
+            {preview && !previewLoading ? (
+              <dl className="mt-2 grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                <div><dt className="text-[var(--ccr-muted)]">Vehicle</dt><dd className="font-semibold">{preview.vehicleLabel}</dd></div>
+                <div><dt className="text-[var(--ccr-muted)]">Days</dt><dd className="font-semibold">{preview.days}</dd></div>
+                <div><dt className="text-[var(--ccr-muted)]">New total</dt><dd className="font-semibold">{formatCurrency(preview.total)}</dd></div>
+                <div><dt className="text-[var(--ccr-muted)]">New balance</dt><dd className="font-semibold">{formatCurrency(preview.balanceDue)}</dd></div>
+                <div><dt className="text-[var(--ccr-muted)]">Base rental</dt><dd>{formatCurrency(preview.baseTotal)}</dd></div>
+                <div><dt className="text-[var(--ccr-muted)]">Insurance</dt><dd>{formatCurrency(preview.insuranceTotal)}</dd></div>
+                <div><dt className="text-[var(--ccr-muted)]">Discount</dt><dd>-{formatCurrency(preview.promoDiscount)}</dd></div>
+                <div><dt className="text-[var(--ccr-muted)]">Paid to date</dt><dd>{formatCurrency(preview.paidToDate)}</dd></div>
+                {preview.refundRequired ? <p className="sm:col-span-2 lg:col-span-4 font-semibold text-red-500">Refund review required after this change.</p> : null}
+              </dl>
+            ) : null}
+          </section>
 
           <div className="md:col-span-2 flex flex-wrap items-center gap-2">
             <button

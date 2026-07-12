@@ -570,6 +570,14 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
       throw error;
     }
   }
+  const vehicleOptions = (
+    await dbQuery<{ id: string; make: string; model: string; year: number }>(
+      "select id, make, model, year from vehicles where deleted_at is null order by year desc, make asc, model asc",
+    )
+  ).rows.map((vehicle: { id: string; make: string; model: string; year: number }) => ({
+    id: vehicle.id,
+    label: `${vehicle.year} ${vehicle.make} ${vehicle.model}`.trim(),
+  }));
   const overriddenByBookingPublicId = overriddenByBookingId
     ? (
         await dbQuery<{ public_id: string }>(
@@ -651,7 +659,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
       dropoffLocationTypeKey: bookingLocationDetails.dropoff.typeKey,
       pickupLocationValues: bookingLocationDetails.pickup.values,
       dropoffLocationValues: bookingLocationDetails.dropoff.values,
-      disabled: ["RETURNED", "CANCELLED"].includes(booking.status.toUpperCase()),
+      disabled: ["PICKED_UP", "RETURNED", "CANCELLED"].includes(booking.status.toUpperCase()),
     },
   });
 
@@ -674,6 +682,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
         requireRestoreReason={requireRestoreReason}
         promoOptions={promoOptions}
         insuranceOption={insuranceOption}
+        vehicleOptions={vehicleOptions}
         inspection={{
           inspections: vehicleInspections,
           mediaActivities,
