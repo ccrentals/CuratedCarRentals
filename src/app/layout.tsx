@@ -101,6 +101,9 @@ export default function RootLayout({
   const showBreakpointOverlay =
     process.env.NODE_ENV !== "production" &&
     process.env.NEXT_PUBLIC_DISABLE_BREAKPOINT_OVERLAY !== "1";
+  const showStagingBanner =
+    process.env.CONTEXT === "branch-deploy" &&
+    process.env.BRANCH?.trim().toLowerCase() === "staging";
   const allowedThemesJson = JSON.stringify(APP_THEMES);
 
   return (
@@ -172,6 +175,14 @@ html[data-theme="forest"], html[data-theme="forest"] body {
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${playfairDisplay.variable} ${greatVibes.variable} antialiased bg-[var(--ccr-bg)] text-[var(--ccr-text)]`}
       >
+        {showStagingBanner ? (
+          <div
+            role="status"
+            className="relative z-[100] border-b border-amber-950 bg-amber-300 px-4 py-2 text-center text-sm font-bold text-amber-950"
+          >
+            Staging site - test environment only
+          </div>
+        ) : null}
         <OptionalClerkProvider>
           <div className="flex min-h-screen flex-col">
             <main className="flex-1">{children}</main>
