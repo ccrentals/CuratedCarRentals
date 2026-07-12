@@ -24,3 +24,8 @@ test("booking itinerary mutation persists vehicle, insurance, audit, and notific
   assert.match(route, /sendBookingItineraryUpdatedEmail/);
   assert.match(route, /PICKED_UP.*RETURNED.*CANCELLED/);
 });
+
+test("booking itinerary preview displays stored JMD units without cent conversion", async () => {
+  const form = await readFile("src/components/admin/BookingUpdateForm.tsx", "utf8");
+  assert.doesNotMatch(form, /Number\(value \?\? 0\)\) \/ 100/);
+});

@@ -73,7 +73,7 @@ function formatCurrency(value: number) {
     style: "currency",
     currency: "JMD",
     maximumFractionDigits: 2,
-  }).format(Math.max(0, Number(value ?? 0)) / 100);
+  }).format(Math.max(0, Number(value ?? 0)));
 }
 
 function toDateInputValue(value: string | Date) {
@@ -685,7 +685,7 @@ export function BookingUpdateForm({
             Booking changes
           </p>
           <h3 className="text-sm font-semibold text-[var(--ccr-text)]">
-            Update dates, customer info, and location details
+            Update vehicle, dates, customer info, and location details
           </h3>
         </div>
         <button
