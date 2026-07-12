@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "db:bootstrap": "node scripts/bootstrap-db.js",
     "migrate": "node scripts/migrate.js",
     "rebuild:promo-ledger-history": "tsx scripts/rebuild-promo-ledger-history.ts",
     "seed:public-vehicles": "tsx scripts/seed-public-vehicles.ts",

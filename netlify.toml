@@ -9,7 +9,7 @@
   command = "npm run build"
 
 [context.staging]
-  command = "npm run migrate && npm run build"
+  command = "npm run db:bootstrap && npm run migrate && npm run build"
 
 [context.branch-deploy]
   command = "npm run build"
