@@ -53,6 +53,7 @@ type AdminBookingDetailClientProps = {
   requireRestoreReason: boolean;
   promoOptions: AdminBookingActionPromoOption[];
   insuranceOption: AdminBookingActionInsuranceOption;
+  vehicleOptions: Array<{ id: string; label: string }>;
   inspection?: {
     inspections: LoadedBookingVehicleInspections;
     mediaActivities?: MediaAuditActivity[];
@@ -146,6 +147,7 @@ export function AdminBookingDetailClient({
   requireRestoreReason,
   promoOptions,
   insuranceOption,
+  vehicleOptions,
   inspection,
   payments,
   refundedOriginalIds,
@@ -217,6 +219,8 @@ export function AdminBookingDetailClient({
             bookingChangesContent={
               <BookingUpdateForm
                 bookingId={detail.bookingId}
+                vehicleId={detail.vehicleId}
+                vehicleOptions={vehicleOptions}
                 startDate={detail.form.startDate}
                 endDate={detail.form.endDate}
                 pickupTime={detail.form.pickupTime}
