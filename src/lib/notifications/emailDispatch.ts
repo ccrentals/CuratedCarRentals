@@ -404,14 +404,30 @@ export async function fetchEmailDispatchByProviderMessageId(
   return result.rows[0] ?? null;
 }
 
+export function applyStagingEmailMarker(subject: string, html: string) {
+  const isStaging =
+    String(process.env.BRANCH ?? "").trim().toLowerCase() === "staging" ||
+    String(process.env.CONTEXT ?? process.env.NETLIFY_CONTEXT ?? "")
+      .trim()
+      .toLowerCase() === "staging";
+  return {
+    subject:
+      isStaging && !subject.startsWith("[STAGING]") ? `[STAGING] ${subject}` : subject,
+    html: isStaging
+      ? `<div style="background:#facc15;color:#111827;font-family:Arial,sans-serif;font-size:14px;font-weight:700;padding:12px;text-align:center">STAGING TEST EMAIL - NOT A REAL BOOKING</div>${html}`
+      : html,
+  };
+}
+
 export async function sendTrackedResendEmail(
   input: SendTrackedResendEmailInput,
   queryFn: DbQueryFn = dbQuery,
 ): Promise<SendTrackedEmailResult> {
+  const { subject, html } = applyStagingEmailMarker(input.subject, input.html);
   const dispatchId = await createEmailDispatch(
     {
       toEmail: input.to,
-      subject: input.subject,
+      subject,
       provider: "resend",
       context: input.dispatch,
     },
@@ -451,8 +467,8 @@ export async function sendTrackedResendEmail(
     body: JSON.stringify({
       from,
       to: input.to,
-      subject: input.subject,
-      html: input.html,
+      subject,
+      html,
       reply_to: input.replyTo ?? from,
       attachments: input.attachments,
       tags: buildEmailDispatchTags(dispatchId, input.dispatch),
@@ -470,7 +486,7 @@ export async function sendTrackedResendEmail(
       status: response.status,
       responseBody: payload?.message ?? null,
       to: input.to,
-      subject: input.subject,
+      subject,
       emailType: input.dispatch.emailType,
       dispatchId,
     });
