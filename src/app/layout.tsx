@@ -102,8 +102,7 @@ export default function RootLayout({
     process.env.NODE_ENV !== "production" &&
     process.env.NEXT_PUBLIC_DISABLE_BREAKPOINT_OVERLAY !== "1";
   const showStagingBanner =
-    process.env.CONTEXT === "branch-deploy" &&
-    process.env.BRANCH?.trim().toLowerCase() === "staging";
+    process.env.NEXT_PUBLIC_SITE_ENV?.trim().toLowerCase() === "staging";
   const allowedThemesJson = JSON.stringify(APP_THEMES);
 
   return (
