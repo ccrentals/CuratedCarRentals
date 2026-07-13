@@ -2243,9 +2243,15 @@ export async function sendBookingItineraryUpdatedEmail(input: {
 }) {
   const bookingReference = await resolveBookingReference(input.bookingId);
   const internal = input.recipientType === "internal";
-  const link = internal
-    ? `${baseUrl()}/admin/bookings/${input.bookingId}`
-    : `${baseUrl()}/bookings/${input.bookingId}`;
+  const [link, invoiceLink] = internal
+    ? [
+        `${baseUrl()}/admin/bookings/${input.bookingId}`,
+        `${baseUrl()}/admin/bookings/${input.bookingId}`,
+      ]
+    : await Promise.all([
+        buildPublicBookingEmailLink(input.bookingId, "view"),
+        buildPublicBookingEmailLink(input.bookingId, "invoice"),
+      ]);
   const previousInsurance = input.previousInsuranceSelected
     ? `${formatAmount(input.previousInsurancePricePerDayCents)}/day (${formatAmount(input.previousInsuranceTotalCents)} total)`
     : "Not selected";
@@ -2277,7 +2283,14 @@ export async function sendBookingItineraryUpdatedEmail(input: {
         <p><strong>Balance outstanding:</strong> ${formatAmount(input.balanceDueCents)}</p>
         ${input.refundRequired ? '<p style="color:#b91c1c"><strong>Refund review required. No automatic refund has been issued.</strong></p>' : ""}
       </div>
-      <p style="margin-top:16px"><a href="${link}" style="background:#1f2d4d;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none">View updated booking</a></p>
+      <p style="margin-top:16px">
+        ${renderPrimaryEmailButton(internal ? "Open Booking" : "View updated booking", link)}
+        ${
+          internal
+            ? ""
+            : `<span style="display:inline-block;width:12px"></span>${renderPrimaryEmailButton("View updated invoice", invoiceLink, { accent: "secondary" })}`
+        }
+      </p>
     </div>`;
   return sendResendEmail({
     to: input.recipientEmail,
