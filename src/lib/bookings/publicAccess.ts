@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import {
   bookingAccessCookieName,
+  hasMatchingBookingEmailAccessSignature,
   hasMatchingBookingAccessToken,
   readBookingAccessHash,
   readBookingAccessTokenFromCookieHeader,
@@ -29,12 +30,20 @@ export async function hasPublicBookingAccessForRequest(
 export async function hasPublicBookingAccessForPage(
   bookingId: string,
   pricing: Record<string, unknown> | null | undefined,
+  signature?: string | null,
 ) {
   const session = await getSessionFromRequest();
   if (session) return true;
 
   const expectedHash = readBookingAccessHash(pricing);
   if (!expectedHash) return false;
+
+  if (
+    signature &&
+    hasMatchingBookingEmailAccessSignature(signature, bookingId, expectedHash)
+  ) {
+    return true;
+  }
 
   const cookieStore = await cookies();
   const accessToken = cookieStore.get(bookingAccessCookieName(bookingId))?.value ?? "";

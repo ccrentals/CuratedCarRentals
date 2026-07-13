@@ -34,6 +34,7 @@ export default async function BookingInvoicePage({
   const { id } = await params;
   const query = await searchParams;
   const autoPrint = query.autoprint === "1";
+  const signature = typeof query.sig === "string" ? query.sig : null;
 
   const accessResult = await dbQuery<{
     id: string;
@@ -46,6 +47,7 @@ export default async function BookingInvoicePage({
   const isAuthorized = await hasPublicBookingAccessForPage(
     bookingAccess.id,
     bookingAccess.pricing_json,
+    signature,
   );
   if (!isAuthorized) {
     notFound();
