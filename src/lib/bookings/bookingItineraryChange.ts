@@ -36,6 +36,8 @@ export async function evaluateBookingItineraryChange(input: {
   startDate: string;
   endDate: string;
   customerEmail?: string | null;
+  insuranceSelected?: boolean;
+  promoCode?: string | null;
 }) {
   const vehicleResult = await input.client.query(
     `select
@@ -102,15 +104,17 @@ export async function evaluateBookingItineraryChange(input: {
   const currentPricing = input.booking.pricing_json ?? {};
   const insurance = readInsurancePricingFields(currentPricing);
   const promo = readPromoPricingFields(currentPricing);
+  const insuranceSelected = input.insuranceSelected ?? insurance.insuranceSelected;
+  const promoCode = input.promoCode === undefined ? promo.promoCode : input.promoCode;
   let quote;
   try {
     quote = await buildQuotePricingSnapshot({
       vehicleId: input.vehicleId,
       startAt: input.startAt,
       endAt: input.endAt,
-      insuranceEnabled: insurance.insuranceSelected,
+      insuranceEnabled: insuranceSelected,
       insurancePlanId: null,
-      promoCode: promo.promoCode,
+      promoCode,
       customerId: input.booking.customer_id,
       customerEmail: input.customerEmail ?? input.booking.customer_email,
       deliverySelected: currentPricing.delivery_selected === true,

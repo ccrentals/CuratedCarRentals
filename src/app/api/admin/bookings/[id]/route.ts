@@ -749,6 +749,10 @@ export async function PATCH(
     const customerName = typeof body?.customerName === "string" ? body.customerName.trim() : "";
     const customerEmail = typeof body?.customerEmail === "string" ? body.customerEmail.trim() : "";
     const customerPhone = typeof body?.customerPhone === "string" ? body.customerPhone.trim() : "";
+    const requestedInsuranceSelected =
+      typeof body?.insuranceSelected === "boolean" ? body.insuranceSelected : undefined;
+    const requestedPromoCode =
+      typeof body?.promoCode === "string" ? body.promoCode.trim() || null : undefined;
     const bookingLocationDetailsRaw = asObject(body?.bookingLocationDetails);
     const pickupLocationDetailsRaw = asObject(bookingLocationDetailsRaw?.pickup);
     const dropoffLocationDetailsRaw = asObject(bookingLocationDetailsRaw?.dropoff);
@@ -919,6 +923,8 @@ export async function PATCH(
         startDate,
         endDate,
         customerEmail,
+        insuranceSelected: requestedInsuranceSelected,
+        promoCode: requestedPromoCode,
       });
       const pricingSummary = evaluatedItinerary.summary;
       const previousPricingSummary = computeBookingPricingFromStoredSnapshot({
@@ -1071,6 +1077,11 @@ export async function PATCH(
           previous_customer_phone: booking.customer_phone,
           previous_vehicle_id: booking.vehicle_id,
           previous_vehicle: `${booking.vehicle_year} ${booking.vehicle_make} ${booking.vehicle_model}`.trim(),
+          previous_insurance_selected: previousPricingSummary.insuranceSelected,
+          previous_insurance_price_per_day: previousPricingSummary.insurancePricePerDay,
+          previous_insurance_total: previousPricingSummary.insuranceTotal,
+          previous_promo_code: previousPricingSummary.promoCode,
+          previous_promo_discount: previousPricingSummary.promoDiscount,
           next_start_date: startDate,
           next_end_date: endDate,
           next_pickup_time: pickupTime,
@@ -1082,6 +1093,11 @@ export async function PATCH(
           next_customer_phone: customerPhone,
           next_vehicle_id: evaluatedItinerary.vehicle.id,
           next_vehicle: evaluatedItinerary.vehicleLabel,
+          next_insurance_selected: pricingSummary.insuranceSelected,
+          next_insurance_price_per_day: pricingSummary.insurancePricePerDay,
+          next_insurance_total: pricingSummary.insuranceTotal,
+          next_promo_code: pricingSummary.promoCode,
+          next_promo_discount: pricingSummary.promoDiscount,
           synchronized_booking_count: customerSyncResult.synchronizedBookingCount,
           total: pricingSummary.total,
           balance_due: pricingSummary.balanceDue,
@@ -1101,6 +1117,16 @@ export async function PATCH(
         previousDropoffLocation:
           booking.dropoff_location_text_snapshot || booking.dropoff_location || booking.pickup_location,
         nextDropoffLocation: locationSelection.dropoffLocationTextSnapshot,
+        previousInsuranceSelected: previousPricingSummary.insuranceSelected,
+        previousInsurancePricePerDayCents: previousPricingSummary.insurancePricePerDay,
+        previousInsuranceTotalCents: previousPricingSummary.insuranceTotal,
+        nextInsuranceSelected: pricingSummary.insuranceSelected,
+        nextInsurancePricePerDayCents: pricingSummary.insurancePricePerDay,
+        nextInsuranceTotalCents: pricingSummary.insuranceTotal,
+        previousPromoCode: previousPricingSummary.promoCode,
+        previousPromoDiscountCents: previousPricingSummary.promoDiscount,
+        nextPromoCode: pricingSummary.promoCode,
+        nextPromoDiscountCents: pricingSummary.promoDiscount,
         totalCents: pricingSummary.total,
         paidToDateCents: pricingSummary.netPaidToDate,
         balanceDueCents: pricingSummary.balanceDue,

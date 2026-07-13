@@ -42,6 +42,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       startDate,
       endDate,
       customerEmail: typeof body?.customerEmail === "string" ? body.customerEmail : null,
+      insuranceSelected:
+        typeof body?.insuranceSelected === "boolean" ? body.insuranceSelected : undefined,
+      promoCode:
+        typeof body?.promoCode === "string" ? body.promoCode.trim() || null : undefined,
     });
     return NextResponse.json({
       ok: true,
@@ -53,6 +57,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         insuranceSelected: evaluated.summary.insuranceSelected,
         insurancePricePerDay: evaluated.summary.insurancePricePerDay,
         insuranceTotal: evaluated.summary.insuranceTotal,
+        promoCode: evaluated.summary.promoCode,
         promoDiscount: evaluated.summary.promoDiscount,
         total: evaluated.summary.total,
         depositRequired: evaluated.summary.depositRequired,

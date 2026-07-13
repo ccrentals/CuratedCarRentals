@@ -2225,6 +2225,16 @@ export async function sendBookingItineraryUpdatedEmail(input: {
   nextPickupLocation: string;
   previousDropoffLocation: string;
   nextDropoffLocation: string;
+  previousInsuranceSelected: boolean;
+  previousInsurancePricePerDayCents: number;
+  previousInsuranceTotalCents: number;
+  nextInsuranceSelected: boolean;
+  nextInsurancePricePerDayCents: number;
+  nextInsuranceTotalCents: number;
+  previousPromoCode: string | null;
+  previousPromoDiscountCents: number;
+  nextPromoCode: string | null;
+  nextPromoDiscountCents: number;
   totalCents: number;
   paidToDateCents: number;
   balanceDueCents: number;
@@ -2236,6 +2246,18 @@ export async function sendBookingItineraryUpdatedEmail(input: {
   const link = internal
     ? `${baseUrl()}/admin/bookings/${input.bookingId}`
     : `${baseUrl()}/bookings/${input.bookingId}`;
+  const previousInsurance = input.previousInsuranceSelected
+    ? `${formatAmount(input.previousInsurancePricePerDayCents)}/day (${formatAmount(input.previousInsuranceTotalCents)} total)`
+    : "Not selected";
+  const nextInsurance = input.nextInsuranceSelected
+    ? `${formatAmount(input.nextInsurancePricePerDayCents)}/day (${formatAmount(input.nextInsuranceTotalCents)} total)`
+    : "Not selected";
+  const previousPromo = input.previousPromoCode
+    ? `${input.previousPromoCode} (${formatAmount(input.previousPromoDiscountCents)} discount)`
+    : "Not applied";
+  const nextPromo = input.nextPromoCode
+    ? `${input.nextPromoCode} (${formatAmount(input.nextPromoDiscountCents)} discount)`
+    : "Not applied";
   const html = `
     <div style="font-family:Arial,sans-serif;color:#0f172a;line-height:1.5">
       <h2>${internal ? "Internal: " : ""}Booking details updated</h2>
@@ -2246,6 +2268,8 @@ export async function sendBookingItineraryUpdatedEmail(input: {
         <tr><td style="padding:8px">Dates</td><td style="padding:8px">${input.previousDates}</td><td style="padding:8px"><strong>${input.nextDates}</strong></td></tr>
         <tr><td style="padding:8px">Pickup</td><td style="padding:8px">${input.previousPickupLocation}</td><td style="padding:8px"><strong>${input.nextPickupLocation}</strong></td></tr>
         <tr><td style="padding:8px">Drop-off</td><td style="padding:8px">${input.previousDropoffLocation}</td><td style="padding:8px"><strong>${input.nextDropoffLocation}</strong></td></tr>
+        <tr><td style="padding:8px">Insurance</td><td style="padding:8px">${previousInsurance}</td><td style="padding:8px"><strong>${nextInsurance}</strong></td></tr>
+        <tr><td style="padding:8px">Promo</td><td style="padding:8px">${previousPromo}</td><td style="padding:8px"><strong>${nextPromo}</strong></td></tr>
       </table>
       <div style="margin-top:16px;padding:12px;border:1px solid #cbd5e1;border-radius:8px;background:#f8fafc">
         <p><strong>Updated total:</strong> ${formatAmount(input.totalCents)}</p>

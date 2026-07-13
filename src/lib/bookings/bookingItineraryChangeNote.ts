@@ -2,6 +2,8 @@ type PricingSummary = {
   insuranceSelected: boolean;
   insurancePricePerDay: number;
   insuranceTotal: number;
+  promoCode: string | null;
+  promoDiscount: number;
   total: number;
   netPaidToDate: number;
   balanceDue: number;
@@ -31,6 +33,11 @@ function addChange(lines: string[], label: string, previous: ChangeValue, next: 
 function formatInsurance(summary: PricingSummary) {
   if (!summary.insuranceSelected) return "Not selected";
   return `${formatJmd(summary.insurancePricePerDay)}/day (${formatJmd(summary.insuranceTotal)} total)`;
+}
+
+function formatPromo(summary: PricingSummary) {
+  if (!summary.promoCode) return "Not applied";
+  return `${summary.promoCode} (${formatJmd(summary.promoDiscount)} discount)`;
 }
 
 export function appendBookingItineraryChangeNote(
@@ -69,6 +76,7 @@ export function appendBookingItineraryChangeNote(
   addChange(lines, "Customer email", input.previousCustomerEmail, input.nextCustomerEmail);
   addChange(lines, "Customer phone", input.previousCustomerPhone, input.nextCustomerPhone);
   addChange(lines, "Insurance", formatInsurance(input.previousSummary), formatInsurance(input.nextSummary));
+  addChange(lines, "Promo", formatPromo(input.previousSummary), formatPromo(input.nextSummary));
   addChange(lines, "Booking total", formatJmd(input.previousSummary.total), formatJmd(input.nextSummary.total));
   addChange(lines, "Balance due", formatJmd(input.previousSummary.balanceDue), formatJmd(input.nextSummary.balanceDue));
 
