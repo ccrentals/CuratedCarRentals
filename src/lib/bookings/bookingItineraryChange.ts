@@ -19,6 +19,10 @@ export class BookingItineraryChangeError extends Error {
   }
 }
 
+export function canEditBookingItinerary(status: unknown) {
+  return !["RETURNED", "CANCELLED"].includes(String(status ?? "").trim().toUpperCase());
+}
+
 export type BookingItinerarySource = {
   id: string;
   status: string;
@@ -39,6 +43,14 @@ export async function evaluateBookingItineraryChange(input: {
   insuranceSelected?: boolean;
   promoCode?: string | null;
 }) {
+  if (!canEditBookingItinerary(input.booking.status)) {
+    throw new BookingItineraryChangeError(
+      "Returned or cancelled bookings cannot be updated.",
+      400,
+      "BOOKING_NOT_EDITABLE",
+    );
+  }
+
   const vehicleResult = await input.client.query(
     `select
        v.id,

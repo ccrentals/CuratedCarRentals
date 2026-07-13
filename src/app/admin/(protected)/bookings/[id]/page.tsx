@@ -10,6 +10,7 @@ import { InlineDateTimeRange } from "@/components/shared/InlineDateTimeRange";
 import { loadAdminSettings } from "@/lib/adminSettings";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { formatBookingDateOnly } from "@/lib/bookings/bookingDateTime";
+import { canEditBookingItinerary } from "@/lib/bookings/bookingItineraryChange";
 import {
   computeBookingPricingFromStoredSnapshot,
   fetchNetPaidToDate,
@@ -659,7 +660,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
       dropoffLocationTypeKey: bookingLocationDetails.dropoff.typeKey,
       pickupLocationValues: bookingLocationDetails.pickup.values,
       dropoffLocationValues: bookingLocationDetails.dropoff.values,
-      disabled: ["PICKED_UP", "RETURNED", "CANCELLED"].includes(booking.status.toUpperCase()),
+      disabled: !canEditBookingItinerary(booking.status),
     },
   });
 

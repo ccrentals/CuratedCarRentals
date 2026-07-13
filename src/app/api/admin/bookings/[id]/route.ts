@@ -60,6 +60,7 @@ import { requireCsrf } from "@/lib/security/csrf";
 import { synchronizeCustomerContact } from "@/lib/customers/customerContactSync";
 import {
   BookingItineraryChangeError,
+  canEditBookingItinerary,
   evaluateBookingItineraryChange,
 } from "@/lib/bookings/bookingItineraryChange";
 
@@ -893,10 +894,10 @@ export async function PATCH(
         customer_phone: string;
         customer_legal_id_number: string | null;
       };
-      if (["PICKED_UP", "RETURNED", "CANCELLED"].includes(booking.status.toUpperCase())) {
+      if (!canEditBookingItinerary(booking.status)) {
         await client.query("rollback");
         return NextResponse.json(
-          { error: "Picked-up, cancelled, or returned bookings cannot be updated" },
+          { error: "Returned or cancelled bookings cannot be updated" },
           { status: 400 },
         );
       }
@@ -1340,7 +1341,7 @@ export async function PATCH(
           dropoffLocationTypeKey: nextLocationDetails.dropoff.typeKey,
           pickupLocationValues: nextLocationDetails.pickup.values,
           dropoffLocationValues: nextLocationDetails.dropoff.values,
-          disabled: ["PICKED_UP", "RETURNED", "CANCELLED"].includes(booking.status.toUpperCase()),
+          disabled: !canEditBookingItinerary(booking.status),
         },
       });
 
