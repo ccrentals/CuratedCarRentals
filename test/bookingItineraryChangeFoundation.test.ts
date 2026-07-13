@@ -82,6 +82,15 @@ test("booking update email uses signed customer booking and invoice links", asyn
   );
 });
 
+test("email links provision access for legacy and admin-created bookings", async () => {
+  const email = await readFile("src/lib/notifications/email.ts", "utf8");
+  assert.match(email, /async function ensureBookingAccessHash/);
+  assert.match(email, /hashBookingAccessToken\(createBookingAccessToken\(\)\)/);
+  assert.match(email, /jsonb_set\([\s\S]*private_access_token_hash/);
+  assert.match(email, /coalesce\(pricing_json->>'private_access_token_hash', ''\) = ''/);
+  assert.match(email, /const accessHash = await ensureBookingAccessHash\(normalizedBookingId\)/);
+});
+
 test("booking change note describes promo replacement and insurance removal", () => {
   const pricing = appendBookingItineraryChangeNote({}, {
     previousVehicle: "Car A",
