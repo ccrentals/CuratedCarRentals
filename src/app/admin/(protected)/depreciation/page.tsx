@@ -8,7 +8,7 @@ import {
   readSortFromSearchParams,
   type SortDir,
 } from "@/components/admin/tableSort";
-import { formatJmdFromCents } from "@/lib/money";
+import { formatJmdFromMinorUnits } from "@/lib/money";
 import {
   normalizePageSize,
   parsePositiveIntParam,
@@ -53,7 +53,7 @@ function monthFieldValue(value: string) {
 
 function metricsLabel(value: number | null, incompleteReason: string | null) {
   if (value !== null && Number.isFinite(value)) {
-    return formatJmdFromCents(value);
+    return formatJmdFromMinorUnits(value);
   }
   if (incompleteReason) {
     return "Incomplete finance info";
@@ -261,7 +261,7 @@ export default async function AdminDepreciationPage({
                       <dd className="text-sm font-semibold text-[var(--ccr-text)]">
                         {row.purchaseCostCents === null
                           ? "—"
-                          : formatJmdFromCents(row.purchaseCostCents)}
+                          : formatJmdFromMinorUnits(row.purchaseCostCents)}
                       </dd>
                     </div>
                     <div>
@@ -355,7 +355,7 @@ export default async function AdminDepreciationPage({
                       <td className="px-4 py-3 text-[var(--ccr-text)]">
                         {row.purchaseCostCents === null
                           ? "—"
-                          : formatJmdFromCents(row.purchaseCostCents)}
+                          : formatJmdFromMinorUnits(row.purchaseCostCents)}
                       </td>
                       <td className="px-4 py-3 text-[var(--ccr-muted)]">
                         {metricsLabel(row.bookValueCents, row.incompleteReason)}

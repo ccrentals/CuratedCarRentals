@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
+import { formatJmd } from "@/lib/money";
 
 type VehicleStatus = "AVAILABLE" | "RESERVED" | "RENTED" | "MAINTENANCE" | "INACTIVE";
 
@@ -49,15 +50,6 @@ const DEFAULT_DRAFT: VehicleFormDraft = {
   depositCents: "",
   status: "AVAILABLE",
 };
-
-function formatCurrency(cents: number): string {
-  return new Intl.NumberFormat("en-JM", {
-    style: "currency",
-    currency: "JMD",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(cents / 100);
-}
 
 function vehicleLabel(vehicle: Pick<VehicleRow, "year" | "make" | "model">): string {
   return `${vehicle.year} ${vehicle.make} ${vehicle.model}`.trim();
@@ -142,11 +134,11 @@ export function SettingsVehiclesPanel() {
       return;
     }
     if (!Number.isFinite(dailyRateCents) || dailyRateCents <= 0) {
-      setError("Daily rate (cents) must be greater than 0.");
+      setError("Daily rate (JMD) must be greater than 0.");
       return;
     }
     if (!Number.isFinite(depositCents) || depositCents < 0) {
-      setError("Deposit (cents) must be 0 or greater.");
+      setError("Deposit (JMD) must be 0 or greater.");
       return;
     }
     if (seatCount !== null && (!Number.isFinite(seatCount) || seatCount < 1 || seatCount > 60)) {
@@ -299,7 +291,7 @@ export function SettingsVehiclesPanel() {
             />
           </label>
           <label className="grid gap-1 text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-            Daily rate (cents)
+            Daily rate (JMD)
             <input
               value={form.dailyRateCents}
               onChange={(event) =>
@@ -312,7 +304,7 @@ export function SettingsVehiclesPanel() {
             />
           </label>
           <label className="grid gap-1 text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-            Deposit (cents)
+            Deposit (JMD)
             <input
               value={form.depositCents}
               onChange={(event) =>
@@ -342,7 +334,7 @@ export function SettingsVehiclesPanel() {
           </label>
         </div>
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-          <p className="text-xs text-[var(--ccr-muted)]">Tip: enter amounts in cents to match fleet pricing.</p>
+          <p className="text-xs text-[var(--ccr-muted)]">Enter the displayed JMD amount without converting it to cents.</p>
           <button
             type="submit"
             disabled={saving}
@@ -410,8 +402,8 @@ export function SettingsVehiclesPanel() {
                       <p className="text-xs text-[var(--ccr-muted)]">{vehicle.public_id}</p>
                     </td>
                     <td className="px-3 py-3">{vehicle.status}</td>
-                    <td className="px-3 py-3">{formatCurrency(vehicle.daily_rate_cents)}</td>
-                    <td className="px-3 py-3">{formatCurrency(vehicle.deposit_cents)}</td>
+                    <td className="px-3 py-3">{formatJmd(vehicle.daily_rate_cents)}</td>
+                    <td className="px-3 py-3">{formatJmd(vehicle.deposit_cents)}</td>
                     <td className="px-3 py-3">{vehicle.seat_count ?? "—"}</td>
                     <td className="px-3 py-3">
                       <DateTimeInline value={vehicle.created_at} />

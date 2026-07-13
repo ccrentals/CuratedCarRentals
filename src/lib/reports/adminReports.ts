@@ -1,6 +1,7 @@
 import { dbQuery } from "@/lib/db";
 import { buildBookingRangeWhere, buildRange } from "@/lib/bookings/dateRangeFilter";
 import { dateOnlyUtc } from "@/lib/payments/dateMath";
+import { jmdMinorUnitsToAmount } from "@/lib/money";
 import {
   isBlockingBookingHold,
   isNonBlockingBookingHold,
@@ -813,7 +814,7 @@ async function buildVehicleProfitabilityReport(
 
   const maintenanceByVehicle = new Map<string, number>();
   for (const row of maintenanceRows.rows as Array<{ vehicle_id: string; maintenance_cost: number }>) {
-    maintenanceByVehicle.set(row.vehicle_id, asNumber(row.maintenance_cost));
+    maintenanceByVehicle.set(row.vehicle_id, jmdMinorUnitsToAmount(row.maintenance_cost));
   }
 
   const vehicleIds = new Set<string>([

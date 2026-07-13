@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { handleVehicleMaintenanceGet } from "@/app/api/admin/vehicles/[id]/maintenance/route";
 import { requireAdminAccess } from "@/lib/auth/adminGuards";
 import { getSessionFromRequest } from "@/lib/auth/session";
+import { formatJmdDecimalFromMinorUnits } from "@/lib/money";
 
 export const dynamic = "force-dynamic";
 
@@ -50,7 +51,7 @@ function csvEscape(value: unknown) {
 
 function formatMoney(cents: number | null | undefined) {
   if (!Number.isFinite(Number(cents))) return "";
-  return (Math.round(Number(cents)) / 100).toFixed(2);
+  return formatJmdDecimalFromMinorUnits(Number(cents));
 }
 
 const DEFAULT_DEPS: VehicleMaintenanceExportRouteDeps = {

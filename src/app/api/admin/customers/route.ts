@@ -10,6 +10,7 @@ import { normalizeLegalIdType } from "@/lib/customers/legalId";
 import { buildAdminExportPdf } from "@/lib/pdf/adminExportPdf";
 import { readSortFromSearchParams, type SortDir } from "@/components/admin/tableSort";
 import { normalizeCountryName, normalizeRegionForCountry } from "@/lib/jamaicaParishes";
+import { formatJmdDecimal, formatJmdNumber } from "@/lib/money";
 
 type CustomerListRow = {
   id: string;
@@ -94,7 +95,7 @@ function createCsv(rows: CustomerListRow[]) {
   return `${lines.join("\n")}\n`;
 }
 
-function createExcel(rows: CustomerListRow[]) {
+export function createExcel(rows: CustomerListRow[]) {
   const nowLabel = formatGeneratedAt();
   const headers = [
     "Customer Name",
@@ -117,7 +118,7 @@ function createExcel(rows: CustomerListRow[]) {
       )
       .join("")}</Row>`,
     ...rows.map((row) => {
-      const totalSpend = (Number(row.total_spend) / 100).toFixed(2);
+      const totalSpend = formatJmdDecimal(Number(row.total_spend));
       const lastBooked = formatDateTime(row.last_booked_at);
       const created = formatDateTime(row.created_at);
       return `<Row>
@@ -207,7 +208,7 @@ function formatSortLabel(sortBy: CustomerSortBy, sortDir: CustomerSortDir) {
   return `${label} (${sortDir.toUpperCase()})`;
 }
 
-function createPdf(rows: CustomerListRow[], options: { q: string; sortBy: CustomerSortBy; sortDir: CustomerSortDir }) {
+export function createPdf(rows: CustomerListRow[], options: { q: string; sortBy: CustomerSortBy; sortDir: CustomerSortDir }) {
   const totalBookings = rows.reduce((sum, row) => sum + Number(row.total_bookings || 0), 0);
   const totalSpend = rows.reduce((sum, row) => sum + Number(row.total_spend || 0), 0);
   const customersWithBookings = rows.filter((row) => Number(row.total_bookings || 0) > 0).length;
@@ -226,7 +227,7 @@ function createPdf(rows: CustomerListRow[], options: { q: string; sortBy: Custom
       { label: "Bookings", value: String(totalBookings) },
       {
         label: "Total spend",
-        value: `J$${(totalSpend / 100).toLocaleString("en-JM", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+        value: `J$${formatJmdNumber(totalSpend)}`,
       },
     ],
     columns: [
@@ -243,7 +244,7 @@ function createPdf(rows: CustomerListRow[], options: { q: string; sortBy: Custom
       row.email || "No email",
       row.phone || "No phone",
       String(row.total_bookings ?? 0),
-      `J$${(Number(row.total_spend) / 100).toLocaleString("en-JM", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      `J$${formatJmdNumber(row.total_spend)}`,
       formatDateTime(row.last_booked_at),
       formatDateTime(row.created_at),
     ]),

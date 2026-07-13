@@ -7,6 +7,7 @@ import { PaginationSummary } from "@/components/admin/PaginationSummaryNav";
 import { SortableTh } from "@/components/admin/SortableTh";
 import { TableDateTime } from "@/components/shared/TableDateTime";
 import type { SortDir, SortState } from "@/components/admin/tableSort";
+import { formatJmd } from "@/lib/money";
 
 type RangePreset = "30d" | "90d" | "365d" | "custom";
 type ByMonthSortBy = "month" | "booked" | "downtime" | "bookings" | "revenue";
@@ -170,11 +171,7 @@ function defaultCustomRange() {
 
 function formatCurrency(cents: number | null) {
   if (!Number.isFinite(cents)) return "N/A";
-  return new Intl.NumberFormat("en-JM", {
-    style: "currency",
-    currency: "JMD",
-    maximumFractionDigits: 2,
-  }).format((cents as number) / 100);
+  return formatJmd(cents as number);
 }
 
 function formatPercent(value: number) {

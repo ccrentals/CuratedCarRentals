@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { handleVehicleReservationsGet } from "@/app/api/admin/vehicles/[id]/reservations/route";
 import { requireOperationsAccess } from "@/lib/auth/adminGuards";
 import { getSessionFromRequest } from "@/lib/auth/session";
+import { formatJmdDecimal } from "@/lib/money";
 
 export const dynamic = "force-dynamic";
 
@@ -50,9 +51,9 @@ function csvEscape(value: unknown) {
   return text;
 }
 
-function formatMoney(cents: number | null | undefined) {
-  if (!Number.isFinite(Number(cents))) return "";
-  return (Math.round(Number(cents)) / 100).toFixed(2);
+function formatMoney(amountJmd: number | null | undefined) {
+  if (!Number.isFinite(Number(amountJmd))) return "";
+  return formatJmdDecimal(Number(amountJmd));
 }
 
 const DEFAULT_DEPS: VehicleReservationsExportRouteDeps = {

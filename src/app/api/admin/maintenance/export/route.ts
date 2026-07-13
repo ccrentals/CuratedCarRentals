@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { handleAdminMaintenanceGet } from "@/app/api/admin/maintenance/route";
+import { formatJmdDecimalFromMinorUnits } from "@/lib/money";
 import { buildAdminExportPdf } from "@/lib/pdf/adminExportPdf";
 
 type MaintenanceExportItem = {
@@ -39,7 +40,7 @@ function csvEscape(value: string) {
 }
 
 function formatCurrency(cents: number) {
-  return (Math.round(cents) / 100).toFixed(2);
+  return formatJmdDecimalFromMinorUnits(cents);
 }
 
 function formatDateLabel(value: string | null) {

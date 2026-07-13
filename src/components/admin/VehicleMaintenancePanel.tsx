@@ -17,6 +17,7 @@ import { buttonStyles } from "@/components/ui/Button";
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { fmtDateNoSeconds } from "@/lib/dateFormat";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
+import { formatJmdFromMinorUnits } from "@/lib/money";
 import {
   getUploadcareClientErrorMessage,
   getUploadcareSignedOptions,
@@ -264,7 +265,7 @@ function dueFilterToView(filter: DueFilter) {
 
 function formatCurrency(cents: number | null) {
   if (cents === null || !Number.isFinite(cents)) return "N/A";
-  return new Intl.NumberFormat("en-JM", { style: "currency", currency: "JMD" }).format(cents / 100);
+  return formatJmdFromMinorUnits(cents);
 }
 
 function formatServiceDateTime(value: string | null) {

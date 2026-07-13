@@ -227,4 +227,5 @@ test("admin vehicle reservations export API: returns CSV", async () => {
   const csv = await response.text();
   assert.match(csv, /event_id,public_id,event_type,customer_name,customer_email,pickup_at,return_at,status,total_jmd,deposit_jmd,source,active_now,impacts_availability,action_href,created_at/);
   assert.match(csv, /Jane Doe/);
+  assert.match(csv, /123400\.00,30000\.00/);
 });

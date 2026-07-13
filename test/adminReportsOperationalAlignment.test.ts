@@ -10,6 +10,9 @@ function createMockReportsDb(options?: {
   missingBlockouts?: boolean;
   excludedUnknownTimestampCount?: number;
   queryLog?: string[];
+  profitabilityBookingRows?: Array<Record<string, unknown>>;
+  profitabilityMaintenanceRows?: Array<Record<string, unknown>>;
+  profitabilityVehicleRows?: Array<Record<string, unknown>>;
 }): Queryable {
   const config = options ?? {};
   return {
@@ -24,7 +27,18 @@ function createMockReportsDb(options?: {
           error.code = "42P01";
           throw error;
         }
-        return { rows: [], rowCount: 0 };
+        const rows = config.profitabilityMaintenanceRows ?? [];
+        return { rows, rowCount: rows.length };
+      }
+
+      if (text.includes("select b.vehicle_id") && text.includes("gross_revenue")) {
+        const rows = config.profitabilityBookingRows ?? [];
+        return { rows, rowCount: rows.length };
+      }
+
+      if (text.includes("select v.id, v.make, v.model, v.status from vehicles")) {
+        const rows = config.profitabilityVehicleRows ?? [];
+        return { rows, rowCount: rows.length };
       }
 
       if (text.includes("from blockouts bo")) {
@@ -150,4 +164,35 @@ test("getAdminReportsPayload: vehicle filter does not leak into first-booking co
   const outstandingQuery = queryLog.find((sql) => sql.includes("with booking_financials as"));
   assert.match(outstandingQuery ?? "", /b\.created_at::date <= \$1::date/);
   assert.doesNotMatch(outstandingQuery ?? "", /between \$1 and \$2/);
+});
+
+test("getAdminReportsPayload: profitability converts maintenance minor units to whole JMD", async () => {
+  const payload = await getAdminReportsPayload(
+    {
+      snapshotDate: "2026-03-22",
+      rangeFrom: "2026-03-01",
+      rangeTo: "2026-03-22",
+    },
+    {
+      db: createMockReportsDb({
+        profitabilityBookingRows: [
+          {
+            vehicle_id: "veh-1",
+            booking_count: 1,
+            gross_revenue: 6500,
+            refunds: 0,
+          },
+        ],
+        profitabilityMaintenanceRows: [
+          { vehicle_id: "veh-1", maintenance_cost: 25000 },
+        ],
+        profitabilityVehicleRows: [
+          { id: "veh-1", make: "Toyota", model: "Aqua", status: "AVAILABLE" },
+        ],
+      }),
+    },
+  );
+
+  assert.equal(payload.vehicleProfitability.rows[0]?.maintenanceCost, 250);
+  assert.equal(payload.vehicleProfitability.rows[0]?.netProfit, 6250);
 });

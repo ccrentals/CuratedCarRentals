@@ -6,7 +6,11 @@ import { PaginationSummary } from "@/components/admin/PaginationSummaryNav";
 import { SortableTh } from "@/components/admin/SortableTh";
 import type { SortState } from "@/components/admin/tableSort";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
-import { formatJmdDecimalFromCents, formatJmdFromCents } from "@/lib/money";
+import {
+  formatJmdDecimalFromMinorUnits,
+  formatJmdFromMinorUnits,
+  jmdAmountToMinorUnits,
+} from "@/lib/money";
 
 type FinanceResponse = {
   ok: boolean;
@@ -70,12 +74,12 @@ function parseAmountToCents(input: string) {
   if (!input.trim()) return null;
   const parsed = Number(input.replace(/,/g, ""));
   if (!Number.isFinite(parsed) || parsed < 0) return null;
-  return Math.round(parsed * 100);
+  return jmdAmountToMinorUnits(parsed);
 }
 
 function toAmountInput(value: number | null | undefined) {
   if (!Number.isFinite(value)) return "";
-  return formatJmdDecimalFromCents(value);
+  return formatJmdDecimalFromMinorUnits(value);
 }
 
 function formatSnapshotMonth(value: string) {
@@ -541,7 +545,7 @@ export function VehicleDepreciationPanel({ vehicleId }: VehicleDepreciationPanel
                 <dd className="mt-1 text-sm font-semibold text-[var(--ccr-text)]">
                   {monthlyDepreciationCents === null
                     ? "—"
-                    : formatJmdFromCents(monthlyDepreciationCents)}
+                    : formatJmdFromMinorUnits(monthlyDepreciationCents)}
                 </dd>
               </div>
 
@@ -550,7 +554,7 @@ export function VehicleDepreciationPanel({ vehicleId }: VehicleDepreciationPanel
                   Current Book Value
                 </dt>
                 <dd className="mt-1 text-sm font-semibold text-[var(--ccr-text)]">
-                  {bookValueCents === null ? "—" : formatJmdFromCents(bookValueCents)}
+                  {bookValueCents === null ? "—" : formatJmdFromMinorUnits(bookValueCents)}
                 </dd>
               </div>
 
@@ -559,7 +563,7 @@ export function VehicleDepreciationPanel({ vehicleId }: VehicleDepreciationPanel
                   Depreciated Amount
                 </dt>
                 <dd className="mt-1 text-sm font-semibold text-[var(--ccr-text)]">
-                  {accumulatedCents === null ? "—" : formatJmdFromCents(accumulatedCents)}
+                  {accumulatedCents === null ? "—" : formatJmdFromMinorUnits(accumulatedCents)}
                 </dd>
               </div>
 
@@ -697,13 +701,13 @@ export function VehicleDepreciationPanel({ vehicleId }: VehicleDepreciationPanel
                         {formatSnapshotMonth(snapshot.asOfMonth)}
                       </td>
                       <td className="px-3 py-2 text-[var(--ccr-text)]">
-                        {formatJmdFromCents(snapshot.bookValueCents)}
+                        {formatJmdFromMinorUnits(snapshot.bookValueCents)}
                       </td>
                       <td className="px-3 py-2 text-[var(--ccr-text)]">
-                        {formatJmdFromCents(snapshot.accumulatedDepreciationCents)}
+                        {formatJmdFromMinorUnits(snapshot.accumulatedDepreciationCents)}
                       </td>
                       <td className="px-3 py-2 text-[var(--ccr-text)]">
-                        {formatJmdFromCents(snapshot.depreciationForMonthCents)}
+                        {formatJmdFromMinorUnits(snapshot.depreciationForMonthCents)}
                       </td>
                     </tr>
                   ))}
