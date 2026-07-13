@@ -30,6 +30,8 @@ type BookingUpdateFormProps = {
   endDate: string | Date;
   pickupTime: string | null;
   dropoffTime: string | null;
+  initialInsuranceSelected: boolean;
+  initialPromoCode: string | null;
   customerName: string;
   customerEmail: string;
   customerPhone: string;
@@ -248,6 +250,8 @@ export function BookingUpdateForm({
   endDate,
   pickupTime,
   dropoffTime,
+  initialInsuranceSelected,
+  initialPromoCode,
   customerName,
   customerEmail,
   customerPhone,
@@ -274,6 +278,7 @@ export function BookingUpdateForm({
     insuranceSelected: boolean;
     insurancePricePerDay: number;
     insuranceTotal: number;
+    promoCode: string | null;
     promoDiscount: number;
     total: number;
     depositRequired: number;
@@ -291,6 +296,8 @@ export function BookingUpdateForm({
   const [nextEndDate, setNextEndDate] = useState(toDateInputValue(endDate));
   const [nextPickupTime, setNextPickupTime] = useState(toTimeInputValue(pickupTime));
   const [nextDropoffTime, setNextDropoffTime] = useState(toTimeInputValue(dropoffTime));
+  const [nextInsuranceSelected, setNextInsuranceSelected] = useState(initialInsuranceSelected);
+  const [nextPromoCode, setNextPromoCode] = useState(initialPromoCode ?? "");
   const [nextCustomerName, setNextCustomerName] = useState(customerName);
   const [nextCustomerEmail, setNextCustomerEmail] = useState(customerEmail);
   const [nextCustomerPhone, setNextCustomerPhone] = useState(customerPhone);
@@ -413,6 +420,8 @@ export function BookingUpdateForm({
             pickupTime: nextPickupTime,
             dropoffTime: nextDropoffTime,
             customerEmail: nextCustomerEmail,
+            insuranceSelected: nextInsuranceSelected,
+            promoCode: nextPromoCode.trim(),
           }),
         });
         const payload = (await response.json().catch(() => ({}))) as {
@@ -436,7 +445,7 @@ export function BookingUpdateForm({
       controller.abort();
       window.clearTimeout(timeout);
     };
-  }, [bookingId, nextCustomerEmail, nextDropoffTime, nextEndDate, nextPickupTime, nextStartDate, nextVehicleId, open]);
+  }, [bookingId, nextCustomerEmail, nextDropoffTime, nextEndDate, nextInsuranceSelected, nextPickupTime, nextPromoCode, nextStartDate, nextVehicleId, open]);
 
   useEffect(() => {
     setNextPickupLocationValues((current) =>
@@ -496,6 +505,8 @@ export function BookingUpdateForm({
     setNextEndDate(toDateInputValue(endDate));
     setNextPickupTime(toTimeInputValue(pickupTime));
     setNextDropoffTime(toTimeInputValue(dropoffTime));
+    setNextInsuranceSelected(initialInsuranceSelected);
+    setNextPromoCode(initialPromoCode ?? "");
     setNextCustomerName(customerName);
     setNextCustomerEmail(customerEmail);
     setNextCustomerPhone(customerPhone);
@@ -640,6 +651,8 @@ export function BookingUpdateForm({
           customerName: nextCustomerName,
           customerEmail: nextCustomerEmail,
           customerPhone: nextCustomerPhone,
+          insuranceSelected: nextInsuranceSelected,
+          promoCode: nextPromoCode.trim(),
           pickupLocationType: locationSelection.pickupConfig?.locationTypeKey ?? nextPickupLocationTypeKey,
           dropoffLocationType: locationSelection.dropoffConfig?.locationTypeKey ?? nextDropoffLocationTypeKey,
           pickupLocationId: locationSelection.pickupConfig?.id ?? null,
@@ -904,6 +917,29 @@ export function BookingUpdateForm({
           </div>
 
           <label className="text-xs text-[var(--ccr-muted)]">
+            Insurance
+            <select
+              value={nextInsuranceSelected ? "selected" : "none"}
+              onChange={(event) => setNextInsuranceSelected(event.target.value === "selected")}
+              className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+            >
+              <option value="none">No protection</option>
+              <option value="selected">Standard protection</option>
+            </select>
+          </label>
+
+          <label className="text-xs text-[var(--ccr-muted)]">
+            Promo code
+            <input
+              type="text"
+              value={nextPromoCode}
+              onChange={(event) => setNextPromoCode(event.target.value.toUpperCase())}
+              placeholder="Leave blank to remove"
+              className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm uppercase text-[var(--ccr-text)]"
+            />
+          </label>
+
+          <label className="text-xs text-[var(--ccr-muted)]">
             Customer name
             <input
               type="text"
@@ -952,6 +988,7 @@ export function BookingUpdateForm({
                   <dd>{preview.insuranceSelected ? `${formatCurrency(preview.insurancePricePerDay)} / day` : "Not selected"}</dd>
                 </div>
                 <div><dt className="text-[var(--ccr-muted)]">Insurance total</dt><dd>{formatCurrency(preview.insuranceTotal)}</dd></div>
+                <div><dt className="text-[var(--ccr-muted)]">Promo</dt><dd>{preview.promoCode ?? "Not applied"}</dd></div>
                 <div><dt className="text-[var(--ccr-muted)]">Discount</dt><dd>-{formatCurrency(preview.promoDiscount)}</dd></div>
                 <div><dt className="text-[var(--ccr-muted)]">Paid to date</dt><dd>{formatCurrency(preview.paidToDate)}</dd></div>
                 {preview.insuranceSelected ? (
