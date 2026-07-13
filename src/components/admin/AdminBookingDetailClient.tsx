@@ -227,6 +227,7 @@ export function AdminBookingDetailClient({
                 dropoffTime={detail.form.dropoffTime}
                 initialInsuranceSelected={detail.initialInsuranceSelected}
                 initialPromoCode={detail.initialPromoCode}
+                promoOptions={promoOptions}
                 customerName={detail.form.customerName}
                 customerEmail={detail.form.customerEmail}
                 customerPhone={detail.form.customerPhone}
