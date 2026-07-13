@@ -25,9 +25,9 @@ import {
 } from "@/lib/bookings/adminBookingDetailView";
 import { bookingDateTimeToUtcIso } from "@/lib/bookings/bookingDateTime";
 import {
-  appendBookingLocationNote,
   readBookingLocationDetails,
 } from "@/lib/bookings/bookingLocations";
+import { appendBookingItineraryChangeNote } from "@/lib/bookings/bookingItineraryChangeNote";
 import {
   listActiveBookingLocationConfigs,
   toBookingLocationConfigSchemaError,
@@ -969,6 +969,16 @@ export async function PATCH(
         customerEmail,
       });
       const pricingSummary = evaluatedItinerary.summary;
+      const previousPricingSummary = computeBookingPricingFromStoredSnapshot({
+        bookingId: booking.id,
+        bookingStatus: booking.status,
+        startDate: booking.start_date,
+        endDate: booking.end_date,
+        pricing: currentPricing,
+        fallbackDailyRate: booking.daily_rate_cents,
+        fallbackDeposit: booking.deposit_cents,
+        netPaidToDate: pricingSummary.netPaidToDate,
+      });
 
       const nextLocationDetails = locationSelection.details;
       const nextPricingBase = {
@@ -993,11 +1003,30 @@ export async function PATCH(
         payment_option_selected: pricingSummary.paymentOption,
         refund_required: pricingSummary.refundRequired,
       };
-      const locationDetailsChanged =
-        JSON.stringify(currentLocationDetails) !== JSON.stringify(nextLocationDetails);
-      const nextPricing = locationDetailsChanged
-        ? appendBookingLocationNote(nextPricingBase, nextLocationDetails)
-        : nextPricingBase;
+      const previousVehicleLabel =
+        `${booking.vehicle_year} ${booking.vehicle_make} ${booking.vehicle_model}`.trim();
+      const nextPricing = appendBookingItineraryChangeNote(nextPricingBase, {
+        previousVehicle: previousVehicleLabel,
+        nextVehicle: evaluatedItinerary.vehicleLabel,
+        previousPickupDateTime: `${booking.start_date} ${booking.pickup_time ?? "11:00"}`,
+        nextPickupDateTime: `${startDate} ${pickupTime}`,
+        previousDropoffDateTime: `${booking.end_date} ${booking.dropoff_time ?? "11:00"}`,
+        nextDropoffDateTime: `${endDate} ${dropoffTime}`,
+        previousPickupLocation: booking.pickup_location_text_snapshot || booking.pickup_location,
+        nextPickupLocation: locationSelection.pickupLocationTextSnapshot,
+        previousDropoffLocation:
+          booking.dropoff_location_text_snapshot || booking.dropoff_location || booking.pickup_location,
+        nextDropoffLocation: locationSelection.dropoffLocationTextSnapshot,
+        previousCustomerName: booking.customer_name,
+        nextCustomerName: customerName,
+        previousCustomerEmail: booking.customer_email,
+        nextCustomerEmail: customerEmail,
+        previousCustomerPhone: booking.customer_phone,
+        nextCustomerPhone: customerPhone,
+        previousSummary: previousPricingSummary,
+        nextSummary: pricingSummary,
+        userId: session.userId,
+      });
 
       const customerSyncResult = await synchronizeCustomerContact(client, booking.customer_id, {
         fullName: customerName,

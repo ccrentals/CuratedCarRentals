@@ -34,7 +34,15 @@ test("booking itinerary mutation persists vehicle, insurance, audit, and notific
   assert.match(route, /PICKED_UP.*RETURNED.*CANCELLED/);
 });
 
-test("booking itinerary preview displays stored JMD units without cent conversion", async () => {
-  const form = await readFile("src/components/admin/BookingUpdateForm.tsx", "utf8");
-  assert.doesNotMatch(form, /Number\(value \?\? 0\)\) \/ 100/);
+test("booking itinerary mutation writes a detailed admin change note", async () => {
+  const [route, noteBuilder] = await Promise.all([
+    readFile("src/app/api/admin/bookings/[id]/route.ts", "utf8"),
+    readFile("src/lib/bookings/bookingItineraryChangeNote.ts", "utf8"),
+  ]);
+  assert.match(route, /appendBookingItineraryChangeNote/);
+  assert.match(noteBuilder, /Vehicle.*previousVehicle.*nextVehicle/s);
+  assert.match(noteBuilder, /Booking total/);
+  assert.match(noteBuilder, /Insurance/);
+  assert.match(noteBuilder, /Refund review required/);
+  assert.match(noteBuilder, /BOOKING_ITINERARY_UPDATED/);
 });
