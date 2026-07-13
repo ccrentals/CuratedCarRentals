@@ -2,7 +2,16 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
+import { canEditBookingItinerary } from "../src/lib/bookings/bookingItineraryChange";
 import { appendBookingItineraryChangeNote } from "../src/lib/bookings/bookingItineraryChangeNote";
+
+test("booking itinerary editing remains available while a vehicle is picked up", () => {
+  assert.equal(canEditBookingItinerary("PENDING_PAYMENT"), true);
+  assert.equal(canEditBookingItinerary("CONFIRMED"), true);
+  assert.equal(canEditBookingItinerary("PICKED_UP"), true);
+  assert.equal(canEditBookingItinerary("RETURNED"), false);
+  assert.equal(canEditBookingItinerary("CANCELLED"), false);
+});
 
 test("booking itinerary preview and save share the production evaluator", async () => {
   const [previewRoute, mutationRoute, evaluator] = await Promise.all([
@@ -33,7 +42,7 @@ test("booking itinerary mutation persists vehicle, insurance, audit, and notific
   assert.match(route, /previous_vehicle_id/);
   assert.match(route, /next_vehicle_id/);
   assert.match(route, /sendBookingItineraryUpdatedEmail/);
-  assert.match(route, /PICKED_UP.*RETURNED.*CANCELLED/);
+  assert.match(route, /canEditBookingItinerary\(booking\.status\)/);
 });
 
 test("booking itinerary mutation writes a detailed admin change note", async () => {
