@@ -32,6 +32,13 @@ type BookingUpdateFormProps = {
   dropoffTime: string | null;
   initialInsuranceSelected: boolean;
   initialPromoCode: string | null;
+  promoOptions: Array<{
+    id: string;
+    code: string;
+    discountType: "PERCENT" | "FIXED";
+    discountValue: number;
+    remainingRedemptions: number | null;
+  }>;
   customerName: string;
   customerEmail: string;
   customerPhone: string;
@@ -252,6 +259,7 @@ export function BookingUpdateForm({
   dropoffTime,
   initialInsuranceSelected,
   initialPromoCode,
+  promoOptions,
   customerName,
   customerEmail,
   customerPhone,
@@ -316,6 +324,22 @@ export function BookingUpdateForm({
         normalizeBookingLocationFieldValuesInput(dropoffLocationValues),
       ),
   );
+  const currentPromoMissingFromOptions = Boolean(
+    initialPromoCode &&
+      !promoOptions.some((promo) => promo.code.toUpperCase() === initialPromoCode.toUpperCase()),
+  );
+
+  function formatPromoOptionLabel(option: BookingUpdateFormProps["promoOptions"][number]) {
+    const discountLabel =
+      option.discountType === "PERCENT"
+        ? `${option.discountValue}%`
+        : formatCurrency(option.discountValue);
+    const redemptionsLabel =
+      option.remainingRedemptions === null
+        ? "unlimited"
+        : `${option.remainingRedemptions} left`;
+    return `${option.code} (${discountLabel}, ${redemptionsLabel})`;
+  }
 
   const pickupLocations = useMemo(
     () => getBookingLocationConfigsForSide(locations, "pickup").filter((location) => location.isActive),
@@ -930,13 +954,21 @@ export function BookingUpdateForm({
 
           <label className="text-xs text-[var(--ccr-muted)]">
             Promo code
-            <input
-              type="text"
+            <select
               value={nextPromoCode}
-              onChange={(event) => setNextPromoCode(event.target.value.toUpperCase())}
-              placeholder="Leave blank to remove"
-              className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm uppercase text-[var(--ccr-text)]"
-            />
+              onChange={(event) => setNextPromoCode(event.target.value)}
+              className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+            >
+              <option value="">No promo</option>
+              {currentPromoMissingFromOptions && initialPromoCode ? (
+                <option value={initialPromoCode}>{initialPromoCode} (current, unavailable)</option>
+              ) : null}
+              {promoOptions.map((promo) => (
+                <option key={promo.id} value={promo.code}>
+                  {formatPromoOptionLabel(promo)}
+                </option>
+              ))}
+            </select>
           </label>
 
           <label className="text-xs text-[var(--ccr-muted)]">
