@@ -58,6 +58,9 @@ test("booking change controls flow insurance and promo through preview, save, no
     readFile("src/lib/notifications/email.ts", "utf8"),
   ]);
   assert.match(form, /Insurance[\s\S]*Promo code[\s\S]*Customer name/);
+  assert.match(form, /<option value="">No promo<\/option>/);
+  assert.match(form, /formatPromoOptionLabel\(promo\)/);
+  assert.doesNotMatch(form, /placeholder="Leave blank to remove"/);
   assert.match(form, /insuranceSelected: nextInsuranceSelected/);
   assert.match(form, /promoCode: nextPromoCode\.trim\(\)/);
   assert.match(previewRoute, /promoCode: evaluated\.summary\.promoCode/);
