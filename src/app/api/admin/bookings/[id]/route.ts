@@ -55,7 +55,7 @@ import {
   readPromoPricingFields,
 } from "@/lib/payments/pricing";
 import { formatBookingStatusLabel } from "@/lib/bookings/formatBookingStatusLabel";
-import { isEntitledBooking, isVehicleUnavailableEntitlementBased } from "@/lib/availability/entitlement";
+import { isEntitledBooking } from "@/lib/availability/entitlement";
 import { requireCsrf } from "@/lib/security/csrf";
 import { synchronizeCustomerContact } from "@/lib/customers/customerContactSync";
 import {
@@ -205,21 +205,6 @@ async function resolveValidatedPromoForBookingUpdate(input: {
     promoCode: promoValidation.code,
     promoDiscount: promoValidation.discountAmountCents,
     promoId: promoValidation.promoId,
-  };
-}
-
-function buildWindowFromDates(
-  startDate: string,
-  endDate: string,
-  pickupTime = "11:00",
-  dropoffTime = "11:00",
-) {
-  const startAt = bookingDateTimeToUtcIso(startDate, pickupTime);
-  const endAt = bookingDateTimeToUtcIso(endDate, dropoffTime);
-  if (!startAt || !endAt || endAt <= startAt) return null;
-  return {
-    startAt,
-    endAt,
   };
 }
 

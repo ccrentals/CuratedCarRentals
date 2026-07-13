@@ -88,7 +88,7 @@ export async function evaluateBookingItineraryChange(input: {
       client: input.client,
       excludeBookingId: input.booking.id,
       includeBlockouts: true,
-      publicEligibility: true,
+      publicEligibility: false,
     },
   );
   if (!decision?.available) {

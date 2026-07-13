@@ -73,7 +73,7 @@ function formatCurrency(value: number) {
     style: "currency",
     currency: "JMD",
     maximumFractionDigits: 2,
-  }).format(Math.max(0, Number(value ?? 0)) / 100);
+  }).format(Math.max(0, Number(value ?? 0)));
 }
 
 function toDateInputValue(value: string | Date) {
@@ -271,6 +271,8 @@ export function BookingUpdateForm({
     vehicleLabel: string;
     days: number;
     baseTotal: number;
+    insuranceSelected: boolean;
+    insurancePricePerDay: number;
     insuranceTotal: number;
     promoDiscount: number;
     total: number;
@@ -945,9 +947,18 @@ export function BookingUpdateForm({
                 <div><dt className="text-[var(--ccr-muted)]">New total</dt><dd className="font-semibold">{formatCurrency(preview.total)}</dd></div>
                 <div><dt className="text-[var(--ccr-muted)]">New balance</dt><dd className="font-semibold">{formatCurrency(preview.balanceDue)}</dd></div>
                 <div><dt className="text-[var(--ccr-muted)]">Base rental</dt><dd>{formatCurrency(preview.baseTotal)}</dd></div>
-                <div><dt className="text-[var(--ccr-muted)]">Insurance</dt><dd>{formatCurrency(preview.insuranceTotal)}</dd></div>
+                <div>
+                  <dt className="text-[var(--ccr-muted)]">Insurance</dt>
+                  <dd>{preview.insuranceSelected ? `${formatCurrency(preview.insurancePricePerDay)} / day` : "Not selected"}</dd>
+                </div>
+                <div><dt className="text-[var(--ccr-muted)]">Insurance total</dt><dd>{formatCurrency(preview.insuranceTotal)}</dd></div>
                 <div><dt className="text-[var(--ccr-muted)]">Discount</dt><dd>-{formatCurrency(preview.promoDiscount)}</dd></div>
                 <div><dt className="text-[var(--ccr-muted)]">Paid to date</dt><dd>{formatCurrency(preview.paidToDate)}</dd></div>
+                {preview.insuranceSelected ? (
+                  <p className="sm:col-span-2 lg:col-span-4 text-xs text-[var(--ccr-muted)]">
+                    Insurance remains selected and is recalculated using the selected vehicle&apos;s active rate.
+                  </p>
+                ) : null}
                 {preview.refundRequired ? <p className="sm:col-span-2 lg:col-span-4 font-semibold text-red-500">Refund review required after this change.</p> : null}
               </dl>
             ) : null}
