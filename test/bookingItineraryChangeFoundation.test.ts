@@ -70,6 +70,18 @@ test("booking change controls flow insurance and promo through preview, save, no
   assert.match(email, /previousInsurance[\s\S]*nextPromo/);
 });
 
+test("booking update email uses signed customer booking and invoice links", async () => {
+  const email = await readFile("src/lib/notifications/email.ts", "utf8");
+  const itineraryEmail = email.slice(email.indexOf("export async function sendBookingItineraryUpdatedEmail"));
+  assert.match(itineraryEmail, /buildPublicBookingEmailLink\(input\.bookingId, "view"\)/);
+  assert.match(itineraryEmail, /buildPublicBookingEmailLink\(input\.bookingId, "invoice"\)/);
+  assert.match(itineraryEmail, /View updated invoice/);
+  assert.doesNotMatch(
+    itineraryEmail,
+    /: `\$\{baseUrl\(\)\}\/bookings\/\$\{input\.bookingId\}`/,
+  );
+});
+
 test("booking change note describes promo replacement and insurance removal", () => {
   const pricing = appendBookingItineraryChangeNote({}, {
     previousVehicle: "Car A",
