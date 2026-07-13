@@ -22,6 +22,24 @@ test("public booking pages use shared booking-access enforcement", () => {
   }
 });
 
+test("public booking pages accept reusable signed email links without relying on cookies", () => {
+  const access = read("src/lib/bookings/publicAccess.ts");
+  assert.match(access, /hasMatchingBookingEmailAccessSignature\(signature, bookingId, expectedHash\)/);
+
+  const files = [
+    "src/app/(site)/bookings/[id]/page.tsx",
+    "src/app/(site)/bookings/[id]/pay/page.tsx",
+    "src/app/(site)/bookings/[id]/balance/page.tsx",
+    "src/app/(site)/bookings/[id]/invoice/page.tsx",
+  ];
+
+  for (const file of files) {
+    const code = read(file);
+    assert.match(code, /typeof query\.sig === "string" \? query\.sig : null/);
+    assert.match(code, /bookingAccess\.pricing_json,\s*signature,/);
+  }
+});
+
 test("payment success page denies missing or unauthorized booking access", () => {
   const code = read("src/app/(site)/payment/success/page.tsx");
   assert.match(code, /if \(!bookingAccess\) {\s*notFound\(\);/);
