@@ -13,6 +13,15 @@ test("booking itinerary preview and save share the production evaluator", async 
   assert.match(evaluator, /excludeBookingId: input\.booking\.id/);
   assert.match(evaluator, /buildQuotePricingSnapshot/);
   assert.match(evaluator, /includeBlockouts: true/);
+  assert.match(evaluator, /publicEligibility: false/);
+  assert.match(previewRoute, /insurancePricePerDay: evaluated\.summary\.insurancePricePerDay/);
+});
+
+test("booking itinerary preview explains vehicle-specific insurance repricing", async () => {
+  const form = await readFile("src/components/admin/BookingUpdateForm.tsx", "utf8");
+  assert.match(form, /Insurance remains selected and is recalculated using the selected vehicle/);
+  assert.match(form, /formatCurrency\(preview\.insurancePricePerDay\)/);
+  assert.doesNotMatch(form, /Number\(value \?\? 0\)\) \/ 100/);
 });
 
 test("booking itinerary mutation persists vehicle, insurance, audit, and notifications", async () => {
