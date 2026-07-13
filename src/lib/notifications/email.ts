@@ -10,7 +10,9 @@ import {
   readBookingLocationDetails,
 } from "@/lib/bookings/bookingLocations";
 import {
+  createBookingAccessToken,
   createBookingEmailAccessSignature,
+  hashBookingAccessToken,
   readBookingAccessHash,
 } from "@/lib/bookings/privateAccess";
 import { loadAdminSettings } from "@/lib/adminSettings";
@@ -105,6 +107,40 @@ function formatPaymentOptionLabel(value: unknown) {
 
 type PublicBookingEmailLinkTarget = "view" | "pay" | "balance" | "invoice";
 
+async function ensureBookingAccessHash(bookingId: string) {
+  const result = await dbQuery<{ pricing_json: Record<string, unknown> | null }>(
+    "select pricing_json from bookings where id = $1 limit 1",
+    [bookingId],
+  );
+  const existingHash = readBookingAccessHash(result.rows[0]?.pricing_json);
+  if (existingHash) return existingHash;
+  if (result.rowCount < 1) return "";
+
+  const generatedHash = hashBookingAccessToken(createBookingAccessToken());
+  const updated = await dbQuery<{ pricing_json: Record<string, unknown> | null }>(
+    `update bookings
+       set pricing_json = jsonb_set(
+         coalesce(pricing_json, '{}'::jsonb),
+         '{private_access_token_hash}',
+         to_jsonb($2::text),
+         true
+       ),
+       updated_at = now()
+     where id = $1
+       and coalesce(pricing_json->>'private_access_token_hash', '') = ''
+     returning pricing_json`,
+    [bookingId, generatedHash],
+  );
+  const persistedHash = readBookingAccessHash(updated.rows[0]?.pricing_json);
+  if (persistedHash) return persistedHash;
+
+  const concurrent = await dbQuery<{ pricing_json: Record<string, unknown> | null }>(
+    "select pricing_json from bookings where id = $1 limit 1",
+    [bookingId],
+  );
+  return readBookingAccessHash(concurrent.rows[0]?.pricing_json);
+}
+
 async function buildPublicBookingEmailLink(
   bookingId: string,
   target: PublicBookingEmailLinkTarget = "view",
@@ -122,11 +158,7 @@ async function buildPublicBookingEmailLink(
   }
 
   try {
-    const result = await dbQuery<{ pricing_json: Record<string, unknown> | null }>(
-      "select pricing_json from bookings where id = $1 limit 1",
-      [normalizedBookingId],
-    );
-    const accessHash = readBookingAccessHash(result.rows[0]?.pricing_json);
+    const accessHash = await ensureBookingAccessHash(normalizedBookingId);
     const signature = createBookingEmailAccessSignature(normalizedBookingId, accessHash);
     if (!accessHash || !signature) {
       return `${baseUrl()}${pathMap[target]}`;
