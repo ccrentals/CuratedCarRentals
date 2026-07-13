@@ -50,6 +50,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         vehicleLabel: evaluated.vehicleLabel,
         days: evaluated.summary.days,
         baseTotal: evaluated.summary.baseTotal,
+        insuranceSelected: evaluated.summary.insuranceSelected,
+        insurancePricePerDay: evaluated.summary.insurancePricePerDay,
         insuranceTotal: evaluated.summary.insuranceTotal,
         promoDiscount: evaluated.summary.promoDiscount,
         total: evaluated.summary.total,
