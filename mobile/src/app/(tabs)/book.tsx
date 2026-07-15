@@ -1,13 +1,13 @@
 import { Image } from "expo-image";
 import { useLocalSearchParams } from "expo-router";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { CalendarPicker } from "@/components/CalendarPicker";
 import { Button, Card, Field, Notice, PageIntro, Screen } from "@/components/primitives";
 import { SignaturePad } from "@/components/SignaturePad";
 import { useAppTheme } from "@/components/ThemeProvider";
-import { radii, shadow, type AppColors } from "@/constants/theme";
+import { radii, type AppColors } from "@/constants/theme";
 import { formatJmd, type Vehicle } from "@/data/catalog";
 import { useFleet } from "@/hooks/useFleet";
 import {
@@ -121,6 +121,9 @@ export default function BookingScreen() {
   const deliverySelected = pickupLocation?.locationTypeKey === "CUSTOM_ADDRESS" || dropoffLocation?.locationTypeKey === "CUSTOM_ADDRESS";
   const deliveryZoneLabel = [pickupAddress || pickupLocation?.pickupLabel, dropoffAddress || dropoffLocation?.dropoffLabel].filter(Boolean).join(" → ") || null;
   const customAmount = Number(customPaymentAmount.replace(/[^0-9.]/g, ""));
+  const listedRentalEstimate = days * (vehicle?.dailyRate ?? 0);
+  const protectionEstimate = insuranceSelected && insurance?.enabled ? days * insurance.pricePerDay : 0;
+  const tripEstimate = listedRentalEstimate + protectionEstimate;
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => screenRef.current?.scrollTo({ y: 0, animated: false }));
@@ -357,10 +360,25 @@ export default function BookingScreen() {
             <Text style={styles.skipText}>{insuranceSelected ? "Protection added to this trip." : "You can continue without optional protection."}</Text>
           </Card>
 
-          <ActionCard title="Trip setup complete" body={vehicle ? `${vehicle.name} · ${days || "—"} days · ${pickupLocation?.pickupLabel || "Choose pickup"}` : "Complete the four steps above."}>
+          <Card style={styles.reservationSummary}>
+            <Text style={styles.summaryEyebrow}>PAGE 1 SUMMARY</Text>
+            <Text style={styles.summaryTitle}>Your trip so far</Text>
+            <Text style={styles.summaryBody}>Review the selections collected on this page before adding your details and payment choice.</Text>
+            <View style={styles.summaryRows}>
+              <ReviewRow label="Vehicle" value={vehicle?.name || "Choose a vehicle"} />
+              <ReviewRow label="Trip" value={days > 0 ? `${days} days · ${pickupDate} → ${returnDate}` : "Choose pickup and return dates"} />
+              <ReviewRow label="Pickup" value={pickupAddress || pickupLocation?.pickupLabel || "Choose pickup"} />
+              <ReviewRow label="Return" value={dropoffAddress || dropoffLocation?.dropoffLabel || "Choose return"} />
+              <ReviewRow label="Protection" value={insuranceSelected ? `Selected · ${formatJmd(protectionEstimate)}` : "Not added"} />
+              <ReviewRow label="Listed rental" value={days > 0 && vehicle ? formatJmd(listedRentalEstimate) : "Calculated after dates"} />
+              {vehicle && vehicle.securityDeposit > 0 ? <ReviewRow label="Refundable security deposit" value={formatJmd(vehicle.securityDeposit)} /> : null}
+              <View style={styles.divider} />
+              <ReviewRow label="Estimated trip total" value={days > 0 && vehicle ? formatJmd(tripEstimate) : "—"} strong />
+            </View>
+            <Text style={styles.summaryDisclaimer}>This estimate uses the current listed daily rate. Page 2 applies any promo, delivery charge, payment choice, and the final live server quote before you confirm.</Text>
             <Button label={availabilityBusy ? "Checking availability…" : "Continue to your details"} onPress={() => void continueToDetails()} disabled={availabilityBusy || fleetLoading} />
             {error ? <Notice error>{error}</Notice> : null}
-          </ActionCard>
+          </Card>
         </>
       ) : null}
 
@@ -445,12 +463,19 @@ export default function BookingScreen() {
             <Text style={styles.paymentHeroTitle}>{paymentOption === "NONE" ? "You’re booked" : "One last secure step"}</Text>
             <Text style={styles.paymentHeroBody}>{paymentOption === "NONE" ? "Your vehicle is reserved and the balance is due at pickup." : "Continue to WiPay to complete your selected payment. You will return here to see the confirmed status."}</Text>
           </View>
-          <Card>
+          <Card style={styles.reservationSummary}>
+            <Text style={styles.summaryEyebrow}>PAGE 3 SUMMARY</Text>
+            <Text style={styles.summaryTitle}>Booking confirmation</Text>
             <Text style={styles.confirmationLabel}>BOOKING REFERENCE</Text>
             <Text style={styles.confirmationReference}>{bookingStatus?.reference || bookingResult?.bookingId.slice(0, 8).toUpperCase()}</Text>
             <ReviewRow label="Vehicle" value={vehicle?.name || "Reserved vehicle"} />
+            <ReviewRow label="Trip" value={`${days} days · ${pickupDate} → ${returnDate}`} />
+            <ReviewRow label="Pickup" value={pickupAddress || pickupLocation?.pickupLabel || "—"} />
+            <ReviewRow label="Return" value={dropoffAddress || dropoffLocation?.dropoffLabel || "—"} />
             <ReviewRow label="Trip total" value={formatJmd(quote?.total || 0)} />
             <ReviewRow label="Payment choice" value={PAYMENT_OPTIONS.find((item) => item.value === paymentOption)?.title || paymentOption} />
+            {quote ? <ReviewRow label={paymentOption === "NONE" ? "Due at pickup" : "Due now"} value={formatJmd(paymentOption === "NONE" ? quote.balanceDue : quote.dueNow)} strong /> : null}
+            {bookingStatus ? <ReviewRow label="Balance remaining" value={formatJmd(bookingStatus.balanceDue)} strong /> : null}
             {bookingStatus ? <ReviewRow label="Status" value={bookingStatus.paymentStatus.replaceAll("_", " ")} strong /> : null}
             {paymentOption !== "NONE" ? <Button label={paymentBusy ? "Checking payment status…" : "Continue to WiPay"} onPress={() => void continueToPayment()} disabled={paymentBusy || bookingStatus?.paymentStatus === "DEPOSIT_PAID" || bookingStatus?.paymentStatus === "PAID_IN_FULL"} /> : null}
             <Button label="View My Booking" href="/booking-status" secondary />
@@ -496,11 +521,6 @@ function Loading({ label }: { label: string }) {
 function LocationChoices({ label, locations, selectedId, getLabel, onSelect }: { label: string; locations: BookingLocation[]; selectedId: string; getLabel: (location: BookingLocation) => string; onSelect: (id: string) => void }) {
   const { styles } = useBookingStyles();
   return <View style={styles.locationSection}><Text style={styles.fieldHeading}>{label}</Text><View style={styles.chips}>{locations.map((item) => <Pressable key={`${label}-${item.id}`} onPress={() => onSelect(item.id)} style={[styles.chip, selectedId === item.id && styles.chipActive]} accessibilityRole="radio" accessibilityState={{ checked: selectedId === item.id }}><Text style={[styles.chipText, selectedId === item.id && styles.chipTextActive]}>{getLabel(item)}</Text></Pressable>)}</View></View>;
-}
-
-function ActionCard({ title, body, children }: { title: string; body: string; children: ReactNode }) {
-  const { styles } = useBookingStyles();
-  return <View style={styles.actionCard}><Text style={styles.actionTitle}>{title}</Text><Text style={styles.actionBody}>{body}</Text>{children}</View>;
 }
 
 function PageSummary({ vehicle, pickupDate, returnDate, days, onEdit }: { vehicle?: Vehicle; pickupDate: string; returnDate: string; days: number; onEdit: () => void }) {
@@ -569,9 +589,6 @@ const makeStyles = (colors: AppColors, isDark: boolean) => StyleSheet.create({
   optionTitle: { color: colors.text, fontSize: 15, fontWeight: "900" },
   optionBody: { color: colors.muted, fontSize: 12, lineHeight: 18, marginTop: 4 },
   skipText: { color: colors.muted, fontSize: 11, lineHeight: 17, marginTop: 12 },
-  actionCard: { marginHorizontal: 20, marginBottom: 22, borderRadius: radii.lg, padding: 20, backgroundColor: colors.navy, ...shadow },
-  actionTitle: { color: colors.white, fontSize: 21, fontWeight: "900" },
-  actionBody: { color: "rgba(255,255,255,0.7)", fontSize: 13, lineHeight: 20, marginTop: 7 },
   pageSummary: { flexDirection: "row", alignItems: "center", gap: 12, margin: 20, padding: 16, borderRadius: radii.lg, backgroundColor: colors.navy },
   pageSummaryContent: { flex: 1 },
   pageSummaryLabel: { color: "#9FE3CB", fontSize: 9, fontWeight: "900", letterSpacing: 1.4 },
