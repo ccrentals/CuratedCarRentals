@@ -384,7 +384,7 @@ export default function BookingScreen() {
 
       {page === 2 ? (
         <>
-          <PageSummary vehicle={vehicle} pickupDate={pickupDate} returnDate={returnDate} days={days} onEdit={() => { setQuote(null); setPage(1); }} />
+          <PageSummary vehicle={vehicle} pickupDate={pickupDate} returnDate={returnDate} days={days} estimatedTotal={tripEstimate} onEdit={() => { setQuote(null); setPage(1); }} />
 
           <Card><StepHeader number={5} title="Your details" body="We will use these details for your agreement and trip updates." />
             <Field label="Full name" value={fullName} onChangeText={(value) => { setFullName(value); invalidateReview(); }} autoComplete="name" placeholder="As shown on your ID" />
@@ -429,27 +429,32 @@ export default function BookingScreen() {
             <Button label="Back to trip setup" onPress={() => { setQuote(null); setPage(1); }} secondary />
           </Card>
 
-          {quote && vehicle ? (
+          {vehicle ? (
             <Card style={styles.reservationSummary}>
-              <Text style={styles.summaryEyebrow}>FINAL REVIEW</Text>
+              <Text style={styles.summaryEyebrow}>{quote ? "FINAL REVIEW" : "PAGE 2 SUMMARY"}</Text>
               <Text style={styles.summaryTitle}>Reservation summary</Text>
-              <Text style={styles.summaryBody}>Confirm that your trip, pricing, and payment choice are correct.</Text>
+              <Text style={styles.summaryBody}>{quote ? "Confirm that your trip, pricing, and payment choice are correct." : "This summary updates as you complete your details, promo, payment choice, signature, and terms."}</Text>
               <View style={styles.summaryRows}>
                 <ReviewRow label="Vehicle" value={vehicle.name} />
                 <ReviewRow label="Trip" value={`${days} days · ${pickupDate} → ${returnDate}`} />
                 <ReviewRow label="Pickup" value={pickupLocation?.pickupLabel || "—"} />
                 <ReviewRow label="Return" value={dropoffLocation?.dropoffLabel || "—"} />
-                <ReviewRow label="Rental" value={formatJmd(quote.baseTotal)} />
-                {quote.insuranceTotal > 0 ? <ReviewRow label="Protection" value={formatJmd(quote.insuranceTotal)} /> : null}
-                {quote.discountTotal > 0 ? <ReviewRow label={`Promo ${quote.promoCode || ""}`} value={`−${formatJmd(quote.discountTotal)}`} success /> : null}
+                <ReviewRow label="Renter" value={fullName.trim() || "Add your full name"} />
+                <ReviewRow label="Contact" value={[email.trim(), phone.trim()].filter(Boolean).join(" · ") || "Add email and phone"} />
+                <ReviewRow label="Protection" value={quote ? (quote.insuranceTotal > 0 ? formatJmd(quote.insuranceTotal) : "Not added") : (insuranceSelected ? `Selected · est. ${formatJmd(protectionEstimate)}` : "Not added")} />
+                <ReviewRow label="Promo" value={promo ? `${promo.code} · −${formatJmd(promo.discountAmount)}` : "None applied"} success={Boolean(promo)} />
                 <ReviewRow label="Payment choice" value={PAYMENT_OPTIONS.find((item) => item.value === paymentOption)?.title || paymentOption} />
+                <ReviewRow label="Signature" value={signatureDataUrl ? "Saved" : "Required"} success={Boolean(signatureDataUrl)} />
+                <ReviewRow label="Terms" value={acceptTerms ? "Accepted" : "Required"} success={acceptTerms} />
+                <ReviewRow label="Rental" value={formatJmd(quote?.baseTotal ?? listedRentalEstimate)} />
+                {quote && quote.discountTotal > 0 ? <ReviewRow label={`Promo ${quote.promoCode || ""}`} value={`−${formatJmd(quote.discountTotal)}`} success /> : null}
                 <View style={styles.divider} />
-                <ReviewRow label="Trip total" value={formatJmd(quote.total)} strong />
-                <ReviewRow label={paymentOption === "NONE" ? "Due at pickup" : "Due now"} value={formatJmd(paymentOption === "NONE" ? quote.balanceDue : quote.dueNow)} strong />
-                {paymentOption !== "FULL" && paymentOption !== "NONE" ? <ReviewRow label="Balance due at pickup" value={formatJmd(quote.dueOnPickup)} strong /> : null}
+                <ReviewRow label={quote ? "Trip total" : "Estimated trip total"} value={formatJmd(quote?.total ?? tripEstimate)} strong />
+                {quote ? <ReviewRow label={paymentOption === "NONE" ? "Due at pickup" : "Due now"} value={formatJmd(paymentOption === "NONE" ? quote.balanceDue : quote.dueNow)} strong /> : null}
+                {quote && paymentOption !== "FULL" && paymentOption !== "NONE" ? <ReviewRow label="Balance due at pickup" value={formatJmd(quote.dueOnPickup)} strong /> : null}
               </View>
-              <Text style={styles.summaryDisclaimer}>The refundable security deposit, if applicable, is separate and handled according to the rental policy.</Text>
-              <Button label={bookingBusy ? "Opening secure confirmation…" : "Confirm reservation"} onPress={() => void confirmBooking()} disabled={bookingBusy} />
+              <Text style={styles.summaryDisclaimer}>{quote ? "The refundable security deposit, if applicable, is separate and handled according to the rental policy." : "Complete steps 5–8 and prepare the reservation review above to replace this estimate with the final live quote."}</Text>
+              {quote ? <Button label={bookingBusy ? "Opening secure confirmation…" : "Confirm reservation"} onPress={() => void confirmBooking()} disabled={bookingBusy} /> : null}
             </Card>
           ) : null}
         </>
@@ -523,9 +528,9 @@ function LocationChoices({ label, locations, selectedId, getLabel, onSelect }: {
   return <View style={styles.locationSection}><Text style={styles.fieldHeading}>{label}</Text><View style={styles.chips}>{locations.map((item) => <Pressable key={`${label}-${item.id}`} onPress={() => onSelect(item.id)} style={[styles.chip, selectedId === item.id && styles.chipActive]} accessibilityRole="radio" accessibilityState={{ checked: selectedId === item.id }}><Text style={[styles.chipText, selectedId === item.id && styles.chipTextActive]}>{getLabel(item)}</Text></Pressable>)}</View></View>;
 }
 
-function PageSummary({ vehicle, pickupDate, returnDate, days, onEdit }: { vehicle?: Vehicle; pickupDate: string; returnDate: string; days: number; onEdit: () => void }) {
+function PageSummary({ vehicle, pickupDate, returnDate, days, estimatedTotal, onEdit }: { vehicle?: Vehicle; pickupDate: string; returnDate: string; days: number; estimatedTotal: number; onEdit: () => void }) {
   const { styles } = useBookingStyles();
-  return <View style={styles.pageSummary}><View style={styles.pageSummaryContent}><Text style={styles.pageSummaryLabel}>YOUR TRIP</Text><Text style={styles.pageSummaryTitle}>{vehicle?.name || "Selected vehicle"}</Text><Text style={styles.pageSummaryBody}>{pickupDate} → {returnDate} · {days} days</Text></View><Pressable onPress={onEdit} style={styles.editButton} accessibilityRole="button"><Text style={styles.editButtonText}>Edit</Text></Pressable></View>;
+  return <View style={styles.pageSummary}><View style={styles.pageSummaryContent}><Text style={styles.pageSummaryLabel}>PAGE 2 SUMMARY</Text><Text style={styles.pageSummaryTitle}>{vehicle?.name || "Selected vehicle"}</Text><Text style={styles.pageSummaryBody}>{pickupDate} → {returnDate} · {days} days{"\n"}Current estimate · {formatJmd(estimatedTotal)}</Text></View><Pressable onPress={onEdit} style={styles.editButton} accessibilityRole="button"><Text style={styles.editButtonText}>Edit trip</Text></Pressable></View>;
 }
 
 function ReviewRow({ label, value, strong = false, success = false }: { label: string; value: string; strong?: boolean; success?: boolean }) {
