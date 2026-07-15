@@ -406,25 +406,34 @@ export default function BookingScreen() {
           <Card><StepHeader number={9} title="Review reservation" body="We will recheck live availability, promo, and pricing before anything is created." />
             {!quote ? <Button label={reviewBusy ? "Preparing live review…" : "Prepare reservation review"} onPress={() => void reviewReservation()} disabled={reviewBusy} /> : null}
             {reviewBusy ? <Loading label="Calculating your final live quote…" /> : null}
-            {quote && vehicle ? (
-              <View style={styles.quote}>
-                <ReviewRow label="Vehicle" value={vehicle.name} />
-                <ReviewRow label="Trip" value={`${days} days · ${pickupDate} → ${returnDate}`} />
-                <ReviewRow label="Pickup" value={pickupLocation?.pickupLabel || "—"} />
-                <ReviewRow label="Rental" value={formatJmd(quote.baseTotal)} />
-                {quote.insuranceTotal > 0 ? <ReviewRow label="Protection" value={formatJmd(quote.insuranceTotal)} /> : null}
-                {quote.discountTotal > 0 ? <ReviewRow label={`Promo ${quote.promoCode || ""}`} value={`−${formatJmd(quote.discountTotal)}`} success /> : null}
-                <View style={styles.divider} />
-                <ReviewRow label="Trip total" value={formatJmd(quote.total)} strong />
-                <ReviewRow label={paymentOption === "NONE" ? "Due at pickup" : "Due now"} value={formatJmd(paymentOption === "NONE" ? quote.balanceDue : quote.dueNow)} strong />
-                {paymentOption !== "FULL" && paymentOption !== "NONE" ? <ReviewRow label="Remaining at pickup" value={formatJmd(quote.dueOnPickup)} /> : null}
-                <Notice>Live availability and pricing verified. Your booking is not created until you confirm below.</Notice>
-                <Button label={bookingBusy ? "Opening secure confirmation…" : "Confirm reservation"} onPress={() => void confirmBooking()} disabled={bookingBusy} />
-              </View>
-            ) : null}
+            {quote ? <Notice>Live availability and pricing verified. Review the complete reservation summary below before confirming.</Notice> : null}
             {error ? <Notice error>{error}</Notice> : null}
             <Button label="Back to trip setup" onPress={() => { setQuote(null); setPage(1); }} secondary />
           </Card>
+
+          {quote && vehicle ? (
+            <Card style={styles.reservationSummary}>
+              <Text style={styles.summaryEyebrow}>FINAL REVIEW</Text>
+              <Text style={styles.summaryTitle}>Reservation summary</Text>
+              <Text style={styles.summaryBody}>Confirm that your trip, pricing, and payment choice are correct.</Text>
+              <View style={styles.summaryRows}>
+                <ReviewRow label="Vehicle" value={vehicle.name} />
+                <ReviewRow label="Trip" value={`${days} days · ${pickupDate} → ${returnDate}`} />
+                <ReviewRow label="Pickup" value={pickupLocation?.pickupLabel || "—"} />
+                <ReviewRow label="Return" value={dropoffLocation?.dropoffLabel || "—"} />
+                <ReviewRow label="Rental" value={formatJmd(quote.baseTotal)} />
+                {quote.insuranceTotal > 0 ? <ReviewRow label="Protection" value={formatJmd(quote.insuranceTotal)} /> : null}
+                {quote.discountTotal > 0 ? <ReviewRow label={`Promo ${quote.promoCode || ""}`} value={`−${formatJmd(quote.discountTotal)}`} success /> : null}
+                <ReviewRow label="Payment choice" value={PAYMENT_OPTIONS.find((item) => item.value === paymentOption)?.title || paymentOption} />
+                <View style={styles.divider} />
+                <ReviewRow label="Trip total" value={formatJmd(quote.total)} strong />
+                <ReviewRow label={paymentOption === "NONE" ? "Due at pickup" : "Due now"} value={formatJmd(paymentOption === "NONE" ? quote.balanceDue : quote.dueNow)} strong />
+                {paymentOption !== "FULL" && paymentOption !== "NONE" ? <ReviewRow label="Balance due at pickup" value={formatJmd(quote.dueOnPickup)} strong /> : null}
+              </View>
+              <Text style={styles.summaryDisclaimer}>The refundable security deposit, if applicable, is separate and handled according to the rental policy.</Text>
+              <Button label={bookingBusy ? "Opening secure confirmation…" : "Confirm reservation"} onPress={() => void confirmBooking()} disabled={bookingBusy} />
+            </Card>
+          ) : null}
         </>
       ) : null}
 
@@ -585,7 +594,12 @@ const makeStyles = (colors: AppColors, isDark: boolean) => StyleSheet.create({
   paymentBody: { color: colors.muted, fontSize: 12, lineHeight: 18, marginTop: 7, marginLeft: 30 },
   terms: { flexDirection: "row", alignItems: "flex-start", gap: 10, marginTop: 18, padding: 14, borderRadius: radii.md, backgroundColor: colors.surfaceSoft },
   termsText: { flex: 1, color: colors.text, fontSize: 12, lineHeight: 19, fontWeight: "700" },
-  quote: { marginTop: 16, borderRadius: radii.md, padding: 16, backgroundColor: colors.cream },
+  reservationSummary: { backgroundColor: colors.cream, borderColor: colors.orange },
+  summaryEyebrow: { color: colors.orangeDark, fontSize: 9, fontWeight: "900", letterSpacing: 1.5 },
+  summaryTitle: { color: colors.text, fontSize: 22, lineHeight: 27, fontWeight: "900", marginTop: 6 },
+  summaryBody: { color: colors.muted, fontSize: 12, lineHeight: 19, marginTop: 5 },
+  summaryRows: { marginTop: 8 },
+  summaryDisclaimer: { color: colors.muted, fontSize: 10, lineHeight: 16, marginTop: 15 },
   reviewRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 14, marginTop: 12 },
   reviewLabel: { flex: 1, color: colors.muted, fontSize: 12, lineHeight: 18 },
   reviewValue: { maxWidth: "58%", color: colors.text, fontSize: 12, lineHeight: 18, fontWeight: "800", textAlign: "right" },
