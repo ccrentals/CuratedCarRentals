@@ -10,6 +10,17 @@ import {
   readBookingAccessTokenFromCookieHeader,
 } from "@/lib/bookings/privateAccess";
 
+export function readPublicBookingBearerToken(request: Request) {
+  const authorization = request.headers.get("authorization")?.trim() ?? "";
+  const match = authorization.match(/^Bearer\s+(.+)$/i);
+  if (match?.[1]?.trim()) return match[1].trim();
+  return request.headers.get("x-booking-access-token")?.trim() ?? "";
+}
+
+export function hasPublicBookingBearerCredential(request: Request) {
+  return readPublicBookingBearerToken(request).length > 0;
+}
+
 export async function hasPublicBookingAccessForRequest(
   request: Request,
   bookingId: string,
@@ -19,7 +30,8 @@ export async function hasPublicBookingAccessForRequest(
   if (session) return true;
 
   const expectedHash = readBookingAccessHash(pricing);
-  const accessToken = readBookingAccessTokenFromCookieHeader(
+  const bearerToken = readPublicBookingBearerToken(request);
+  const accessToken = bearerToken || readBookingAccessTokenFromCookieHeader(
     request.headers.get("cookie") ?? "",
     bookingId,
   );

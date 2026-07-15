@@ -298,7 +298,7 @@ export const DEFAULT_LANDING_CONTENT: LandingContent = {
       { href: "/book", label: "Book Now" },
     ],
     footerLegalLinks: [
-      { href: "/rental-policies", label: "Privacy Policy" },
+      { href: "/privacy", label: "Privacy Policy" },
       { href: "/rental-policies", label: "Terms & Conditions" },
       { href: "/rental-policies", label: "FAQ" },
     ],

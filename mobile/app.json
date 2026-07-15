@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "Curated Car Rentals",
+    "slug": "curated-car-rentals",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "curatedcarrentals",
+    "userInterfaceStyle": "light",
+    "android": {
+      "package": "com.curatedcarrentals.app",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "backgroundColor": "#0A1323",
+        "foregroundImage": "./assets/images/android-icon-foreground.png"
+      },
+      "predictiveBackGestureEnabled": true
+    },
+    "web": {
+      "output": "static",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#0A1323",
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 160
+        }
+      ],
+      "expo-secure-store"
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}

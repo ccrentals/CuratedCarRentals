@@ -10,6 +10,7 @@ const PUBLIC_ROUTES = [
   "/tourist-destinations",
   "/driving-in-jamaica",
   "/rental-policies",
+  "/privacy",
   "/about",
   "/contact",
   "/book",

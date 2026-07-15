@@ -32,6 +32,7 @@
   ],
   "exclude": [
     "node_modules",
+    "mobile",
     ".next/types/validator.ts",
     ".next/dev/types/validator.ts"
   ]
