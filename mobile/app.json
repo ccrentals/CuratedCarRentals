@@ -4,15 +4,18 @@
     "slug": "curated-car-rentals",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/app-icon-current.png",
     "scheme": "curatedcarrentals",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "icon": "./assets/images/app-icon-current.png"
+    },
     "android": {
       "package": "com.curatedcarrentals.app",
       "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#0A1323",
-        "foregroundImage": "./assets/images/android-icon-foreground.png"
+        "foregroundImage": "./assets/images/splash-current.png"
       },
       "predictiveBackGestureEnabled": true
     },
@@ -26,8 +29,12 @@
         "expo-splash-screen",
         {
           "backgroundColor": "#0A1323",
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 160
+          "image": "./assets/images/splash-blank.png",
+          "imageWidth": 1,
+          "dark": {
+            "backgroundColor": "#07111F",
+            "image": "./assets/images/splash-blank.png"
+          }
         }
       ],
       "expo-secure-store"

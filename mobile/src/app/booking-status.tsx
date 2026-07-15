@@ -1,112 +1,167 @@
-import { useEffect, useState } from "react";
-import { ActivityIndicator, StyleSheet, Text } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { Button, Card, Notice, PageIntro, Screen } from "@/components/primitives";
-import { colors } from "@/constants/theme";
+import { useAppTheme } from "@/components/ThemeProvider";
+import { radii, type AppColors } from "@/constants/theme";
 import { formatJmd } from "@/data/catalog";
 import { fetchBookingStatus, startDepositPayment, type BookingStatus } from "@/services/api";
-import { clearCurrentBooking, getCurrentBooking, type SavedBooking } from "@/services/bookingStore";
+import { getSavedBookings, removeSavedBooking, type SavedBooking } from "@/services/bookingStore";
 
 export default function BookingStatusScreen() {
-  const [booking, setBooking] = useState<SavedBooking | null>(null);
-  const [status, setStatus] = useState<BookingStatus | null>(null);
+  const { colors, isDark } = useAppTheme();
+  const styles = useMemo(() => makeStyles(colors, isDark), [colors, isDark]);
+  const [bookings, setBookings] = useState<SavedBooking[]>([]);
+  const [statuses, setStatuses] = useState<Record<string, BookingStatus>>({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
-  const [paymentBusy, setPaymentBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [busyId, setBusyId] = useState<string | null>(null);
 
-  const refresh = async (savedBooking = booking) => {
-    if (!savedBooking) return;
-    setError("");
+  const refresh = async (booking: SavedBooking) => {
+    setBusyId(booking.bookingId);
+    setErrors((current) => ({ ...current, [booking.bookingId]: "" }));
     try {
-      setStatus(await fetchBookingStatus(savedBooking.bookingId, savedBooking.bookingAccessToken));
+      const nextStatus = await fetchBookingStatus(booking.bookingId, booking.bookingAccessToken);
+      setStatuses((current) => ({ ...current, [booking.bookingId]: nextStatus }));
     } catch (refreshError) {
-      setError(refreshError instanceof Error ? refreshError.message : "Unable to refresh this reservation.");
+      setErrors((current) => ({
+        ...current,
+        [booking.bookingId]: refreshError instanceof Error ? refreshError.message : "Unable to refresh this reservation.",
+      }));
+    } finally {
+      setBusyId(null);
     }
   };
 
   useEffect(() => {
     let active = true;
-    void getCurrentBooking().then(async (savedBooking) => {
+    void getSavedBookings().then(async (savedBookings) => {
       if (!active) return;
-      setBooking(savedBooking);
-      if (savedBooking) {
-        try {
-          const nextStatus = await fetchBookingStatus(savedBooking.bookingId, savedBooking.bookingAccessToken);
-          if (active) setStatus(nextStatus);
-        } catch (loadError) {
-          if (active) setError(loadError instanceof Error ? loadError.message : "Unable to load this reservation.");
-        }
-      }
-      if (active) setLoading(false);
-    });
+      setBookings(savedBookings);
+      const results = await Promise.allSettled(savedBookings.map(async (booking) => ({
+        bookingId: booking.bookingId,
+        status: await fetchBookingStatus(booking.bookingId, booking.bookingAccessToken),
+      })));
+      if (!active) return;
+      const nextStatuses: Record<string, BookingStatus> = {};
+      results.forEach((result) => {
+        if (result.status === "fulfilled") nextStatuses[result.value.bookingId] = result.value.status;
+      });
+      setStatuses(nextStatuses);
+      setLoading(false);
+    }).catch(() => active && setLoading(false));
     return () => { active = false; };
   }, []);
 
-  const payDeposit = async () => {
-    if (!booking) return;
-    setPaymentBusy(true);
-    setError("");
+  const payDeposit = async (booking: SavedBooking) => {
+    setBusyId(booking.bookingId);
+    setErrors((current) => ({ ...current, [booking.bookingId]: "" }));
     try {
-      setStatus(await startDepositPayment(booking.bookingId, booking.bookingAccessToken));
+      const nextStatus = await startDepositPayment(booking.bookingId, booking.bookingAccessToken);
+      setStatuses((current) => ({ ...current, [booking.bookingId]: nextStatus }));
     } catch (paymentError) {
-      setError(paymentError instanceof Error ? paymentError.message : "Unable to start deposit payment.");
+      setErrors((current) => ({
+        ...current,
+        [booking.bookingId]: paymentError instanceof Error ? paymentError.message : "Unable to start deposit payment.",
+      }));
     } finally {
-      setPaymentBusy(false);
+      setBusyId(null);
     }
   };
 
-  const forget = async () => {
-    await clearCurrentBooking();
-    setBooking(null);
-    setStatus(null);
-    setError("");
+  const forget = async (bookingId: string) => {
+    setBookings(await removeSavedBooking(bookingId));
+    setStatuses((current) => {
+      const next = { ...current };
+      delete next[bookingId];
+      return next;
+    });
   };
 
   return (
     <Screen>
-      <PageIntro eyebrow="Your reservation" title="My Booking" description="Review the latest reservation saved securely on this device and complete its deposit." />
-      {loading ? <ActivityIndicator style={styles.loading} color={colors.teal} /> : null}
-      {!loading && !booking ? (
+      <PageIntro eyebrow="Your reservations" title="My Bookings" description="Review reservations saved securely on this device and continue outstanding payments." />
+      <Card style={styles.securityCard}>
+        <View style={styles.securityHeader}><Text style={styles.securityIcon}>▣</Text><Text style={styles.securityTitle}>Private on-device access</Text></View>
+        <Text style={styles.securityBody}>Each booking’s private access token is encrypted on this device—not stored in a temporary cache. Reservations survive normal restarts and app updates.</Text>
+        <Text style={styles.syncNote}>Only bookings made on this device appear here. Account-based cross-device sync requires customer sign-in and is not enabled yet.</Text>
+      </Card>
+
+      {loading ? <View style={styles.loading}><ActivityIndicator color={colors.teal} /><Text style={styles.loadingText}>Checking saved reservations…</Text></View> : null}
+      {!loading && bookings.length === 0 ? (
         <Card>
-          <Text style={styles.title}>No saved booking</Text>
-          <Text style={styles.body}>Create a reservation in the Book tab. Its private access key will be encrypted on this device.</Text>
+          <Text style={styles.title}>No saved bookings</Text>
+          <Text style={styles.body}>Complete a reservation in the Book tab and it will appear here automatically.</Text>
           <Button label="Start a reservation" href="/(tabs)/book" />
         </Card>
       ) : null}
-      {booking ? (
-        <Card>
-          <Text style={styles.title}>Booking {status?.reference || booking.bookingId}</Text>
-          <Row label="Reservation status" value={(status?.status || booking.status).replaceAll("_", " ")} />
-          {status ? (
-            <>
-              <Row label="Payment status" value={status.paymentStatus.replaceAll("_", " ")} />
-              <Row label="Total" value={formatJmd(status.total)} />
-              <Row label="Paid" value={formatJmd(status.paidToDate)} />
-              <Row label="Balance" value={formatJmd(status.balanceDue)} />
-            </>
-          ) : null}
-          <Button label="Refresh status" onPress={() => void refresh()} secondary />
-          <Button
-            label={paymentBusy ? "Checking payment…" : "Pay deposit securely"}
-            onPress={() => void payDeposit()}
-            disabled={paymentBusy || status?.paymentStatus === "DEPOSIT_PAID" || status?.paymentStatus === "PAID_IN_FULL"}
-          />
-          <Button label="Remove from this device" onPress={() => void forget()} secondary />
-          {error ? <Notice error>{error}</Notice> : null}
-        </Card>
-      ) : null}
+
+      {bookings.map((booking) => {
+        const status = statuses[booking.bookingId];
+        const isBusy = busyId === booking.bookingId;
+        const isPaid = status?.paymentStatus === "DEPOSIT_PAID" || status?.paymentStatus === "PAID_IN_FULL";
+        return (
+          <Card key={booking.bookingId}>
+            <View style={styles.bookingHeader}>
+              <View style={styles.bookingHeaderCopy}>
+                <Text style={styles.savedLabel}>SAVED RESERVATION</Text>
+                <Text style={styles.title}>{status?.reference || booking.bookingId.slice(0, 8).toUpperCase()}</Text>
+                {booking.vehicleName ? <Text style={styles.vehicleName}>{booking.vehicleName}</Text> : null}
+              </View>
+              <View style={[styles.statusBadge, isPaid && styles.statusBadgePaid]}><Text style={[styles.statusBadgeText, isPaid && styles.statusBadgeTextPaid]}>{(status?.paymentStatus || booking.status).replaceAll("_", " ")}</Text></View>
+            </View>
+            {booking.startDate && booking.endDate ? <Row label="Trip" value={`${booking.startDate} → ${booking.endDate}`} /> : null}
+            <Row label="Reservation" value={(status?.status || booking.status).replaceAll("_", " ")} />
+            {status ? (
+              <>
+                <Row label="Total" value={formatJmd(status.total)} />
+                <Row label="Paid" value={formatJmd(status.paidToDate)} />
+                <Row label="Balance" value={formatJmd(status.balanceDue)} strong />
+              </>
+            ) : <Text style={styles.offlineText}>Saved locally. Refresh when connected to retrieve current totals and payment status.</Text>}
+            <Text style={styles.savedAt}>Saved {new Date(booking.savedAt).toLocaleDateString("en-JM", { year: "numeric", month: "short", day: "numeric" })}</Text>
+            <Button label={isBusy ? "Refreshing…" : "Refresh status"} onPress={() => void refresh(booking)} disabled={isBusy} secondary />
+            {!isPaid ? <Button label={isBusy ? "Please wait…" : "Pay deposit securely"} onPress={() => void payDeposit(booking)} disabled={isBusy} /> : null}
+            <Pressable onPress={() => void forget(booking.bookingId)} style={styles.removeButton} accessibilityRole="button"><Text style={styles.removeText}>Remove from this device</Text></Pressable>
+            {errors[booking.bookingId] ? <Notice error>{errors[booking.bookingId]}</Notice> : null}
+          </Card>
+        );
+      })}
     </Screen>
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
-  return <Text style={styles.row}><Text style={styles.label}>{label}: </Text>{value}</Text>;
+function Row({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
+  const { colors, isDark } = useAppTheme();
+  const styles = useMemo(() => makeStyles(colors, isDark), [colors, isDark]);
+  return <View style={styles.row}><Text style={styles.label}>{label}</Text><Text style={[styles.value, strong && styles.valueStrong]}>{value}</Text></View>;
 }
 
-const styles = StyleSheet.create({
-  loading: { marginTop: 40 },
+const makeStyles = (colors: AppColors, isDark: boolean) => StyleSheet.create({
+  securityCard: { backgroundColor: isDark ? colors.navySoft : "#ECF7F3", borderColor: colors.teal },
+  securityHeader: { flexDirection: "row", alignItems: "center", gap: 9 },
+  securityIcon: { color: colors.orange, fontSize: 20, fontWeight: "900" },
+  securityTitle: { color: colors.tealDark, fontSize: 18, fontWeight: "900" },
+  securityBody: { color: colors.text, fontSize: 13, lineHeight: 20, marginTop: 10 },
+  syncNote: { color: colors.muted, fontSize: 11, lineHeight: 17, marginTop: 8 },
+  loading: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, paddingVertical: 34 },
+  loadingText: { color: colors.muted, fontSize: 13, fontWeight: "700" },
   title: { color: colors.text, fontSize: 22, fontWeight: "900" },
   body: { color: colors.muted, fontSize: 15, lineHeight: 23, marginTop: 10 },
-  row: { color: colors.text, fontSize: 14, lineHeight: 23, marginTop: 9, textTransform: "capitalize" },
-  label: { color: colors.muted, fontWeight: "700" },
+  bookingHeader: { flexDirection: "row", alignItems: "flex-start", gap: 10, marginBottom: 12 },
+  bookingHeaderCopy: { flex: 1 },
+  savedLabel: { color: colors.orange, fontSize: 9, fontWeight: "900", letterSpacing: 1.3, marginBottom: 5 },
+  vehicleName: { color: colors.muted, fontSize: 13, fontWeight: "700", marginTop: 4 },
+  statusBadge: { maxWidth: "42%", borderRadius: radii.pill, paddingHorizontal: 9, paddingVertical: 6, backgroundColor: colors.surfaceSoft },
+  statusBadgePaid: { backgroundColor: isDark ? colors.navySoft : "#DDF2EA" },
+  statusBadgeText: { color: colors.muted, fontSize: 8, fontWeight: "900", textTransform: "uppercase", textAlign: "center" },
+  statusBadgeTextPaid: { color: colors.success },
+  row: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 14, paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: colors.border },
+  label: { color: colors.muted, fontSize: 12, fontWeight: "700" },
+  value: { flex: 1, color: colors.text, fontSize: 12, lineHeight: 18, fontWeight: "800", textAlign: "right", textTransform: "capitalize" },
+  valueStrong: { color: colors.tealDark, fontSize: 14, fontWeight: "900" },
+  offlineText: { color: colors.muted, fontSize: 12, lineHeight: 18, marginTop: 12 },
+  savedAt: { color: colors.muted, fontSize: 10, marginTop: 12 },
+  removeButton: { alignItems: "center", paddingVertical: 14, marginTop: 5 },
+  removeText: { color: colors.danger, fontSize: 12, fontWeight: "800" },
 });

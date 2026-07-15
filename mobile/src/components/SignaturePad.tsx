@@ -1,12 +1,15 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { PanResponder, StyleSheet, Text, View } from "react-native";
 import Svg, { Path, Rect } from "react-native-svg";
 import { captureRef } from "react-native-view-shot";
 
 import { Button, Notice } from "@/components/primitives";
-import { colors, radii } from "@/constants/theme";
+import { useAppTheme } from "@/components/ThemeProvider";
+import { radii, type AppColors } from "@/constants/theme";
 
 export function SignaturePad({ onChange }: { onChange: (signatureDataUrl: string | null) => void }) {
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const canvasRef = useRef<View>(null);
   const [paths, setPaths] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
@@ -81,7 +84,7 @@ export function SignaturePad({ onChange }: { onChange: (signatureDataUrl: string
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: AppColors) => StyleSheet.create({
   help: { color: colors.muted, fontSize: 13, lineHeight: 20, marginVertical: 12 },
   canvas: { height: 190, overflow: "hidden", borderWidth: 1, borderColor: colors.border, borderRadius: radii.md, backgroundColor: colors.white },
   line: { position: "absolute", left: 24, right: 24, bottom: 38, height: 1, backgroundColor: "#CBD5E1" },

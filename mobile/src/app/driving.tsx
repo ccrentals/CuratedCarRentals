@@ -1,10 +1,14 @@
+import { useMemo } from "react";
 import { StyleSheet, Text } from "react-native";
 
 import { Button, Card, PageIntro, Screen } from "@/components/primitives";
-import { colors } from "@/constants/theme";
+import { useAppTheme } from "@/components/ThemeProvider";
+import type { AppColors } from "@/constants/theme";
 import { drivingTips } from "@/data/catalog";
 
 export default function DrivingScreen() {
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <Screen>
       <PageIntro eyebrow="Island road guide" title="Driving in Jamaica" description="Essential information for a safe and enjoyable driving experience on the island." />
@@ -14,7 +18,7 @@ export default function DrivingScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: AppColors) => StyleSheet.create({
   title: { color: colors.text, fontSize: 21, fontWeight: "800" },
   body: { color: colors.muted, fontSize: 15, lineHeight: 24, marginTop: 10 },
   cta: { backgroundColor: colors.navy, borderColor: colors.navy },

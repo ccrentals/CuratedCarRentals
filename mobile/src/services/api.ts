@@ -50,6 +50,15 @@ export type PricingQuote = {
   currency: string;
 };
 
+export type PaymentOption = "FULL" | "DEPOSIT" | "CUSTOM" | "NONE";
+
+export type PromoValidation = {
+  code: string;
+  discountAmount: number;
+  totalAfterDiscount: number;
+  deposit: number;
+};
+
 export type BookingLocation = {
   id: string;
   label: string;
@@ -82,6 +91,9 @@ export type BookingCreateInput = {
   insurancePlanId: string | null;
   signatureDataUrl: string;
   turnstileToken: string;
+  promoCode?: string | null;
+  paymentOption: PaymentOption;
+  customPaymentAmount?: number | null;
 };
 
 export type BookingCreateResult = {
@@ -184,6 +196,9 @@ export async function fetchPricingQuote(input: {
   insurancePlanId?: string | null;
   deliverySelected?: boolean;
   deliveryZoneLabel?: string | null;
+  promoCode?: string | null;
+  paymentOption?: PaymentOption;
+  customAmount?: number | null;
 }): Promise<PricingQuote> {
   const data = await requestJson<{ ok: true; summary: Omit<PricingQuote, "currency">; currency: string }>(
     "/api/public/pricing/quote",
@@ -196,13 +211,54 @@ export async function fetchPricingQuote(input: {
         customerEmail: input.customerEmail || null,
         insuranceSelected: input.insuranceSelected === true,
         insurancePlanId: input.insurancePlanId || null,
-        paymentOption: "DEPOSIT",
+        promoCode: input.promoCode || null,
+        paymentOption: input.paymentOption || "DEPOSIT",
+        customAmount: input.paymentOption === "CUSTOM" ? input.customAmount : null,
         deliverySelected: input.deliverySelected === true,
         deliveryZoneLabel: input.deliveryZoneLabel || null,
       }),
     },
   );
   return { ...data.summary, currency: data.currency || "JMD" };
+}
+
+export async function validatePromoCode(input: {
+  code: string;
+  vehicleId: string;
+  pickupDate: string;
+  returnDate: string;
+  customerEmail?: string;
+  insuranceSelected?: boolean;
+  insurancePlanId?: string | null;
+  deliverySelected?: boolean;
+  deliveryZoneLabel?: string | null;
+}): Promise<PromoValidation> {
+  const data = await requestJson<{
+    ok: true;
+    code: string;
+    discountAmountCents: number;
+    totalAfterDiscountCents: number;
+    depositCents: number;
+  }>("/api/public/promos/validate", {
+    method: "POST",
+    body: JSON.stringify({
+      code: input.code,
+      vehicleId: input.vehicleId,
+      startDate: input.pickupDate,
+      endDate: input.returnDate,
+      customerEmail: input.customerEmail || null,
+      insuranceSelected: input.insuranceSelected === true,
+      insurancePlanId: input.insurancePlanId || null,
+      deliverySelected: input.deliverySelected === true,
+      deliveryZoneLabel: input.deliveryZoneLabel || null,
+    }),
+  });
+  return {
+    code: data.code,
+    discountAmount: Math.max(0, Number(data.discountAmountCents) || 0),
+    totalAfterDiscount: Math.max(0, Number(data.totalAfterDiscountCents) || 0),
+    deposit: Math.max(0, Number(data.depositCents) || 0),
+  };
 }
 
 export async function fetchMinimumRentalDays(): Promise<number> {
@@ -301,7 +357,9 @@ export async function createBooking(input: BookingCreateInput): Promise<BookingC
       },
       insuranceSelected: input.insuranceSelected,
       insurancePlanId: input.insuranceSelected ? input.insurancePlanId : null,
-      paymentOption: "DEPOSIT",
+      couponCode: input.promoCode || null,
+      paymentOption: input.paymentOption,
+      customPaymentAmountCents: input.paymentOption === "CUSTOM" ? input.customPaymentAmount : null,
       deliverySelected,
       deliveryZoneLabel: deliverySelected ? `${pickupText} → ${dropoffText}` : null,
       signatureDataUrl: input.signatureDataUrl,
@@ -325,11 +383,21 @@ export async function fetchBookingStatus(bookingId: string, accessToken: string)
   return data.booking;
 }
 
-export async function startDepositPayment(bookingId: string, accessToken: string): Promise<BookingStatus> {
-  const data = await requestJson<{ ok: true; redirectUrl: string }>("/api/payments/wipay/start", {
+export async function startBookingPayment(
+  bookingId: string,
+  accessToken: string,
+  option: Exclude<PaymentOption, "NONE">,
+  customAmount?: number | null,
+): Promise<BookingStatus> {
+  const path = option === "FULL"
+    ? "/api/payments/wipay/full/start"
+    : option === "CUSTOM"
+      ? "/api/payments/wipay/custom/start"
+      : "/api/payments/wipay/start";
+  const data = await requestJson<{ ok: true; redirectUrl: string }>(path, {
     method: "POST",
     headers: bookingBearerHeaders(accessToken),
-    body: JSON.stringify({ bookingId }),
+    body: JSON.stringify({ bookingId, customAmountCents: option === "CUSTOM" ? customAmount : undefined }),
   });
   if (!data.redirectUrl) throw new ApiError("The payment provider did not return a checkout URL.", 502);
   await WebBrowser.openBrowserAsync(data.redirectUrl, {
@@ -337,4 +405,17 @@ export async function startDepositPayment(bookingId: string, accessToken: string
     showTitle: true,
   });
   return fetchBookingStatus(bookingId, accessToken);
+}
+
+export async function selectPayOnPickup(bookingId: string, accessToken: string): Promise<BookingStatus> {
+  await requestJson<{ ok: true }>(`/api/public/bookings/${encodeURIComponent(bookingId)}/pay-on-pickup`, {
+    method: "POST",
+    headers: bookingBearerHeaders(accessToken),
+    body: JSON.stringify({}),
+  });
+  return fetchBookingStatus(bookingId, accessToken);
+}
+
+export function startDepositPayment(bookingId: string, accessToken: string) {
+  return startBookingPayment(bookingId, accessToken, "DEPOSIT");
 }

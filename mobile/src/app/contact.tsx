@@ -1,9 +1,10 @@
 import * as Linking from "expo-linking";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Alert, StyleSheet, Text } from "react-native";
 
 import { Button, Card, Field, Notice, PageIntro, Screen } from "@/components/primitives";
-import { colors } from "@/constants/theme";
+import { useAppTheme } from "@/components/ThemeProvider";
+import type { AppColors } from "@/constants/theme";
 import { contact } from "@/data/catalog";
 
 async function open(url: string) {
@@ -11,6 +12,8 @@ async function open(url: string) {
 }
 
 export default function ContactScreen() {
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState("");
@@ -46,7 +49,7 @@ export default function ContactScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: AppColors) => StyleSheet.create({
   title: { color: colors.text, fontSize: 22, fontWeight: "900" },
   address: { color: colors.muted, fontSize: 15, lineHeight: 23, marginTop: 10 },
   help: { color: colors.muted, fontSize: 14, lineHeight: 22, marginTop: 8 },

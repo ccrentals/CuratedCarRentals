@@ -1,13 +1,17 @@
 import { Image } from "expo-image";
 import { router, useLocalSearchParams } from "expo-router";
+import { useMemo } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { Button, Card, PageIntro, Screen } from "@/components/primitives";
-import { colors, radii } from "@/constants/theme";
+import { useAppTheme } from "@/components/ThemeProvider";
+import { radii, type AppColors } from "@/constants/theme";
 import { formatJmd } from "@/data/catalog";
 import { useFleet } from "@/hooks/useFleet";
 
 export default function VehicleDetailScreen() {
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const { id } = useLocalSearchParams<{ id: string }>();
   const { vehicles, loading } = useFleet();
   const vehicle = vehicles.find((item) => item.id === id);
@@ -36,10 +40,12 @@ export default function VehicleDetailScreen() {
 }
 
 function Spec({ label, value }: { label: string; value: string }) {
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return <View style={styles.spec}><Text style={styles.specLabel}>{label}</Text><Text style={styles.specValue}>{value}</Text></View>;
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: AppColors) => StyleSheet.create({
   gallery: { gap: 12, paddingHorizontal: 20, paddingVertical: 22 },
   image: { width: 310, height: 230, borderRadius: radii.lg, backgroundColor: colors.surfaceSoft },
   price: { color: colors.tealDark, fontSize: 27, fontWeight: "900" },

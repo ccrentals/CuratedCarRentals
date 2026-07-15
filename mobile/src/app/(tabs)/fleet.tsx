@@ -1,11 +1,15 @@
+import { useMemo } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
 import { Button, Notice, PageIntro, PhotoCard, Screen } from "@/components/primitives";
-import { colors } from "@/constants/theme";
+import { useAppTheme } from "@/components/ThemeProvider";
+import type { AppColors } from "@/constants/theme";
 import { formatJmd } from "@/data/catalog";
 import { useFleet } from "@/hooks/useFleet";
 
 export default function FleetScreen() {
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const { vehicles, loading, source, error, refresh } = useFleet();
 
   return (
@@ -32,7 +36,7 @@ export default function FleetScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: AppColors) => StyleSheet.create({
   status: { marginHorizontal: 20, marginVertical: 18, flexDirection: "row", alignItems: "center", gap: 10 },
   statusText: { flex: 1, color: colors.muted, fontSize: 13, fontWeight: "700" },
 });

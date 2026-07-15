@@ -1,15 +1,23 @@
 import { Image, type ImageProps } from "expo-image";
 import { Link, type Href } from "expo-router";
-import type { PropsWithChildren, ReactNode } from "react";
+import { useMemo, type PropsWithChildren, type ReactNode, type RefObject } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, type TextInputProps, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { colors, radii, shadow } from "@/constants/theme";
+import { useAppTheme } from "@/components/ThemeProvider";
+import { radii, shadow, type AppColors } from "@/constants/theme";
 
-export function Screen({ children, dark = false }: PropsWithChildren<{ dark?: boolean }>) {
+function useStyles() {
+  const { colors } = useAppTheme();
+  return useMemo(() => makeStyles(colors), [colors]);
+}
+
+export function Screen({ children, dark = false, scrollRef }: PropsWithChildren<{ dark?: boolean; scrollRef?: RefObject<ScrollView | null> }>) {
+  const styles = useStyles();
+  const insets = useSafeAreaInsets();
   return (
     <SafeAreaView style={[styles.safe, dark && styles.safeDark]} edges={["top"]}>
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+      <ScrollView ref={scrollRef} contentContainerStyle={[styles.scroll, { paddingBottom: 92 + insets.bottom }]} keyboardShouldPersistTaps="handled">
         {children}
       </ScrollView>
     </SafeAreaView>
@@ -17,6 +25,7 @@ export function Screen({ children, dark = false }: PropsWithChildren<{ dark?: bo
 }
 
 export function PageIntro({ eyebrow, title, description }: { eyebrow?: string; title: string; description: string }) {
+  const styles = useStyles();
   return (
     <View style={styles.intro}>
       {eyebrow ? <Text style={styles.eyebrow}>{eyebrow}</Text> : null}
@@ -27,6 +36,7 @@ export function PageIntro({ eyebrow, title, description }: { eyebrow?: string; t
 }
 
 export function SectionTitle({ eyebrow, title, description }: { eyebrow?: string; title: string; description?: string }) {
+  const styles = useStyles();
   return (
     <View style={styles.sectionTitle}>
       {eyebrow ? <Text style={styles.eyebrow}>{eyebrow}</Text> : null}
@@ -37,10 +47,12 @@ export function SectionTitle({ eyebrow, title, description }: { eyebrow?: string
 }
 
 export function Card({ children, style }: PropsWithChildren<{ style?: object }>) {
+  const styles = useStyles();
   return <View style={[styles.card, style]}>{children}</View>;
 }
 
 export function PhotoCard({ image, eyebrow, title, body, action }: { image: ImageProps["source"]; eyebrow?: string; title: string; body: string; action?: ReactNode }) {
+  const styles = useStyles();
   return (
     <Card style={styles.photoCard}>
       <Image source={image} style={styles.photo} contentFit="cover" transition={180} accessibilityLabel={title} />
@@ -55,6 +67,7 @@ export function PhotoCard({ image, eyebrow, title, body, action }: { image: Imag
 }
 
 export function Button({ label, href, onPress, secondary = false, disabled = false }: { label: string; href?: Href; onPress?: () => void; secondary?: boolean; disabled?: boolean }) {
+  const styles = useStyles();
   const content = <Text style={[styles.buttonText, secondary && styles.buttonTextSecondary]}>{label}</Text>;
   const buttonStyle = StyleSheet.flatten([styles.button, secondary && styles.buttonSecondary, disabled && styles.buttonDisabled]);
   if (href) {
@@ -64,19 +77,22 @@ export function Button({ label, href, onPress, secondary = false, disabled = fal
 }
 
 export function Field({ label, ...props }: TextInputProps & { label: string }) {
+  const styles = useStyles();
+  const { colors } = useAppTheme();
   return (
     <View style={styles.fieldWrap}>
       <Text style={styles.fieldLabel}>{label}</Text>
-      <TextInput placeholderTextColor="#98A2B3" style={styles.field} {...props} />
+      <TextInput placeholderTextColor={colors.muted} style={styles.field} {...props} />
     </View>
   );
 }
 
 export function Notice({ children, error = false }: PropsWithChildren<{ error?: boolean }>) {
+  const styles = useStyles();
   return <Text style={[styles.notice, error && styles.noticeError]}>{children}</Text>;
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: AppColors) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.surfaceSoft },
   safeDark: { backgroundColor: colors.navy },
   scroll: { flexGrow: 1, paddingBottom: 36 },
@@ -100,6 +116,6 @@ const styles = StyleSheet.create({
   fieldWrap: { marginTop: 15 },
   fieldLabel: { color: colors.text, fontSize: 13, fontWeight: "700", marginBottom: 7 },
   field: { minHeight: 50, borderWidth: 1, borderColor: colors.border, borderRadius: radii.md, backgroundColor: colors.surface, color: colors.text, fontSize: 16, paddingHorizontal: 14, paddingVertical: 12 },
-  notice: { marginTop: 16, borderRadius: radii.md, backgroundColor: "#EAF7F1", color: colors.success, padding: 14, fontSize: 14, lineHeight: 21, fontWeight: "600" },
-  noticeError: { backgroundColor: "#FFF0EE", color: colors.danger },
+  notice: { marginTop: 16, borderRadius: radii.md, backgroundColor: colors.cream, color: colors.success, borderWidth: 1, borderColor: colors.border, padding: 14, fontSize: 14, lineHeight: 21, fontWeight: "600" },
+  noticeError: { backgroundColor: colors.surface, color: colors.danger, borderColor: colors.danger },
 });

@@ -1,12 +1,16 @@
 import { Image } from "expo-image";
+import { useMemo } from "react";
 import { StyleSheet, Text } from "react-native";
 
 import { Button, Card, PageIntro, Screen, SectionTitle } from "@/components/primitives";
-import { colors, radii } from "@/constants/theme";
+import { useAppTheme } from "@/components/ThemeProvider";
+import { radii, type AppColors } from "@/constants/theme";
 
 const features = ["Premium Insurance", "24/7 Support", "Well-Maintained Fleet", "Convenient Kingston Location", "Personal Service", "Local Expertise"];
 
 export default function AboutScreen() {
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <Screen>
       <PageIntro eyebrow="Our story" title="About Curated" description="Exceptional vehicles and personal service for business trips, family visits and Jamaican adventures." />
@@ -18,7 +22,7 @@ export default function AboutScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: AppColors) => StyleSheet.create({
   image: { height: 290, margin: 20, borderRadius: radii.lg },
   feature: { color: colors.text, fontSize: 17, fontWeight: "700" },
   mission: { backgroundColor: colors.cream, borderColor: colors.sand },

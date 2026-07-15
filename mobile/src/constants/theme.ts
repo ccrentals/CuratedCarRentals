@@ -17,6 +17,27 @@ export const colors = {
   white: "#FFFFFF",
 } as const;
 
+export type AppColors = { [Key in keyof typeof colors]: string };
+
+export const darkColors: AppColors = {
+  navy: "#07111F",
+  navySoft: "#10223A",
+  teal: "#4DB897",
+  tealDark: "#83D9BE",
+  orange: "#F47B4B",
+  orangeDark: "#FF9B73",
+  sand: "#4A3B24",
+  cream: "#1A2433",
+  surface: "#121D2C",
+  surfaceSoft: "#081321",
+  text: "#F4F7FB",
+  muted: "#9DAABD",
+  border: "#2A394C",
+  success: "#63D6A8",
+  danger: "#FF8D84",
+  white: "#FFFFFF",
+};
+
 export const radii = {
   sm: 10,
   md: 16,

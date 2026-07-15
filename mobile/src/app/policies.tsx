@@ -1,7 +1,9 @@
+import { useMemo } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
 import { Button, Card, PageIntro, Screen } from "@/components/primitives";
-import { colors } from "@/constants/theme";
+import { useAppTheme } from "@/components/ThemeProvider";
+import type { AppColors } from "@/constants/theme";
 
 const sections = [
   { title: "Driver requirements", items: ["Drivers must be 23 years or older.", "A driver's licence must be valid for at least one year and in good standing.", "Two valid forms of identification are required."] },
@@ -11,6 +13,8 @@ const sections = [
 ];
 
 export default function PoliciesScreen() {
+  const { colors, isDark } = useAppTheme();
+  const styles = useMemo(() => makeStyles(colors, isDark), [colors, isDark]);
   return (
     <Screen>
       <PageIntro eyebrow="Clear rental terms" title="Rental Policies" description="Review the key requirements, deposit, insurance and reservation terms before booking." />
@@ -20,12 +24,12 @@ export default function PoliciesScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: AppColors, isDark: boolean) => StyleSheet.create({
   title: { color: colors.text, fontSize: 22, fontWeight: "900", marginBottom: 6 },
   item: { flexDirection: "row", gap: 10, marginTop: 13 },
   check: { color: colors.teal, fontSize: 16, fontWeight: "900" },
   body: { flex: 1, color: colors.muted, fontSize: 15, lineHeight: 23 },
-  notice: { backgroundColor: "#EAF7F1", borderColor: "#B8E0CE" },
+  notice: { backgroundColor: isDark ? colors.navySoft : "#EAF7F1", borderColor: colors.teal },
   noticeTitle: { color: colors.tealDark, fontSize: 21, fontWeight: "900" },
   noticeBody: { color: colors.tealDark, fontSize: 15, lineHeight: 23, marginTop: 10 },
 });
