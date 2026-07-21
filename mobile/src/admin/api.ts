@@ -73,6 +73,60 @@ export type AdminBookingDetail = {
   payments: { id: string; public_id: string; provider: string; status: string; deposit_amount_cents: number; currency: string; created_at: string }[];
 };
 
+export type AdminQuoteStatus = "DRAFT" | "SENT" | "ACCEPTED" | "EXPIRED" | "CONVERTED" | "CANCELLED";
+
+export type AdminQuoteListItem = {
+  id: string;
+  publicId: string;
+  createdAt: string;
+  status: AdminQuoteStatus;
+  expiresAt: string | null;
+  customerFullName: string;
+  customerEmail: string;
+  customerPhone: string | null;
+  startAt: string;
+  endAt: string;
+  pickupLocationText: string;
+  dropoffLocationText: string;
+  vehicleId: string | null;
+  vehicleLabel: string;
+  vehicleClass: string | null;
+  baseTotalCents: number;
+  insuranceTotalCents: number;
+  discountTotalCents: number;
+  subtotalCents: number;
+  totalCents: number;
+  depositRequiredCents: number;
+  amountDueCents: number;
+  promoCode: string | null;
+  insuranceEnabled: boolean;
+  tags: string[];
+  comments: string | null;
+  commissionPartnerName: string | null;
+  clientPaysAtPartner: boolean;
+  rackPriceCents: number | null;
+  lastEmailedAt: string | null;
+};
+
+export type AdminQuoteDetail = AdminQuoteListItem & {
+  updatedAt: string;
+  pricingJson: Record<string, unknown>;
+  pickupLocationId: string | null;
+  dropoffLocationId: string | null;
+  insurancePlanId: string | null;
+  createdByAdminUserId: string | null;
+  lastEmailedTo: string | null;
+  convertedBookingId: string | null;
+};
+
+export type AdminQuotesPage = {
+  items: AdminQuoteListItem[];
+  nextCursor: string | null;
+  hasMore: boolean;
+  totalCount: number;
+  limit: number;
+};
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -131,5 +185,55 @@ export async function updateAdminBookingStatus(request: AdminRequest, bookingId:
   return readAdminJson<{ ok: true; message?: string }>(request, `/api/admin/bookings/${encodeURIComponent(bookingId)}`, {
     method: "PATCH",
     body: JSON.stringify({ action }),
+  });
+}
+
+export async function fetchAdminQuotes(request: AdminRequest, input: {
+  q?: string;
+  status?: string;
+  cursor?: string | null;
+  limit?: number;
+}) {
+  const params = new URLSearchParams();
+  if (input.q?.trim()) params.set("q", input.q.trim());
+  if (input.status && input.status !== "all") params.set("status", input.status);
+  if (input.cursor) params.set("cursor", input.cursor);
+  params.set("sortBy", "created");
+  params.set("sortDir", "desc");
+  params.set("limit", String(input.limit ?? 20));
+  const data = await readAdminJson<AdminQuotesPage>(request, `/api/admin/quotes?${params.toString()}`, { cache: "no-store" });
+  if (!Array.isArray(data.items) || typeof data.totalCount !== "number") {
+    throw new ApiError("The quotes service returned an invalid response.", 502);
+  }
+  return data;
+}
+
+export async function fetchAdminQuote(request: AdminRequest, quoteId: string) {
+  const data = await readAdminJson<{ ok: true; item: AdminQuoteDetail }>(request, `/api/admin/quotes/${encodeURIComponent(quoteId)}`, { cache: "no-store" });
+  if (!isObject(data.item) || !Array.isArray(data.item.tags)) {
+    throw new ApiError("The quote service returned an invalid response.", 502);
+  }
+  return data.item;
+}
+
+export async function updateAdminQuoteStatus(request: AdminRequest, quoteId: string, status: AdminQuoteStatus) {
+  const data = await readAdminJson<{ ok: true; item: AdminQuoteDetail }>(request, `/api/admin/quotes/${encodeURIComponent(quoteId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
+  return data.item;
+}
+
+export async function emailAdminQuote(request: AdminRequest, quoteId: string, toEmail: string) {
+  return readAdminJson<{ ok: true; toEmail: string; subject: string }>(request, `/api/admin/quotes/${encodeURIComponent(quoteId)}/email`, {
+    method: "POST",
+    body: JSON.stringify({ toEmail }),
+  });
+}
+
+export async function convertAdminQuote(request: AdminRequest, quoteId: string) {
+  return readAdminJson<{ ok: true; bookingId: string; alreadyConverted: boolean }>(request, `/api/admin/quotes/${encodeURIComponent(quoteId)}/convert-to-booking`, {
+    method: "POST",
+    body: JSON.stringify({}),
   });
 }
