@@ -640,6 +640,51 @@ export type AdminPromoInput = {
   blackoutDates: string[];
 };
 
+export type AdminEmailListItem = {
+  id: string;
+  kind: "dispatch" | "quote_legacy" | "notification_dispatch_legacy";
+  rawId: string;
+  status: string;
+  sentAt: string | null;
+  lastEventAt: string | null;
+  createdAt: string;
+  recipientName: string | null;
+  recipientEmail: string | null;
+  subject: string | null;
+  emailType: string;
+  entityType: string | null;
+  entityId: string | null;
+  entityPublicId: string | null;
+  triggerSource: string | null;
+  relatedTransactionType: string | null;
+  relatedTransactionId: string | null;
+  providerMessageId: string | null;
+  triggeredByUserId: string | null;
+  triggeredByName: string | null;
+  lastError: string | null;
+  manualResendAllowed: boolean;
+};
+
+export type AdminEmailsPage = {
+  items: AdminEmailListItem[];
+  totalCount: number;
+  page: number;
+  rowsPerPage: number;
+  totalPages: number;
+  hasPrev: boolean;
+  hasNext: boolean;
+  from: number;
+  to: number;
+  summary: { total: number; failed: number; bouncedOrIssue: number; pendingOrUnknown: number };
+};
+
+export type AdminEmailDetail = AdminEmailListItem & {
+  metadata: Record<string, unknown>;
+  events: { id: string; source: string; eventType: string; status: string | null; occurredAt: string; createdAt: string; details: Record<string, unknown> }[];
+  providerLastEvent: string | null;
+  providerStatusError: string | null;
+};
+
 type AdminSettingsErrorPayload = Partial<AdminSettingsPayload> & {
   error?: string;
   message?: string;
@@ -1045,4 +1090,28 @@ export async function updateAdminPromo(request: AdminRequest, promoId: string, i
     method: "PATCH",
     body: JSON.stringify(input),
   });
+}
+
+export async function fetchAdminEmails(request: AdminRequest, input: { q?: string; status?: string; emailType?: string; entityType?: string; triggerSource?: string; dateFrom?: string; dateTo?: string; page?: number; limit?: number }) {
+  const params = new URLSearchParams({ page: String(input.page ?? 1), limit: String(input.limit ?? 20), sortBy: "lastEvent", sortDir: "desc" });
+  if (input.q?.trim()) params.set("q", input.q.trim());
+  if (input.status && input.status !== "all") params.set("status", input.status);
+  if (input.emailType?.trim()) params.set("emailType", input.emailType.trim());
+  if (input.entityType?.trim()) params.set("entityType", input.entityType.trim());
+  if (input.triggerSource?.trim()) params.set("triggerSource", input.triggerSource.trim());
+  if (input.dateFrom?.trim()) params.set("dateFrom", input.dateFrom.trim());
+  if (input.dateTo?.trim()) params.set("dateTo", input.dateTo.trim());
+  const data = await readAdminJson<AdminEmailsPage & { ok: true }>(request, `/api/admin/emails?${params.toString()}`, { cache: "no-store" });
+  if (!Array.isArray(data.items) || typeof data.totalCount !== "number" || !isObject(data.summary)) throw new ApiError("The email activity service returned an invalid response.", 502);
+  return data;
+}
+
+export async function fetchAdminEmail(request: AdminRequest, emailId: string) {
+  const data = await readAdminJson<{ ok: true; item: AdminEmailDetail }>(request, `/api/admin/emails/${encodeURIComponent(emailId)}`, { cache: "no-store" });
+  if (!isObject(data.item) || !Array.isArray(data.item.events)) throw new ApiError("The email detail service returned an invalid response.", 502);
+  return data.item;
+}
+
+export async function resendAdminEmail(request: AdminRequest, emailId: string) {
+  return readAdminJson<{ ok: true }>(request, `/api/admin/emails/${encodeURIComponent(emailId)}/resend`, { method: "POST", body: "{}" });
 }
