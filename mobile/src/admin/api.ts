@@ -316,6 +316,39 @@ export type AdminMessagesPage = {
   limit: number;
 };
 
+export type AdminReportsPayload = {
+  filters: { snapshotDate: string; rangeFrom: string; rangeTo: string; vehicleId: string; pickupLocationType: string; dropoffLocationType: string; locationLabel: string; revenueGranularity: "day" | "week" | "month" };
+  generatedAt: string;
+  sectionMeta: Record<string, { mode: "operational" | "historical"; dateBasisLabel: string; supportsExport: boolean; warnings: string[] }>;
+  revenue: { granularity: string; totals: { grossRevenue: number; refunds: number; netRevenue: number; paymentCount: number }; points: { periodStart: string; periodLabel: string; grossRevenue: number; refunds: number; netRevenue: number; paymentCount: number }[] };
+  vehicleProfitability: { totals: { vehicleCount: number; grossRevenue: number; refunds: number; maintenanceCost: number; netProfit: number }; includesMaintenanceData: boolean; rows: { vehicleId: string; vehicleLabel: string; bookingCount: number; grossRevenue: number; refunds: number; maintenanceCost: number; netProfit: number; marginPercent: number }[] };
+  utilization: { rangeDays: number; includesBlockouts: boolean; rows: { vehicleId: string; vehicleLabel: string; bookedDays: number; blockoutDays: number; availableDays: number; utilizationPercent: number }[] };
+  outstandingBalances: { totals: { totalOutstandingAmount: number; outstandingCount: number }; rows: { bookingId: string; bookingDbId: string; customerName: string; vehicleLabel: string; pickupDate: string; returnDate: string; status: string; paymentOption: string; paymentStatus: string; isNonBlocking: boolean; total: number; amountPaid: number; balanceDue: number; daysFromPickup: number }[] };
+  agingReceivables: { totals: { totalOutstandingAmount: number; outstandingCount: number; overdueAmount: number; overdueCount: number }; buckets: { label: string; count: number; amount: number }[]; rows: { bookingId: string; bookingDbId: string; customerName: string; vehicleLabel: string; pickupDate: string; returnDate: string; balanceDue: number; daysPastDue: number; bucket: string }[] };
+  customerCohort: { summary: { totalCustomers: number; newCustomers: number; repeatCustomers: number; repeatRate: number | null }; rows: { cohortMonth: string; cohortLabel: string; customerCount: number; bookingCount: number; revenue: number }[] };
+  locationPerformance: { totals: { bookingCount: number; revenue: number; amountPaid: number; outstanding: number; cancellationCount: number }; rows: { locationLabel: string; pickupLabel: string; dropoffLabel: string; pickupType: string; dropoffType: string; bookingCount: number; revenue: number; amountPaid: number; outstanding: number; cancellationCount: number }[] };
+  funnel: { counts: { pendingPayment: number; confirmedActive: number; completedReturned: number; cancelled: number; overridden: number; totalCreated: number }; conversion: { pendingToConfirmed: number | null; confirmedToCompleted: number | null; cancellationRate: number | null } };
+  upcoming: { pickups: AdminReportUpcomingItem[]; returns: AdminReportUpcomingItem[] };
+  cancellationRefundImpact: { summary: { cancelledCount: number; refundCount: number; refundTotal: number; grossPayments: number; netImpact: number }; breakdown: { periodStart: string; periodLabel: string; cancellations: number; refundTotal: number }[]; cancellations: unknown[]; refunds: unknown[]; excludedUnknownTimestampCount: number };
+};
+
+export type AdminReportUpcomingItem = {
+  bookingId: string;
+  bookingDbId: string;
+  customerName: string;
+  vehicleLabel: string;
+  status: string;
+  paymentStatus: string;
+  paymentOption: string;
+  isNonBlocking: boolean;
+  pickupDate: string;
+  returnDate: string;
+  eventDate: string;
+  total: number;
+  amountPaid: number;
+  balanceDue: number;
+};
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -556,4 +589,11 @@ export async function fetchAdminMessage(request: AdminRequest, messageId: string
 export async function updateAdminMessage(request: AdminRequest, messageId: string, action: AdminMessageAction) {
   const data = await readAdminJson<{ ok: true; item: AdminMessageDetail; deleted?: boolean }>(request, `/api/admin/messages/${encodeURIComponent(messageId)}`, { method: "PATCH", body: JSON.stringify({ action }) });
   return data;
+}
+
+export async function fetchAdminReports(request: AdminRequest, input: { rangeFrom: string; rangeTo: string; snapshotDate?: string; granularity?: "day" | "week" | "month" }) {
+  const params = new URLSearchParams({ rangeFrom: input.rangeFrom, rangeTo: input.rangeTo, snapshotDate: input.snapshotDate ?? input.rangeTo, revenueGranularity: input.granularity ?? "day" });
+  const data = await readAdminJson<{ ok: true; report: AdminReportsPayload }>(request, `/api/admin/reports?${params.toString()}`, { cache: "no-store" });
+  if (!isObject(data.report) || !isObject(data.report.revenue) || !isObject(data.report.upcoming)) throw new ApiError("The reports service returned an invalid response.", 502);
+  return data.report;
 }
