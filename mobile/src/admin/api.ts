@@ -487,6 +487,48 @@ export type AdminCalendarPayload = {
   warnings: string[];
 };
 
+export type AdminPaymentItem = {
+  id: string;
+  publicId: string;
+  bookingId: string;
+  bookingPublicId: string | null;
+  provider: string;
+  providerLabel: string;
+  status: string;
+  statusLabel: string;
+  paymentType: string;
+  amount: number;
+  currency: string;
+  providerReference: string | null;
+  transactionId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+  deletedReason: string | null;
+  isRefunded: boolean;
+  customerName: string;
+  customerEmail: string;
+  vehicleLabel: string;
+  error: { title: string; detail: string } | null;
+};
+
+export type AdminPaymentsPage = {
+  items: AdminPaymentItem[];
+  summary: {
+    total_count: number;
+    collected_amount: number;
+    refund_amount: number;
+    net_amount: number;
+    successful_count: number;
+    attention_count: number;
+  };
+  totalCount: number;
+  hasMore: boolean;
+  nextCursor: string | null;
+  requireRestoreReason: boolean;
+  filters: { q: string; type: string; state: string; provider: string };
+};
+
 type AdminSettingsErrorPayload = Partial<AdminSettingsPayload> & {
   error?: string;
   message?: string;
@@ -810,4 +852,33 @@ export async function fetchAdminCalendar(request: AdminRequest, input: { date: s
     throw new ApiError("The calendar service returned an invalid response.", 502);
   }
   return data;
+}
+
+export async function fetchAdminPayments(request: AdminRequest, input: { q?: string; type?: string; state?: string; provider?: string; cursor?: string | null; limit?: number }) {
+  const params = new URLSearchParams();
+  if (input.q?.trim()) params.set("q", input.q.trim());
+  if (input.type && input.type !== "all") params.set("type", input.type);
+  if (input.state && input.state !== "all") params.set("state", input.state);
+  if (input.provider && input.provider !== "all") params.set("provider", input.provider);
+  if (input.cursor) params.set("cursor", input.cursor);
+  params.set("limit", String(input.limit ?? 20));
+  const data = await readAdminJson<AdminPaymentsPage>(request, `/api/admin/payments?${params.toString()}`, { cache: "no-store" });
+  if (!Array.isArray(data.items) || !isObject(data.summary) || typeof data.totalCount !== "number") {
+    throw new ApiError("The payments service returned an invalid response.", 502);
+  }
+  return data;
+}
+
+export async function updateAdminPayment(request: AdminRequest, paymentId: string, action: "delete" | "restore", reason: string) {
+  return readAdminJson<{ ok: true; summary?: unknown }>(request, `/api/admin/payments/${encodeURIComponent(paymentId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(action === "delete" ? { action, reason } : { action, note: reason }),
+  });
+}
+
+export async function recordAdminRefundAdjustment(request: AdminRequest, paymentId: string, reason: string) {
+  return readAdminJson<{ ok: true; message?: string; summary?: unknown }>(request, `/api/admin/payments/${encodeURIComponent(paymentId)}/refund`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  });
 }

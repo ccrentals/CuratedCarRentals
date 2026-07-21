@@ -176,12 +176,13 @@ test("reconcileWiPayPayment: replay paths dedupe loser emails", async () => {
             return { rowCount: 0, rows: [] };
           }
 
-          if (text.startsWith("select b.id, b.start_date, b.end_date, b.status")) {
+          if (text.startsWith("select b.id, b.public_id, b.start_date, b.end_date, b.status")) {
             return {
               rowCount: 1,
               rows: [
                 {
                   id: "booking-winner",
+                  public_id: "BK000001",
                   start_date: "2026-04-01",
                   end_date: "2026-04-03",
                   status: "CONFIRMED",
