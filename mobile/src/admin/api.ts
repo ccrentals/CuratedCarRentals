@@ -68,8 +68,8 @@ export type AdminBookingDetail = {
     non_blocking: boolean;
     overridden_by_booking_id: string | null;
   };
-  customer: { full_name: string; email: string; phone: string };
-  vehicle: { make: string; model: string; year: number };
+  customer: { id: string; full_name: string; email: string; phone: string };
+  vehicle: { id: string; make: string; model: string; year: number };
   payments: { id: string; public_id: string; provider: string; status: string; deposit_amount_cents: number; currency: string; created_at: string }[];
 };
 
@@ -839,6 +839,20 @@ export async function updateAdminBookingStatus(request: AdminRequest, bookingId:
     method: "PATCH",
     body: JSON.stringify({ action }),
   });
+}
+
+export async function cancelAdminBooking(request: AdminRequest, bookingId: string) {
+  return readAdminJson<{ ok: true; message?: string }>(request, `/api/admin/bookings/${encodeURIComponent(bookingId)}/cancel`, { method: "POST", body: "{}" });
+}
+
+export async function resendAdminBookingEmail(request: AdminRequest, bookingId: string, type: "booking_created" | "deposit_receipt") {
+  return readAdminJson<{ ok: true; message?: string }>(request, `/api/admin/bookings/${encodeURIComponent(bookingId)}/resend-email`, { method: "POST", body: JSON.stringify({ type }) });
+}
+
+export type AdminBookingDocumentResult = { ok: true; bookingId: string; provider: string; providerStatus: string; previewUrl: string | null; downloadUrl: string | null };
+export async function generateAdminBookingDocument(request: AdminRequest, bookingId: string, type: "agreement" | "invoice") {
+  const suffix = type === "agreement" ? "agreement-document" : "invoice-document";
+  return readAdminJson<AdminBookingDocumentResult>(request, `/api/admin/bookings/${encodeURIComponent(bookingId)}/${suffix}`, { cache: "no-store" });
 }
 
 export async function fetchAdminQuotes(request: AdminRequest, input: {
