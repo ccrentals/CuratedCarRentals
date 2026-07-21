@@ -739,6 +739,33 @@ export type AdminQuoteCreateInput = {
   clientPaysAtPartner: boolean; rackPriceCents: number | null;
 };
 
+export type AdminBookingCreateInput = {
+  vehicleId: string;
+  customerId?: string;
+  fullName: string;
+  email: string;
+  phone: string;
+  startDate: string;
+  endDate: string;
+  pickupLocation: string;
+  dropoffLocation: string;
+  pickupLocationType: string;
+  dropoffLocationType: string;
+  pickupLocationId: string | null;
+  dropoffLocationId: string | null;
+  pickupLocationTextSnapshot: string;
+  dropoffLocationTextSnapshot: string;
+  bookingLocationDetails: Record<string, unknown>;
+  insuranceSelected: boolean;
+  insurancePlanId: string | null;
+  promoCode: string | null;
+};
+
+export type AdminBookingCreateResult = { bookingId: string; status: string; promoApplied: boolean; insuranceSelected: boolean };
+export type AdminManualPaymentMethod = "CASH" | "BANK_TRANSFER" | "POS_CARD" | "CHEQUE" | "OTHER";
+export type AdminManualPaymentInput = { amount: number; method: AdminManualPaymentMethod; reference?: string; note?: string; paidAt?: string };
+export type AdminManualPaymentResult = { ok: true; duplicate?: boolean; lost?: boolean; winnerBookingId?: string | null; paidToDate?: number; balanceDue?: number; paidInFull?: boolean };
+
 type AdminSettingsErrorPayload = Partial<AdminSettingsPayload> & {
   error?: string;
   message?: string;
@@ -1231,4 +1258,23 @@ export async function createAdminQuote(request: AdminRequest, input: AdminQuoteC
   const data = await readAdminJson<{ ok: true; item: AdminQuoteDetail }>(request, "/api/admin/quotes", { method: "POST", body: JSON.stringify(input) });
   if (!isObject(data.item) || typeof data.item.id !== "string") throw new ApiError("The quote service returned an invalid response.", 502);
   return data.item;
+}
+
+export async function fetchMinimumRentalDays(request: AdminRequest) {
+  const data = await readAdminJson<{ minimumDays: number }>(request, "/api/public/minimum-rental-days", { cache: "no-store" });
+  const minimumDays = Math.round(Number(data.minimumDays));
+  if (!Number.isFinite(minimumDays) || minimumDays < 1 || minimumDays > 30) throw new ApiError("The minimum rental period is unavailable.", 502);
+  return minimumDays;
+}
+
+export async function createAdminBooking(request: AdminRequest, input: AdminBookingCreateInput) {
+  const data = await readAdminJson<AdminBookingCreateResult>(request, "/api/admin/bookings", { method: "POST", body: JSON.stringify(input) });
+  if (typeof data.bookingId !== "string" || typeof data.status !== "string") throw new ApiError("The booking service returned an invalid response.", 502);
+  return data;
+}
+
+export async function addAdminBookingPayment(request: AdminRequest, bookingId: string, input: AdminManualPaymentInput) {
+  const data = await readAdminJson<AdminManualPaymentResult>(request, `/api/admin/bookings/${encodeURIComponent(bookingId)}/add-payment`, { method: "POST", body: JSON.stringify(input) });
+  if (data.ok !== true) throw new ApiError("The payment service returned an invalid response.", 502);
+  return data;
 }
