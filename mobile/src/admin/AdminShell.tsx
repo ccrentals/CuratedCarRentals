@@ -25,6 +25,7 @@ type AdminScreenProps = PropsWithChildren<{
   action?: ReactNode;
   refreshing?: boolean;
   onRefresh?: () => void;
+  onBackRequest?: () => void;
 }>;
 
 export function AdminScreen({
@@ -35,6 +36,7 @@ export function AdminScreen({
   action,
   refreshing = false,
   onRefresh,
+  onBackRequest,
   children,
 }: AdminScreenProps) {
   const { colors } = useAppTheme();
@@ -46,7 +48,7 @@ export function AdminScreen({
       <View style={styles.header}>
         <View style={styles.headerTop}>
           {back ? (
-            <Pressable onPress={() => router.back()} style={styles.headerIconButton} accessibilityRole="button" accessibilityLabel="Go back">
+            <Pressable onPress={onBackRequest ?? (() => router.back())} style={styles.headerIconButton} accessibilityRole="button" accessibilityLabel="Go back">
               <MaterialIcons name="arrow-back" size={22} color={colors.white} />
             </Pressable>
           ) : <BrandLogo compact light size={38} />}

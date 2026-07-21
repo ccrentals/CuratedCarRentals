@@ -366,6 +366,100 @@ export type AdminUserListItem = {
 
 export type AdminUserAction = "update_profile" | "set_role" | "resend_invite" | "unlock" | "lock" | "reset_password" | "deactivate" | "reactivate" | "delete_user";
 
+export type AdminSettings = {
+  authLoginMethod: "clerk" | "legacy";
+  blockoutSupersedesBookings: boolean;
+  requireRestoreReason: boolean;
+  sendPickupReminder: boolean;
+  sendDropoffReminder: boolean;
+  sendLateDropoffAlert: boolean;
+  dayViewBookingLimit: number | "all";
+  contactNotificationEmails: string;
+  contactNotifyCooldownMinutes: number;
+  primaryAdminUserId: string | null;
+  primaryDeveloperUserId: string | null;
+  defaultOperationalNotificationEmail: string;
+  additionalOperationalNotificationEmails: string[];
+  sendVehicleInspectionWarningEmails: boolean;
+  vehicleDocumentFolders: string[];
+  vehicleDocumentTypeOptions: string[];
+  vehicleChecklistTemplates: {
+    key: string;
+    label: string;
+    folder: string;
+    required: boolean;
+    allowNotRequired: boolean;
+    expiryRequired: boolean;
+    expiryWarningDays: number | null;
+    isActive: boolean;
+  }[];
+  vehicleChecklistTemplateItems: string[];
+  maintenanceRemindersEnabled: boolean;
+  maintenanceReminderLeadDays: number;
+  maintenanceDueSoonDays: number;
+  maintenanceDueSoonKm: number;
+  maintenanceCategories: string[];
+  maintenancePriorities: string[];
+  depreciationDefaultMethod: "STRAIGHT_LINE";
+  depreciationDefaultUsefulLifeMonths: number;
+  depreciationDefaultResidualPercent: number;
+  bookingMinimumRentalDays: { globalDefaultDays: number };
+  bookingVehicleSecurityDeposits: { vehicleDepositsJmd: Record<string, number | null> };
+};
+
+export type AdminSettingsFieldErrors = Partial<Record<keyof AdminSettings | "bookingMinimumRentalDays" | "bookingVehicleSecurityDeposits", string>>;
+
+export type AdminSettingsOwnershipOption = {
+  id: string;
+  email: string | null;
+  fullName: string | null;
+  username: string | null;
+  role: string | null;
+  roleLabel: string;
+  label: string;
+};
+
+export type AdminSettingsOwnershipResolution = {
+  userId: string | null;
+  status: "missing" | "valid" | "not_found" | "inactive" | "wrong_role";
+  label: string;
+  message: string;
+};
+
+export type AdminSettingsPayload = {
+  settings: AdminSettings;
+  ownership: {
+    primaryAdmin: AdminSettingsOwnershipResolution;
+    primaryDeveloper: AdminSettingsOwnershipResolution;
+    primaryAdminOptions: AdminSettingsOwnershipOption[];
+    primaryDeveloperOptions: AdminSettingsOwnershipOption[];
+  };
+  operationalRouting: {
+    configuredRecipients: string[];
+    effectiveRecipients: string[];
+    recipients: { email: string; source: string; label: string }[];
+    hasConfiguredRecipients: boolean;
+    usesFallback: boolean;
+    warnings: string[];
+  };
+  configurationHealth?: { status: "ready" | "needs-review"; warnings: string[] };
+  updatedAt: string | null;
+  updatedByEmail: string | null;
+};
+
+type AdminSettingsErrorPayload = Partial<AdminSettingsPayload> & {
+  error?: string;
+  message?: string;
+  fieldErrors?: AdminSettingsFieldErrors;
+};
+
+export class AdminSettingsError extends ApiError {
+  constructor(message: string, status: number, readonly payload: AdminSettingsErrorPayload) {
+    super(message, status);
+    this.name = "AdminSettingsError";
+  }
+}
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -629,4 +723,40 @@ export async function createAdminUser(request: AdminRequest, input: { firstName:
 
 export async function updateAdminUser(request: AdminRequest, userId: string, action: AdminUserAction, payload: Record<string, unknown> = {}) {
   return readAdminJson<{ ok: true; message?: string; tempPassword?: string; tempPasswordExpiresAt?: string; setupEmail?: string; setupUrl?: string }>(request, `/api/admin/users/${encodeURIComponent(userId)}`, { method: "PATCH", body: JSON.stringify({ action, ...payload }) });
+}
+
+function isAdminSettingsPayload(value: unknown): value is AdminSettingsPayload {
+  return isObject(value)
+    && isObject(value.settings)
+    && isObject(value.ownership)
+    && isObject(value.operationalRouting)
+    && Array.isArray(value.operationalRouting.effectiveRecipients);
+}
+
+export async function fetchAdminSettings(request: AdminRequest) {
+  const data = await readAdminJson<AdminSettingsPayload>(request, "/api/admin/settings", { cache: "no-store" });
+  if (!isAdminSettingsPayload(data)) throw new ApiError("The settings service returned an invalid response.", 502);
+  return data;
+}
+
+export async function saveAdminSettings(request: AdminRequest, settings: AdminSettings, baseUpdatedAt: string | null) {
+  const response = await request("/api/admin/settings", {
+    method: "PATCH",
+    body: JSON.stringify({ settings, baseUpdatedAt }),
+  });
+  const data = await response.json().catch(() => null) as unknown;
+  if (!response.ok) {
+    const payload = isObject(data) ? data as AdminSettingsErrorPayload : {};
+    throw new AdminSettingsError(
+      typeof payload.message === "string"
+        ? payload.message
+        : typeof payload.error === "string"
+          ? payload.error
+          : "The settings service could not save these changes.",
+      response.status,
+      payload,
+    );
+  }
+  if (!isAdminSettingsPayload(data)) throw new ApiError("The settings service returned an invalid response.", 502);
+  return data;
 }
