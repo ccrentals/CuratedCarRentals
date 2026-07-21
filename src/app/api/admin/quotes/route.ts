@@ -93,6 +93,7 @@ export async function handleAdminQuotesPost(
 
   try {
     const item = await deps.createQuote({
+      clientRequestId: body?.client_request_id ?? body?.clientRequestId,
       customerFullName: body?.customer_full_name ?? body?.customerFullName,
       customerEmail: body?.customer_email ?? body?.customerEmail,
       customerPhone: body?.customer_phone ?? body?.customerPhone,

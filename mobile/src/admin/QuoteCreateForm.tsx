@@ -1,4 +1,5 @@
 import { MaterialIcons } from "@expo/vector-icons";
+import { randomUUID } from "expo-crypto";
 import { router, type Href, useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, BackHandler, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
@@ -30,6 +31,7 @@ export function AdminQuoteCreateForm() {
   const { colors } = useAppTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const allowed = Boolean(user && hasCapability(user.role, "quotes.write"));
+  const [clientRequestId] = useState(() => randomUUID());
 
   const [customerFullName, setCustomerFullName] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
@@ -136,7 +138,7 @@ export function AdminQuoteCreateForm() {
     finally { setBusy(""); }
   };
 
-  const formInput = () => ({ customerFullName, customerEmail, customerPhone, pickupDate, pickupTime, dropoffDate, dropoffTime, locations, pickupTypeKey, dropoffTypeKey, pickupValues, dropoffValues, vehicleId, insuranceEnabled, insurancePlanId: insurance.planId, promoCode, tags, comments, expiresDate, commissionPartnerName, clientPaysAtPartner, rackPrice });
+  const formInput = () => ({ clientRequestId, customerFullName, customerEmail, customerPhone, pickupDate, pickupTime, dropoffDate, dropoffTime, locations, pickupTypeKey, dropoffTypeKey, pickupValues, dropoffValues, vehicleId, insuranceEnabled, insurancePlanId: insurance.planId, promoCode, tags, comments, expiresDate, commissionPartnerName, clientPaysAtPartner, rackPrice });
 
   const requestCreate = () => {
     const result = prepareQuoteCreate(formInput());

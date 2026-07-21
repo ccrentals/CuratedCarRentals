@@ -37,6 +37,10 @@ type Queryable = {
   query: (text: string, params?: unknown[]) => Promise<{ rows: unknown[]; rowCount: number }>;
 };
 
+type QuoteDbPool = {
+  connect: () => Promise<Queryable & { release: () => void }>;
+};
+
 type QuoteCursor = {
   createdAt: string;
   id: string;
@@ -168,6 +172,7 @@ export type FetchAdminQuotesInput = {
 };
 
 export type CreateAdminQuoteInput = {
+  clientRequestId?: string | null;
   customerFullName: string;
   customerEmail: string;
   customerPhone?: string | null;
@@ -618,6 +623,10 @@ export async function fetchAdminQuoteById(id: string) {
 }
 
 function requireValidCreateInput(input: CreateAdminQuoteInput) {
+  if (input.clientRequestId != null && !UUID_REGEX.test(normalizeText(input.clientRequestId))) {
+    throw new AdminQuoteError("INVALID_CLIENT_REQUEST_ID", "Client request id is invalid.", 400);
+  }
+
   if (!isNonEmptyString(input.customerFullName, 2)) {
     throw new AdminQuoteError("INVALID_CUSTOMER_NAME", "Customer full name is required.", 400);
   }
@@ -810,7 +819,10 @@ async function buildQuoteLocationSelection(input: {
   return locationSelection;
 }
 
-export async function createAdminQuote(input: CreateAdminQuoteInput) {
+export async function createAdminQuote(
+  input: CreateAdminQuoteInput,
+  options: { pool?: QuoteDbPool } = {},
+) {
   requireValidCreateInput(input);
 
   const startAt = toDate(input.startAt);
@@ -831,12 +843,36 @@ export async function createAdminQuote(input: CreateAdminQuoteInput) {
   const commissionPartnerName = normalizeNullableText(input.commissionPartnerName);
   const clientPaysAtPartner = normalizeBoolean(input.clientPaysAtPartner);
   const rackPriceCents = normalizeInteger(input.rackPriceCents);
+  const clientRequestId = normalizeUuidOrNull(input.clientRequestId);
+  const createdByAdminUserId = normalizeUuidOrNull(input.createdByAdminUserId);
+  if (clientRequestId && !createdByAdminUserId) {
+    throw new AdminQuoteError(
+      "INVALID_CLIENT_REQUEST_ACTOR",
+      "A staff user is required for retry-safe quote creation.",
+      400,
+    );
+  }
 
-  const pool = getDbPool();
+  const pool = options.pool ?? getDbPool();
   const client = await pool.connect();
 
   try {
     await client.query("begin");
+
+    if (clientRequestId && createdByAdminUserId) {
+      await client.query("select pg_advisory_xact_lock(hashtext($1))", [
+        `admin-quote-create:${createdByAdminUserId}:${clientRequestId}`,
+      ]);
+      const replayResult = await client.query(
+        "select id, public_id, created_at, updated_at, status, expires_at, customer_full_name, customer_email, customer_phone, start_at, end_at, pickup_location_id, dropoff_location_id, pickup_location_text, dropoff_location_text, vehicle_id, vehicle_label, vehicle_class, pricing_json, base_total_cents, insurance_total_cents, discount_total_cents, subtotal_cents, total_cents, deposit_required_cents, amount_due_cents, promo_code, insurance_plan_id, insurance_enabled, tags, comments, commission_partner_name, client_pays_at_partner, rack_price_cents, created_by_admin_user_id, last_emailed_at, last_emailed_to, converted_booking_id from quotes where pricing_json->>'admin_client_request_id' = $1 and pricing_json->>'admin_client_request_user_id' = $2 order by created_at asc limit 1",
+        [clientRequestId, createdByAdminUserId],
+      );
+      const replayed = replayResult.rows[0] as QuoteRow | undefined;
+      if (replayed) {
+        await client.query("commit");
+        return mapDetailItem(replayed);
+      }
+    }
 
     const locationSelection = await buildQuoteLocationSelection({
       client,
@@ -885,6 +921,12 @@ export async function createAdminQuote(input: CreateAdminQuoteInput) {
     const nextPricingJson = {
       ...(pricing.pricing_json ?? {}),
       booking_location_details: locationSelection.details,
+      ...(clientRequestId && createdByAdminUserId
+        ? {
+            admin_client_request_id: clientRequestId,
+            admin_client_request_user_id: createdByAdminUserId,
+          }
+        : {}),
     };
 
     const insertResult = await client.query(
@@ -919,7 +961,7 @@ export async function createAdminQuote(input: CreateAdminQuoteInput) {
         commissionPartnerName,
         clientPaysAtPartner,
         pricing.rack_price_cents,
-        normalizeUuidOrNull(input.createdByAdminUserId),
+        createdByAdminUserId,
       ],
     );
 
@@ -931,7 +973,7 @@ export async function createAdminQuote(input: CreateAdminQuoteInput) {
     await insertQuoteEvent(client, {
       quoteId: inserted.id,
       eventType: "CREATED",
-      actorAdminUserId: normalizeUuidOrNull(input.createdByAdminUserId),
+      actorAdminUserId: createdByAdminUserId,
       meta: {
         status: inserted.status,
       },
@@ -1148,6 +1190,12 @@ export async function updateAdminQuote(input: UpdateAdminQuoteInput) {
       pricingJson = {
         ...(summary.pricing_json ?? {}),
         booking_location_details: locationSelection.details,
+        ...(readPricingText(existing.pricing_json, "admin_client_request_id")
+          ? {
+              admin_client_request_id: readPricingText(existing.pricing_json, "admin_client_request_id"),
+              admin_client_request_user_id: readPricingText(existing.pricing_json, "admin_client_request_user_id"),
+            }
+          : {}),
       };
       baseTotalCents = summary.base_total_cents;
       insuranceTotalCents = summary.insurance_total_cents;

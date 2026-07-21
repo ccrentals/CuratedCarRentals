@@ -731,6 +731,7 @@ export type AdminInsuranceOption = { enabled: boolean; planId: string | null; pr
 export type AdminPricingPreview = { days: number; dailyRateCents: number; baseTotalCents: number; insuranceSelected: boolean; insurancePlanId: string | null; insurancePricePerDayCents: number; insuranceTotalCents: number; subtotalCents: number; promoCode: string | null; promoDiscountCents: number; totalCents: number; depositRequiredCents: number; amountDueCents: number; dueNowCents: number; balanceDueCents: number; rateBreakdown: { date: string; dailyRateCents: number; source: "base" | "weekend" | "date_override" }[]; currency: "JMD" };
 
 export type AdminQuoteCreateInput = {
+  clientRequestId: string;
   customerFullName: string; customerEmail: string; customerPhone: string | null; startAt: string; endAt: string;
   pickupLocationId: string | null; dropoffLocationId: string | null; pickupLocationText: string; dropoffLocationText: string;
   pickupLocationType: string; dropoffLocationType: string; pickupLocationTextSnapshot: string; dropoffLocationTextSnapshot: string;

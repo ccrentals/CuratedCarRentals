@@ -21,18 +21,19 @@ test("admin creation model distinguishes configured locations that share a type"
 });
 
 test("admin creation model prepares a complete quote payload", () => {
-  const result = model.prepareQuoteCreate({ customerFullName: "Ada Lovelace", customerEmail: "ADA@example.com", customerPhone: "8765551111", pickupDate: "2026-08-10", pickupTime: "09:00", dropoffDate: "2026-08-12", dropoffTime: "11:00", locations: [office], pickupTypeKey: "OFFICE", dropoffTypeKey: "OFFICE", pickupValues: {}, dropoffValues: {}, vehicleId: "33333333-3333-4333-8333-333333333333", insuranceEnabled: false, insurancePlanId: null, promoCode: " island10 ", tags: "VIP, airport, VIP", comments: "Call before arrival", expiresDate: "2026-08-05", commissionPartnerName: "Hotel partner", clientPaysAtPartner: true, rackPrice: "75,000" });
+  const result = model.prepareQuoteCreate({ clientRequestId: "77777777-7777-4777-8777-777777777777", customerFullName: "Ada Lovelace", customerEmail: "ADA@example.com", customerPhone: "8765551111", pickupDate: "2026-08-10", pickupTime: "09:00", dropoffDate: "2026-08-12", dropoffTime: "11:00", locations: [office], pickupTypeKey: "OFFICE", dropoffTypeKey: "OFFICE", pickupValues: {}, dropoffValues: {}, vehicleId: "33333333-3333-4333-8333-333333333333", insuranceEnabled: false, insurancePlanId: null, promoCode: " island10 ", tags: "VIP, airport, VIP", comments: "Call before arrival", expiresDate: "2026-08-05", commissionPartnerName: "Hotel partner", clientPaysAtPartner: true, rackPrice: "75,000" });
   assert.equal(result.ok, true);
   if (!result.ok) return;
   assert.equal(result.payload.startAt, "2026-08-10T14:00:00.000Z");
   assert.equal(result.payload.customerEmail, "ada@example.com");
+  assert.equal(result.payload.clientRequestId, "77777777-7777-4777-8777-777777777777");
   assert.deepEqual(result.payload.tags, ["VIP", "airport"]);
   assert.equal(result.payload.promoCode, "ISLAND10");
   assert.equal(result.payload.rackPriceCents, 75000);
 });
 
 test("admin creation model blocks missing dynamic fields and invalid windows", () => {
-  const base = { customerFullName: "Ada Lovelace", customerEmail: "ada@example.com", customerPhone: "", pickupDate: "2026-08-10", pickupTime: "09:00", dropoffDate: "2026-08-09", dropoffTime: "11:00", locations: [airport], pickupTypeKey: "AIRPORT", dropoffTypeKey: "AIRPORT", pickupValues: {}, dropoffValues: {}, vehicleId: "vehicle", insuranceEnabled: false, insurancePlanId: null, promoCode: "", tags: "", comments: "", expiresDate: "", commissionPartnerName: "", clientPaysAtPartner: false, rackPrice: "" };
+  const base = { clientRequestId: "77777777-7777-4777-8777-777777777777", customerFullName: "Ada Lovelace", customerEmail: "ada@example.com", customerPhone: "", pickupDate: "2026-08-10", pickupTime: "09:00", dropoffDate: "2026-08-09", dropoffTime: "11:00", locations: [airport], pickupTypeKey: "AIRPORT", dropoffTypeKey: "AIRPORT", pickupValues: {}, dropoffValues: {}, vehicleId: "vehicle", insuranceEnabled: false, insurancePlanId: null, promoCode: "", tags: "", comments: "", expiresDate: "", commissionPartnerName: "", clientPaysAtPartner: false, rackPrice: "" };
   assert.equal(model.prepareQuoteCreate(base).ok, false);
   assert.equal(model.prepareQuoteCreate({ ...base, dropoffDate: "2026-08-12" }).ok, false);
   const partnerResult = model.prepareQuoteCreate({ ...base, dropoffDate: "2026-08-12", pickupValues: { flight_number: "JM 100" }, dropoffValues: { flight_number: "JM 101" }, clientPaysAtPartner: true });
