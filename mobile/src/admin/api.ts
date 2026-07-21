@@ -529,6 +529,23 @@ export type AdminPaymentsPage = {
   filters: { q: string; type: string; state: string; provider: string };
 };
 
+export type AdminMaintenanceItem = {
+  id: string;
+  vehicleId: string;
+  vehiclePublicId: string;
+  vehicleLabel: string;
+  status: "SCHEDULED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
+  category: string;
+  title: string;
+  scheduledDate: string | null;
+  serviceDate: string | null;
+  nextDueDate: string | null;
+  dueState: "OVERDUE" | "DUE_SOON" | "UPCOMING" | "COMPLETED" | "CANCELLED";
+  totalCostCents: number;
+  priority: string;
+  currentOdometerKm: number | null;
+};
+
 type AdminSettingsErrorPayload = Partial<AdminSettingsPayload> & {
   error?: string;
   message?: string;
@@ -881,4 +898,16 @@ export async function recordAdminRefundAdjustment(request: AdminRequest, payment
     method: "POST",
     body: JSON.stringify({ reason }),
   });
+}
+
+export async function fetchAdminMaintenance(request: AdminRequest, input: { q?: string; dueState?: string; status?: string; category?: string; onlyActive?: boolean }) {
+  const params = new URLSearchParams();
+  if (input.q?.trim()) params.set("q", input.q.trim());
+  if (input.dueState && input.dueState !== "all") params.set("dueState", input.dueState);
+  if (input.status && input.status !== "all") params.set("status", input.status);
+  if (input.category && input.category !== "all") params.set("category", input.category);
+  if (input.onlyActive === false) params.set("onlyActive", "0");
+  const data = await readAdminJson<{ ok: true; items: AdminMaintenanceItem[] }>(request, `/api/admin/maintenance${params.size ? `?${params.toString()}` : ""}`, { cache: "no-store" });
+  if (!Array.isArray(data.items)) throw new ApiError("The maintenance service returned an invalid response.", 502);
+  return data.items;
 }
