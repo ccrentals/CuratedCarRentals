@@ -14,8 +14,8 @@ const AUTO_EXPIRE_STATUSES = new Set<QuoteStatus>(["DRAFT", "SENT", "ACCEPTED"])
 
 const QUOTE_STATUS_TRANSITIONS: Record<QuoteStatus, ReadonlySet<QuoteStatus>> = {
   DRAFT: new Set<QuoteStatus>(["SENT", "EXPIRED", "CANCELLED"]),
-  SENT: new Set<QuoteStatus>(["ACCEPTED", "EXPIRED", "CANCELLED"]),
-  ACCEPTED: new Set<QuoteStatus>(["SENT", "CONVERTED", "EXPIRED", "CANCELLED"]),
+  SENT: new Set<QuoteStatus>(["DRAFT", "ACCEPTED", "EXPIRED", "CANCELLED"]),
+  ACCEPTED: new Set<QuoteStatus>(["DRAFT", "SENT", "CONVERTED", "EXPIRED", "CANCELLED"]),
   EXPIRED: new Set<QuoteStatus>(["SENT", "ACCEPTED", "CANCELLED"]),
   CONVERTED: new Set<QuoteStatus>([]),
   CANCELLED: new Set<QuoteStatus>(["SENT", "ACCEPTED", "EXPIRED"]),

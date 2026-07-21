@@ -892,6 +892,22 @@ export async function updateAdminQuoteStatus(request: AdminRequest, quoteId: str
   return data.item;
 }
 
+export async function reviseAdminQuote(request: AdminRequest, quoteId: string, input: {
+  status?: "DRAFT";
+  promoCode: string | null;
+  tags: string[];
+  comments: string | null;
+}) {
+  const data = await readAdminJson<{ ok: true; item: AdminQuoteDetail }>(request, `/api/admin/quotes/${encodeURIComponent(quoteId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+  if (!isObject(data.item) || typeof data.item.id !== "string") {
+    throw new ApiError("The quote service returned an invalid revision response.", 502);
+  }
+  return data.item;
+}
+
 export async function emailAdminQuote(request: AdminRequest, quoteId: string, toEmail: string) {
   return readAdminJson<{ ok: true; toEmail: string; subject: string }>(request, `/api/admin/quotes/${encodeURIComponent(quoteId)}/email`, {
     method: "POST",

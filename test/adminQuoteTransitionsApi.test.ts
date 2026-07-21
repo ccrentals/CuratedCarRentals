@@ -24,9 +24,11 @@ test("quote transition map: allows expected transitions", () => {
     ["DRAFT", "EXPIRED"],
     ["DRAFT", "CANCELLED"],
     ["SENT", "ACCEPTED"],
+    ["SENT", "DRAFT"],
     ["SENT", "EXPIRED"],
     ["SENT", "CANCELLED"],
     ["ACCEPTED", "SENT"],
+    ["ACCEPTED", "DRAFT"],
     ["ACCEPTED", "CONVERTED"],
     ["ACCEPTED", "EXPIRED"],
     ["ACCEPTED", "CANCELLED"],
@@ -50,7 +52,6 @@ test("quote transition map: allows expected transitions", () => {
 
 test("quote transition map: disallows invalid transitions", () => {
   const disallowed: Array<[QuoteStatus, QuoteStatus]> = [
-    ["SENT", "DRAFT"],
     ["CONVERTED", "DRAFT"],
     ["CONVERTED", "SENT"],
     ["CONVERTED", "EXPIRED"],
@@ -70,7 +71,7 @@ test("quote transition map: disallows invalid transitions", () => {
 });
 
 test("admin quote PATCH surfaces clear transition error message", async () => {
-  const fromStatus: QuoteStatus = "SENT";
+  const fromStatus: QuoteStatus = "CONVERTED";
   const toStatus: QuoteStatus = "DRAFT";
   const expectedError = getQuoteStatusTransitionError(fromStatus, toStatus);
   assert.ok(expectedError);
