@@ -93,7 +93,7 @@ function QuoteCard({ quote }: { quote: AdminQuoteListItem }) {
   return (
     <Pressable onPress={() => router.push(`/admin/quotes/${quote.id}` as Href)} style={({ pressed }) => [styles.card, pressed && styles.cardPressed]} accessibilityRole="button">
       <View style={styles.cardTop}><Text style={styles.quoteId}>{quote.publicId || quote.id.slice(0, 8).toUpperCase()}</Text><View style={[styles.statusBadge, tone === "good" && styles.statusGood, tone === "warning" && styles.statusWarning]}><Text style={[styles.statusText, tone === "good" && styles.statusTextGood, tone === "warning" && styles.statusTextWarning]}>{humanize(effectiveStatus)}</Text></View></View>
-      <View style={styles.amountRow}><View style={styles.amountCopy}><Text style={styles.customerName}>{quote.customerFullName}</Text><Text style={styles.customerEmail}>{quote.customerEmail}</Text></View><Text style={styles.amount}>{formatJmdCents(quote.totalCents)}</Text></View>
+      <View style={styles.amountRow}><View style={styles.amountCopy}><Text style={styles.customerName}>{quote.customerFullName}</Text><Text style={styles.customerEmail}>{quote.customerEmail}</Text></View><Text style={styles.amount}>{formatStoredJmd(quote.totalCents)}</Text></View>
       <View style={styles.metaRow}><MaterialIcons name="directions-car" size={16} color={colors.tealDark} /><Text style={styles.metaText}>{quote.vehicleLabel}</Text></View>
       <View style={styles.metaRow}><MaterialIcons name="date-range" size={16} color={colors.muted} /><Text style={styles.metaText}>{dateOnly(quote.startAt)} → {dateOnly(quote.endAt)}</Text></View>
       <View style={styles.openRow}><Text style={styles.openText}>Review quote</Text><MaterialIcons name="chevron-right" size={21} color={colors.orange} /></View>
@@ -114,7 +114,7 @@ function statusTone(status: string) {
 
 function humanize(value: string) { return value.toLowerCase().replaceAll("_", " ").replace(/\b\w/g, (character) => character.toUpperCase()); }
 function dateOnly(value: string) { return String(value).match(/^\d{4}-\d{2}-\d{2}/)?.[0] || String(value); }
-function formatJmdCents(value: number) { return new Intl.NumberFormat("en-JM", { style: "currency", currency: "JMD", maximumFractionDigits: 0 }).format(Math.max(0, Number(value) || 0) / 100); }
+function formatStoredJmd(value: number) { return new Intl.NumberFormat("en-JM", { style: "currency", currency: "JMD", maximumFractionDigits: 0 }).format(Math.max(0, Number(value) || 0)); }
 
 const makeStyles = (colors: AppColors) => StyleSheet.create({
   searchRow: { flexDirection: "row", gap: 9 },

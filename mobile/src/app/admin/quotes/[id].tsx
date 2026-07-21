@@ -89,7 +89,7 @@ function QuoteDetail() {
   const reference = quote?.publicId || id?.slice(0, 8).toUpperCase() || "Quote";
 
   return (
-    <AdminScreen back eyebrow="QUOTE DETAIL" title={reference} subtitle={quote ? `${quote.customerFullName} · ${formatJmdCents(quote.totalCents)}` : "Loading estimate details…"} refreshing={loading && Boolean(quote)} onRefresh={() => void load()}>
+    <AdminScreen back eyebrow="QUOTE DETAIL" title={reference} subtitle={quote ? `${quote.customerFullName} · ${formatStoredJmd(quote.totalCents)}` : "Loading estimate details…"} refreshing={loading && Boolean(quote)} onRefresh={() => void load()}>
       {loading && !quote ? <AdminCard style={styles.loadingCard}><View style={styles.loadingLineLarge} /><View style={styles.loadingLine} /><View style={styles.loadingLineSmall} /></AdminCard> : null}
       {error ? <View style={styles.errorCard}><MaterialIcons name="error-outline" size={21} color={colors.danger} /><Text style={styles.errorText}>{error}</Text><Pressable onPress={() => void load()}><Text style={styles.retry}>Retry</Text></Pressable></View> : null}
       {notice ? <View style={styles.noticeCard}><MaterialIcons name="check-circle" size={20} color={colors.success} /><Text style={styles.noticeText}>{notice}</Text></View> : null}
@@ -113,12 +113,12 @@ function QuoteDetail() {
         </AdminCard>
 
         <AdminCard>
-          <View style={styles.moneyHero}><View><Text style={styles.label}>ESTIMATE TOTAL</Text><Text style={styles.moneyValue}>{formatJmdCents(quote.totalCents)}</Text></View><View style={styles.depositBadge}><Text style={styles.depositBadgeText}>{formatJmdCents(quote.depositRequiredCents)} deposit</Text></View></View>
+          <View style={styles.moneyHero}><View><Text style={styles.label}>ESTIMATE TOTAL</Text><Text style={styles.moneyValue}>{formatStoredJmd(quote.totalCents)}</Text></View><View style={styles.depositBadge}><Text style={styles.depositBadgeText}>{formatStoredJmd(quote.depositRequiredCents)} deposit</Text></View></View>
           <View style={styles.divider} />
-          <InfoRow label="Base rental" value={formatJmdCents(quote.baseTotalCents)} />
-          <InfoRow label="Insurance" value={formatJmdCents(quote.insuranceTotalCents)} />
-          <InfoRow label="Discount" value={quote.discountTotalCents ? `−${formatJmdCents(quote.discountTotalCents)}` : formatJmdCents(0)} />
-          <InfoRow label="Amount due" value={formatJmdCents(quote.amountDueCents)} />
+          <InfoRow label="Base rental" value={formatStoredJmd(quote.baseTotalCents)} />
+          <InfoRow label="Insurance" value={formatStoredJmd(quote.insuranceTotalCents)} />
+          <InfoRow label="Discount" value={quote.discountTotalCents ? `−${formatStoredJmd(quote.discountTotalCents)}` : formatStoredJmd(0)} />
+          <InfoRow label="Amount due" value={formatStoredJmd(quote.amountDueCents)} />
           {quote.promoCode ? <InfoRow label="Promo code" value={quote.promoCode} /> : null}
         </AdminCard>
 
@@ -148,7 +148,7 @@ function getEffectiveStatus(status: string, expiresAt: string | null) { if (!["C
 function humanize(value: string) { return String(value || "Not recorded").toLowerCase().replaceAll("_", " ").replace(/\b\w/g, (character) => character.toUpperCase()); }
 function dateOnly(value: string) { return String(value).match(/^\d{4}-\d{2}-\d{2}/)?.[0] || String(value); }
 function formatTimestamp(value: string) { const parsed = new Date(value); return Number.isNaN(parsed.getTime()) ? value : new Intl.DateTimeFormat("en-JM", { dateStyle: "medium", timeStyle: "short" }).format(parsed); }
-function formatJmdCents(value: number) { return new Intl.NumberFormat("en-JM", { style: "currency", currency: "JMD", maximumFractionDigits: 0 }).format(Math.max(0, Number(value) || 0) / 100); }
+function formatStoredJmd(value: number) { return new Intl.NumberFormat("en-JM", { style: "currency", currency: "JMD", maximumFractionDigits: 0 }).format(Math.max(0, Number(value) || 0)); }
 
 const makeStyles = (colors: AppColors) => StyleSheet.create({
   loadingCard: { gap: 12 }, loadingLineLarge: { width: "55%", height: 24, borderRadius: 7, backgroundColor: colors.surfaceSoft }, loadingLine: { width: "100%", height: 16, borderRadius: 6, backgroundColor: colors.surfaceSoft }, loadingLineSmall: { width: "72%", height: 16, borderRadius: 6, backgroundColor: colors.surfaceSoft },

@@ -108,14 +108,14 @@ function BookingDetail() {
 
           <AdminCard>
             <Text style={styles.sectionTitle}>Payment summary</Text>
-            <View style={styles.moneyHero}><View><Text style={styles.moneyLabel}>BALANCE DUE</Text><Text style={styles.moneyValue}>{formatJmdCents(detail.booking.balance_due)}</Text></View><View style={styles.paymentBadge}><Text style={styles.paymentBadgeText}>{humanize(detail.booking.payment_status)}</Text></View></View>
+            <View style={styles.moneyHero}><View><Text style={styles.moneyLabel}>BALANCE DUE</Text><Text style={styles.moneyValue}>{formatStoredJmd(detail.booking.balance_due)}</Text></View><View style={styles.paymentBadge}><Text style={styles.paymentBadgeText}>{humanize(detail.booking.payment_status)}</Text></View></View>
             <View style={styles.divider} />
             <InfoRow label="Payment choice" value={humanize(detail.booking.payment_option)} />
-            <InfoRow label="Paid to date" value={formatJmdCents(detail.booking.amount_paid)} />
+            <InfoRow label="Paid to date" value={formatStoredJmd(detail.booking.amount_paid)} />
             <InfoRow label="Transactions" value={String(detail.payments.length)} />
           </AdminCard>
 
-          {detail.payments.length ? <AdminCard><Text style={styles.sectionTitle}>Payment activity</Text>{detail.payments.map((payment) => <View key={payment.id} style={styles.paymentRow}><View style={styles.paymentIcon}><MaterialIcons name="receipt-long" size={18} color={colors.tealDark} /></View><View style={styles.paymentCopy}><Text style={styles.paymentTitle}>{payment.public_id || payment.provider}</Text><Text style={styles.paymentMeta}>{humanize(payment.provider)} · {dateOnly(payment.created_at)}</Text></View><View><Text style={styles.paymentAmount}>{formatJmdCents(payment.deposit_amount_cents)}</Text><Text style={styles.paymentStatus}>{humanize(payment.status)}</Text></View></View>)}</AdminCard> : null}
+          {detail.payments.length ? <AdminCard><Text style={styles.sectionTitle}>Payment activity</Text>{detail.payments.map((payment) => <View key={payment.id} style={styles.paymentRow}><View style={styles.paymentIcon}><MaterialIcons name="receipt-long" size={18} color={colors.tealDark} /></View><View style={styles.paymentCopy}><Text style={styles.paymentTitle}>{payment.public_id || payment.provider}</Text><Text style={styles.paymentMeta}>{humanize(payment.provider)} · {dateOnly(payment.created_at)}</Text></View><View><Text style={styles.paymentAmount}>{formatStoredJmd(payment.deposit_amount_cents)}</Text><Text style={styles.paymentStatus}>{humanize(payment.status)}</Text></View></View>)}</AdminCard> : null}
 
           {primaryAction ? <AdminCard><Text style={styles.sectionTitle}>Next operational step</Text><Text style={styles.actionBody}>The server will validate every prerequisite before changing this booking.</Text><AdminButton label={busyAction ? "Updating reservation…" : primaryAction.label} onPress={() => runAction(primaryAction.action)} disabled={Boolean(busyAction)} icon={primaryAction.icon} /></AdminCard> : null}
         </>
@@ -145,8 +145,8 @@ function dateOnly(value: string) {
   return match?.[0] || String(value);
 }
 
-function formatJmdCents(value: number) {
-  return new Intl.NumberFormat("en-JM", { style: "currency", currency: "JMD", maximumFractionDigits: 0 }).format(Math.max(0, Number(value) || 0) / 100);
+function formatStoredJmd(value: number) {
+  return new Intl.NumberFormat("en-JM", { style: "currency", currency: "JMD", maximumFractionDigits: 0 }).format(Math.max(0, Number(value) || 0));
 }
 
 const makeStyles = (colors: AppColors) => StyleSheet.create({
