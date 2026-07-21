@@ -198,6 +198,82 @@ export type AdminCustomerInput = {
   notes?: string;
 };
 
+export type AdminVehicleListItem = {
+  id: string;
+  public_id: string;
+  make: string;
+  model: string;
+  year: number;
+  seat_count: number | null;
+  daily_rate_cents: number;
+  deposit_cents: number;
+  status: string;
+  derived_status: string;
+  created_at: string;
+  deleted_at: string | null;
+};
+
+export type AdminVehicleDetail = Omit<AdminVehicleListItem, "derived_status" | "deleted_at"> & {
+  updated_at: string;
+};
+
+export type AdminVehicleProfile = {
+  vehicle_id: string;
+  vin: string | null;
+  license_plate: string | null;
+  vehicle_type: string | null;
+  vehicle_class: string | null;
+  year: number | null;
+  color: string | null;
+  seat_count: number | null;
+  current_location_label: string | null;
+  odometer_value: number | null;
+  odometer_unit: string | null;
+  fuel_level_value: number | null;
+  available_from: string | null;
+  available_until: string | null;
+  entry_date: string | null;
+  exit_date: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AdminVehicleHistoryItem = {
+  id: string;
+  publicId: string | null;
+  eventType: "BOOKING" | "BLOCKOUT" | "MAINTENANCE";
+  customerName: string | null;
+  customerEmail: string | null;
+  pickupAt: string;
+  returnAt: string;
+  status: string;
+  totalCents: number | null;
+  depositCents: number | null;
+  source: string;
+  activeNow: boolean;
+  impactsAvailability: boolean;
+  actionHref: string;
+  createdAt: string;
+};
+
+export type AdminVehicleHistory = {
+  rows: AdminVehicleHistoryItem[];
+  summary: { upcomingCount: number; onRentCount: number; activeCount: number; completedCount: number; cancelledCount: number; activeBlockoutCount: number };
+  paging: { limit: number; offset: number; total: number };
+  statuses: string[];
+};
+
+export type AdminVehicleNote = {
+  id: string;
+  vehicleId: string;
+  noteText: string;
+  createdByUserId: string | null;
+  createdByEmail: string | null;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+};
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -358,4 +434,62 @@ export async function setAdminCustomerBlocked(request: AdminRequest, customerId:
     method: "PATCH",
     body: JSON.stringify({ setBlocked: blocked, blockReason: blocked ? blockReason?.trim() || "Blocked by staff in mobile admin" : null }),
   });
+}
+
+export async function fetchAdminVehicles(request: AdminRequest, includeDeleted = false) {
+  const suffix = includeDeleted ? "?includeDeleted=1" : "";
+  const data = await readAdminJson<{ vehicles: AdminVehicleListItem[] }>(request, `/api/admin/vehicles${suffix}`, { cache: "no-store" });
+  if (!Array.isArray(data.vehicles)) throw new ApiError("The fleet service returned an invalid response.", 502);
+  return data.vehicles;
+}
+
+export async function fetchAdminVehicle(request: AdminRequest, vehicleId: string) {
+  const data = await readAdminJson<{ vehicle: AdminVehicleDetail }>(request, `/api/admin/vehicles/${encodeURIComponent(vehicleId)}`, { cache: "no-store" });
+  if (!isObject(data.vehicle) || typeof data.vehicle.id !== "string") throw new ApiError("The vehicle service returned an invalid response.", 502);
+  return data.vehicle;
+}
+
+export async function fetchAdminVehicleProfile(request: AdminRequest, vehicleId: string) {
+  const data = await readAdminJson<{ ok: true; profile: AdminVehicleProfile | null }>(request, `/api/admin/vehicles/${encodeURIComponent(vehicleId)}/profile`, { cache: "no-store" });
+  return data.profile;
+}
+
+export async function fetchAdminVehicleHistory(request: AdminRequest, vehicleId: string, view: "upcoming" | "history" = "upcoming", offset = 0) {
+  const params = new URLSearchParams({ view, limit: "20", offset: String(offset) });
+  const data = await readAdminJson<AdminVehicleHistory & { ok: true }>(request, `/api/admin/vehicles/${encodeURIComponent(vehicleId)}/reservations?${params.toString()}`, { cache: "no-store" });
+  if (!Array.isArray(data.rows) || !isObject(data.summary) || !isObject(data.paging)) throw new ApiError("The fleet history service returned an invalid response.", 502);
+  return data;
+}
+
+export async function fetchAdminVehicleNotes(request: AdminRequest, vehicleId: string) {
+  const data = await readAdminJson<{ ok: true; items: AdminVehicleNote[] }>(request, `/api/admin/vehicles/${encodeURIComponent(vehicleId)}/notes`, { cache: "no-store" });
+  if (!Array.isArray(data.items)) throw new ApiError("The vehicle notes service returned an invalid response.", 502);
+  return data.items;
+}
+
+export async function createAdminVehicle(request: AdminRequest, input: { make: string; model: string; year: number; seatCount: number | null; dailyRateJmd: number; depositJmd: number; status: string }) {
+  const data = await readAdminJson<{ vehicle: AdminVehicleDetail }>(request, "/api/admin/vehicles", {
+    method: "POST",
+    body: JSON.stringify({ make: input.make, model: input.model, year: input.year, seat_count: input.seatCount, daily_rate_jmd: input.dailyRateJmd, deposit_jmd: input.depositJmd, status: input.status, public_visible: false, image_urls_json: [] }),
+  });
+  if (!isObject(data.vehicle) || typeof data.vehicle.id !== "string") throw new ApiError("The vehicle service returned an invalid response.", 502);
+  return data.vehicle;
+}
+
+export async function updateAdminVehicle(request: AdminRequest, vehicleId: string, input: { make: string; model: string; year: number; seatCount: number | null; dailyRateJmd: number; depositJmd: number; status: string; profile?: Partial<AdminVehicleProfile> }) {
+  const data = await readAdminJson<{ vehicle: AdminVehicleDetail }>(request, `/api/admin/vehicles/${encodeURIComponent(vehicleId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ make: input.make, model: input.model, year: input.year, seat_count: input.seatCount, daily_rate: input.dailyRateJmd, deposit: input.depositJmd, status: input.status, profile: input.profile }),
+  });
+  return data.vehicle;
+}
+
+export async function updateAdminVehicleProfile(request: AdminRequest, vehicleId: string, input: Partial<AdminVehicleProfile>) {
+  const data = await readAdminJson<{ ok: true; profile: AdminVehicleProfile }>(request, `/api/admin/vehicles/${encodeURIComponent(vehicleId)}/profile`, { method: "PATCH", body: JSON.stringify(input) });
+  return data.profile;
+}
+
+export async function createAdminVehicleNote(request: AdminRequest, vehicleId: string, noteText: string) {
+  const data = await readAdminJson<{ ok: true; item: AdminVehicleNote }>(request, `/api/admin/vehicles/${encodeURIComponent(vehicleId)}/notes`, { method: "POST", body: JSON.stringify({ noteText }) });
+  return data.item;
 }
