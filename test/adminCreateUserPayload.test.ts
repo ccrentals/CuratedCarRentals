@@ -1,88 +1,57 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {
-  buildAdminCreatedUserPublicMetadata,
-  buildAdminUserCreateSuccessPayload,
-  ensureAdminCreatedUserEmailVerification,
-  shouldSkipEmailChallengeForAdminCreatedUsers,
-} from "@/app/api/admin/users/route";
+import { buildAdminUserCreateSuccessPayload } from "@/app/api/admin/users/route";
 
-test("admin create-user payload includes username and temp password", () => {
+test("admin create-user payload returns the secure setup invitation contract", () => {
   const payload = buildAdminUserCreateSuccessPayload({
     userId: "user-123",
     userPublicId: "UR000123",
     username: "mmalcolm",
-    tempPassword: "TempPass123!",
-    tempPasswordExpiresAt: "2026-03-03T10:00:00.000Z",
-    clerkSync: {
-      status: "created",
-      clerkUserId: "user_clerk_123",
-      finalUsername: "mmalcolm",
-      message: "Clerk account created and linked.",
-      localLinkSaved: true,
+    setupEmail: "mary@example.com",
+    onboarding: {
+      status: "setup_pending",
+      message: "Complete account setup before signing in.",
+      setupPath: "/sign-up?redirect=%2Fadmin",
+    },
+    welcomeEmail: {
+      warning: "Welcome email could not be sent. Share the setup link manually.",
     },
   });
 
-  assert.equal(payload.ok, true);
-  assert.equal(payload.username, "mmalcolm");
-  assert.equal(payload.tempPassword, "TempPass123!");
-  assert.equal(payload.userId, "user-123");
-});
-
-test("admin create-user metadata marks first-login password change", () => {
-  const metadata = buildAdminCreatedUserPublicMetadata({
-    tempPasswordExpiresAt: "2026-03-03T10:00:00.000Z",
-  });
-  assert.equal(metadata.forcePasswordChange, true);
-  assert.equal(metadata.tempPasswordExpiresAt, "2026-03-03T10:00:00.000Z");
-});
-
-test("email-challenge skip flag applies outside production or with explicit env flag", () => {
-  assert.equal(
-    shouldSkipEmailChallengeForAdminCreatedUsers({
-      nodeEnv: "development",
-      envFlag: "0",
-    }),
-    true,
-  );
-  assert.equal(
-    shouldSkipEmailChallengeForAdminCreatedUsers({
-      nodeEnv: "production",
-      envFlag: "0",
-    }),
-    false,
-  );
-  assert.equal(
-    shouldSkipEmailChallengeForAdminCreatedUsers({
-      nodeEnv: "production",
-      envFlag: "1",
-    }),
-    true,
-  );
-});
-
-test("admin create-user email verification helper verifies primary email when enabled", async () => {
-  const calls: Array<{ id: string; verified?: boolean }> = [];
-  const result = await ensureAdminCreatedUserEmailVerification({
-    clerkEmailAddressesApi: {
-      updateEmailAddress: async (emailAddressId, params) => {
-        calls.push({ id: emailAddressId, verified: params?.verified });
-        return {} as never;
-      },
+  assert.deepEqual(payload, {
+    ok: true,
+    userId: "user-123",
+    userPublicId: "UR000123",
+    username: "mmalcolm",
+    setupEmail: "mary@example.com",
+    onboarding: {
+      status: "setup_pending",
+      message: "Complete account setup before signing in.",
+      setupPath: "/sign-up?redirect=%2Fadmin",
     },
-    shouldVerify: true,
-    primaryEmailAddressId: "email_primary_123",
-    emailAddresses: [
-      {
-        id: "email_primary_123",
-        verification: { status: "unverified" },
-      },
-    ],
+    welcomeEmail: {
+      warning: "Welcome email could not be sent. Share the setup link manually.",
+    },
+  });
+  assert.equal("tempPassword" in payload, false);
+  assert.equal("tempPasswordExpiresAt" in payload, false);
+});
+
+test("admin create-user payload defaults missing welcome-email state to null", () => {
+  const payload = buildAdminUserCreateSuccessPayload({
+    userId: "user-456",
+    userPublicId: null,
+    username: "jsmith",
+    setupEmail: "john@example.com",
+    onboarding: {
+      status: "setup_pending",
+      message: "Account setup is pending.",
+      setupPath: "/sign-up?redirect=%2Fadmin",
+    },
   });
 
-  assert.equal(result.attempted, true);
-  assert.equal(result.verified, true);
-  assert.equal(calls.length, 1);
-  assert.deepEqual(calls[0], { id: "email_primary_123", verified: true });
+  assert.equal(payload.welcomeEmail, null);
+  assert.equal(payload.onboarding.status, "setup_pending");
+  assert.equal("tempPassword" in payload, false);
 });

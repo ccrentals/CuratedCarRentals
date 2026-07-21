@@ -349,6 +349,23 @@ export type AdminReportUpcomingItem = {
   balanceDue: number;
 };
 
+export type AdminUserListItem = {
+  id: string;
+  public_id: string | null;
+  email: string;
+  username: string | null;
+  full_name: string | null;
+  role: string;
+  is_active: boolean | null;
+  lifecycle_state: string | null;
+  deactivated_at: string | null;
+  locked_at: string | null;
+  created_at: string;
+  last_login_at: string | null;
+};
+
+export type AdminUserAction = "update_profile" | "set_role" | "resend_invite" | "unlock" | "lock" | "reset_password" | "deactivate" | "reactivate" | "delete_user";
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -596,4 +613,20 @@ export async function fetchAdminReports(request: AdminRequest, input: { rangeFro
   const data = await readAdminJson<{ ok: true; report: AdminReportsPayload }>(request, `/api/admin/reports?${params.toString()}`, { cache: "no-store" });
   if (!isObject(data.report) || !isObject(data.report.revenue) || !isObject(data.report.upcoming)) throw new ApiError("The reports service returned an invalid response.", 502);
   return data.report;
+}
+
+export async function fetchAdminUsers(request: AdminRequest, q = "") {
+  const params = new URLSearchParams();
+  if (q.trim()) params.set("q", q.trim());
+  const data = await readAdminJson<{ users: AdminUserListItem[] }>(request, `/api/admin/users${params.size ? `?${params.toString()}` : ""}`, { cache: "no-store" });
+  if (!Array.isArray(data.users)) throw new ApiError("The users service returned an invalid response.", 502);
+  return data.users;
+}
+
+export async function createAdminUser(request: AdminRequest, input: { firstName: string; lastName: string; email: string; role: string }) {
+  return readAdminJson<{ ok: true; userId: string; userPublicId: string | null; username: string; setupEmail: string; onboarding: { status: "setup_pending"; message: string; setupPath: string }; welcomeEmail: { warning?: string | null } | null }>(request, "/api/admin/users", { method: "POST", body: JSON.stringify(input) });
+}
+
+export async function updateAdminUser(request: AdminRequest, userId: string, action: AdminUserAction, payload: Record<string, unknown> = {}) {
+  return readAdminJson<{ ok: true; message?: string; tempPassword?: string; tempPasswordExpiresAt?: string; setupEmail?: string; setupUrl?: string }>(request, `/api/admin/users/${encodeURIComponent(userId)}`, { method: "PATCH", body: JSON.stringify({ action, ...payload }) });
 }
