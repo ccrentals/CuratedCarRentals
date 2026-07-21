@@ -127,6 +127,77 @@ export type AdminQuotesPage = {
   limit: number;
 };
 
+export type AdminCustomerListItem = {
+  id: string;
+  full_name: string;
+  email: string;
+  phone: string;
+  created_at: string;
+  last_booked_at: string | null;
+  total_bookings: number;
+  total_spend: number;
+};
+
+export type AdminCustomerDetail = {
+  id: string;
+  full_name: string;
+  email: string;
+  phone: string;
+  first_name: string | null;
+  last_name: string | null;
+  street: string | null;
+  street2: string | null;
+  city: string | null;
+  state: string | null;
+  country: string | null;
+  birthday: string | null;
+  drivers_license_number: string | null;
+  is_blocked: boolean | null;
+  blocked_at: string | null;
+  blocked_by_user_id: string | null;
+  blocked_reason: string | null;
+  legal_id_type: string | null;
+  legal_id_number: string | null;
+  address: string | null;
+  notes: string | null;
+  created_at: string;
+  last_booked_at: string | null;
+};
+
+export type AdminCustomerBooking = {
+  id: string;
+  publicId: string;
+  vehicleLabel: string;
+  startDateValue: string;
+  startDateLabel: string;
+  endDateValue: string;
+  endDateLabel: string;
+  status: string;
+  statusLabel: string;
+  totalAmount: number;
+  totalLabel: string;
+  balanceAmount: number;
+  balanceLabel: string;
+  createdAtValue: string;
+  createdAtLabel: string;
+};
+
+export type AdminCustomerBookingsPage = {
+  bookings: AdminCustomerBooking[];
+  nextCursor: string | null;
+  hasMore: boolean;
+  totalCount: number;
+  limit: number;
+};
+
+export type AdminCustomerInput = {
+  fullName: string;
+  email: string;
+  phone: string;
+  address?: string;
+  notes?: string;
+};
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -235,5 +306,56 @@ export async function convertAdminQuote(request: AdminRequest, quoteId: string) 
   return readAdminJson<{ ok: true; bookingId: string; alreadyConverted: boolean }>(request, `/api/admin/quotes/${encodeURIComponent(quoteId)}/convert-to-booking`, {
     method: "POST",
     body: JSON.stringify({}),
+  });
+}
+
+export async function fetchAdminCustomers(request: AdminRequest, input: {
+  q?: string;
+  sortBy?: "customer" | "bookings" | "totalSpend" | "lastBooked" | "created";
+  sortDir?: "asc" | "desc";
+}) {
+  const params = new URLSearchParams();
+  if (input.q?.trim()) params.set("q", input.q.trim());
+  params.set("sortBy", input.sortBy ?? "lastBooked");
+  params.set("sortDir", input.sortDir ?? "desc");
+  const data = await readAdminJson<{ customers: AdminCustomerListItem[] }>(request, `/api/admin/customers?${params.toString()}`, { cache: "no-store" });
+  if (!Array.isArray(data.customers)) throw new ApiError("The customers service returned an invalid response.", 502);
+  return data.customers;
+}
+
+export async function fetchAdminCustomer(request: AdminRequest, customerId: string) {
+  const data = await readAdminJson<{ customer: AdminCustomerDetail }>(request, `/api/admin/customers/${encodeURIComponent(customerId)}`, { cache: "no-store" });
+  if (!isObject(data.customer) || typeof data.customer.id !== "string") throw new ApiError("The customer service returned an invalid response.", 502);
+  return data.customer;
+}
+
+export async function fetchAdminCustomerBookings(request: AdminRequest, customerId: string, cursor?: string | null) {
+  const params = new URLSearchParams({ limit: "20" });
+  if (cursor) params.set("cursor", cursor);
+  const data = await readAdminJson<AdminCustomerBookingsPage>(request, `/api/admin/customers/${encodeURIComponent(customerId)}/bookings?${params.toString()}`, { cache: "no-store" });
+  if (!Array.isArray(data.bookings) || typeof data.totalCount !== "number") throw new ApiError("The customer history service returned an invalid response.", 502);
+  return data;
+}
+
+export async function createAdminCustomer(request: AdminRequest, input: AdminCustomerInput & { firstName: string; lastName: string }) {
+  const data = await readAdminJson<{ customer: Pick<AdminCustomerDetail, "id" | "full_name" | "email" | "phone"> }>(request, "/api/admin/customers", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  if (!isObject(data.customer) || typeof data.customer.id !== "string") throw new ApiError("The customer service returned an invalid response.", 502);
+  return data.customer;
+}
+
+export async function updateAdminCustomer(request: AdminRequest, customerId: string, input: AdminCustomerInput) {
+  return readAdminJson<{ ok: true; synchronizedBookingCount: number }>(request, `/api/admin/customers/${encodeURIComponent(customerId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function setAdminCustomerBlocked(request: AdminRequest, customerId: string, blocked: boolean, blockReason?: string) {
+  return readAdminJson<{ ok: true; blocked: boolean }>(request, `/api/admin/customers/${encodeURIComponent(customerId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ setBlocked: blocked, blockReason: blocked ? blockReason?.trim() || "Blocked by staff in mobile admin" : null }),
   });
 }
