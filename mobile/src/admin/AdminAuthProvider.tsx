@@ -13,6 +13,7 @@ import {
 
 import { API_BASE_URL, ApiError } from "@/services/api";
 import { isAdminRole, type AdminRole } from "@/admin/capabilities";
+import { buildAdminAssetSource } from "@/admin/assetSource";
 
 const clerkPublishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY?.trim() ?? "";
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -60,6 +61,7 @@ type AdminAuthContextValue = {
   refresh: () => Promise<boolean>;
   signOut: () => Promise<void>;
   request: (path: string, init?: RequestInit) => Promise<Response>;
+  assetSource: (url: string) => { uri: string; headers?: Record<string, string> };
 };
 
 const AdminAuthContext = createContext<AdminAuthContextValue | null>(null);
@@ -92,6 +94,7 @@ function MissingConfigProvider({ children }: PropsWithChildren) {
   const request = useCallback(async () => {
     throw new ApiError("Admin sign-in is not configured for this app build.", 503);
   }, []);
+  const assetSource = useCallback((url: string) => buildAdminAssetSource(url, null, API_BASE_URL), []);
   const value = useMemo<AdminAuthContextValue>(() => ({
     status: "config_missing",
     user: null,
@@ -99,7 +102,8 @@ function MissingConfigProvider({ children }: PropsWithChildren) {
     refresh: unavailable,
     signOut,
     request,
-  }), [request, signOut, unavailable]);
+    assetSource,
+  }), [assetSource, request, signOut, unavailable]);
   return <AdminAuthContext.Provider value={value}>{children}</AdminAuthContext.Provider>;
 }
 
@@ -232,6 +236,8 @@ function AdminSessionBridge({ children }: PropsWithChildren) {
     return response;
   }, [error, exchange, session]);
 
+  const assetSource = useCallback((url: string) => buildAdminAssetSource(url, session?.accessToken ?? null, API_BASE_URL), [session]);
+
   const visibleStatus: AdminAuthStatus = !isLoaded
     ? "loading"
     : !isSignedIn
@@ -245,7 +251,8 @@ function AdminSessionBridge({ children }: PropsWithChildren) {
     refresh,
     signOut,
     request,
-  }), [error, isSignedIn, refresh, request, session?.user, signOut, visibleStatus]);
+    assetSource,
+  }), [assetSource, error, isSignedIn, refresh, request, session?.user, signOut, visibleStatus]);
 
   return <AdminAuthContext.Provider value={value}>{children}</AdminAuthContext.Provider>;
 }

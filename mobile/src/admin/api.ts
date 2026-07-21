@@ -685,6 +685,45 @@ export type AdminEmailDetail = AdminEmailListItem & {
   providerStatusError: string | null;
 };
 
+export type AdminMediaSource = "inspections" | "vehicles" | "vehicle-files";
+
+export type AdminMediaItem = {
+  id: string;
+  source: AdminMediaSource;
+  sourceLabel: string;
+  title: string;
+  fileName: string;
+  previewUrl: string;
+  vehicleId: string;
+  vehiclePublicId: string;
+  vehicleLabel: string;
+  bookingId: string | null;
+  bookingPublicId: string | null;
+  category: string;
+  categoryLabel: string;
+  subtype: string;
+  subtypeLabel: string;
+  uploadedBy: string | null;
+  createdAt: string;
+  isPrimary: boolean;
+  canRemoveAtSource: boolean;
+};
+
+export type AdminMediaPage = {
+  source: AdminMediaSource;
+  items: AdminMediaItem[];
+  counts: Record<AdminMediaSource, number>;
+  totalCount: number;
+  page: number;
+  totalPages: number;
+  from: number;
+  to: number;
+  hasPrev: boolean;
+  hasNext: boolean;
+  options: { vehicles: { value: string; label: string }[]; categories: { value: string; label: string }[]; subtypes: { value: string; label: string }[] };
+  warnings: string[];
+};
+
 type AdminSettingsErrorPayload = Partial<AdminSettingsPayload> & {
   error?: string;
   message?: string;
@@ -1114,4 +1153,17 @@ export async function fetchAdminEmail(request: AdminRequest, emailId: string) {
 
 export async function resendAdminEmail(request: AdminRequest, emailId: string) {
   return readAdminJson<{ ok: true }>(request, `/api/admin/emails/${encodeURIComponent(emailId)}/resend`, { method: "POST", body: "{}" });
+}
+
+export async function fetchAdminMedia(request: AdminRequest, input: { source: AdminMediaSource; q?: string; vehicleId?: string; category?: string; subtype?: string; dateFrom?: string; dateTo?: string; sort?: "newest" | "oldest"; page?: number }) {
+  const params = new URLSearchParams({ source: input.source, page: String(input.page ?? 1), sort: input.sort ?? "newest" });
+  if (input.q?.trim()) params.set("q", input.q.trim());
+  if (input.vehicleId) params.set("vehicleId", input.vehicleId);
+  if (input.category) params.set("category", input.category);
+  if (input.subtype) params.set("subtype", input.subtype);
+  if (input.dateFrom?.trim()) params.set("dateFrom", input.dateFrom.trim());
+  if (input.dateTo?.trim()) params.set("dateTo", input.dateTo.trim());
+  const data = await readAdminJson<AdminMediaPage & { ok: true }>(request, `/api/admin/media?${params.toString()}`, { cache: "no-store" });
+  if (!Array.isArray(data.items) || !isObject(data.counts) || !isObject(data.options) || typeof data.totalCount !== "number") throw new ApiError("The media service returned an invalid response.", 502);
+  return data;
 }
