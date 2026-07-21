@@ -114,3 +114,5 @@ export function prepareAdminSettings(
     },
   };
 }
+
+export default { formFromSettings, settingsSnapshot, prepareAdminSettings };

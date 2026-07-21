@@ -85,11 +85,11 @@ export type AdminModule = {
 };
 
 export const ADMIN_MODULES: readonly AdminModule[] = [
-  { key: "bookings", title: "Bookings", description: "Manage reservations, payments, inspections, and trip status.", icon: "calendar", href: "/admin/bookings", capability: "bookings.read", group: "work" },
+  { key: "bookings", title: "Bookings", description: "Manage reservations, payments, documents, and trip status.", icon: "calendar", href: "/admin/bookings", capability: "bookings.read", group: "work" },
   { key: "quotes", title: "Quotes", description: "Prepare, send, revise, and convert customer quotes.", icon: "description", href: "/admin/quotes", capability: "quotes.read", group: "work" },
-  { key: "customers", title: "Customers", description: "Customer profiles, history, documents, and contact details.", icon: "groups", href: "/admin/customers", capability: "customers.read", group: "work" },
+  { key: "customers", title: "Customers", description: "Customer profiles, booking history, account state, and contact details.", icon: "groups", href: "/admin/customers", capability: "customers.read", group: "work" },
   { key: "calendar", title: "Calendar", description: "See pickups, returns, availability, and operational conflicts.", icon: "date-range", href: "/admin/calendar", capability: "calendar.read", group: "work" },
-  { key: "vehicles", title: "Vehicles", description: "Fleet status, pricing, documents, and availability controls.", icon: "directions-car", href: "/admin/vehicles", capability: "vehicles.read", group: "business" },
+  { key: "vehicles", title: "Vehicles", description: "Fleet status, rates, reservations, notes, and readiness.", icon: "directions-car", href: "/admin/vehicles", capability: "vehicles.read", group: "business" },
   { key: "messages", title: "Messages", description: "Triage customer enquiries and service alerts.", icon: "forum", href: "/admin/messages", capability: "messages.read", group: "work" },
   { key: "reports", title: "Reports", description: "Revenue, utilization, balances, and business performance.", icon: "monitoring", href: "/admin/reports", capability: "reports.read", group: "business" },
   { key: "payments", title: "Payments", description: "Review transactions, exceptions, and refunds.", icon: "payments", href: "/admin/payments", capability: "payments.read", group: "business" },
