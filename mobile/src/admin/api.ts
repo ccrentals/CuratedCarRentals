@@ -546,6 +546,84 @@ export type AdminMaintenanceItem = {
   currentOdometerKm: number | null;
 };
 
+export type AdminPromoState = "ACTIVE" | "INACTIVE" | "SCHEDULED" | "EXPIRED" | "LIMIT_REACHED";
+
+export type AdminPromoItem = {
+  id: string;
+  public_id: string;
+  code: string;
+  is_active: boolean;
+  discount_type: "PERCENT" | "FIXED";
+  apply_scope: "OVERALL_TOTAL" | "DAYS_TOTAL";
+  discount_value: number;
+  min_subtotal_cents: number | null;
+  max_redemptions: number | null;
+  max_redemptions_per_customer: number | null;
+  start_at: string | null;
+  end_at: string | null;
+  allowed_vehicle_ids_json: string[];
+  excluded_vehicle_ids_json: string[];
+  blackout_dates_json: string[];
+  created_at: string;
+  updated_at: string;
+  current_redemption_count: number;
+  remaining_redemptions: number | null;
+  admin_state: AdminPromoState;
+};
+
+export type AdminPromosPage = {
+  promos: AdminPromoItem[];
+  totalCount: number;
+  page: number;
+  totalPages: number;
+  rowsPerPage: number;
+  from: number;
+  to: number;
+  hasPrev: boolean;
+  hasNext: boolean;
+};
+
+export type AdminPromoActivity = {
+  id: string;
+  booking_id: string;
+  booking_public_id: string | null;
+  customer_email: string | null;
+  discount_amount_cents: number;
+  event_type: "REDEEMED" | "REVERSED";
+  event_at: string;
+  created_at: string;
+  is_reconstructed: boolean;
+  timestamp_source: string | null;
+};
+
+export type AdminPromoDetail = {
+  promo: AdminPromoItem;
+  summary: {
+    currentCount: number;
+    remaining: number | null;
+    status: AdminPromoState;
+    redeemedEvents: number;
+    reversedEvents: number;
+    netCounted: number;
+    totalDiscountRedeemed: number;
+    totalDiscountReversed: number;
+  };
+  historyCoverage: string;
+  historyCoverageStartedAt: string | null;
+  hasReconstructedHistory: boolean;
+  activity: {
+    rows: AdminPromoActivity[];
+    page: number;
+    totalPages: number;
+    totalCount: number;
+    pageSize: number;
+    from: number;
+    to: number;
+    hasPrev: boolean;
+    hasNext: boolean;
+  };
+};
+
 type AdminSettingsErrorPayload = Partial<AdminSettingsPayload> & {
   error?: string;
   message?: string;
@@ -910,4 +988,31 @@ export async function fetchAdminMaintenance(request: AdminRequest, input: { q?: 
   const data = await readAdminJson<{ ok: true; items: AdminMaintenanceItem[] }>(request, `/api/admin/maintenance${params.size ? `?${params.toString()}` : ""}`, { cache: "no-store" });
   if (!Array.isArray(data.items)) throw new ApiError("The maintenance service returned an invalid response.", 502);
   return data.items;
+}
+
+export async function fetchAdminPromos(request: AdminRequest, input: { q?: string; page?: number; rows?: number }) {
+  const params = new URLSearchParams();
+  if (input.q?.trim()) params.set("q", input.q.trim());
+  params.set("page", String(input.page ?? 1));
+  params.set("rows", String(input.rows ?? 20));
+  const data = await readAdminJson<AdminPromosPage>(request, `/api/admin/promo-codes?${params.toString()}`, { cache: "no-store" });
+  if (!Array.isArray(data.promos) || typeof data.totalCount !== "number" || typeof data.page !== "number") {
+    throw new ApiError("The promotions service returned an invalid response.", 502);
+  }
+  return data;
+}
+
+export async function fetchAdminPromo(request: AdminRequest, promoId: string, activityPage = 1) {
+  const data = await readAdminJson<AdminPromoDetail>(request, `/api/admin/promo-codes/${encodeURIComponent(promoId)}?activityPage=${activityPage}`, { cache: "no-store" });
+  if (!isObject(data.promo) || !isObject(data.summary) || !isObject(data.activity) || !Array.isArray(data.activity.rows)) {
+    throw new ApiError("The promotion service returned an invalid response.", 502);
+  }
+  return data;
+}
+
+export async function setAdminPromoActive(request: AdminRequest, promoId: string, isActive: boolean) {
+  return readAdminJson<{ ok: true }>(request, `/api/admin/promo-codes/${encodeURIComponent(promoId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ action: "set_active", isActive }),
+  });
 }
