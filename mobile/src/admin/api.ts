@@ -724,6 +724,21 @@ export type AdminMediaPage = {
   warnings: string[];
 };
 
+export type AdminBookingLocationField = { key: string; label: string; inputType: "text" | "date" | "time"; required: boolean; appliesTo: "pickup" | "dropoff" | "both"; defaultSource: "pickup_date" | "pickup_time" | "dropoff_date" | "dropoff_time" | null };
+export type AdminBookingLocation = { id: string | null; label: string; locationTypeKey: string; pickupLabel: string; dropoffLabel: string; appliesToPickup: boolean; appliesToDropoff: boolean; isActive: boolean; sortOrder: number; fieldSchema: AdminBookingLocationField[] };
+export type AdminAvailableVehicle = { id: string; year: number; make: string; model: string; dailyRateCents: number; depositCents: number; label: string };
+export type AdminInsuranceOption = { enabled: boolean; planId: string | null; pricePerDayCents: number; coverageCents: number };
+export type AdminPricingPreview = { days: number; dailyRateCents: number; baseTotalCents: number; insuranceSelected: boolean; insurancePlanId: string | null; insurancePricePerDayCents: number; insuranceTotalCents: number; subtotalCents: number; promoCode: string | null; promoDiscountCents: number; totalCents: number; depositRequiredCents: number; amountDueCents: number; dueNowCents: number; balanceDueCents: number; rateBreakdown: { date: string; dailyRateCents: number; source: "base" | "weekend" | "date_override" }[]; currency: "JMD" };
+
+export type AdminQuoteCreateInput = {
+  customerFullName: string; customerEmail: string; customerPhone: string | null; startAt: string; endAt: string;
+  pickupLocationId: string | null; dropoffLocationId: string | null; pickupLocationText: string; dropoffLocationText: string;
+  pickupLocationType: string; dropoffLocationType: string; pickupLocationTextSnapshot: string; dropoffLocationTextSnapshot: string;
+  bookingLocationDetails: Record<string, unknown>; vehicleId: string; insuranceEnabled: boolean; insurancePlanId: string | null;
+  promoCode: string | null; tags: string[]; comments: string | null; expiresAt: string | null; commissionPartnerName: string | null;
+  clientPaysAtPartner: boolean; rackPriceCents: number | null;
+};
+
 type AdminSettingsErrorPayload = Partial<AdminSettingsPayload> & {
   error?: string;
   message?: string;
@@ -1166,4 +1181,54 @@ export async function fetchAdminMedia(request: AdminRequest, input: { source: Ad
   const data = await readAdminJson<AdminMediaPage & { ok: true }>(request, `/api/admin/media?${params.toString()}`, { cache: "no-store" });
   if (!Array.isArray(data.items) || !isObject(data.counts) || !isObject(data.options) || typeof data.totalCount !== "number") throw new ApiError("The media service returned an invalid response.", 502);
   return data;
+}
+
+export async function fetchAdminBookingLocations(request: AdminRequest) {
+  const data = await readAdminJson<{ locations: unknown[] }>(request, "/api/admin/booking-locations", { cache: "no-store" });
+  const locations = Array.isArray(data.locations) ? data.locations.flatMap((value) => {
+    if (!isObject(value)) return [];
+    const typeKey = typeof value.location_type_key === "string" ? value.location_type_key.trim().toUpperCase() : "";
+    const label = typeof value.label === "string" ? value.label.trim() : "";
+    if (!typeKey || !label) return [];
+    const fieldSchema = Array.isArray(value.field_schema) ? value.field_schema.flatMap((raw) => {
+      if (!isObject(raw) || typeof raw.key !== "string" || typeof raw.label !== "string" || !["text", "date", "time"].includes(String(raw.input_type)) || !["pickup", "dropoff", "both"].includes(String(raw.applies_to))) return [];
+      const key = raw.key.trim();
+      const fieldLabel = raw.label.trim();
+      if (!key || !fieldLabel) return [];
+      return [{ key, label: fieldLabel, inputType: raw.input_type as AdminBookingLocationField["inputType"], required: raw.required === true, appliesTo: raw.applies_to as AdminBookingLocationField["appliesTo"], defaultSource: ["pickup_date", "pickup_time", "dropoff_date", "dropoff_time"].includes(String(raw.default_source)) ? raw.default_source as AdminBookingLocationField["defaultSource"] : null }];
+    }) : [];
+    return [{ id: typeof value.id === "string" ? value.id : null, label, locationTypeKey: typeKey, pickupLabel: typeof value.pickup_label === "string" ? value.pickup_label : label, dropoffLabel: typeof value.dropoff_label === "string" ? value.dropoff_label : label, appliesToPickup: value.applies_to_pickup !== false && value.allow_pickup !== false, appliesToDropoff: value.applies_to_dropoff !== false && value.allow_dropoff !== false, isActive: value.is_active !== false, sortOrder: Number(value.sort_order) || 0, fieldSchema }];
+  }).filter((location) => location.isActive).sort((a, b) => a.sortOrder - b.sortOrder) : [];
+  if (!locations.length) throw new ApiError("No active booking locations are configured.", 503);
+  return locations;
+}
+
+export async function fetchAdminAvailableVehicles(request: AdminRequest, startDate: string, endDate: string) {
+  const params = new URLSearchParams({ startDate, endDate });
+  const data = await readAdminJson<{ vehicles: AdminAvailableVehicle[] }>(request, `/api/admin/bookings/available-vehicles?${params.toString()}`, { cache: "no-store" });
+  if (!Array.isArray(data.vehicles)) throw new ApiError("The availability service returned an invalid response.", 502);
+  return data.vehicles;
+}
+
+export async function fetchAdminInsuranceOption(request: AdminRequest, vehicleId: string) {
+  const data = await readAdminJson<{ insurance: AdminInsuranceOption }>(request, `/api/public/insurance?vehicleId=${encodeURIComponent(vehicleId)}`, { cache: "no-store" });
+  if (!isObject(data.insurance)) throw new ApiError("The protection service returned an invalid response.", 502);
+  return data.insurance;
+}
+
+export async function fetchAdminPricingPreview(request: AdminRequest, input: { vehicleId: string; startDate: string; endDate: string; customerEmail?: string; insuranceSelected?: boolean; insurancePlanId?: string | null; promoCode?: string | null }) {
+  const params = new URLSearchParams({ vehicleId: input.vehicleId, startDate: input.startDate, endDate: input.endDate });
+  if (input.customerEmail?.trim()) params.set("customerEmail", input.customerEmail.trim().toLowerCase());
+  if (input.insuranceSelected) params.set("insuranceSelected", "true");
+  if (input.insurancePlanId) params.set("insurancePlanId", input.insurancePlanId);
+  if (input.promoCode?.trim()) params.set("promoCode", input.promoCode.trim().toUpperCase());
+  const data = await readAdminJson<{ ok: true; preview: AdminPricingPreview }>(request, `/api/admin/bookings/preview?${params.toString()}`, { cache: "no-store" });
+  if (!isObject(data.preview)) throw new ApiError("The pricing service returned an invalid response.", 502);
+  return data.preview;
+}
+
+export async function createAdminQuote(request: AdminRequest, input: AdminQuoteCreateInput) {
+  const data = await readAdminJson<{ ok: true; item: AdminQuoteDetail }>(request, "/api/admin/quotes", { method: "POST", body: JSON.stringify(input) });
+  if (!isObject(data.item) || typeof data.item.id !== "string") throw new ApiError("The quote service returned an invalid response.", 502);
+  return data.item;
 }

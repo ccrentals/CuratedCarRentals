@@ -1,0 +1,33 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import model from "../src/admin/adminCreationModel.ts";
+import type { AdminBookingLocation } from "../src/admin/api";
+
+const office: AdminBookingLocation = { id: "11111111-1111-4111-8111-111111111111", label: "Office", locationTypeKey: "OFFICE", pickupLabel: "Kingston office", dropoffLabel: "Kingston office", appliesToPickup: true, appliesToDropoff: true, isActive: true, sortOrder: 1, fieldSchema: [] };
+const airport: AdminBookingLocation = { id: "22222222-2222-4222-8222-222222222222", label: "Airport", locationTypeKey: "AIRPORT", pickupLabel: "Airport arrival", dropoffLabel: "Airport departure", appliesToPickup: true, appliesToDropoff: true, isActive: true, sortOrder: 2, fieldSchema: [{ key: "flight_date", label: "Flight date", inputType: "date", required: true, appliesTo: "both", defaultSource: "pickup_date" }, { key: "flight_number", label: "Flight number", inputType: "text", required: true, appliesTo: "both", defaultSource: null }] };
+
+test("admin creation model builds dynamic location evidence with Jamaica defaults", () => {
+  const selection = model.buildLocationSelection({ locations: [office, airport], pickupTypeKey: "AIRPORT", dropoffTypeKey: "OFFICE", pickupValues: { flight_number: "JM 100" }, dropoffValues: {}, context: { pickupDate: "2026-08-10", pickupTime: "09:00", dropoffDate: "2026-08-12", dropoffTime: "11:00" } });
+  assert.equal(selection.pickupValues.flight_date, "2026-08-10");
+  assert.equal(selection.pickupText, "Airport arrival");
+  assert.equal((selection.details.pickup as any).fieldLabels.flight_number, "Flight number");
+  assert.equal(model.validateLocation(selection.pickup, "pickup", selection.pickupValues), null);
+});
+
+test("admin creation model prepares a complete quote payload", () => {
+  const result = model.prepareQuoteCreate({ customerFullName: "Ada Lovelace", customerEmail: "ADA@example.com", customerPhone: "8765551111", pickupDate: "2026-08-10", pickupTime: "09:00", dropoffDate: "2026-08-12", dropoffTime: "11:00", locations: [office], pickupTypeKey: "OFFICE", dropoffTypeKey: "OFFICE", pickupValues: {}, dropoffValues: {}, vehicleId: "33333333-3333-4333-8333-333333333333", insuranceEnabled: false, insurancePlanId: null, promoCode: " island10 ", tags: "VIP, airport, VIP", comments: "Call before arrival", expiresDate: "2026-08-05", commissionPartnerName: "Hotel partner", clientPaysAtPartner: true, rackPrice: "75,000" });
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.payload.startAt, "2026-08-10T14:00:00.000Z");
+  assert.equal(result.payload.customerEmail, "ada@example.com");
+  assert.deepEqual(result.payload.tags, ["VIP", "airport"]);
+  assert.equal(result.payload.promoCode, "ISLAND10");
+  assert.equal(result.payload.rackPriceCents, 75000);
+});
+
+test("admin creation model blocks missing dynamic fields and invalid windows", () => {
+  const base = { customerFullName: "Ada Lovelace", customerEmail: "ada@example.com", customerPhone: "", pickupDate: "2026-08-10", pickupTime: "09:00", dropoffDate: "2026-08-09", dropoffTime: "11:00", locations: [airport], pickupTypeKey: "AIRPORT", dropoffTypeKey: "AIRPORT", pickupValues: {}, dropoffValues: {}, vehicleId: "vehicle", insuranceEnabled: false, insurancePlanId: null, promoCode: "", tags: "", comments: "", expiresDate: "", commissionPartnerName: "", clientPaysAtPartner: false, rackPrice: "" };
+  assert.equal(model.prepareQuoteCreate(base).ok, false);
+  assert.equal(model.prepareQuoteCreate({ ...base, dropoffDate: "2026-08-12" }).ok, false);
+});
