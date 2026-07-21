@@ -57,6 +57,17 @@ export default function ExploreScreen() {
             </Pressable>
           </Link>
         ))}
+        <View style={styles.staffDivider} />
+        <Text style={styles.staffLabel}>CURATED TEAM</Text>
+        <Link href={"/admin" as Href} asChild>
+          <Pressable style={styles.staffCard} accessibilityRole="button">
+            <View style={styles.staffIcon}><Text style={styles.staffIconText}>◆</Text></View>
+            <View style={styles.content}>
+              <View style={styles.titleRow}><Text style={styles.staffTitle}>Staff workspace</Text><Text style={styles.staffChevron}>›</Text></View>
+              <Text style={styles.staffBody}>Secure access for authorized Curated team members.</Text>
+            </View>
+          </Pressable>
+        </Link>
       </View>
     </Screen>
   );
@@ -78,4 +89,12 @@ const makeStyles = (colors: AppColors, isDark: boolean) => StyleSheet.create({
   modeButtonActive: { backgroundColor: colors.teal },
   modeText: { color: colors.muted, fontSize: 11, fontWeight: "800" },
   modeTextActive: { color: colors.white },
+  staffDivider: { height: 1, backgroundColor: colors.border, marginTop: 8, marginBottom: 2 },
+  staffLabel: { color: colors.muted, fontSize: 10, fontWeight: "900", letterSpacing: 1.5, marginTop: 5 },
+  staffCard: { flexDirection: "row", alignItems: "center", gap: 14, backgroundColor: colors.navy, borderRadius: radii.lg, padding: 17 },
+  staffIcon: { width: 42, height: 42, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: colors.navySoft },
+  staffIconText: { color: colors.orange, fontSize: 17, fontWeight: "900" },
+  staffTitle: { flex: 1, color: colors.white, fontSize: 17, fontWeight: "900" },
+  staffChevron: { color: colors.orange, fontSize: 27, lineHeight: 25 },
+  staffBody: { color: "rgba(255,255,255,0.62)", fontSize: 12, lineHeight: 18, marginTop: 4 },
 });

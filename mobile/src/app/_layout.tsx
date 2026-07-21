@@ -6,13 +6,16 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ThemeProvider, useAppTheme } from "@/components/ThemeProvider";
 import { LaunchScreen } from "@/components/LaunchScreen";
+import { AdminAuthProvider } from "@/admin/AdminAuthProvider";
 
 export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <ThemeProvider>
-          <ThemedApp />
+          <AdminAuthProvider>
+            <ThemedApp />
+          </AdminAuthProvider>
         </ThemeProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
