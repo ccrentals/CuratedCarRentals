@@ -5,6 +5,7 @@ import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { useAdminAuth } from "@/admin/AdminAuthProvider";
 import { fetchAdminQuotes, type AdminQuoteListItem } from "@/admin/api";
+import { hasCapability } from "@/admin/capabilities";
 import { AdminButton, AdminGate, AdminScreen } from "@/admin/AdminShell";
 import { useAppTheme } from "@/components/ThemeProvider";
 import { radii, type AppColors } from "@/constants/theme";
@@ -22,7 +23,7 @@ export default function AdminQuotesScreen() {
 }
 
 function QuotesList() {
-  const { request } = useAdminAuth();
+  const { request, user } = useAdminAuth();
   const { colors } = useAppTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [queryInput, setQueryInput] = useState("");
@@ -64,9 +65,11 @@ function QuotesList() {
 
   const submitSearch = () => setQuery(queryInput.trim());
   const filtered = query || status !== "all";
+  const canCreate = Boolean(user && hasCapability(user.role, "quotes.write"));
 
   return (
     <AdminScreen back eyebrow="SALES PIPELINE" title="Quotes" subtitle="Follow every estimate from draft through booking." refreshing={loading && quotes.length > 0} onRefresh={() => void load()}>
+      {canCreate ? <AdminButton label="Create a new quote" onPress={() => router.push("/admin/quotes/new" as Href)} icon="add" /> : null}
       <View style={styles.searchRow}>
         <View style={styles.searchBox}><MaterialIcons name="search" size={20} color={colors.muted} /><TextInput value={queryInput} onChangeText={setQueryInput} onSubmitEditing={submitSearch} placeholder="Quote, customer, email, vehicle" placeholderTextColor={colors.muted} style={styles.searchInput} returnKeyType="search" autoCapitalize="none" /></View>
         <Pressable onPress={submitSearch} style={styles.searchButton} accessibilityRole="button" accessibilityLabel="Search quotes"><MaterialIcons name="arrow-forward" size={21} color={colors.white} /></Pressable>

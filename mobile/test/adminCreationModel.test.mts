@@ -15,6 +15,11 @@ test("admin creation model builds dynamic location evidence with Jamaica default
   assert.equal(model.validateLocation(selection.pickup, "pickup", selection.pickupValues), null);
 });
 
+test("admin creation model distinguishes configured locations that share a type", () => {
+  const secondOffice = { ...office, id: "44444444-4444-4444-8444-444444444444", label: "Airport office", pickupLabel: "Airport office pickup" };
+  assert.equal(model.locationForType([office, secondOffice], secondOffice.id!, "pickup")?.pickupLabel, "Airport office pickup");
+});
+
 test("admin creation model prepares a complete quote payload", () => {
   const result = model.prepareQuoteCreate({ customerFullName: "Ada Lovelace", customerEmail: "ADA@example.com", customerPhone: "8765551111", pickupDate: "2026-08-10", pickupTime: "09:00", dropoffDate: "2026-08-12", dropoffTime: "11:00", locations: [office], pickupTypeKey: "OFFICE", dropoffTypeKey: "OFFICE", pickupValues: {}, dropoffValues: {}, vehicleId: "33333333-3333-4333-8333-333333333333", insuranceEnabled: false, insurancePlanId: null, promoCode: " island10 ", tags: "VIP, airport, VIP", comments: "Call before arrival", expiresDate: "2026-08-05", commissionPartnerName: "Hotel partner", clientPaysAtPartner: true, rackPrice: "75,000" });
   assert.equal(result.ok, true);
@@ -30,4 +35,7 @@ test("admin creation model blocks missing dynamic fields and invalid windows", (
   const base = { customerFullName: "Ada Lovelace", customerEmail: "ada@example.com", customerPhone: "", pickupDate: "2026-08-10", pickupTime: "09:00", dropoffDate: "2026-08-09", dropoffTime: "11:00", locations: [airport], pickupTypeKey: "AIRPORT", dropoffTypeKey: "AIRPORT", pickupValues: {}, dropoffValues: {}, vehicleId: "vehicle", insuranceEnabled: false, insurancePlanId: null, promoCode: "", tags: "", comments: "", expiresDate: "", commissionPartnerName: "", clientPaysAtPartner: false, rackPrice: "" };
   assert.equal(model.prepareQuoteCreate(base).ok, false);
   assert.equal(model.prepareQuoteCreate({ ...base, dropoffDate: "2026-08-12" }).ok, false);
+  const partnerResult = model.prepareQuoteCreate({ ...base, dropoffDate: "2026-08-12", pickupValues: { flight_number: "JM 100" }, dropoffValues: { flight_number: "JM 101" }, clientPaysAtPartner: true });
+  assert.equal(partnerResult.ok, false);
+  if (!partnerResult.ok) assert.match(partnerResult.error, /commission partner/i);
 });
