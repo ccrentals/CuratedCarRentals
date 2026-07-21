@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { AdminSettings } from "../mobile/src/admin/api";
-import { formFromSettings, prepareAdminSettings } from "../mobile/src/admin/settingsModel";
+import settingsModel from "../src/admin/settingsModel.ts";
+
+type AdminSettings = import("../src/admin/api").AdminSettings;
+const { formFromSettings, prepareAdminSettings } = settingsModel;
 
 const settings: AdminSettings = {
   authLoginMethod: "clerk",

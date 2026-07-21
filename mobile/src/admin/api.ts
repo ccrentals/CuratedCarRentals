@@ -447,6 +447,46 @@ export type AdminSettingsPayload = {
   updatedByEmail: string | null;
 };
 
+export type AdminCalendarPayload = {
+  view: "week" | "month";
+  baseDate: string;
+  rangeStart: string;
+  rangeEnd: string;
+  days: string[];
+  selectedVehicleId: string | null;
+  selectedStatus: "all" | "pending_payment" | "confirmed" | "returned";
+  dayViewBookingLimit: number | "all";
+  vehicles: { id: string; make: string; model: string }[];
+  bookings: {
+    id: string;
+    public_id: string | null;
+    status: string;
+    archived_at: string | null;
+    start_at: string | null;
+    end_at: string | null;
+    start_date: string;
+    end_date: string;
+    created_at: string;
+    pickup_location: string;
+    customer_name: string;
+    customer_email: string;
+    vehicle_id: string;
+    vehicle_make: string;
+    vehicle_model: string;
+  }[];
+  blockouts: {
+    id: string;
+    vehicle_id: string;
+    start_at: string;
+    end_at: string;
+    reason: string;
+    notes: string | null;
+    vehicle_make: string;
+    vehicle_model: string;
+  }[];
+  warnings: string[];
+};
+
 type AdminSettingsErrorPayload = Partial<AdminSettingsPayload> & {
   error?: string;
   message?: string;
@@ -758,5 +798,16 @@ export async function saveAdminSettings(request: AdminRequest, settings: AdminSe
     );
   }
   if (!isAdminSettingsPayload(data)) throw new ApiError("The settings service returned an invalid response.", 502);
+  return data;
+}
+
+export async function fetchAdminCalendar(request: AdminRequest, input: { date: string; view: "week" | "month"; vehicleId?: string | null; status?: string }) {
+  const params = new URLSearchParams({ date: input.date, view: input.view });
+  if (input.vehicleId) params.set("vehicleId", input.vehicleId);
+  if (input.status && input.status !== "all") params.set("status", input.status);
+  const data = await readAdminJson<AdminCalendarPayload>(request, `/api/admin/calendar?${params.toString()}`, { cache: "no-store" });
+  if (!Array.isArray(data.days) || !Array.isArray(data.bookings) || !Array.isArray(data.blockouts) || !Array.isArray(data.vehicles)) {
+    throw new ApiError("The calendar service returned an invalid response.", 502);
+  }
   return data;
 }
