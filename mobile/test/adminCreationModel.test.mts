@@ -41,17 +41,18 @@ test("admin creation model blocks missing dynamic fields and invalid windows", (
 });
 
 test("admin creation model prepares a booking without creating payment state", () => {
-  const result = model.prepareBookingCreate({ customerId: "55555555-5555-4555-8555-555555555555", customerFullName: "Ada Lovelace", customerEmail: "ADA@example.com", customerPhone: "876-555-1111", pickupDate: "2026-08-10", dropoffDate: "2026-08-13", minimumDays: 3, todayDate: "2026-08-01", locations: [office], pickupTypeKey: office.id!, dropoffTypeKey: office.id!, pickupValues: {}, dropoffValues: {}, vehicleId: "33333333-3333-4333-8333-333333333333", insuranceSelected: false, insurancePlanId: null, promoCode: " island10 " });
+  const result = model.prepareBookingCreate({ clientRequestId: "66666666-6666-4666-8666-666666666666", customerId: "55555555-5555-4555-8555-555555555555", customerFullName: "Ada Lovelace", customerEmail: "ADA@example.com", customerPhone: "876-555-1111", pickupDate: "2026-08-10", dropoffDate: "2026-08-13", minimumDays: 3, todayDate: "2026-08-01", locations: [office], pickupTypeKey: office.id!, dropoffTypeKey: office.id!, pickupValues: {}, dropoffValues: {}, vehicleId: "33333333-3333-4333-8333-333333333333", insuranceSelected: false, insurancePlanId: null, promoCode: " island10 " });
   assert.equal(result.ok, true);
   if (!result.ok) return;
   assert.equal(result.payload.customerId, "55555555-5555-4555-8555-555555555555");
+  assert.equal(result.payload.clientRequestId, "66666666-6666-4666-8666-666666666666");
   assert.equal(result.payload.email, "ada@example.com");
   assert.equal(result.payload.promoCode, "ISLAND10");
   assert.equal("payment" in result.payload, false);
 });
 
 test("admin creation model enforces Jamaica booking date, minimum stay, and payment inputs", () => {
-  const base = { customerFullName: "Ada Lovelace", customerEmail: "ada@example.com", customerPhone: "8765551111", pickupDate: "2026-08-10", dropoffDate: "2026-08-12", minimumDays: 3, todayDate: "2026-08-01", locations: [office], pickupTypeKey: "OFFICE", dropoffTypeKey: "OFFICE", pickupValues: {}, dropoffValues: {}, vehicleId: "33333333-3333-4333-8333-333333333333", insuranceSelected: false, insurancePlanId: null, promoCode: "" };
+  const base = { clientRequestId: "66666666-6666-4666-8666-666666666666", customerFullName: "Ada Lovelace", customerEmail: "ada@example.com", customerPhone: "8765551111", pickupDate: "2026-08-10", dropoffDate: "2026-08-12", minimumDays: 3, todayDate: "2026-08-01", locations: [office], pickupTypeKey: "OFFICE", dropoffTypeKey: "OFFICE", pickupValues: {}, dropoffValues: {}, vehicleId: "33333333-3333-4333-8333-333333333333", insuranceSelected: false, insurancePlanId: null, promoCode: "" };
   assert.equal(model.prepareBookingCreate(base).ok, false);
   assert.equal(model.prepareBookingCreate({ ...base, pickupDate: "2026-07-31", dropoffDate: "2026-08-04" }).ok, false);
   assert.equal(model.prepareManualPayment({ amount: "0", method: "CASH", reference: "", note: "" }).ok, false);

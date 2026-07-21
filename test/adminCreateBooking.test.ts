@@ -347,6 +347,41 @@ test("admin bookings API: requires an explicit insurance selection", async () =>
   assert.deepEqual(await response.json(), { error: "Select an insurance option." });
 });
 
+test("admin bookings API: replays a committed native request without duplicate side effects", async () => {
+  const queries: string[] = [];
+  const client = {
+    async query(text: string) {
+      queries.push(text);
+      if (text === "begin" || text === "rollback") return { rowCount: 0, rows: [] };
+      if (text.startsWith("select pg_advisory_xact_lock")) return { rowCount: 1, rows: [{}] };
+      if (text.includes("admin_client_request_id")) return { rowCount: 1, rows: [{ id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", status: "PENDING_PAYMENT", insurance_selected: false, pricing_json: { promo_code: "ISLAND10" } }] };
+      throw new Error(`Unexpected query: ${text}`);
+    },
+    release() { return undefined; },
+  };
+  const unreachable = async () => { throw new Error("Replay must not execute booking side effects"); };
+  const deps = {
+    requireAdmin: async () => ({ ok: true, actor: { userId: "91c7c89a-9f07-4d59-b79b-f92d55f0cf8b", role: "ADMIN", appRole: "ADMIN", authSource: "legacy", clerkUserId: null, issuedAt: 999999000, expiresAt: 999999999 }, session: { userId: "91c7c89a-9f07-4d59-b79b-f92d55f0cf8b", role: "ADMIN", issuedAt: 999999000, expiresAt: 999999999 } }),
+    requireCsrfToken: async () => true,
+    getPool: () => ({ connect: async () => client }),
+    loadBookingLocationConfigs: async () => [],
+    isVehicleUnavailable: unreachable,
+    upsertCustomer: unreachable,
+    validatePromo: unreachable,
+    syncPromoRedemption: unreachable,
+    buildPricingSnapshot: unreachable,
+    writeAudit: unreachable,
+    sendCreatedEmail: unreachable,
+    sendInternalCreatedNotifications: unreachable,
+    log: () => undefined,
+  } as unknown as AdminBookingsPostRouteDeps;
+  const response = await handleAdminBookingsPost(new Request("http://localhost/api/admin/bookings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ clientRequestId: "66666666-6666-4666-8666-666666666666", vehicleId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", fullName: "Admin Booking Tester", email: "admin-booking@example.com", phone: "+18765550144", startDate: "2099-04-10", endDate: "2099-04-12", pickupLocation: "Office", dropoffLocation: "Office", insuranceSelected: false }) }), deps);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { bookingId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", status: "PENDING_PAYMENT", promoApplied: true, insuranceSelected: false, idempotent: true });
+  assert.ok(queries.some((query) => query.startsWith("select pg_advisory_xact_lock")));
+  assert.ok(queries.includes("rollback"));
+});
+
 test("admin bookings API: submit still rejects unavailable vehicles after UI prefiltering", async () => {
   const queries: string[] = [];
   const client = {
@@ -538,6 +573,7 @@ test("admin bookings API: create still succeeds when audit logging fails after c
       queries.push(text);
       if (text === "begin" || text === "commit") return { rowCount: 0, rows: [] };
       if (text.startsWith("select pg_advisory_xact_lock")) return { rowCount: 1, rows: [{}] };
+      if (text.includes("admin_client_request_id")) return { rowCount: 0, rows: [] };
       if (text.includes("select id, year, make, model, daily_rate_cents, deposit_cents")) {
         return {
           rowCount: 1,
@@ -616,6 +652,7 @@ test("admin bookings API: create still succeeds when audit logging fails after c
         "x-csrf-token": "token",
       },
       body: JSON.stringify({
+        clientRequestId: "66666666-6666-4666-8666-666666666666",
         vehicleId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         fullName: "Admin Booking Tester",
         email: "admin-booking@example.com",
@@ -644,6 +681,7 @@ test("admin bookings API: persists structured pickup and dropoff location detail
     async query(text: string, params?: unknown[]) {
       if (text === "begin" || text === "commit") return { rowCount: 0, rows: [] };
       if (text.startsWith("select pg_advisory_xact_lock")) return { rowCount: 1, rows: [{}] };
+      if (text.includes("admin_client_request_id")) return { rowCount: 0, rows: [] };
       if (text.includes("select id, year, make, model, daily_rate_cents, deposit_cents")) {
         return {
           rowCount: 1,
@@ -799,6 +837,7 @@ test("admin bookings API: persists structured pickup and dropoff location detail
         "x-csrf-token": "token",
       },
       body: JSON.stringify({
+        clientRequestId: "66666666-6666-4666-8666-666666666666",
         vehicleId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         fullName: "Admin Booking Tester",
         email: "admin-booking@example.com",
@@ -859,6 +898,8 @@ test("admin bookings API: persists structured pickup and dropoff location detail
   assert.equal(pricingInput?.promoCode, "SAVE10");
 
   const pricing = insertParams?.[18] as Record<string, unknown>;
+  assert.equal(pricing.admin_client_request_id, "66666666-6666-4666-8666-666666666666");
+  assert.equal(pricing.admin_client_request_user_id, "91c7c89a-9f07-4d59-b79b-f92d55f0cf8b");
   const details = pricing.booking_location_details as {
     pickup: Record<string, unknown>;
     dropoff: Record<string, unknown>;

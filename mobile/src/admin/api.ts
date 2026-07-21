@@ -740,6 +740,7 @@ export type AdminQuoteCreateInput = {
 };
 
 export type AdminBookingCreateInput = {
+  clientRequestId: string;
   vehicleId: string;
   customerId?: string;
   fullName: string;
@@ -761,7 +762,7 @@ export type AdminBookingCreateInput = {
   promoCode: string | null;
 };
 
-export type AdminBookingCreateResult = { bookingId: string; status: string; promoApplied: boolean; insuranceSelected: boolean };
+export type AdminBookingCreateResult = { bookingId: string; status: string; promoApplied: boolean; insuranceSelected: boolean; idempotent?: boolean };
 export type AdminManualPaymentMethod = "CASH" | "BANK_TRANSFER" | "POS_CARD" | "CHEQUE" | "OTHER";
 export type AdminManualPaymentInput = { amount: number; method: AdminManualPaymentMethod; reference?: string; note?: string; paidAt?: string };
 export type AdminManualPaymentResult = { ok: true; duplicate?: boolean; lost?: boolean; winnerBookingId?: string | null; paidToDate?: number; balanceDue?: number; paidInFull?: boolean };

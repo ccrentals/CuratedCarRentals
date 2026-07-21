@@ -48,10 +48,11 @@ export function prepareQuoteCreate(input: {
 }
 
 export function prepareBookingCreate(input: {
-  customerId?: string | null; customerFullName: string; customerEmail: string; customerPhone: string; pickupDate: string; dropoffDate: string;
+  clientRequestId: string; customerId?: string | null; customerFullName: string; customerEmail: string; customerPhone: string; pickupDate: string; dropoffDate: string;
   minimumDays: number; todayDate?: string; locations: AdminBookingLocation[]; pickupTypeKey: string; dropoffTypeKey: string; pickupValues: LocationValues; dropoffValues: LocationValues;
   vehicleId: string; insuranceSelected: boolean; insurancePlanId: string | null; promoCode: string;
 }): { ok: true; payload: AdminBookingCreateInput } | { ok: false; error: string } {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.clientRequestId)) return { ok: false, error: "Start a fresh booking draft and try again." };
   if (input.customerFullName.trim().length < 2) return { ok: false, error: "Enter the customer’s full name." };
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.customerEmail.trim())) return { ok: false, error: "Enter a valid customer email." };
   if (input.customerPhone.trim().length < 7) return { ok: false, error: "Enter a valid customer phone number." };
@@ -67,7 +68,7 @@ export function prepareBookingCreate(input: {
   const locationError = validateLocation(selection.pickup, "pickup", selection.pickupValues) || validateLocation(selection.dropoff, "dropoff", selection.dropoffValues);
   if (locationError) return { ok: false, error: locationError };
   if (input.insuranceSelected && !input.insurancePlanId) return { ok: false, error: "The selected protection option is unavailable." };
-  return { ok: true, payload: { vehicleId: input.vehicleId, ...(input.customerId ? { customerId: input.customerId } : {}), fullName: input.customerFullName.trim(), email: input.customerEmail.trim().toLowerCase(), phone: input.customerPhone.trim(), startDate: input.pickupDate, endDate: input.dropoffDate, pickupLocation: selection.pickupText, dropoffLocation: selection.dropoffText, pickupLocationType: selection.pickup?.locationTypeKey || input.pickupTypeKey, dropoffLocationType: selection.dropoff?.locationTypeKey || input.dropoffTypeKey, pickupLocationId: selection.pickup?.id ?? null, dropoffLocationId: selection.dropoff?.id ?? null, pickupLocationTextSnapshot: selection.pickupText, dropoffLocationTextSnapshot: selection.dropoffText, bookingLocationDetails: selection.details, insuranceSelected: input.insuranceSelected, insurancePlanId: input.insuranceSelected ? input.insurancePlanId : null, promoCode: input.promoCode.trim().toUpperCase() || null } };
+  return { ok: true, payload: { clientRequestId: input.clientRequestId, vehicleId: input.vehicleId, ...(input.customerId ? { customerId: input.customerId } : {}), fullName: input.customerFullName.trim(), email: input.customerEmail.trim().toLowerCase(), phone: input.customerPhone.trim(), startDate: input.pickupDate, endDate: input.dropoffDate, pickupLocation: selection.pickupText, dropoffLocation: selection.dropoffText, pickupLocationType: selection.pickup?.locationTypeKey || input.pickupTypeKey, dropoffLocationType: selection.dropoff?.locationTypeKey || input.dropoffTypeKey, pickupLocationId: selection.pickup?.id ?? null, dropoffLocationId: selection.dropoff?.id ?? null, pickupLocationTextSnapshot: selection.pickupText, dropoffLocationTextSnapshot: selection.dropoffText, bookingLocationDetails: selection.details, insuranceSelected: input.insuranceSelected, insurancePlanId: input.insuranceSelected ? input.insurancePlanId : null, promoCode: input.promoCode.trim().toUpperCase() || null } };
 }
 
 const PAYMENT_METHODS = new Set<AdminManualPaymentMethod>(["CASH", "BANK_TRANSFER", "POS_CARD", "CHEQUE", "OTHER"]);

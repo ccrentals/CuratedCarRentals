@@ -178,6 +178,7 @@ export async function handleAdminBookingsPost(
       ? (bookingLocationDetailsRaw.dropoff as Record<string, unknown>)
       : null;
   const customerId = body?.customerId;
+  const clientRequestId = typeof body?.clientRequestId === "string" ? body.clientRequestId.trim() : "";
   const promoCodeRaw = body?.promoCode;
   const insuranceSelected = body?.insuranceSelected === true;
   const insurancePlanId =
@@ -188,6 +189,9 @@ export async function handleAdminBookingsPost(
   }
   if (customerId && !UUID_REGEX.test(customerId ?? "")) {
     return NextResponse.json({ error: "Invalid customerId" }, { status: 400 });
+  }
+  if (clientRequestId && !UUID_REGEX.test(clientRequestId)) {
+    return NextResponse.json({ error: "Invalid clientRequestId" }, { status: 400 });
   }
   if (insurancePlanId && !UUID_REGEX.test(insurancePlanId)) {
     return NextResponse.json({ error: "Invalid insurancePlanId" }, { status: 400 });
@@ -356,6 +360,27 @@ export async function handleAdminBookingsPost(
   try {
     await client.query("begin");
 
+    if (clientRequestId) {
+      await client.query("select pg_advisory_xact_lock(hashtext($1))", [
+        `admin-booking-request:${clientRequestId}`,
+      ]);
+      const existingRequest = await client.query(
+        "select id, status, insurance_selected, pricing_json from bookings where pricing_json->>'admin_client_request_id' = $1 and pricing_json->>'admin_client_request_user_id' = $2 order by created_at desc limit 1",
+        [clientRequestId, actor.userId],
+      );
+      if (existingRequest.rowCount > 0) {
+        const existing = existingRequest.rows[0];
+        await client.query("rollback");
+        return NextResponse.json({
+          bookingId: existing.id,
+          status: existing.status,
+          promoApplied: Boolean(existing.pricing_json?.promo_code),
+          insuranceSelected: existing.insurance_selected === true,
+          idempotent: true,
+        });
+      }
+    }
+
     const vehicle = await getAdminCreateBookingVehicleById(vehicleId, { client });
     if (!vehicle) {
       await client.query("rollback");
@@ -461,6 +486,7 @@ export async function handleAdminBookingsPost(
       payment_option_selected: pricingSummary.paymentOption,
       refund_required: false,
       currency: String(quoteSnapshot.pricingJson.currency ?? "JMD"),
+      ...(clientRequestId ? { admin_client_request_id: clientRequestId, admin_client_request_user_id: actor.userId } : {}),
     };
     const pricing = appendBookingLocationNote(pricingBase, bookingLocationDetails);
     const pickupTime = "11:00";
@@ -595,6 +621,7 @@ export async function handleAdminBookingsPost(
       status: bookingInsert.rows[0].status,
       promoApplied: quoteSnapshot.promoId ? true : false,
       insuranceSelected: quoteSnapshot.insuranceEnabled,
+      idempotent: false,
     });
   } catch (error) {
     await client.query("rollback");
