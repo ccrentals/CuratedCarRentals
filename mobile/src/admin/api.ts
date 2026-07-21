@@ -274,6 +274,48 @@ export type AdminVehicleNote = {
   deletedAt: string | null;
 };
 
+export type AdminMessageStatus = "NEW" | "READ" | "ARCHIVED";
+export type AdminMessageAction = "MARK_READ" | "MARK_NEW" | "ARCHIVE" | "UNARCHIVE" | "DELETE_PERMANENT";
+
+export type AdminMessageListItem = {
+  id: string;
+  createdAt: string;
+  name: string;
+  email: string;
+  status: AdminMessageStatus;
+  visibleStatus: "NEW" | "READ" | "TRASH";
+  statusLabel: string;
+  snippet: string;
+  source: string;
+  sourceKey: string;
+  sourceLabel: string;
+  subject: string;
+  messageType: string;
+  priority: string;
+  isTrashed: boolean;
+  displayName: string;
+  displayEmail: string;
+  relatedEntityType: string | null;
+  relatedEntityId: string | null;
+  relatedEntityPublicId: string | null;
+  relatedEntityLabel: string | null;
+  relatedEntityHref: string | null;
+};
+
+export type AdminMessageDetail = AdminMessageListItem & {
+  message: string;
+  readAt: string | null;
+  readByUserId: string | null;
+};
+
+export type AdminMessagesPage = {
+  items: AdminMessageListItem[];
+  nextCursor: string | null;
+  hasMore: boolean;
+  totalCount: number;
+  limit: number;
+};
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -492,4 +534,26 @@ export async function updateAdminVehicleProfile(request: AdminRequest, vehicleId
 export async function createAdminVehicleNote(request: AdminRequest, vehicleId: string, noteText: string) {
   const data = await readAdminJson<{ ok: true; item: AdminVehicleNote }>(request, `/api/admin/vehicles/${encodeURIComponent(vehicleId)}/notes`, { method: "POST", body: JSON.stringify({ noteText }) });
   return data.item;
+}
+
+export async function fetchAdminMessages(request: AdminRequest, input: { q?: string; status?: string; source?: string; cursor?: string | null; limit?: number }) {
+  const params = new URLSearchParams({ sortBy: "received", sortDir: "desc", limit: String(input.limit ?? 20) });
+  if (input.q?.trim()) params.set("q", input.q.trim());
+  if (input.status && input.status !== "all") params.set("status", input.status);
+  if (input.source && input.source !== "all") params.set("source", input.source);
+  if (input.cursor) params.set("cursor", input.cursor);
+  const data = await readAdminJson<AdminMessagesPage & { ok: true }>(request, `/api/admin/messages?${params.toString()}`, { cache: "no-store" });
+  if (!Array.isArray(data.items) || typeof data.totalCount !== "number") throw new ApiError("The messages service returned an invalid response.", 502);
+  return data;
+}
+
+export async function fetchAdminMessage(request: AdminRequest, messageId: string, markRead = true) {
+  const data = await readAdminJson<{ ok: true; item: AdminMessageDetail }>(request, `/api/admin/messages/${encodeURIComponent(messageId)}?markRead=${markRead ? "1" : "0"}`, { cache: "no-store" });
+  if (!isObject(data.item) || typeof data.item.id !== "string") throw new ApiError("The message service returned an invalid response.", 502);
+  return data.item;
+}
+
+export async function updateAdminMessage(request: AdminRequest, messageId: string, action: AdminMessageAction) {
+  const data = await readAdminJson<{ ok: true; item: AdminMessageDetail; deleted?: boolean }>(request, `/api/admin/messages/${encodeURIComponent(messageId)}`, { method: "PATCH", body: JSON.stringify({ action }) });
+  return data;
 }
