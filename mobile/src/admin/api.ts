@@ -624,6 +624,22 @@ export type AdminPromoDetail = {
   };
 };
 
+export type AdminPromoInput = {
+  code: string;
+  isActive: boolean;
+  discountType: "PERCENT" | "FIXED";
+  applyScope: "OVERALL_TOTAL" | "DAYS_TOTAL";
+  discountValue: number;
+  minSubtotalCents: number | null;
+  maxRedemptions: number | null;
+  maxRedemptionsPerCustomer: number | null;
+  startAt: string | null;
+  endAt: string | null;
+  allowedVehicleIds: string[];
+  excludedVehicleIds: string[];
+  blackoutDates: string[];
+};
+
 type AdminSettingsErrorPayload = Partial<AdminSettingsPayload> & {
   error?: string;
   message?: string;
@@ -1014,5 +1030,19 @@ export async function setAdminPromoActive(request: AdminRequest, promoId: string
   return readAdminJson<{ ok: true }>(request, `/api/admin/promo-codes/${encodeURIComponent(promoId)}`, {
     method: "PATCH",
     body: JSON.stringify({ action: "set_active", isActive }),
+  });
+}
+
+export async function createAdminPromo(request: AdminRequest, input: AdminPromoInput) {
+  return readAdminJson<{ ok: true; promoId: string; promoPublicId: string }>(request, "/api/admin/promo-codes", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function updateAdminPromo(request: AdminRequest, promoId: string, input: AdminPromoInput) {
+  return readAdminJson<{ ok: true }>(request, `/api/admin/promo-codes/${encodeURIComponent(promoId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
   });
 }

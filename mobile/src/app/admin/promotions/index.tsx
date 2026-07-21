@@ -19,6 +19,7 @@ function PromotionsWorkspace() {
   const { colors } = useAppTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const allowed = Boolean(user && hasCapability(user.role, "promotions.read"));
+  const canWrite = Boolean(user && hasCapability(user.role, "promotions.write"));
   const [queryInput, setQueryInput] = useState("");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
@@ -45,6 +46,7 @@ function PromotionsWorkspace() {
   const submitSearch = () => { setPage(1); setQuery(queryInput.trim()); };
 
   return <AdminScreen back eyebrow="REVENUE TOOLS" title="Promotions" subtitle="Control offers, eligibility windows, redemption limits, and discount exposure." refreshing={loading && promos.length > 0} onRefresh={() => void load()}>
+    {canWrite ? <AdminButton label="Create promotion" icon="add" onPress={() => router.push("/admin/promotions/new" as Href)} /> : null}
     <View style={styles.searchRow}><View style={styles.search}><MaterialIcons name="search" size={20} color={colors.muted} /><TextInput value={queryInput} onChangeText={setQueryInput} onSubmitEditing={submitSearch} placeholder="Promo code or reference" placeholderTextColor={colors.muted} autoCapitalize="characters" style={styles.searchInput} returnKeyType="search" /></View><Pressable onPress={submitSearch} style={styles.searchButton}><MaterialIcons name="arrow-forward" size={21} color={colors.white} /></Pressable></View>
     <View style={styles.metrics}><Metric label="ACTIVE ON PAGE" value={String(active)} tone="good" /><Metric label="SCHEDULED" value={String(scheduled)} /><Metric label="ATTENTION" value={String(attention)} tone="warn" /><Metric label="TOTAL CODES" value={String(data?.totalCount ?? 0)} /></View>
     <View style={styles.result}><View><Text style={styles.resultTitle}>{loading && !data ? "Loading promotions…" : `${data?.totalCount ?? 0} ${(data?.totalCount ?? 0) === 1 ? "promotion" : "promotions"}`}</Text>{data && data.totalCount > 0 ? <Text style={styles.resultMeta}>Showing {data.from}–{data.to} · Page {data.page} of {data.totalPages}</Text> : null}</View>{query ? <Pressable onPress={() => { setQueryInput(""); setQuery(""); setPage(1); }}><Text style={styles.clear}>Clear search</Text></Pressable> : null}</View>
