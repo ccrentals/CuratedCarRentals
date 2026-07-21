@@ -1,4 +1,4 @@
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { auth, currentUser } from "@clerk/nextjs/server";
 
@@ -18,8 +18,9 @@ export type AdminSession = {
   role: string;
   expiresAt: number;
   issuedAt: number;
-  source?: "legacy" | "clerk";
+  source?: "legacy" | "clerk" | "native";
   clerkUserId?: string;
+  audience?: "browser" | "native-admin";
 };
 
 export type ClerkBridgeMode = "admin-only" | "any-local-user";
@@ -35,6 +36,11 @@ export type GetSessionFromRequestOptions = {
    * General admin routes should rely on the signed app session cookie so idle-timeout semantics stay consistent.
    */
   allowClerkBridge?: boolean;
+  /**
+   * Native session exchange authenticates directly with Clerk even while the
+   * browser-admin Clerk cutover flag remains disabled.
+   */
+  allowClerkWhenAdminProtectionDisabled?: boolean;
 };
 
 function getSessionSecret() {
@@ -58,10 +64,14 @@ function sign(payload: string) {
   return createHmac("sha256", secret).update(payload).digest("base64url");
 }
 
-export function createSessionToken(userId: string, role: string) {
+export function createSessionToken(
+  userId: string,
+  role: string,
+  audience: "browser" | "native-admin" = "browser",
+) {
   const issuedAt = Math.floor(Date.now() / 1000);
   const expiresAt = issuedAt + COOKIE_MAX_AGE_SECONDS;
-  const payload = JSON.stringify({ sub: userId, role, exp: expiresAt, iat: issuedAt });
+  const payload = JSON.stringify({ sub: userId, role, exp: expiresAt, iat: issuedAt, aud: audience });
   const encoded = base64UrlEncode(payload);
   const signature = sign(encoded);
   return `${encoded}.${signature}`;
@@ -183,10 +193,13 @@ async function findLocalUserForClerkIdentity({
   return { status: "matched", user };
 }
 
-async function getSessionFromClerkBridge(
+export async function getSessionFromClerkBridge(
   options: GetSessionFromRequestOptions = {},
 ): Promise<AdminSession | null> {
-  if (!isClerkAdminBridgeEnabled()) {
+  if (
+    !isClerkEnabled() ||
+    (!isClerkAdminBridgeEnabled() && !options.allowClerkWhenAdminProtectionDisabled)
+  ) {
     return null;
   }
   const bridgeMode = options.clerkBridgeMode ?? "admin-only";
@@ -260,8 +273,10 @@ async function getSessionFromClerkBridge(
   }
 }
 
-async function getSessionFromLegacyCookie(token: string): Promise<AdminSession | null> {
-
+export function verifyAdminSessionToken(
+  token: string,
+  expectedAudience?: "browser" | "native-admin",
+): AdminSession | null {
   const [encoded, signature] = token.split(".");
   if (!encoded || !signature) {
     return null;
@@ -289,6 +304,7 @@ async function getSessionFromLegacyCookie(token: string): Promise<AdminSession |
       role: string;
       exp: number;
       iat?: number;
+      aud?: string;
     };
 
     const nowSeconds = Math.floor(Date.now() / 1000);
@@ -300,14 +316,12 @@ async function getSessionFromLegacyCookie(token: string): Promise<AdminSession |
     if (payload.exp - issuedAtSeconds > COOKIE_MAX_AGE_SECONDS + 30) {
       return null;
     }
-
-    if (payload.exp - nowSeconds <= SESSION_ROTATION_WINDOW_SECONDS) {
-      const refreshed = createSessionToken(payload.sub, payload.role);
-      try {
-        await setSessionCookie(refreshed);
-      } catch {
-        // Ignore rotation errors in read-only rendering contexts.
-      }
+    const audience = payload.aud ?? "browser";
+    if (audience !== "browser" && audience !== "native-admin") {
+      return null;
+    }
+    if (expectedAudience && audience !== expectedAudience) {
+      return null;
     }
 
     return {
@@ -315,16 +329,52 @@ async function getSessionFromLegacyCookie(token: string): Promise<AdminSession |
       role: payload.role,
       expiresAt: payload.exp,
       issuedAt: issuedAtSeconds,
-      source: "legacy",
+      source: audience === "native-admin" ? "native" : "legacy",
+      audience,
     };
   } catch {
     return null;
   }
 }
 
+export function getNativeAdminSessionFromAuthorization(
+  authorization: string | null | undefined,
+): AdminSession | null {
+  const match = authorization?.match(/^Bearer\s+(.+)$/i);
+  if (!match?.[1]) {
+    return null;
+  }
+  return verifyAdminSessionToken(match[1].trim(), "native-admin");
+}
+
+async function getSessionFromLegacyCookie(token: string): Promise<AdminSession | null> {
+  const session = verifyAdminSessionToken(token, "browser");
+  if (!session) {
+    return null;
+  }
+
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  if (session.expiresAt - nowSeconds <= SESSION_ROTATION_WINDOW_SECONDS) {
+    const refreshed = createSessionToken(session.userId, session.role, "browser");
+    try {
+      await setSessionCookie(refreshed);
+    } catch {
+      // Ignore rotation errors in read-only rendering contexts.
+    }
+  }
+
+  return session;
+}
+
 export async function getSessionFromRequest(
   options: GetSessionFromRequestOptions = {},
 ): Promise<AdminSession | null> {
+  const headerStore = await headers();
+  const nativeSession = getNativeAdminSessionFromAuthorization(headerStore.get("authorization"));
+  if (nativeSession) {
+    return nativeSession;
+  }
+
   const cookieStore = await cookies();
   const token = cookieStore.get(COOKIE_NAME)?.value;
   // Deprecated fallback: keep legacy cookie auth until admin Clerk cutover completes in production.
