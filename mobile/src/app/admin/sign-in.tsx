@@ -1,11 +1,10 @@
 import { MaterialIcons } from "@expo/vector-icons";
-import { useSignIn } from "@clerk/expo";
 import { Redirect, router, type Href } from "expo-router";
 import { useMemo, useState } from "react";
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { isAdminAuthConfigured, useAdminAuth } from "@/admin/AdminAuthProvider";
+import { adminAuthUnavailableReason, isAdminAuthConfigured, isExpoGoRuntime, useAdminAuth } from "@/admin/AdminAuthProvider";
 import { AdminButton } from "@/admin/AdminShell";
 import { BrandLogo } from "@/components/BrandLogo";
 import { useAppTheme } from "@/components/ThemeProvider";
@@ -21,6 +20,9 @@ export default function AdminSignInScreen() {
 }
 
 function ConfiguredSignIn() {
+  // This screen only renders when the Clerk native runtime is available.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { useSignIn } = require("@clerk/expo") as typeof import("@clerk/expo");
   const { colors } = useAppTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const { signIn, fetchStatus } = useSignIn();
@@ -155,7 +157,7 @@ function AuthField({ label, ...props }: React.ComponentProps<typeof TextInput> &
 function UnconfiguredSignIn() {
   const { colors } = useAppTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  return <SafeAreaView style={styles.safe}><View style={styles.unconfigured}><BrandLogo light /><Text style={styles.heroTitle}>Staff sign-in needs configuration.</Text><Text style={styles.heroBody}>Add EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY to the app build environment, then restart Expo.</Text><AdminButton label="Back to customer app" onPress={() => router.replace("/(tabs)")} secondary /></View></SafeAreaView>;
+  return <SafeAreaView style={styles.safe}><View style={styles.unconfigured}><BrandLogo light /><Text style={styles.heroTitle}>{isExpoGoRuntime ? "Open staff tools in the installed app." : "Staff sign-in needs configuration."}</Text><Text style={styles.heroBody}>{adminAuthUnavailableReason}</Text><AdminButton label="Back to customer app" onPress={() => router.replace("/(tabs)")} secondary /></View></SafeAreaView>;
 }
 
 function readClerkError(error: unknown) {

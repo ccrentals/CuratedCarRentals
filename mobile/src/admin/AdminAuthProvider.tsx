@@ -1,4 +1,5 @@
-import { ClerkProvider, useAuth, useClerk, type TokenCache } from "@clerk/expo";
+import type { TokenCache } from "@clerk/expo";
+import Constants, { AppOwnership } from "expo-constants";
 import * as SecureStore from "expo-secure-store";
 import {
   createContext,
@@ -17,6 +18,19 @@ import { buildAdminAssetSource } from "@/admin/assetSource";
 
 const clerkPublishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY?.trim() ?? "";
 const REQUEST_TIMEOUT_MS = 15_000;
+
+type ClerkExpoModule = typeof import("@clerk/expo");
+
+function getClerkExpo() {
+  // Clerk's native module is intentionally loaded only outside Expo Go.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  return require("@clerk/expo") as ClerkExpoModule;
+}
+
+export const isExpoGoRuntime = Constants.appOwnership === AppOwnership.Expo;
+export const adminAuthUnavailableReason = isExpoGoRuntime
+  ? "The staff workspace requires the installed Android app. Expo Go does not include Clerk's secure native module."
+  : "Add EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY to enable staff sign-in.";
 
 const tokenCache: TokenCache = {
   async getToken(key) {
@@ -88,17 +102,17 @@ async function fetchWithTimeout(url: string, init: RequestInit) {
   }
 }
 
-function MissingConfigProvider({ children }: PropsWithChildren) {
+function UnavailableProvider({ children }: PropsWithChildren) {
   const unavailable = useCallback(async () => false, []);
   const signOut = useCallback(async () => {}, []);
   const request = useCallback(async () => {
-    throw new ApiError("Admin sign-in is not configured for this app build.", 503);
+    throw new ApiError(adminAuthUnavailableReason, 503);
   }, []);
   const assetSource = useCallback((url: string) => buildAdminAssetSource(url, null, API_BASE_URL), []);
   const value = useMemo<AdminAuthContextValue>(() => ({
     status: "config_missing",
     user: null,
-    error: "Add EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY to enable staff sign-in.",
+    error: adminAuthUnavailableReason,
     refresh: unavailable,
     signOut,
     request,
@@ -108,6 +122,7 @@ function MissingConfigProvider({ children }: PropsWithChildren) {
 }
 
 function AdminSessionBridge({ children }: PropsWithChildren) {
+  const { useAuth, useClerk } = getClerkExpo();
   const { isLoaded, isSignedIn, getToken } = useAuth();
   const clerk = useClerk();
   const [status, setStatus] = useState<AdminAuthStatus>("loading");
@@ -258,9 +273,10 @@ function AdminSessionBridge({ children }: PropsWithChildren) {
 }
 
 export function AdminAuthProvider({ children }: PropsWithChildren) {
-  if (!clerkPublishableKey) {
-    return <MissingConfigProvider>{children}</MissingConfigProvider>;
+  if (!isAdminAuthConfigured) {
+    return <UnavailableProvider>{children}</UnavailableProvider>;
   }
+  const { ClerkProvider } = getClerkExpo();
   return (
     <ClerkProvider publishableKey={clerkPublishableKey} tokenCache={tokenCache}>
       <AdminSessionBridge>{children}</AdminSessionBridge>
@@ -274,4 +290,4 @@ export function useAdminAuth() {
   return value;
 }
 
-export const isAdminAuthConfigured = Boolean(clerkPublishableKey);
+export const isAdminAuthConfigured = Boolean(clerkPublishableKey) && !isExpoGoRuntime;
