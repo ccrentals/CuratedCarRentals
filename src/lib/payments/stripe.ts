@@ -2,11 +2,17 @@ import Stripe from "stripe";
 
 import { assertStripeTestConfiguration } from "@/lib/payments/provider";
 
-export function toStripeJmdMinorUnits(amountCents: number) {
-  if (!Number.isSafeInteger(amountCents) || amountCents < 1) {
-    throw new Error("Stripe JMD amount must be a positive integer in minor units.");
+export function toStripeJmdMinorUnits(amountJmd: number) {
+  if (!Number.isSafeInteger(amountJmd) || amountJmd < 1) {
+    throw new Error("Stripe JMD amount must be a positive whole-JMD value.");
   }
-  return amountCents;
+
+  const stripeMinorUnits = amountJmd * 100;
+  if (!Number.isSafeInteger(stripeMinorUnits)) {
+    throw new Error("Stripe JMD amount is too large.");
+  }
+
+  return stripeMinorUnits;
 }
 
 export function getStripeClient() {
