@@ -5,7 +5,7 @@ function configuredProvider() {
 }
 
 export function isStripeTestMode() {
-  return process.env.STRIPE_TEST_MODE === "true" && (process.env.STRIPE_SECRET_KEY ?? "").startsWith("sk_test_");
+  return process.env.STRIPE_TEST_MODE === "true" && (process.env.STRIPE_SECRET_KEY ?? "").trim().startsWith("sk_test_");
 }
 
 export function getPublicPaymentProvider(): PaymentProvider {
