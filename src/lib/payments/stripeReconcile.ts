@@ -4,6 +4,7 @@ import { writeAuditLog } from "@/lib/audit";
 import { getDbPool } from "@/lib/db";
 import { maybeEntitleBookingAfterPayment } from "@/lib/availability/entitlement";
 import { recalculateBookingPayments } from "@/lib/payments/recalculateBooking";
+import { toStripeJmdMinorUnits } from "@/lib/payments/stripe";
 
 type ReconcileResult = { ok: boolean; bookingId?: string; status: "paid" | "pending" | "failed" | "not_found" | "overlap" };
 
@@ -36,7 +37,9 @@ export async function reconcileStripeCheckoutSession(session: Stripe.Checkout.Se
       await client.query("commit");
       return { ok: false, bookingId: payment.booking_id, status: "pending" };
     }
-    if (session.amount_total !== payment.deposit_amount_cents) throw new Error("Stripe Checkout amount does not match the JMD payment record.");
+    if (session.amount_total !== toStripeJmdMinorUnits(payment.deposit_amount_cents)) {
+      throw new Error("Stripe Checkout amount does not match the JMD payment record.");
+    }
     await client.query("update payments set status = 'DEPOSIT_PAID', provider_ref = $1, provider_transaction_id = $2, metadata_json = $3, updated_at = now() where id = $4", [session.id, intentId(session.payment_intent), metadata, payment.id]);
     const entitlement = await maybeEntitleBookingAfterPayment(payment.booking_id, { client, auditUserId: "system" });
     const summary = await recalculateBookingPayments(payment.booking_id, { client });
