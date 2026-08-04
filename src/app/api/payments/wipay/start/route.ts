@@ -22,5 +22,6 @@ export async function POST(request: Request) {
     request,
     bookingId,
     mode: "deposit",
+    forceProvider: "WIPAY",
   });
 }
