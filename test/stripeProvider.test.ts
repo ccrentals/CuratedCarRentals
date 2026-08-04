@@ -6,7 +6,7 @@ import { toStripeJmdMinorUnits } from "../src/lib/payments/stripe";
 
 const saved = { ...process.env };
 function setEnv(values: Record<string, string | undefined>) {
-  for (const key of ["PAYMENT_PROVIDER", "STRIPE_TEST_MODE", "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "CONTEXT", "NETLIFY_CONTEXT", "BRANCH", "NODE_ENV"]) delete process.env[key];
+  for (const key of ["PAYMENT_PROVIDER", "STRIPE_TEST_MODE", "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "CONTEXT", "NETLIFY_CONTEXT", "BRANCH", "NODE_ENV", "NEXT_PUBLIC_SITE_ENV"]) delete process.env[key];
   Object.assign(process.env, values);
 }
 test.after(() => { process.env = saved; });
@@ -34,6 +34,16 @@ test("Stripe accepts a test key with harmless environment whitespace", () => {
     CONTEXT: "branch-deploy",
     STRIPE_TEST_MODE: "true",
     STRIPE_SECRET_KEY: "  sk_test_example  ",
+  });
+  assert.equal(getPublicPaymentProvider(), "STRIPE");
+});
+
+test("Stripe accepts the explicit staging environment marker in function runtime", () => {
+  setEnv({
+    PAYMENT_PROVIDER: "stripe",
+    STRIPE_TEST_MODE: " true ",
+    STRIPE_SECRET_KEY: "sk_test_example",
+    NEXT_PUBLIC_SITE_ENV: "staging",
   });
   assert.equal(getPublicPaymentProvider(), "STRIPE");
 });

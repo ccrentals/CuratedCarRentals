@@ -5,7 +5,7 @@ function configuredProvider() {
 }
 
 export function isStripeTestMode() {
-  return process.env.STRIPE_TEST_MODE === "true" && (process.env.STRIPE_SECRET_KEY ?? "").trim().startsWith("sk_test_");
+  return (process.env.STRIPE_TEST_MODE ?? "").trim().toLowerCase() === "true" && (process.env.STRIPE_SECRET_KEY ?? "").trim().startsWith("sk_test_");
 }
 
 export function getPublicPaymentProvider(): PaymentProvider {
@@ -14,10 +14,14 @@ export function getPublicPaymentProvider(): PaymentProvider {
 
   // Stripe must never be selectable from a production deployment or with a live key.
   const isProduction = process.env.CONTEXT === "production" || process.env.NETLIFY_CONTEXT === "production";
-  const isStaging = process.env.NODE_ENV === "test" || process.env.BRANCH === "staging" || process.env.CONTEXT === "branch-deploy";
-  if (isProduction || !isStaging || !isStripeTestMode()) {
-    throw new Error("Stripe is restricted to the staging deployment with an sk_test_ key.");
-  }
+  const isStaging =
+    process.env.NODE_ENV === "test" ||
+    process.env.BRANCH === "staging" ||
+    process.env.CONTEXT === "branch-deploy" ||
+    process.env.NETLIFY_CONTEXT === "branch-deploy" ||
+    process.env.NEXT_PUBLIC_SITE_ENV === "staging";
+  if (isProduction || !isStaging) throw new Error("Stripe is enabled only for the staging deployment.");
+  if (!isStripeTestMode()) throw new Error("Stripe staging requires STRIPE_TEST_MODE=true and an sk_test_ STRIPE_SECRET_KEY.");
   return "STRIPE";
 }
 
