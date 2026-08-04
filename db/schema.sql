@@ -1789,7 +1789,8 @@ create index if not exists vehicle_document_links_vehicle_document_id_idx
 
 create table if not exists booking_private_files (
   id uuid primary key default gen_random_uuid(),
-  booking_id uuid not null references bookings(id) on delete cascade,
+  booking_id uuid references bookings(id) on delete cascade,
+  customer_id uuid not null references customers(id) on delete cascade,
   document_type text not null,
   storage_provider text not null default 'UPLOADCARE',
   storage_key text not null,
@@ -1807,6 +1808,10 @@ create table if not exists booking_private_files (
 
 create index if not exists booking_private_files_booking_id_idx
   on booking_private_files(booking_id);
+create index if not exists booking_private_files_customer_id_idx
+  on booking_private_files(customer_id);
+create index if not exists booking_private_files_customer_document_created_idx
+  on booking_private_files(customer_id, document_type, created_at desc);
 create index if not exists booking_private_files_document_type_idx
   on booking_private_files(document_type);
 create index if not exists booking_private_files_created_at_idx
