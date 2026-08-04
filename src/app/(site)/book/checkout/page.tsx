@@ -30,12 +30,7 @@ function parseCheckoutOption(value: string): CheckoutOption | null {
   return null;
 }
 
-function endpointForOption(option: CheckoutOption) {
-  if (option === "FULL") return "/api/payments/wipay/full/start";
-  if (option === "CUSTOM") return "/api/payments/wipay/custom/start";
-  if (option === "BALANCE") return "/api/payments/wipay/balance/start";
-  return "/api/payments/wipay/start";
-}
+const stripeTestCheckout = process.env.NEXT_PUBLIC_PAYMENT_PROVIDER === "stripe";
 
 function BookingCheckoutContent() {
   const searchParams = useSearchParams();
@@ -92,12 +87,9 @@ function BookingCheckoutContent() {
           throw new Error("Unable to verify your session. Refresh and try again.");
         }
 
-        const payload =
-          option === "CUSTOM"
-            ? { bookingId, customAmountCents: customAmountCents ?? 1 }
-            : { bookingId };
+        const payload = { bookingId, mode: option.toLowerCase(), ...(option === "CUSTOM" ? { customAmountCents: customAmountCents ?? 1 } : {}) };
 
-        const response = await fetch(endpointForOption(option), {
+        const response = await fetch("/api/payments/start", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -108,7 +100,7 @@ function BookingCheckoutContent() {
 
         const data = (await response.json().catch(() => ({}))) as PaymentStartResponse;
         if (!response.ok || !data.redirectUrl) {
-          throw new Error(data.error ?? "Unable to start WiPay checkout.");
+          throw new Error(data.error ?? "Unable to start secure checkout.");
         }
 
         clearBookingDraft({ keys: [WIZARD_DRAFT_STORAGE_KEY] });
@@ -118,7 +110,7 @@ function BookingCheckoutContent() {
         setErrorMessage(
           error instanceof Error && error.message
             ? error.message
-            : "Unable to start WiPay checkout.",
+            : "Unable to start secure checkout.",
         );
         setStarting(false);
       }
@@ -138,14 +130,15 @@ function BookingCheckoutContent() {
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--ccr-muted)]">
             Reservation Wizard
           </p>
-          <h1 className="mt-2 text-2xl font-bold text-[var(--ccr-text)]">Step 7: WiPay Checkout</h1>
+          <h1 className="mt-2 text-2xl font-bold text-[var(--ccr-text)]">Step 7: Secure Checkout</h1>
           <p className="mt-2 text-sm text-[var(--ccr-muted)]">
             We are preparing your secure hosted checkout.
           </p>
+          {stripeTestCheckout ? <p className="mt-4 rounded-xl border border-amber-400/50 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900">Test payment — no money will be charged. Use Stripe test cards only.</p> : null}
 
           {!errorMessage ? (
             <div className="mt-5 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-4 py-3 text-sm text-[var(--ccr-text)]">
-              {starting ? "Starting WiPay checkout..." : "Redirecting..."}
+              {starting ? "Starting secure checkout..." : "Redirecting..."}
             </div>
           ) : (
             <div className="mt-5 rounded-xl border border-[var(--ccr-clerk-danger-border)] bg-[var(--ccr-clerk-danger-bg)] px-4 py-3 text-sm text-[var(--ccr-clerk-danger-text)]">
