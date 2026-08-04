@@ -27,6 +27,17 @@ test("Stripe is enabled only for staging with a test key", () => {
   assert.throws(() => getPublicPaymentProvider());
 });
 
+test("Stripe accepts a test key with harmless environment whitespace", () => {
+  setEnv({
+    PAYMENT_PROVIDER: "stripe",
+    BRANCH: "staging",
+    CONTEXT: "branch-deploy",
+    STRIPE_TEST_MODE: "true",
+    STRIPE_SECRET_KEY: "  sk_test_example  ",
+  });
+  assert.equal(getPublicPaymentProvider(), "STRIPE");
+});
+
 test("WiPay remains the safe default", () => {
   setEnv({ PAYMENT_PROVIDER: undefined });
   assert.equal(getPublicPaymentProvider(), "WIPAY");
