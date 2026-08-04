@@ -92,13 +92,23 @@ export function validateEnv(): EnvValidation {
     notes.push("CSRF_SECRET is not set; development fallback secret will be used.");
   }
 
-  const paymentsMissing = missingKeys([
-    "WIPAY_ACCOUNT_NUMBER",
-    "WIPAY_API_KEY",
-    "WIPAY_ENV",
-    "WIPAY_FEE_STRUCTURE",
-  ]);
+  const configuredPaymentProvider = (process.env.PAYMENT_PROVIDER ?? "wipay").trim().toLowerCase();
+  const isStripe = configuredPaymentProvider === "stripe";
+  const paymentsMissing = isStripe
+    ? missingKeys(["STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "STRIPE_TEST_MODE"])
+    : missingKeys(["WIPAY_ACCOUNT_NUMBER", "WIPAY_API_KEY", "WIPAY_ENV", "WIPAY_FEE_STRUCTURE"]);
   const paymentsInvalid: string[] = [];
+  if (!["wipay", "stripe"].includes(configuredPaymentProvider)) {
+    paymentsInvalid.push("PAYMENT_PROVIDER must be wipay or stripe");
+  }
+  if (isStripe) {
+    if (process.env.CONTEXT === "production" || process.env.NETLIFY_CONTEXT === "production") {
+      paymentsInvalid.push("Stripe is forbidden in the production deployment");
+    }
+    if (process.env.STRIPE_TEST_MODE !== "true") paymentsInvalid.push("STRIPE_TEST_MODE must be true for the staging trial");
+    if (isNonEmpty(process.env.STRIPE_SECRET_KEY) && !process.env.STRIPE_SECRET_KEY!.startsWith("sk_test_")) paymentsInvalid.push("STRIPE_SECRET_KEY must be a Stripe test key");
+    if (isNonEmpty(process.env.STRIPE_WEBHOOK_SECRET) && !process.env.STRIPE_WEBHOOK_SECRET!.startsWith("whsec_")) paymentsInvalid.push("STRIPE_WEBHOOK_SECRET must be a webhook signing secret");
+  }
   if (!isNonEmpty(process.env.WIPAY_ORIGIN)) {
     notes.push(`WIPAY_ORIGIN is not set; defaulting to ${DEFAULT_WIPAY_ORIGIN}.`);
   }

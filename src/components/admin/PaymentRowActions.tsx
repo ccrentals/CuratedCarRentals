@@ -39,13 +39,13 @@ export function PaymentRowActions({
   const isDeleted = Boolean(deletedAt);
   const refunded = Boolean(isRefunded);
   const showManualActions = canAdmin && provider === "MANUAL";
-  const showRefundAction = canAdmin && provider === "WIPAY" && status === "DEPOSIT_PAID" && amount > 0;
+  const showRefundAction = canAdmin && (provider === "WIPAY" || provider === "STRIPE") && status === "DEPOSIT_PAID" && amount > 0;
 
   const title = useMemo(() => {
     if (showManualActions) {
       return isDeleted ? "Restore payment" : "Cancel payment";
     }
-    if (showRefundAction) return "Record manual refund adjustment";
+    if (showRefundAction) return provider === "STRIPE" ? "Refund Stripe test payment" : "Record manual refund adjustment";
     return "";
   }, [showManualActions, isDeleted, showRefundAction]);
 

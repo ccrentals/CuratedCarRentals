@@ -6,6 +6,7 @@ import { writeAuditLog } from "@/lib/audit";
 import { logError } from "@/lib/log";
 import { requireCsrf } from "@/lib/security/csrf";
 import { recalculateBookingPayments } from "@/lib/payments/recalculateBooking";
+import { getStripeClient } from "@/lib/payments/stripe";
 
 export async function POST(
   request: Request,
@@ -56,10 +57,10 @@ export async function POST(
       provider_transaction_id: string | null;
     };
 
-    if (original.provider !== "WIPAY") {
+    if (original.provider !== "WIPAY" && original.provider !== "STRIPE") {
       await client.query("rollback");
       return NextResponse.json(
-        { error: "Only WIPAY payments can be manually adjusted here" },
+        { error: "Only WiPay or staging Stripe payments can be refunded here" },
         { status: 400 },
       );
     }
@@ -72,10 +73,37 @@ export async function POST(
       );
     }
 
-    const refundRef = `REFUND_${original.id}`;
+    const existingByOriginal = await client.query(
+      "select id from payments where provider = $1 and metadata_json->>'original_payment_id' = $2 limit 1",
+      [original.provider, original.id],
+    );
+    if (existingByOriginal.rowCount > 0) {
+      const summary = await recalculateBookingPayments(original.booking_id, { client });
+      await client.query("commit");
+      return NextResponse.json({ ok: true, message: "Refund already recorded", summary });
+    }
+
+    let refundRef = `REFUND_${original.id}`;
+    let stripeRefundId: string | null = null;
+    if (original.provider === "STRIPE") {
+      if (!original.provider_transaction_id) {
+        await client.query("rollback");
+        return NextResponse.json({ error: "Stripe Payment Intent is missing" }, { status: 409 });
+      }
+      const refund = await getStripeClient().refunds.create(
+        { payment_intent: original.provider_transaction_id, metadata: { original_payment_id: original.id, reason, refund_environment: "staging_test" } },
+        { idempotencyKey: `stripe-test-refund-${original.id}` },
+      );
+      if (refund.status !== "succeeded") {
+        await client.query("rollback");
+        return NextResponse.json({ error: `Stripe refund is ${refund.status ?? "pending"}; no accounting record was created.` }, { status: 409 });
+      }
+      refundRef = refund.id;
+      stripeRefundId = refund.id;
+    }
     const existingRefund = await client.query(
-      "select id from payments where provider = 'WIPAY' and provider_ref = $1 limit 1",
-      [refundRef],
+      "select id from payments where provider = $2 and provider_ref = $1 limit 1",
+      [refundRef, original.provider],
     );
     if (existingRefund.rowCount > 0) {
       const summary = await recalculateBookingPayments(original.booking_id, { client });
@@ -89,9 +117,10 @@ export async function POST(
 
     const refundAmount = -Math.abs(Number(original.deposit_amount_cents));
     const refundInsert = await client.query(
-      "insert into payments (booking_id, provider, deposit_amount_cents, currency, status, provider_ref, metadata_json) values ($1, 'WIPAY', $2, 'JMD', 'REFUNDED', $3, $4) returning id",
+      "insert into payments (booking_id, provider, deposit_amount_cents, currency, status, provider_ref, metadata_json) values ($1, $2, $3, 'JMD', 'REFUNDED', $4, $5) returning id",
       [
         original.booking_id,
+        original.provider,
         refundAmount,
         refundRef,
         {
@@ -101,6 +130,7 @@ export async function POST(
           reason,
           created_by: actor.userId,
           created_at: new Date().toISOString(),
+          stripe_refund_id: stripeRefundId,
         },
       ],
     );

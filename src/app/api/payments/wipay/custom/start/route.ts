@@ -31,6 +31,7 @@ export async function POST(request: Request) {
     request,
     bookingId,
     mode: "custom",
+    forceProvider: "WIPAY",
     customAmountCents: parseAmount(body?.customAmountCents ?? body?.amountCents),
   });
 }

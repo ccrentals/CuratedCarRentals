@@ -15,6 +15,8 @@ import {
 } from "@/lib/payments/pricing";
 import { isVehicleUnavailableEntitlementBased } from "@/lib/availability/entitlement";
 import { buildCanonicalSiteUrl, buildRequestParams, getCanonicalSiteUrl, requestHostedPageUrl } from "@/lib/wipay";
+import { getPublicPaymentProvider, type PaymentProvider } from "@/lib/payments/provider";
+import { getStripeClient, stripeCheckoutUrls, toStripeJmdMinorUnits } from "@/lib/payments/stripe";
 
 const ACTIVE_PAYMENT_WINDOW_MS = 30 * 60 * 1000;
 const PENDING_PAYMENT_WINDOW_MS = 2 * 60 * 1000;
@@ -187,10 +189,11 @@ async function findExistingAttempt(
   bookingId: string,
   paymentType: "deposit" | "full" | "custom" | "balance",
   amountCents: number,
+  provider: PaymentProvider,
 ) {
   const result = await client.query<ExistingPaymentAttemptRow>(
-    "select id, deposit_amount_cents, created_at, metadata_json from payments where booking_id = $1 and provider = 'WIPAY' and status = 'INITIATED' and deposit_amount_cents = $2 and coalesce(metadata_json->>'payment_type', 'deposit') = $3 order by created_at desc limit 1",
-    [bookingId, amountCents, paymentType],
+    "select id, deposit_amount_cents, created_at, metadata_json from payments where booking_id = $1 and provider = $4 and status = 'INITIATED' and deposit_amount_cents = $2 and coalesce(metadata_json->>'payment_type', 'deposit') = $3 order by created_at desc limit 1",
+    [bookingId, amountCents, paymentType, provider],
   );
   return result.rows[0] ?? null;
 }
@@ -340,13 +343,17 @@ export async function startPublicWipayPayment({
   bookingId,
   mode,
   customAmountCents = null,
+  forceProvider,
 }: {
   request: Request;
   bookingId: string;
   mode: PublicPaymentStartMode;
   customAmountCents?: number | null;
+  /** Existing WiPay/mobile callers pass WIPAY; the website-neutral route omits this. */
+  forceProvider?: PaymentProvider;
 }) {
-  const envError = validateEnvironment();
+  const provider = forceProvider ?? getPublicPaymentProvider();
+  const envError = provider === "WIPAY" ? validateEnvironment() : null;
   if (envError) return envError;
 
   const pool = getDbPool();
@@ -423,6 +430,7 @@ export async function startPublicWipayPayment({
       booking.id,
       startDetails.paymentType,
       startDetails.amountCents,
+      provider,
     );
     const classifiedAttempt = classifyExistingPaymentAttempt(existingAttempt);
     if (classifiedAttempt.type === "reuse") {
@@ -463,9 +471,10 @@ export async function startPublicWipayPayment({
 
     orderId = buildOrderId();
     const insertResult = (await client.query(
-      "insert into payments (booking_id, provider, deposit_amount_cents, currency, status, provider_ref, metadata_json) values ($1, 'WIPAY', $2, 'JMD', 'INITIATED', $3, $4) returning id",
+      "insert into payments (booking_id, provider, deposit_amount_cents, currency, status, provider_ref, metadata_json) values ($1, $2, $3, 'JMD', 'INITIATED', $4, $5) returning id",
       [
         booking.id,
+        provider,
         startDetails.amountCents,
         orderId,
         {
@@ -474,7 +483,8 @@ export async function startPublicWipayPayment({
           custom_amount_cents: startDetails.customAmountCents ?? null,
           total_amount: mode === "deposit" ? startDetails.amountCents : undefined,
           total_decimal: startDetails.totalDecimal,
-          env: process.env.WIPAY_ENV ?? "sandbox",
+          env: provider === "STRIPE" ? "stripe_test" : process.env.WIPAY_ENV ?? "sandbox",
+          provider: provider,
           created_at: new Date().toISOString(),
         },
       ],
@@ -483,20 +493,35 @@ export async function startPublicWipayPayment({
 
     await client.query("commit");
 
-    const responseUrl = buildCanonicalSiteUrl("/api/payments/wipay/return");
-    const params = buildRequestParams({
-      orderId,
-      amountDecimal: startDetails.totalDecimal,
-      responseUrl,
-      name: booking.customer_name,
-      email: booking.customer_email,
-      phone: booking.customer_phone,
-    });
-
-    const wipayResponse = await requestHostedPageUrl(params);
+    let redirectUrl = "";
+    if (provider === "STRIPE") {
+      const stripe = getStripeClient();
+      const urls = stripeCheckoutUrls();
+      const session = await stripe.checkout.sessions.create({
+        mode: "payment",
+        success_url: urls.successUrl,
+        cancel_url: urls.cancelUrl,
+        customer_email: booking.customer_email || undefined,
+        client_reference_id: paymentId ?? undefined,
+        metadata: { payment_id: paymentId ?? "", booking_id: booking.id, payment_type: startDetails.paymentType },
+        payment_intent_data: { metadata: { payment_id: paymentId ?? "", booking_id: booking.id, payment_type: startDetails.paymentType } },
+        line_items: [{ price_data: { currency: "jmd", product_data: { name: `Curated Car Rentals ${startDetails.paymentType} payment` }, unit_amount: toStripeJmdMinorUnits(startDetails.amountCents) }, quantity: 1 }],
+      });
+      if (!session.url) throw new Error("Stripe did not return a Checkout URL.");
+      redirectUrl = session.url;
+      await getDbPool().query(
+        "update payments set provider_ref = $1, metadata_json = metadata_json || $2::jsonb, updated_at = now() where id = $3",
+        [session.id, JSON.stringify({ checkout_session_id: session.id, payment_intent_id: typeof session.payment_intent === "string" ? session.payment_intent : null, hosted_page_url: session.url, hosted_page_created_at: new Date().toISOString(), stripe_livemode: session.livemode }), paymentId],
+      );
+    } else {
+      const responseUrl = buildCanonicalSiteUrl("/api/payments/wipay/return");
+      const params = buildRequestParams({ orderId, amountDecimal: startDetails.totalDecimal, responseUrl, name: booking.customer_name, email: booking.customer_email, phone: booking.customer_phone });
+      const wipayResponse = await requestHostedPageUrl(params);
+      redirectUrl = wipayResponse.url;
+    }
     if (paymentId) {
       try {
-        await updatePaymentHostedPageUrl(paymentId, wipayResponse.url);
+        await updatePaymentHostedPageUrl(paymentId, redirectUrl);
       } catch (metadataError) {
         logError("public_wipay_start_metadata_update_failed", metadataError, {
           bookingId,
@@ -508,8 +533,9 @@ export async function startPublicWipayPayment({
 
     return NextResponse.json({
       ok: true,
-      redirectUrl: wipayResponse.url,
+      redirectUrl,
       paymentId,
+      provider,
     });
   } catch (error) {
     try {
