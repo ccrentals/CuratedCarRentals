@@ -11,10 +11,12 @@ function setEnv(values: Record<string, string | undefined>) {
 }
 test.after(() => { process.env = saved; });
 
-test("JMD Checkout uses the database's JMD minor units unchanged", () => {
-  assert.equal(toStripeJmdMinorUnits(700000), 700000);
+test("JMD Checkout converts whole-JMD booking amounts into Stripe minor units", () => {
+  assert.equal(toStripeJmdMinorUnits(7000), 700000);
+  assert.equal(toStripeJmdMinorUnits(20000), 2000000);
   assert.throws(() => toStripeJmdMinorUnits(0));
   assert.throws(() => toStripeJmdMinorUnits(12.5));
+  assert.throws(() => toStripeJmdMinorUnits(Number.MAX_SAFE_INTEGER));
 });
 
 test("Stripe is enabled only for staging with a test key", () => {
