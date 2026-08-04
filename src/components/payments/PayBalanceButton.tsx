@@ -21,13 +21,13 @@ export function PayBalanceButton({ bookingId }: { bookingId: string }) {
 
     const csrfToken = await ensureCsrfToken();
 
-    const response = await fetch("/api/payments/wipay/balance/start", {
+    const response = await fetch("/api/payments/start", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "x-csrf-token": csrfToken ?? "",
       },
-      body: JSON.stringify({ bookingId }),
+      body: JSON.stringify({ bookingId, mode: "balance" }),
     });
 
     let data: PaymentStartResponse = {};
