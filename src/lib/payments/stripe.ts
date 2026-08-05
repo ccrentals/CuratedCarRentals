@@ -15,8 +15,8 @@ export function toStripeJmdMinorUnits(amountJmd: number) {
   return stripeMinorUnits;
 }
 
-export function getStripeClient() {
-  assertStripeTestConfiguration();
+export function getStripeClient(requestUrl?: string) {
+  assertStripeTestConfiguration(requestUrl);
   return new Stripe(process.env.STRIPE_SECRET_KEY!.trim());
 }
 

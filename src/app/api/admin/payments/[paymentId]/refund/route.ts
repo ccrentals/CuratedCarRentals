@@ -90,7 +90,7 @@ export async function POST(
         await client.query("rollback");
         return NextResponse.json({ error: "Stripe Payment Intent is missing" }, { status: 409 });
       }
-      const refund = await getStripeClient().refunds.create(
+      const refund = await getStripeClient(request.url).refunds.create(
         { payment_intent: original.provider_transaction_id, metadata: { original_payment_id: original.id, reason, refund_environment: "staging_test" } },
         { idempotencyKey: `stripe-test-refund-${original.id}` },
       );

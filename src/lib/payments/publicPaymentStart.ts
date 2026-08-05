@@ -360,10 +360,10 @@ export async function startPublicWipayPayment({
   /** Existing WiPay/mobile callers pass WIPAY; the website-neutral route omits this. */
   forceProvider?: PaymentProvider;
 }) {
-  const provider = forceProvider ?? getPublicPaymentProvider();
+  const provider = forceProvider ?? getPublicPaymentProvider(request.url);
   if (provider === "WIPAY") {
     try {
-      assertWiPayAvailable();
+      assertWiPayAvailable(request.url);
     } catch (error) {
       return jsonError(
         409,
@@ -478,7 +478,7 @@ export async function startPublicWipayPayment({
 
       if (staleSessionId) {
         try {
-          await getStripeClient().checkout.sessions.expire(staleSessionId);
+          await getStripeClient(request.url).checkout.sessions.expire(staleSessionId);
         } catch {
           await client.query("rollback");
           return jsonError(
@@ -539,7 +539,7 @@ export async function startPublicWipayPayment({
 
     let redirectUrl = "";
     if (provider === "STRIPE") {
-      const stripe = getStripeClient();
+      const stripe = getStripeClient(request.url);
       const urls = stripeCheckoutUrls();
       const paymentLabel = startDetails.paymentType === "deposit" ? "Deposit" : startDetails.paymentType === "full" ? "Full payment" : startDetails.paymentType === "balance" ? "Balance payment" : "Custom payment";
       const vehicleLabel = `${booking.vehicle_year} ${booking.vehicle_make} ${booking.vehicle_model}`.trim();
