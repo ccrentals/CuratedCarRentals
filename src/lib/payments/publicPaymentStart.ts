@@ -497,6 +497,9 @@ export async function startPublicWipayPayment({
     if (provider === "STRIPE") {
       const stripe = getStripeClient();
       const urls = stripeCheckoutUrls();
+      const paymentLabel = startDetails.paymentType === "deposit" ? "Deposit" : startDetails.paymentType === "full" ? "Full payment" : startDetails.paymentType === "balance" ? "Balance payment" : "Custom payment";
+      const bookingReference = booking.public_id ?? booking.id.slice(0, 8).toUpperCase();
+      const vehicleLabel = `${booking.vehicle_year} ${booking.vehicle_make} ${booking.vehicle_model}`.trim();
       const session = await stripe.checkout.sessions.create({
         mode: "payment",
         success_url: urls.successUrl,
@@ -505,7 +508,17 @@ export async function startPublicWipayPayment({
         client_reference_id: paymentId ?? undefined,
         metadata: { payment_id: paymentId ?? "", booking_id: booking.id, payment_type: startDetails.paymentType },
         payment_intent_data: { metadata: { payment_id: paymentId ?? "", booking_id: booking.id, payment_type: startDetails.paymentType } },
-        line_items: [{ price_data: { currency: "jmd", product_data: { name: `Curated Car Rentals ${startDetails.paymentType} payment` }, unit_amount: toStripeJmdMinorUnits(startDetails.amountCents) }, quantity: 1 }],
+        line_items: [{
+          price_data: {
+            currency: "jmd",
+            product_data: {
+              name: `${paymentLabel} — ${vehicleLabel}`,
+              description: `Booking ${bookingReference} · ${booking.start_date} to ${booking.end_date} · Curated Car Rentals`,
+            },
+            unit_amount: toStripeJmdMinorUnits(startDetails.amountCents),
+          },
+          quantity: 1,
+        }],
       });
       if (!session.url) throw new Error("Stripe did not return a Checkout URL.");
       redirectUrl = session.url;

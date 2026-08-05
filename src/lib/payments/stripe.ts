@@ -20,9 +20,14 @@ export function getStripeClient() {
   return new Stripe(process.env.STRIPE_SECRET_KEY!.trim());
 }
 
-export function stripeCheckoutUrls() {
+export function stripeCheckoutSiteUrl() {
   const siteUrl = (process.env.SITE_URL ?? "").trim();
   if (!siteUrl) throw new Error("Missing SITE_URL");
+  return siteUrl;
+}
+
+export function stripeCheckoutUrls() {
+  const siteUrl = stripeCheckoutSiteUrl();
   return {
     successUrl: new URL("/api/payments/stripe/return?session_id={CHECKOUT_SESSION_ID}", siteUrl).toString(),
     cancelUrl: new URL("/api/payments/stripe/return?cancelled=1&session_id={CHECKOUT_SESSION_ID}", siteUrl).toString(),
