@@ -25,7 +25,6 @@ type PublicPaymentStartMode = "deposit" | "full" | "custom" | "balance";
 
 type PublicPaymentStartBookingRow = {
   id: string;
-  public_id: string | null;
   status: string;
   vehicle_id: string;
   start_date: string;
@@ -182,7 +181,7 @@ function buildPricingUpdate(
 
 async function loadLockedBooking(client: Queryable, bookingId: string) {
   const result = await client.query<PublicPaymentStartBookingRow>(
-    "select b.id, b.public_id, b.status, b.vehicle_id, b.start_date, b.end_date, b.start_at, b.end_at, b.pricing_json, c.full_name as customer_name, c.email as customer_email, c.phone as customer_phone, v.daily_rate_cents, v.deposit_cents, v.year as vehicle_year, v.make as vehicle_make, v.model as vehicle_model from bookings b join vehicles v on v.id = b.vehicle_id join customers c on c.id = b.customer_id where b.id = $1 for update",
+    "select b.id, b.status, b.vehicle_id, b.start_date, b.end_date, b.start_at, b.end_at, b.pricing_json, c.full_name as customer_name, c.email as customer_email, c.phone as customer_phone, v.daily_rate_cents, v.deposit_cents, v.year as vehicle_year, v.make as vehicle_make, v.model as vehicle_model from bookings b join vehicles v on v.id = b.vehicle_id join customers c on c.id = b.customer_id where b.id = $1 for update",
     [bookingId],
   );
   return result.rows[0] ?? null;
@@ -502,7 +501,6 @@ export async function startPublicWipayPayment({
       const stripe = getStripeClient();
       const urls = stripeCheckoutUrls();
       const paymentLabel = startDetails.paymentType === "deposit" ? "Deposit" : startDetails.paymentType === "full" ? "Full payment" : startDetails.paymentType === "balance" ? "Balance payment" : "Custom payment";
-      const bookingReference = booking.public_id ?? booking.id.slice(0, 8).toUpperCase();
       const vehicleLabel = `${booking.vehicle_year} ${booking.vehicle_make} ${booking.vehicle_model}`.trim();
       const session = await stripe.checkout.sessions.create({
         mode: "payment",
@@ -517,7 +515,6 @@ export async function startPublicWipayPayment({
             currency: "jmd",
             product_data: {
               name: `${paymentLabel} — ${vehicleLabel}`,
-              description: `Booking ${bookingReference} · ${booking.start_date} to ${booking.end_date} · Curated Car Rentals`,
             },
             unit_amount: toStripeJmdMinorUnits(startDetails.amountCents),
           },
