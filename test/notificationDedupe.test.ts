@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   computeDedupeKey,
   markDedupeResult,
+  retryFailedDedupe,
   tryAcquireDedupe,
 } from "@/lib/notifications/dedupe";
 
@@ -24,6 +25,20 @@ test("computeDedupeKey: builds deterministic keys", () => {
     key,
     "booking:123e4567-e89b-42d3-a456-426614174000:BOOKING_CREATED_EMAIL:a=1|b=2",
   );
+});
+
+test("notification dedupe: a failed dispatch can be retried", async () => {
+  const result = await retryFailedDedupe(
+    { dedupeKey: "booking:retry", provider: "resend" },
+    async <T = unknown>(text: string, params: unknown[] = []) => {
+      assert.match(text, /status = 'FAILED'/);
+      assert.deepEqual(params, ["booking:retry", "resend"]);
+      return { rows: [{ id: "dispatch-1" }] as T[], rowCount: 1 };
+    },
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(result.acquired, true);
 });
 
 test("notification dedupe: first send allowed, duplicate blocked, result can be marked", async () => {

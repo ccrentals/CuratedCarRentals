@@ -40,14 +40,14 @@ test("Stripe accepts a test key with harmless environment whitespace", () => {
   assert.equal(getPublicPaymentProvider(), "STRIPE");
 });
 
-test("Stripe accepts the explicit staging environment marker in function runtime", () => {
+test("Stripe rejects a non-staging deployment even when a public environment marker is set", () => {
   setEnv({
     PAYMENT_PROVIDER: "stripe",
     STRIPE_TEST_MODE: " true ",
     STRIPE_SECRET_KEY: "sk_test_example",
     NEXT_PUBLIC_SITE_ENV: "staging",
   });
-  assert.equal(getPublicPaymentProvider(), "STRIPE");
+  assert.throws(() => getPublicPaymentProvider());
 });
 
 test("WiPay remains the safe default", () => {

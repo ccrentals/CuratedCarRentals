@@ -75,6 +75,20 @@ export async function tryAcquireDedupe(
   }
 }
 
+export async function retryFailedDedupe(
+  input: {
+    dedupeKey: string;
+    provider?: string | null;
+  },
+  queryFn: DbQueryFn = dbQuery,
+) {
+  const result = await queryFn(
+    "update notification_dispatch_log set status = 'PENDING', provider = coalesce($2, provider), provider_message_id = null, error = null where dedupe_key = $1 and status = 'FAILED' returning id",
+    [input.dedupeKey, input.provider ?? null],
+  );
+  return { ok: true, acquired: result.rowCount > 0 };
+}
+
 export async function markDedupeResult(
   input: {
     dedupeKey: string;

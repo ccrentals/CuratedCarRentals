@@ -14,12 +14,7 @@ export function getPublicPaymentProvider(): PaymentProvider {
 
   // Stripe must never be selectable from a production deployment or with a live key.
   const isProduction = process.env.CONTEXT === "production" || process.env.NETLIFY_CONTEXT === "production";
-  const isStaging =
-    process.env.NODE_ENV === "test" ||
-    process.env.BRANCH === "staging" ||
-    process.env.CONTEXT === "branch-deploy" ||
-    process.env.NETLIFY_CONTEXT === "branch-deploy" ||
-    process.env.NEXT_PUBLIC_SITE_ENV === "staging";
+  const isStaging = process.env.NODE_ENV === "test" || process.env.BRANCH === "staging";
   if (isProduction || !isStaging) throw new Error("Stripe is enabled only for the staging deployment.");
   if (!isStripeTestMode()) throw new Error("Stripe staging requires STRIPE_TEST_MODE=true and an sk_test_ STRIPE_SECRET_KEY.");
   return "STRIPE";
