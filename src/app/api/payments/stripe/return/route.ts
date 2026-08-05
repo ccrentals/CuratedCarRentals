@@ -9,7 +9,7 @@ export async function GET(request: Request) {
   if (!sessionId) return NextResponse.redirect(new URL("/payment/failed?reason=notfound", siteUrl));
   let bookingId = "";
   try {
-    const session = await getStripeClient().checkout.sessions.retrieve(sessionId);
+    const session = await getStripeClient(request.url).checkout.sessions.retrieve(sessionId);
     bookingId = session.metadata?.booking_id ?? "";
     const result = await reconcileStripeCheckoutSession(session, "return");
     const destination = result.ok ? `/payment/success?bookingId=${encodeURIComponent(result.bookingId ?? "")}` : `/payment/failed?reason=${encodeURIComponent(result.status)}${result.bookingId ? `&bookingId=${encodeURIComponent(result.bookingId)}` : ""}`;

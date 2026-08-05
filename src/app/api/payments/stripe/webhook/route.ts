@@ -7,7 +7,7 @@ export async function POST(request: Request) {
   const signature = request.headers.get("stripe-signature");
   if (!signature) return new Response("Missing Stripe signature", { status: 400 });
   let event;
-  try { event = getStripeClient().webhooks.constructEvent(await request.text(), signature, process.env.STRIPE_WEBHOOK_SECRET!.trim()); }
+  try { event = getStripeClient(request.url).webhooks.constructEvent(await request.text(), signature, process.env.STRIPE_WEBHOOK_SECRET!.trim()); }
   catch { return new Response("Invalid Stripe signature", { status: 400 }); }
   const pool = getDbPool();
   const inserted = await pool.query("insert into webhook_events (provider, event_id) values ('STRIPE', $1) on conflict (provider, event_id) do nothing returning id", [event.id]);
