@@ -4,17 +4,30 @@ function configuredProvider() {
   return (process.env.PAYMENT_PROVIDER ?? "wipay").trim().toLowerCase();
 }
 
+export function isStripeStagingDeployment() {
+  return process.env.BRANCH === "staging";
+}
+
+export function assertWiPayAvailable() {
+  if (isStripeStagingDeployment()) {
+    throw new Error("WiPay is disabled for the staging deployment.");
+  }
+}
+
 export function isStripeTestMode() {
   return (process.env.STRIPE_TEST_MODE ?? "").trim().toLowerCase() === "true" && (process.env.STRIPE_SECRET_KEY ?? "").trim().startsWith("sk_test_");
 }
 
 export function getPublicPaymentProvider(): PaymentProvider {
   const provider = configuredProvider();
-  if (provider !== "stripe") return "WIPAY";
+  if (provider !== "stripe") {
+    assertWiPayAvailable();
+    return "WIPAY";
+  }
 
   // Stripe must never be selectable from a production deployment or with a live key.
   const isProduction = process.env.CONTEXT === "production" || process.env.NETLIFY_CONTEXT === "production";
-  const isStaging = process.env.NODE_ENV === "test" || process.env.BRANCH === "staging";
+  const isStaging = process.env.NODE_ENV === "test" || isStripeStagingDeployment();
   if (isProduction || !isStaging) throw new Error("Stripe is enabled only for the staging deployment.");
   if (!isStripeTestMode()) throw new Error("Stripe staging requires STRIPE_TEST_MODE=true and an sk_test_ STRIPE_SECRET_KEY.");
   return "STRIPE";

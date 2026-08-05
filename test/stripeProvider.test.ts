@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { getPublicPaymentProvider, isStripeTestMode } from "../src/lib/payments/provider";
+import {
+  assertWiPayAvailable,
+  getPublicPaymentProvider,
+  isStripeTestMode,
+} from "../src/lib/payments/provider";
 import { toStripeJmdMinorUnits } from "../src/lib/payments/stripe";
 
 const saved = { ...process.env };
@@ -53,4 +57,10 @@ test("Stripe rejects a non-staging deployment even when a public environment mar
 test("WiPay remains the safe default", () => {
   setEnv({ PAYMENT_PROVIDER: undefined });
   assert.equal(getPublicPaymentProvider(), "WIPAY");
+});
+
+test("staging cannot fall back to WiPay or call legacy WiPay payment routes", () => {
+  setEnv({ PAYMENT_PROVIDER: undefined, BRANCH: "staging" });
+  assert.throws(() => getPublicPaymentProvider(), /WiPay is disabled/);
+  assert.throws(() => assertWiPayAvailable(), /WiPay is disabled/);
 });
