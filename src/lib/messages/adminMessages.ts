@@ -8,7 +8,7 @@ import {
 export const CONTACT_MESSAGE_STATUSES = ["NEW", "READ", "ARCHIVED"] as const;
 export const ADMIN_MESSAGE_SOURCE_OPTIONS = [
   { value: "contact_inquiry", label: "Contact form" },
-  { value: "home_contact_inquiry", label: "Home contact form" },
+  { value: "home_page_contact", label: "Home contact form" },
   { value: "inspection_alert", label: "Vehicle inspection alert" },
   { value: "email_delivery_issue", label: "Email delivery issue" },
 ] as const;
@@ -304,6 +304,10 @@ function legacySourcesForMessageType(messageType: string) {
   if (messageType === "inspection_alert") return ["booking_inspection"];
   if (messageType === "email_delivery_issue") return ["resend_webhook"];
   return ["contact_page"];
+}
+
+function messageTypeForSourceFilter(source: AdminMessageSourceFilter) {
+  return source === "home_page_contact" ? "home_contact_inquiry" : source;
 }
 
 export function humanizeAdminMessageSource(value: unknown) {
@@ -629,13 +633,14 @@ export async function fetchAdminMessagesPage(
   const values: unknown[] = [...filters.values];
 
   if (filters.source) {
+    const messageType = messageTypeForSourceFilter(filters.source);
     if (capabilities.hasMessageType) {
       filters.whereParts.push(`coalesce(m.message_type, $${filters.index}) = $${filters.index}`);
-      values.push(filters.source);
+      values.push(messageType);
       filters.index += 1;
     } else {
       filters.whereParts.push(`coalesce(m.source, 'contact_page') = any($${filters.index}::text[])`);
-      values.push(legacySourcesForMessageType(filters.source));
+      values.push(legacySourcesForMessageType(messageType));
       filters.index += 1;
     }
   }
@@ -713,13 +718,14 @@ export async function fetchAdminMessageExportRows(input: FetchAdminMessagesInput
   const values: unknown[] = [...filters.values];
 
   if (filters.source) {
+    const messageType = messageTypeForSourceFilter(filters.source);
     if (capabilities.hasMessageType) {
       filters.whereParts.push(`coalesce(m.message_type, $${filters.index}) = $${filters.index}`);
-      values.push(filters.source);
+      values.push(messageType);
       filters.index += 1;
     } else {
       filters.whereParts.push(`coalesce(m.source, 'contact_page') = any($${filters.index}::text[])`);
-      values.push(legacySourcesForMessageType(filters.source));
+      values.push(legacySourcesForMessageType(messageType));
       filters.index += 1;
     }
   }

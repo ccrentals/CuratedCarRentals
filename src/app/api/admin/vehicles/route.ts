@@ -12,6 +12,7 @@ import {
   validateUploadcareFiles,
 } from "@/lib/uploads/uploadcare";
 import { buildVehicleGalleryEntries } from "@/lib/vehicles/gallery";
+import { fetchActiveFleetSnapshot } from "@/lib/vehicles/adminFleetSnapshot";
 import { writeMediaAudit } from "@/lib/uploads/mediaAudit";
 
 const allowedStatuses = ["AVAILABLE", "UNAVAILABLE", "RESERVED", "RENTED", "MAINTENANCE", "INACTIVE"];
@@ -101,6 +102,7 @@ type AdminVehiclesGetDeps = {
       daily_rate_cents: number;
       deposit_cents: number;
       status: string;
+      derived_status?: string;
       created_at: string;
       deleted_at: string | null;
     }>
@@ -125,6 +127,23 @@ type AdminVehiclePostDeps = {
 const DEFAULT_GET_DEPS: AdminVehiclesGetDeps = {
   getSession: () => getSessionFromRequest(),
   listVehicles: async ({ includeDeleted }) => {
+    if (!includeDeleted) {
+      const activeFleet = await fetchActiveFleetSnapshot();
+      return activeFleet.map((vehicle) => ({
+        id: vehicle.id,
+        public_id: vehicle.public_id,
+        make: vehicle.make,
+        model: vehicle.model,
+        year: vehicle.year,
+        seat_count: null,
+        daily_rate_cents: vehicle.daily_rate_cents,
+        deposit_cents: vehicle.deposit_cents,
+        status: vehicle.status,
+        derived_status: vehicle.derived_status,
+        created_at: vehicle.created_at,
+        deleted_at: vehicle.deleted_at,
+      }));
+    }
     const whereClause = includeDeleted ? "where deleted_at is not null" : "where deleted_at is null";
     const result = await dbQuery(
       `select id, public_id, make, model, year, seat_count, daily_rate_cents, deposit_cents, status, created_at, deleted_at
@@ -154,7 +173,12 @@ export async function handleAdminVehiclesGet(
 
   const includeDeleted = new URL(request.url).searchParams.get("includeDeleted") === "1";
   const vehicles = await deps.listVehicles({ includeDeleted });
-  return NextResponse.json({ vehicles });
+  return NextResponse.json({
+    vehicles: vehicles.map((vehicle) => ({
+      ...vehicle,
+      derived_status: vehicle.derived_status ?? (includeDeleted ? "INACTIVE" : vehicle.status),
+    })),
+  });
 }
 
 export async function GET(request: Request) {

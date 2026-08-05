@@ -54,6 +54,21 @@ test("admin booking cancel API: rate limits repeated cancellation attempts per u
   assert.match(String(payload.error), /too many booking cancellation attempts/i);
 });
 
+test("admin booking cancel API: committed cancellation survives audit failure", async () => {
+  const queries: string[] = [];
+  const client = { async query(text: string) { queries.push(text); if (text.includes("select status")) return { rowCount: 1, rows: [{ status: "PENDING_PAYMENT", pricing_json: {} }] }; return { rowCount: 0, rows: [] }; }, release() { return undefined; } };
+  const response = await handleAdminBookingCancelPost(new Request("http://localhost/api/admin/bookings/booking-1/cancel", { method: "POST" }), { params: Promise.resolve({ id: "booking-1" }) }, {
+    requireAdminAccess: async () => operationsAuth(), requireCsrfCheck: async () => true,
+    consumeRateLimitCheck: async () => ({ count: 1, limit: 10, allowed: true, remaining: 9, resetAt: "2026-05-25T18:10:00.000Z", retryAfterSeconds: 600 }),
+    getPool: () => ({ connect: async () => client }) as never, syncPromoRedemption: async () => undefined,
+    writeAudit: async () => { throw new Error("audit unavailable"); }, log: () => undefined,
+  });
+  assert.equal(response.status, 200);
+  assert.equal((await response.json() as { ok: boolean }).ok, true);
+  assert.ok(queries.includes("commit"));
+  assert.equal(queries.filter((query) => query === "rollback").length, 0);
+});
+
 test("admin booking mark deposit paid API: rate limits repeated deposit actions per user and booking", async () => {
   const response = await handleAdminBookingMarkDepositPaidPost(
     new Request("http://localhost/api/admin/bookings/booking-1/mark-deposit-paid", {

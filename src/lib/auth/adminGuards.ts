@@ -7,7 +7,7 @@ export type AdminActor = {
   userId: string;
   role: string;
   appRole: ReturnType<typeof parseAppRole>;
-  authSource: "legacy" | "clerk-bridge";
+  authSource: "legacy" | "clerk-bridge" | "native";
   clerkUserId: string | null;
   issuedAt: number;
   expiresAt: number;
@@ -33,6 +33,7 @@ export type RequireAdminApiSessionResult =
   | { ok: false; reason: GuardFailureReason; response: Response };
 
 function mapAuthSource(session: AdminSession): AdminActor["authSource"] {
+  if (session.source === "native") return "native";
   return session.source === "clerk" ? "clerk-bridge" : "legacy";
 }
 

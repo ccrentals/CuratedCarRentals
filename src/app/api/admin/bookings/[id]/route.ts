@@ -291,11 +291,13 @@ export async function handleAdminBookingByIdGet(
       override_reason: overrideInfo.overrideReason,
     },
     customer: {
+      id: booking.customer_id,
       full_name: booking.customer_name,
       email: booking.customer_email,
       phone: booking.customer_phone,
     },
     vehicle: {
+      id: booking.vehicle_id,
       make: booking.vehicle_make,
       model: booking.vehicle_model,
       year: booking.vehicle_year,

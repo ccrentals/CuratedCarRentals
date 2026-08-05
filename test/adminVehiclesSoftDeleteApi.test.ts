@@ -134,7 +134,8 @@ test("soft-deleted vehicle is hidden from default list and visible in archived l
     },
   );
   assert.equal(archivedListResponse.status, 200);
-  const archivedListJson = (await archivedListResponse.json()) as { vehicles?: Array<{ id: string }> };
+  const archivedListJson = (await archivedListResponse.json()) as { vehicles?: Array<{ id: string; derived_status?: string }> };
   assert.equal(archivedListJson.vehicles?.length, 1);
   assert.equal(archivedListJson.vehicles?.[0]?.id, VEHICLE_ID);
+  assert.equal(archivedListJson.vehicles?.[0]?.derived_status, "INACTIVE");
 });

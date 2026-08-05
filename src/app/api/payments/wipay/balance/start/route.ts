@@ -1,8 +1,9 @@
 import { requireCsrf } from "@/lib/security/csrf";
 import { startPublicWipayPayment } from "@/lib/payments/publicPaymentStart";
+import { hasPublicBookingBearerCredential } from "@/lib/bookings/publicAccess";
 
 export async function POST(request: Request) {
-  if (!(await requireCsrf(request))) {
+  if (!hasPublicBookingBearerCredential(request) && !(await requireCsrf(request))) {
     return Response.json(
       { ok: false, code: "invalid_csrf", error: "Invalid CSRF token" },
       { status: 403 },

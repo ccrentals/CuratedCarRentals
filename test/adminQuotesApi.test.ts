@@ -6,6 +6,7 @@ import { handleAdminQuotesGet, handleAdminQuotesPost } from "@/app/api/admin/quo
 import {
   AdminQuoteError,
   assertAdminQuoteMutable,
+  createAdminQuote,
   quoteWindowsOverlap,
   type AdminQuoteDetailItem,
   type FetchAdminQuotesInput,
@@ -87,6 +88,7 @@ function buildQuoteFixture(): AdminQuoteDetailItem {
 
 test("admin quotes API: POST create quote success", async () => {
   const fixture = buildQuoteFixture();
+  let capturedClientRequestId: string | null | undefined;
 
   const response = await handleAdminQuotesPost(
     new Request("http://localhost/api/admin/quotes", {
@@ -94,6 +96,7 @@ test("admin quotes API: POST create quote success", async () => {
       headers: { "Content-Type": "application/json", "x-csrf-token": "token" },
       body: JSON.stringify({
         csrfToken: "token",
+        clientRequestId: "77777777-7777-4777-8777-777777777777",
         customer_full_name: fixture.customerFullName,
         customer_email: fixture.customerEmail,
         start_at: fixture.startAt,
@@ -107,7 +110,10 @@ test("admin quotes API: POST create quote success", async () => {
       getSession: async () => adminSession(),
       requireCsrfCheck: async () => true,
       fetchPage: async () => ({ items: [], nextCursor: null, hasMore: false, totalCount: 0, limit: 20 }),
-      createQuote: async () => fixture,
+      createQuote: async (input) => {
+        capturedClientRequestId = input.clientRequestId;
+        return fixture;
+      },
     },
   );
 
@@ -124,11 +130,87 @@ test("admin quotes API: POST create quote success", async () => {
   };
 
   assert.equal(body.ok, true);
+  assert.equal(capturedClientRequestId, "77777777-7777-4777-8777-777777777777");
   assert.equal(body.item.status, "DRAFT");
   assert.equal(typeof body.item.pricingJson, "object");
   assert.equal(body.item.totalCents, fixture.totalCents);
   assert.equal(body.item.subtotalCents, fixture.subtotalCents);
   assert.equal(body.item.discountTotalCents, fixture.discountTotalCents);
+});
+
+test("admin quote creation: a staff-scoped retry returns the existing draft before side effects", async () => {
+  const fixture = buildQuoteFixture();
+  const queries: string[] = [];
+  const row = {
+    id: fixture.id,
+    public_id: fixture.publicId,
+    created_at: fixture.createdAt,
+    updated_at: fixture.updatedAt,
+    status: fixture.status,
+    expires_at: fixture.expiresAt,
+    customer_full_name: fixture.customerFullName,
+    customer_email: fixture.customerEmail,
+    customer_phone: fixture.customerPhone,
+    start_at: fixture.startAt,
+    end_at: fixture.endAt,
+    pickup_location_id: fixture.pickupLocationId,
+    dropoff_location_id: fixture.dropoffLocationId,
+    pickup_location_text: fixture.pickupLocationText,
+    dropoff_location_text: fixture.dropoffLocationText,
+    vehicle_id: fixture.vehicleId,
+    vehicle_label: fixture.vehicleLabel,
+    vehicle_class: fixture.vehicleClass,
+    pricing_json: fixture.pricingJson,
+    base_total_cents: fixture.baseTotalCents,
+    insurance_total_cents: fixture.insuranceTotalCents,
+    discount_total_cents: fixture.discountTotalCents,
+    subtotal_cents: fixture.subtotalCents,
+    total_cents: fixture.totalCents,
+    deposit_required_cents: fixture.depositRequiredCents,
+    amount_due_cents: fixture.amountDueCents,
+    promo_code: fixture.promoCode,
+    insurance_plan_id: fixture.insurancePlanId,
+    insurance_enabled: fixture.insuranceEnabled,
+    tags: fixture.tags,
+    comments: fixture.comments,
+    commission_partner_name: fixture.commissionPartnerName,
+    client_pays_at_partner: fixture.clientPaysAtPartner,
+    rack_price_cents: fixture.rackPriceCents,
+    created_by_admin_user_id: fixture.createdByAdminUserId,
+    last_emailed_at: fixture.lastEmailedAt,
+    last_emailed_to: fixture.lastEmailedTo,
+    converted_booking_id: fixture.convertedBookingId,
+  };
+  const client = {
+    query: async (text: string) => {
+      queries.push(text);
+      if (text.includes("pricing_json->>'admin_client_request_id'")) {
+        return { rows: [row], rowCount: 1 };
+      }
+      return { rows: [], rowCount: 0 };
+    },
+    release: () => undefined,
+  };
+
+  const result = await createAdminQuote(
+    {
+      clientRequestId: "77777777-7777-4777-8777-777777777777",
+      customerFullName: fixture.customerFullName,
+      customerEmail: fixture.customerEmail,
+      startAt: fixture.startAt,
+      endAt: fixture.endAt,
+      pickupLocationText: fixture.pickupLocationText,
+      dropoffLocationText: fixture.dropoffLocationText,
+      vehicleId: fixture.vehicleId,
+      createdByAdminUserId: fixture.createdByAdminUserId,
+    },
+    { pool: { connect: async () => client } },
+  );
+
+  assert.equal(result.id, fixture.id);
+  assert.equal(queries.some((query) => query.includes("pg_advisory_xact_lock")), true);
+  assert.equal(queries.some((query) => query.includes("insert into quotes")), false);
+  assert.equal(queries.some((query) => query.includes("quote_events")), false);
 });
 
 test("admin quotes API: POST create quote rejects invalid window", async () => {

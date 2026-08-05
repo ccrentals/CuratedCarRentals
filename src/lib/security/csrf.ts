@@ -2,6 +2,8 @@ import { cookies } from "next/headers";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 
 import { logWarn } from "@/lib/log";
+import { canAccessAdmin } from "@/lib/auth/roles";
+import { getNativeAdminSessionFromAuthorization } from "@/lib/auth/session";
 
 const COOKIE_NAME = "ccr_csrf";
 const MAX_AGE_SECONDS = 60 * 60 * 2;
@@ -56,6 +58,14 @@ export function verifyCsrfToken(token?: string | null) {
 }
 
 export async function requireCsrf(request: Request, bodyToken?: string | null) {
+  // Native admin mutations authenticate with a short-lived, audience-bound bearer
+  // token. CSRF applies to ambient browser cookies, not explicit Authorization
+  // credentials. Never bypass this check for browser-audience session tokens.
+  const nativeSession = getNativeAdminSessionFromAuthorization(request.headers.get("authorization"));
+  if (nativeSession && canAccessAdmin(nativeSession.role)) {
+    return true;
+  }
+
   const headerToken = request.headers.get("x-csrf-token") ?? bodyToken ?? null;
   const cookieToken = await getCsrfTokenFromCookie();
   if (!headerToken || !cookieToken) return false;

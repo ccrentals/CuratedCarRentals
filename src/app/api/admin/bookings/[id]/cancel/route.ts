@@ -65,6 +65,7 @@ export async function handleAdminBookingCancelPost(
 
   const pool = deps.getPool();
   const client = await pool.connect();
+  let committed = false;
 
   try {
     await client.query("begin");
@@ -106,18 +107,23 @@ export async function handleAdminBookingCancelPost(
     });
 
     await client.query("commit");
+    committed = true;
 
-    await deps.writeAudit({
-      userId: actor.userId,
-      action: "BOOKING_CANCELLED",
-      entityType: "booking",
-      entityId: id,
-      details: { previous_status: status, cancelled_at: cancelledAt },
-    });
+    try {
+      await deps.writeAudit({
+        userId: actor.userId,
+        action: "BOOKING_CANCELLED",
+        entityType: "booking",
+        entityId: id,
+        details: { previous_status: status, cancelled_at: cancelledAt },
+      });
+    } catch (error) {
+      deps.log("api.admin.bookings.cancel.audit_failed", error, { bookingId: id, userId: actor.userId });
+    }
 
     return NextResponse.json({ ok: true });
   } catch (error) {
-    await client.query("rollback");
+    if (!committed) await client.query("rollback");
     deps.log("api.admin.bookings.cancel.POST", error, { bookingId: id, userId: actor.userId });
     return NextResponse.json({ error: "Failed to cancel booking" }, { status: 500 });
   } finally {

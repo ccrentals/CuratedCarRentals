@@ -1,5 +1,6 @@
 import { requireCsrf } from "@/lib/security/csrf";
 import { startPublicWipayPayment } from "@/lib/payments/publicPaymentStart";
+import { hasPublicBookingBearerCredential } from "@/lib/bookings/publicAccess";
 
 function parseAmount(value: unknown) {
   if (typeof value === "number" && Number.isFinite(value)) return Math.round(value);
@@ -11,7 +12,7 @@ function parseAmount(value: unknown) {
 }
 
 export async function POST(request: Request) {
-  if (!(await requireCsrf(request))) {
+  if (!hasPublicBookingBearerCredential(request) && !(await requireCsrf(request))) {
     return Response.json(
       { ok: false, code: "invalid_csrf", error: "Invalid CSRF token" },
       { status: 403 },
