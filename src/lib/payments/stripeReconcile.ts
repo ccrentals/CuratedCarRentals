@@ -1,15 +1,147 @@
 import type Stripe from "stripe";
 
 import { writeAuditLog } from "@/lib/audit";
-import { getDbPool } from "@/lib/db";
+import { dbQuery, getDbPool } from "@/lib/db";
 import { maybeEntitleBookingAfterPayment } from "@/lib/availability/entitlement";
+import { logError } from "@/lib/log";
+import {
+  sendDepositReceiptEmail,
+  sendInternalDepositReceiptNotifications,
+  sendInternalPaymentCompleteNotifications,
+  sendPaymentCompleteEmail,
+} from "@/lib/notifications/email";
+import { computeDedupeKey, markDedupeResult, tryAcquireDedupe } from "@/lib/notifications/dedupe";
 import { recalculateBookingPayments } from "@/lib/payments/recalculateBooking";
+import { readPromoPricingFields } from "@/lib/payments/pricing";
 import { toStripeJmdMinorUnits } from "@/lib/payments/stripe";
 
 type ReconcileResult = { ok: boolean; bookingId?: string; status: "paid" | "pending" | "failed" | "not_found" | "overlap" };
 
 function intentId(value: Stripe.Checkout.Session["payment_intent"]) {
   return typeof value === "string" ? value : value?.id ?? null;
+}
+
+type ConfirmedStripePayment = {
+  id: string;
+  booking_id: string;
+  deposit_amount_cents: number;
+  metadata_json: Record<string, unknown> | null;
+};
+
+async function sendStripePaymentConfirmationEmails(input: {
+  payment: ConfirmedStripePayment;
+  session: Stripe.Checkout.Session;
+  paymentIntentId: string | null;
+  summary: Awaited<ReturnType<typeof recalculateBookingPayments>>;
+}) {
+  const paymentType = String(input.session.metadata?.payment_type ?? input.payment.metadata_json?.payment_type ?? "deposit").toLowerCase();
+  const eventType = paymentType === "deposit" ? "DEPOSIT_RECEIPT" : "PAYMENT_COMPLETE";
+  const dedupeKey = computeDedupeKey({
+    entityType: "booking",
+    entityId: input.payment.booking_id,
+    eventType,
+    extra: input.payment.id,
+  });
+  const dedupe = await tryAcquireDedupe({
+    dedupeKey,
+    entityType: "booking",
+    entityId: input.payment.booking_id,
+    eventType,
+    provider: "resend",
+  });
+
+  if (!dedupe.acquired) {
+    await dbQuery(
+      "update payments set metadata_json = jsonb_set(metadata_json, '{receipt_email_sent}', 'true'::jsonb, true), updated_at = now() where id = $1",
+      [input.payment.id],
+    );
+    return;
+  }
+
+  try {
+    const bookingResult = await dbQuery<{
+      id: string;
+      public_id: string | null;
+      start_date: string;
+      end_date: string;
+      pickup_location: string;
+      pricing_json: Record<string, unknown> | null;
+      customer_name: string;
+      customer_email: string;
+      customer_phone: string | null;
+      vehicle_make: string;
+      vehicle_model: string;
+      vehicle_year: number;
+      daily_rate_cents: number;
+      deposit_cents: number;
+    }>(
+      "select b.id, b.public_id, b.start_date, b.end_date, b.pickup_location, b.pricing_json, c.full_name as customer_name, c.email as customer_email, c.phone as customer_phone, v.make as vehicle_make, v.model as vehicle_model, v.year as vehicle_year, v.daily_rate_cents, v.deposit_cents from bookings b join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id where b.id = $1",
+      [input.payment.booking_id],
+    );
+    if (!bookingResult.rowCount) throw new Error("Booking not found while sending Stripe payment receipt.");
+
+    const booking = bookingResult.rows[0];
+    const { promoCode, promoDiscount } = readPromoPricingFields(booking.pricing_json);
+    const common = {
+      bookingId: booking.id,
+      customerEmail: booking.customer_email,
+      customerName: booking.customer_name,
+      customerPhone: booking.customer_phone ?? "",
+      vehicleLabel: `${booking.vehicle_year} ${booking.vehicle_make} ${booking.vehicle_model}`.trim(),
+      startDate: booking.start_date,
+      endDate: booking.end_date,
+      pickupLocation: booking.pickup_location,
+      dailyRate: Number(booking.daily_rate_cents || 0),
+      deposit: Number(booking.deposit_cents || 0),
+      paidToDate: input.summary.netPaidToDate,
+      paymentAmount: Number(input.payment.deposit_amount_cents || 0),
+      paymentMethod: "Stripe (test)",
+      paymentDateTime: new Date().toISOString(),
+      paymentReference: input.paymentIntentId ?? input.session.id,
+      dispatch: {
+        triggerSource: "stripe_reconcile",
+        entityType: "booking" as const,
+        entityId: booking.id,
+        entityPublicId: booking.public_id,
+        relatedTransactionType: "payment" as const,
+        relatedTransactionId: input.payment.id,
+        manualResendAllowed: true,
+      },
+    };
+
+    const customerResult = paymentType === "deposit"
+      ? await sendDepositReceiptEmail({ ...common, promoCode, promoDiscount })
+      : await sendPaymentCompleteEmail({ ...common, total: input.summary.totalAmount, balanceDue: input.summary.balanceDue });
+    if (!customerResult.ok) throw new Error(customerResult.error ?? "Stripe payment receipt email failed.");
+
+    if (paymentType === "deposit") {
+      await sendInternalDepositReceiptNotifications({ ...common, promoCode, promoDiscount });
+    } else {
+      await sendInternalPaymentCompleteNotifications({
+        ...common,
+        total: input.summary.totalAmount,
+        balanceDue: input.summary.balanceDue,
+      });
+    }
+
+    await markDedupeResult({ dedupeKey, status: "SENT", provider: "resend" });
+    await dbQuery(
+      "update payments set metadata_json = jsonb_set(metadata_json, '{receipt_email_sent}', 'true'::jsonb, true), updated_at = now() where id = $1",
+      [input.payment.id],
+    );
+  } catch (error) {
+    await markDedupeResult({
+      dedupeKey,
+      status: "FAILED",
+      provider: "resend",
+      error: error instanceof Error ? error.message : String(error),
+    });
+    logError("stripe_payment_receipt_email_failed", error, {
+      bookingId: input.payment.booking_id,
+      paymentId: input.payment.id,
+      sessionId: input.session.id,
+    });
+  }
 }
 
 export async function reconcileStripeCheckoutSession(session: Stripe.Checkout.Session, source: "webhook" | "return" | "admin"): Promise<ReconcileResult> {
@@ -44,7 +176,9 @@ export async function reconcileStripeCheckoutSession(session: Stripe.Checkout.Se
     const entitlement = await maybeEntitleBookingAfterPayment(payment.booking_id, { client, auditUserId: "system" });
     const summary = await recalculateBookingPayments(payment.booking_id, { client });
     await client.query("commit");
-    await writeAuditLog({ userId: "system", action: "PAYMENT_CONFIRMED_STRIPE_TEST", entityType: "booking", entityId: payment.booking_id, details: { paymentId: payment.id, sessionId: session.id, paymentIntentId: intentId(session.payment_intent), source, netPaidToDate: summary.netPaidToDate, entitlementState: entitlement.state } });
+    const paymentIntentId = intentId(session.payment_intent);
+    await writeAuditLog({ userId: "system", action: "PAYMENT_CONFIRMED_STRIPE_TEST", entityType: "booking", entityId: payment.booking_id, details: { paymentId: payment.id, sessionId: session.id, paymentIntentId, source, netPaidToDate: summary.netPaidToDate, entitlementState: entitlement.state } });
+    await sendStripePaymentConfirmationEmails({ payment, session, paymentIntentId, summary });
     return entitlement.state === "LOST" ? { ok: false, bookingId: payment.booking_id, status: "overlap" } : { ok: true, bookingId: payment.booking_id, status: "paid" };
   } catch (error) {
     await client.query("rollback").catch(() => undefined);
