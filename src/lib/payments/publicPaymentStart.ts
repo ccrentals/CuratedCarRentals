@@ -46,6 +46,7 @@ type ExistingPaymentAttemptRow = {
   id: string;
   deposit_amount_cents: number;
   created_at: string | null;
+  provider_ref?: string | null;
   metadata_json: Record<string, unknown> | null;
 };
 
@@ -195,7 +196,7 @@ async function findExistingAttempt(
   provider: PaymentProvider,
 ) {
   const result = await client.query<ExistingPaymentAttemptRow>(
-    "select id, deposit_amount_cents, created_at, metadata_json from payments where booking_id = $1 and provider = $4 and status = 'INITIATED' and deposit_amount_cents = $2 and coalesce(metadata_json->>'payment_type', 'deposit') = $3 order by created_at desc limit 1",
+    "select id, deposit_amount_cents, created_at, provider_ref, metadata_json from payments where booking_id = $1 and provider = $4 and status = 'INITIATED' and deposit_amount_cents = $2 and coalesce(metadata_json->>'payment_type', 'deposit') = $3 order by created_at desc limit 1",
     [bookingId, amountCents, paymentType, provider],
   );
   return result.rows[0] ?? null;
@@ -451,6 +452,31 @@ export async function startPublicWipayPayment({
         409,
         "payment_in_progress",
         "A payment attempt is already starting. Please wait a moment and try again.",
+      );
+    }
+
+    if (provider === "STRIPE" && existingAttempt) {
+      const staleSessionId =
+        typeof existingAttempt.metadata_json?.checkout_session_id === "string"
+          ? existingAttempt.metadata_json.checkout_session_id
+          : existingAttempt.provider_ref;
+
+      if (staleSessionId) {
+        try {
+          await getStripeClient().checkout.sessions.expire(staleSessionId);
+        } catch {
+          await client.query("rollback");
+          return jsonError(
+            409,
+            "payment_in_progress",
+            "Your previous Stripe checkout is still being confirmed. Please wait a moment before trying again.",
+          );
+        }
+      }
+
+      await client.query(
+        "update payments set status = 'FAILED', metadata_json = metadata_json || $1::jsonb, updated_at = now() where id = $2",
+        [JSON.stringify({ stripe_retry_replaced_at: new Date().toISOString() }), existingAttempt.id],
       );
     }
 

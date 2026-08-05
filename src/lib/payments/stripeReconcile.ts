@@ -10,7 +10,7 @@ import {
   sendInternalPaymentCompleteNotifications,
   sendPaymentCompleteEmail,
 } from "@/lib/notifications/email";
-import { computeDedupeKey, markDedupeResult, tryAcquireDedupe } from "@/lib/notifications/dedupe";
+import { computeDedupeKey, markDedupeResult, retryFailedDedupe, tryAcquireDedupe } from "@/lib/notifications/dedupe";
 import { recalculateBookingPayments } from "@/lib/payments/recalculateBooking";
 import { readPromoPricingFields } from "@/lib/payments/pricing";
 import { toStripeJmdMinorUnits } from "@/lib/payments/stripe";
@@ -50,13 +50,8 @@ async function sendStripePaymentConfirmationEmails(input: {
     provider: "resend",
   });
 
-  if (!dedupe.acquired) {
-    await dbQuery(
-      "update payments set metadata_json = jsonb_set(metadata_json, '{receipt_email_sent}', 'true'::jsonb, true), updated_at = now() where id = $1",
-      [input.payment.id],
-    );
-    return;
-  }
+  const retry = dedupe.acquired ? dedupe : await retryFailedDedupe({ dedupeKey, provider: "resend" });
+  if (!retry.acquired) return;
 
   try {
     const bookingResult = await dbQuery<{
