@@ -10,7 +10,7 @@ import { toStripeJmdMinorUnits } from "../src/lib/payments/stripe";
 
 const saved = { ...process.env };
 function setEnv(values: Record<string, string | undefined>) {
-  for (const key of ["PAYMENT_PROVIDER", "STRIPE_TEST_MODE", "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "CONTEXT", "NETLIFY_CONTEXT", "BRANCH", "NODE_ENV", "NEXT_PUBLIC_SITE_ENV"]) delete process.env[key];
+  for (const key of ["PAYMENT_PROVIDER", "STRIPE_TEST_MODE", "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "CONTEXT", "NETLIFY_CONTEXT", "BRANCH", "NODE_ENV", "NEXT_PUBLIC_SITE_ENV", "SITE_URL"]) delete process.env[key];
   Object.assign(process.env, values);
 }
 test.after(() => { process.env = saved; });
@@ -36,8 +36,8 @@ test("Stripe is enabled only for staging with a test key", () => {
 test("Stripe accepts a test key with harmless environment whitespace", () => {
   setEnv({
     PAYMENT_PROVIDER: "stripe",
-    BRANCH: "staging",
     CONTEXT: "branch-deploy",
+    SITE_URL: "https://staging--ccrentals.netlify.app",
     STRIPE_TEST_MODE: "true",
     STRIPE_SECRET_KEY: "  sk_test_example  ",
   });
@@ -60,7 +60,22 @@ test("WiPay remains the safe default", () => {
 });
 
 test("staging cannot fall back to WiPay or call legacy WiPay payment routes", () => {
-  setEnv({ PAYMENT_PROVIDER: undefined, BRANCH: "staging" });
+  setEnv({
+    PAYMENT_PROVIDER: undefined,
+    CONTEXT: "branch-deploy",
+    SITE_URL: "https://staging--ccrentals.netlify.app",
+  });
   assert.throws(() => getPublicPaymentProvider(), /WiPay is disabled/);
   assert.throws(() => assertWiPayAvailable(), /WiPay is disabled/);
+});
+
+test("Stripe rejects other Netlify branch deploys", () => {
+  setEnv({
+    PAYMENT_PROVIDER: "stripe",
+    CONTEXT: "branch-deploy",
+    SITE_URL: "https://feature--ccrentals.netlify.app",
+    STRIPE_TEST_MODE: "true",
+    STRIPE_SECRET_KEY: "sk_test_example",
+  });
+  assert.throws(() => getPublicPaymentProvider(), /only for the staging deployment/);
 });

@@ -5,7 +5,16 @@ function configuredProvider() {
 }
 
 export function isStripeStagingDeployment() {
-  return process.env.BRANCH === "staging";
+  if (process.env.BRANCH === "staging") return true;
+
+  const deployContext = process.env.CONTEXT ?? process.env.NETLIFY_CONTEXT;
+  if (deployContext !== "branch-deploy") return false;
+
+  try {
+    return new URL(process.env.SITE_URL ?? "").hostname === "staging--ccrentals.netlify.app";
+  } catch {
+    return false;
+  }
 }
 
 export function assertWiPayAvailable() {

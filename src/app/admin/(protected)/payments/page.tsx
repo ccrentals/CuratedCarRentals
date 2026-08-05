@@ -19,6 +19,7 @@ import { formatJmd } from "@/lib/money";
 import { normalizePageSize, parsePositiveIntParam } from "@/lib/pagination/sharedPagination";
 import { formatPaymentStatus } from "@/lib/payments/formatPaymentStatus";
 import { formatPaymentMetadataError, sanitizePaymentMetadataForUi } from "@/lib/payments/formatWipayError";
+import { isStripeStagingDeployment } from "@/lib/payments/provider";
 import { getWiPayRequestOrigin } from "@/lib/wipay";
 
 function maskValue(value: string | undefined, visible = 4) {
@@ -173,7 +174,7 @@ export default async function AdminPaymentsPage({
   const payments = await dbQuery<PaymentRow>(queryText, values);
   const visibleCount = Math.max(rowsPerPage, requestedVisible ?? rowsPerPage);
   const visiblePayments = payments.rows.slice(0, visibleCount);
-  const isStripeStaging = process.env.BRANCH === "staging";
+  const isStripeStaging = isStripeStagingDeployment();
   const wipayRecent = isStripeStaging
     ? { rows: [] as WipayRow[] }
     : await dbQuery<WipayRow>(
