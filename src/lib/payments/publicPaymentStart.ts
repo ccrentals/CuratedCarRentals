@@ -25,6 +25,7 @@ type PublicPaymentStartMode = "deposit" | "full" | "custom" | "balance";
 
 type PublicPaymentStartBookingRow = {
   id: string;
+  public_id: string | null;
   status: string;
   vehicle_id: string;
   start_date: string;
@@ -37,6 +38,9 @@ type PublicPaymentStartBookingRow = {
   customer_phone: string;
   daily_rate_cents: number;
   deposit_cents: number;
+  vehicle_year: number | null;
+  vehicle_make: string;
+  vehicle_model: string;
 };
 
 type ExistingPaymentAttemptRow = {
@@ -178,7 +182,7 @@ function buildPricingUpdate(
 
 async function loadLockedBooking(client: Queryable, bookingId: string) {
   const result = await client.query<PublicPaymentStartBookingRow>(
-    "select b.id, b.status, b.vehicle_id, b.start_date, b.end_date, b.start_at, b.end_at, b.pricing_json, c.full_name as customer_name, c.email as customer_email, c.phone as customer_phone, v.daily_rate_cents, v.deposit_cents from bookings b join vehicles v on v.id = b.vehicle_id join customers c on c.id = b.customer_id where b.id = $1 for update",
+    "select b.id, b.public_id, b.status, b.vehicle_id, b.start_date, b.end_date, b.start_at, b.end_at, b.pricing_json, c.full_name as customer_name, c.email as customer_email, c.phone as customer_phone, v.daily_rate_cents, v.deposit_cents, v.year as vehicle_year, v.make as vehicle_make, v.model as vehicle_model from bookings b join vehicles v on v.id = b.vehicle_id join customers c on c.id = b.customer_id where b.id = $1 for update",
     [bookingId],
   );
   return result.rows[0] ?? null;
