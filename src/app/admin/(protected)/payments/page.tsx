@@ -173,9 +173,12 @@ export default async function AdminPaymentsPage({
   const payments = await dbQuery<PaymentRow>(queryText, values);
   const visibleCount = Math.max(rowsPerPage, requestedVisible ?? rowsPerPage);
   const visiblePayments = payments.rows.slice(0, visibleCount);
-  const wipayRecent = await dbQuery<WipayRow>(
-    "select p.id, p.public_id, p.booking_id, b.public_id as booking_public_id, p.status, p.deposit_amount_cents, p.provider_ref, p.provider_transaction_id, p.metadata_json, p.created_at from payments p join bookings b on b.id = p.booking_id where p.provider = 'WIPAY' order by p.created_at desc limit 5",
-  );
+  const isStripeStaging = process.env.BRANCH === "staging";
+  const wipayRecent = isStripeStaging
+    ? { rows: [] as WipayRow[] }
+    : await dbQuery<WipayRow>(
+        "select p.id, p.public_id, p.booking_id, b.public_id as booking_public_id, p.status, p.deposit_amount_cents, p.provider_ref, p.provider_transaction_id, p.metadata_json, p.created_at from payments p join bookings b on b.id = p.booking_id where p.provider = 'WIPAY' order by p.created_at desc limit 5",
+      );
 
   const accountNumber = process.env.WIPAY_ACCOUNT_NUMBER?.trim() ?? "";
   const originConfigured = Boolean(process.env.WIPAY_ORIGIN?.trim());
@@ -291,6 +294,17 @@ export default async function AdminPaymentsPage({
         })}
       </div>
 
+      {isStripeStaging ? (
+        <div className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
+            Staging payment provider
+          </p>
+          <p className="mt-2 text-sm font-semibold text-[var(--ccr-text)]">Stripe test mode is active.</p>
+          <p className="mt-1 text-sm text-[var(--ccr-muted)]">
+            New WiPay checkout attempts are disabled on this deployment. Historic WiPay payments remain in the table below.
+          </p>
+        </div>
+      ) : (
       <div className="mt-6 grid gap-4 lg:grid-cols-[1.1fr_1.9fr]">
         <div className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
           <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
@@ -385,6 +399,7 @@ export default async function AdminPaymentsPage({
           )}
         </div>
       </div>
+      )}
 
       <PaymentsFilters initialQuery={q} />
 

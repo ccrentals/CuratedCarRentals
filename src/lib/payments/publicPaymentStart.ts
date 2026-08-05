@@ -15,7 +15,11 @@ import {
 } from "@/lib/payments/pricing";
 import { isVehicleUnavailableEntitlementBased } from "@/lib/availability/entitlement";
 import { buildCanonicalSiteUrl, buildRequestParams, getCanonicalSiteUrl, requestHostedPageUrl } from "@/lib/wipay";
-import { getPublicPaymentProvider, type PaymentProvider } from "@/lib/payments/provider";
+import {
+  assertWiPayAvailable,
+  getPublicPaymentProvider,
+  type PaymentProvider,
+} from "@/lib/payments/provider";
 import { getStripeClient, stripeCheckoutUrls, toStripeJmdMinorUnits } from "@/lib/payments/stripe";
 
 const ACTIVE_PAYMENT_WINDOW_MS = 30 * 60 * 1000;
@@ -357,6 +361,17 @@ export async function startPublicWipayPayment({
   forceProvider?: PaymentProvider;
 }) {
   const provider = forceProvider ?? getPublicPaymentProvider();
+  if (provider === "WIPAY") {
+    try {
+      assertWiPayAvailable();
+    } catch (error) {
+      return jsonError(
+        409,
+        "provider_unavailable",
+        error instanceof Error ? error.message : "WiPay is unavailable for this deployment.",
+      );
+    }
+  }
   const envError = provider === "WIPAY" ? validateEnvironment() : null;
   if (envError) return envError;
 

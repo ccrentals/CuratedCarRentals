@@ -83,4 +83,5 @@ test("public WiPay start routes use shared idempotent start helper", () => {
   assert.match(helper, /status = 'INITIATED'/);
   assert.match(helper, /hosted_page_url/);
   assert.match(helper, /payment_in_progress/);
+  assert.match(helper, /assertWiPayAvailable\(\)/);
 });
