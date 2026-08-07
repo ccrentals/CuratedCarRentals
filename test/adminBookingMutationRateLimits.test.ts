@@ -148,6 +148,7 @@ test("admin booking resend email API: rate limits repeated resend actions per us
       },
       sendBookingCreated: async () => ({ ok: true, skipped: false, delivered: 1, errors: [] }),
       sendDepositReceipt: async () => ({ ok: true, skipped: false, delivered: 1, errors: [] }),
+      sendPaymentComplete: async () => ({ ok: true, skipped: false, delivered: 1, errors: [] }),
       acquireDedupe: async () => undefined,
       finalizeDedupe: async () => undefined,
       makeDedupeKey: () => "dedupe-key",
@@ -236,6 +237,7 @@ test("admin booking resend email API: sends the current repriced insurance and p
         };
       },
       sendDepositReceipt: async () => ({ ok: true, skipped: false, delivered: 1, errors: [] }),
+      sendPaymentComplete: async () => ({ ok: true, skipped: false, delivered: 1, errors: [] }),
       acquireDedupe: async () => undefined,
       finalizeDedupe: async () => undefined,
       makeDedupeKey: () => "dedupe-key",
@@ -249,4 +251,54 @@ test("admin booking resend email API: sends the current repriced insurance and p
   assert.equal(sentInput?.paidToDate, 3400);
   assert.equal(sentInput?.balanceDue, 149600);
   assert.equal(sentInput?.paymentOption, "DEPOSIT");
+});
+
+test("admin booking resend email API: supports full-payment receipts", async () => {
+  let sentInput: Parameters<
+    Parameters<typeof handleAdminBookingResendEmailPost>[2]["sendPaymentComplete"]
+  >[0] | null = null;
+
+  const response = await handleAdminBookingResendEmailPost(
+    new Request("http://localhost/api/admin/bookings/booking-1/resend-email", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-csrf-token": "token" },
+      body: JSON.stringify({ type: "payment_complete" }),
+    }),
+    { params: Promise.resolve({ id: "booking-1" }) },
+    {
+      requireAdminAccess: async () => operationsAuth(),
+      requireCsrfCheck: async () => true,
+      consumeRateLimitCheck: async () => ({ count: 1, limit: 10, allowed: true, remaining: 9, resetAt: "2026-06-24T22:10:00.000Z", retryAfterSeconds: 600 }),
+      query: async (text: string) => {
+        if (text.includes("from bookings b join customers")) {
+          return {
+            rowCount: 1,
+            rows: [{
+              id: "booking-1", status: "BOOKED", start_date: "2026-12-23", end_date: "2026-12-25", pickup_location: "41 Upper Waterloo Rd",
+              pricing_json: { total_cents: 153000, deposit_cents: 3400 }, customer_name: "Customer", customer_email: "customer@example.com",
+              vehicle_make: "Toyota", vehicle_model: "Aqua", vehicle_year: 2020, daily_rate_cents: 76500, deposit_cents: 3400,
+            }],
+          };
+        }
+        if (text.includes("sum(deposit_amount_cents)")) return { rowCount: 1, rows: [{ amount: 153000 }] };
+        throw new Error(`Unexpected query: ${text}`);
+      },
+      sendBookingCreated: async () => ({ ok: true, skipped: false, delivered: 1, errors: [] }),
+      sendDepositReceipt: async () => ({ ok: true, skipped: false, delivered: 1, errors: [] }),
+      sendPaymentComplete: async (input) => {
+        sentInput = input;
+        return { ok: true, skipped: false, delivered: 1, errors: [], providerMessageId: "email-1" };
+      },
+      acquireDedupe: async () => undefined,
+      finalizeDedupe: async () => undefined,
+      makeDedupeKey: () => "dedupe-key",
+      randomId: () => "uuid",
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(sentInput?.total, 153000);
+  assert.equal(sentInput?.paidToDate, 153000);
+  assert.equal(sentInput?.balanceDue, 0);
+  assert.equal(sentInput?.paymentMethod, "Recorded payment");
 });

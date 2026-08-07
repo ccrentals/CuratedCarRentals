@@ -8,6 +8,7 @@ import { consumeRouteRateLimit, withRateLimitHeaders } from "@/lib/security/rate
 import {
   sendBookingCreatedEmail,
   sendDepositReceiptEmail,
+  sendPaymentCompleteEmail,
 } from "@/lib/notifications/email";
 import {
   computeDedupeKey,
@@ -21,7 +22,7 @@ import {
   readPromoPricingFields,
 } from "@/lib/payments/pricing";
 
-const ALLOWED_TYPES = ["booking_created", "deposit_receipt"] as const;
+const ALLOWED_TYPES = ["booking_created", "deposit_receipt", "payment_complete"] as const;
 
 type EmailType = (typeof ALLOWED_TYPES)[number];
 
@@ -39,6 +40,7 @@ export type AdminBookingResendEmailRouteDeps = {
   query: typeof dbQuery;
   sendBookingCreated: typeof sendBookingCreatedEmail;
   sendDepositReceipt: typeof sendDepositReceiptEmail;
+  sendPaymentComplete: typeof sendPaymentCompleteEmail;
   acquireDedupe: typeof tryAcquireDedupe;
   finalizeDedupe: typeof markDedupeResult;
   makeDedupeKey: typeof computeDedupeKey;
@@ -52,6 +54,7 @@ const DEFAULT_DEPS: AdminBookingResendEmailRouteDeps = {
   query: dbQuery,
   sendBookingCreated: sendBookingCreatedEmail,
   sendDepositReceipt: sendDepositReceiptEmail,
+  sendPaymentComplete: sendPaymentCompleteEmail,
   acquireDedupe: tryAcquireDedupe,
   finalizeDedupe: markDedupeResult,
   makeDedupeKey: computeDedupeKey,
@@ -134,7 +137,9 @@ export async function handleAdminBookingResendEmailPost(
   const eventType =
     type === "booking_created"
       ? "RESEND_BOOKING_CREATED_EMAIL"
-      : "RESEND_DEPOSIT_RECEIPT_EMAIL";
+      : type === "deposit_receipt"
+        ? "RESEND_DEPOSIT_RECEIPT_EMAIL"
+        : "RESEND_PAYMENT_COMPLETE_EMAIL";
   const dedupeKey = deps.makeDedupeKey({
     entityType: "booking",
     entityId: booking.id,
@@ -226,8 +231,18 @@ export async function handleAdminBookingResendEmailPost(
   );
 
   const paidToDate = Number(paymentResult.rows[0]?.amount ?? 0);
+  const summary = computeBookingPricingFromStoredSnapshot({
+    bookingId: booking.id,
+    bookingStatus: booking.status,
+    startDate: booking.start_date,
+    endDate: booking.end_date,
+    pricing,
+    fallbackDailyRate: booking.daily_rate_cents,
+    fallbackDeposit: booking.deposit_cents,
+    netPaidToDate: paidToDate,
+  });
 
-  const receiptResult = await deps.sendDepositReceipt({
+  const receiptInput = {
     bookingId: booking.id,
     customerEmail: booking.customer_email,
     customerName: booking.customer_name,
@@ -238,8 +253,6 @@ export async function handleAdminBookingResendEmailPost(
     dailyRate: Number(booking.daily_rate_cents || 0),
     deposit: depositValue,
     paidToDate,
-    promoCode,
-    promoDiscount,
     dispatch: {
       triggerSource: "admin_resend",
       triggeredByUserId: actor.userId,
@@ -247,7 +260,20 @@ export async function handleAdminBookingResendEmailPost(
         resendOfLegacyRoute: true,
       },
     },
-  });
+  };
+  const receiptResult = type === "payment_complete"
+    ? await deps.sendPaymentComplete({
+      ...receiptInput,
+      total: summary.total,
+      balanceDue: summary.balanceDue,
+      paymentAmount: paidToDate,
+      paymentMethod: "Recorded payment",
+    })
+    : await deps.sendDepositReceipt({
+      ...receiptInput,
+      promoCode,
+      promoDiscount,
+    });
 
   if (!receiptResult.ok) {
     const skipped = wasEmailSkipped(receiptResult);

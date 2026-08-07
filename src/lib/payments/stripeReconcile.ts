@@ -13,6 +13,7 @@ import {
 import { computeDedupeKey, markDedupeResult, retryFailedDedupe, tryAcquireDedupe } from "@/lib/notifications/dedupe";
 import { recalculateBookingPayments } from "@/lib/payments/recalculateBooking";
 import { readPromoPricingFields } from "@/lib/payments/pricing";
+import { getStripePaymentMode } from "@/lib/payments/provider";
 import { toStripeJmdMinorUnits } from "@/lib/payments/stripe";
 
 type ReconcileResult = { ok: boolean; bookingId?: string; status: "paid" | "pending" | "failed" | "not_found" | "overlap" };
@@ -34,6 +35,7 @@ async function sendStripePaymentConfirmationEmails(input: {
   paymentIntentId: string | null;
   summary: Awaited<ReturnType<typeof recalculateBookingPayments>>;
 }) {
+  const stripeMode = getStripePaymentMode();
   const paymentType = String(input.session.metadata?.payment_type ?? input.payment.metadata_json?.payment_type ?? "deposit").toLowerCase();
   const eventType = paymentType === "deposit" ? "DEPOSIT_RECEIPT" : "PAYMENT_COMPLETE";
   const dedupeKey = computeDedupeKey({
@@ -90,7 +92,7 @@ async function sendStripePaymentConfirmationEmails(input: {
       deposit: Number(booking.deposit_cents || 0),
       paidToDate: input.summary.netPaidToDate,
       paymentAmount: Number(input.payment.deposit_amount_cents || 0),
-      paymentMethod: "Stripe (test)",
+      paymentMethod: stripeMode === "test" ? "Stripe (test)" : "Stripe",
       paymentDateTime: new Date().toISOString(),
       paymentReference: input.paymentIntentId ?? input.session.id,
       dispatch: {
@@ -140,7 +142,10 @@ async function sendStripePaymentConfirmationEmails(input: {
 }
 
 export async function reconcileStripeCheckoutSession(session: Stripe.Checkout.Session, source: "webhook" | "return" | "admin"): Promise<ReconcileResult> {
-  if (session.livemode || session.currency?.toLowerCase() !== "jmd") throw new Error("Unexpected Stripe Checkout currency or live mode.");
+  const stripeMode = getStripePaymentMode();
+  if (session.livemode !== (stripeMode === "live") || session.currency?.toLowerCase() !== "jmd") {
+    throw new Error("Unexpected Stripe Checkout currency or mode.");
+  }
   const paymentId = session.metadata?.payment_id || session.client_reference_id || "";
   const pool = getDbPool();
   const client = await pool.connect();
@@ -172,7 +177,7 @@ export async function reconcileStripeCheckoutSession(session: Stripe.Checkout.Se
     const summary = await recalculateBookingPayments(payment.booking_id, { client });
     await client.query("commit");
     const paymentIntentId = intentId(session.payment_intent);
-    await writeAuditLog({ userId: "system", action: "PAYMENT_CONFIRMED_STRIPE_TEST", entityType: "booking", entityId: payment.booking_id, details: { paymentId: payment.id, sessionId: session.id, paymentIntentId, source, netPaidToDate: summary.netPaidToDate, entitlementState: entitlement.state } });
+    await writeAuditLog({ userId: "system", action: stripeMode === "test" ? "PAYMENT_CONFIRMED_STRIPE_TEST" : "PAYMENT_CONFIRMED_STRIPE", entityType: "booking", entityId: payment.booking_id, details: { paymentId: payment.id, sessionId: session.id, paymentIntentId, source, netPaidToDate: summary.netPaidToDate, entitlementState: entitlement.state } });
     await sendStripePaymentConfirmationEmails({ payment, session, paymentIntentId, summary });
     return entitlement.state === "LOST" ? { ok: false, bookingId: payment.booking_id, status: "overlap" } : { ok: true, bookingId: payment.booking_id, status: "paid" };
   } catch (error) {

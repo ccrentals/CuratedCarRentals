@@ -1,6 +1,6 @@
 import Stripe from "stripe";
 
-import { assertStripeTestConfiguration } from "@/lib/payments/provider";
+import { assertStripeConfiguration } from "@/lib/payments/provider";
 
 export function toStripeJmdMinorUnits(amountJmd: number) {
   if (!Number.isSafeInteger(amountJmd) || amountJmd < 1) {
@@ -16,7 +16,7 @@ export function toStripeJmdMinorUnits(amountJmd: number) {
 }
 
 export function getStripeClient(requestUrl?: string) {
-  assertStripeTestConfiguration(requestUrl);
+  assertStripeConfiguration(requestUrl);
   return new Stripe(process.env.STRIPE_SECRET_KEY!.trim());
 }
 
