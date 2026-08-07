@@ -427,6 +427,10 @@ export function PublicBookingWizard({
   turnstileDevBypassEnabled = false,
 }: PublicBookingWizardProps) {
   const router = useRouter();
+  const hostedPaymentProvider =
+    process.env.NEXT_PUBLIC_PAYMENT_PROVIDER?.trim().toLowerCase() === "stripe"
+      ? "Stripe"
+      : "WiPay";
   const [requestedVehicleFromQuery, setRequestedVehicleFromQuery] = useState("");
   const draftHydratedRef = useRef(false);
   const preselectedVehicleIdRef = useRef("");
@@ -3125,7 +3129,7 @@ export function PublicBookingWizard({
           Secure checkout
         </p>
         <p className="mt-3 text-sm leading-6 text-white/76">
-          Reservation details are reviewed in six steps before Step 7 launches WiPay.
+          {`Reservation details are reviewed in six steps before Step 7 launches ${hostedPaymentProvider}.`}
         </p>
       </article>
     </div>
@@ -3978,7 +3982,7 @@ export function PublicBookingWizard({
                 <section className="min-w-0" data-testid="booking-step-payments">
                   <h2 className="break-words text-xl font-bold text-[var(--ccr-text)]">Payments</h2>
                   <p className="mt-1 text-sm text-[var(--ccr-muted)]">
-                    Choose your payment option in JMD. Step 7 launches hosted WiPay checkout.
+                    {`Choose your payment option in JMD. Step 7 launches hosted ${hostedPaymentProvider} checkout.`}
                   </p>
                   {step6VehicleWarning ? (
                     <div
@@ -4128,7 +4132,7 @@ export function PublicBookingWizard({
                         ? "Submitting..."
                         : paymentOption === "NONE"
                           ? "Confirm Booking"
-                          : "Continue to WiPay"}
+                          : `Continue to ${hostedPaymentProvider}`}
                     </button>
                   </div>
                 </section>
