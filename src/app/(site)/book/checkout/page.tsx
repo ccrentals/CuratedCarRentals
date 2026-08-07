@@ -30,7 +30,7 @@ function parseCheckoutOption(value: string): CheckoutOption | null {
   return null;
 }
 
-const stripeTestCheckout = process.env.NEXT_PUBLIC_PAYMENT_PROVIDER === "stripe";
+const stripeTestCheckout = process.env.NEXT_PUBLIC_STRIPE_TEST_MODE === "true";
 
 function BookingCheckoutContent() {
   const searchParams = useSearchParams();

@@ -81,7 +81,7 @@ export function BookingActions({
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loadingKey, setLoadingKey] = useState<ActionKey | null>(null);
-  const [emailLoading, setEmailLoading] = useState<"booking_created" | "deposit_receipt" | null>(
+  const [emailLoading, setEmailLoading] = useState<"booking_created" | "deposit_receipt" | "payment_complete" | null>(
     null,
   );
   const [pricingLoading, setPricingLoading] = useState<"promo" | "insurance" | null>(null);
@@ -243,7 +243,7 @@ export function BookingActions({
     router.refresh();
   }
 
-  async function resendEmail(type: "booking_created" | "deposit_receipt") {
+  async function resendEmail(type: "booking_created" | "deposit_receipt" | "payment_complete") {
     setMessage(null);
     setError(null);
     setEmailLoading(type);
@@ -703,6 +703,14 @@ export function BookingActions({
                 className={emailButtonClass}
               >
                 {emailLoading === "deposit_receipt" ? "Sending..." : "Resend deposit receipt"}
+              </button>
+              <button
+                type="button"
+                onClick={() => resendEmail("payment_complete")}
+                disabled={emailLoading === "payment_complete"}
+                className={emailButtonClass}
+              >
+                {emailLoading === "payment_complete" ? "Sending..." : "Resend payment receipt"}
               </button>
               <Link href={`/api/admin/bookings/${bookingId}/invoice-payload`} className={emailButtonClass}>
                 Invoice payload

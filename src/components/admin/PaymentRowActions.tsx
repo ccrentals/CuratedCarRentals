@@ -47,7 +47,7 @@ export function PaymentRowActions({
     }
     if (showRefundAction) return provider === "STRIPE" ? "Refund Stripe test payment" : "Record manual refund adjustment";
     return "";
-  }, [showManualActions, isDeleted, showRefundAction]);
+  }, [showManualActions, isDeleted, showRefundAction, provider]);
 
   async function submit(action: "delete" | "restore") {
     if (loading) return;

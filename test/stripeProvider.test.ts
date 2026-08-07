@@ -4,6 +4,8 @@ import test from "node:test";
 import {
   assertWiPayAvailable,
   getPublicPaymentProvider,
+  getStripePaymentMode,
+  isStripeLiveMode,
   isStripeTestMode,
 } from "../src/lib/payments/provider";
 import { toStripeJmdMinorUnits } from "../src/lib/payments/stripe";
@@ -23,7 +25,7 @@ test("JMD Checkout converts whole-JMD booking amounts into Stripe minor units", 
   assert.throws(() => toStripeJmdMinorUnits(Number.MAX_SAFE_INTEGER));
 });
 
-test("Stripe is enabled only for staging with a test key", () => {
+test("Stripe is enabled for staging with a test key", () => {
   setEnv({ PAYMENT_PROVIDER: "stripe", STRIPE_TEST_MODE: "true", STRIPE_SECRET_KEY: "sk_test_example", STRIPE_WEBHOOK_SECRET: "whsec_example", BRANCH: "staging", NODE_ENV: "production" });
   assert.equal(isStripeTestMode(), true);
   assert.equal(getPublicPaymentProvider(), "STRIPE");
@@ -31,6 +33,16 @@ test("Stripe is enabled only for staging with a test key", () => {
   assert.throws(() => getPublicPaymentProvider());
   setEnv({ PAYMENT_PROVIDER: "stripe", STRIPE_TEST_MODE: "true", STRIPE_SECRET_KEY: "sk_test_example", CONTEXT: "production" });
   assert.throws(() => getPublicPaymentProvider());
+});
+
+test("Stripe is enabled for production only with a live key", () => {
+  setEnv({ PAYMENT_PROVIDER: "stripe", STRIPE_TEST_MODE: "false", STRIPE_SECRET_KEY: "sk_live_example", STRIPE_WEBHOOK_SECRET: "whsec_example", CONTEXT: "production" });
+  assert.equal(isStripeLiveMode(), true);
+  assert.equal(getStripePaymentMode(), "live");
+  assert.equal(getPublicPaymentProvider(), "STRIPE");
+
+  setEnv({ PAYMENT_PROVIDER: "stripe", STRIPE_TEST_MODE: "true", STRIPE_SECRET_KEY: "sk_test_example", STRIPE_WEBHOOK_SECRET: "whsec_example", CONTEXT: "production" });
+  assert.throws(() => getPublicPaymentProvider(), /requires STRIPE_TEST_MODE=false/);
 });
 
 test("Stripe accepts a test key with harmless environment whitespace", () => {
@@ -89,5 +101,5 @@ test("Stripe rejects other Netlify branch deploys", () => {
     STRIPE_TEST_MODE: "true",
     STRIPE_SECRET_KEY: "sk_test_example",
   });
-  assert.throws(() => getPublicPaymentProvider(), /only for the staging deployment/);
+  assert.throws(() => getPublicPaymentProvider(), /only for the staging or production deployment/);
 });

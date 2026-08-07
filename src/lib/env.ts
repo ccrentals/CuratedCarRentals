@@ -102,11 +102,15 @@ export function validateEnv(): EnvValidation {
     paymentsInvalid.push("PAYMENT_PROVIDER must be wipay or stripe");
   }
   if (isStripe) {
-    if (process.env.CONTEXT === "production" || process.env.NETLIFY_CONTEXT === "production") {
-      paymentsInvalid.push("Stripe is forbidden in the production deployment");
+    const isProductionDeployment = process.env.CONTEXT === "production" || process.env.NETLIFY_CONTEXT === "production";
+    const stripeTestMode = (process.env.STRIPE_TEST_MODE ?? "").trim().toLowerCase() === "true";
+    if (isProductionDeployment) {
+      if (stripeTestMode) paymentsInvalid.push("STRIPE_TEST_MODE must be false in production");
+      if (isNonEmpty(process.env.STRIPE_SECRET_KEY) && !process.env.STRIPE_SECRET_KEY!.startsWith("sk_live_")) paymentsInvalid.push("STRIPE_SECRET_KEY must be a Stripe live key in production");
+    } else {
+      if (!stripeTestMode) paymentsInvalid.push("STRIPE_TEST_MODE must be true for the staging trial");
+      if (isNonEmpty(process.env.STRIPE_SECRET_KEY) && !process.env.STRIPE_SECRET_KEY!.startsWith("sk_test_")) paymentsInvalid.push("STRIPE_SECRET_KEY must be a Stripe test key outside production");
     }
-    if (process.env.STRIPE_TEST_MODE !== "true") paymentsInvalid.push("STRIPE_TEST_MODE must be true for the staging trial");
-    if (isNonEmpty(process.env.STRIPE_SECRET_KEY) && !process.env.STRIPE_SECRET_KEY!.startsWith("sk_test_")) paymentsInvalid.push("STRIPE_SECRET_KEY must be a Stripe test key");
     if (isNonEmpty(process.env.STRIPE_WEBHOOK_SECRET) && !process.env.STRIPE_WEBHOOK_SECRET!.startsWith("whsec_")) paymentsInvalid.push("STRIPE_WEBHOOK_SECRET must be a webhook signing secret");
   }
   if (!isNonEmpty(process.env.WIPAY_ORIGIN)) {

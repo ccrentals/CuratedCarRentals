@@ -7,6 +7,7 @@ import { requireCsrf } from "@/lib/security/csrf";
 import {
   sendBookingCreatedEmail,
   sendDepositReceiptEmail,
+  sendPaymentCompleteEmail,
 } from "@/lib/notifications/email";
 import {
   computeDedupeKey,
@@ -20,7 +21,7 @@ import {
   readPromoPricingFields,
 } from "@/lib/payments/pricing";
 
-const ALLOWED_TYPES = ["booking_created", "deposit_receipt"] as const;
+const ALLOWED_TYPES = ["booking_created", "deposit_receipt", "payment_complete"] as const;
 
 type EmailType = (typeof ALLOWED_TYPES)[number];
 
@@ -85,7 +86,9 @@ export async function POST(
   const eventType =
     type === "booking_created"
       ? "RESEND_BOOKING_CREATED_EMAIL"
-      : "RESEND_DEPOSIT_RECEIPT_EMAIL";
+      : type === "deposit_receipt"
+        ? "RESEND_DEPOSIT_RECEIPT_EMAIL"
+        : "RESEND_PAYMENT_COMPLETE_EMAIL";
   const dedupeKey = computeDedupeKey({
     entityType: "booking",
     entityId: booking.id,
@@ -177,8 +180,18 @@ export async function POST(
   );
 
   const paidToDate = Number(paymentResult.rows[0]?.amount ?? 0);
+  const summary = computeBookingPricingFromStoredSnapshot({
+    bookingId: booking.id,
+    bookingStatus: booking.status,
+    startDate: booking.start_date,
+    endDate: booking.end_date,
+    pricing,
+    fallbackDailyRate: booking.daily_rate_cents,
+    fallbackDeposit: booking.deposit_cents,
+    netPaidToDate: paidToDate,
+  });
 
-  const receiptResult = await sendDepositReceiptEmail({
+  const receiptInput = {
     bookingId: booking.id,
     customerEmail: booking.customer_email,
     customerName: booking.customer_name,
@@ -189,8 +202,6 @@ export async function POST(
     dailyRate: Number(booking.daily_rate_cents || 0),
     deposit: depositValue,
     paidToDate,
-    promoCode,
-    promoDiscount,
     dispatch: {
       triggerSource: "admin_resend",
       triggeredByUserId: actor.userId,
@@ -198,7 +209,20 @@ export async function POST(
         resendOfLegacyRoute: true,
       },
     },
-  });
+  };
+  const receiptResult = type === "payment_complete"
+    ? await sendPaymentCompleteEmail({
+      ...receiptInput,
+      total: summary.total,
+      balanceDue: summary.balanceDue,
+      paymentAmount: paidToDate,
+      paymentMethod: "Recorded payment",
+    })
+    : await sendDepositReceiptEmail({
+      ...receiptInput,
+      promoCode,
+      promoDiscount,
+    });
 
   if (!receiptResult.ok) {
     const skipped = wasEmailSkipped(receiptResult);

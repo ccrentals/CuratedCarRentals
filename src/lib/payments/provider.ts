@@ -1,4 +1,5 @@
 export type PaymentProvider = "WIPAY" | "STRIPE";
+export type StripePaymentMode = "test" | "live";
 
 function configuredProvider() {
   return (process.env.PAYMENT_PROVIDER ?? "wipay").trim().toLowerCase();
@@ -30,6 +31,28 @@ export function isStripeTestMode() {
   return (process.env.STRIPE_TEST_MODE ?? "").trim().toLowerCase() === "true" && (process.env.STRIPE_SECRET_KEY ?? "").trim().startsWith("sk_test_");
 }
 
+export function isStripeLiveMode() {
+  return (process.env.STRIPE_TEST_MODE ?? "").trim().toLowerCase() !== "true" && (process.env.STRIPE_SECRET_KEY ?? "").trim().startsWith("sk_live_");
+}
+
+function isProductionDeployment() {
+  return process.env.CONTEXT === "production" || process.env.NETLIFY_CONTEXT === "production";
+}
+
+export function getStripePaymentMode(requestUrl?: string): StripePaymentMode {
+  if (isProductionDeployment()) {
+    if (!isStripeLiveMode()) {
+      throw new Error("Stripe production requires STRIPE_TEST_MODE=false and an sk_live_ STRIPE_SECRET_KEY.");
+    }
+    return "live";
+  }
+
+  const isStaging = process.env.NODE_ENV === "test" || isStripeStagingDeployment(requestUrl);
+  if (!isStaging) throw new Error("Stripe is enabled only for the staging or production deployment.");
+  if (!isStripeTestMode()) throw new Error("Stripe staging requires STRIPE_TEST_MODE=true and an sk_test_ STRIPE_SECRET_KEY.");
+  return "test";
+}
+
 export function getPublicPaymentProvider(requestUrl?: string): PaymentProvider {
   const provider = configuredProvider();
   if (provider !== "stripe") {
@@ -37,20 +60,16 @@ export function getPublicPaymentProvider(requestUrl?: string): PaymentProvider {
     return "WIPAY";
   }
 
-  // Stripe must never be selectable from a production deployment or with a live key.
-  const isProduction = process.env.CONTEXT === "production" || process.env.NETLIFY_CONTEXT === "production";
-  const isStaging = process.env.NODE_ENV === "test" || isStripeStagingDeployment(requestUrl);
-  if (isProduction || !isStaging) throw new Error("Stripe is enabled only for the staging deployment.");
-  if (!isStripeTestMode()) throw new Error("Stripe staging requires STRIPE_TEST_MODE=true and an sk_test_ STRIPE_SECRET_KEY.");
+  getStripePaymentMode(requestUrl);
   return "STRIPE";
 }
 
-export function assertStripeTestConfiguration(requestUrl?: string) {
+export function assertStripeConfiguration(requestUrl?: string) {
   if (getPublicPaymentProvider(requestUrl) !== "STRIPE") {
     throw new Error("Stripe is not enabled for this deployment.");
   }
   const webhookSecret = (process.env.STRIPE_WEBHOOK_SECRET ?? "").trim();
   if (!webhookSecret.startsWith("whsec_")) {
-    throw new Error("Missing Stripe test webhook signing secret.");
+    throw new Error("Missing Stripe webhook signing secret.");
   }
 }
