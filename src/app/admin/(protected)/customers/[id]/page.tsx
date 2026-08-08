@@ -132,7 +132,15 @@ export default async function AdminCustomerDetailPage({
     ) {
       throw error;
     }
-    const legacyCustomer = await dbQuery<Omit<CustomerRow, "legal_id_type" | "legal_id_number">>(
+    const legacyCustomer = await dbQuery<
+      Omit<
+        CustomerRow,
+        | "legal_id_type"
+        | "legal_id_number"
+        | "legal_id_expiration_date"
+        | "drivers_license_expiration_date"
+      >
+    >(
       "select c.id, c.full_name, c.email, c.phone, false as is_blocked, null::timestamptz as blocked_at, null::uuid as blocked_by_user_id, null::text as blocked_reason, c.address, c.notes, c.created_at, c.last_booked_at, count(distinct b.id)::int as total_bookings, coalesce(sum(case when p.status in ('DEPOSIT_PAID', 'SUCCESS', 'REFUNDED') and p.deleted_at is null then p.deposit_amount_cents else 0 end), 0)::int as total_spend from customers c left join bookings b on b.customer_id = c.id left join payments p on p.booking_id = b.id where c.id = $1 group by c.id, c.full_name, c.email, c.phone, c.address, c.notes, c.created_at, c.last_booked_at",
       [id],
     );
@@ -140,7 +148,13 @@ export default async function AdminCustomerDetailPage({
       ...legacyCustomer,
       rows: legacyCustomer.rows.map(
         (
-          row: Omit<CustomerRow, "legal_id_type" | "legal_id_number">,
+          row: Omit<
+            CustomerRow,
+            | "legal_id_type"
+            | "legal_id_number"
+            | "legal_id_expiration_date"
+            | "drivers_license_expiration_date"
+          >,
         ) => ({
           ...row,
           first_name: null,

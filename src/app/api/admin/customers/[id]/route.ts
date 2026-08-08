@@ -70,7 +70,7 @@ function isUniqueDriversLicenseError(error: unknown) {
 }
 
 function toCustomerRowWithNullLegalFields(
-  row: Omit<CustomerRow, "legal_id_type" | "legal_id_number">,
+  row: Omit<CustomerRow, "legal_id_type" | "legal_id_number" | "legal_id_expiration_date">,
 ): CustomerRow {
   return {
     ...row,
@@ -126,6 +126,8 @@ export async function GET(
         | "blocked_reason"
         | "legal_id_type"
         | "legal_id_number"
+        | "legal_id_expiration_date"
+        | "drivers_license_expiration_date"
       >
     >(
       "select id, full_name, email, phone, address, notes, created_at, last_booked_at from customers where id = $1 limit 1",
@@ -150,8 +152,10 @@ export async function GET(
             | "country"
             | "birthday"
             | "drivers_license_number"
+            | "drivers_license_expiration_date"
             | "legal_id_type"
             | "legal_id_number"
+            | "legal_id_expiration_date"
           >,
         ) =>
         toCustomerRowWithNullLegalFields({
