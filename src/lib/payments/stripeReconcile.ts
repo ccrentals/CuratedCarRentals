@@ -34,8 +34,9 @@ async function sendStripePaymentConfirmationEmails(input: {
   session: Stripe.Checkout.Session;
   paymentIntentId: string | null;
   summary: Awaited<ReturnType<typeof recalculateBookingPayments>>;
+  stripeMode: ReturnType<typeof getStripePaymentMode>;
 }) {
-  const stripeMode = getStripePaymentMode();
+  const { stripeMode } = input;
   const paymentType = String(input.session.metadata?.payment_type ?? input.payment.metadata_json?.payment_type ?? "deposit").toLowerCase();
   const eventType = paymentType === "deposit" ? "DEPOSIT_RECEIPT" : "PAYMENT_COMPLETE";
   const dedupeKey = computeDedupeKey({
@@ -141,8 +142,12 @@ async function sendStripePaymentConfirmationEmails(input: {
   }
 }
 
-export async function reconcileStripeCheckoutSession(session: Stripe.Checkout.Session, source: "webhook" | "return" | "admin"): Promise<ReconcileResult> {
-  const stripeMode = getStripePaymentMode();
+export async function reconcileStripeCheckoutSession(
+  session: Stripe.Checkout.Session,
+  source: "webhook" | "return" | "admin",
+  requestUrl?: string,
+): Promise<ReconcileResult> {
+  const stripeMode = getStripePaymentMode(requestUrl);
   if (session.livemode !== (stripeMode === "live") || session.currency?.toLowerCase() !== "jmd") {
     throw new Error("Unexpected Stripe Checkout currency or mode.");
   }
@@ -178,7 +183,7 @@ export async function reconcileStripeCheckoutSession(session: Stripe.Checkout.Se
     await client.query("commit");
     const paymentIntentId = intentId(session.payment_intent);
     await writeAuditLog({ userId: "system", action: stripeMode === "test" ? "PAYMENT_CONFIRMED_STRIPE_TEST" : "PAYMENT_CONFIRMED_STRIPE", entityType: "booking", entityId: payment.booking_id, details: { paymentId: payment.id, sessionId: session.id, paymentIntentId, source, netPaidToDate: summary.netPaidToDate, entitlementState: entitlement.state } });
-    await sendStripePaymentConfirmationEmails({ payment, session, paymentIntentId, summary });
+    await sendStripePaymentConfirmationEmails({ payment, session, paymentIntentId, summary, stripeMode });
     return entitlement.state === "LOST" ? { ok: false, bookingId: payment.booking_id, status: "overlap" } : { ok: true, bookingId: payment.booking_id, status: "paid" };
   } catch (error) {
     await client.query("rollback").catch(() => undefined);

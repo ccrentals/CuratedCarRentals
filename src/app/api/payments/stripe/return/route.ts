@@ -2,16 +2,18 @@ import { NextResponse } from "next/server";
 import { logError } from "@/lib/log";
 import { getStripeClient, stripeCheckoutSiteUrl } from "@/lib/payments/stripe";
 import { reconcileStripeCheckoutSession } from "@/lib/payments/stripeReconcile";
+import { getPublicPaymentRequestUrl } from "@/lib/payments/provider";
 
 export async function GET(request: Request) {
   const url = new URL(request.url); const sessionId = url.searchParams.get("session_id");
+  const paymentRequestUrl = getPublicPaymentRequestUrl(request);
   const siteUrl = stripeCheckoutSiteUrl();
   if (!sessionId) return NextResponse.redirect(new URL("/payment/failed?reason=notfound", siteUrl));
   let bookingId = "";
   try {
-    const session = await getStripeClient(request.url).checkout.sessions.retrieve(sessionId);
+    const session = await getStripeClient(paymentRequestUrl).checkout.sessions.retrieve(sessionId);
     bookingId = session.metadata?.booking_id ?? "";
-    const result = await reconcileStripeCheckoutSession(session, "return");
+    const result = await reconcileStripeCheckoutSession(session, "return", paymentRequestUrl);
     const destination = result.ok ? `/payment/success?bookingId=${encodeURIComponent(result.bookingId ?? "")}` : `/payment/failed?reason=${encodeURIComponent(result.status)}${result.bookingId ? `&bookingId=${encodeURIComponent(result.bookingId)}` : ""}`;
     return NextResponse.redirect(new URL(destination, siteUrl));
   } catch (error) {

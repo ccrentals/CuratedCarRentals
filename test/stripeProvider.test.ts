@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   assertWiPayAvailable,
+  getPublicPaymentRequestUrl,
   getPublicPaymentProvider,
   getStripePaymentMode,
   isStripeLiveMode,
@@ -23,6 +24,19 @@ test("JMD Checkout converts whole-JMD booking amounts into Stripe minor units", 
   assert.throws(() => toStripeJmdMinorUnits(0));
   assert.throws(() => toStripeJmdMinorUnits(12.5));
   assert.throws(() => toStripeJmdMinorUnits(Number.MAX_SAFE_INTEGER));
+});
+
+test("Stripe uses Netlify's forwarded public host instead of the internal function URL", () => {
+  const request = new Request("http://localhost:8888/api/payments/start", {
+    headers: {
+      "x-forwarded-host": "curatedcarrentals.com",
+      "x-forwarded-proto": "https",
+    },
+  });
+  assert.equal(
+    getPublicPaymentRequestUrl(request),
+    "https://curatedcarrentals.com/api/payments/start",
+  );
 });
 
 test("Stripe is enabled for staging with a test key", () => {

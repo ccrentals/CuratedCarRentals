@@ -17,6 +17,7 @@ import { isVehicleUnavailableEntitlementBased } from "@/lib/availability/entitle
 import { buildCanonicalSiteUrl, buildRequestParams, getCanonicalSiteUrl, requestHostedPageUrl } from "@/lib/wipay";
 import {
   assertWiPayAvailable,
+  getPublicPaymentRequestUrl,
   getPublicPaymentProvider,
   getStripePaymentMode,
   type PaymentProvider,
@@ -361,9 +362,10 @@ export async function startPublicWipayPayment({
   /** Existing WiPay/mobile callers pass WIPAY; the website-neutral route omits this. */
   forceProvider?: PaymentProvider;
 }) {
+  const paymentRequestUrl = getPublicPaymentRequestUrl(request);
   let provider: PaymentProvider;
   try {
-    provider = forceProvider ?? getPublicPaymentProvider(request.url);
+    provider = forceProvider ?? getPublicPaymentProvider(paymentRequestUrl);
   } catch (error) {
     logError("public_payment_provider_configuration_invalid", error, {
       bookingId,
@@ -377,7 +379,7 @@ export async function startPublicWipayPayment({
   }
   if (provider === "WIPAY") {
     try {
-      assertWiPayAvailable(request.url);
+      assertWiPayAvailable(paymentRequestUrl);
     } catch (error) {
       return jsonError(
         409,
@@ -492,7 +494,7 @@ export async function startPublicWipayPayment({
 
       if (staleSessionId) {
         try {
-          await getStripeClient(request.url).checkout.sessions.expire(staleSessionId);
+          await getStripeClient(paymentRequestUrl).checkout.sessions.expire(staleSessionId);
         } catch {
           await client.query("rollback");
           return jsonError(
@@ -541,7 +543,7 @@ export async function startPublicWipayPayment({
           custom_amount_cents: startDetails.customAmountCents ?? null,
           total_amount: mode === "deposit" ? startDetails.amountCents : undefined,
           total_decimal: startDetails.totalDecimal,
-          env: provider === "STRIPE" ? `stripe_${getStripePaymentMode(request.url)}` : process.env.WIPAY_ENV ?? "sandbox",
+          env: provider === "STRIPE" ? `stripe_${getStripePaymentMode(paymentRequestUrl)}` : process.env.WIPAY_ENV ?? "sandbox",
           provider: provider,
           created_at: new Date().toISOString(),
         },
@@ -553,7 +555,7 @@ export async function startPublicWipayPayment({
 
     let redirectUrl = "";
     if (provider === "STRIPE") {
-      const stripe = getStripeClient(request.url);
+      const stripe = getStripeClient(paymentRequestUrl);
       const urls = stripeCheckoutUrls();
       const paymentLabel = startDetails.paymentType === "deposit" ? "Deposit" : startDetails.paymentType === "full" ? "Full payment" : startDetails.paymentType === "balance" ? "Balance payment" : "Custom payment";
       const vehicleLabel = `${booking.vehicle_year} ${booking.vehicle_make} ${booking.vehicle_model}`.trim();

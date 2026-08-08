@@ -1,6 +1,21 @@
 export type PaymentProvider = "WIPAY" | "STRIPE";
 export type StripePaymentMode = "test" | "live";
 
+export function getPublicPaymentRequestUrl(request: Request) {
+  const url = new URL(request.url);
+  const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const host = forwardedHost || request.headers.get("host")?.trim();
+  if (!host) return url.toString();
+
+  const forwardedProtocol = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  url.host = host;
+  url.port = "";
+  if (forwardedProtocol === "http" || forwardedProtocol === "https") {
+    url.protocol = `${forwardedProtocol}:`;
+  }
+  return url.toString();
+}
+
 function configuredProvider() {
   return (process.env.PAYMENT_PROVIDER ?? "wipay").trim().toLowerCase();
 }
