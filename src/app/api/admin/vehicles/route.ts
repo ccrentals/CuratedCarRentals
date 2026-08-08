@@ -8,8 +8,8 @@ import { requireCsrf } from "@/lib/security/csrf";
 import {
   UPLOADCARE_ALLOWED_RASTER_IMAGE_MIME_TYPES,
   UploadcareFileValidationError,
-  validateUploadcareFiles,
 } from "@/lib/uploads/uploadcare";
+import { validateVehicleGalleryFiles } from "@/lib/uploads/vehicleGallery";
 import { buildVehicleGalleryEntries } from "@/lib/vehicles/gallery";
 import { writeMediaAudit } from "@/lib/uploads/mediaAudit";
 
@@ -114,7 +114,7 @@ type AdminVehiclePostDeps = {
   authorize: () => Promise<AdminAccessResult>;
   requireCsrfCheck: (request: Request, bodyToken?: string | null) => Promise<boolean>;
   connect: () => Promise<VehicleMutationClient>;
-  validateUploads?: typeof validateUploadcareFiles;
+  validateUploads?: typeof validateVehicleGalleryFiles;
   writeMediaAudit?: typeof writeMediaAudit;
 };
 
@@ -136,7 +136,7 @@ const DEFAULT_POST_DEPS: AdminVehiclePostDeps = {
   authorize: () => requireAdminAccess(),
   requireCsrfCheck: (request, bodyToken) => requireCsrf(request, bodyToken),
   connect: async () => getDbPool().connect(),
-  validateUploads: validateUploadcareFiles,
+  validateUploads: validateVehicleGalleryFiles,
   writeMediaAudit,
 };
 

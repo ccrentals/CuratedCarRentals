@@ -10,8 +10,8 @@ import {
   deleteUploadcareFile,
   extractUploadcareFileId,
   UploadcareFileValidationError,
-  validateUploadcareFiles,
 } from "@/lib/uploads/uploadcare";
+import { validateVehicleGalleryFiles } from "@/lib/uploads/vehicleGallery";
 import { parseMoneyToCents, parseImageUrls } from "@/lib/validators";
 import { buildVehicleGalleryEntries } from "@/lib/vehicles/gallery";
 import { writeMediaAudit } from "@/lib/uploads/mediaAudit";
@@ -89,7 +89,7 @@ type AdminVehiclePatchDeps = {
   requireCsrfCheck: (request: Request, bodyToken?: string | null) => Promise<boolean>;
   connect: () => Promise<VehicleMutationClient>;
   writeAudit: typeof writeAuditLog;
-  validateUploads?: typeof validateUploadcareFiles;
+  validateUploads?: typeof validateVehicleGalleryFiles;
   deleteFile?: typeof deleteUploadcareFile;
   countActiveFileReferences?: (fileId: string) => Promise<number>;
   writeMediaAudit?: typeof writeMediaAudit;
@@ -162,7 +162,7 @@ const DEFAULT_PATCH_DEPS: AdminVehiclePatchDeps = {
   requireCsrfCheck: (request, bodyToken) => requireCsrf(request, bodyToken),
   connect: async () => getDbPool().connect(),
   writeAudit: writeAuditLog,
-  validateUploads: validateUploadcareFiles,
+  validateUploads: validateVehicleGalleryFiles,
   deleteFile: deleteUploadcareFile,
   writeMediaAudit,
   countActiveFileReferences: async (fileId) => {

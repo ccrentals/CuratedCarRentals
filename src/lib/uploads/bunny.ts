@@ -36,6 +36,36 @@ function normalizeHttpsOrigin(value: string, label: string) {
   }
 }
 
+export function getBunnyPublicCdnUrl(environment: NodeJS.ProcessEnv = process.env) {
+  const value = normalizeText(environment.BUNNY_PUBLIC_CDN_URL);
+  return value ? normalizeHttpsOrigin(value, "BUNNY_PUBLIC_CDN_URL") : null;
+}
+
+export function extractBunnyPublicStorageKey(value: unknown, publicCdnUrl: string) {
+  if (typeof value !== "string" || !value.trim()) return null;
+  try {
+    const parsed = new URL(value);
+    if (
+      parsed.origin !== publicCdnUrl ||
+      parsed.search ||
+      parsed.hash ||
+      parsed.username ||
+      parsed.password
+    ) {
+      return null;
+    }
+    const segments = parsed.pathname
+      .split("/")
+      .filter(Boolean)
+      .map((segment) => decodeURIComponent(segment));
+    if (segments.some((segment) => segment.includes("/") || segment.includes("\\\\"))) return null;
+    const storageKey = normalizeBunnyStorageKey(segments.join("/"));
+    return storageKey.startsWith("public/") ? storageKey : null;
+  } catch {
+    return null;
+  }
+}
+
 export function normalizeBunnyStorageKey(value: unknown) {
   const key = normalizeText(value).replace(/^\/+/, "");
   if (!key || key.includes("\\") || key.split("/").some((part) => !part || part === "." || part === "..")) {
@@ -61,7 +91,10 @@ export function getBunnyStorageConfig(
   );
   const publicCdnUrl =
     scope === "public"
-      ? normalizeHttpsOrigin(requiredEnvironmentValue(environment, "BUNNY_PUBLIC_CDN_URL"), "BUNNY_PUBLIC_CDN_URL")
+      ? getBunnyPublicCdnUrl(environment) ??
+        (() => {
+          throw new BunnyStorageError("BUNNY_PUBLIC_CDN_URL is not configured.", 503);
+        })()
       : null;
 
   return {
