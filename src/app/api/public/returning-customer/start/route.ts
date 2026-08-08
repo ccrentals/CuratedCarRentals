@@ -21,6 +21,7 @@ type CustomerLookupRow = {
   id: string;
   email: string | null;
   drivers_license_number: string | null;
+  legal_id_number: string | null;
 };
 
 function normalizeDriversLicense(value: unknown) {
@@ -136,7 +137,7 @@ export async function POST(request: Request) {
   }
 
   const customerResult = await dbQuery<CustomerLookupRow>(
-    "select id, email, drivers_license_number from customers where lower(coalesce(drivers_license_number, '')) = lower($1) limit 1",
+    "select id, email, drivers_license_number, legal_id_number from customers where lower(coalesce(drivers_license_number, '')) = lower($1) or lower(coalesce(legal_id_number, '')) = lower($1) order by case when lower(coalesce(drivers_license_number, '')) = lower($1) then 0 else 1 end limit 1",
     [driversLicenseNumber],
   );
 

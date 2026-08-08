@@ -65,6 +65,18 @@ test("Admin logout redirects to canonical SITE_URL rather than the deployment ho
   assert.doesNotMatch(logoutRoute, /new URL\(redirectUrl, request\.url\)/);
 });
 
+test("Returning-customer verification accepts stored legal IDs and does not require birthday", () => {
+  const startRoute = read("src/app/api/public/returning-customer/start/route.ts");
+  const verifyRoute = read("src/app/api/public/returning-customer/verify/route.ts");
+  const wizard = read("src/components/booking/PublicBookingWizard.tsx");
+
+  assert.match(startRoute, /legal_id_number/);
+  assert.match(verifyRoute, /legal_id_number/);
+  assert.match(verifyRoute, /otpCode && lastNameInput/);
+  assert.doesNotMatch(verifyRoute, /birthdayInput/);
+  assert.doesNotMatch(wizard, /returningBirthday/);
+});
+
 test("Pricing SSoT: quote preview and booking create use the shared quote snapshot builder", () => {
   const files = [
     "src/app/api/public/pricing/quote/route.ts",
