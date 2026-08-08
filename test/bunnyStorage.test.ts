@@ -5,6 +5,7 @@ import {
   buildBunnyPublicUrl,
   buildBunnyStorageObjectUrl,
   createBunnyStorageKey,
+  createBunnyVehicleGalleryStorageKey,
   getBunnyStorageConfig,
   normalizeBunnyStorageKey,
   uploadBunnyStorageObject,
@@ -72,5 +73,18 @@ test("Bunny storage: creates deterministic, scoped object keys when given a migr
       id: "migration-1",
     }),
     "private/2026-08-08/migration-1-Damian-s-licence.png",
+  );
+});
+
+test("Bunny storage: creates readable vehicle gallery keys", () => {
+  assert.equal(
+    createBunnyVehicleGalleryStorageKey({
+      vehiclePublicId: "VE000003",
+      vehicleLabel: "Subaru XV",
+      position: 2,
+      fileName: "front view.png",
+      id: "test-id",
+    }),
+    "public/vehicles/VE000003/subaru-xv/gallery-02-test-id-front-view.png",
   );
 });

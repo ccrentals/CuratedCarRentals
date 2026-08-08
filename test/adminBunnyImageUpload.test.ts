@@ -21,9 +21,10 @@ function authorized(): RequireAdminApiSessionResult {
   };
 }
 
-function request(files: Array<{ name: string; type: string; contents: string }>) {
+function request(files: Array<{ name: string; type: string; contents: string }>, vehicleId?: string) {
   const form = new FormData();
   form.set("csrfToken", "token");
+  if (vehicleId) form.set("vehicleId", vehicleId);
   for (const file of files) form.append("files", new Blob([file.contents], { type: file.type }), file.name);
   return new Request("http://localhost/api/admin/uploads/images", {
     method: "POST",
@@ -58,6 +59,30 @@ test("admin Bunny image upload stores validated images using server-only credent
       sizeBytes: 3,
     }],
   });
+});
+
+test("admin Bunny vehicle uploads use a readable vehicle gallery key", async () => {
+  let storedKey = "";
+  const response = await handleAdminImageUploadPost(
+    request(
+      [{ name: "front view.png", type: "image/png", contents: "png" }],
+      "11111111-1111-4111-8111-111111111111",
+    ),
+    {
+      requireUploadAccess: async () => authorized(),
+      requireCsrfCheck: async () => true,
+      getProvider: () => "bunny",
+      getPublicConfig: () => CONFIG,
+      getVehicleContext: async () => ({ publicId: "VE000003", vehicleLabel: "Subaru XV", galleryCount: 1 }),
+      createStorageKey: () => "unused",
+      uploadObject: async (_config, key) => { storedKey = key; },
+      deleteObject: async () => ({ alreadyDeleted: false }),
+      buildPublicUrl: (_config, key) => `https://ccrstagingmedia.b-cdn.net/${key}`,
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.match(storedKey, /^public\/vehicles\/VE000003\/subaru-xv\/gallery-02-[\w-]+-front-view\.png$/);
 });
 
 test("admin Bunny image upload rejects unsupported types before writing to storage", async () => {

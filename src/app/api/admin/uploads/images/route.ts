@@ -6,11 +6,13 @@ import { requireCsrf } from "@/lib/security/csrf";
 import {
   buildBunnyPublicUrl,
   createBunnyStorageKey,
+  createBunnyVehicleGalleryStorageKey,
   deleteBunnyStorageObject,
   getBunnyStorageConfig,
   uploadBunnyStorageObject,
   type BunnyStorageConfig,
 } from "@/lib/uploads/bunny";
+import { dbQuery } from "@/lib/db";
 
 const MAX_IMAGE_COUNT = 20;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
@@ -38,6 +40,11 @@ type AdminImageUploadRouteDeps = {
   uploadObject: typeof uploadBunnyStorageObject;
   deleteObject: typeof deleteBunnyStorageObject;
   buildPublicUrl: typeof buildBunnyPublicUrl;
+  getVehicleContext: (vehicleId: string) => Promise<{
+    publicId: string;
+    vehicleLabel: string;
+    galleryCount: number;
+  } | null>;
 };
 
 const DEFAULT_DEPS: AdminImageUploadRouteDeps = {
@@ -49,7 +56,33 @@ const DEFAULT_DEPS: AdminImageUploadRouteDeps = {
   uploadObject: uploadBunnyStorageObject,
   deleteObject: deleteBunnyStorageObject,
   buildPublicUrl: buildBunnyPublicUrl,
+  getVehicleContext: async (vehicleId) => {
+    const result = await dbQuery<{
+      public_id: string;
+      make: string;
+      model: string;
+      gallery_count: number;
+    }>(
+      `select public_id, make, model, coalesce(jsonb_array_length(image_urls_json), 0)::int as gallery_count
+       from vehicles
+       where id = $1::uuid and deleted_at is null
+       limit 1`,
+      [vehicleId],
+    );
+    const vehicle = result.rows[0];
+    return vehicle
+      ? {
+          publicId: vehicle.public_id,
+          vehicleLabel: `${vehicle.make} ${vehicle.model}`,
+          galleryCount: vehicle.gallery_count,
+        }
+      : null;
+  },
 };
+
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
 
 export async function GET() {
   const auth = await requireOperationsAccess();
@@ -84,6 +117,14 @@ export async function handleAdminImageUploadPost(
     return jsonNoStore({ error: `A maximum of ${MAX_IMAGE_COUNT} images can be uploaded at once.` }, 400);
   }
 
+  const vehicleId = form.get("vehicleId");
+  let vehicleContext: Awaited<ReturnType<AdminImageUploadRouteDeps["getVehicleContext"]>> = null;
+  if (typeof vehicleId === "string" && vehicleId.trim()) {
+    if (!isUuid(vehicleId)) return jsonNoStore({ error: "Invalid vehicle upload context." }, 400);
+    vehicleContext = await resolvedDeps.getVehicleContext(vehicleId);
+    if (!vehicleContext) return jsonNoStore({ error: "Vehicle upload context was not found." }, 404);
+  }
+
   for (const file of files) {
     const mimeType = file.type.trim().toLowerCase();
     if (!ALLOWED_IMAGE_TYPES.has(mimeType)) {
@@ -107,8 +148,15 @@ export async function handleAdminImageUploadPost(
   const storedKeys: string[] = [];
   try {
     const items = [];
-    for (const file of files) {
-      const storageKey = resolvedDeps.createStorageKey({ scope: "public", fileName: file.name });
+    for (const [fileIndex, file] of files.entries()) {
+      const storageKey = vehicleContext
+        ? createBunnyVehicleGalleryStorageKey({
+            vehiclePublicId: vehicleContext.publicId,
+            vehicleLabel: vehicleContext.vehicleLabel,
+            position: vehicleContext.galleryCount + fileIndex + 1,
+            fileName: file.name,
+          })
+        : resolvedDeps.createStorageKey({ scope: "public", fileName: file.name });
       await resolvedDeps.uploadObject(config, storageKey, file);
       storedKeys.push(storageKey);
       items.push({

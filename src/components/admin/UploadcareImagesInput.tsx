@@ -19,6 +19,7 @@ type UploadcareImagesInputProps = {
   displayMode?: "grid" | "carousel";
   disabled?: boolean;
   actionSlot?: ReactNode;
+  uploadContext?: { vehicleId: string };
 };
 
 type GlightboxInstance = {
@@ -144,6 +145,7 @@ export async function resolveUploadcareUrls(file: UploadcareSingleFile | Uploadc
 export async function openUploadcareImagesDialog(input: {
   multiple?: boolean;
   imagesOnly?: boolean;
+  vehicleId?: string;
 }) {
   const providerResponse = await fetch("/api/admin/uploads/images", {
     method: "GET",
@@ -202,7 +204,7 @@ function selectBrowserImages(input: { multiple?: boolean; imagesOnly?: boolean }
   });
 }
 
-async function openBunnyImagesDialog(input: { multiple?: boolean; imagesOnly?: boolean }) {
+async function openBunnyImagesDialog(input: { multiple?: boolean; imagesOnly?: boolean; vehicleId?: string }) {
   const files = await selectBrowserImages(input);
   if (files.length === 0) return [];
 
@@ -210,6 +212,7 @@ async function openBunnyImagesDialog(input: { multiple?: boolean; imagesOnly?: b
   if (!csrfToken) throw new Error("Unable to secure the upload. Refresh the page and try again.");
   const form = new FormData();
   form.set("csrfToken", csrfToken);
+  if (input.vehicleId) form.set("vehicleId", input.vehicleId);
   for (const file of files) form.append("files", file, file.name);
   const response = await fetch("/api/admin/uploads/images", {
     method: "POST",
@@ -269,6 +272,7 @@ export function UploadcareImagesInput({
   displayMode = "grid",
   disabled = false,
   actionSlot = null,
+  uploadContext,
 }: UploadcareImagesInputProps) {
   const [internal, setInternal] = useState<string[]>(() => value ?? []);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -343,6 +347,7 @@ export function UploadcareImagesInput({
       const nextUrls = await openUploadcareImagesDialog({
         multiple: true,
         imagesOnly: true,
+        vehicleId: uploadContext?.vehicleId,
       });
       const mergedUrls = mergeUploadcareImageUrls(urls, nextUrls);
       setUrls(mergedUrls);

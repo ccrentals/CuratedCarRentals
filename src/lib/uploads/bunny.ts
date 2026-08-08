@@ -139,6 +139,34 @@ export function createBunnyStorageKey(input: {
   return `${input.scope}/${date}/${input.id ?? randomUUID()}-${safeName}`;
 }
 
+export function createBunnyVehicleGalleryStorageKey(input: {
+  vehiclePublicId: string;
+  vehicleLabel: string;
+  position: number;
+  fileName: string;
+  id?: string;
+}) {
+  const vehiclePublicId = normalizeText(input.vehiclePublicId).replace(/[^a-zA-Z0-9_-]+/g, "-");
+  const vehicleSlug = normalizeText(input.vehicleLabel)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
+  if (!vehiclePublicId || !vehicleSlug || !Number.isInteger(input.position) || input.position < 1) {
+    throw new BunnyStorageError("Invalid Bunny vehicle gallery key.", 400);
+  }
+  const rawName = normalizeText(input.fileName) || "upload.bin";
+  const safeName = rawName
+    .split(/[\\/]/)
+    .at(-1)!
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 120) || "upload.bin";
+  return `public/vehicles/${vehiclePublicId}/${vehicleSlug}/gallery-${String(input.position).padStart(2, "0")}-${
+    input.id ?? randomUUID()
+  }-${safeName}`;
+}
+
 type BunnyFetchOptions = {
   fetchFn?: typeof fetch;
 };
