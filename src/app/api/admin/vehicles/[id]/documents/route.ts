@@ -3,7 +3,15 @@ import { NextResponse } from "next/server";
 import { requireAdminAccess } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery } from "@/lib/db";
+import { getFileStorageProvider } from "@/lib/env";
 import { requireCsrf } from "@/lib/security/csrf";
+import {
+  BunnyStorageError,
+  createBunnyVehicleDocumentStorageKey,
+  getBunnyStorageConfig,
+  normalizeBunnyStorageKey,
+  uploadBunnyStorageObject,
+} from "@/lib/uploads/bunny";
 import {
   extractUploadcareDeliveryUrl,
   extractUploadcareFileId,
@@ -48,6 +56,12 @@ type VehicleDocumentRow = {
 type DocumentsRouteContext = {
   params: Promise<{ id: string }>;
 };
+
+type UploadFile = File & { name: string; size: number; type: string };
+
+function isUploadFile(value: FormDataEntryValue | null): value is UploadFile {
+  return Boolean(value && typeof value !== "string" && typeof value.name === "string" && typeof value.size === "number");
+}
 
 type CreateVehicleDocumentInput = {
   folder: string;
@@ -131,11 +145,20 @@ function normalizeRecordId(value: unknown) {
 
 function mapDocument(row: VehicleDocumentRow) {
   const normalizedProvider = row.storage_provider.trim().toUpperCase();
-  const providerIsSupported =
-    !normalizedProvider || ["UPLOADCARE_FILE_ID", "UPLOADCARE", "UPLOADCARE_TOKEN"].includes(normalizedProvider);
+  const isBunnyStorage = normalizedProvider === "BUNNY_STORAGE";
+  const providerIsSupported = !normalizedProvider || isBunnyStorage ||
+    ["UPLOADCARE_FILE_ID", "UPLOADCARE", "UPLOADCARE_TOKEN"].includes(normalizedProvider);
   const hasDeliveryUrl = Boolean(extractUploadcareDeliveryUrl(row.storage_key ?? ""));
   const hasKnownFileId = Boolean(extractUploadcareFileId(row.storage_key ?? ""));
-  const canDownload = providerIsSupported && (hasDeliveryUrl || hasKnownFileId);
+  let hasBunnyStorageKey = false;
+  if (isBunnyStorage) {
+    try {
+      hasBunnyStorageKey = normalizeBunnyStorageKey(row.storage_key ?? "").startsWith("private/vehicles/");
+    } catch {
+      hasBunnyStorageKey = false;
+    }
+  }
+  const canDownload = providerIsSupported && (hasBunnyStorageKey || hasDeliveryUrl || hasKnownFileId);
   return {
     id: row.id,
     vehicleId: row.vehicle_id,
@@ -360,8 +383,12 @@ export async function handleAdminVehicleDocumentsPost(
   if (!auth.ok) return auth.response;
   const session = auth.session;
 
-  const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
-  if (!(await deps.requireCsrfCheck(request, (body?.csrfToken as string | null | undefined) ?? null))) {
+  const isMultipart = request.headers.get("content-type")?.toLowerCase().includes("multipart/form-data") ?? false;
+  const form = isMultipart ? await request.formData().catch(() => null) : null;
+  const body = isMultipart ? null : (await request.json().catch(() => null)) as Record<string, unknown> | null;
+  const read = (key: string) => form?.get(key) ?? body?.[key];
+  const csrfToken = read("csrfToken");
+  if (!(await deps.requireCsrfCheck(request, typeof csrfToken === "string" ? csrfToken : null))) {
     return NextResponse.json({ ok: false, error: "Invalid CSRF token" }, { status: 403 });
   }
 
@@ -370,38 +397,35 @@ export async function handleAdminVehicleDocumentsPost(
     return NextResponse.json({ ok: false, error: "Invalid vehicle id" }, { status: 400 });
   }
 
-  const folder = normalizeFolder(body?.folder);
-  const documentType = normalizeDocumentType(body?.document_type ?? body?.documentType);
+  const folder = normalizeFolder(read("folder"));
+  const documentType = normalizeDocumentType(read("document_type") ?? read("documentType"));
+  const uploadedFile = isMultipart ? form?.get("file") ?? null : null;
+  const isBunnyUpload = isMultipart && isUploadFile(uploadedFile);
   const storageProvider =
-    normalizeText(body?.storage_provider ?? body?.storageProvider).toUpperCase() || "UPLOADCARE_FILE_ID";
+    isBunnyUpload ? "BUNNY_STORAGE" : normalizeText(read("storage_provider") ?? read("storageProvider")).toUpperCase() || "UPLOADCARE_FILE_ID";
   const rawStorageReference =
-    body?.storage_key ??
-    body?.storageKey ??
-    body?.uploadcareFileId ??
-    body?.uploadcare_file_id ??
-    body?.fileId ??
-    body?.cdnUrl;
+    read("storage_key") ?? read("storageKey") ?? read("uploadcareFileId") ?? read("uploadcare_file_id") ?? read("fileId") ?? read("cdnUrl");
   const rawStorageText = normalizeText(rawStorageReference);
   const uploadcareFileId = extractUploadcareFileId(rawStorageReference);
   const normalizedStorageKey =
     uploadcareFileId ?? extractUploadcareDeliveryUrl(rawStorageText);
-  const title = normalizeTitle(body?.title, documentType || "Document");
-  const label = normalizeNullableText(body?.label, 140);
+  const title = normalizeTitle(read("title"), documentType || "Document");
+  const label = normalizeNullableText(read("label"), 140);
   const maintenanceRecordId = normalizeRecordId(
-    body?.maintenanceRecordId ?? body?.maintenance_record_id,
+    read("maintenanceRecordId") ?? read("maintenance_record_id"),
   );
   const checklistItemId = normalizeRecordId(
-    body?.checklistItemId ?? body?.checklist_item_id,
+    read("checklistItemId") ?? read("checklist_item_id"),
   );
-  const mimeType = normalizeMimeType(body?.mime_type ?? body?.mimeType);
-  const sizeBytes = normalizeSizeBytes(body?.size_bytes ?? body?.sizeBytes);
-  const fileSizeBytes = normalizeSizeBytes(body?.file_size_bytes ?? body?.fileSizeBytes ?? sizeBytes);
+  const mimeType = isBunnyUpload ? normalizeMimeType(uploadedFile.type) : normalizeMimeType(read("mime_type") ?? read("mimeType"));
+  const sizeBytes = isBunnyUpload ? uploadedFile.size : normalizeSizeBytes(read("size_bytes") ?? read("sizeBytes"));
+  const fileSizeBytes = isBunnyUpload ? uploadedFile.size : normalizeSizeBytes(read("file_size_bytes") ?? read("fileSizeBytes") ?? sizeBytes);
   const tags = normalizeTags(body?.tags);
 
   if (!folder) {
     return NextResponse.json({ ok: false, error: "Folder is required." }, { status: 400 });
   }
-  if (!normalizedStorageKey) {
+  if (!isBunnyUpload && !normalizedStorageKey) {
     return NextResponse.json(
       { ok: false, error: "Invalid upload reference. Upload a file first." },
       { status: 400 },
@@ -410,12 +434,29 @@ export async function handleAdminVehicleDocumentsPost(
   if (!documentType) {
     return NextResponse.json({ ok: false, error: "Document type is required." }, { status: 400 });
   }
-  if (!["UPLOADCARE_FILE_ID", "UPLOADCARE", "UPLOADCARE_TOKEN"].includes(storageProvider)) {
+  if (isMultipart && (!isBunnyUpload || getFileStorageProvider() !== "bunny")) {
+    return NextResponse.json({ ok: false, error: "Private Bunny uploads are not active for this environment." }, { status: 409 });
+  }
+  if (isBunnyUpload && (
+    !mimeType || !VEHICLE_DOCUMENT_POLICY.allowedMimeTypes.includes(mimeType as never) || !sizeBytes || sizeBytes > VEHICLE_DOCUMENT_POLICY.maxBytes
+  )) {
+    return NextResponse.json({ ok: false, error: "Select a PDF, JPG, PNG, WebP, HEIC, or HEIF file no larger than 20 MB." }, { status: 400 });
+  }
+  if (!["UPLOADCARE_FILE_ID", "UPLOADCARE", "UPLOADCARE_TOKEN", "BUNNY_STORAGE"].includes(storageProvider)) {
     return NextResponse.json({ ok: false, error: "Unsupported storage provider." }, { status: 400 });
   }
 
+  let uploadedBunnyStorageKey: string | null = null;
   try {
-    await deps.validateUploads?.([normalizedStorageKey], VEHICLE_DOCUMENT_POLICY);
+    let storageKey = normalizedStorageKey ?? "";
+    if (isBunnyUpload) {
+      const config = getBunnyStorageConfig("private");
+      storageKey = createBunnyVehicleDocumentStorageKey({ vehicleId: id, fileName: uploadedFile.name });
+      await uploadBunnyStorageObject(config, storageKey, uploadedFile);
+      uploadedBunnyStorageKey = storageKey;
+    } else {
+      await deps.validateUploads?.([storageKey], VEHICLE_DOCUMENT_POLICY);
+    }
     const row = await deps.createDocument(id, {
       folder,
       maintenanceRecordId,
@@ -424,7 +465,7 @@ export async function handleAdminVehicleDocumentsPost(
       title,
       label,
       storageProvider,
-      storageKey: normalizedStorageKey,
+      storageKey,
       mimeType,
       sizeBytes,
       fileSizeBytes,
@@ -437,11 +478,11 @@ export async function handleAdminVehicleDocumentsPost(
         action: "MEDIA_UPLOAD",
         entityType: "vehicle",
         entityId: id,
-        fileId: normalizedStorageKey,
+        fileId: storageKey,
         context: maintenanceRecordId ? "maintenance document" : "vehicle document",
         label: title,
-        outcome: "Saved to vehicle files",
-        details: { documentId: row.id, folder, documentType },
+        outcome: isBunnyUpload ? "Saved privately to Bunny Storage" : "Saved to vehicle files",
+        details: { documentId: row.id, folder, documentType, storageProvider },
       });
     } catch {
       // Document creation remains successful when audit logging is unavailable.
@@ -449,11 +490,21 @@ export async function handleAdminVehicleDocumentsPost(
 
     return NextResponse.json({ ok: true, item: mapDocument(row) });
   } catch (error) {
+    if (uploadedBunnyStorageKey) {
+      try {
+        await deleteBunnyStorageObject(getBunnyStorageConfig("private"), uploadedBunnyStorageKey);
+      } catch {
+        // The primary save failure is more useful than a best-effort cleanup failure.
+      }
+    }
     if (error instanceof UploadcareFileValidationError) {
       return NextResponse.json(
         { ok: false, error: error.message },
         { status: error.status },
       );
+    }
+    if (error instanceof BunnyStorageError) {
+      return NextResponse.json({ ok: false, error: error.message }, { status: error.status });
     }
     const message = String((error as Error | null)?.message ?? "");
     if (message === "VEHICLE_NOT_FOUND") {
