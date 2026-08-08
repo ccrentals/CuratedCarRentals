@@ -361,7 +361,20 @@ export async function startPublicWipayPayment({
   /** Existing WiPay/mobile callers pass WIPAY; the website-neutral route omits this. */
   forceProvider?: PaymentProvider;
 }) {
-  const provider = forceProvider ?? getPublicPaymentProvider(request.url);
+  let provider: PaymentProvider;
+  try {
+    provider = forceProvider ?? getPublicPaymentProvider(request.url);
+  } catch (error) {
+    logError("public_payment_provider_configuration_invalid", error, {
+      bookingId,
+      forcedProvider: forceProvider ?? null,
+    });
+    return jsonError(
+      503,
+      "provider_unavailable",
+      "Online payment is temporarily unavailable. Please try again shortly.",
+    );
+  }
   if (provider === "WIPAY") {
     try {
       assertWiPayAvailable(request.url);
