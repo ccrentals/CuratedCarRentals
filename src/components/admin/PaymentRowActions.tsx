@@ -17,7 +17,7 @@ type PaymentRowActionsProps = {
   requireRestoreReason?: boolean;
 };
 
-type Mode = "delete" | "restore" | "refund" | null;
+type Mode = "delete" | "restore" | "refund" | "reconcile" | null;
 
 export function PaymentRowActions({
   paymentId,
@@ -40,14 +40,16 @@ export function PaymentRowActions({
   const refunded = Boolean(isRefunded);
   const showManualActions = canAdmin && provider === "MANUAL";
   const showRefundAction = canAdmin && (provider === "WIPAY" || provider === "STRIPE") && status === "DEPOSIT_PAID" && amount > 0;
+  const showReconcileAction = canAdmin && provider === "STRIPE" && status === "INITIATED";
 
   const title = useMemo(() => {
     if (showManualActions) {
       return isDeleted ? "Restore payment" : "Cancel payment";
     }
     if (showRefundAction) return provider === "STRIPE" ? "Refund Stripe test payment" : "Record manual refund adjustment";
+    if (showReconcileAction) return "Check Stripe and update this payment";
     return "";
-  }, [showManualActions, isDeleted, showRefundAction, provider]);
+  }, [showManualActions, isDeleted, showRefundAction, showReconcileAction, provider]);
 
   async function submit(action: "delete" | "restore") {
     if (loading) return;
@@ -137,7 +139,29 @@ export function PaymentRowActions({
     router.refresh();
   }
 
-  if (!showManualActions && !showRefundAction) return null;
+  async function submitReconcile() {
+    if (loading) return;
+    setLoading(true);
+    setError(null);
+
+    const csrfToken = await ensureCsrfToken();
+    const response = await fetch(`/api/admin/payments/${paymentId}/reconcile`, {
+      method: "POST",
+      headers: { "x-csrf-token": csrfToken ?? "" },
+    });
+    const data = await response.json().catch(() => ({}));
+    setLoading(false);
+
+    if (!response.ok || !data.ok) {
+      setError(data.error ?? "Stripe could not confirm this payment.");
+      return;
+    }
+
+    setMode(null);
+    router.refresh();
+  }
+
+  if (!showManualActions && !showRefundAction && !showReconcileAction) return null;
 
   return (
     <div data-testid="payment-row-actions" className="flex items-center justify-end gap-2">
@@ -180,6 +204,21 @@ export function PaymentRowActions({
         </button>
       ) : null}
 
+      {showReconcileAction ? (
+        <button
+          type="button"
+          data-testid="payment-row-action-reconcile"
+          onClick={() => {
+            setError(null);
+            setMode("reconcile");
+          }}
+          title={title}
+          className={buttonStyles({ variant: "secondary", size: "sm" })}
+        >
+          Reconcile
+        </button>
+      ) : null}
+
       {mode ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
           <div
@@ -199,14 +238,18 @@ export function PaymentRowActions({
                 ? "Cancel manual payment"
                 : mode === "restore"
                   ? "Restore manual payment"
-                  : "Record manual refund adjustment"}
+                  : mode === "refund"
+                    ? "Record manual refund adjustment"
+                    : "Reconcile Stripe payment"}
             </h3>
             <p className="mt-1 text-sm text-[var(--ccr-muted)]">
               {mode === "delete"
                 ? "This will cancel the payment entry and roll totals back."
                 : mode === "restore"
                   ? "This will restore the payment and re-apply totals."
-                  : "This records a manual refund adjustment in the system and adjusts totals. It does not call WiPay automatically."}
+                  : mode === "refund"
+                    ? "This records a manual refund adjustment in the system and adjusts totals. It does not call WiPay automatically."
+                    : "This checks the existing Stripe Checkout Session and updates the booking only if Stripe confirms payment. It never creates a new charge."}
             </p>
 
             {mode === "delete" ? (
@@ -231,7 +274,7 @@ export function PaymentRowActions({
                   className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
                 />
               </label>
-            ) : (
+            ) : mode === "refund" ? (
               <div className="mt-4 space-y-3">
                 <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3 text-sm text-[var(--ccr-muted)]">
                   <div className="flex items-center justify-between">
@@ -250,7 +293,7 @@ export function PaymentRowActions({
                   />
                 </label>
               </div>
-            )}
+            ) : null}
 
             {error ? (
               <p data-testid="payment-row-action-error" className="mt-3 text-xs text-red-300">
@@ -274,7 +317,7 @@ export function PaymentRowActions({
               <button
                 type="button"
                 data-testid="payment-row-action-confirm"
-                onClick={() => (mode === "refund" ? submitRefund() : submit(mode))}
+                onClick={() => (mode === "refund" ? submitRefund() : mode === "reconcile" ? submitReconcile() : submit(mode))}
                 disabled={loading}
                 className={
                   mode === "delete"
@@ -288,7 +331,9 @@ export function PaymentRowActions({
                       ? "Cancel payment"
                       : mode === "restore"
                         ? "Restore"
-                        : "Record adjustment"}
+                      : mode === "refund"
+                        ? "Record adjustment"
+                        : "Reconcile payment"}
                 </button>
             </div>
           </div>

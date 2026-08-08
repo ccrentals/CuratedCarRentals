@@ -42,6 +42,13 @@ test("WiPay callbacks use canonical SITE_URL rather than request-origin fallback
   assert.doesNotMatch(paymentStart, /request\.url\)\.origin/);
 });
 
+test("Stripe admin reconciliation uses the forwarded public payment URL", () => {
+  const route = read("src/app/api/admin/payments/[paymentId]/reconcile/route.ts");
+  assert.match(route, /getPublicPaymentRequestUrl\(request\)/);
+  assert.match(route, /getStripeClient\(paymentRequestUrl\)/);
+  assert.match(route, /reconcileStripeCheckoutSession\(session, "admin", paymentRequestUrl\)/);
+});
+
 test("Pricing SSoT: quote preview and booking create use the shared quote snapshot builder", () => {
   const files = [
     "src/app/api/public/pricing/quote/route.ts",
