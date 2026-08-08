@@ -86,6 +86,49 @@ function formatDetailValue(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
 
+function isDetailRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function DetailValue({ value }: { value: unknown }) {
+  if (isDetailRecord(value)) {
+    const entries = Object.entries(value);
+    if (entries.length === 0) return <span className="font-mono text-[var(--ccr-text)]">&#123;&#125;</span>;
+
+    return (
+      <dl className="divide-y divide-[var(--ccr-border)] rounded-md border border-[var(--ccr-border)] bg-[var(--ccr-surface)] text-xs">
+        {entries.map(([key, nestedValue]) => (
+          <div key={key} className="grid gap-1 px-3 py-2 sm:grid-cols-[minmax(7rem,0.8fr)_minmax(0,1.8fr)]">
+            <dt className="font-semibold text-[var(--ccr-muted)]">{formatDetailLabel(key)}</dt>
+            <dd className="min-w-0 break-words text-[var(--ccr-text)]">
+              <DetailValue value={nestedValue} />
+            </dd>
+          </div>
+        ))}
+      </dl>
+    );
+  }
+
+  if (Array.isArray(value)) {
+    if (value.length === 0) return <span className="font-mono text-[var(--ccr-text)]">[]</span>;
+
+    return (
+      <ol className="space-y-2">
+        {value.map((entry, index) => (
+          <li key={index} className="grid gap-1 sm:grid-cols-[minmax(2rem,auto)_minmax(0,1fr)]">
+            <span className="font-semibold text-[var(--ccr-muted)]">{index + 1}</span>
+            <div className="min-w-0 break-words text-[var(--ccr-text)]">
+              <DetailValue value={entry} />
+            </div>
+          </li>
+        ))}
+      </ol>
+    );
+  }
+
+  return <span className="whitespace-pre-wrap font-mono text-[var(--ccr-text)]">{formatDetailValue(value)}</span>;
+}
+
 function DetailObjectList({
   value,
   emptyLabel = "No details recorded.",
@@ -103,9 +146,7 @@ function DetailObjectList({
       {entries.map(([key, detailValue]) => (
         <div key={key} className="grid gap-1 px-3 py-2 sm:grid-cols-[minmax(8rem,0.8fr)_minmax(0,1.8fr)]">
           <dt className="font-semibold text-[var(--ccr-muted)]">{formatDetailLabel(key)}</dt>
-          <dd className="whitespace-pre-wrap break-words font-mono text-[var(--ccr-text)]">
-            {formatDetailValue(detailValue)}
-          </dd>
+          <dd className="min-w-0 break-words"><DetailValue value={detailValue} /></dd>
         </div>
       ))}
     </dl>
