@@ -144,9 +144,16 @@ function DetailObjectList({
   return (
     <dl className="mt-3 divide-y divide-[var(--ccr-border)] rounded-lg bg-[var(--ccr-bg)] text-xs">
       {entries.map(([key, detailValue]) => (
-        <div key={key} className="grid gap-1 px-3 py-2 sm:grid-cols-[minmax(8rem,0.8fr)_minmax(0,1.8fr)]">
+        <div
+          key={key}
+          className={
+            isDetailRecord(detailValue) || Array.isArray(detailValue)
+              ? "px-3 py-2"
+              : "grid gap-1 px-3 py-2 sm:grid-cols-[minmax(8rem,0.8fr)_minmax(0,1.8fr)]"
+          }
+        >
           <dt className="font-semibold text-[var(--ccr-muted)]">{formatDetailLabel(key)}</dt>
-          <dd className="min-w-0 break-words"><DetailValue value={detailValue} /></dd>
+          <dd className="min-w-0 break-words [&_dl]:mt-2"><DetailValue value={detailValue} /></dd>
         </div>
       ))}
     </dl>
