@@ -2600,7 +2600,6 @@ export function PublicBookingWizard({
     setReturningChallengeToken("");
     setReturningOtpCode("");
     setReturningLastName("");
-    setReturningBirthday("");
     setReturningBusy(false);
     setSubmitting(false);
     setErrorMessage(null);
