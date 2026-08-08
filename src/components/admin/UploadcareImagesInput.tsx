@@ -8,6 +8,7 @@ import {
   getUploadcareClientErrorMessage,
   getUploadcareSignedOptions,
 } from "@/lib/uploads/uploadcare-client";
+import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
 type UploadcareImagesInputProps = {
   label?: string;
@@ -144,6 +145,21 @@ export async function openUploadcareImagesDialog(input: {
   multiple?: boolean;
   imagesOnly?: boolean;
 }) {
+  const providerResponse = await fetch("/api/admin/uploads/images", {
+    method: "GET",
+    cache: "no-store",
+    credentials: "include",
+  });
+  const providerPayload = (await providerResponse.json().catch(() => null)) as
+    | { provider?: unknown; error?: string }
+    | null;
+  if (!providerResponse.ok) {
+    throw new Error(providerPayload?.error ?? "Unable to authorize the upload.");
+  }
+  if (providerPayload?.provider === "bunny") {
+    return openBunnyImagesDialog(input);
+  }
+
   const signedOptions = await getUploadcareSignedOptions();
   await loadUploadcareScript();
   window.UPLOADCARE_PUBLIC_KEY = signedOptions.publicKey;
@@ -172,6 +188,44 @@ export async function openUploadcareImagesDialog(input: {
       reject(new Error(error?.message ?? "Upload cancelled."));
     });
   });
+}
+
+function selectBrowserImages(input: { multiple?: boolean; imagesOnly?: boolean }) {
+  return new Promise<File[]>((resolve) => {
+    const picker = document.createElement("input");
+    picker.type = "file";
+    picker.multiple = input.multiple ?? true;
+    picker.accept = input.imagesOnly === false ? "*/*" : "image/jpeg,image/png,image/webp,image/heic,image/heif";
+    picker.addEventListener("change", () => resolve(Array.from(picker.files ?? [])), { once: true });
+    picker.addEventListener("cancel", () => resolve([]), { once: true });
+    picker.click();
+  });
+}
+
+async function openBunnyImagesDialog(input: { multiple?: boolean; imagesOnly?: boolean }) {
+  const files = await selectBrowserImages(input);
+  if (files.length === 0) return [];
+
+  const csrfToken = await ensureCsrfToken();
+  if (!csrfToken) throw new Error("Unable to secure the upload. Refresh the page and try again.");
+  const form = new FormData();
+  form.set("csrfToken", csrfToken);
+  for (const file of files) form.append("files", file, file.name);
+  const response = await fetch("/api/admin/uploads/images", {
+    method: "POST",
+    headers: { "x-csrf-token": csrfToken },
+    credentials: "include",
+    body: form,
+  });
+  const payload = (await response.json().catch(() => null)) as
+    | { error?: string; items?: Array<{ url?: unknown }> }
+    | null;
+  if (!response.ok || !Array.isArray(payload?.items)) {
+    throw new Error(payload?.error ?? "Unable to upload images.");
+  }
+  return payload.items
+    .map((item) => (typeof item.url === "string" ? item.url : ""))
+    .filter(Boolean);
 }
 
 export function mergeUploadcareImageUrls(
