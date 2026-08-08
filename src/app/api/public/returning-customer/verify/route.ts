@@ -226,7 +226,7 @@ export async function POST(request: Request) {
     customer: {
       customerId: customer.id,
       firstName: normalizeText(customer.first_name ?? "") || normalizeText(customer.full_name).split(/\s+/)[0] || null,
-      lastName: normalizeText(customer.last_name ?? "") || getEffectiveLastName(customer) || null,
+      lastName: getCustomerLastName(customer) || null,
       emailAddress: normalizeText(customer.email ?? "") || null,
       phoneNumber: normalizeText(customer.phone ?? "") || null,
       street: normalizeText(customer.street ?? "") || null,
