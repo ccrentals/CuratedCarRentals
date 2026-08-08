@@ -66,11 +66,18 @@ export type EnvValidation = {
 };
 
 export type InvoiceProvider = "pdfmonkey" | "gotenberg";
+export type FileStorageProvider = "uploadcare" | "bunny";
 
 export function getInvoiceProvider(): InvoiceProvider {
   const provider = (process.env.INVOICE_PDF_PROVIDER ?? "pdfmonkey").trim().toLowerCase();
   if (provider === "gotenberg") return "gotenberg";
   return "pdfmonkey";
+}
+
+export function getFileStorageProvider(): FileStorageProvider {
+  return (process.env.FILE_STORAGE_PROVIDER ?? "uploadcare").trim().toLowerCase() === "bunny"
+    ? "bunny"
+    : "uploadcare";
 }
 
 export function validateEnv(): EnvValidation {
@@ -166,8 +173,28 @@ export function validateEnv(): EnvValidation {
     invoicesMissing.push(...missingKeys(["PDFMONKEY_API_KEY", "PDFMONKEY_TEMPLATE_ID"]));
   }
 
-  const uploadsMissing = missingKeys(["NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY"]);
+  const fileStorageProviderRaw = (process.env.FILE_STORAGE_PROVIDER ?? "uploadcare").trim().toLowerCase();
+  const fileStorageProvider = getFileStorageProvider();
+  const uploadsMissing =
+    fileStorageProvider === "bunny"
+      ? missingKeys([
+          "BUNNY_STORAGE_PUBLIC_ZONE",
+          "BUNNY_STORAGE_PUBLIC_ACCESS_KEY",
+          "BUNNY_STORAGE_PRIVATE_ZONE",
+          "BUNNY_STORAGE_PRIVATE_ACCESS_KEY",
+          "BUNNY_PUBLIC_CDN_URL",
+        ])
+      : missingKeys(["NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY"]);
   const uploadsInvalid: string[] = [];
+  if (!["uploadcare", "bunny"].includes(fileStorageProviderRaw)) {
+    uploadsInvalid.push("FILE_STORAGE_PROVIDER must be uploadcare or bunny");
+  }
+  if (isNonEmpty(process.env.BUNNY_STORAGE_ENDPOINT) && !isValidUrl(process.env.BUNNY_STORAGE_ENDPOINT)) {
+    uploadsInvalid.push("BUNNY_STORAGE_ENDPOINT must be a valid http(s) URL");
+  }
+  if (fileStorageProvider === "bunny" && !isValidUrl(process.env.BUNNY_PUBLIC_CDN_URL)) {
+    uploadsInvalid.push("BUNNY_PUBLIC_CDN_URL must be a valid http(s) URL");
+  }
 
   const cronMissing = missingKeys(["CRON_SECRET"]);
   const cronInvalid: string[] = [];
