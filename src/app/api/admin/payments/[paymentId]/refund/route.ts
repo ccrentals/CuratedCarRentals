@@ -6,6 +6,7 @@ import { writeAuditLog } from "@/lib/audit";
 import { logError } from "@/lib/log";
 import { requireCsrf } from "@/lib/security/csrf";
 import { recalculateBookingPayments } from "@/lib/payments/recalculateBooking";
+import { getPublicPaymentRequestUrl, getStripePaymentMode } from "@/lib/payments/provider";
 import { getStripeClient } from "@/lib/payments/stripe";
 
 export async function POST(
@@ -21,6 +22,7 @@ export async function POST(
   }
 
   const { paymentId } = await params;
+  const paymentRequestUrl = getPublicPaymentRequestUrl(request);
   const body = await request.json().catch(() => null);
   const reason = typeof body?.reason === "string" ? body.reason.trim() : "";
 
@@ -60,7 +62,7 @@ export async function POST(
     if (original.provider !== "WIPAY" && original.provider !== "STRIPE") {
       await client.query("rollback");
       return NextResponse.json(
-        { error: "Only WiPay or staging Stripe payments can be refunded here" },
+        { error: "Only WiPay or Stripe payments can be refunded here" },
         { status: 400 },
       );
     }
@@ -90,9 +92,16 @@ export async function POST(
         await client.query("rollback");
         return NextResponse.json({ error: "Stripe Payment Intent is missing" }, { status: 409 });
       }
-      const refund = await getStripeClient(request.url).refunds.create(
-        { payment_intent: original.provider_transaction_id, metadata: { original_payment_id: original.id, reason, refund_environment: "staging_test" } },
-        { idempotencyKey: `stripe-test-refund-${original.id}` },
+      const refund = await getStripeClient(paymentRequestUrl).refunds.create(
+        {
+          payment_intent: original.provider_transaction_id,
+          metadata: {
+            original_payment_id: original.id,
+            reason,
+            refund_environment: getStripePaymentMode(paymentRequestUrl),
+          },
+        },
+        { idempotencyKey: `stripe-refund-${original.id}` },
       );
       if (refund.status !== "succeeded") {
         await client.query("rollback");
@@ -157,7 +166,7 @@ export async function POST(
   } catch (error) {
     await client.query("rollback");
     logError("api.admin.payments.refund.POST", error, { userId: actor.userId, paymentId });
-    return NextResponse.json({ error: "Failed to record manual refund adjustment" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to process the payment refund" }, { status: 500 });
   } finally {
     client.release();
   }

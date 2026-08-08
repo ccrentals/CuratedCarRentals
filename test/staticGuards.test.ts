@@ -49,6 +49,14 @@ test("Stripe admin reconciliation uses the forwarded public payment URL", () => 
   assert.match(route, /reconcileStripeCheckoutSession\(session, "admin", paymentRequestUrl\)/);
 });
 
+test("Stripe refunds use the forwarded public payment URL and are not test-only", () => {
+  const route = read("src/app/api/admin/payments/[paymentId]/refund/route.ts");
+  assert.match(route, /getPublicPaymentRequestUrl\(request\)/);
+  assert.match(route, /getStripeClient\(paymentRequestUrl\)\.refunds\.create/);
+  assert.match(route, /stripe-refund-/);
+  assert.doesNotMatch(route, /stripe-test-refund|staging_test/);
+});
+
 test("Pricing SSoT: quote preview and booking create use the shared quote snapshot builder", () => {
   const files = [
     "src/app/api/public/pricing/quote/route.ts",

@@ -41,15 +41,16 @@ export function PaymentRowActions({
   const showManualActions = canAdmin && provider === "MANUAL";
   const showRefundAction = canAdmin && (provider === "WIPAY" || provider === "STRIPE") && status === "DEPOSIT_PAID" && amount > 0;
   const showReconcileAction = canAdmin && provider === "STRIPE" && status === "INITIATED";
+  const isStripeRefund = provider === "STRIPE";
 
   const title = useMemo(() => {
     if (showManualActions) {
       return isDeleted ? "Restore payment" : "Cancel payment";
     }
-    if (showRefundAction) return provider === "STRIPE" ? "Refund Stripe test payment" : "Record manual refund adjustment";
+    if (showRefundAction) return isStripeRefund ? "Issue a refund through Stripe" : "Record manual refund adjustment";
     if (showReconcileAction) return "Check Stripe and update this payment";
     return "";
-  }, [showManualActions, isDeleted, showRefundAction, showReconcileAction, provider]);
+  }, [showManualActions, isDeleted, showRefundAction, showReconcileAction, isStripeRefund]);
 
   async function submit(action: "delete" | "restore") {
     if (loading) return;
@@ -200,7 +201,7 @@ export function PaymentRowActions({
           title={refunded ? "Already refunded" : title}
           className={buttonStyles({ variant: "secondary", size: "sm" })}
         >
-          Record adjustment
+          {isStripeRefund ? "Refund via Stripe" : "Record adjustment"}
         </button>
       ) : null}
 
@@ -239,7 +240,9 @@ export function PaymentRowActions({
                 : mode === "restore"
                   ? "Restore manual payment"
                   : mode === "refund"
-                    ? "Record manual refund adjustment"
+                    ? isStripeRefund
+                      ? "Refund Stripe payment"
+                      : "Record manual refund adjustment"
                     : "Reconcile Stripe payment"}
             </h3>
             <p className="mt-1 text-sm text-[var(--ccr-muted)]">
@@ -248,7 +251,9 @@ export function PaymentRowActions({
                 : mode === "restore"
                   ? "This will restore the payment and re-apply totals."
                   : mode === "refund"
-                    ? "This records a manual refund adjustment in the system and adjusts totals. It does not call WiPay automatically."
+                    ? isStripeRefund
+                      ? "This sends a real refund to the original payment method through Stripe. The booking totals will update only after Stripe confirms it."
+                      : "This records a manual refund adjustment in the system and adjusts totals. It does not call WiPay automatically."
                     : "This checks the existing Stripe Checkout Session and updates the booking only if Stripe confirms payment. It never creates a new charge."}
             </p>
 
@@ -278,7 +283,7 @@ export function PaymentRowActions({
               <div className="mt-4 space-y-3">
                 <div className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3 text-sm text-[var(--ccr-muted)]">
                   <div className="flex items-center justify-between">
-                    <span>Adjustment amount</span>
+                    <span>{isStripeRefund ? "Refund amount" : "Adjustment amount"}</span>
                     <span className="font-semibold text-[var(--ccr-text)]">{amount.toFixed(2)}</span>
                   </div>
                 </div>
@@ -332,7 +337,9 @@ export function PaymentRowActions({
                       : mode === "restore"
                         ? "Restore"
                       : mode === "refund"
-                        ? "Record adjustment"
+                        ? isStripeRefund
+                          ? "Refund payment"
+                          : "Record adjustment"
                         : "Reconcile payment"}
                 </button>
             </div>
