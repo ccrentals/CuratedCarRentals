@@ -167,6 +167,25 @@ export function createBunnyVehicleGalleryStorageKey(input: {
   }-${safeName}`;
 }
 
+export function createBunnyCustomerLegalIdStorageKey(input: {
+  customerPublicId: string;
+  fileName: string;
+  id?: string;
+}) {
+  const customerPublicId = normalizeText(input.customerPublicId).replace(/[^a-zA-Z0-9_-]+/g, "-");
+  if (!customerPublicId) {
+    throw new BunnyStorageError("Invalid Bunny customer identification key.", 400);
+  }
+  const rawName = normalizeText(input.fileName) || "id-image.bin";
+  const safeName = rawName
+    .split(/[\\/]/)
+    .at(-1)!
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 120) || "id-image.bin";
+  return `private/customers/${customerPublicId}/drivers-license/${input.id ?? randomUUID()}-${safeName}`;
+}
+
 type BunnyFetchOptions = {
   fetchFn?: typeof fetch;
 };

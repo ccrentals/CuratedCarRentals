@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   buildBunnyPublicUrl,
   buildBunnyStorageObjectUrl,
+  createBunnyCustomerLegalIdStorageKey,
   createBunnyStorageKey,
   createBunnyVehicleGalleryStorageKey,
   getBunnyStorageConfig,
@@ -86,5 +87,16 @@ test("Bunny storage: creates readable vehicle gallery keys", () => {
       id: "test-id",
     }),
     "public/vehicles/VE000003/subaru-xv/gallery-02-test-id-front-view.png",
+  );
+});
+
+test("Bunny storage: creates private customer identification keys", () => {
+  assert.equal(
+    createBunnyCustomerLegalIdStorageKey({
+      customerPublicId: "CU000101",
+      fileName: "Driver Licence Front.png",
+      id: "test-id",
+    }),
+    "private/customers/CU000101/drivers-license/test-id-Driver-Licence-Front.png",
   );
 });
