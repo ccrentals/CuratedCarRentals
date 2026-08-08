@@ -39,6 +39,7 @@ function isProductionDeployment(requestUrl?: string) {
   if (process.env.CONTEXT === "production" || process.env.NETLIFY_CONTEXT === "production") {
     return true;
   }
+  if (process.env.BRANCH === "main") return true;
 
   try {
     const requestHost = new URL(requestUrl ?? "").hostname;
