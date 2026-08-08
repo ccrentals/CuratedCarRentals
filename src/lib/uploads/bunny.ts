@@ -1,0 +1,160 @@
+import { randomUUID } from "node:crypto";
+
+export type BunnyStorageScope = "public" | "private";
+
+export type BunnyStorageConfig = {
+  scope: BunnyStorageScope;
+  storageZone: string;
+  accessKey: string;
+  endpoint: string;
+  publicCdnUrl: string | null;
+};
+
+export class BunnyStorageError extends Error {
+  status: number;
+
+  constructor(message: string, status = 502) {
+    super(message);
+    this.name = "BunnyStorageError";
+    this.status = status;
+  }
+}
+
+function normalizeText(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeHttpsOrigin(value: string, label: string) {
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== "https:" || parsed.username || parsed.password || parsed.search || parsed.hash) {
+      throw new Error();
+    }
+    return parsed.origin;
+  } catch {
+    throw new BunnyStorageError(`${label} must be a valid HTTPS origin.`, 503);
+  }
+}
+
+export function normalizeBunnyStorageKey(value: unknown) {
+  const key = normalizeText(value).replace(/^\/+/, "");
+  if (!key || key.includes("\\") || key.split("/").some((part) => !part || part === "." || part === "..")) {
+    throw new BunnyStorageError("Invalid Bunny storage key.", 400);
+  }
+  return key;
+}
+
+function requiredEnvironmentValue(environment: NodeJS.ProcessEnv, key: string) {
+  const value = normalizeText(environment[key]);
+  if (!value) throw new BunnyStorageError(`${key} is not configured.`, 503);
+  return value;
+}
+
+export function getBunnyStorageConfig(
+  scope: BunnyStorageScope,
+  environment: NodeJS.ProcessEnv = process.env,
+): BunnyStorageConfig {
+  const prefix = scope === "public" ? "BUNNY_STORAGE_PUBLIC" : "BUNNY_STORAGE_PRIVATE";
+  const endpoint = normalizeHttpsOrigin(
+    normalizeText(environment.BUNNY_STORAGE_ENDPOINT) || "https://storage.bunnycdn.com",
+    "BUNNY_STORAGE_ENDPOINT",
+  );
+  const publicCdnUrl =
+    scope === "public"
+      ? normalizeHttpsOrigin(requiredEnvironmentValue(environment, "BUNNY_PUBLIC_CDN_URL"), "BUNNY_PUBLIC_CDN_URL")
+      : null;
+
+  return {
+    scope,
+    storageZone: requiredEnvironmentValue(environment, `${prefix}_ZONE`),
+    accessKey: requiredEnvironmentValue(environment, `${prefix}_ACCESS_KEY`),
+    endpoint,
+    publicCdnUrl,
+  };
+}
+
+export function buildBunnyStorageObjectUrl(config: BunnyStorageConfig, storageKey: string) {
+  const key = normalizeBunnyStorageKey(storageKey);
+  return `${config.endpoint}/${encodeURIComponent(config.storageZone)}/${key
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/")}`;
+}
+
+export function buildBunnyPublicUrl(config: BunnyStorageConfig, storageKey: string) {
+  if (config.scope !== "public" || !config.publicCdnUrl) {
+    throw new BunnyStorageError("A public Bunny CDN URL is not available for this storage scope.", 500);
+  }
+  const key = normalizeBunnyStorageKey(storageKey);
+  return `${config.publicCdnUrl}/${key.split("/").map(encodeURIComponent).join("/")}`;
+}
+
+export function createBunnyStorageKey(input: {
+  scope: BunnyStorageScope;
+  fileName: string;
+  now?: Date;
+  id?: string;
+}) {
+  const rawName = normalizeText(input.fileName) || "upload.bin";
+  const safeName = rawName
+    .split(/[\\/]/)
+    .at(-1)!
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 120) || "upload.bin";
+  const date = (input.now ?? new Date()).toISOString().slice(0, 10);
+  return `${input.scope}/${date}/${input.id ?? randomUUID()}-${safeName}`;
+}
+
+type BunnyFetchOptions = {
+  fetchFn?: typeof fetch;
+};
+
+export async function uploadBunnyStorageObject(
+  config: BunnyStorageConfig,
+  storageKey: string,
+  body: BodyInit,
+  options: BunnyFetchOptions = {},
+) {
+  const response = await (options.fetchFn ?? fetch)(buildBunnyStorageObjectUrl(config, storageKey), {
+    method: "PUT",
+    headers: { AccessKey: config.accessKey },
+    body,
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new BunnyStorageError("Bunny could not store the uploaded file.", response.status || 502);
+  }
+}
+
+export async function fetchBunnyStorageObject(
+  config: BunnyStorageConfig,
+  storageKey: string,
+  options: BunnyFetchOptions = {},
+) {
+  const response = await (options.fetchFn ?? fetch)(buildBunnyStorageObjectUrl(config, storageKey), {
+    headers: { AccessKey: config.accessKey },
+    cache: "no-store",
+  });
+  if (!response.ok || !response.body) {
+    throw new BunnyStorageError("Bunny could not load the requested file.", response.status || 502);
+  }
+  return response;
+}
+
+export async function deleteBunnyStorageObject(
+  config: BunnyStorageConfig,
+  storageKey: string,
+  options: BunnyFetchOptions = {},
+) {
+  const response = await (options.fetchFn ?? fetch)(buildBunnyStorageObjectUrl(config, storageKey), {
+    method: "DELETE",
+    headers: { AccessKey: config.accessKey },
+    cache: "no-store",
+  });
+  if (response.status === 404) return { alreadyDeleted: true };
+  if (!response.ok) {
+    throw new BunnyStorageError("Bunny could not delete the requested file.", response.status || 502);
+  }
+  return { alreadyDeleted: false };
+}
