@@ -57,6 +57,14 @@ test("Stripe refunds use the forwarded public payment URL and are not test-only"
   assert.doesNotMatch(route, /stripe-test-refund|staging_test/);
 });
 
+test("Admin logout redirects to canonical SITE_URL rather than the deployment hostname", () => {
+  const logoutRoute = read("src/app/api/admin/logout/route.ts");
+
+  assert.match(logoutRoute, /getCanonicalSiteUrl\(\)/);
+  assert.match(logoutRoute, /new URL\(redirectUrl, getCanonicalSiteUrl\(\)\)/);
+  assert.doesNotMatch(logoutRoute, /new URL\(redirectUrl, request\.url\)/);
+});
+
 test("Pricing SSoT: quote preview and booking create use the shared quote snapshot builder", () => {
   const files = [
     "src/app/api/public/pricing/quote/route.ts",
