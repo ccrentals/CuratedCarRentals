@@ -20,7 +20,10 @@ type UploadcareImagesInputProps = {
   disabled?: boolean;
   actionSlot?: ReactNode;
   uploadContext?: { vehicleId: string };
+  uploadPurpose?: BunnyImageUploadPurpose;
 };
+
+export type BunnyImageUploadPurpose = "vehicle-gallery" | "landing-content";
 
 type GlightboxInstance = {
   destroy: () => void;
@@ -146,8 +149,10 @@ export async function openUploadcareImagesDialog(input: {
   multiple?: boolean;
   imagesOnly?: boolean;
   vehicleId?: string;
+  purpose?: BunnyImageUploadPurpose;
 }) {
-  const providerResponse = await fetch("/api/admin/uploads/images", {
+  const query = input.purpose ? `?purpose=${encodeURIComponent(input.purpose)}` : "";
+  const providerResponse = await fetch(`/api/admin/uploads/images${query}`, {
     method: "GET",
     cache: "no-store",
     credentials: "include",
@@ -204,7 +209,12 @@ function selectBrowserImages(input: { multiple?: boolean; imagesOnly?: boolean }
   });
 }
 
-async function openBunnyImagesDialog(input: { multiple?: boolean; imagesOnly?: boolean; vehicleId?: string }) {
+async function openBunnyImagesDialog(input: {
+  multiple?: boolean;
+  imagesOnly?: boolean;
+  vehicleId?: string;
+  purpose?: BunnyImageUploadPurpose;
+}) {
   const files = await selectBrowserImages(input);
   if (files.length === 0) return [];
 
@@ -213,6 +223,7 @@ async function openBunnyImagesDialog(input: { multiple?: boolean; imagesOnly?: b
   const form = new FormData();
   form.set("csrfToken", csrfToken);
   if (input.vehicleId) form.set("vehicleId", input.vehicleId);
+  if (input.purpose) form.set("purpose", input.purpose);
   for (const file of files) form.append("files", file, file.name);
   const response = await fetch("/api/admin/uploads/images", {
     method: "POST",
@@ -273,6 +284,7 @@ export function UploadcareImagesInput({
   disabled = false,
   actionSlot = null,
   uploadContext,
+  uploadPurpose,
 }: UploadcareImagesInputProps) {
   const [internal, setInternal] = useState<string[]>(() => value ?? []);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -348,6 +360,7 @@ export function UploadcareImagesInput({
         multiple: true,
         imagesOnly: true,
         vehicleId: uploadContext?.vehicleId,
+        purpose: uploadPurpose,
       });
       const mergedUrls = mergeUploadcareImageUrls(urls, nextUrls);
       setUrls(mergedUrls);

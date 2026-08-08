@@ -62,7 +62,7 @@ function fieldHelp(fieldName: string, collectionKey: string) {
   }
   if (fieldName === "href") return "Use an internal path such as /fleet or a full HTTPS URL.";
   if (["src", "imageSrc", "avatar"].includes(fieldName)) {
-    return "Upload an image from the connected Uploadcare project.";
+    return "Upload an image to the connected media library.";
   }
   return null;
 }
@@ -105,7 +105,11 @@ export function LandingContentAddItemDialog({
     setUploadingField(fieldName);
     setUploadError(null);
     try {
-      const [url] = await openUploadcareImagesDialog({ multiple: false, imagesOnly: true });
+      const [url] = await openUploadcareImagesDialog({
+        multiple: false,
+        imagesOnly: true,
+        purpose: "landing-content",
+      });
       if (url) updateDraft(path, url);
     } catch (error) {
       setUploadError(error instanceof Error ? error.message : "Unable to upload this image.");

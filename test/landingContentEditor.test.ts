@@ -76,13 +76,23 @@ test("new item validation rejects incomplete, unsafe, and duplicate values", () 
   assert.match(nullId.id ?? "", /required/i);
 });
 
-test("new item validation accepts supported links and Uploadcare images", () => {
+test("new item validation accepts supported links, Uploadcare images, and Bunny CDN images", () => {
   assert.deepEqual(
     validateLandingItem(
       {
         label: "+1 (876) 379-7163",
         href: "tel:+18763797163",
         imageSrc: "https://ucarecdn.com/00000000-0000-0000-0000-000000000000/",
+      },
+      [],
+    ),
+    {},
+  );
+  assert.deepEqual(
+    validateLandingItem(
+      {
+        label: "Airport pickup",
+        imageSrc: "https://ccrstagingmedia.b-cdn.net/public/2026-08-08/airport-pickup.jpg",
       },
       [],
     ),

@@ -548,7 +548,8 @@ function isSafeImageSource(value: string) {
         url.hostname === "ucarecdn.com" ||
         url.hostname.endsWith(".ucarecdn.com") ||
         url.hostname === "ucarecd.net" ||
-        url.hostname.endsWith(".ucarecd.net"))
+        url.hostname.endsWith(".ucarecd.net") ||
+        (url.hostname.endsWith(".b-cdn.net") && url.pathname.startsWith("/public/")))
     );
   } catch {
     return false;

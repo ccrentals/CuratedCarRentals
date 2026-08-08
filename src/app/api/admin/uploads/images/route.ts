@@ -17,6 +17,7 @@ import { dbQuery } from "@/lib/db";
 const MAX_IMAGE_COUNT = 20;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"]);
+const BUNNY_PUBLIC_IMAGE_PURPOSES = new Set(["vehicle-gallery", "landing-content"]);
 
 type UploadFile = File & { name: string; size: number; type: string };
 
@@ -84,10 +85,19 @@ function isUuid(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
-export async function GET() {
+function isBunnyPublicImagePurpose(value: unknown): value is "vehicle-gallery" | "landing-content" {
+  return typeof value === "string" && BUNNY_PUBLIC_IMAGE_PURPOSES.has(value);
+}
+
+export async function GET(request: Request) {
   const auth = await requireOperationsAccess();
   if (!auth.ok) return auth.response;
-  return jsonNoStore({ provider: getFileStorageProvider() });
+  const purpose = new URL(request.url).searchParams.get("purpose");
+  const provider =
+    getFileStorageProvider() === "bunny" && isBunnyPublicImagePurpose(purpose)
+      ? "bunny"
+      : "uploadcare";
+  return jsonNoStore({ provider });
 }
 
 export async function handleAdminImageUploadPost(
@@ -104,7 +114,8 @@ export async function handleAdminImageUploadPost(
   if (!(await resolvedDeps.requireCsrfCheck(request, typeof csrfToken === "string" ? csrfToken : null))) {
     return jsonNoStore({ error: "Invalid CSRF token." }, 403);
   }
-  if (resolvedDeps.getProvider() !== "bunny") {
+  const purpose = form.get("purpose");
+  if (resolvedDeps.getProvider() !== "bunny" || !isBunnyPublicImagePurpose(purpose)) {
     return jsonNoStore({ error: "Bunny uploads are not active for this environment." }, 409);
   }
 

@@ -105,7 +105,8 @@ export function AdminVehicleForm() {
       <div className="md:col-span-2">
         <UploadcareImagesInput
           name="image_urls_json"
-          helperText="Uploads stay in our Uploadcare account and are saved under the vehicle gallery naming convention after you save."
+          helperText="Vehicle photos are securely uploaded and saved when you create the vehicle."
+          uploadPurpose="vehicle-gallery"
         />
       </div>
       <div className="md:col-span-2">
