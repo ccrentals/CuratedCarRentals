@@ -32,6 +32,7 @@ type CustomerRow = {
   country: string | null;
   birthday: string | null;
   drivers_license_number: string | null;
+  legal_id_number: string | null;
 };
 
 type OtpAuditRow = {
@@ -63,14 +64,11 @@ function normalizeDateOnly(value: string) {
   return value;
 }
 
-function getEffectiveLastName(customer: CustomerRow) {
+function getCustomerLastName(customer: CustomerRow) {
   const fromColumn = normalizeText(customer.last_name ?? "");
   if (fromColumn) return fromColumn;
-  const fullName = normalizeText(customer.full_name ?? "");
-  if (!fullName) return "";
-  const parts = fullName.split(/\s+/);
-  if (parts.length <= 1) return "";
-  return parts.slice(1).join(" ");
+  const parts = normalizeText(customer.full_name).split(/\s+/);
+  return parts.length > 1 ? parts.slice(1).join(" ") : "";
 }
 
 async function hitRateLimit(ip: string, sessionKey: string) {
@@ -90,7 +88,6 @@ export async function POST(request: Request) {
   const challengeToken = normalizeText(body?.challengeToken);
   const otpCode = normalizeText(body?.otpCode);
   const lastNameInput = normalizeText(body?.lastName).toLowerCase();
-  const birthdayInput = normalizeDateOnly(normalizeText(body?.birthday));
 
   const turnstileResult = await verifyTurnstileToken({
     token: turnstileToken,
@@ -142,7 +139,7 @@ export async function POST(request: Request) {
   }
 
   const customerResult = await dbQuery<CustomerRow>(
-    "select id, full_name, first_name, last_name, email, phone, street, street2, city, state, country, birthday::text as birthday, drivers_license_number from customers where lower(coalesce(drivers_license_number, '')) = lower($1) limit 1",
+    "select id, full_name, first_name, last_name, email, phone, street, street2, city, state, country, birthday::text as birthday, drivers_license_number, legal_id_number from customers where lower(coalesce(drivers_license_number, '')) = lower($1) or lower(coalesce(legal_id_number, '')) = lower($1) order by case when lower(coalesce(drivers_license_number, '')) = lower($1) then 0 else 1 end limit 1",
     [driversLicenseNumber],
   );
   const customer = customerResult.rows[0] ?? null;
@@ -157,9 +154,9 @@ export async function POST(request: Request) {
   }
 
   let verified = false;
-  let verifiedBy: "OTP_EMAIL" | "MATCH_LAST_NAME_DOB" | null = null;
+  let verifiedBy: "OTP_EMAIL" | null = null;
 
-  if (challengeToken && otpCode && isReturningCustomerOtpConfigured()) {
+  if (challengeToken && otpCode && lastNameInput && isReturningCustomerOtpConfigured()) {
     const otpResult = await dbQuery<OtpAuditRow>(
       "select id, details_json from audit_logs where action = 'RETURNING_CUSTOMER_OTP_ISSUED' and entity_type = 'customer' and entity_id = $1 order by created_at desc limit 1",
       [customer.id],
@@ -177,7 +174,13 @@ export async function POST(request: Request) {
       typeof otpDetails.otpHash === "string" ? otpDetails.otpHash : "";
     const providedHash = hashReturningCustomerOtp(challengeToken, otpCode);
 
-    if (tokenMatches && notExpired && !alreadyUsed && expectedHash === providedHash) {
+    if (
+      tokenMatches &&
+      notExpired &&
+      !alreadyUsed &&
+      expectedHash === providedHash &&
+      getCustomerLastName(customer).toLowerCase() === lastNameInput
+    ) {
       verified = true;
       verifiedBy = "OTP_EMAIL";
       if (otpRecord?.id) {
@@ -186,21 +189,6 @@ export async function POST(request: Request) {
           [otpRecord.id],
         );
       }
-    }
-  }
-
-  if (!verified && lastNameInput && birthdayInput) {
-    const customerLastName = getEffectiveLastName(customer).toLowerCase();
-    const customerBirthday = normalizeDateOnly(normalizeText(customer.birthday ?? ""));
-
-    if (
-      customerLastName &&
-      customerBirthday &&
-      customerLastName === lastNameInput &&
-      customerBirthday === birthdayInput
-    ) {
-      verified = true;
-      verifiedBy = "MATCH_LAST_NAME_DOB";
     }
   }
 
@@ -247,7 +235,10 @@ export async function POST(request: Request) {
       parish: addressFields.region,
       country: addressFields.country,
       birthday: normalizeDateOnly(normalizeText(customer.birthday ?? "")) || null,
-      driversLicenseNumber: normalizeText(customer.drivers_license_number ?? "") || null,
+      driversLicenseNumber:
+        normalizeText(customer.drivers_license_number ?? "") ||
+        normalizeText(customer.legal_id_number ?? "") ||
+        null,
     },
   });
 }

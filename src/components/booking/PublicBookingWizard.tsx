@@ -527,7 +527,6 @@ export function PublicBookingWizard({
   const [returningSessionKey, setReturningSessionKey] = useState("");
   const [returningOtpCode, setReturningOtpCode] = useState("");
   const [returningLastName, setReturningLastName] = useState("");
-  const [returningBirthday, setReturningBirthday] = useState("");
   const [returningBusy, setReturningBusy] = useState(false);
   const [returningStage, setReturningStage] = useState<"lookup" | "verify">("lookup");
   const [returningError, setReturningError] = useState<string | null>(null);
@@ -2855,7 +2854,6 @@ export function PublicBookingWizard({
           challengeToken: returningChallengeToken,
           otpCode: returningOtpCode,
           lastName: returningLastName,
-          birthday: returningBirthday,
           sessionKey: returningSessionKey,
           turnstileToken: returningTurnstileToken,
         }),
@@ -4346,7 +4344,7 @@ export function PublicBookingWizard({
             {returningStage === "lookup" ? (
               <div className="mt-4 space-y-3">
                 <label className="block">
-                  <span className="text-sm font-semibold text-[var(--ccr-muted)]">Driver&apos;s License Number</span>
+                  <span className="text-sm font-semibold text-[var(--ccr-muted)]">Driver&apos;s License or ID Number</span>
                   <input
                     value={returningDlInput}
                     onChange={(event) => setReturningDlInput(event.target.value)}
@@ -4365,7 +4363,7 @@ export function PublicBookingWizard({
             ) : (
               <div className="mt-4 space-y-3">
                 <label className="block">
-                  <span className="text-sm font-semibold text-[var(--ccr-muted)]">Driver&apos;s License Number</span>
+                  <span className="text-sm font-semibold text-[var(--ccr-muted)]">Driver&apos;s License or ID Number</span>
                   <input
                     value={returningDlInput}
                     readOnly
@@ -4373,8 +4371,7 @@ export function PublicBookingWizard({
                   />
                 </label>
                 <p className="text-xs text-[var(--ccr-muted)]">
-                  If you have an email on file, enter the code we sent. Otherwise verify with last
-                  name and date of birth.
+                  Enter the code we sent and confirm your last name.
                 </p>
                 <label className="block">
                   <span className="text-sm font-semibold text-[var(--ccr-muted)]">One-Time Code</span>
@@ -4389,15 +4386,6 @@ export function PublicBookingWizard({
                   <input
                     value={returningLastName}
                     onChange={(event) => setReturningLastName(event.target.value)}
-                    className={bookingFieldClassName}
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-sm font-semibold text-[var(--ccr-muted)]">Birthday</span>
-                  <input
-                    type="date"
-                    value={returningBirthday}
-                    onChange={(event) => setReturningBirthday(event.target.value)}
                     className={bookingFieldClassName}
                   />
                 </label>
