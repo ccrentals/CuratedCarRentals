@@ -239,8 +239,6 @@ const STEPS: Array<{ step: WizardStep; title: string }> = [
   { step: 5, title: "Confirm" },
   { step: 6, title: "Payments" },
 ];
-const CHECKOUT_STEP = { step: 7, title: "WiPay" } as const;
-
 const WIZARD_DRAFT_STORAGE_KEY = "ccr_booking_wizard_draft_v1";
 const WIZARD_DEBUG_ENABLED = process.env.NEXT_PUBLIC_WIZARD_DEBUG === "1";
 const BACKGROUND_VEHICLE_REFRESH_INTERVAL_MS = 15000;
@@ -431,6 +429,7 @@ export function PublicBookingWizard({
     process.env.NEXT_PUBLIC_PAYMENT_PROVIDER?.trim().toLowerCase() === "stripe"
       ? "Stripe"
       : "WiPay";
+  const checkoutStep = { step: 7, title: hostedPaymentProvider } as const;
   const [requestedVehicleFromQuery, setRequestedVehicleFromQuery] = useState("");
   const draftHydratedRef = useRef(false);
   const preselectedVehicleIdRef = useRef("");
@@ -3295,9 +3294,9 @@ export function PublicBookingWizard({
                     data-testid="booking-step-tab-7"
                   >
                     <p className="text-[11px] font-semibold uppercase tracking-[0.18em]">
-                      Step {CHECKOUT_STEP.step}
+                      Step {checkoutStep.step}
                     </p>
-                    <p className="mt-1.5 text-[13px] font-semibold sm:mt-2 sm:text-sm">{CHECKOUT_STEP.title}</p>
+                    <p className="mt-1.5 text-[13px] font-semibold sm:mt-2 sm:text-sm">{checkoutStep.title}</p>
                   </button>
                 </li>
               </ol>

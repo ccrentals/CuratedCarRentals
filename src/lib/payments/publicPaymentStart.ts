@@ -18,6 +18,7 @@ import { buildCanonicalSiteUrl, buildRequestParams, getCanonicalSiteUrl, request
 import {
   assertWiPayAvailable,
   getPublicPaymentProvider,
+  getStripePaymentMode,
   type PaymentProvider,
 } from "@/lib/payments/provider";
 import { getStripeClient, stripeCheckoutUrls, toStripeJmdMinorUnits } from "@/lib/payments/stripe";
@@ -527,7 +528,7 @@ export async function startPublicWipayPayment({
           custom_amount_cents: startDetails.customAmountCents ?? null,
           total_amount: mode === "deposit" ? startDetails.amountCents : undefined,
           total_decimal: startDetails.totalDecimal,
-          env: provider === "STRIPE" ? "stripe_test" : process.env.WIPAY_ENV ?? "sandbox",
+          env: provider === "STRIPE" ? `stripe_${getStripePaymentMode(request.url)}` : process.env.WIPAY_ENV ?? "sandbox",
           provider: provider,
           created_at: new Date().toISOString(),
         },
