@@ -13,14 +13,9 @@ import type { SortState } from "@/components/admin/tableSort";
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { TableDateTime } from "@/components/shared/TableDateTime";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
-import {
-  getUploadcareClientErrorMessage,
-  getUploadcareSignedOptions,
-} from "@/lib/uploads/uploadcare-client";
 
 const DEFAULT_FOLDERS = ["Paperwork", "Insurance", "Registration", "Other"] as const;
 const CUSTOM_DOCUMENT_TYPE_VALUE = "__custom__";
-const WIDGET_SRC = "https://ucarecdn.com/libs/widget/3.x/uploadcare.full.min.js";
 const FILES_PAGE_SIZE = 5;
 
 type VehicleFilesPanelProps = {
@@ -57,72 +52,12 @@ type ChecklistItemOption = {
   uploadedDocumentDisplayLabel: string | null;
 };
 
-type UploadcareFileInfo = {
-  cdnUrl?: string;
-  uuid?: string;
-  name?: string;
-  originalFilename?: string;
-  size?: number;
-  mimeType?: string;
-};
-
-type UploadcareSingleFile = {
-  promise?: () => Promise<UploadcareFileInfo>;
-  done?: (callback: (file: UploadcareFileInfo) => void) => void;
-};
-
-type UploadcareFileGroup = {
-  files?: () => UploadcareSingleFile[];
-};
-
-type UploadcareDialog = {
-  done: (callback: (file: UploadcareSingleFile | UploadcareFileGroup) => void) => void;
-  fail: (callback: (error: { message?: string }) => void) => void;
-};
-
-type UploadcareApi = {
-  openDialog: (
-    _file: null,
-    options: {
-      publicKey: string;
-      multiple: boolean;
-      imagesOnly: boolean;
-      secureSignature: string;
-      secureExpire: string;
-    },
-  ) => UploadcareDialog | null;
-};
-
 type PendingUpload = {
-  reference: string;
+  file: File;
   fileName: string;
   mimeType: string | null;
   sizeBytes: number | null;
 };
-
-async function loadUploadcareScript() {
-  if (typeof window === "undefined") return;
-  const uploadWindow = window as Window & { uploadcare?: UploadcareApi; UPLOADCARE_PUBLIC_KEY?: string };
-  if (uploadWindow.uploadcare) return;
-
-  const existing = document.querySelector<HTMLScriptElement>(`script[src="${WIDGET_SRC}"]`);
-  if (existing) {
-    await new Promise<void>((resolve, reject) => {
-      existing.addEventListener("load", () => resolve(), { once: true });
-      existing.addEventListener("error", () => reject(new Error("Uploadcare failed to load")), { once: true });
-    });
-    return;
-  }
-
-  await new Promise<void>((resolve, reject) => {
-    const script = document.createElement("script");
-    script.src = WIDGET_SRC;
-    script.async = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error("Uploadcare failed to load"));
-    document.body.appendChild(script);
-  });
-}
 
 function normalizeBytes(value: number | null) {
   if (!value || value < 1) return "Unknown size";
@@ -515,65 +450,21 @@ export function VehicleFilesPanel({
     setMessage(null);
 
     try {
-      const signedOptions = await getUploadcareSignedOptions();
-      await loadUploadcareScript();
-      const uploadWindow = window as Window & {
-        uploadcare?: UploadcareApi;
-        UPLOADCARE_PUBLIC_KEY?: string;
-      };
-
-      uploadWindow.UPLOADCARE_PUBLIC_KEY = signedOptions.publicKey;
-      const dialog = uploadWindow.uploadcare?.openDialog(null, {
-        ...signedOptions,
-        multiple: false,
-        imagesOnly: false,
+      const files = await new Promise<File[]>((resolve) => {
+        const picker = document.createElement("input");
+        picker.type = "file";
+        picker.accept = "application/pdf,image/jpeg,image/png,image/webp,image/heic,image/heif";
+        picker.addEventListener("change", () => resolve(Array.from(picker.files ?? [])), { once: true });
+        picker.addEventListener("cancel", () => resolve([]), { once: true });
+        picker.click();
       });
-
-      if (!dialog) {
-        setError("Unable to open upload dialog.");
-        return;
-      }
-
-      dialog.done(async (file) => {
-        const singleFile = typeof (file as UploadcareFileGroup).files === "function"
-          ? (file as UploadcareFileGroup).files?.()?.[0]
-          : (file as UploadcareSingleFile);
-        if (!singleFile) {
-          setError("Upload returned no file.");
-          return;
-        }
-        const info =
-          typeof singleFile.promise === "function"
-            ? await singleFile.promise()
-            : await new Promise<UploadcareFileInfo>((resolve) => singleFile.done?.(resolve));
-
-        const reference = String(info?.cdnUrl ?? info?.uuid ?? "").trim();
-        if (!reference) {
-          setError("Upload returned an invalid file reference.");
-          return;
-        }
-
-        const fileName = String(info?.originalFilename ?? info?.name ?? "Document").trim() || "Document";
-        setPendingUpload({
-          reference,
-          fileName,
-          mimeType: typeof info?.mimeType === "string" ? info.mimeType : null,
-          sizeBytes: typeof info?.size === "number" && Number.isFinite(info.size) ? Math.round(info.size) : null,
-        });
-        setTitle(fileName);
-        setMessage("Upload complete. Review the document details, then save the file.");
-      });
-
-      dialog.fail((requestError) => {
-        setError(getUploadcareClientErrorMessage(requestError));
-      });
+      const file = files[0];
+      if (!file) return;
+      setPendingUpload({ file, fileName: file.name || "Document", mimeType: file.type || null, sizeBytes: file.size || null });
+      setTitle(file.name || "Document");
+      setMessage("File selected. Review the document details, then save the file.");
     } catch (requestError) {
-      setError(
-        getUploadcareClientErrorMessage(
-          requestError,
-          "Unable to open the upload dialog. Refresh the page and try again.",
-        ),
-      );
+      setError(requestError instanceof Error ? requestError.message : "Unable to select a file.");
     }
   };
 
@@ -595,25 +486,21 @@ export function VehicleFilesPanel({
 
     try {
       const csrfToken = await ensureCsrfToken();
+      if (!csrfToken) throw new Error("Unable to secure the upload. Refresh the page and try again.");
+      const form = new FormData();
+      form.set("csrfToken", csrfToken);
+      form.set("folder", activeFolder);
+      form.set("checklistItemId", selectedChecklistItemId || "");
+      form.set("documentType", normalizedType);
+      form.set("label", normalizedLabel);
+      form.set("title", normalizedTitle);
+      form.append("file", pendingUpload.file, pendingUpload.fileName);
       const response = await fetch(`/api/admin/vehicles/${vehicleId}/documents`, {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
           "x-csrf-token": csrfToken ?? "",
         },
-        body: JSON.stringify({
-          folder: activeFolder,
-          checklistItemId: selectedChecklistItemId || null,
-          documentType: normalizedType,
-          label: normalizedLabel || null,
-          title: normalizedTitle,
-          storageProvider: "UPLOADCARE_FILE_ID",
-          storageKey: pendingUpload.reference,
-          mimeType: pendingUpload.mimeType,
-          sizeBytes: pendingUpload.sizeBytes,
-          tags: [],
-          csrfToken,
-        }),
+        body: form,
       });
 
       const payload = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string };

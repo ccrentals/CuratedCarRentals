@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { requireAdminAccess } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import { dbQuery } from "@/lib/db";
+import { BunnyStorageError, fetchBunnyStorageObject, getBunnyStorageConfig, normalizeBunnyStorageKey } from "@/lib/uploads/bunny";
 import {
   buildUploadcareCdnUrl,
   extractUploadcareDeliveryUrl,
@@ -97,6 +98,27 @@ export async function handleAdminVehicleDocumentDownload(
     }
 
     const provider = doc.storage_provider.trim().toUpperCase();
+    if (provider === "BUNNY_STORAGE") {
+      let storageKey: string;
+      try {
+        storageKey = normalizeBunnyStorageKey(doc.storage_key);
+      } catch {
+        return NextResponse.json({ ok: false, error: "Invalid storage key." }, { status: 500, headers: { "cache-control": "no-store" } });
+      }
+      if (!storageKey.startsWith("private/vehicles/")) {
+        return NextResponse.json({ ok: false, error: "Invalid storage key." }, { status: 500, headers: { "cache-control": "no-store" } });
+      }
+      const upstream = await fetchBunnyStorageObject(getBunnyStorageConfig("private"), storageKey);
+      const filename = sanitizeFileName(doc.title);
+      return new NextResponse(upstream.body, {
+        status: 200,
+        headers: {
+          "content-type": doc.mime_type || upstream.headers.get("content-type") || "application/octet-stream",
+          "content-disposition": `${isInline ? "inline" : "attachment"}; filename="${filename}"`,
+          "cache-control": "private, max-age=0, no-store",
+        },
+      });
+    }
     if (provider && !["UPLOADCARE", "UPLOADCARE_FILE_ID", "UPLOADCARE_TOKEN"].includes(provider)) {
       return NextResponse.json(
         { ok: false, error: "Unsupported storage provider." },
@@ -151,6 +173,9 @@ export async function handleAdminVehicleDocumentDownload(
       },
     });
   } catch (error) {
+    if (error instanceof BunnyStorageError) {
+      return NextResponse.json({ ok: false, error: error.message }, { status: error.status, headers: { "cache-control": "no-store" } });
+    }
     if (isVehicleExtensionsMissingTableError(error)) {
       return NextResponse.json(
         { ok: false, error: "Vehicle documents table is not installed." },

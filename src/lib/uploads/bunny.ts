@@ -213,6 +213,25 @@ export function createBunnyBookingInspectionStorageKey(input: {
   return `private/bookings/${bookingId}/inspections/${inspectionType}/${category}/${input.id ?? randomUUID()}-${safeName}`;
 }
 
+export function createBunnyVehicleDocumentStorageKey(input: {
+  vehicleId: string;
+  fileName: string;
+  id?: string;
+}) {
+  const vehicleId = normalizeText(input.vehicleId).replace(/[^a-zA-Z0-9_-]+/g, "-");
+  if (!vehicleId) {
+    throw new BunnyStorageError("Invalid Bunny vehicle document key.", 400);
+  }
+  const rawName = normalizeText(input.fileName) || "vehicle-document.bin";
+  const safeName = rawName
+    .split(/[\\/]/)
+    .at(-1)!
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 120) || "vehicle-document.bin";
+  return `private/vehicles/${vehicleId}/documents/${input.id ?? randomUUID()}-${safeName}`;
+}
+
 type BunnyFetchOptions = {
   fetchFn?: typeof fetch;
 };

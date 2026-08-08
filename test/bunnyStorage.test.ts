@@ -7,6 +7,7 @@ import {
   createBunnyBookingInspectionStorageKey,
   createBunnyCustomerLegalIdStorageKey,
   createBunnyStorageKey,
+  createBunnyVehicleDocumentStorageKey,
   createBunnyVehicleGalleryStorageKey,
   getBunnyStorageConfig,
   normalizeBunnyStorageKey,
@@ -112,5 +113,16 @@ test("Bunny storage: creates private booking inspection keys", () => {
       id: "test-id",
     }),
     "private/bookings/BK000101/inspections/pickup/exterior/test-id-Front-bumper.jpg",
+  );
+});
+
+test("Bunny storage: creates private vehicle document keys", () => {
+  assert.equal(
+    createBunnyVehicleDocumentStorageKey({
+      vehicleId: "11111111-1111-4111-8111-111111111111",
+      fileName: "Registration Certificate.pdf",
+      id: "test-id",
+    }),
+    "private/vehicles/11111111-1111-4111-8111-111111111111/documents/test-id-Registration-Certificate.pdf",
   );
 });
