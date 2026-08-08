@@ -16,6 +16,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ pay
   try {
     const session = await getStripeClient(request.url).checkout.sessions.retrieve(sessionId);
     const reconciled = await reconcileStripeCheckoutSession(session, "admin");
-    return NextResponse.json({ ok: reconciled.ok, ...reconciled });
+    return NextResponse.json(reconciled);
   } catch { return NextResponse.json({ error: "Unable to reconcile Stripe Checkout Session" }, { status: 502 }); }
 }
