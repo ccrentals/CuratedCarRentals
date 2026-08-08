@@ -35,6 +35,30 @@ const CUSTOMER_SITE_DOMAINS = [
   "https://curatedcarrentals.com",
 ];
 
+export function getConfiguredBunnyPublicCdn(value = process.env.BUNNY_PUBLIC_CDN_URL) {
+  const candidate = value?.trim();
+  if (!candidate) return null;
+  try {
+    const url = new URL(candidate);
+    if (
+      url.protocol !== "https:" ||
+      url.username ||
+      url.password ||
+      url.pathname !== "/" ||
+      url.search ||
+      url.hash
+    ) {
+      throw new Error();
+    }
+    return { origin: url.origin, hostname: url.hostname };
+  } catch {
+    throw new Error("BUNNY_PUBLIC_CDN_URL must be a valid HTTPS origin.");
+  }
+}
+
+const BUNNY_PUBLIC_CDN = getConfiguredBunnyPublicCdn();
+const BUNNY_PUBLIC_CDN_DOMAINS = BUNNY_PUBLIC_CDN ? [BUNNY_PUBLIC_CDN.origin] : [];
+
 function buildCsp(frameAncestors: string = "'none'") {
   const scriptSrc = [
     "'self'",
@@ -62,7 +86,12 @@ function buildCsp(frameAncestors: string = "'none'") {
     `script-src ${scriptSrc.join(" ")}`,
     `style-src 'self' 'unsafe-inline'`,
     `font-src 'self' data:`,
-    `img-src 'self' data: blob: ${[...CLERK_DOMAINS, ...UPLOADCARE_DOMAINS, ...CUSTOMER_SITE_DOMAINS].join(" ")}`,
+    `img-src 'self' data: blob: ${[
+      ...CLERK_DOMAINS,
+      ...UPLOADCARE_DOMAINS,
+      ...CUSTOMER_SITE_DOMAINS,
+      ...BUNNY_PUBLIC_CDN_DOMAINS,
+    ].join(" ")}`,
     `connect-src ${connectSrc.join(" ")}`,
     `frame-src 'self' ${[...CLERK_DOMAINS, ...TURNSTILE_DOMAINS, ...WIPAY_DOMAINS].join(" ")}`,
     `worker-src 'self' blob:`,
@@ -161,6 +190,14 @@ const nextConfig: NextConfig = {
         protocol: "https",
         hostname: "curatedcarrentals.com",
       },
+      ...(BUNNY_PUBLIC_CDN
+        ? [
+            {
+              protocol: "https" as const,
+              hostname: BUNNY_PUBLIC_CDN.hostname,
+            },
+          ]
+        : []),
     ],
   },
 };
