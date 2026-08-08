@@ -766,7 +766,8 @@ export function VehicleDetailForm({
           value={form.images}
           onChange={(nextImages) => setForm((current) => ({ ...current, images: nextImages }))}
           label="Vehicle Images"
-          helperText="Upload photos that stay in our Uploadcare account and are tracked under this vehicle's gallery naming convention when you save."
+          helperText="Upload photos to this vehicle's managed gallery. New Bunny files are stored under its vehicle folder."
+          uploadContext={{ vehicleId: vehicle.id }}
           displayMode="carousel"
           disabled={!isEditing}
           actionSlot={
