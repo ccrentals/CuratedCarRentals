@@ -19,6 +19,7 @@ type CustomerProfileFormProps = {
   phone: string;
   legalIdType: string | null;
   legalIdNumber: string | null;
+  legalIdExpirationDate: string | null;
   firstName: string | null;
   lastName: string | null;
   street: string | null;
@@ -28,6 +29,7 @@ type CustomerProfileFormProps = {
   country: string | null;
   birthday: string | null;
   driversLicenseNumber: string | null;
+  driversLicenseExpirationDate: string | null;
   address: string | null;
   notes: string | null;
   children?: ReactNode;
@@ -45,6 +47,7 @@ export function CustomerProfileForm({
   phone,
   legalIdType,
   legalIdNumber,
+  legalIdExpirationDate,
   firstName,
   lastName,
   street,
@@ -54,6 +57,7 @@ export function CustomerProfileForm({
   country,
   birthday,
   driversLicenseNumber,
+  driversLicenseExpirationDate,
   address,
   notes,
   children,
@@ -64,6 +68,9 @@ export function CustomerProfileForm({
   const [nextPhone, setNextPhone] = useState(phone);
   const [nextLegalIdType, setNextLegalIdType] = useState(legalIdType ?? "TRN");
   const [nextLegalIdNumber, setNextLegalIdNumber] = useState(legalIdNumber ?? "");
+  const [nextLegalIdExpirationDate, setNextLegalIdExpirationDate] = useState(
+    normalizeDateInput(legalIdExpirationDate),
+  );
   const [nextFirstName, setNextFirstName] = useState(firstName ?? "");
   const [nextLastName, setNextLastName] = useState(lastName ?? "");
   const [nextStreet, setNextStreet] = useState(street ?? "");
@@ -75,6 +82,9 @@ export function CustomerProfileForm({
   const [nextBirthday, setNextBirthday] = useState(normalizeDateInput(birthday));
   const [nextDriversLicenseNumber, setNextDriversLicenseNumber] = useState(
     driversLicenseNumber ?? "",
+  );
+  const [nextDriversLicenseExpirationDate, setNextDriversLicenseExpirationDate] = useState(
+    normalizeDateInput(driversLicenseExpirationDate),
   );
   const [nextAddress, setNextAddress] = useState(address ?? "");
   const [nextNotes, setNextNotes] = useState(notes ?? "");
@@ -113,6 +123,7 @@ export function CustomerProfileForm({
         phone: nextPhone,
         legalIdType: nextLegalIdType,
         legalIdNumber: nextLegalIdNumber,
+        legalIdExpirationDate: nextLegalIdExpirationDate || null,
         firstName: nextFirstName,
         lastName: nextLastName,
         street: nextStreet,
@@ -122,6 +133,7 @@ export function CustomerProfileForm({
         country: nextCountry,
         birthday: nextBirthday || null,
         driversLicenseNumber: nextDriversLicenseNumber,
+        driversLicenseExpirationDate: nextDriversLicenseExpirationDate || null,
         address: nextAddress,
         notes: nextNotes,
       }),
@@ -177,6 +189,26 @@ export function CustomerProfileForm({
             value={nextPhone}
             onChange={(event) => setNextPhone(event.target.value)}
             required
+            className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+          />
+        </label>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="block text-xs text-[var(--ccr-muted)]">
+          Driver&apos;s license expiration date
+          <input
+            type="date"
+            value={nextDriversLicenseExpirationDate}
+            onChange={(event) => setNextDriversLicenseExpirationDate(event.target.value)}
+            className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
+          />
+        </label>
+        <label className="block text-xs text-[var(--ccr-muted)]">
+          Legal ID expiration date
+          <input
+            type="date"
+            value={nextLegalIdExpirationDate}
+            onChange={(event) => setNextLegalIdExpirationDate(event.target.value)}
             className="mt-1 w-full rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-3 py-2 text-sm text-[var(--ccr-text)]"
           />
         </label>

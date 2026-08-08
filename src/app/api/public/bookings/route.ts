@@ -581,7 +581,7 @@ export async function POST(request: Request) {
     const region = normalizeRegionForCountry(regionInput, country);
 
     await client.query(
-      "update customers set first_name = case when nullif($2, '') is not null then $2 else first_name end, last_name = case when nullif($3, '') is not null then $3 else last_name end, street = case when nullif($4, '') is not null then $4 else street end, street2 = case when nullif($5, '') is not null then $5 else street2 end, city = case when nullif($6, '') is not null then $6 else city end, state = case when nullif($7, '') is not null then $7 else state end, zip = null, country = case when nullif($8, '') is not null then $8 else country end, birthday = coalesce($9::date, birthday), drivers_license_number = case when nullif($10, '') is not null then $10 else drivers_license_number end where id = $1",
+      "update customers set first_name = case when nullif($2, '') is not null then $2 else first_name end, last_name = case when nullif($3, '') is not null then $3 else last_name end, street = case when nullif($4, '') is not null then $4 else street end, street2 = case when nullif($5, '') is not null then $5 else street2 end, city = case when nullif($6, '') is not null then $6 else city end, state = case when nullif($7, '') is not null then $7 else state end, zip = null, country = case when nullif($8, '') is not null then $8 else country end, birthday = coalesce($9::date, birthday), drivers_license_number = case when nullif($10, '') is not null then $10 else drivers_license_number end, drivers_license_expiration_date = coalesce($11::date, drivers_license_expiration_date) where id = $1",
       [
         customerUpsert.customerId,
         firstName,
@@ -593,6 +593,7 @@ export async function POST(request: Request) {
         country,
         profileBirthday,
         driversLicenseNumber,
+        driversLicenseExpirationDate,
       ],
     );
 
