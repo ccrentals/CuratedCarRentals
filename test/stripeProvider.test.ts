@@ -45,6 +45,21 @@ test("Stripe is enabled for production only with a live key", () => {
   assert.throws(() => getPublicPaymentProvider(), /requires STRIPE_TEST_MODE=false/);
 });
 
+test("Stripe recognizes the canonical production request host when Netlify runtime context is unavailable", () => {
+  setEnv({
+    PAYMENT_PROVIDER: "stripe",
+    STRIPE_TEST_MODE: "false",
+    STRIPE_SECRET_KEY: "sk_live_example",
+    STRIPE_WEBHOOK_SECRET: "whsec_example",
+    SITE_URL: "https://curatedcarrentals.com",
+  });
+
+  assert.equal(
+    getPublicPaymentProvider("https://curatedcarrentals.com/api/payments/start"),
+    "STRIPE",
+  );
+});
+
 test("Stripe accepts a test key with harmless environment whitespace", () => {
   setEnv({
     PAYMENT_PROVIDER: "stripe",

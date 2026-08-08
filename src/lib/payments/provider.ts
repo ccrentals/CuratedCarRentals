@@ -35,12 +35,22 @@ export function isStripeLiveMode() {
   return (process.env.STRIPE_TEST_MODE ?? "").trim().toLowerCase() !== "true" && (process.env.STRIPE_SECRET_KEY ?? "").trim().startsWith("sk_live_");
 }
 
-function isProductionDeployment() {
-  return process.env.CONTEXT === "production" || process.env.NETLIFY_CONTEXT === "production";
+function isProductionDeployment(requestUrl?: string) {
+  if (process.env.CONTEXT === "production" || process.env.NETLIFY_CONTEXT === "production") {
+    return true;
+  }
+
+  try {
+    const requestHost = new URL(requestUrl ?? "").hostname;
+    const siteHost = new URL(process.env.SITE_URL ?? "").hostname;
+    return Boolean(requestHost && siteHost && requestHost === siteHost);
+  } catch {
+    return false;
+  }
 }
 
 export function getStripePaymentMode(requestUrl?: string): StripePaymentMode {
-  if (isProductionDeployment()) {
+  if (isProductionDeployment(requestUrl)) {
     if (!isStripeLiveMode()) {
       throw new Error("Stripe production requires STRIPE_TEST_MODE=false and an sk_live_ STRIPE_SECRET_KEY.");
     }
