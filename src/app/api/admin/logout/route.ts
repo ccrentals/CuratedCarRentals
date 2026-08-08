@@ -5,6 +5,7 @@ import { clearSessionCookie } from "@/lib/auth/session";
 import { isClerkEnabled } from "@/lib/security/clerk";
 import { requireCsrf } from "@/lib/security/csrf";
 import { THEME_COOKIE_NAME } from "@/lib/theme";
+import { getCanonicalSiteUrl } from "@/lib/wipay";
 
 function resolveRedirectUrl(request: Request) {
   const { searchParams, origin } = new URL(request.url);
@@ -56,7 +57,7 @@ export async function GET(request: Request) {
   await revokeCurrentClerkSession();
   await clearSessionCookie();
   const redirectUrl = resolveRedirectUrl(request);
-  return applyLogoutCookies(NextResponse.redirect(new URL(redirectUrl, request.url)));
+  return applyLogoutCookies(NextResponse.redirect(new URL(redirectUrl, getCanonicalSiteUrl())));
 }
 
 export async function POST(request: Request) {
