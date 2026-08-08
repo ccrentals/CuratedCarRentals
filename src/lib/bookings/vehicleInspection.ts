@@ -415,6 +415,14 @@ function resolveInspectionImageUrl(storageProvider: unknown, storageKey: unknown
   if (!normalizedStorageKey) return null;
 
   const provider = normalizeStorageProvider(storageProvider);
+  if (provider === "BUNNY_STORAGE") {
+    try {
+      const key = normalizeBunnyStorageKey(normalizedStorageKey);
+      return key.startsWith("private/bookings/") ? key : null;
+    } catch {
+      return null;
+    }
+  }
   if (!["UPLOADCARE_FILE_ID", "UPLOADCARE", "UPLOADCARE_TOKEN"].includes(provider)) {
     return null;
   }

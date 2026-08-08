@@ -441,6 +441,67 @@ test("booking vehicle inspection image helper: stores upload metadata with booki
   );
 });
 
+test("booking vehicle inspection image helper: returns an authenticated preview for Bunny private storage", async () => {
+  const created = await createBookingVehicleInspectionImages(
+    BOOKING_ID,
+    {
+      inspectionId: PICKUP_INSPECTION_ID,
+      inspectionType: "PICKUP",
+      category: "EXTERIOR",
+      uploadedByUserId: "admin-user-id",
+      files: [{
+        storageProvider: "BUNNY_STORAGE",
+        storageKey: "private/bookings/BK000334/inspections/pickup/exterior/test-image.jpg",
+        mimeType: "image/jpeg",
+      }],
+    },
+    {
+      query: async <T = unknown>(queryText: string) => {
+        if (queryText.includes("from bookings b") && queryText.includes("join booking_vehicle_inspections i")) {
+          return {
+            rows: [{
+              booking_id: BOOKING_ID,
+              booking_public_id: "BK000334",
+              inspection_id: PICKUP_INSPECTION_ID,
+              inspection_type: "PICKUP",
+            }] as T[],
+          };
+        }
+        if (queryText.includes("select max(sort_order)::int")) {
+          return { rows: [{ max_sort_order: 0 }] as T[] };
+        }
+        if (queryText.startsWith("insert into booking_vehicle_inspection_images")) {
+          return {
+            rows: [{
+              id: PICKUP_IMAGE_ID,
+              inspection_id: PICKUP_INSPECTION_ID,
+              booking_id: BOOKING_ID,
+              inspection_type: "PICKUP",
+              category: "EXTERIOR",
+              label: null,
+              storage_provider: "BUNNY_STORAGE",
+              storage_key: "private/bookings/BK000334/inspections/pickup/exterior/test-image.jpg",
+              original_file_name: "test-image.jpg",
+              generated_file_name: "BK000334-pickup-exterior-test.jpg",
+              mime_type: "image/jpeg",
+              byte_size: 3,
+              uploaded_by_user_id: "admin-user-id",
+              uploaded_by_display: null,
+              created_at: "2026-08-08T23:09:24.000Z",
+            }] as T[],
+          };
+        }
+        throw new Error(`Unexpected query: ${queryText}`);
+      },
+    },
+  );
+
+  assert.equal(
+    created[0]?.previewUrl,
+    `/api/admin/bookings/${BOOKING_ID}/inspections/images/${PICKUP_IMAGE_ID}`,
+  );
+});
+
 test("booking vehicle inspection image helper: rejects external URLs that only mimic Uploadcare refs", async () => {
   await assert.rejects(
     () =>
