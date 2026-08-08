@@ -77,6 +77,19 @@ test("Returning-customer verification accepts stored legal IDs and does not requ
   assert.doesNotMatch(wizard, /returningBirthday/);
 });
 
+test("Customer identification expiry dates are stored and reused", () => {
+  const bookingRoute = read("src/app/api/public/bookings/route.ts");
+  const customerRoute = read("src/app/api/admin/customers/[id]/route.ts");
+  const customerProfile = read("src/components/admin/CustomerProfileForm.tsx");
+  const migration = read("migrations/050_customer_identification_expirations.sql");
+
+  assert.match(migration, /drivers_license_expiration_date date/);
+  assert.match(migration, /legal_id_expiration_date date/);
+  assert.match(bookingRoute, /drivers_license_expiration_date/);
+  assert.match(customerRoute, /legal_id_expiration_date/);
+  assert.match(customerProfile, /Legal ID expiration date/);
+});
+
 test("Pricing SSoT: quote preview and booking create use the shared quote snapshot builder", () => {
   const files = [
     "src/app/api/public/pricing/quote/route.ts",

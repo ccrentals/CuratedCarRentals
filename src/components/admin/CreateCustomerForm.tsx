@@ -22,8 +22,10 @@ export function CreateCustomerForm() {
   const [country, setCountry] = useState("Jamaica");
   const [birthday, setBirthday] = useState("");
   const [driversLicenseNumber, setDriversLicenseNumber] = useState("");
+  const [driversLicenseExpirationDate, setDriversLicenseExpirationDate] = useState("");
   const [legalIdType, setLegalIdType] = useState<(typeof LEGAL_ID_TYPES)[number]>("TRN");
   const [legalIdNumber, setLegalIdNumber] = useState("");
+  const [legalIdExpirationDate, setLegalIdExpirationDate] = useState("");
   const [address, setAddress] = useState("");
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
@@ -55,8 +57,10 @@ export function CreateCustomerForm() {
         country,
         birthday: birthday || null,
         driversLicenseNumber,
+        driversLicenseExpirationDate: driversLicenseExpirationDate || null,
         legalIdType,
         legalIdNumber,
+        legalIdExpirationDate: legalIdExpirationDate || null,
         address,
         notes,
       }),
@@ -85,8 +89,10 @@ export function CreateCustomerForm() {
     setCountry("Jamaica");
     setBirthday("");
     setDriversLicenseNumber("");
+    setDriversLicenseExpirationDate("");
     setLegalIdType("TRN");
     setLegalIdNumber("");
+    setLegalIdExpirationDate("");
     setAddress("");
     setNotes("");
     setMessage(data.customer ? `Customer created: ${data.customer.full_name}` : "Customer created.");
@@ -254,6 +260,15 @@ export function CreateCustomerForm() {
                 />
               </label>
               <label className="text-xs text-[var(--ccr-muted)]">
+                Driver&apos;s license expiration date
+                <input
+                  type="date"
+                  value={driversLicenseExpirationDate}
+                  onChange={(event) => setDriversLicenseExpirationDate(event.target.value)}
+                  className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+                />
+              </label>
+              <label className="text-xs text-[var(--ccr-muted)]">
                 Legal ID type
                 <select
                   value={legalIdType}
@@ -273,6 +288,15 @@ export function CreateCustomerForm() {
                   type="text"
                   value={legalIdNumber}
                   onChange={(event) => setLegalIdNumber(event.target.value)}
+                  className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
+                />
+              </label>
+              <label className="text-xs text-[var(--ccr-muted)]">
+                Legal ID expiration date
+                <input
+                  type="date"
+                  value={legalIdExpirationDate}
+                  onChange={(event) => setLegalIdExpirationDate(event.target.value)}
                   className="mt-1 w-full rounded-xl border border-[var(--ccr-border)] bg-transparent px-3 py-2 text-sm text-[var(--ccr-text)]"
                 />
               </label>

@@ -32,6 +32,7 @@ type CustomerRow = {
   country: string | null;
   birthday: string | null;
   drivers_license_number: string | null;
+  drivers_license_expiration_date: string | null;
   legal_id_number: string | null;
 };
 
@@ -139,7 +140,7 @@ export async function POST(request: Request) {
   }
 
   const customerResult = await dbQuery<CustomerRow>(
-    "select id, full_name, first_name, last_name, email, phone, street, street2, city, state, country, birthday::text as birthday, drivers_license_number, legal_id_number from customers where lower(coalesce(drivers_license_number, '')) = lower($1) or lower(coalesce(legal_id_number, '')) = lower($1) order by case when lower(coalesce(drivers_license_number, '')) = lower($1) then 0 else 1 end limit 1",
+    "select id, full_name, first_name, last_name, email, phone, street, street2, city, state, country, birthday::text as birthday, drivers_license_number, drivers_license_expiration_date::text as drivers_license_expiration_date, legal_id_number from customers where lower(coalesce(drivers_license_number, '')) = lower($1) or lower(coalesce(legal_id_number, '')) = lower($1) order by case when lower(coalesce(drivers_license_number, '')) = lower($1) then 0 else 1 end limit 1",
     [driversLicenseNumber],
   );
   const customer = customerResult.rows[0] ?? null;
@@ -239,6 +240,8 @@ export async function POST(request: Request) {
         normalizeText(customer.drivers_license_number ?? "") ||
         normalizeText(customer.legal_id_number ?? "") ||
         null,
+      driversLicenseExpirationDate:
+        normalizeDateOnly(normalizeText(customer.drivers_license_expiration_date ?? "")) || null,
     },
   });
 }

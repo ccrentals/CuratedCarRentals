@@ -395,8 +395,10 @@ export async function POST(request: Request) {
         country?: unknown;
         birthday?: unknown;
         driversLicenseNumber?: unknown;
+        driversLicenseExpirationDate?: unknown;
         legalIdType?: unknown;
         legalIdNumber?: unknown;
+        legalIdExpirationDate?: unknown;
         address?: unknown;
         notes?: unknown;
         csrfToken?: string | null;
@@ -427,9 +429,21 @@ export async function POST(request: Request) {
   const birthday = /^\d{4}-\d{2}-\d{2}$/.test(birthdayInput) ? birthdayInput : null;
   const driversLicenseNumber =
     typeof body?.driversLicenseNumber === "string" ? body.driversLicenseNumber.trim() : "";
+  const driversLicenseExpirationDateInput =
+    typeof body?.driversLicenseExpirationDate === "string"
+      ? body.driversLicenseExpirationDate.trim()
+      : "";
+  const driversLicenseExpirationDate = /^\d{4}-\d{2}-\d{2}$/.test(driversLicenseExpirationDateInput)
+    ? driversLicenseExpirationDateInput
+    : null;
   const legalIdType = normalizeLegalIdType(body?.legalIdType);
   const legalIdNumber =
     typeof body?.legalIdNumber === "string" ? body.legalIdNumber.trim() : "";
+  const legalIdExpirationDateInput =
+    typeof body?.legalIdExpirationDate === "string" ? body.legalIdExpirationDate.trim() : "";
+  const legalIdExpirationDate = /^\d{4}-\d{2}-\d{2}$/.test(legalIdExpirationDateInput)
+    ? legalIdExpirationDateInput
+    : null;
   const address = typeof body?.address === "string" ? body.address.trim() : "";
   const notes = typeof body?.notes === "string" ? body.notes.trim() : "";
 
@@ -447,6 +461,12 @@ export async function POST(request: Request) {
   if (email && !isEmail(email)) {
     return NextResponse.json({ error: "Email is invalid." }, { status: 400 });
   }
+  if (driversLicenseExpirationDateInput && !driversLicenseExpirationDate) {
+    return NextResponse.json({ error: "Driver's license expiration date must be YYYY-MM-DD." }, { status: 400 });
+  }
+  if (legalIdExpirationDateInput && !legalIdExpirationDate) {
+    return NextResponse.json({ error: "Legal ID expiration date must be YYYY-MM-DD." }, { status: 400 });
+  }
 
   const fullName = `${firstName} ${lastName}`.trim();
 
@@ -454,7 +474,7 @@ export async function POST(request: Request) {
     let insert;
     try {
       insert = await dbQuery<{ id: string; full_name: string; email: string; phone: string }>(
-        "insert into customers (full_name, email, phone, first_name, last_name, street, street2, city, state, zip, country, birthday, drivers_license_number, legal_id_type, legal_id_number, address, notes) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::date, $13, $14, $15, $16, $17) returning id, full_name, email, phone",
+        "insert into customers (full_name, email, phone, first_name, last_name, street, street2, city, state, zip, country, birthday, drivers_license_number, drivers_license_expiration_date, legal_id_type, legal_id_number, legal_id_expiration_date, address, notes) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::date, $13, $14::date, $15, $16, $17::date, $18, $19) returning id, full_name, email, phone",
         [
           fullName,
           email,
@@ -469,8 +489,10 @@ export async function POST(request: Request) {
           country || null,
           birthday,
           driversLicenseNumber || null,
+          driversLicenseExpirationDate,
           legalIdType || null,
           legalIdNumber || null,
+          legalIdExpirationDate,
           address || null,
           notes || null,
         ],
@@ -494,8 +516,10 @@ export async function POST(request: Request) {
           "country",
           "birthday",
           "drivers_license_number",
+          "drivers_license_expiration_date",
           "legal_id_type",
           "legal_id_number",
+          "legal_id_expiration_date",
         ])
       ) {
         throw error;

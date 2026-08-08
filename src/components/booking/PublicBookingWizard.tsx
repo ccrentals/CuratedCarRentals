@@ -103,6 +103,7 @@ type ReturningVerifyResponse = {
     country?: string | null;
     birthday?: string | null;
     driversLicenseNumber?: string | null;
+    driversLicenseExpirationDate?: string | null;
   };
 };
 
@@ -2875,6 +2876,9 @@ export function PublicBookingWizard({
       setBirthday((current) => setIfPresent(current, data.customer?.birthday));
       setDriversLicenseNumber((current) =>
         setIfPresent(current, data.customer?.driversLicenseNumber),
+      );
+      setDriversLicenseExpirationDate((current) =>
+        setIfPresent(current, data.customer?.driversLicenseExpirationDate),
       );
 
       setShowReturningCustomerModal(false);

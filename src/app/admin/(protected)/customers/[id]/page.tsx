@@ -29,12 +29,14 @@ type CustomerRow = {
   country: string | null;
   birthday: string | null;
   drivers_license_number: string | null;
+  drivers_license_expiration_date: string | null;
   is_blocked: boolean;
   blocked_at: string | null;
   blocked_by_user_id: string | null;
   blocked_reason: string | null;
   legal_id_type: string | null;
   legal_id_number: string | null;
+  legal_id_expiration_date: string | null;
   address: string | null;
   notes: string | null;
   created_at: string;
@@ -104,7 +106,7 @@ export default async function AdminCustomerDetailPage({
   let customer;
   try {
     customer = await dbQuery<CustomerRow>(
-      "select c.id, c.full_name, c.email, c.phone, c.first_name, c.last_name, c.street, c.street2, c.city, c.state, c.country, c.birthday::text as birthday, c.drivers_license_number, coalesce(c.is_blocked, false) as is_blocked, c.blocked_at, c.blocked_by_user_id, c.blocked_reason, c.legal_id_type, c.legal_id_number, c.address, c.notes, c.created_at, c.last_booked_at, count(distinct b.id)::int as total_bookings, coalesce(sum(case when p.status in ('DEPOSIT_PAID', 'SUCCESS', 'REFUNDED') and p.deleted_at is null then p.deposit_amount_cents else 0 end), 0)::int as total_spend from customers c left join bookings b on b.customer_id = c.id left join payments p on p.booking_id = b.id where c.id = $1 group by c.id, c.full_name, c.email, c.phone, c.first_name, c.last_name, c.street, c.street2, c.city, c.state, c.country, c.birthday, c.drivers_license_number, c.is_blocked, c.blocked_at, c.blocked_by_user_id, c.blocked_reason, c.legal_id_type, c.legal_id_number, c.address, c.notes, c.created_at, c.last_booked_at",
+      "select c.id, c.full_name, c.email, c.phone, c.first_name, c.last_name, c.street, c.street2, c.city, c.state, c.country, c.birthday::text as birthday, c.drivers_license_number, c.drivers_license_expiration_date::text as drivers_license_expiration_date, coalesce(c.is_blocked, false) as is_blocked, c.blocked_at, c.blocked_by_user_id, c.blocked_reason, c.legal_id_type, c.legal_id_number, c.legal_id_expiration_date::text as legal_id_expiration_date, c.address, c.notes, c.created_at, c.last_booked_at, count(distinct b.id)::int as total_bookings, coalesce(sum(case when p.status in ('DEPOSIT_PAID', 'SUCCESS', 'REFUNDED') and p.deleted_at is null then p.deposit_amount_cents else 0 end), 0)::int as total_spend from customers c left join bookings b on b.customer_id = c.id left join payments p on p.booking_id = b.id where c.id = $1 group by c.id, c.full_name, c.email, c.phone, c.first_name, c.last_name, c.street, c.street2, c.city, c.state, c.country, c.birthday, c.drivers_license_number, c.drivers_license_expiration_date, c.is_blocked, c.blocked_at, c.blocked_by_user_id, c.blocked_reason, c.legal_id_type, c.legal_id_number, c.legal_id_expiration_date, c.address, c.notes, c.created_at, c.last_booked_at",
       [id],
     );
   } catch (error) {
@@ -124,11 +126,21 @@ export default async function AdminCustomerDetailPage({
         "country",
         "birthday",
         "drivers_license_number",
+        "drivers_license_expiration_date",
+        "legal_id_expiration_date",
       ])
     ) {
       throw error;
     }
-    const legacyCustomer = await dbQuery<Omit<CustomerRow, "legal_id_type" | "legal_id_number">>(
+    const legacyCustomer = await dbQuery<
+      Omit<
+        CustomerRow,
+        | "legal_id_type"
+        | "legal_id_number"
+        | "legal_id_expiration_date"
+        | "drivers_license_expiration_date"
+      >
+    >(
       "select c.id, c.full_name, c.email, c.phone, false as is_blocked, null::timestamptz as blocked_at, null::uuid as blocked_by_user_id, null::text as blocked_reason, c.address, c.notes, c.created_at, c.last_booked_at, count(distinct b.id)::int as total_bookings, coalesce(sum(case when p.status in ('DEPOSIT_PAID', 'SUCCESS', 'REFUNDED') and p.deleted_at is null then p.deposit_amount_cents else 0 end), 0)::int as total_spend from customers c left join bookings b on b.customer_id = c.id left join payments p on p.booking_id = b.id where c.id = $1 group by c.id, c.full_name, c.email, c.phone, c.address, c.notes, c.created_at, c.last_booked_at",
       [id],
     );
@@ -136,7 +148,13 @@ export default async function AdminCustomerDetailPage({
       ...legacyCustomer,
       rows: legacyCustomer.rows.map(
         (
-          row: Omit<CustomerRow, "legal_id_type" | "legal_id_number">,
+          row: Omit<
+            CustomerRow,
+            | "legal_id_type"
+            | "legal_id_number"
+            | "legal_id_expiration_date"
+            | "drivers_license_expiration_date"
+          >,
         ) => ({
           ...row,
           first_name: null,
@@ -148,8 +166,10 @@ export default async function AdminCustomerDetailPage({
           country: null,
           birthday: null,
           drivers_license_number: null,
+          drivers_license_expiration_date: null,
           legal_id_type: null,
           legal_id_number: null,
+          legal_id_expiration_date: null,
         }),
       ),
     };
@@ -275,6 +295,7 @@ export default async function AdminCustomerDetailPage({
             phone={customerRow.phone}
             legalIdType={customerRow.legal_id_type}
             legalIdNumber={customerRow.legal_id_number}
+            legalIdExpirationDate={customerRow.legal_id_expiration_date}
             firstName={customerRow.first_name}
             lastName={customerRow.last_name}
             street={customerRow.street}
@@ -284,6 +305,7 @@ export default async function AdminCustomerDetailPage({
             country={customerRow.country}
             birthday={customerRow.birthday}
             driversLicenseNumber={customerRow.drivers_license_number}
+            driversLicenseExpirationDate={customerRow.drivers_license_expiration_date}
             address={customerRow.address}
             notes={customerRow.notes}
           >
@@ -293,7 +315,9 @@ export default async function AdminCustomerDetailPage({
                 Type: {customerRow.legal_id_type ? formatLegalIdTypeLabel(customerRow.legal_id_type) : "Not provided"}
               </p>
               <p className="mt-1">Number: {customerRow.legal_id_number || "Not provided"}</p>
+              <p className="mt-1">Expiration: {customerRow.legal_id_expiration_date || "Not provided"}</p>
               <p className="mt-1">Driver&apos;s License Number: {customerRow.drivers_license_number || "Not provided"}</p>
+              <p className="mt-1">Driver&apos;s License Expiration: {customerRow.drivers_license_expiration_date || "Not provided"}</p>
               <CustomerLegalIdImagesManager
                 customerId={customerRow.id}
                 initialItems={driversLicenseDocuments}

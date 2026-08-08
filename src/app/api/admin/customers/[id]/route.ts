@@ -24,12 +24,14 @@ type CustomerRow = {
   country: string | null;
   birthday: string | null;
   drivers_license_number: string | null;
+  drivers_license_expiration_date: string | null;
   is_blocked: boolean | null;
   blocked_at: string | null;
   blocked_by_user_id: string | null;
   blocked_reason: string | null;
   legal_id_type: string | null;
   legal_id_number: string | null;
+  legal_id_expiration_date: string | null;
   address: string | null;
   notes: string | null;
   created_at: string;
@@ -68,12 +70,13 @@ function isUniqueDriversLicenseError(error: unknown) {
 }
 
 function toCustomerRowWithNullLegalFields(
-  row: Omit<CustomerRow, "legal_id_type" | "legal_id_number">,
+  row: Omit<CustomerRow, "legal_id_type" | "legal_id_number" | "legal_id_expiration_date">,
 ): CustomerRow {
   return {
     ...row,
     legal_id_type: null,
     legal_id_number: null,
+    legal_id_expiration_date: null,
   };
 }
 
@@ -88,7 +91,7 @@ export async function GET(
   let result;
   try {
     result = await dbQuery<CustomerRow>(
-      "select id, full_name, email, phone, first_name, last_name, street, street2, city, state, country, birthday::text as birthday, drivers_license_number, coalesce(is_blocked, false) as is_blocked, blocked_at, blocked_by_user_id, blocked_reason, legal_id_type, legal_id_number, address, notes, created_at, last_booked_at from customers where id = $1 limit 1",
+      "select id, full_name, email, phone, first_name, last_name, street, street2, city, state, country, birthday::text as birthday, drivers_license_number, drivers_license_expiration_date::text as drivers_license_expiration_date, coalesce(is_blocked, false) as is_blocked, blocked_at, blocked_by_user_id, blocked_reason, legal_id_type, legal_id_number, legal_id_expiration_date::text as legal_id_expiration_date, address, notes, created_at, last_booked_at from customers where id = $1 limit 1",
       [id],
     );
   } catch (error) {
@@ -108,6 +111,8 @@ export async function GET(
         "country",
         "birthday",
         "drivers_license_number",
+        "drivers_license_expiration_date",
+        "legal_id_expiration_date",
       ])
     ) {
       throw error;
@@ -121,6 +126,8 @@ export async function GET(
         | "blocked_reason"
         | "legal_id_type"
         | "legal_id_number"
+        | "legal_id_expiration_date"
+        | "drivers_license_expiration_date"
       >
     >(
       "select id, full_name, email, phone, address, notes, created_at, last_booked_at from customers where id = $1 limit 1",
@@ -145,8 +152,10 @@ export async function GET(
             | "country"
             | "birthday"
             | "drivers_license_number"
+            | "drivers_license_expiration_date"
             | "legal_id_type"
             | "legal_id_number"
+            | "legal_id_expiration_date"
           >,
         ) =>
         toCustomerRowWithNullLegalFields({
@@ -160,6 +169,7 @@ export async function GET(
           country: null,
           birthday: null,
           drivers_license_number: null,
+          drivers_license_expiration_date: null,
           is_blocked: false,
           blocked_at: null,
           blocked_by_user_id: null,
@@ -262,8 +272,18 @@ export async function PATCH(
   const birthdayRaw = trimOptional(body?.birthday);
   const birthday = birthdayRaw && /^\d{4}-\d{2}-\d{2}$/.test(birthdayRaw) ? birthdayRaw : null;
   const driversLicenseNumber = trimOptional(body?.driversLicenseNumber);
+  const driversLicenseExpirationDateRaw = trimOptional(body?.driversLicenseExpirationDate);
+  const driversLicenseExpirationDate =
+    driversLicenseExpirationDateRaw && /^\d{4}-\d{2}-\d{2}$/.test(driversLicenseExpirationDateRaw)
+      ? driversLicenseExpirationDateRaw
+      : null;
   const legalIdType = normalizeLegalIdType(body?.legalIdType);
   const legalIdNumber = trimOptional(body?.legalIdNumber);
+  const legalIdExpirationDateRaw = trimOptional(body?.legalIdExpirationDate);
+  const legalIdExpirationDate =
+    legalIdExpirationDateRaw && /^\d{4}-\d{2}-\d{2}$/.test(legalIdExpirationDateRaw)
+      ? legalIdExpirationDateRaw
+      : null;
 
   if (!isNonEmptyString(fullName, 2)) {
     return NextResponse.json({ error: "Full name is required." }, { status: 400 });
@@ -276,6 +296,12 @@ export async function PATCH(
   }
   if (birthdayRaw && !birthday) {
     return NextResponse.json({ error: "Birthday must be YYYY-MM-DD." }, { status: 400 });
+  }
+  if (driversLicenseExpirationDateRaw && !driversLicenseExpirationDate) {
+    return NextResponse.json({ error: "Driver's license expiration date must be YYYY-MM-DD." }, { status: 400 });
+  }
+  if (legalIdExpirationDateRaw && !legalIdExpirationDate) {
+    return NextResponse.json({ error: "Legal ID expiration date must be YYYY-MM-DD." }, { status: 400 });
   }
   if (legalIdType && !legalIdNumber) {
     return NextResponse.json({ error: "Legal ID number is required when type is selected." }, { status: 400 });
@@ -365,14 +391,14 @@ export async function PATCH(
       await client.query("savepoint customer_legal_fields");
       try {
         await client.query(
-          "update customers set legal_id_type = $2, legal_id_number = $3 where id = $1",
-          [id, legalIdType, legalIdNumber],
+          "update customers set legal_id_type = $2, legal_id_number = $3, legal_id_expiration_date = $4::date where id = $1",
+          [id, legalIdType, legalIdNumber, legalIdExpirationDate],
         );
         await client.query("release savepoint customer_legal_fields");
       } catch (error) {
         await client.query("rollback to savepoint customer_legal_fields");
         await client.query("release savepoint customer_legal_fields");
-        if (!isAnyMissingColumn(error, ["legal_id_type", "legal_id_number"])) {
+        if (!isAnyMissingColumn(error, ["legal_id_type", "legal_id_number", "legal_id_expiration_date"])) {
           throw error;
         }
       }
@@ -380,7 +406,7 @@ export async function PATCH(
       await client.query("savepoint customer_extended_fields");
       try {
         await client.query(
-          "update customers set first_name = $2, last_name = $3, street = $4, street2 = $5, city = $6, state = $7, zip = $8, country = $9, birthday = $10::date, drivers_license_number = $11 where id = $1",
+          "update customers set first_name = $2, last_name = $3, street = $4, street2 = $5, city = $6, state = $7, zip = $8, country = $9, birthday = $10::date, drivers_license_number = $11, drivers_license_expiration_date = $12::date where id = $1",
           [
             id,
             firstName,
@@ -393,6 +419,7 @@ export async function PATCH(
             country || null,
             birthday,
             driversLicenseNumber,
+            driversLicenseExpirationDate,
           ],
         );
         await client.query("release savepoint customer_extended_fields");
@@ -411,6 +438,7 @@ export async function PATCH(
             "country",
             "birthday",
             "drivers_license_number",
+            "drivers_license_expiration_date",
           ])
         ) {
           throw error;
