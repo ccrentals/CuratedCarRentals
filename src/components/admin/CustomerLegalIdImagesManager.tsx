@@ -6,10 +6,6 @@ import { useState } from "react";
 import { buttonStyles } from "@/components/ui/Button";
 import type { CustomerPrivateFileItem } from "@/lib/customers/privateFiles";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
-import {
-  getUploadcareClientErrorMessage,
-} from "@/lib/uploads/uploadcare-client";
-import { openUploadcareImagesDialog } from "@/components/admin/UploadcareImagesInput";
 
 type Props = {
   customerId: string;
@@ -46,20 +42,31 @@ export function CustomerLegalIdImagesManager({
     setMessage(null);
     setError(null);
     try {
-      const urls = await openUploadcareImagesDialog({ multiple: true, imagesOnly: true });
-      if (urls.length === 0) {
+      const files = await new Promise<File[]>((resolve) => {
+        const picker = document.createElement("input");
+        picker.type = "file";
+        picker.multiple = true;
+        picker.accept = "image/jpeg,image/png,image/webp,image/heic,image/heif";
+        picker.addEventListener("change", () => resolve(Array.from(picker.files ?? [])), { once: true });
+        picker.addEventListener("cancel", () => resolve([]), { once: true });
+        picker.click();
+      });
+      if (files.length === 0) {
         setBusy(false);
         return;
       }
       const csrfToken = await ensureCsrfToken();
+      if (!csrfToken) throw new Error("Unable to secure the upload. Refresh the page and try again.");
+      const form = new FormData();
+      form.set("csrfToken", csrfToken);
+      for (const file of files) form.append("files", file, file.name);
       const response = await fetch(`/api/admin/customers/${customerId}/private-files`, {
         method: "POST",
         headers: {
-          "content-type": "application/json",
           "x-csrf-token": csrfToken ?? "",
         },
         credentials: "include",
-        body: JSON.stringify({ files: urls, csrfToken }),
+        body: form,
       });
       const payload = (await response.json().catch(() => null)) as
         | { error?: string; items?: CustomerPrivateFileItem[] }
@@ -75,7 +82,7 @@ export function CustomerLegalIdImagesManager({
           : `${added.length} ID images added to the customer.`,
       );
     } catch (uploadError) {
-      setError(getUploadcareClientErrorMessage(uploadError));
+      setError(uploadError instanceof Error ? uploadError.message : "Unable to upload ID images.");
     } finally {
       setBusy(false);
     }

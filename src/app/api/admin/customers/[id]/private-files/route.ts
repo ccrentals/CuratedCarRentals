@@ -5,6 +5,7 @@ import { requireOperationsAccess } from "@/lib/auth/adminGuards";
 import {
   CUSTOMER_ID_IMAGE_POLICY,
   CUSTOMER_PRIVATE_FILE_DOCUMENT_TYPE,
+  MAX_CUSTOMER_ID_IMAGES_PER_UPLOAD,
   type CustomerPrivateFileRow,
 } from "@/lib/customers/privateFiles";
 import { dbQuery, getDbPool } from "@/lib/db";
@@ -16,6 +17,14 @@ import {
   UploadcareFileValidationError,
   validateUploadcareFiles,
 } from "@/lib/uploads/uploadcare";
+import {
+  BunnyStorageError,
+  createBunnyCustomerLegalIdStorageKey,
+  deleteBunnyStorageObject,
+  getBunnyStorageConfig,
+  uploadBunnyStorageObject,
+} from "@/lib/uploads/bunny";
+import { getFileStorageProvider } from "@/lib/env";
 import { writeMediaAudit } from "@/lib/uploads/mediaAudit";
 
 const UUID_REGEX =
@@ -25,6 +34,31 @@ type CustomerRow = {
   id: string;
   public_id: string | null;
 };
+
+type UploadedImage = File & { name: string; size: number; type: string };
+
+function isUploadedImage(value: FormDataEntryValue): value is UploadedImage {
+  return typeof value !== "string" && typeof value.name === "string" && typeof value.size === "number";
+}
+
+function validateBunnyCustomerImages(files: UploadedImage[]) {
+  if (files.length === 0) throw new BunnyStorageError("Select at least one valid ID image.", 400);
+  if (files.length > MAX_CUSTOMER_ID_IMAGES_PER_UPLOAD) {
+    throw new BunnyStorageError(
+      `Customer ID images allow a maximum of ${MAX_CUSTOMER_ID_IMAGES_PER_UPLOAD} files per upload.`,
+      400,
+    );
+  }
+  for (const file of files) {
+    const mimeType = file.type.trim().toLowerCase();
+    if (!new Set<string>(CUSTOMER_ID_IMAGE_POLICY.allowedMimeTypes).has(mimeType)) {
+      throw new BunnyStorageError("Choose a JPG, PNG, WebP, HEIC, or HEIF image.", 400);
+    }
+    if (file.size <= 0 || file.size > CUSTOMER_ID_IMAGE_POLICY.maxBytes) {
+      throw new BunnyStorageError("Each customer ID image must be no larger than 10 MB.", 400);
+    }
+  }
+}
 
 function jsonNoStore(payload: Record<string, unknown>, status = 200) {
   return NextResponse.json(payload, {
@@ -77,6 +111,112 @@ async function loadCustomerFiles(customerId: string) {
   return result.rows;
 }
 
+async function saveBunnyCustomerImages(input: {
+  customerId: string;
+  files: UploadedImage[];
+  userId: string;
+}) {
+  validateBunnyCustomerImages(input.files);
+  const config = getBunnyStorageConfig("private");
+  const pool = getDbPool();
+  const client = await pool.connect();
+  const storedKeys: string[] = [];
+  const insertedRows: CustomerPrivateFileRow[] = [];
+  let customerPublicId: string | null = null;
+  try {
+    await client.query("begin");
+    const customerResult = (await client.query(
+      "select id, public_id from customers where id = $1::uuid for update",
+      [input.customerId],
+    )) as { rows: CustomerRow[] };
+    const customer = customerResult.rows[0];
+    if (!customer) {
+      await client.query("rollback");
+      return { customerPublicId, insertedRows, notFound: true };
+    }
+    customerPublicId = customer.public_id ?? customer.id;
+
+    for (const file of input.files) {
+      const storageKey = createBunnyCustomerLegalIdStorageKey({
+        customerPublicId,
+        fileName: file.name,
+      });
+      await uploadBunnyStorageObject(config, storageKey, file);
+      storedKeys.push(storageKey);
+      const uploadedAt = new Date().toISOString();
+      const insertResult = (await client.query(
+        `insert into booking_private_files (
+           customer_id,
+           booking_id,
+           document_type,
+           storage_provider,
+           storage_key,
+           original_file_name,
+           mime_type,
+           byte_size,
+           metadata_json,
+           created_by_user_id
+         ) values (
+           $1::uuid,
+           null,
+           $2,
+           'BUNNY_STORAGE',
+           $3,
+           $4,
+           $5,
+           $6,
+           $7::jsonb,
+           $8::uuid
+         )
+         returning
+           id,
+           customer_id,
+           booking_id,
+           null::text as booking_public_id,
+           document_type,
+           storage_provider,
+           storage_key,
+           original_file_name,
+           mime_type,
+           byte_size,
+           metadata_json,
+           created_by_user_id,
+           created_at`,
+        [
+          input.customerId,
+          CUSTOMER_PRIVATE_FILE_DOCUMENT_TYPE,
+          storageKey,
+          file.name,
+          file.type.trim().toLowerCase(),
+          file.size,
+          JSON.stringify({
+            customerId: input.customerId,
+            customerPublicId,
+            documentType: CUSTOMER_PRIVATE_FILE_DOCUMENT_TYPE,
+            storageProvider: "BUNNY_STORAGE",
+            source: "admin_customer_profile",
+            uploadedByUserId: input.userId,
+            uploadedAt,
+            originalFileName: file.name,
+            mimeType: file.type.trim().toLowerCase(),
+            byteSize: file.size,
+          }),
+          input.userId,
+        ],
+      )) as { rows: CustomerPrivateFileRow[] };
+      insertedRows.push(insertResult.rows[0]);
+    }
+    await client.query("commit");
+    return { customerPublicId, insertedRows, notFound: false };
+  } catch (error) {
+    await client.query("rollback");
+    await Promise.allSettled(storedKeys.map((storageKey) => deleteBunnyStorageObject(config, storageKey)));
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -115,14 +255,70 @@ export async function POST(
   const auth = await requireOperationsAccess();
   if (!auth.ok) return auth.response;
 
-  const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
-  if (!(await requireCsrf(request, typeof body?.csrfToken === "string" ? body.csrfToken : null))) {
-    return jsonNoStore({ ok: false, error: "Invalid CSRF token." }, 403);
-  }
-
   const { id: customerId } = await params;
   if (!UUID_REGEX.test(customerId)) {
     return jsonNoStore({ ok: false, error: "Invalid customer ID." }, 400);
+  }
+
+  if (request.headers.get("content-type")?.toLowerCase().startsWith("multipart/form-data")) {
+    const form = await request.formData().catch(() => null);
+    const csrfToken = form?.get("csrfToken");
+    if (!(await requireCsrf(request, typeof csrfToken === "string" ? csrfToken : null))) {
+      return jsonNoStore({ ok: false, error: "Invalid CSRF token." }, 403);
+    }
+    if (getFileStorageProvider() !== "bunny") {
+      return jsonNoStore({ ok: false, error: "Private Bunny uploads are not active for this environment." }, 409);
+    }
+    const entries = form?.getAll("files") ?? [];
+    const files = entries.filter(isUploadedImage);
+    if (files.length !== entries.length) {
+      return jsonNoStore({ ok: false, error: "Select at least one valid ID image." }, 400);
+    }
+
+    try {
+      const saved = await saveBunnyCustomerImages({ customerId, files, userId: auth.actor.userId });
+      if (saved.notFound) return jsonNoStore({ ok: false, error: "Customer not found." }, 404);
+      for (const row of saved.insertedRows) {
+        try {
+          await writeMediaAudit({
+            userId: auth.actor.userId,
+            action: "MEDIA_UPLOAD",
+            entityType: "customer",
+            entityId: customerId,
+            fileId: row.storage_key,
+            context: "customer legal identification",
+            label: row.original_file_name,
+            outcome: "Saved privately to Bunny Storage",
+            details: {
+              privateFileId: row.id,
+              customerPublicId: saved.customerPublicId,
+              documentType: CUSTOMER_PRIVATE_FILE_DOCUMENT_TYPE,
+              storageProvider: "BUNNY_STORAGE",
+            },
+          });
+        } catch (auditError) {
+          logError("api.admin.customers.private-files.POST.bunny-audit", auditError, {
+            customerId,
+            privateFileId: row.id,
+          });
+        }
+      }
+      return jsonNoStore({ ok: true, items: saved.insertedRows.map(mapFile) }, 201);
+    } catch (error) {
+      if (error instanceof BunnyStorageError) {
+        return jsonNoStore({ ok: false, error: error.message }, error.status);
+      }
+      logError("api.admin.customers.private-files.POST.bunny", error, {
+        customerId,
+        userId: auth.actor.userId,
+      });
+      return jsonNoStore({ ok: false, error: "Failed to save customer ID images." }, 500);
+    }
+  }
+
+  const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+  if (!(await requireCsrf(request, typeof body?.csrfToken === "string" ? body.csrfToken : null))) {
+    return jsonNoStore({ ok: false, error: "Invalid CSRF token." }, 403);
   }
 
   const rawReferences = Array.isArray(body?.files)

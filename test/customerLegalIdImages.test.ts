@@ -47,6 +47,10 @@ test("customer private-file APIs require auth, CSRF, ownership scoping, and safe
   assert.match(collectionRoute, /requireOperationsAccess/);
   assert.match(collectionRoute, /requireCsrf/);
   assert.match(collectionRoute, /validateUploadcareFiles\(references, CUSTOMER_ID_IMAGE_POLICY\)/);
+  assert.match(collectionRoute, /getBunnyStorageConfig\("private"\)/);
+  assert.match(collectionRoute, /createBunnyCustomerLegalIdStorageKey/);
+  assert.match(collectionRoute, /'BUNNY_STORAGE'/);
+  assert.match(collectionRoute, /uploadBunnyStorageObject/);
   assert.match(collectionRoute, /customer_id = \$1::uuid/);
   assert.match(collectionRoute, /file\.originalFileUrl/);
   assert.match(collectionRoute, /normalizeUploadcareDeliveryUrl\(references\[index\]\)/);
@@ -62,6 +66,8 @@ test("customer private-file APIs require auth, CSRF, ownership scoping, and safe
   assert.match(itemRoute, /x-content-type-options": "nosniff"/);
   assert.match(itemRoute, /count\(\*\) from booking_private_files/);
   assert.match(itemRoute, /deleteUploadcareFile/);
+  assert.match(itemRoute, /fetchBunnyStorageObject/);
+  assert.match(itemRoute, /deleteBunnyStorageObject/);
   assert.match(itemRoute, /MEDIA_SHARED_PRESERVE/);
 });
 

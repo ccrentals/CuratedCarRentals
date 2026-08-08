@@ -18,6 +18,11 @@ import {
   extractUploadcareFileId,
   getUploadcareFileMetadata,
 } from "@/lib/uploads/uploadcare";
+import {
+  deleteBunnyStorageObject,
+  fetchBunnyStorageObject,
+  getBunnyStorageConfig,
+} from "@/lib/uploads/bunny";
 import { writeMediaAudit } from "@/lib/uploads/mediaAudit";
 
 const UUID_REGEX =
@@ -88,6 +93,25 @@ export async function GET(
             ...file,
             mime_type: parsed.mimeType,
           })}"`,
+          "x-content-type-options": "nosniff",
+        },
+      });
+    }
+    if (file.storage_provider.trim().toUpperCase() === "BUNNY_STORAGE") {
+      const upstream = await fetchBunnyStorageObject(getBunnyStorageConfig("private"), file.storage_key);
+      const mimeType = resolveCustomerPrivateFileMimeType(
+        file.mime_type,
+        upstream.headers.get("content-type"),
+      );
+      if (!mimeType) {
+        return jsonNoStore({ ok: false, error: "Unable to load a safe image." }, 502);
+      }
+      return new NextResponse(upstream.body, {
+        status: 200,
+        headers: {
+          "content-type": mimeType,
+          "cache-control": "private, max-age=0, no-store",
+          "content-disposition": `inline; filename="${customerPrivateFileName(file)}"`,
           "x-content-type-options": "nosniff",
         },
       });
@@ -188,11 +212,25 @@ export async function DELETE(
       return jsonNoStore({ ok: false, error: "File not found." }, 404);
     }
 
+    const storageProvider = file.storage_provider.trim().toUpperCase();
     const uploadcareFileId = extractUploadcareFileId(file.storage_key);
     let providerFileDeleted = false;
     let providerFileShared = false;
     let cleanupWarning: string | null = null;
-    if (uploadcareFileId) {
+    if (storageProvider === "BUNNY_STORAGE") {
+      try {
+        await deleteBunnyStorageObject(getBunnyStorageConfig("private"), file.storage_key);
+        providerFileDeleted = true;
+      } catch (error) {
+        cleanupWarning =
+          "The image was removed from the customer, but permanent storage cleanup failed.";
+        logError("api.admin.customers.private-files.file.bunny-delete", error, {
+          customerId,
+          fileId,
+          userId: auth.actor.userId,
+        });
+      }
+    } else if (uploadcareFileId) {
       try {
         const referenceResult = await dbQuery<{ reference_count: number }>(
           `select (
@@ -233,7 +271,7 @@ export async function DELETE(
         action: "MEDIA_REMOVE",
         entityType: "customer",
         entityId: customerId,
-        fileId: uploadcareFileId,
+        fileId: storageProvider === "BUNNY_STORAGE" ? file.storage_key : uploadcareFileId,
         context: "customer legal identification",
         label: file.original_file_name,
         outcome: cleanupWarning
@@ -241,9 +279,11 @@ export async function DELETE(
           : providerFileShared
             ? "Removed; shared provider file preserved"
             : providerFileDeleted
-              ? "Removed and deleted from Uploadcare"
+              ? storageProvider === "BUNNY_STORAGE"
+                ? "Removed and deleted from Bunny Storage"
+                : "Removed and deleted from Uploadcare"
               : "Removed",
-        details: { privateFileId: fileId },
+        details: { privateFileId: fileId, storageProvider },
       });
       if (cleanupWarning || providerFileShared || providerFileDeleted) {
         await writeMediaAudit({
@@ -255,11 +295,11 @@ export async function DELETE(
               : "MEDIA_PROVIDER_DELETE",
           entityType: "customer",
           entityId: customerId,
-          fileId: uploadcareFileId,
+          fileId: storageProvider === "BUNNY_STORAGE" ? file.storage_key : uploadcareFileId,
           context: "customer legal identification",
           label: file.original_file_name,
           outcome: cleanupWarning ?? (providerFileShared ? "File remains referenced" : "Deleted"),
-          details: { privateFileId: fileId },
+          details: { privateFileId: fileId, storageProvider },
         });
       }
     } catch (auditError) {
