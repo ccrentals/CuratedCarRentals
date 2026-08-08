@@ -9,8 +9,8 @@ import { consumeRouteRateLimit, withRateLimitHeaders } from "@/lib/security/rate
 import {
   UPLOADCARE_ALLOWED_RASTER_IMAGE_MIME_TYPES,
   UploadcareFileValidationError,
-  validateUploadcareFiles,
 } from "@/lib/uploads/uploadcare";
+import { validateVehicleGalleryFiles } from "@/lib/uploads/vehicleGallery";
 import { buildVehicleGalleryEntries } from "@/lib/vehicles/gallery";
 import { writeMediaAudit } from "@/lib/uploads/mediaAudit";
 
@@ -118,7 +118,7 @@ type AdminVehiclePostDeps = {
   requireCsrfCheck: (request: Request, bodyToken?: string | null) => Promise<boolean>;
   consumeRateLimitCheck?: typeof consumeRouteRateLimit;
   connect: () => Promise<VehicleMutationClient>;
-  validateUploads?: typeof validateUploadcareFiles;
+  validateUploads?: typeof validateVehicleGalleryFiles;
   writeMediaAudit?: typeof writeMediaAudit;
 };
 
@@ -141,7 +141,7 @@ const DEFAULT_POST_DEPS: AdminVehiclePostDeps = {
   requireCsrfCheck: (request, bodyToken) => requireCsrf(request, bodyToken),
   consumeRateLimitCheck: consumeRouteRateLimit,
   connect: async () => getDbPool().connect(),
-  validateUploads: validateUploadcareFiles,
+  validateUploads: validateVehicleGalleryFiles,
   writeMediaAudit,
 };
 
