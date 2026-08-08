@@ -186,6 +186,33 @@ export function createBunnyCustomerLegalIdStorageKey(input: {
   return `private/customers/${customerPublicId}/drivers-license/${input.id ?? randomUUID()}-${safeName}`;
 }
 
+export function createBunnyBookingInspectionStorageKey(input: {
+  bookingId: string;
+  inspectionType: "PICKUP" | "RETURN";
+  category: string;
+  fileName: string;
+  id?: string;
+}) {
+  const bookingId = normalizeText(input.bookingId).replace(/[^a-zA-Z0-9_-]+/g, "-");
+  const inspectionType = normalizeText(input.inspectionType).toLowerCase();
+  const category = normalizeText(input.category)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40);
+  if (!bookingId || !["pickup", "return"].includes(inspectionType) || !category) {
+    throw new BunnyStorageError("Invalid Bunny inspection image key.", 400);
+  }
+  const rawName = normalizeText(input.fileName) || "inspection-image.bin";
+  const safeName = rawName
+    .split(/[\\/]/)
+    .at(-1)!
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 120) || "inspection-image.bin";
+  return `private/bookings/${bookingId}/inspections/${inspectionType}/${category}/${input.id ?? randomUUID()}-${safeName}`;
+}
+
 type BunnyFetchOptions = {
   fetchFn?: typeof fetch;
 };

@@ -3,7 +3,6 @@
 import { useState, type ReactNode } from "react";
 import { ChevronDown } from "lucide-react";
 
-import { openUploadcareImagesDialog } from "@/components/admin/UploadcareImagesInput";
 import { MediaActivityPanel } from "@/components/admin/MediaActivityPanel";
 import { buttonStyles } from "@/components/ui/Button";
 import {
@@ -880,12 +879,17 @@ export function BookingVehicleInspectionPanel({
         inspectionId = draftSave.inspection.inspectionId;
       }
 
-      const uploadedUrls = await openUploadcareImagesDialog({
-        multiple: true,
-        imagesOnly: true,
+      const files = await new Promise<File[]>((resolve) => {
+        const picker = document.createElement("input");
+        picker.type = "file";
+        picker.multiple = true;
+        picker.accept = "image/jpeg,image/png,image/webp,image/heic,image/heif";
+        picker.addEventListener("change", () => resolve(Array.from(picker.files ?? [])), { once: true });
+        picker.addEventListener("cancel", () => resolve([]), { once: true });
+        picker.click();
       });
 
-      if (uploadedUrls.length < 1) {
+      if (files.length < 1) {
         setUploadState((current) => ({
           ...current,
           loading: false,
@@ -900,21 +904,19 @@ export function BookingVehicleInspectionPanel({
         operation: "saving",
       }));
       const csrfToken = await ensureCsrfToken();
-      const response = await fetch(`/api/admin/bookings/${bookingId}/inspections/images`, {
+      if (!csrfToken) throw new Error("Unable to secure the upload. Refresh the page and try again.");
+      const form = new FormData();
+      form.set("csrfToken", csrfToken);
+      form.set("inspectionId", inspectionId);
+      form.set("inspectionType", inspectionType);
+      form.set("category", uploadState.category);
+      for (const file of files) form.append("files", file, file.name);
+      const response = await fetch(`/api/admin/bookings/${bookingId}/inspections/images/private-upload`, {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
           "x-csrf-token": csrfToken ?? "",
         },
-        body: JSON.stringify({
-          inspectionId,
-          inspectionType,
-          category: uploadState.category,
-          files: uploadedUrls.map((url) => ({
-            storageProvider: "UPLOADCARE_FILE_ID",
-            storageKey: url,
-          })),
-        }),
+        body: form,
       });
 
       const payload = (await response.json().catch(() => ({}))) as {
@@ -936,9 +938,9 @@ export function BookingVehicleInspectionPanel({
         loading: false,
         operation: "idle",
         message:
-          uploadedUrls.length === 1
+          files.length === 1
             ? `${isPickup ? "Pickup" : "Return"} image uploaded.`
-            : `${uploadedUrls.length} ${isPickup ? "pickup" : "return"} images uploaded.`,
+            : `${files.length} ${isPickup ? "pickup" : "return"} images uploaded.`,
       }));
     } catch (error) {
       setUploadState((current) => ({

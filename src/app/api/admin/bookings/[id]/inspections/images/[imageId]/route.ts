@@ -12,6 +12,11 @@ import {
   UploadcareFileValidationError,
 } from "@/lib/uploads/uploadcare";
 import {
+  deleteBunnyStorageObject,
+  fetchBunnyStorageObject,
+  getBunnyStorageConfig,
+} from "@/lib/uploads/bunny";
+import {
   BOOKING_VEHICLE_INSPECTION_TYPES,
   archiveBookingVehicleInspectionImage,
   isBookingVehicleInspectionMissingTableError,
@@ -36,6 +41,7 @@ export type AdminBookingInspectionImageRouteDeps = {
   loadInspections: typeof loadBookingVehicleInspectionSummaries;
   archiveImage: typeof archiveBookingVehicleInspectionImage;
   getImage: (bookingId: string, imageId: string) => Promise<{
+    storageProvider?: string | null;
     storageKey: string;
     mimeType: string | null;
     fileName: string | null;
@@ -62,11 +68,12 @@ const DEFAULT_DEPS: AdminBookingInspectionImageRouteDeps = {
   getImage: async (bookingId, imageId) => {
     const result = await dbQuery<{
       storage_key: string;
+      storage_provider: string | null;
       mime_type: string | null;
       generated_file_name: string | null;
       original_file_name: string | null;
     }>(
-      `select storage_key, mime_type, generated_file_name, original_file_name
+      `select storage_key, storage_provider, mime_type, generated_file_name, original_file_name
        from booking_vehicle_inspection_images
        where id = $1::uuid
          and booking_id = $2::uuid
@@ -77,6 +84,7 @@ const DEFAULT_DEPS: AdminBookingInspectionImageRouteDeps = {
     const row = result.rows[0];
     if (!row) return null;
     return {
+      storageProvider: row.storage_provider,
       storageKey: row.storage_key,
       mimeType: row.mime_type,
       fileName: row.generated_file_name ?? row.original_file_name,
@@ -157,6 +165,20 @@ export async function handleAdminBookingInspectionImageGet(
     const image = await resolvedDeps.getImage(id, imageId);
     if (!image) {
       return NextResponse.json({ error: "Inspection image not found." }, { status: 404 });
+    }
+
+    const storageProvider = normalizeText(image.storageProvider).toUpperCase();
+    if (storageProvider === "BUNNY_STORAGE") {
+      const upstream = await fetchBunnyStorageObject(getBunnyStorageConfig("private"), image.storageKey);
+      const headers = new Headers({
+        "Cache-Control": "private, max-age=300",
+        "Content-Type": upstream.headers.get("content-type") ?? image.mimeType ?? "application/octet-stream",
+        "X-Content-Type-Options": "nosniff",
+      });
+      if (image.fileName) {
+        headers.set("Content-Disposition", `inline; filename="${image.fileName.replace(/[\"\r\n]/g, "_")}"`);
+      }
+      return new Response(upstream.body, { status: 200, headers });
     }
 
     const fileId = extractUploadcareFileId(image.storageKey);
@@ -266,6 +288,7 @@ export async function handleAdminBookingInspectionImageDelete(
     if (!image) {
       return NextResponse.json({ ok: false, error: "Inspection image not found." }, { status: 404 });
     }
+    const storageProvider = normalizeText(image.storageProvider).toUpperCase();
     const fileId = extractUploadcareFileId(image.storageKey);
 
     const deleted = await resolvedDeps.archiveImage(id, {
@@ -280,7 +303,20 @@ export async function handleAdminBookingInspectionImageDelete(
     let providerFileDeleted = false;
     let providerFileShared = false;
     let cleanupWarning: string | null = null;
-    if (fileId) {
+    if (storageProvider === "BUNNY_STORAGE") {
+      try {
+        await deleteBunnyStorageObject(getBunnyStorageConfig("private"), image.storageKey);
+        providerFileDeleted = true;
+      } catch (error) {
+        cleanupWarning =
+          "The image was removed from this inspection, but permanent storage cleanup failed.";
+        logError("admin.booking-inspections.images.bunny-delete", error, {
+          bookingId: id,
+          imageId,
+          actorUserId: auth.actor.userId,
+        });
+      }
+    } else if (fileId) {
       try {
         providerFileShared = (await resolvedDeps.countActiveFileReferences(fileId)) > 0;
         if (!providerFileShared) {
@@ -305,7 +341,7 @@ export async function handleAdminBookingInspectionImageDelete(
         action: "MEDIA_REMOVE",
         entityType: "booking",
         entityId: id,
-        fileId,
+        fileId: storageProvider === "BUNNY_STORAGE" ? image.storageKey : fileId,
         context: `${inspectionType.toLowerCase()} inspection`,
         label: image.fileName,
         outcome: cleanupWarning
@@ -313,9 +349,11 @@ export async function handleAdminBookingInspectionImageDelete(
           : providerFileShared
             ? "Removed; shared provider file preserved"
             : providerFileDeleted
-              ? "Removed and deleted from Uploadcare"
+              ? storageProvider === "BUNNY_STORAGE"
+                ? "Removed and deleted from Bunny Storage"
+                : "Removed and deleted from Uploadcare"
               : "Removed",
-        details: { inspectionId, imageId },
+        details: { inspectionId, imageId, storageProvider },
       });
       if (cleanupWarning || providerFileShared || providerFileDeleted) {
         await resolvedDeps.writeMediaAudit({
@@ -327,11 +365,11 @@ export async function handleAdminBookingInspectionImageDelete(
               : "MEDIA_PROVIDER_DELETE",
           entityType: "booking",
           entityId: id,
-          fileId,
+          fileId: storageProvider === "BUNNY_STORAGE" ? image.storageKey : fileId,
           context: `${inspectionType.toLowerCase()} inspection`,
           label: image.fileName,
           outcome: cleanupWarning ?? (providerFileShared ? "File remains referenced" : "Deleted"),
-          details: { inspectionId, imageId },
+          details: { inspectionId, imageId, storageProvider },
         });
       }
     } catch (auditError) {

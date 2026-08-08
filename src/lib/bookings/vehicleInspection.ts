@@ -7,6 +7,7 @@ import {
   extractUploadcareFileId,
   normalizeUploadcareDeliveryUrl,
 } from "@/lib/uploads/uploadcare";
+import { normalizeBunnyStorageKey } from "@/lib/uploads/bunny";
 import {
   BOOKING_VEHICLE_INSPECTION_IMAGE_CATEGORIES,
   BOOKING_VEHICLE_INSPECTION_FUEL_LEVELS,
@@ -885,13 +886,19 @@ export async function createBookingVehicleInspectionImages(
 
   for (const [index, file] of input.files.entries()) {
     const storageProvider = normalizeStorageProvider(file.storageProvider);
-    if (!["UPLOADCARE_FILE_ID", "UPLOADCARE", "UPLOADCARE_TOKEN"].includes(storageProvider)) {
-      throw new Error("UNSUPPORTED_IMAGE_STORAGE_PROVIDER");
-    }
-
     const rawStorageKey = normalizeText(file.storageKey);
-    const normalizedStorageKey =
-      extractUploadcareDeliveryUrl(rawStorageKey) ?? extractUploadcareFileId(rawStorageKey);
+    const normalizedStorageKey = ["UPLOADCARE_FILE_ID", "UPLOADCARE", "UPLOADCARE_TOKEN"].includes(storageProvider)
+      ? extractUploadcareDeliveryUrl(rawStorageKey) ?? extractUploadcareFileId(rawStorageKey)
+      : storageProvider === "BUNNY_STORAGE"
+        ? (() => {
+            try {
+              const key = normalizeBunnyStorageKey(rawStorageKey);
+              return key.startsWith("private/bookings/") ? key : null;
+            } catch {
+              return null;
+            }
+          })()
+        : null;
     if (!normalizedStorageKey) {
       throw new Error("INVALID_IMAGE_STORAGE_REFERENCE");
     }

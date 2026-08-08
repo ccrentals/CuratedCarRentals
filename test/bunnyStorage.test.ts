@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   buildBunnyPublicUrl,
   buildBunnyStorageObjectUrl,
+  createBunnyBookingInspectionStorageKey,
   createBunnyCustomerLegalIdStorageKey,
   createBunnyStorageKey,
   createBunnyVehicleGalleryStorageKey,
@@ -98,5 +99,18 @@ test("Bunny storage: creates private customer identification keys", () => {
       id: "test-id",
     }),
     "private/customers/CU000101/drivers-license/test-id-Driver-Licence-Front.png",
+  );
+});
+
+test("Bunny storage: creates private booking inspection keys", () => {
+  assert.equal(
+    createBunnyBookingInspectionStorageKey({
+      bookingId: "BK000101",
+      inspectionType: "PICKUP",
+      category: "EXTERIOR",
+      fileName: "Front bumper.jpg",
+      id: "test-id",
+    }),
+    "private/bookings/BK000101/inspections/pickup/exterior/test-id-Front-bumper.jpg",
   );
 });
