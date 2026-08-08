@@ -114,6 +114,35 @@ test("admin media library maps vehicle gallery metadata and primary position", a
   assert.equal(items[0].canRemove, false);
 });
 
+test("admin media library maps configured Bunny vehicle gallery URLs", async () => {
+  const previous = process.env.BUNNY_PUBLIC_CDN_URL;
+  process.env.BUNNY_PUBLIC_CDN_URL = "https://ccrstagingmedia.b-cdn.net";
+  try {
+    const items = await loadAdminMediaItems("vehicles", {
+      query: async () => ({
+        rows: [{
+          id: "vehicle-1",
+          public_id: "VE000101",
+          make: "Toyota",
+          model: "Aqua",
+          year: 2019,
+          status: "AVAILABLE",
+          image_urls_json: ["https://ccrstagingmedia.b-cdn.net/public/vehicles/VE000101/toyota-aqua/gallery-01.jpg"],
+          features_json: {},
+          created_at: "2026-06-01T12:00:00.000Z",
+          updated_at: "2026-06-07T12:00:00.000Z",
+        }],
+      }),
+    });
+
+    assert.equal(items.length, 1);
+    assert.equal(items[0].previewUrl, "https://ccrstagingmedia.b-cdn.net/public/vehicles/VE000101/toyota-aqua/gallery-01.jpg");
+  } finally {
+    if (previous === undefined) delete process.env.BUNNY_PUBLIC_CDN_URL;
+    else process.env.BUNNY_PUBLIC_CDN_URL = previous;
+  }
+});
+
 test("admin media library includes only image vehicle files with existing archive action", async () => {
   const items = await loadAdminMediaItems("vehicle-files", {
     query: async () => ({

@@ -21,9 +21,14 @@ function authorized(): RequireAdminApiSessionResult {
   };
 }
 
-function request(files: Array<{ name: string; type: string; contents: string }>, vehicleId?: string) {
+function request(
+  files: Array<{ name: string; type: string; contents: string }>,
+  vehicleId?: string,
+  purpose: "vehicle-gallery" | "landing-content" = "vehicle-gallery",
+) {
   const form = new FormData();
   form.set("csrfToken", "token");
+  form.set("purpose", purpose);
   if (vehicleId) form.set("vehicleId", vehicleId);
   for (const file of files) form.append("files", new Blob([file.contents], { type: file.type }), file.name);
   return new Request("http://localhost/api/admin/uploads/images", {
@@ -109,6 +114,27 @@ test("admin Bunny image upload does not permit Uploadcare mode to write Bunny fi
     requireCsrfCheck: async () => true,
     getProvider: () => "uploadcare",
   });
+
+  assert.equal(response.status, 409);
+  assert.match(String((await response.json()).error), /not active/i);
+});
+
+test("admin Bunny image upload requires an explicit approved public purpose", async () => {
+  const form = new FormData();
+  form.set("csrfToken", "token");
+  form.append("files", new Blob(["jpg"], { type: "image/jpeg" }), "vehicle.jpg");
+  const response = await handleAdminImageUploadPost(
+    new Request("http://localhost/api/admin/uploads/images", {
+      method: "POST",
+      headers: { "x-csrf-token": "token" },
+      body: form,
+    }),
+    {
+      requireUploadAccess: async () => authorized(),
+      requireCsrfCheck: async () => true,
+      getProvider: () => "bunny",
+    },
+  );
 
   assert.equal(response.status, 409);
   assert.match(String((await response.json()).error), /not active/i);

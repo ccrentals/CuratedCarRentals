@@ -366,7 +366,11 @@ export function LandingContentManager({
     setUploadingPath(key);
     setError(null);
     try {
-      const urls = await openUploadcareImagesDialog({ multiple: false, imagesOnly: true });
+      const urls = await openUploadcareImagesDialog({
+        multiple: false,
+        imagesOnly: true,
+        purpose: "landing-content",
+      });
       const [url] = urls;
       if (url) {
         handleChange(path, url);

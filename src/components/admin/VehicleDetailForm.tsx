@@ -768,6 +768,7 @@ export function VehicleDetailForm({
           label="Vehicle Images"
           helperText="Upload photos to this vehicle's managed gallery. New Bunny files are stored under its vehicle folder."
           uploadContext={{ vehicleId: vehicle.id }}
+          uploadPurpose="vehicle-gallery"
           displayMode="carousel"
           disabled={!isEditing}
           actionSlot={

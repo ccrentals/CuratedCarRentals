@@ -231,7 +231,8 @@ export function isSafeLandingImageSource(value: string) {
         url.hostname === "ucarecdn.com" ||
         url.hostname.endsWith(".ucarecdn.com") ||
         url.hostname === "ucarecd.net" ||
-        url.hostname.endsWith(".ucarecd.net"))
+        url.hostname.endsWith(".ucarecd.net") ||
+        (url.hostname.endsWith(".b-cdn.net") && url.pathname.startsWith("/public/")))
     );
   } catch {
     return false;
@@ -258,7 +259,7 @@ export function validateLandingItem(
       } else if (key === "href" && !isSafeLandingHref(trimmed)) {
         errors[path] = "Use an internal path, HTTPS URL, email link, or telephone link.";
       } else if (["src", "imageSrc", "avatar"].includes(key) && !isSafeLandingImageSource(trimmed)) {
-        errors[path] = "Upload an image or use an approved site or Uploadcare image URL.";
+        errors[path] = "Upload an image or use an approved site, Uploadcare, or Bunny CDN image URL.";
       } else if (key === "id" && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(trimmed)) {
         errors[path] = "Use a lowercase URL ID with letters, numbers, and hyphens only.";
       } else if (

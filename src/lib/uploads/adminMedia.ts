@@ -7,6 +7,7 @@ import {
   type BookingVehicleInspectionType,
 } from "@/lib/bookings/vehicleInspectionShared";
 import { normalizeUploadcareDeliveryUrl } from "@/lib/uploads/uploadcare";
+import { extractBunnyPublicStorageKey, getBunnyPublicCdnUrl } from "@/lib/uploads/bunny";
 
 export const ADMIN_MEDIA_SOURCES = ["inspections", "vehicles", "vehicle-files"] as const;
 export type AdminMediaSource = (typeof ADMIN_MEDIA_SOURCES)[number];
@@ -128,6 +129,15 @@ function isImageMimeType(value: string | null) {
   return normalizeText(value).toLowerCase().startsWith("image/");
 }
 
+function normalizeVehicleGalleryUrl(value: unknown) {
+  const uploadcareUrl = normalizeUploadcareDeliveryUrl(value);
+  if (uploadcareUrl) return uploadcareUrl;
+  const bunnyPublicCdnUrl = getBunnyPublicCdnUrl();
+  return bunnyPublicCdnUrl && extractBunnyPublicStorageKey(value, bunnyPublicCdnUrl)
+    ? String(value).trim()
+    : null;
+}
+
 function inspectionSubtypeLabel(value: BookingVehicleInspectionType) {
   return value === "RETURN" ? "Return" : "Pickup";
 }
@@ -192,7 +202,7 @@ function galleryEntries(row: VehicleGalleryRow) {
     return storedGallery
       .map((value, index) => {
         const entry = toObject(value);
-        const url = normalizeUploadcareDeliveryUrl(normalizeText(entry.url));
+        const url = normalizeVehicleGalleryUrl(normalizeText(entry.url));
         if (!url) return null;
         const position = Number(entry.position);
         return {
@@ -209,7 +219,7 @@ function galleryEntries(row: VehicleGalleryRow) {
 
   return imageUrls
     .map((value, index) => {
-      const url = normalizeUploadcareDeliveryUrl(value);
+      const url = normalizeVehicleGalleryUrl(value);
       if (!url) return null;
       return {
         name: `${row.public_id ?? row.id}-gallery-${String(index + 1).padStart(2, "0")}`,
