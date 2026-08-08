@@ -396,8 +396,10 @@ export async function POST(request: Request) {
         country?: unknown;
         birthday?: unknown;
         driversLicenseNumber?: unknown;
+        driversLicenseExpirationDate?: unknown;
         legalIdType?: unknown;
         legalIdNumber?: unknown;
+        legalIdExpirationDate?: unknown;
         address?: unknown;
         notes?: unknown;
         csrfToken?: string | null;
