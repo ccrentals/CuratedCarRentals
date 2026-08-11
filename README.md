@@ -56,7 +56,7 @@ Important:
 
 Set all values from `.env.example` in Netlify:
 1. Netlify dashboard → Site configuration → Environment variables.
-2. Add production values for Clerk, Turnstile, WiPay, Resend, PDFMonkey, and database keys.
+2. Add context-specific values for Clerk, Turnstile, the selected payment provider (Stripe or WiPay), Resend, the PDF provider, Bunny Storage, and database keys.
 3. Deploy after saving env vars so `src/proxy.ts` and security headers run with the new values.
 4. Keep secrets server-side only (`CLERK_SECRET_KEY`, `TURNSTILE_SECRET_KEY`, payment keys, DB URLs).
 
@@ -229,7 +229,7 @@ Use `/admin/health` as the checklist.
 
 For a “goLiveReady: true” signal you must have:
 - Core env configured (including `CSRF_SECRET`).
-- WiPay configured + reachable.
+- The active payment provider configured + reachable (Stripe test credentials on staging; the selected live provider in production).
 - Resend configured + reachable.
 - PDFMonkey configured + reachable.
 - Active file-storage provider configured + reachable: Bunny requires both public/private

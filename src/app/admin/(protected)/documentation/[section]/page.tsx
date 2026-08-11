@@ -274,17 +274,17 @@ const BOOKING_FLOW_DIAGRAM = `Customer booking + deposit (high level)
                  "Deposit due now" + "Balance due on pickup"
                                  |
                                  v
-                   POST /api/payments/wipay/start (CSRF)
+                      POST /api/payments/start (CSRF)
                                  |
                                  v
-                        WiPay hosted checkout page
+                   Configured provider checkout page
                          /\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\
-                        (card details handled by WiPay)
+                    (card details handled by provider)
                          \\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/
                           |                     |
                           | (return redirect)    | (webhook)
                           v                     v
-             GET /api/payments/wipay/return   POST /api/payments/wipay/webhook
+          Provider return route              Provider webhook route
                           |                     |
                           +----------+----------+
                                      v
@@ -314,8 +314,8 @@ const SYSTEM_ARCH_DIAGRAM = `System architecture (simplified)
           |                |                         |
           v                v                         v
  +----------------+  +--------------+        +----------------------+
- | Neon Postgres  |  | WiPay        |        | Resend + PDF Engine  |
- | (DATABASE_URL) |  | (hosted pay) |        | (Gotenberg/PDFMonkey)|
+ | Neon Postgres  |  | Payments     |        | Resend + PDF Engine  |
+ | (DATABASE_URL) |  | (Stripe/WiPay)|       | (Gotenberg/PDFMonkey)|
  +----------------+  +--------------+        +----------------------+
                       ^      |
                       |      v
@@ -374,7 +374,7 @@ Reminders (cron)
 const DATA_PROCESSING_DIAGRAM = `Data processing map (high level)
 
 Customer submits booking details -> Next.js API -> Neon Postgres
-Deposit checkout -> WiPay (hosted) -> return/webhook -> reconcile in Neon
+Deposit checkout -> selected hosted payment provider -> return/webhook -> reconcile in Neon
 Emails -> Resend
 Invoices -> configured provider (Gotenberg or PDFMonkey)
 Quotes -> native PDF generation endpoint
@@ -1015,8 +1015,8 @@ const DOCS: Record<string, DocSection> = {
                   y={45}
                   width={210}
                   height={92}
-                  title="WiPay"
-                  lines={["Hosted checkout", "return + webhook"]}
+                  title="Payments"
+                  lines={["Stripe or WiPay", "return + webhook"]}
                   fill="var(--ccr-accent)"
                   fillOpacity={0.14}
                   stroke="var(--ccr-accent-strong)"
@@ -1077,12 +1077,14 @@ const DOCS: Record<string, DocSection> = {
                 <code>pg</code> using <code>src/lib/db.ts</code>.
               </li>
               <li>
-                <span className="font-semibold text-[var(--ccr-text)]">Auth:</span> Signed admin session cookie + bcrypt
-                password hashes.
+                <span className="font-semibold text-[var(--ccr-text)]">Auth:</span> Clerk-backed identity where enabled,
+                bridged to the local <code>users.role</code> authorization record; the legacy signed admin-cookie path
+                remains during the cutover.
               </li>
               <li>
-                <span className="font-semibold text-[var(--ccr-text)]">Payments:</span> WiPay hosted checkout for deposit
-                payments; return + webhook reconciliation.
+                <span className="font-semibold text-[var(--ccr-text)]">Payments:</span> provider-selected hosted checkout
+                (Stripe for the staging test flow; Stripe or WiPay in production according to deployment configuration),
+                with return + webhook reconciliation.
               </li>
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">Email & documents:</span> Resend for notifications;
@@ -1130,12 +1132,12 @@ const DOCS: Record<string, DocSection> = {
               </li>
             </ul>
 
-            <p className="mt-4 text-[var(--ccr-text)] font-semibold">Payments (WiPay)</p>
+            <p className="mt-4 text-[var(--ccr-text)] font-semibold">Payments</p>
             <ul className="mt-1 list-disc space-y-1 pl-5">
               <li>
-                <code>POST /api/payments/wipay/start</code>
+                <code>POST /api/payments/start</code>
                 <DateRangeArrow />
-                returns hosted checkout URL.
+                starts the configured provider checkout and returns its hosted URL.
               </li>
               <li>
                 <code>POST /api/payments/wipay/balance/start</code>
@@ -1157,7 +1159,8 @@ const DOCS: Record<string, DocSection> = {
               <li>
                 <code>POST /api/payments/wipay/webhook</code>
                 <DateRangeArrow />
-                reconcile async provider events.
+                reconcile WiPay events; Stripe uses <code>POST /api/payments/stripe/webhook</code> and
+                <code> GET /api/payments/stripe/return</code>.
               </li>
             </ul>
 
@@ -1409,8 +1412,9 @@ x-csrf-token: <token>
           <>
             <ul className="list-disc space-y-2 pl-5">
               <li>
-                <span className="font-semibold text-[var(--ccr-text)]">Netlify:</span> Build via <code>npm run build</code>{" "}
-                with <code>@netlify/plugin-nextjs</code> (see <code>netlify.toml</code>).
+                <span className="font-semibold text-[var(--ccr-text)]">Netlify:</span> Branch pushes build through
+                <code>@netlify/plugin-nextjs</code>; staging runs bootstrap + migrations, while production runs
+                migrations before <code>npm run build</code> (see <code>netlify.toml</code>).
               </li>
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">Database:</span> Neon Postgres; requires{" "}
@@ -1436,7 +1440,15 @@ x-csrf-token: <token>
 - CSRF_SECRET
 - SITE_URL
 
-Payments (WiPay)
+Payments (choose the configured provider)
+- PAYMENT_PROVIDER (wipay|stripe)
+
+Stripe staging / production
+- STRIPE_SECRET_KEY
+- STRIPE_WEBHOOK_SECRET
+- STRIPE_TEST_MODE (true with sk_test_ in staging; false with sk_live_ in production)
+
+WiPay production
 - SITE_URL (builds WiPay response_url)
 - WIPAY_ACCOUNT_NUMBER
 - WIPAY_API_KEY
@@ -1515,8 +1527,10 @@ Cron
             </p>
             <ol className="list-decimal space-y-2 pl-5">
               <li>
-                <span className="font-semibold text-[var(--ccr-text)]">Git + release:</span> Merge the production branch,
-                tag a release, and verify CI is green before deploy.
+                <span className="font-semibold text-[var(--ccr-text)]">Git + release:</span> Push the candidate to
+                <code> staging</code>, verify the Netlify staging deployment and smoke tests, then promote that verified
+                commit to <code>main</code>. Tag a release after the production deployment is healthy; do not deploy from
+                an unpushed local workspace.
               </li>
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">Netlify config:</span> Confirm production site is linked
@@ -1532,10 +1546,12 @@ Cron
                 set, required migrations are applied, and a restore-tested backup/snapshot exists.
               </li>
               <li>
-                <span className="font-semibold text-[var(--ccr-text)]">WiPay:</span> Replace sandbox credentials with live{" "}
-                <code>WIPAY_ACCOUNT_NUMBER</code> and <code>WIPAY_API_KEY</code>, set <code>WIPAY_ENV=live</code>, confirm{" "}
-                <code>WIPAY_FEE_STRUCTURE</code> matches business policy, keep <code>WIPAY_COUNTRY_CODE=JM</code> for the current
-                JMD flow, and run a small real payment + webhook reconciliation.
+                <span className="font-semibold text-[var(--ccr-text)]">Payments:</span> Staging must use Stripe test
+                credentials (<code>STRIPE_TEST_MODE=true</code> with an <code>sk_test_</code> key). For production, validate
+                the selected <code>PAYMENT_PROVIDER</code>: Stripe requires <code>STRIPE_TEST_MODE=false</code>, an
+                <code>sk_live_</code> key, and a verified webhook; WiPay requires live credentials,
+                <code>WIPAY_ENV=live</code>, and the approved fee structure. Run a small real payment plus webhook
+                reconciliation only after the provider configuration is confirmed.
               </li>
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">Email (Resend):</span> Validate <code>RESEND_API_KEY</code>{" "}
@@ -1640,30 +1656,33 @@ Cron
       "Operational reference for payment modes, PDF provider setup, template previews, and email attachment behavior.",
     blocks: [
       {
-        title: "Payment Integration Matrix (WiPay + Admin)",
+        title: "Payment Integration Matrix",
         content: (
           <>
             <ul className="list-disc space-y-2 pl-5">
               <li>
-                <span className="font-semibold text-[var(--ccr-text)]">Deposit payment:</span>{" "}
-                <code>POST /api/payments/wipay/start</code>
+                <span className="font-semibold text-[var(--ccr-text)]">Configured checkout:</span>{" "}
+                <code>POST /api/payments/start</code> selects the configured provider.
               </li>
               <li>
-                <span className="font-semibold text-[var(--ccr-text)]">Balance payment:</span>{" "}
-                <code>POST /api/payments/wipay/balance/start</code>
+                <span className="font-semibold text-[var(--ccr-text)]">Staging:</span> Stripe test mode is required;
+                configure <code>STRIPE_TEST_MODE=true</code> with test credentials and validate the Stripe webhook.
               </li>
               <li>
-                <span className="font-semibold text-[var(--ccr-text)]">Full payment:</span>{" "}
-                <code>POST /api/payments/wipay/full/start</code>
+                <span className="font-semibold text-[var(--ccr-text)]">Production:</span> Use the provider named by
+                <code> PAYMENT_PROVIDER</code>. Stripe requires live-mode credentials and a signing secret; WiPay uses
+                its live account/API credentials and configured fee structure.
               </li>
               <li>
-                <span className="font-semibold text-[var(--ccr-text)]">Manual/custom payment:</span>{" "}
-                <code>POST /api/payments/wipay/custom/start</code> (admin/internal flows).
+                <span className="font-semibold text-[var(--ccr-text)]">WiPay-specific routes:</span>{" "}
+                <code>/api/payments/wipay/*</code> support WiPay deposit, balance, full, and custom flows when WiPay is
+                the selected provider.
               </li>
               <li>
-                Return reconciliation is handled by <code>GET /api/payments/wipay/return</code>; async provider callbacks
-                are processed by <code>POST /api/payments/wipay/webhook</code>. Provider-side webhook registration is external
-                WiPay/dashboard setup; this repo does not use a <code>WIPAY_CALLBACK_URL</code> env var.
+                Reconciliation is provider-specific: WiPay uses <code>/api/payments/wipay/return</code> and
+                <code> /api/payments/wipay/webhook</code>; Stripe uses <code>/api/payments/stripe/return</code> and
+                <code> /api/payments/stripe/webhook</code>. Register the matching webhook with the provider and never
+                place signing secrets in browser-accessible variables.
               </li>
             </ul>
           </>
@@ -1816,8 +1835,9 @@ Cron
           <>
             <ul className="list-disc space-y-2 pl-5">
               <li>
-                <span className="font-semibold text-[var(--ccr-text)]">Passwords:</span> admin credentials are
-                stored as bcrypt hashes; never log or export raw passwords.
+                <span className="font-semibold text-[var(--ccr-text)]">Identity and roles:</span> Clerk may establish
+                identity, but local <code>users.role</code> remains the authorization source of truth. Legacy password
+                hashes must never be logged or exported while the cookie-login path remains available.
               </li>
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">Sessions:</span> admin authentication uses
@@ -1846,9 +1866,9 @@ Cron
           <>
             <ul className="list-disc space-y-2 pl-5">
               <li>
-                <span className="font-semibold text-[var(--ccr-text)]">Hosted checkout boundary:</span> WiPay
-                handles card entry, which reduces PCI scope; this app should only store transaction references and
-                reconciliation metadata.
+                <span className="font-semibold text-[var(--ccr-text)]">Hosted checkout boundary:</span> the configured
+                payment provider (Stripe or WiPay) handles card entry, which reduces PCI scope; this app should only store
+                transaction references and reconciliation metadata.
               </li>
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">Webhook safety:</span> payment webhooks
@@ -2046,16 +2066,22 @@ Cron
         content: (
           <>
             <p>
-              Roles are stored in <code>users.role</code>. Login supports usernames and emails where configured.
+              Roles are stored in <code>users.role</code>; Clerk identity can be linked, but it is not the authorization
+              source of truth. Login supports the configured Clerk or legacy path during the cutover.
             </p>
             <ul className="list-disc space-y-2 pl-5">
               <li>
-                <span className="font-semibold text-[var(--ccr-text)]">ADMIN:</span> Full access to admin portal features
-                (bookings, vehicles, payments, reports, users, health).
+                <span className="font-semibold text-[var(--ccr-text)]">ADMIN:</span> Privileged operational access,
+                including payments, users, settings, media, reporting, and fleet administration.
               </li>
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">OPERATIONS:</span> Day-to-day operational access
-                for bookings, quotes, customers, and calendar workflows without privileged admin tooling.
+                for bookings, quotes, customers, and calendar workflows without privileged or developer-only tooling.
+              </li>
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">DEVELOPER:</span> Admin capabilities plus
+                developer-only diagnostic and configuration surfaces, including health, cron diagnostics, documentation,
+                template tools, and <code>/admin/developer</code>. Assign only to trusted technical staff.
               </li>
             </ul>
             <p className="mt-3 text-sm text-[var(--ccr-muted)]">
@@ -2111,8 +2137,14 @@ Cron
                 runs and requests include the <code>x-csrf-token</code> header for protected endpoints.
               </li>
               <li>
-                <span className="font-semibold text-[var(--ccr-text)]">WiPay start fails:</span> Confirm WiPay env vars,
-                account number formatting (digits only), and provider reachability.
+                <span className="font-semibold text-[var(--ccr-text)]">Payment start fails:</span> Confirm
+                <code>PAYMENT_PROVIDER</code> and the matching credentials. Staging requires Stripe test mode; production
+                Stripe requires live mode, while WiPay requires valid account-number formatting and provider reachability.
+              </li>
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">File storage fails:</span> Check
+                <code>/admin/health</code> for the active provider, then verify the Bunny public/private zone credentials,
+                public Pull Zone URL, and Netlify deploy context. Never use a private-zone access key in browser code.
               </li>
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">Emails not sending:</span> Validate Resend keys and{" "}
