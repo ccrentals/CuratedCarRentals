@@ -210,12 +210,16 @@ const SITE_MAP = `Public
 - /book/checkout
 - /services
 - /tourist-destinations
+- /driving-in-jamaica
 - /about
 - /contact
+- /rental-policies
 - /bookings/[id]
+  - /bookings/[id]/access
   - /bookings/[id]/pay
   - /bookings/[id]/balance
   - /bookings/[id]/invoice
+  - /bookings/[id]/invoice/preview
 - /payment/success
 - /payment/failed
 
@@ -231,6 +235,9 @@ Admin (requires login)
 - /admin/customers
   - /admin/customers/[id]
 - /admin/messages
+- /admin/messages/trash
+- /admin/emails
+- /admin/media
 - /admin/vehicles
   - /admin/vehicles/[vehicleId]
 - /admin/payments
@@ -246,6 +253,8 @@ Admin (requires login)
 - /admin/profile
 - /admin/template-lab
 - /admin/developer
+  - /admin/developer/access
+  - /admin/developer/auth-sync
 - /admin/documentation
   - /admin/documentation/prd
 - /admin/documentation/design
@@ -456,7 +465,7 @@ const DOCS: Record<string, DocSection> = {
             <ul className="list-disc space-y-2 pl-5">
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">Public pages:</span> Home, Fleet, Services,
-                Destinations, About, Contact.
+                Destinations, Driving in Jamaica, About, Contact, and Rental Policies.
               </li>
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">Fleet browsing:</span> Display available vehicles
@@ -467,8 +476,9 @@ const DOCS: Record<string, DocSection> = {
                 vehicle, dates, pickup location, and customer contact details; validates inputs and availability.
               </li>
               <li>
-                <span className="font-semibold text-[var(--ccr-text)]">Deposits:</span> Start a hosted WiPay checkout for
-                the deposit amount due now; redirect back to success/failure pages and reconcile by webhook/return.
+                <span className="font-semibold text-[var(--ccr-text)]">Deposits:</span> Start the configured hosted
+                checkout for the deposit amount due now; redirect back to success/failure pages and reconcile by
+                webhook/return.
               </li>
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">Balance options:</span> Remaining balance can be paid
@@ -489,7 +499,7 @@ const DOCS: Record<string, DocSection> = {
               <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-text)]">Out of scope (for now)</p>
               <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-[var(--ccr-muted)]">
                 <li>Automated refunds/chargebacks.</li>
-                <li>Customer accounts and self-serve booking changes.</li>
+                <li>Self-serve booking changes after a booking is created.</li>
               </ul>
             </div>
           </>
@@ -506,8 +516,8 @@ const DOCS: Record<string, DocSection> = {
               </li>
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">Security:</span> CSRF protection for state-changing
-                requests, HttpOnly session cookies for admin, bcrypt password hashes, rate-limited login, audit logs for
-                key actions.
+                requests, Clerk identity where configured with local role authorization, legacy HttpOnly admin sessions
+                during cutover, rate-limited login, and audit logs for key actions.
               </li>
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">Payments:</span> PCI handled by hosted checkout;
@@ -561,7 +571,8 @@ const DOCS: Record<string, DocSection> = {
                 >
                 <title id="booking-flow-title">Customer booking and deposit payment flow</title>
                 <desc id="booking-flow-desc">
-                  Fleet browsing, booking creation, deposit checkout via WiPay, reconciliation via return and webhook, and final status pages.
+                  Fleet browsing, booking creation, configured hosted deposit checkout, reconciliation via return and
+                  webhook, and final status pages.
                 </desc>
                 <defs>
                   <marker
@@ -603,7 +614,7 @@ const DOCS: Record<string, DocSection> = {
                   width={120}
                   height={72}
                   title="Pay deposit"
-                  lines={["POST", "/api/payments/wipay/start"]}
+                  lines={["POST", "/api/payments/start"]}
                   fill="var(--ccr-surface-soft)"
                 />
                 <SvgBox
@@ -611,8 +622,8 @@ const DOCS: Record<string, DocSection> = {
                   y={50}
                   width={120}
                   height={72}
-                  title="WiPay"
-                  lines={["Hosted checkout", "Card handled off-site"]}
+                  title="Payment provider"
+                  lines={["Stripe or WiPay", "Card handled off-site"]}
                   fill="var(--ccr-accent)"
                   fillOpacity={0.14}
                   stroke="var(--ccr-accent-strong)"
@@ -1088,7 +1099,7 @@ const DOCS: Record<string, DocSection> = {
               </li>
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">Email & documents:</span> Resend for notifications;
-                invoice provider is configurable via <code>PDF_PROVIDER</code> (<code>gotenberg</code> or{" "}
+                invoice provider is configurable via <code>INVOICE_PDF_PROVIDER</code> (<code>gotenberg</code> or{" "}
                 <code>pdfmonkey</code>), and quote PDFs are generated natively.
               </li>
               <li>
@@ -1129,6 +1140,12 @@ const DOCS: Record<string, DocSection> = {
                 <code>POST /api/public/promos/validate</code>
                 <DateRangeArrow />
                 validates promo code applicability for the selected booking window.
+              </li>
+              <li>
+                <code>POST /api/public/contact</code>, <code>POST /api/public/returning-customer/start</code>, and
+                <code> POST /api/public/returning-customer/verify</code>
+                <DateRangeArrow />
+                protected customer-contact and returning-customer recovery flows.
               </li>
             </ul>
 
@@ -1190,6 +1207,28 @@ const DOCS: Record<string, DocSection> = {
                 <code>/api/admin/quotes/*</code>
                 <DateRangeArrow />
                 quote CRUD, status transitions, PDF generation, and email send.
+              </li>
+              <li>
+                <code>/api/admin/bookings/*</code>
+                <DateRangeArrow />
+                booking changes, inspection drafts/completion, inspection-image uploads, documents, and payment actions.
+              </li>
+              <li>
+                <code>/api/admin/vehicles/*</code>
+                <DateRangeArrow />
+                vehicle profile, availability, pricing rules, reservations, checklists, documents, maintenance, finance,
+                depreciation, notes, and performance data.
+              </li>
+              <li>
+                <code>GET/PATCH /api/admin/landing-content</code> and <code>POST /api/admin/uploads/images</code>
+                <DateRangeArrow />
+                saved public-page content and configured public-media uploads.
+              </li>
+              <li>
+                <code>/api/admin/messages/*</code>, <code>/api/admin/emails/*</code>, <code>/api/admin/reports</code>, and
+                <code> /api/admin/payments/*</code>
+                <DateRangeArrow />
+                communications, reporting, payment operations, export, reconciliation, and refunds within role limits.
               </li>
               <li><code>/api/admin/*</code> resource routes for vehicles, bookings, payments, users, and blockouts.</li>
             </ul>
@@ -1281,9 +1320,9 @@ Content-Type: application/json
 
             <details className="mt-3 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-4 py-3">
               <summary className="cursor-pointer text-sm font-semibold text-[var(--ccr-text)]">
-                Example: Start WiPay deposit payment
+                Example: Start configured deposit payment
               </summary>
-              <CodeBlock>{`POST /api/payments/wipay/start
+              <CodeBlock>{`POST /api/payments/start
 Content-Type: application/json
 x-csrf-token: <token>
 
@@ -1294,7 +1333,7 @@ x-csrf-token: <token>
 200 OK
 {
   "ok": true,
-  "redirectUrl": "https://...wipay...hosted-page...",
+  "redirectUrl": "https://...provider-hosted-page...",
   "paymentId": "uuid"
 }`}</CodeBlock>
             </details>
@@ -1425,9 +1464,9 @@ x-csrf-token: <token>
                 provider; set <code>SITE_URL</code> to the public https URL.
               </li>
               <li>
-                <span className="font-semibold text-[var(--ccr-text)]">Cron:</span> Scheduled functions exist for pickup
-                and balance reminders, note emails, maintenance reminders, and archived-file cleanup; routes are also callable
-                manually via <code>/admin/cron</code>.
+                <span className="font-semibold text-[var(--ccr-text)]">Cron:</span> Scheduled functions cover pickup and
+                balance reminders, note emails, maintenance reminders, cancelled-booking archival, and archived-file cleanup;
+                developer-authorized runs and diagnostics are available through <code>/admin/cron</code>.
               </li>
             </ul>
             <details className="mt-3 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-4 py-3">
@@ -1462,10 +1501,10 @@ Email (Resend)
 - RESEND_FROM
 
 	Invoices
-	- PDF_PROVIDER (gotenberg|pdfmonkey)
-	- GOTENBERG_URL (required in production when PDF_PROVIDER=gotenberg)
-	- PDFMONKEY_API_KEY (required when PDF_PROVIDER=pdfmonkey)
-	- PDFMONKEY_TEMPLATE_ID (required when PDF_PROVIDER=pdfmonkey)
+	- INVOICE_PDF_PROVIDER (gotenberg|pdfmonkey)
+	- GOTENBERG_URL (required in production when INVOICE_PDF_PROVIDER=gotenberg)
+	- PDFMONKEY_API_KEY (required when INVOICE_PDF_PROVIDER=pdfmonkey)
+	- PDFMONKEY_TEMPLATE_ID (required when INVOICE_PDF_PROVIDER=pdfmonkey)
 
 Uploads (Bunny Storage)
 - FILE_STORAGE_PROVIDER=bunny
@@ -1559,8 +1598,8 @@ Cron
               </li>
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">Invoices:</span> If using Gotenberg, set{" "}
-                <code>PDF_PROVIDER=gotenberg</code> and <code>GOTENBERG_URL</code>; if using PDFMonkey, set{" "}
-                <code>PDF_PROVIDER=pdfmonkey</code>, <code>PDFMONKEY_API_KEY</code>, and{" "}
+                <code>INVOICE_PDF_PROVIDER=gotenberg</code> and <code>GOTENBERG_URL</code>; if using PDFMonkey, set{" "}
+                <code>INVOICE_PDF_PROVIDER=pdfmonkey</code>, <code>PDFMONKEY_API_KEY</code>, and{" "}
                 <code>PDFMONKEY_TEMPLATE_ID</code>. Then generate and open a real invoice from an actual booking.
               </li>
               <li>
@@ -1695,7 +1734,7 @@ Cron
             <ul className="list-disc space-y-2 pl-5">
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">Invoice PDFs:</span> provider-backed via{" "}
-                <code>PDF_PROVIDER</code> with runtime support for <code>gotenberg</code> and <code>pdfmonkey</code>.
+                <code>INVOICE_PDF_PROVIDER</code> with runtime support for <code>gotenberg</code> and <code>pdfmonkey</code>.
               </li>
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">Quote PDFs:</span> generated natively via{" "}
@@ -1746,7 +1785,8 @@ Cron
                 <code>netlify.toml</code>).
               </li>
               <li>
-                Existing reminder jobs remain active: pickup, balance, note emails, and maintenance reminders.
+                Other scheduled jobs cover pickup reminders, balance reminders, note emails, maintenance reminders, and
+                cancellation archival. Verify outcomes in <code>/admin/cron</code> and Netlify function logs.
               </li>
             </ul>
           </>
@@ -1781,7 +1821,7 @@ Cron
               </li>
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">Third-party trust boundaries:</span>{" "}
-                WiPay handles card entry, Resend handles outbound email, configurable PDF providers render
+                the configured payment provider handles card entry, Resend handles outbound email, configurable PDF providers render
                 invoices/documents, Bunny Storage handles current uploads, and Uploadcare remains a legacy read fallback
                 until migration is complete.
               </li>
@@ -2041,21 +2081,73 @@ Cron
         content: (
           <>
             <p>
-              Content is managed in two primary ways: (1) code-based marketing content and (2) admin-managed operational data.
+              Content is managed in three primary ways: (1) code-managed fallback content, (2) saved landing-page content,
+              and (3) admin-managed operational data. The current source indicator in Settings shows whether public pages are
+              using saved content or their code-managed fallback.
             </p>
             <ul className="list-disc space-y-2 pl-5">
               <li>
-                <span className="font-semibold text-[var(--ccr-text)]">Marketing content (code):</span> Update copy and
-                template data in <code>src/data</code> (e.g., <code>content.ts</code>, <code>services.ts</code>,{" "}
-                <code>vehicles.ts</code>) and images under <code>public/</code>.
+                <span className="font-semibold text-[var(--ccr-text)]">Marketing content (fallback code):</span> Update
+                copy and template data in <code>src/data</code> (for example <code>content.ts</code>,
+                <code> services.ts</code>, and <code>vehicles.ts</code>) and images under <code>public/</code> when a
+                saved landing value is intentionally absent.
               </li>
               <li>
-                <span className="font-semibold text-[var(--ccr-text)]">Fleet inventory (DB/admin):</span> Use{" "}
-                <code>/admin/vehicles</code> to manage production vehicles if DB-backed fleet is enabled.
+                <span className="font-semibold text-[var(--ccr-text)]">Landing pages (admin-managed):</span> Use
+                <code> /admin/settings?tab=landing</code> to edit the global header/footer and public Home, Fleet, Services,
+                destinations, driving guide, About, Contact, and Rental Policies content. Save to publish the stored value;
+                use the configured public upload flow for landing images.
+              </li>
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">Fleet inventory (DB/admin):</span> Use
+                <code> /admin/vehicles</code> for vehicle visibility, profile details, gallery images, availability, pricing,
+                reservations, documents, checklist, maintenance, depreciation, promotion, insurance, and notes.
               </li>
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">Documentation notes:</span> Use{" "}
                 <code>/admin/documentation</code> Notes editor for quick updates.
+              </li>
+            </ul>
+          </>
+        ),
+      },
+      {
+        title: "Operational Feature Map",
+        content: (
+          <>
+            <p>
+              Use this map to choose the correct admin area. It reflects the currently implemented operational surfaces,
+              not a future roadmap; access is still limited by role.
+            </p>
+            <ul className="mt-3 list-disc space-y-2 pl-5">
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">Bookings and quotes:</span> create/review bookings,
+                record payments, manage booking changes, generate documents, and convert quotes in
+                <code> /admin/bookings</code> and <code> /admin/bookings/quotes</code>.
+              </li>
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">Vehicle inspections:</span> capture pickup/return
+                odometer, fuel, damage notes, and categorized photo evidence on the booking detail. Inspection photos are
+                private files and are immutable after the relevant inspection is completed.
+              </li>
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">Customers and secure records:</span> manage customer
+                details and driver-license images in <code>/admin/customers</code>; open private files only through CCR's
+                authorized routes, never a public Bunny URL.
+              </li>
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">Operations and finance:</span> use Calendar,
+                Maintenance, Depreciation, Payments, Promo Codes, and Reports for fleet availability, servicing, financial
+                records, discounts, and operational reporting.
+              </li>
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">Communications:</span> use Messages and Emails to
+                review inbound contact traffic, send/re-send operational email, and retain a trace of follow-up activity.
+              </li>
+              <li>
+                <span className="font-semibold text-[var(--ccr-text)]">Configuration and technical tools:</span> Settings
+                controls business rules and content; Health, Cron, Documentation, Templates, and Developer tools are for
+                authorized technical users and should be used with the release runbook.
               </li>
             </ul>
           </>
@@ -2152,7 +2244,7 @@ Cron
               </li>
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">Invoices failing:</span> Verify the configured{" "}
-                <code>PDF_PROVIDER</code> path (<code>GOTENBERG_URL</code> for gotenberg or PDFMonkey credentials/template),
+                <code>INVOICE_PDF_PROVIDER</code> path (<code>GOTENBERG_URL</code> for gotenberg or PDFMonkey credentials/template),
                 and check provider/network health.
               </li>
               <li>
@@ -2188,7 +2280,8 @@ Cron
               >
                 <title id="data-map-title">Data processing map</title>
                 <desc id="data-map-desc">
-                  Customer data and bookings stored in Postgres; payments handled by WiPay; emails via Resend; invoice PDFs via configurable provider; public and private uploads via Bunny Storage; cron jobs via Netlify.
+                  Customer data and bookings stored in Postgres; payments handled by the configured hosted provider; emails via
+                  Resend; invoice PDFs via configurable provider; public and private uploads via Bunny Storage; cron jobs via Netlify.
                 </desc>
                 <defs>
                   <marker
@@ -2213,8 +2306,8 @@ Cron
                   y={190}
                   width={250}
                   height={84}
-                  title="WiPay"
-                  lines={["Hosted checkout", "No card storage"]}
+                  title="Payment provider"
+                  lines={["Stripe or WiPay", "No card storage"]}
                   fill="var(--ccr-accent)"
                   fillOpacity={0.14}
                   stroke="var(--ccr-accent-strong)"
@@ -2243,12 +2336,12 @@ Cron
           <>
             <p>
               This project collects customer contact details and booking metadata. Payments are processed via hosted
-              checkout (WiPay), which reduces PCI scope.
+              checkout, which reduces PCI scope.
             </p>
             <ul className="list-disc space-y-2 pl-5">
               <li>Data collected: name, email, phone, booking dates, pickup location, vehicle selection.</li>
               <li>Payment data: store transaction references and reconciliation metadata; do not store raw card data.</li>
-              <li>Processors: WiPay (payments), Resend (email), configurable PDF provider (Gotenberg/PDFMonkey), and Bunny Storage (public and private uploads). Uploadcare remains a legacy processor only while historical assets are retained there.</li>
+              <li>Processors: the configured payment provider (Stripe or WiPay), Resend (email), configurable PDF provider (Gotenberg/PDFMonkey), and Bunny Storage (public and private uploads). Uploadcare remains a legacy processor only while historical assets are retained there.</li>
               <li>Retention: define retention windows for bookings, payments, and logs.</li>
               <li>User rights: provide contact method for access/deletion requests where applicable.</li>
             </ul>

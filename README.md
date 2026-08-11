@@ -117,7 +117,10 @@ The import is idempotent (safe to re-run). It updates existing rows by `features
 
 ## Admin users
 
-The app expects bcrypt password hashes.
+Clerk is the preferred identity provider when configured. The local `users.role` record remains the authorization source
+of truth, and the legacy bcrypt/cookie-login path is retained only for the active cutover. Use the admin Users and
+Developer access tools for normal staff provisioning; use the manual legacy workflow below only when the legacy path is
+deliberately enabled.
 
 Generate a bcrypt hash locally:
 
@@ -146,16 +149,23 @@ If you explicitly want libpq-compatible semantics now, set:
 
 The app also normalizes `sslmode=require|prefer|verify-ca` to `verify-full` unless `uselibpqcompat=true` is set.
 
-## Payments (WiPay)
+## Payments
 
-Hosted checkout payments:
-- Start: `POST /api/payments/wipay/start`
-- Return: `GET /api/payments/wipay/return`
-- Webhook: `POST /api/payments/wipay/webhook`
+Hosted checkout starts through `POST /api/payments/start`, which selects the active payment provider for the deployment.
+Staging requires Stripe test mode. Production uses the provider selected by `PAYMENT_PROVIDER` and must use the matching
+live credentials and verified webhook.
 
-Current scope: JM/JMD hosted checkout. Keep `WIPAY_COUNTRY_CODE` unset or set to `JM` unless multi-country payment support is deliberately added later.
+Stripe environment variables:
+- `PAYMENT_PROVIDER=stripe`
+- `NEXT_PUBLIC_PAYMENT_PROVIDER=stripe`
+- `STRIPE_TEST_MODE` / `NEXT_PUBLIC_STRIPE_TEST_MODE` (`true` with an `sk_test_` key in staging; `false` with an `sk_live_` key in production)
+- `STRIPE_SECRET_KEY`
+- `STRIPE_WEBHOOK_SECRET`
 
-WiPay env vars for Netlify/Lovable (see `.env.example`):
+WiPay remains supported when `PAYMENT_PROVIDER=wipay`. Its provider-specific routes are under `/api/payments/wipay/*`.
+Keep `WIPAY_COUNTRY_CODE` unset or set to `JM` unless multi-country support is deliberately added.
+
+WiPay environment variables (only when WiPay is selected; see `.env.example`):
 - `SITE_URL` (required; used to derive WiPay `response_url` as `${SITE_URL}/api/payments/wipay/return`)
 - `WIPAY_ACCOUNT_NUMBER` (digits only)
 - `WIPAY_API_KEY`
@@ -237,6 +247,16 @@ For a “goLiveReady: true” signal you must have:
   while historical assets are migrated.
 - DB OK.
 - Promo ledger schema present (`promo_redemption_events`).
+
+## Operational feature map
+
+- **Public site:** fleet browsing, quote and booking flow, hosted payment handoff, returning-customer recovery, contact forms, and customer booking/document access.
+- **Bookings:** lifecycle actions, payment recording, quotes, agreements/invoices, pickup/return inspections, and private inspection media.
+- **Fleet:** vehicles, galleries, availability, pricing, reservations, checklists, documents, maintenance, depreciation, insurance, promotions, and performance.
+- **Customers and communications:** customer profiles and private ID files, messages, emails, reports, and payment operations.
+- **Configuration:** landing-page content in `/admin/settings?tab=landing`; health, cron, templates, documentation, and developer tools are role-restricted.
+
+See `/admin/documentation` for the role boundaries and detailed runbooks. Treat files stored in the private Bunny zone as server-authorized resources: access them through CCR rather than direct public URLs.
 
 ## Security docs
 
