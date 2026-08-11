@@ -65,6 +65,17 @@ test("Admin logout only changes session state through CSRF-protected POST", () =
   assert.doesNotMatch(logoutRoute, /export async function GET[\s\S]*revokeCurrentClerkSession/);
 });
 
+test("CSP scopes legacy Uploadcare hosts to the directives that need them", () => {
+  const config = read("next.config.ts");
+
+  assert.match(config, /const UPLOADCARE_SCRIPT_DOMAINS = \[\s*\/\/[^\n]*\n\s*"https:\/\/ucarecdn\.com",\s*\]/);
+  assert.match(config, /const UPLOADCARE_IMAGE_DOMAINS = \[[\s\S]*"https:\/\/\*\.ucarecd\.net",/);
+  assert.match(config, /const UPLOADCARE_CONNECT_DOMAINS = \[[\s\S]*"https:\/\/upload\.uploadcare\.com",/);
+  assert.match(config, /scriptSrc[\s\S]*\.\.\.UPLOADCARE_SCRIPT_DOMAINS/);
+  assert.match(config, /connectSrc[\s\S]*\.\.\.UPLOADCARE_CONNECT_DOMAINS/);
+  assert.match(config, /img-src[^`]*\.\.\.UPLOADCARE_IMAGE_DOMAINS/);
+});
+
 test("Returning-customer verification accepts stored legal IDs and does not require birthday", () => {
   const startRoute = read("src/app/api/public/returning-customer/start/route.ts");
   const verifyRoute = read("src/app/api/public/returning-customer/verify/route.ts");
