@@ -1,1 +1,3 @@
-export { GET, dynamic } from "./implementation";
+export { GET } from "./implementation";
+
+export const dynamic = "force-dynamic";
