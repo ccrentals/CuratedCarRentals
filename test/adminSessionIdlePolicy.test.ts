@@ -22,7 +22,7 @@ test("/admin/auth: bootstrap requests are redirected into the route-handler boot
   assert.match(source, /function buildBootstrapHref\(/);
   assert.match(source, /return `\/api\/admin\/session\/bootstrap\?\$\{query\.toString\(\)\}`;/);
   assert.match(source, /redirect\(buildBootstrapHref\(params\)\);/);
-  assert.match(source, /redirect\(buildLogoutRedirectHref\(params\)\);/);
+  assert.match(source, /redirect\(buildSignInHref\(params\)\);/);
 });
 
 test("admin bootstrap route: route handler is the only place that rehydrates admin cookie from Clerk", () => {
@@ -33,7 +33,7 @@ test("admin bootstrap route: route handler is the only place that rehydrates adm
     /getSessionFromRequest\(\{\s*allowClerkBridge: true,\s*clerkBridgeMode: "any-local-user",\s*\}\)/,
   );
   assert.match(source, /await setSessionCookie\(createSessionToken\(bootstrapSession\.userId, bootstrapSession\.role\)\);/);
-  assert.match(source, /return NextResponse\.redirect\(new URL\(buildLogoutRedirectHref\(request\), request\.url\)\);/);
+  assert.match(source, /return NextResponse\.redirect\(new URL\(buildSignInHref\(request\), request\.url\)\);/);
 });
 
 test("admin sign-in: Clerk return path uses explicit admin bootstrap route", () => {

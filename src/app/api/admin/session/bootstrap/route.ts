@@ -39,11 +39,6 @@ function buildSignInHref(request: Request) {
   return `/sign-in?${query.toString()}`;
 }
 
-function buildLogoutRedirectHref(request: Request) {
-  const signInHref = buildSignInHref(request);
-  return `/api/admin/logout?redirect=${encodeURIComponent(signInHref)}`;
-}
-
 export async function GET(request: Request) {
   const redirectTarget = resolveRedirectTarget(request);
   const activeSession = await getSessionFromRequest();
@@ -57,7 +52,7 @@ export async function GET(request: Request) {
   });
 
   if (!bootstrapSession || !canAccessAdmin(bootstrapSession.role)) {
-    return NextResponse.redirect(new URL(buildLogoutRedirectHref(request), request.url));
+    return NextResponse.redirect(new URL(buildSignInHref(request), request.url));
   }
 
   const response = NextResponse.redirect(new URL(redirectTarget, request.url));

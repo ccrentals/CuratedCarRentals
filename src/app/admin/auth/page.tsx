@@ -63,13 +63,6 @@ function buildSignInHref(searchParams: {
   return queryString ? `/sign-in?${queryString}` : "/sign-in";
 }
 
-function buildLogoutRedirectHref(searchParams: {
-  [key: string]: string | string[] | undefined;
-}) {
-  const signInHref = buildSignInHref(searchParams);
-  return `/api/admin/logout?redirect=${encodeURIComponent(signInHref)}`;
-}
-
 function buildBootstrapHref(searchParams: {
   [key: string]: string | string[] | undefined;
 }) {
@@ -107,5 +100,5 @@ export default async function AdminAuthEntryPage({
     redirect(buildBootstrapHref(params));
   }
 
-  redirect(buildLogoutRedirectHref(params));
+  redirect(buildSignInHref(params));
 }
