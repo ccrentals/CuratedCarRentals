@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { handlePasswordUpdate, type PasswordUpdateDeps } from "@/app/api/auth/password/update/route";
+import { handlePasswordUpdate, type PasswordUpdateDeps } from "@/app/api/auth/password/update/implementation";
 
 function makeDeps(overrides: Partial<PasswordUpdateDeps>): PasswordUpdateDeps {
   return {

@@ -4,9 +4,9 @@ import test from "node:test";
 import {
   handleAdminVehicleDocumentsGet,
   handleAdminVehicleDocumentsPost,
-} from "@/app/api/admin/vehicles/[id]/documents/route";
-import { handleAdminVehicleDocumentDownload } from "@/app/api/admin/vehicles/[id]/documents/[docId]/download/route";
-import { handleAdminVehicleDocumentPatch } from "@/app/api/admin/vehicles/[id]/documents/[docId]/route";
+} from "@/app/api/admin/vehicles/[id]/documents/implementation";
+import { handleAdminVehicleDocumentDownload } from "@/app/api/admin/vehicles/[id]/documents/[docId]/download/implementation";
+import { handleAdminVehicleDocumentPatch } from "@/app/api/admin/vehicles/[id]/documents/[docId]/implementation";
 import { UploadcareFileValidationError } from "@/lib/uploads/uploadcare";
 
 const VEHICLE_ID = "11111111-1111-4111-8111-111111111111";

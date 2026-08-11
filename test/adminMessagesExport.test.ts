@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { handleAdminMessagesExportGet } from "@/app/api/admin/messages/export/route";
+import { handleAdminMessagesExportGet } from "@/app/api/admin/messages/export/implementation";
 
 test("admin messages export includes source and related entity context", async () => {
   const response = await handleAdminMessagesExportGet(

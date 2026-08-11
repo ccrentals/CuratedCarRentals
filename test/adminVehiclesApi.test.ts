@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { handleAdminVehiclePost } from "@/app/api/admin/vehicles/route";
-import { handleAdminVehiclePatch } from "@/app/api/admin/vehicles/[id]/route";
+import { handleAdminVehiclePost } from "@/app/api/admin/vehicles/implementation";
+import { handleAdminVehiclePatch } from "@/app/api/admin/vehicles/[id]/implementation";
 import { UploadcareFileValidationError } from "@/lib/uploads/uploadcare";
 
 const VEHICLE_ID = "11111111-1111-4111-8111-111111111111";

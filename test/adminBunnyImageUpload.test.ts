@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { handleAdminImageUploadPost } from "@/app/api/admin/uploads/images/route";
+import { handleAdminImageUploadPost } from "@/app/api/admin/uploads/images/implementation";
 import type { BunnyStorageConfig } from "@/lib/uploads/bunny";
 import type { RequireAdminApiSessionResult } from "@/lib/auth/adminGuards";
 

@@ -8,7 +8,7 @@ import {
   jmdMinorUnitsToAmount,
   readStoredJmdAmount,
 } from "@/lib/money";
-import { createExcel } from "@/app/api/admin/customers/route";
+import { createExcel } from "@/app/api/admin/customers/implementation";
 
 test("legacy commercial values remain whole JMD despite cents-style names", () => {
   assert.equal(readStoredJmdAmount(6500), 6500);

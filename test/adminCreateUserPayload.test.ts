@@ -6,7 +6,7 @@ import {
   buildAdminUserCreateSuccessPayload,
   ensureAdminCreatedUserEmailVerification,
   shouldSkipEmailChallengeForAdminCreatedUsers,
-} from "@/app/api/admin/users/route";
+} from "@/app/api/admin/users/implementation";
 
 test("admin create-user payload includes username and temp password", () => {
   const payload = buildAdminUserCreateSuccessPayload({

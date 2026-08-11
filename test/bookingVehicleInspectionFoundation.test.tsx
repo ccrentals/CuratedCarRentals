@@ -8,7 +8,7 @@ import {
   handleAdminBookingConfirmAction,
   handleAdminBookingCompleteAction,
   handleAdminBookingPickupAction,
-} from "@/app/api/admin/bookings/[id]/route";
+} from "@/app/api/admin/bookings/[id]/implementation";
 import {
   handleAdminBookingInspectionsGet,
   handleAdminBookingInspectionsPut,

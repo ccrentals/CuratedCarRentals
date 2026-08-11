@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { handleClerkWebhookPost } from "@/app/api/webhooks/clerk/route";
+import { handleClerkWebhookPost } from "@/app/api/webhooks/clerk/implementation";
 
 test("Clerk webhook route rejects failed verification", async () => {
   const response = await handleClerkWebhookPost(

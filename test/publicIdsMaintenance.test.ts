@@ -4,7 +4,7 @@ import test, { type TestContext } from "node:test";
 
 import { config as loadEnv } from "dotenv";
 
-import { handleVehicleMaintenanceGet } from "@/app/api/admin/vehicles/[id]/maintenance/route";
+import { handleVehicleMaintenanceGet } from "@/app/api/admin/vehicles/[id]/maintenance/implementation";
 import { dbQuery } from "@/lib/db";
 
 loadEnv({ path: ".env.local" });

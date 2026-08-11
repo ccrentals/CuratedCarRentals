@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { resendSetupPendingInviteForUser } from "@/app/api/admin/users/[userId]/route";
+import { resendSetupPendingInviteForUser } from "@/app/api/admin/users/[userId]/implementation";
 
 test("admin user invite resend: sends setup email for setup-pending user", async () => {
   const auditCalls: Array<Record<string, unknown>> = [];

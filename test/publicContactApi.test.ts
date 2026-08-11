@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { handleContactPost } from "@/app/api/public/contact/route";
+import { handleContactPost } from "@/app/api/public/contact/implementation";
 import type { RateLimitScope } from "@/lib/rateLimitStore";
 import type { TurnstileVerificationResult } from "@/lib/security/turnstile";
 

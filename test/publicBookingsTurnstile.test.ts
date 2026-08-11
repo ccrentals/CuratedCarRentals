@@ -4,7 +4,7 @@ import test from "node:test";
 import {
   isValidBookingDateTimeWindow,
   POST as postPublicBooking,
-} from "@/app/api/public/bookings/route";
+} from "@/app/api/public/bookings/implementation";
 import { MAX_BOOKING_PRIVATE_IMAGE_BYTES } from "@/lib/bookings/privateFiles";
 
 function setEnv(name: string, value: string | undefined) {

@@ -21,7 +21,7 @@ test("driver's license upload supports a bounded multi-image selection", () => {
 });
 
 test("public booking API validates and stores every driver's license image", () => {
-  const route = read("src/app/api/public/bookings/route.ts");
+  const route = read("src/app/api/public/bookings/implementation.ts");
 
   assert.match(route, /driversLicenseDataUrls\.length > MAX_DRIVERS_LICENSE_IMAGES/);
   assert.match(route, /parsedDriversLicenseImages\.some\(\(image\) => !image\)/);

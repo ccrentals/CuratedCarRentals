@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { handleAdminDepreciationCutoverAuditGet } from "@/app/api/admin/depreciation/cutover-audit/route";
+import { handleAdminDepreciationCutoverAuditGet } from "@/app/api/admin/depreciation/cutover-audit/implementation";
 
 function adminSession() {
   return {

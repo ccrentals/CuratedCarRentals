@@ -6,7 +6,7 @@ import { NextResponse } from "next/server";
 import {
   handleAdminSettingsGet,
   handleAdminSettingsPatch,
-} from "@/app/api/admin/settings/route";
+} from "@/app/api/admin/settings/implementation";
 import type { NotificationOwnershipDirectory } from "@/lib/notifications/operationalRouting";
 
 type StoredRow = {

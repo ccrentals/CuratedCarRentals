@@ -4,7 +4,7 @@ import test from "node:test";
 import {
   buildQuotePaymentPreview,
   handlePublicPricingQuotePost,
-} from "@/app/api/public/pricing/quote/route";
+} from "@/app/api/public/pricing/quote/implementation";
 
 test("pricing quote preview: deposit shows deposit due now and remaining balance on pickup", () => {
   const preview = buildQuotePaymentPreview({

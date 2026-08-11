@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { handleAdminQuoteEmailPost } from "@/app/api/admin/quotes/[id]/email/route";
+import { handleAdminQuoteEmailPost } from "@/app/api/admin/quotes/[id]/email/implementation";
 import { updateQuoteLastEmailed } from "@/lib/quotes/quoteOps";
 
 function adminSession() {

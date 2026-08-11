@@ -60,7 +60,7 @@ test("public booking mutation routes use shared booking-access enforcement", () 
 });
 
 test("public booking creation uses submission-key idempotency guard", () => {
-  const code = read("src/app/api/public/bookings/route.ts");
+  const code = read("src/app/api/public/bookings/implementation.ts");
   assert.match(code, /pg_advisory_xact_lock\(hashtext\(\$1\)\)/);
   assert.match(code, /public_submit_key_hash/);
   assert.match(code, /createBookingAccessToken\(submissionKey\)/);

@@ -9,11 +9,11 @@ function read(relPath: string) {
 
 test("RBAC: dangerous admin routes contain an explicit 403 Forbidden guard", () => {
   const files = [
-    "src/app/api/admin/users/route.ts",
-    "src/app/api/admin/users/[userId]/route.ts",
+    "src/app/api/admin/users/implementation.ts",
+    "src/app/api/admin/users/[userId]/implementation.ts",
     "src/app/api/admin/payments/[paymentId]/route.ts",
     "src/app/api/admin/payments/[paymentId]/refund/route.ts",
-    "src/app/api/admin/bookings/[id]/route.ts",
+    "src/app/api/admin/bookings/[id]/implementation.ts",
   ];
 
   for (const file of files) {
@@ -31,7 +31,7 @@ test("Idempotency: WiPay webhook uses webhook_events insert gate and short-circu
 });
 
 test("WiPay callbacks use canonical SITE_URL rather than request-origin fallbacks", () => {
-  const returnRoute = read("src/app/api/payments/wipay/return/route.ts");
+  const returnRoute = read("src/app/api/payments/wipay/return/implementation.ts");
   const paymentStart = read("src/lib/payments/publicPaymentStart.ts");
 
   assert.match(returnRoute, /getCanonicalSiteUrl\(/);
@@ -74,7 +74,7 @@ test("Returning-customer verification accepts stored legal IDs and does not requ
 });
 
 test("Customer identification expiry dates are stored and reused", () => {
-  const bookingRoute = read("src/app/api/public/bookings/route.ts");
+  const bookingRoute = read("src/app/api/public/bookings/implementation.ts");
   const customerRoute = read("src/app/api/admin/customers/[id]/route.ts");
   const customerProfile = read("src/components/admin/CustomerProfileForm.tsx");
   const migration = read("migrations/050_customer_identification_expirations.sql");
@@ -88,9 +88,9 @@ test("Customer identification expiry dates are stored and reused", () => {
 
 test("Pricing SSoT: quote preview and booking create use the shared quote snapshot builder", () => {
   const files = [
-    "src/app/api/public/pricing/quote/route.ts",
+    "src/app/api/public/pricing/quote/implementation.ts",
     "src/app/api/public/promos/validate/route.ts",
-    "src/app/api/public/bookings/route.ts",
+    "src/app/api/public/bookings/implementation.ts",
   ];
 
   for (const file of files) {
@@ -101,7 +101,7 @@ test("Pricing SSoT: quote preview and booking create use the shared quote snapsh
 
 test("Pricing SSoT: stored booking pricing is reused by booking follow-up and WiPay routes", () => {
   const files = [
-    "src/app/api/public/bookings/route.ts",
+    "src/app/api/public/bookings/implementation.ts",
     "src/app/api/public/bookings/[id]/promo/route.ts",
     "src/app/api/public/bookings/[id]/pay-on-pickup/route.ts",
     "src/lib/payments/publicPaymentStart.ts",
@@ -129,7 +129,7 @@ test("Pricing SSoT: stored booking pricing is reused by booking follow-up and Wi
 test("Pricing SSoT: insurance-aware pricing is wired into public quote and booking routes", () => {
   const files = [
     "src/app/api/public/promos/validate/route.ts",
-    "src/app/api/public/bookings/route.ts",
+    "src/app/api/public/bookings/implementation.ts",
   ];
 
   for (const file of files) {
@@ -142,7 +142,7 @@ test("Entitlement SSoT wiring: public availability and payment reconciliation us
   const publicVehicles = read("src/lib/publicVehicles.ts");
   assert.match(publicVehicles, /evaluateVehicleAvailability/);
 
-  const publicBookingsCreate = read("src/app/api/public/bookings/route.ts");
+  const publicBookingsCreate = read("src/app/api/public/bookings/implementation.ts");
   assert.match(publicBookingsCreate, /isPublicVehicleUnavailableForWindow/);
 
   const wipayReconcile = read("src/lib/payments/wipayReconcile.ts");
@@ -182,18 +182,18 @@ test("Dashboard upcoming context links to bookings with Upcoming scope", () => {
 });
 
 test("Admin bookings API forwards upcoming scope parameters", () => {
-  const apiRoute = read("src/app/api/admin/bookings/route.ts");
+  const apiRoute = read("src/app/api/admin/bookings/implementation.ts");
   assert.match(apiRoute, /scope:\s*searchParams\.get\(\"scope\"\)/);
   assert.match(apiRoute, /sortBy:\s*searchParams\.get\(\"sortBy\"\)/);
   assert.match(apiRoute, /sortDir:\s*searchParams\.get\(\"sortDir\"\)/);
 });
 
 test("Maintenance SSoT wiring: maintenance APIs use centralized maintenance helper", () => {
-  const listRoute = read("src/app/api/admin/vehicles/[id]/maintenance/route.ts");
+  const listRoute = read("src/app/api/admin/vehicles/[id]/maintenance/implementation.ts");
   assert.match(listRoute, /computeMaintenanceRecordTotal\(/);
   assert.match(listRoute, /getMaintenanceDueState\(/);
 
-  const detailRoute = read("src/app/api/admin/vehicles/[id]/maintenance/[recordId]/route.ts");
+  const detailRoute = read("src/app/api/admin/vehicles/[id]/maintenance/[recordId]/implementation.ts");
   assert.match(detailRoute, /computeMaintenanceRecordTotal\(/);
   assert.match(detailRoute, /getMaintenanceDueState\(/);
 });
@@ -222,8 +222,8 @@ test("Settings SSoT: requireRestoreReason consumers use loadAdminSettings", () =
 
 test("Turnstile coverage: protected public submit routes call shared verifier", () => {
   const files = [
-    "src/app/api/public/contact/route.ts",
-    "src/app/api/public/bookings/route.ts",
+    "src/app/api/public/contact/implementation.ts",
+    "src/app/api/public/bookings/implementation.ts",
     "src/app/api/public/returning-customer/start/route.ts",
     "src/app/api/public/returning-customer/verify/route.ts",
     "src/app/api/public/auth/clerk-account-setup/route.ts",
@@ -253,7 +253,7 @@ test("Returning-customer OTP uses dedicated secret only", () => {
 
 test("Booking access token flow is independent from private-file env secrets", () => {
   const helper = read("src/lib/bookings/privateAccess.ts");
-  const bookingRoute = read("src/app/api/public/bookings/route.ts");
+  const bookingRoute = read("src/app/api/public/bookings/implementation.ts");
 
   assert.doesNotMatch(helper, /BOOKING_PRIVATE_FILE_SECRET|BOOKING_PRIVATE_FILE_SECRET_MISSING/);
   assert.doesNotMatch(bookingRoute, /Booking access is temporarily unavailable/);

@@ -4,7 +4,7 @@ import test, { type TestContext } from "node:test";
 
 import { config as loadEnv } from "dotenv";
 
-import { fetchAdminUsers } from "@/app/api/admin/users/route";
+import { fetchAdminUsers } from "@/app/api/admin/users/implementation";
 import { dbQuery } from "@/lib/db";
 
 loadEnv({ path: ".env.local" });

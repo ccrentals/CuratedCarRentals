@@ -8,7 +8,7 @@ import { config as loadEnv } from "dotenv";
 import {
   handleAdminBookingsPost,
   type AdminBookingsPostRouteDeps,
-} from "@/app/api/admin/bookings/route";
+} from "@/app/api/admin/bookings/implementation";
 import {
   buildAdminCreateBookingWindow,
   computeAdminCreateBookingPricingPreview,

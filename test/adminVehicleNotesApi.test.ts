@@ -4,8 +4,8 @@ import test from "node:test";
 import {
   handleAdminVehicleNotesGet,
   handleAdminVehicleNotesPost,
-} from "@/app/api/admin/vehicles/[id]/notes/route";
-import { handleAdminVehicleNoteDelete } from "@/app/api/admin/vehicles/[id]/notes/[noteId]/route";
+} from "@/app/api/admin/vehicles/[id]/notes/implementation";
+import { handleAdminVehicleNoteDelete } from "@/app/api/admin/vehicles/[id]/notes/[noteId]/implementation";
 
 const VEHICLE_ID = "11111111-1111-4111-8111-111111111111";
 const NOTE_ID = "22222222-2222-4222-8222-222222222222";

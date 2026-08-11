@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { handleAdminMessagesListGet } from "@/app/api/admin/messages/route";
-import { handleAdminMessagesBulkPost } from "@/app/api/admin/messages/bulk/route";
-import { handleAdminMessagePatch } from "@/app/api/admin/messages/[id]/route";
-import { handleAdminMessagesUnreadCountGet } from "@/app/api/admin/messages/unread-count/route";
+import { handleAdminMessagesListGet } from "@/app/api/admin/messages/implementation";
+import { handleAdminMessagesBulkPost } from "@/app/api/admin/messages/bulk/implementation";
+import { handleAdminMessagePatch } from "@/app/api/admin/messages/[id]/implementation";
+import { handleAdminMessagesUnreadCountGet } from "@/app/api/admin/messages/unread-count/implementation";
 
 function buildListItem(id: string, overrides: Record<string, unknown> = {}) {
   return {

@@ -4,13 +4,13 @@ import test from "node:test";
 import {
   handleVehicleMaintenanceGet,
   handleVehicleMaintenancePost,
-} from "@/app/api/admin/vehicles/[id]/maintenance/route";
+} from "@/app/api/admin/vehicles/[id]/maintenance/implementation";
 import {
   handleVehicleMaintenanceRecordGet,
   handleVehicleMaintenanceRecordDelete,
   handleVehicleMaintenanceRecordPatch,
-} from "@/app/api/admin/vehicles/[id]/maintenance/[recordId]/route";
-import { handleVehicleMaintenanceExportGet } from "@/app/api/admin/vehicles/[id]/maintenance/export/route";
+} from "@/app/api/admin/vehicles/[id]/maintenance/[recordId]/implementation";
+import { handleVehicleMaintenanceExportGet } from "@/app/api/admin/vehicles/[id]/maintenance/export/implementation";
 
 const VEHICLE_ID = "11111111-1111-4111-8111-111111111111";
 const RECORD_ID = "22222222-2222-4222-8222-222222222222";

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { handleAdminPaymentsReplayPost } from "@/app/api/admin/payments/replay/route";
+import { handleAdminPaymentsReplayPost } from "@/app/api/admin/payments/replay/implementation";
 
 function adminSession() {
   return {

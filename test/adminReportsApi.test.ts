@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { handleReportsGet } from "@/app/api/admin/reports/route";
+import { handleReportsGet } from "@/app/api/admin/reports/implementation";
 import type { AdminReportsPayload } from "@/lib/reports/adminReports";
 
 const mockPayload: AdminReportsPayload = {

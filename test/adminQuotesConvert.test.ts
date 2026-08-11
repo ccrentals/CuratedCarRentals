@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { handleAdminQuoteConvertPost } from "@/app/api/admin/quotes/[id]/convert-to-booking/route";
+import { handleAdminQuoteConvertPost } from "@/app/api/admin/quotes/[id]/convert-to-booking/implementation";
 import {
   buildQuoteConversionPricingSnapshot,
   QuoteOpsError,

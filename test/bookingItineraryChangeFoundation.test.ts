@@ -16,7 +16,7 @@ test("booking itinerary editing remains available while a vehicle is picked up",
 test("booking itinerary preview and save share the production evaluator", async () => {
   const [previewRoute, mutationRoute, evaluator] = await Promise.all([
     readFile("src/app/api/admin/bookings/[id]/itinerary-preview/route.ts", "utf8"),
-    readFile("src/app/api/admin/bookings/[id]/route.ts", "utf8"),
+    readFile("src/app/api/admin/bookings/[id]/implementation.ts", "utf8"),
     readFile("src/lib/bookings/bookingItineraryChange.ts", "utf8"),
   ]);
   assert.match(previewRoute, /evaluateBookingItineraryChange/);
@@ -36,7 +36,7 @@ test("booking itinerary preview explains vehicle-specific insurance repricing", 
 });
 
 test("booking itinerary mutation persists vehicle, insurance, audit, and notifications", async () => {
-  const route = await readFile("src/app/api/admin/bookings/[id]/route.ts", "utf8");
+  const route = await readFile("src/app/api/admin/bookings/[id]/implementation.ts", "utf8");
   assert.match(route, /vehicle_id = \$15::uuid/);
   assert.match(route, /insurance_plan_id = \$17::uuid/);
   assert.match(route, /previous_vehicle_id/);
@@ -47,7 +47,7 @@ test("booking itinerary mutation persists vehicle, insurance, audit, and notific
 
 test("booking itinerary mutation writes a detailed admin change note", async () => {
   const [route, noteBuilder] = await Promise.all([
-    readFile("src/app/api/admin/bookings/[id]/route.ts", "utf8"),
+    readFile("src/app/api/admin/bookings/[id]/implementation.ts", "utf8"),
     readFile("src/lib/bookings/bookingItineraryChangeNote.ts", "utf8"),
   ]);
   assert.match(route, /appendBookingItineraryChangeNote/);
@@ -62,7 +62,7 @@ test("booking change controls flow insurance and promo through preview, save, no
   const [form, previewRoute, mutationRoute, evaluator, email] = await Promise.all([
     readFile("src/components/admin/BookingUpdateForm.tsx", "utf8"),
     readFile("src/app/api/admin/bookings/[id]/itinerary-preview/route.ts", "utf8"),
-    readFile("src/app/api/admin/bookings/[id]/route.ts", "utf8"),
+    readFile("src/app/api/admin/bookings/[id]/implementation.ts", "utf8"),
     readFile("src/lib/bookings/bookingItineraryChange.ts", "utf8"),
     readFile("src/lib/notifications/email.ts", "utf8"),
   ]);

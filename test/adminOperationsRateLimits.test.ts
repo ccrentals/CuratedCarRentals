@@ -1,19 +1,19 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { handleAdminPromoCodesPost } from "@/app/api/admin/promo-codes/route";
-import { handleAdminPromoCodePatch } from "@/app/api/admin/promo-codes/[id]/route";
-import { handleAdminVehiclePost } from "@/app/api/admin/vehicles/route";
+import { handleAdminPromoCodesPost } from "@/app/api/admin/promo-codes/implementation";
+import { handleAdminPromoCodePatch } from "@/app/api/admin/promo-codes/[id]/implementation";
+import { handleAdminVehiclePost } from "@/app/api/admin/vehicles/implementation";
 import {
   handleAdminVehicleDelete,
   handleAdminVehiclePatch,
   handleAdminVehicleRestore,
-} from "@/app/api/admin/vehicles/[id]/route";
-import { handleVehicleMaintenancePost } from "@/app/api/admin/vehicles/[id]/maintenance/route";
+} from "@/app/api/admin/vehicles/[id]/implementation";
+import { handleVehicleMaintenancePost } from "@/app/api/admin/vehicles/[id]/maintenance/implementation";
 import {
   handleVehicleMaintenanceRecordDelete,
   handleVehicleMaintenanceRecordPatch,
-} from "@/app/api/admin/vehicles/[id]/maintenance/[recordId]/route";
+} from "@/app/api/admin/vehicles/[id]/maintenance/[recordId]/implementation";
 
 const VEHICLE_ID = "11111111-1111-4111-8111-111111111111";
 const RECORD_ID = "22222222-2222-4222-8222-222222222222";

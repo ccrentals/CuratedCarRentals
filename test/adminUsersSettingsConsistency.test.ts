@@ -15,14 +15,14 @@ test("Users page search uses contains matching and SQL total-count pagination", 
 });
 
 test("Settings API GET requires admin role only", () => {
-  const code = read("src/app/api/admin/settings/route.ts");
+  const code = read("src/app/api/admin/settings/implementation.ts");
   assert.match(code, /requireAdmin\?: \(\) => Promise<RequireAdminRoleResult>;/);
   assert.match(code, /deps\.requireAdmin \?\? requireAdminRole/);
   assert.doesNotMatch(code, /requireAdminAccess/);
 });
 
 test("User mutation route prevents removing last active privileged account", () => {
-  const code = read("src/app/api/admin/users/[userId]/route.ts");
+  const code = read("src/app/api/admin/users/[userId]/implementation.ts");
   assert.match(code, /countActivePrivilegedUsers/);
   assert.match(code, /last active privileged account/i);
 });
