@@ -9,6 +9,7 @@ import {
 import { dbQuery } from "@/lib/db";
 import { logError } from "@/lib/log";
 import { buildUploadcareCdnUrl, extractUploadcareFileId } from "@/lib/uploads/uploadcare";
+import { fetchBunnyStorageObject, getBunnyStorageConfig, normalizeBunnyStorageKey } from "@/lib/uploads/bunny";
 
 type BookingFileRow = {
   id: string;
@@ -101,6 +102,29 @@ export async function GET(
     }
 
     const normalizedProvider = file.storage_provider.trim().toUpperCase();
+    if (normalizedProvider === "BUNNY_STORAGE") {
+      let storageKey: string;
+      try {
+        storageKey = normalizeBunnyStorageKey(file.storage_key);
+      } catch {
+        return jsonNoStore({ error: "Unsupported storage reference." }, 500);
+      }
+      if (!storageKey.startsWith("private/bookings/")) {
+        return jsonNoStore({ error: "Unsupported storage reference." }, 500);
+      }
+      const upstream = await fetchBunnyStorageObject(getBunnyStorageConfig("private"), storageKey);
+      const safeMimeType = resolveSafePrivateBookingResponseMimeType(file.mime_type, upstream.headers.get("content-type"));
+      if (!safeMimeType) return jsonNoStore({ error: "Unable to load a safe file from storage." }, 502);
+      return new NextResponse(upstream.body, {
+        status: 200,
+        headers: {
+          "content-type": safeMimeType,
+          "cache-control": "private, max-age=0, no-store",
+          "content-disposition": `inline; filename="${sanitizePrivateBookingFileName(documentType, file.original_file_name, safeMimeType)}"`,
+          "x-content-type-options": "nosniff",
+        },
+      });
+    }
     const uploadcareFileId = extractUploadcareFileId(file.storage_key);
     if (!uploadcareFileId) {
       return jsonNoStore({ error: "Unsupported storage reference." }, 500);
