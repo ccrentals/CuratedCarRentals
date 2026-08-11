@@ -183,7 +183,7 @@ export function createBunnyCustomerLegalIdStorageKey(input: {
     .replace(/[^a-zA-Z0-9._-]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 120) || "id-image.bin";
-  return `private/customers/${customerPublicId}/drivers-license/${input.id ?? randomUUID()}-${safeName}`;
+  return `private/customers/${customerPublicId}/drivers-license/${customerPublicId}-${input.id ?? randomUUID()}-${safeName}`;
 }
 
 export function createBunnyBookingInspectionStorageKey(input: {
