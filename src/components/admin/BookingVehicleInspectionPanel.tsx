@@ -710,7 +710,7 @@ export function BookingVehicleInspectionPanel({
 
     if (!response.ok || !payload.ok || !payload.inspection) {
       setError(payload.error ?? `Unable to save ${inspectionType.toLowerCase()} inspection.`);
-      return;
+      return null;
     }
 
     const nextInspectionSet = {
@@ -738,6 +738,8 @@ export function BookingVehicleInspectionPanel({
     if (status === "COMPLETED") {
       onInspectionCompleted?.(inspectionType);
     }
+
+    return payload;
   }
 
   async function runLifecycleAction(action: "pickup" | "complete") {
@@ -854,7 +856,8 @@ export function BookingVehicleInspectionPanel({
       let inspectionId = summary.inspectionId;
       if (!inspectionId) {
         const draftSave = await saveInspection(inspectionType, "DRAFT");
-        if (!draftSave?.inspection.inspectionId) {
+        const savedInspection = draftSave?.inspection;
+        if (!savedInspection?.inspectionId) {
           setUploadState((current) => ({
             ...current,
             loading: false,
@@ -862,7 +865,7 @@ export function BookingVehicleInspectionPanel({
           }));
           return;
         }
-        inspectionId = draftSave.inspection.inspectionId;
+        inspectionId = savedInspection.inspectionId;
       }
 
       const files = await new Promise<File[]>((resolve) => {
