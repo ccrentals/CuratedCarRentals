@@ -100,7 +100,7 @@ test("Bunny storage: creates private customer identification keys", () => {
       fileName: "Driver Licence Front.png",
       id: "test-id",
     }),
-    "private/customers/CU000101/drivers-license/test-id-Driver-Licence-Front.png",
+    "private/customers/CU000101/drivers-license/CU000101-test-id-Driver-Licence-Front.png",
   );
 });
 
