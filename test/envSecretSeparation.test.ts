@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { validateEnv } from "@/lib/env";
+import { isProductionRuntime, validateEnv } from "@/lib/env";
 import { getHealthSnapshot } from "@/lib/health";
 
 function restoreEnv(key: string, previous: string | undefined) {
@@ -64,5 +64,29 @@ test("env validation rejects placeholder DATABASE_URL hosts in production", () =
   } finally {
     restoreEnv("DATABASE_URL", previousDb);
     restoreEnv("NODE_ENV", previousNodeEnv);
+  }
+});
+
+test("production runtime is detected from Netlify's canonical and configured URLs", () => {
+  const previousContext = process.env.CONTEXT;
+  const previousNetlifyContext = process.env.NETLIFY_CONTEXT;
+  const previousBranch = process.env.BRANCH;
+  const previousUrl = process.env.URL;
+  const previousSiteUrl = process.env.SITE_URL;
+
+  delete process.env.CONTEXT;
+  delete process.env.NETLIFY_CONTEXT;
+  delete process.env.BRANCH;
+  process.env.URL = "https://curatedcarrentals.com";
+  process.env.SITE_URL = "https://curatedcarrentals.com";
+
+  try {
+    assert.equal(isProductionRuntime(), true);
+  } finally {
+    restoreEnv("CONTEXT", previousContext);
+    restoreEnv("NETLIFY_CONTEXT", previousNetlifyContext);
+    restoreEnv("BRANCH", previousBranch);
+    restoreEnv("URL", previousUrl);
+    restoreEnv("SITE_URL", previousSiteUrl);
   }
 });
