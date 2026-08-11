@@ -344,7 +344,7 @@ export async function getHealthSnapshot(): Promise<HealthSnapshot> {
   const netlifyCheck = (async () => {
     const context = process.env.CONTEXT ?? process.env.NETLIFY_CONTEXT ?? "";
     const deployUrl = process.env.DEPLOY_URL ?? process.env.URL ?? "";
-    const onNetlify = (process.env.NETLIFY ?? "").toLowerCase() === "true";
+    const onNetlify = (process.env.NETLIFY ?? "").toLowerCase() === "true" || Boolean(deployUrl);
     return {
       ok: true,
       configured: onNetlify,
