@@ -103,7 +103,18 @@ test.describe("@nightly @tour admin users username + password reveal", () => {
       .locator('[data-testid="create-user-success-temp-password"]')
       .inputValue();
 
-    await page.goto("/api/admin/logout", { waitUntil: "domcontentloaded" });
+    await page.evaluate(async () => {
+      await fetch("/api/security/csrf", { credentials: "include" });
+      const csrfToken = document.cookie
+        .split("; ")
+        .find((entry) => entry.startsWith("ccr_csrf="))
+        ?.split("=")[1];
+      await fetch("/api/admin/logout", {
+        method: "POST",
+        credentials: "include",
+        headers: { "x-csrf-token": csrfToken ? decodeURIComponent(csrfToken) : "" },
+      });
+    });
     await signInViaClerkIdentifier(page, username, tempPassword);
 
     const forceDialog = page.locator('[data-testid="force-password-dialog"]');

@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -80,6 +79,24 @@ export default function AdminSetPasswordPage() {
 
     showToast("Password updated.", "success");
     router.replace("/admin");
+  }
+
+  async function handleSignOut() {
+    if (loading) return;
+    setLoading(true);
+    const csrfToken = await ensureCsrfToken();
+    const response = await fetch("/api/admin/logout", {
+      method: "POST",
+      headers: { "x-csrf-token": csrfToken ?? "" },
+    });
+
+    if (!response.ok) {
+      setLoading(false);
+      showToast("Unable to sign out. Please try again.", "error");
+      return;
+    }
+
+    window.location.assign("/");
   }
 
   if (bootLoading) {
@@ -204,12 +221,14 @@ export default function AdminSetPasswordPage() {
           </button>
         </form>
 
-        <Link
-          href="/api/admin/logout"
+        <button
+          type="button"
+          onClick={handleSignOut}
+          disabled={loading}
           className="mt-4 block w-full rounded-xl border border-[var(--ccr-border)] px-4 py-2 text-center text-sm font-semibold text-[var(--ccr-text)] hover:bg-[var(--ccr-surface-soft)]"
         >
-          Sign out
-        </Link>
+          {loading ? "Signing out..." : "Sign out"}
+        </button>
       </div>
     </div>
   );

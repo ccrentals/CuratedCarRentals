@@ -5,25 +5,6 @@ import { clearSessionCookie } from "@/lib/auth/session";
 import { isClerkEnabled } from "@/lib/security/clerk";
 import { requireCsrf } from "@/lib/security/csrf";
 import { THEME_COOKIE_NAME } from "@/lib/theme";
-import { getCanonicalSiteUrl } from "@/lib/wipay";
-
-function resolveRedirectUrl(request: Request) {
-  const { searchParams, origin } = new URL(request.url);
-  const candidate = (searchParams.get("redirect_url") ?? searchParams.get("redirect") ?? "/").trim();
-  if (!candidate.startsWith("/")) {
-    return "/";
-  }
-  try {
-    const target = new URL(candidate, origin);
-    if (target.origin !== origin) {
-      return "/";
-    }
-    return `${target.pathname}${target.search}${target.hash}`;
-  } catch {
-    return "/";
-  }
-}
-
 function applyLogoutCookies(response: NextResponse) {
   response.cookies.set(THEME_COOKIE_NAME, "", {
     httpOnly: false,
@@ -52,12 +33,11 @@ async function revokeCurrentClerkSession() {
   }
 }
 
-export async function GET(request: Request) {
-  // Allow GET so browser redirects can hard-signout both Clerk and local legacy sessions.
-  await revokeCurrentClerkSession();
-  await clearSessionCookie();
-  const redirectUrl = resolveRedirectUrl(request);
-  return applyLogoutCookies(NextResponse.redirect(new URL(redirectUrl, getCanonicalSiteUrl())));
+export function GET() {
+  return NextResponse.json(
+    { error: "Method not allowed. Use POST to sign out." },
+    { status: 405, headers: { Allow: "POST" } },
+  );
 }
 
 export async function POST(request: Request) {

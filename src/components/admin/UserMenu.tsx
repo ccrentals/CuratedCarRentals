@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import { ThemeToggle } from "@/components/site/ThemeToggle";
 import { buttonStyles } from "@/components/ui/Button";
+import { ensureCsrfToken } from "@/lib/security/csrf-client";
 
 type UserMenuProps = {
   email: string;
@@ -51,11 +52,21 @@ function UserMenuInner({
       ? "admin-desktop-theme-toggle"
       : "admin-mobile-theme-toggle";
 
-  function handleSignOut() {
+  async function handleSignOut() {
     if (loading) return;
     setLoading(true);
-    const fallbackLogoutUrl = "/api/admin/logout?redirect=%2F";
-    window.location.assign(fallbackLogoutUrl);
+    const csrfToken = await ensureCsrfToken();
+    const response = await fetch("/api/admin/logout", {
+      method: "POST",
+      headers: { "x-csrf-token": csrfToken ?? "" },
+    });
+
+    if (!response.ok) {
+      setLoading(false);
+      return;
+    }
+
+    window.location.assign("/");
   }
 
   if (compactSidebarLayout) {

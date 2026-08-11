@@ -57,12 +57,12 @@ test("Stripe refunds use the forwarded public payment URL and are not test-only"
   assert.doesNotMatch(route, /stripe-test-refund|staging_test/);
 });
 
-test("Admin logout redirects to canonical SITE_URL rather than the deployment hostname", () => {
+test("Admin logout only changes session state through CSRF-protected POST", () => {
   const logoutRoute = read("src/app/api/admin/logout/route.ts");
 
-  assert.match(logoutRoute, /getCanonicalSiteUrl\(\)/);
-  assert.match(logoutRoute, /new URL\(redirectUrl, getCanonicalSiteUrl\(\)\)/);
-  assert.doesNotMatch(logoutRoute, /new URL\(redirectUrl, request\.url\)/);
+  assert.match(logoutRoute, /export function GET\(\)[\s\S]*status: 405[\s\S]*Allow: "POST"/);
+  assert.match(logoutRoute, /export async function POST\(request: Request\)[\s\S]*requireCsrf\(request\)/);
+  assert.doesNotMatch(logoutRoute, /export async function GET[\s\S]*revokeCurrentClerkSession/);
 });
 
 test("Returning-customer verification accepts stored legal IDs and does not require birthday", () => {
