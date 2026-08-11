@@ -12,7 +12,7 @@ import {
 import {
   handleAdminBookingInspectionsGet,
   handleAdminBookingInspectionsPut,
-} from "@/app/api/admin/bookings/[id]/inspections/route";
+} from "@/app/api/admin/bookings/[id]/inspections/implementation";
 import { handleAdminBookingInspectionImagesPost } from "@/app/api/admin/bookings/[id]/inspections/images/implementation";
 import {
   handleAdminBookingInspectionImageDelete,
