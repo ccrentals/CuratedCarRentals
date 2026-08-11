@@ -65,9 +65,9 @@ test("operations workflow routes use operations-level authorization", async () =
     "src/app/api/admin/uploads/uploadcare/signature/route.ts",
     "src/app/api/admin/bookings/route.ts",
     "src/app/api/admin/bookings/[id]/route.ts",
-    "src/app/api/admin/bookings/[id]/inspections/route.ts",
-    "src/app/api/admin/bookings/[id]/inspections/images/route.ts",
-    "src/app/api/admin/bookings/[id]/inspections/images/[imageId]/route.ts",
+    "src/app/api/admin/bookings/[id]/inspections/implementation.ts",
+    "src/app/api/admin/bookings/[id]/inspections/images/implementation.ts",
+    "src/app/api/admin/bookings/[id]/inspections/images/[imageId]/implementation.ts",
     "src/app/api/admin/customers/route.ts",
     "src/app/api/admin/customers/[id]/route.ts",
     "src/app/api/admin/customers/[id]/private-files/route.ts",
@@ -87,8 +87,8 @@ test("operations workflow routes use operations-level authorization", async () =
 
 test("privileged inspection overrides remain admin-only", async () => {
   const [inspectionRoute, archiveRoute] = await Promise.all([
-    readFile("src/app/api/admin/bookings/[id]/inspections/route.ts", "utf8"),
-    readFile("src/app/api/admin/bookings/[id]/inspections/images/archive/route.ts", "utf8"),
+    readFile("src/app/api/admin/bookings/[id]/inspections/implementation.ts", "utf8"),
+    readFile("src/app/api/admin/bookings/[id]/inspections/images/archive/implementation.ts", "utf8"),
   ]);
 
   assert.match(inspectionRoute, /hasRequiredAdminAccess\(auth\.actor\.role,\s*"admin"\)/);
