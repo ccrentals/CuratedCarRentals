@@ -17,11 +17,21 @@ const TURNSTILE_DOMAINS = [
   "https://challenges.cloudflare.com",
 ];
 
-const UPLOADCARE_DOMAINS = [
-  // Uploadcare widget script and CDN files used by admin/public uploads.
+const UPLOADCARE_SCRIPT_DOMAINS = [
+  // The legacy Uploadcare widget is loaded from this canonical CDN URL.
+  "https://ucarecdn.com",
+];
+
+const UPLOADCARE_IMAGE_DOMAINS = [
+  // Historic Uploadcare asset delivery, including project-specific CDN hosts.
   "https://ucarecdn.com",
   "https://ucarecd.net",
   "https://*.ucarecd.net",
+];
+
+const UPLOADCARE_CONNECT_DOMAINS = [
+  ...UPLOADCARE_IMAGE_DOMAINS,
+  // Upload API calls made by the legacy browser widget.
   "https://upload.uploadcare.com",
 ];
 
@@ -66,7 +76,7 @@ function buildCsp(frameAncestors: string = "'none'") {
     ...(!IS_PRODUCTION ? ["'unsafe-eval'"] : []),
     ...CLERK_DOMAINS,
     ...TURNSTILE_DOMAINS,
-    ...UPLOADCARE_DOMAINS,
+    ...UPLOADCARE_SCRIPT_DOMAINS,
   ];
 
   // In dev, Next.js HMR uses websockets (ws/wss). CSP `connect-src 'self'` does not cover ws/wss.
@@ -74,7 +84,7 @@ function buildCsp(frameAncestors: string = "'none'") {
     "'self'",
     ...CLERK_DOMAINS,
     ...TURNSTILE_DOMAINS,
-    ...UPLOADCARE_DOMAINS,
+    ...UPLOADCARE_CONNECT_DOMAINS,
     ...(!IS_PRODUCTION ? ["ws:", "wss:"] : []),
   ];
 
@@ -88,7 +98,7 @@ function buildCsp(frameAncestors: string = "'none'") {
     `font-src 'self' data:`,
     `img-src 'self' data: blob: ${[
       ...CLERK_DOMAINS,
-      ...UPLOADCARE_DOMAINS,
+      ...UPLOADCARE_IMAGE_DOMAINS,
       ...CUSTOMER_SITE_DOMAINS,
       ...BUNNY_PUBLIC_CDN_DOMAINS,
     ].join(" ")}`,
