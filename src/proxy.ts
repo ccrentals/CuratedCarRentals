@@ -1,5 +1,5 @@
 import { clerkMiddleware } from "@clerk/nextjs/server";
-import { NextResponse, type NextFetchEvent, type NextRequest } from "next/server";
+import { NextRequest, NextResponse, type NextFetchEvent } from "next/server";
 
 import {
   isAdminRoute,
