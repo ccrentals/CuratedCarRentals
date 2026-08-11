@@ -9,7 +9,7 @@
   command = "npm run build"
 
 [context.staging]
-  command = "npm run db:bootstrap && npm run migrate && npm run build:webpack"
+  command = "npm run db:bootstrap && npm run migrate && npm run build"
   environment = { NEXT_PUBLIC_SITE_ENV = "staging" }
 
 [context.branch-deploy]

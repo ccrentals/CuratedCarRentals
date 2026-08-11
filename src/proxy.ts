@@ -10,14 +10,6 @@ import {
   LEGACY_ADMIN_SESSION_COOKIE,
   shouldEnforceClerkOnAdminRoutes,
 } from "@/lib/security/clerk";
-import { buildContentSecurityPolicy } from "@/lib/security/csp";
-
-const CSP_REPORT_ONLY = (process.env.CSP_REPORT_ONLY ?? "").trim().toLowerCase() === "true";
-const CSP_REPORT_URI = process.env.CSP_REPORT_URI?.trim() ?? "";
-const CSP_HEADER_NAME =
-  process.env.NODE_ENV === "production" && !CSP_REPORT_ONLY
-    ? "Content-Security-Policy"
-    : "Content-Security-Policy-Report-Only";
 
 function readCanonicalSiteUrl() {
   const raw = process.env.SITE_URL?.trim();
@@ -82,24 +74,10 @@ export default function proxy(request: NextRequest, event: NextFetchEvent) {
     return NextResponse.redirect(localUrl);
   }
 
-  const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
-  const contentSecurityPolicy = buildContentSecurityPolicy({
-    nonce,
-    reportUri: CSP_REPORT_URI || undefined,
-  });
-  request.headers.set("x-nonce", nonce);
-  request.headers.set("Content-Security-Policy", contentSecurityPolicy);
-
   if (!clerkProxy) {
-    const response = NextResponse.next({ request: { headers: request.headers } });
-    response.headers.set(CSP_HEADER_NAME, contentSecurityPolicy);
-    return response;
+    return NextResponse.next();
   }
-
-  return clerkProxy(request, event).then((response) => {
-    response.headers.set(CSP_HEADER_NAME, contentSecurityPolicy);
-    return response;
-  });
+  return clerkProxy(request, event);
 }
 
 export const config = {

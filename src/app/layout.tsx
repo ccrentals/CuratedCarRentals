@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Great_Vibes, Playfair_Display } from "next/font/google";
-import { connection, headers } from "next/server";
 
 import { BreakpointOverlay } from "@/components/dev/BreakpointOverlay";
 import { OptionalClerkProvider } from "@/components/security/OptionalClerkProvider";
@@ -93,14 +92,12 @@ export const metadata: Metadata = {
   },
 };
 
-export default async function RootLayout({
+export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  await connection();
   assertProductionEnv();
-  const nonce = (await headers()).get("x-nonce") ?? undefined;
   const showBreakpointOverlay =
     process.env.NODE_ENV !== "production" &&
     process.env.NEXT_PUBLIC_DISABLE_BREAKPOINT_OVERLAY !== "1";
@@ -113,7 +110,6 @@ export default async function RootLayout({
       <head>
         <style
           id="ccr-theme-critical"
-          nonce={nonce}
           dangerouslySetInnerHTML={{
             __html: `
 html, body {
@@ -145,7 +141,6 @@ html[data-theme="forest"], html[data-theme="forest"] body {
         />
         <script
           id="ccr-theme-init"
-          nonce={nonce}
           dangerouslySetInnerHTML={{
             __html: `
 (function () {
