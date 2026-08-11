@@ -17,7 +17,6 @@ import { buttonStyles } from "@/components/ui/Button";
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { fmtDateNoSeconds } from "@/lib/dateFormat";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
-<<<<<<< HEAD
 import { formatJmdFromMinorUnits } from "@/lib/money";
 
 type VehicleMaintenancePanelProps = {
