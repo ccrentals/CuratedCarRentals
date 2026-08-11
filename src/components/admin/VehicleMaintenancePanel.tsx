@@ -17,12 +17,8 @@ import { buttonStyles } from "@/components/ui/Button";
 import { DateTimeInline } from "@/components/shared/DateTimeInline";
 import { fmtDateNoSeconds } from "@/lib/dateFormat";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
-import {
-  getUploadcareClientErrorMessage,
-  getUploadcareSignedOptions,
-} from "@/lib/uploads/uploadcare-client";
-
-const WIDGET_SRC = "https://ucarecdn.com/libs/widget/3.x/uploadcare.full.min.js";
+<<<<<<< HEAD
+import { formatJmdFromMinorUnits } from "@/lib/money";
 
 type VehicleMaintenancePanelProps = {
   vehicleId: string;
@@ -117,49 +113,14 @@ type MaintenanceOptions = {
   defaultReminderLeadDays: number;
 };
 
-type UploadcareFileInfo = {
-  cdnUrl?: string;
-  uuid?: string;
-  name?: string;
-  originalFilename?: string;
-  size?: number;
-  mimeType?: string;
-};
-
 type PendingDocumentUpload = {
   maintenanceRecordId: string;
-  reference: string;
+  file: File;
   fileName: string;
   mimeType: string | null;
   sizeBytes: number | null;
 };
 
-type UploadcareSingleFile = {
-  promise?: () => Promise<UploadcareFileInfo>;
-  done?: (callback: (file: UploadcareFileInfo) => void) => void;
-};
-
-type UploadcareFileGroup = {
-  files?: () => UploadcareSingleFile[];
-};
-
-type UploadcareDialog = {
-  done: (callback: (file: UploadcareSingleFile | UploadcareFileGroup) => void) => void;
-  fail: (callback: (error: { message?: string }) => void) => void;
-};
-
-type UploadcareApi = {
-  openDialog: (
-    _file: null,
-    options: {
-      publicKey: string;
-      multiple: boolean;
-      imagesOnly: boolean;
-      secureSignature: string;
-      secureExpire: string;
-    },
-  ) => UploadcareDialog | null;
-};
 
 const DEFAULT_CATEGORY_OPTIONS = [
   "SERVICE",
@@ -330,32 +291,6 @@ function computeTotal(labor: string, parts: string, tax: string) {
     Number.isFinite(value) && value > 0 ? Math.round(value) : 0,
   );
   return safe[0] + safe[1] + safe[2];
-}
-
-async function loadUploadcareScript() {
-  if (typeof window === "undefined") return;
-  const uploadWindow = window as Window & { uploadcare?: UploadcareApi; UPLOADCARE_PUBLIC_KEY?: string };
-  if (uploadWindow.uploadcare) return;
-
-  const existing = document.querySelector<HTMLScriptElement>(`script[src="${WIDGET_SRC}"]`);
-  if (existing) {
-    await new Promise<void>((resolve, reject) => {
-      existing.addEventListener("load", () => resolve(), { once: true });
-      existing.addEventListener("error", () => reject(new Error("Uploadcare failed to load")), {
-        once: true,
-      });
-    });
-    return;
-  }
-
-  await new Promise<void>((resolve, reject) => {
-    const script = document.createElement("script");
-    script.src = WIDGET_SRC;
-    script.async = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error("Uploadcare failed to load"));
-    document.body.appendChild(script);
-  });
 }
 
 function defaultFormState() {
@@ -988,25 +923,21 @@ function startEdit(item: MaintenanceRecord) {
 
       try {
         const csrfToken = await ensureCsrfToken();
+        if (!csrfToken) throw new Error("Unable to secure the upload. Refresh the page and try again.");
+        const form = new FormData();
+        form.set("csrfToken", csrfToken);
+        form.set("folder", "Maintenance");
+        form.set("maintenanceRecordId", record.id);
+        form.set("documentType", documentType);
+        form.set("title", pendingDocumentUpload.fileName);
+        form.set("label", normalizeText(documentLabel));
+        form.append("file", pendingDocumentUpload.file, pendingDocumentUpload.fileName);
         const response = await fetch(`/api/admin/vehicles/${vehicleId}/documents`, {
           method: "POST",
           headers: {
-            "Content-Type": "application/json",
             "x-csrf-token": csrfToken ?? "",
           },
-          body: JSON.stringify({
-            folder: "Maintenance",
-            maintenanceRecordId: record.id,
-            documentType,
-            title: pendingDocumentUpload.fileName,
-            label: normalizeText(documentLabel) || null,
-            storageProvider: "UPLOADCARE_FILE_ID",
-            storageKey: pendingDocumentUpload.reference,
-            mimeType: pendingDocumentUpload.mimeType,
-            sizeBytes: pendingDocumentUpload.sizeBytes,
-            tags: ["maintenance"],
-            csrfToken,
-          }),
+          body: form,
         });
 
         const result = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string };
@@ -1031,74 +962,28 @@ function startEdit(item: MaintenanceRecord) {
     setMessage(null);
 
     try {
-      const signedOptions = await getUploadcareSignedOptions();
-      await loadUploadcareScript();
-      const uploadWindow = window as Window & {
-        uploadcare?: UploadcareApi;
-        UPLOADCARE_PUBLIC_KEY?: string;
-      };
-      uploadWindow.UPLOADCARE_PUBLIC_KEY = signedOptions.publicKey;
-
-      const dialog = uploadWindow.uploadcare?.openDialog(null, {
-        ...signedOptions,
-        multiple: false,
-        imagesOnly: false,
+      const files = await new Promise<File[]>((resolve) => {
+        const picker = document.createElement("input");
+        picker.type = "file";
+        picker.accept = "application/pdf,image/jpeg,image/png,image/webp,image/heic,image/heif";
+        picker.addEventListener("change", () => resolve(Array.from(picker.files ?? [])), { once: true });
+        picker.addEventListener("cancel", () => resolve([]), { once: true });
+        picker.click();
       });
-      if (!dialog) throw new Error("Unable to open upload dialog.");
-
-      const fileInfo = await new Promise<UploadcareFileInfo>((resolve, reject) => {
-        dialog.done(async (file) => {
-          try {
-            const single =
-              typeof (file as UploadcareFileGroup).files === "function"
-                ? (file as UploadcareFileGroup).files?.()?.[0]
-                : (file as UploadcareSingleFile);
-            if (!single) {
-              reject(new Error("Upload returned no file."));
-              return;
-            }
-            const info =
-              typeof single.promise === "function"
-                ? await single.promise()
-                : await new Promise<UploadcareFileInfo>((done) => single.done?.(done));
-            resolve(info);
-          } catch (error) {
-            reject(error);
-          }
-        });
-        dialog.fail((dialogError) =>
-          reject(new Error(getUploadcareClientErrorMessage(dialogError))),
-        );
-      });
-
-      const reference = String(fileInfo.cdnUrl ?? fileInfo.uuid ?? "").trim();
-      if (!reference) {
-        throw new Error("Upload returned an invalid file reference.");
-      }
-
-      const fileName =
-        normalizeText(String(fileInfo.originalFilename ?? fileInfo.name ?? "Maintenance document")) ||
-        "Maintenance document";
-      const sizeBytes =
-        typeof fileInfo.size === "number" && Number.isFinite(fileInfo.size)
-          ? Math.round(fileInfo.size)
-          : null;
+      const file = files[0];
+      if (!file) return;
+      const fileName = normalizeText(file.name) || "Maintenance document";
 
       setPendingDocumentUpload({
         maintenanceRecordId: record.id,
-        reference,
+        file,
         fileName,
-        mimeType: typeof fileInfo.mimeType === "string" ? fileInfo.mimeType : null,
-        sizeBytes,
+        mimeType: file.type || null,
+        sizeBytes: file.size || null,
       });
       setMessage(`Upload complete. Review and save: ${fileName}`);
     } catch (requestError) {
-      setError(
-        getUploadcareClientErrorMessage(
-          requestError,
-          "Unable to upload the document. Please try again.",
-        ),
-      );
+      setError(requestError instanceof Error ? requestError.message : "Unable to select a document.");
     } finally {
       setSaving(false);
     }
