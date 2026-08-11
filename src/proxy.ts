@@ -38,12 +38,12 @@ function buildNonceCsp(nonce: string) {
     "style-src 'self' 'unsafe-inline'",
     "font-src 'self' data:",
     `img-src 'self' data: blob: ${clerkDomains} ${uploadcareImages} https://curatedcarrentals.com${bunnyOrigin ? ` ${bunnyOrigin}` : ""}`,
-    `connect-src 'self' ${clerkDomains} https://challenges.cloudflare.com ${uploadcareImages} https://upload.uploadcare.com`,
+    `connect-src 'self' ${clerkDomains} https://clerk-telemetry.com https://challenges.cloudflare.com ${uploadcareImages} https://upload.uploadcare.com`,
     `frame-src 'self' ${clerkDomains} https://challenges.cloudflare.com https://jm.wipayfinancial.com`,
     "worker-src 'self' blob:",
     "media-src 'self' blob:",
     "form-action 'self' https://jm.wipayfinancial.com",
-    "upgrade-insecure-requests",
+    ...(CSP_REPORT_ONLY ? [] : ["upgrade-insecure-requests"]),
   ].join("; ");
 }
 
@@ -126,6 +126,9 @@ export default async function proxy(request: NextRequest, event: NextFetchEvent)
   const nonce = crypto.randomUUID().replaceAll("-", "");
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-nonce", nonce);
+  // Next reads this request header while rendering and applies the nonce to its
+  // own bootstrap scripts. The browser-facing policy remains report-only here.
+  requestHeaders.set("Content-Security-Policy", buildNonceCsp(nonce));
   const requestWithNonce = new NextRequest(request, { headers: requestHeaders });
   const response = clerkProxy
     ? ((await clerkProxy(requestWithNonce, event)) ?? NextResponse.next({ request: { headers: requestHeaders } }))
