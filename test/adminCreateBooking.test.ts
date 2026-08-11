@@ -23,7 +23,7 @@ import {
 import {
   handleAdminBookingAddPaymentPost,
   type AdminBookingAddPaymentRouteDeps,
-} from "@/app/api/admin/bookings/[id]/add-payment/route";
+} from "@/app/api/admin/bookings/[id]/add-payment/implementation";
 import { dbQuery } from "@/lib/db";
 import type { Queryable } from "@/lib/payments/pricing";
 import { getPublicVehicles } from "@/lib/publicVehicles";
