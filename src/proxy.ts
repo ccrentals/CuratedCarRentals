@@ -11,7 +11,10 @@ import {
   shouldEnforceClerkOnAdminRoutes,
 } from "@/lib/security/clerk";
 
-const CSP_NONCE_ENABLED = (process.env.CSP_NONCE_ENABLED ?? "").trim().toLowerCase() === "true";
+// This is intentionally public: it is a non-secret build-mode toggle that must
+// be inlined into Netlify's proxy bundle.
+const CSP_NONCE_ENABLED =
+  (process.env.NEXT_PUBLIC_CSP_NONCE_ENABLED ?? "").trim().toLowerCase() === "true";
 const CSP_REPORT_ONLY = (process.env.CSP_REPORT_ONLY ?? "").trim().toLowerCase() === "true";
 
 function buildNonceCsp(nonce: string) {
