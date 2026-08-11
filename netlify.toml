@@ -4,6 +4,7 @@
 
 [context.production]
   command = "npm run migrate && npm run build"
+  environment = { NEXT_PUBLIC_CSP_NONCE_ENABLED = "true", NEXT_PUBLIC_CSP_REPORT_ONLY = "false", CSP_NONCE_ENABLED = "true", CSP_REPORT_ONLY = "false" }
 
 [context.deploy-preview]
   command = "npm run build"
