@@ -15,7 +15,8 @@ import {
 // be inlined into Netlify's proxy bundle.
 const CSP_NONCE_ENABLED =
   (process.env.NEXT_PUBLIC_CSP_NONCE_ENABLED ?? "").trim().toLowerCase() === "true";
-const CSP_REPORT_ONLY = (process.env.CSP_REPORT_ONLY ?? "").trim().toLowerCase() === "true";
+const CSP_REPORT_ONLY =
+  (process.env.NEXT_PUBLIC_CSP_REPORT_ONLY ?? "").trim().toLowerCase() === "true";
 
 function buildNonceCsp(nonce: string) {
   const bunnyOrigin = (() => {
