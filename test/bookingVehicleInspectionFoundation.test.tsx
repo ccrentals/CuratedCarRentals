@@ -12,12 +12,12 @@ import {
   handleAdminBookingInspectionsGet,
   handleAdminBookingInspectionsPut,
 } from "@/app/api/admin/bookings/[id]/inspections/route";
-import { handleAdminBookingInspectionImagesPost } from "@/app/api/admin/bookings/[id]/inspections/images/route";
+import { handleAdminBookingInspectionImagesPost } from "@/app/api/admin/bookings/[id]/inspections/images/implementation";
 import {
   handleAdminBookingInspectionImageDelete,
   handleAdminBookingInspectionImageGet,
-} from "@/app/api/admin/bookings/[id]/inspections/images/[imageId]/route";
-import { handleAdminBookingInspectionImagesArchivePost } from "@/app/api/admin/bookings/[id]/inspections/images/archive/route";
+} from "@/app/api/admin/bookings/[id]/inspections/images/[imageId]/implementation";
+import { handleAdminBookingInspectionImagesArchivePost } from "@/app/api/admin/bookings/[id]/inspections/images/archive/implementation";
 import { BookingVehicleInspectionPanel } from "@/components/admin/BookingVehicleInspectionPanel";
 import type { RequireAdminApiSessionResult } from "@/lib/auth/adminGuards";
 import { DEFAULT_ADMIN_SETTINGS } from "@/lib/adminSettings";
