@@ -15,7 +15,7 @@ import {
 } from "@/lib/pdfmonkey";
 import { getInvoiceProvider } from "@/lib/env";
 import { handleAdminBookingInvoiceDocumentGet } from "@/app/api/admin/bookings/[id]/invoice-document/route";
-import { handleAdminBookingAgreementDocumentGet } from "@/app/api/admin/bookings/[id]/agreement-document/route";
+import { handleAdminBookingAgreementDocumentGet } from "@/app/api/admin/bookings/[id]/agreement-document/implementation";
 import { loadBookingRentalAgreementPayload } from "@/lib/agreements/rentalAgreementPayload";
 import type { RequireAdminApiSessionResult } from "@/lib/auth/adminGuards";
 
