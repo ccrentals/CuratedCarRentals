@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { Geist, Geist_Mono, Great_Vibes, Playfair_Display } from "next/font/google";
 
 import { BreakpointOverlay } from "@/components/dev/BreakpointOverlay";
@@ -92,7 +93,7 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
@@ -104,12 +105,14 @@ export default function RootLayout({
   const showStagingBanner =
     process.env.NEXT_PUBLIC_SITE_ENV?.trim().toLowerCase() === "staging";
   const allowedThemesJson = JSON.stringify(APP_THEMES);
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
 
   return (
     <html lang="en" data-theme="light" suppressHydrationWarning>
       <head>
         <style
           id="ccr-theme-critical"
+          nonce={nonce}
           dangerouslySetInnerHTML={{
             __html: `
 html, body {
@@ -141,6 +144,7 @@ html[data-theme="forest"], html[data-theme="forest"] body {
         />
         <script
           id="ccr-theme-init"
+          nonce={nonce}
           dangerouslySetInnerHTML={{
             __html: `
 (function () {
