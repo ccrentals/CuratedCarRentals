@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { handleResendWebhookPost } from "@/app/api/webhooks/resend/route";
+import { handleResendWebhookPost } from "@/app/api/webhooks/resend/implementation";
 import {
   normalizeResendWebhookEvent,
   processResendWebhookEvent,

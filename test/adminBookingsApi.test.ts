@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { handleAdminBookingsGet } from "@/app/api/admin/bookings/route";
+import { handleAdminBookingsGet } from "@/app/api/admin/bookings/implementation";
 
 test("admin bookings API: GET requires auth", async () => {
   const response = await handleAdminBookingsGet(new Request("http://localhost/api/admin/bookings"), {
@@ -51,4 +51,3 @@ test("admin bookings API: forwards sortBy/sortDir to list fetch", async () => {
   assert.equal(capturedSortBy, "dates");
   assert.equal(capturedSortDir, "asc");
 });
-

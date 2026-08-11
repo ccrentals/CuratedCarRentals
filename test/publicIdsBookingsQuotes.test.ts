@@ -4,9 +4,9 @@ import test, { type TestContext } from "node:test";
 
 import { config as loadEnv } from "dotenv";
 
-import { handleAdminBookingsGet } from "@/app/api/admin/bookings/route";
-import { handleAdminQuoteGet } from "@/app/api/admin/quotes/[id]/route";
-import { handleAdminQuotesGet } from "@/app/api/admin/quotes/route";
+import { handleAdminBookingsGet } from "@/app/api/admin/bookings/implementation";
+import { handleAdminQuoteGet } from "@/app/api/admin/quotes/[id]/implementation";
+import { handleAdminQuotesGet } from "@/app/api/admin/quotes/implementation";
 import { fetchAdminBookingsPage } from "@/lib/bookings/adminBookingsList";
 import { dbQuery } from "@/lib/db";
 import { fetchAdminQuoteById, fetchAdminQuotesPage } from "@/lib/quotes/adminQuotes";

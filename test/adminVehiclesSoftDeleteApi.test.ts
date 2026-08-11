@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { handleAdminVehicleDelete } from "@/app/api/admin/vehicles/[id]/route";
-import { handleAdminVehiclesGet } from "@/app/api/admin/vehicles/route";
+import { handleAdminVehicleDelete } from "@/app/api/admin/vehicles/[id]/implementation";
+import { handleAdminVehiclesGet } from "@/app/api/admin/vehicles/implementation";
 
 const VEHICLE_ID = "11111111-1111-4111-8111-111111111111";
 

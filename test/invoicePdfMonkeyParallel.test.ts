@@ -718,7 +718,7 @@ test("admin invoice document route returns structured provider errors instead of
 
 test("admin invoice document route stays decoupled from email senders", () => {
   const source = readFileSync(
-    "/Users/damianthompson/curated-car-rentals/src/app/api/admin/bookings/[id]/invoice-document/route.ts",
+    "/Users/damianthompson/curated-car-rentals/src/app/api/admin/bookings/[id]/invoice-document/implementation.ts",
     "utf8",
   );
 
@@ -856,7 +856,7 @@ test("admin agreement document route rejects invalid provider values", async () 
 
 test("admin agreement document route stays decoupled from email senders", () => {
   const source = readFileSync(
-    "/Users/damianthompson/curated-car-rentals/src/app/api/admin/bookings/[id]/agreement-document/route.ts",
+    "/Users/damianthompson/curated-car-rentals/src/app/api/admin/bookings/[id]/agreement-document/implementation.ts",
     "utf8",
   );
 

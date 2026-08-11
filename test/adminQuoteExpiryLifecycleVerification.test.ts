@@ -4,8 +4,8 @@ import test, { type TestContext } from "node:test";
 
 import { config as loadEnv } from "dotenv";
 
-import { handleAdminQuotePatch } from "@/app/api/admin/quotes/[id]/route";
-import { handleAdminQuotesGet } from "@/app/api/admin/quotes/route";
+import { handleAdminQuotePatch } from "@/app/api/admin/quotes/[id]/implementation";
+import { handleAdminQuotesGet } from "@/app/api/admin/quotes/implementation";
 import { dbQuery } from "@/lib/db";
 import { fetchAdminQuotesPage, updateAdminQuote } from "@/lib/quotes/adminQuotes";
 

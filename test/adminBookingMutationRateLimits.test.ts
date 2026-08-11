@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { handleAdminBookingCancelPost } from "@/app/api/admin/bookings/[id]/cancel/implementation";
-import { handleAdminBookingMarkDepositPaidPost } from "@/app/api/admin/bookings/[id]/mark-deposit-paid/route";
-import { handleAdminBookingMarkFullyPaidPost } from "@/app/api/admin/bookings/[id]/mark-fully-paid/route";
-import { handleAdminBookingResendEmailPost } from "@/app/api/admin/bookings/[id]/resend-email/route";
+import { handleAdminBookingMarkDepositPaidPost } from "@/app/api/admin/bookings/[id]/mark-deposit-paid/implementation";
+import { handleAdminBookingMarkFullyPaidPost } from "@/app/api/admin/bookings/[id]/mark-fully-paid/implementation";
+import { handleAdminBookingResendEmailPost } from "@/app/api/admin/bookings/[id]/resend-email/implementation";
 
 function operationsAuth() {
   return {

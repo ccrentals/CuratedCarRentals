@@ -4,9 +4,9 @@ import test from "node:test";
 import {
   handleAdminVehicleChecklistGet,
   handleAdminVehicleChecklistPost,
-} from "@/app/api/admin/vehicles/[id]/checklist/route";
-import { handleAdminVehicleChecklistItemPatch } from "@/app/api/admin/vehicles/[id]/checklist/[itemId]/route";
-import { handleVehicleMaintenanceGet } from "@/app/api/admin/vehicles/[id]/maintenance/route";
+} from "@/app/api/admin/vehicles/[id]/checklist/implementation";
+import { handleAdminVehicleChecklistItemPatch } from "@/app/api/admin/vehicles/[id]/checklist/[itemId]/implementation";
+import { handleVehicleMaintenanceGet } from "@/app/api/admin/vehicles/[id]/maintenance/implementation";
 
 const VEHICLE_ID = "11111111-1111-4111-8111-111111111111";
 

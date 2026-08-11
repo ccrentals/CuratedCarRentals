@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { handleAdminMessagesRetentionPost } from "@/app/api/admin/messages/retention/route";
+import { handleAdminMessagesRetentionPost } from "@/app/api/admin/messages/retention/implementation";
 
 test("admin messages retention endpoint is disabled for manual trash workflow", async () => {
   const response = await handleAdminMessagesRetentionPost(undefined, {

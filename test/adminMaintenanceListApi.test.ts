@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { handleAdminMaintenanceGet } from "@/app/api/admin/maintenance/route";
+import { handleAdminMaintenanceGet } from "@/app/api/admin/maintenance/implementation";
 
 function adminSession() {
   return {

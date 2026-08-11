@@ -4,10 +4,10 @@ import test from "node:test";
 import {
   handleVehicleMaintenanceSchedulesGet,
   handleVehicleMaintenanceSchedulesPost,
-} from "@/app/api/admin/vehicles/[id]/maintenance/schedules/route";
-import { handleVehicleMaintenanceLogsPost } from "@/app/api/admin/vehicles/[id]/maintenance/logs/route";
-import { handleVehicleMaintenanceAttachmentsPost } from "@/app/api/admin/vehicles/[id]/maintenance/logs/[logId]/attachments/route";
-import { handleVehicleMaintenanceAttachmentDelete } from "@/app/api/admin/vehicles/[id]/maintenance/logs/[logId]/attachments/[linkId]/route";
+} from "@/app/api/admin/vehicles/[id]/maintenance/schedules/implementation";
+import { handleVehicleMaintenanceLogsPost } from "@/app/api/admin/vehicles/[id]/maintenance/logs/implementation";
+import { handleVehicleMaintenanceAttachmentsPost } from "@/app/api/admin/vehicles/[id]/maintenance/logs/[logId]/attachments/implementation";
+import { handleVehicleMaintenanceAttachmentDelete } from "@/app/api/admin/vehicles/[id]/maintenance/logs/[logId]/attachments/[linkId]/implementation";
 
 const VEHICLE_ID = "11111111-1111-4111-8111-111111111111";
 const SERVICE_TYPE_ID = "22222222-2222-4222-8222-222222222222";

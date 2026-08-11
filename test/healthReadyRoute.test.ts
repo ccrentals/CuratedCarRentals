@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { readinessResponse } from "@/app/api/health/ready/route";
+import { readinessResponse } from "@/app/api/health/ready/implementation";
 
 test("public readiness response exposes only the liveness result", async () => {
   const response = readinessResponse({ ok: true });

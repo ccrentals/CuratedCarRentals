@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { handlePublicLocationsGet } from "@/app/api/public/locations/route";
+import { handlePublicLocationsGet } from "@/app/api/public/locations/implementation";
 import { getBookingLocationConfigMigrationMessage } from "@/lib/bookings/bookingLocationConfigStore";
 
 test("public locations API returns the exact phase-1 location set", async () => {

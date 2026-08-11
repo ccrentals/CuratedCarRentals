@@ -5,7 +5,7 @@ import {
   handleAdminVehiclePricingRulesDelete,
   handleAdminVehiclePricingRulesGet,
   handleAdminVehiclePricingRulesPatch,
-} from "@/app/api/admin/vehicles/[id]/pricing-rules/route";
+} from "@/app/api/admin/vehicles/[id]/pricing-rules/implementation";
 import type { VehiclePricingProfile } from "@/lib/bookings/pricingRules";
 
 const VEHICLE_ID = "11111111-1111-4111-8111-111111111111";

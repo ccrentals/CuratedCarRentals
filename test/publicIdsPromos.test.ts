@@ -4,8 +4,8 @@ import test, { type TestContext } from "node:test";
 
 import { config as loadEnv } from "dotenv";
 
-import { fetchAdminPromoCodeById } from "@/app/api/admin/promo-codes/[id]/route";
-import { fetchAdminPromoCodes } from "@/app/api/admin/promo-codes/route";
+import { fetchAdminPromoCodeById } from "@/app/api/admin/promo-codes/[id]/implementation";
+import { fetchAdminPromoCodes } from "@/app/api/admin/promo-codes/implementation";
 import { dbQuery } from "@/lib/db";
 
 loadEnv({ path: ".env.local" });

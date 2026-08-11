@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { handleAdminQuoteDocumentGet } from "@/app/api/admin/quotes/[id]/pdf-document/route";
-import { handleAdminQuotePdfGet } from "@/app/api/admin/quotes/[id]/pdf/route";
+import { handleAdminQuoteDocumentGet } from "@/app/api/admin/quotes/[id]/pdf-document/implementation";
+import { handleAdminQuotePdfGet } from "@/app/api/admin/quotes/[id]/pdf/implementation";
 import {
   buildPdfMonkeyQuoteDocumentPayload,
   buildPdfMonkeyQuoteTemplateSampleData,

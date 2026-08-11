@@ -4,7 +4,7 @@ import test from "node:test";
 import {
   handleAdminSetPasswordPost,
   type AdminSetPasswordDeps,
-} from "@/app/api/admin/set-password/route";
+} from "@/app/api/admin/set-password/implementation";
 
 function makeDeps(overrides: Partial<AdminSetPasswordDeps> = {}): AdminSetPasswordDeps {
   return {

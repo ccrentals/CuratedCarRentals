@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { handleAdminMaintenanceExportGet } from "@/app/api/admin/maintenance/export/route";
+import { handleAdminMaintenanceExportGet } from "@/app/api/admin/maintenance/export/implementation";
 
 const mockPayload = {
   ok: true,

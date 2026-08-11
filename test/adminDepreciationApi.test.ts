@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { handleAdminDepreciationGet } from "@/app/api/admin/depreciation/route";
-import { handleAdminDepreciationExportGet } from "@/app/api/admin/depreciation/export/route";
+import { handleAdminDepreciationGet } from "@/app/api/admin/depreciation/implementation";
+import { handleAdminDepreciationExportGet } from "@/app/api/admin/depreciation/export/implementation";
 
 test("admin depreciation API: list requires auth", async () => {
   const response = await handleAdminDepreciationGet(

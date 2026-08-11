@@ -113,7 +113,7 @@ test("Netlify runs migrations only for production deploys", () => {
 });
 
 test("future booking wizard private files store customer ownership and normalized tags", () => {
-  const route = read("src/app/api/public/bookings/route.ts");
+  const route = read("src/app/api/public/bookings/implementation.ts");
 
   assert.match(route, /booking_private_files \(customer_id, booking_id/);
   assert.match(route, /customerId: customerUpsert\.customerId/);

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { handleAdminQuotePatch } from "@/app/api/admin/quotes/[id]/route";
+import { handleAdminQuotePatch } from "@/app/api/admin/quotes/[id]/implementation";
 import { AdminQuoteError } from "@/lib/quotes/adminQuotes";
 import {
   getQuoteStatusTransitionError,

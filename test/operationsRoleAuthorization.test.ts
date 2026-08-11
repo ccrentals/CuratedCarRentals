@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { handleAdminUploadcareSignatureGet } from "@/app/api/admin/uploads/uploadcare/signature/route";
+import { handleAdminUploadcareSignatureGet } from "@/app/api/admin/uploads/uploadcare/signature/implementation";
 import type { RequireAdminApiSessionResult } from "@/lib/auth/adminGuards";
 
 const OPERATIONS_ACTOR = {
@@ -62,20 +62,20 @@ test("signed upload credentials still reject unauthenticated users", async () =>
 
 test("operations workflow routes use operations-level authorization", async () => {
   const routePaths = [
-    "src/app/api/admin/uploads/uploadcare/signature/route.ts",
-    "src/app/api/admin/bookings/route.ts",
-    "src/app/api/admin/bookings/[id]/route.ts",
+    "src/app/api/admin/uploads/uploadcare/signature/implementation.ts",
+    "src/app/api/admin/bookings/implementation.ts",
+    "src/app/api/admin/bookings/[id]/implementation.ts",
     "src/app/api/admin/bookings/[id]/inspections/implementation.ts",
     "src/app/api/admin/bookings/[id]/inspections/images/implementation.ts",
     "src/app/api/admin/bookings/[id]/inspections/images/[imageId]/implementation.ts",
-    "src/app/api/admin/customers/route.ts",
+    "src/app/api/admin/customers/implementation.ts",
     "src/app/api/admin/customers/[id]/route.ts",
     "src/app/api/admin/customers/[id]/private-files/route.ts",
     "src/app/api/admin/customers/[id]/private-files/[fileId]/route.ts",
     "src/app/api/admin/blockouts/route.ts",
     "src/app/api/admin/blockouts/[id]/route.ts",
-    "src/app/api/admin/quotes/route.ts",
-    "src/app/api/admin/quotes/[id]/route.ts",
+    "src/app/api/admin/quotes/implementation.ts",
+    "src/app/api/admin/quotes/[id]/implementation.ts",
     "src/app/api/admin/me/route.ts",
   ];
 

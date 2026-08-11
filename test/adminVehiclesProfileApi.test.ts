@@ -4,7 +4,7 @@ import test from "node:test";
 import {
   handleAdminVehicleProfileGet,
   handleAdminVehicleProfilePatch,
-} from "@/app/api/admin/vehicles/[id]/profile/route";
+} from "@/app/api/admin/vehicles/[id]/profile/implementation";
 
 test("admin vehicle profile API: GET requires auth", async () => {
   const response = await handleAdminVehicleProfileGet(

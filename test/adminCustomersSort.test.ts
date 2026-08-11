@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { normalizeCustomerSort } from "@/app/api/admin/customers/route";
+import { normalizeCustomerSort } from "@/app/api/admin/customers/implementation";
 
 test("admin customers sorting: accepts sortBy/sortDir allowlist", () => {
   const sort = normalizeCustomerSort(new URLSearchParams("sortBy=customer&sortDir=asc"));
@@ -17,4 +17,3 @@ test("admin customers sorting: invalid values fall back to default", () => {
   const sort = normalizeCustomerSort(new URLSearchParams("sortBy=drop table&sortDir=sideways"));
   assert.deepEqual(sort, { sortBy: "lastBooked", sortDir: "desc" });
 });
-
