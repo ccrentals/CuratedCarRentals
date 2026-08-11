@@ -4,7 +4,7 @@ import type { MediaAuditActivity } from "@/lib/uploads/mediaAudit";
 const ACTION_LABELS: Record<MediaAuditActivity["action"], string> = {
   MEDIA_UPLOAD: "Uploaded",
   MEDIA_REMOVE: "Removed",
-  MEDIA_PROVIDER_DELETE: "Deleted from Uploadcare",
+  MEDIA_PROVIDER_DELETE: "Deleted from storage provider",
   MEDIA_SHARED_PRESERVE: "Shared file preserved",
   MEDIA_CLEANUP_FAILED: "Cleanup failed",
   MEDIA_ORPHAN_DELETE: "Orphan deleted",

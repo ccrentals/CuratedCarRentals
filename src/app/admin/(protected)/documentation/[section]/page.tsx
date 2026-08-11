@@ -378,7 +378,7 @@ Deposit checkout -> WiPay (hosted) -> return/webhook -> reconcile in Neon
 Emails -> Resend
 Invoices -> configured provider (Gotenberg or PDFMonkey)
 Quotes -> native PDF generation endpoint
-Uploads (if enabled) -> Uploadcare
+Uploads -> Bunny Storage (public + private); Uploadcare legacy fallback during migration
 Scheduled reminders -> Netlify cron -> /api/cron/* -> Resend`;
 
 const PROJECT_TIMELINE_DIAGRAM = `Delivery timeline (template)
@@ -1090,7 +1090,9 @@ const DOCS: Record<string, DocSection> = {
                 <code>pdfmonkey</code>), and quote PDFs are generated natively.
               </li>
               <li>
-                <span className="font-semibold text-[var(--ccr-text)]">Uploads:</span> Uploadcare public key (where used).
+                <span className="font-semibold text-[var(--ccr-text)]">Uploads:</span> Bunny Storage: a public Storage
+                Zone + Pull Zone for public media and a separate private Storage Zone for customer and booking files.
+                Uploadcare remains read-compatible only while historic files are migrated.
               </li>
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">Hosting:</span> Netlify with{" "}
@@ -1453,8 +1455,18 @@ Email (Resend)
 	- PDFMONKEY_API_KEY (required when PDF_PROVIDER=pdfmonkey)
 	- PDFMONKEY_TEMPLATE_ID (required when PDF_PROVIDER=pdfmonkey)
 
-Uploads (Uploadcare)
+Uploads (Bunny Storage)
+- FILE_STORAGE_PROVIDER=bunny
+- BUNNY_STORAGE_ENDPOINT (regional API origin; production currently uses New York)
+- BUNNY_STORAGE_PUBLIC_ZONE
+- BUNNY_STORAGE_PUBLIC_ACCESS_KEY (server-only secret)
+- BUNNY_PUBLIC_CDN_URL (the public Pull Zone HTTPS origin)
+- BUNNY_STORAGE_PRIVATE_ZONE
+- BUNNY_STORAGE_PRIVATE_ACCESS_KEY (server-only secret)
+
+Legacy Uploadcare (retain until historical assets are migrated)
 - NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY
+- UPLOADCARE_SECRET_KEY
 
 Cron
 - CRON_SECRET`}</CodeBlock>
@@ -1481,7 +1493,8 @@ Cron
                   </li>
                   <li>
                     Vehicle gallery ownership: customer fleet images and future vehicle-gallery uploads should
-                    remain under our Uploadcare account using the vehicle gallery naming convention.
+                    be written to the configured Bunny public zone using the vehicle gallery naming convention.
+                    Existing Uploadcare images remain readable until migration is complete.
                   </li>
                   <li>
                     Phase two: stricter blocking of E2E/demo seed scripts against this environment is planned,
@@ -1535,8 +1548,10 @@ Cron
                 <code>PDFMONKEY_TEMPLATE_ID</code>. Then generate and open a real invoice from an actual booking.
               </li>
               <li>
-                <span className="font-semibold text-[var(--ccr-text)]">Uploads (optional):</span> If enabled, verify{" "}
-                <code>NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY</code> and upload access policies.
+                <span className="font-semibold text-[var(--ccr-text)]">Bunny Storage:</span> Confirm
+                <code>FILE_STORAGE_PROVIDER=bunny</code>, separate production public/private zones, server-only access
+                keys, the public Pull Zone HTTPS origin, and that the private zone has no public Pull Zone. Upload a
+                public image and a private ID image through CCR before considering Uploadcare retirement.
               </li>
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">Security:</span> Strong production values for{" "}
@@ -1748,7 +1763,8 @@ Cron
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">Third-party trust boundaries:</span>{" "}
                 WiPay handles card entry, Resend handles outbound email, configurable PDF providers render
-                invoices/documents, and Uploadcare is optional for uploads.
+                invoices/documents, Bunny Storage handles current uploads, and Uploadcare remains a legacy read fallback
+                until migration is complete.
               </li>
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">Operational principle:</span> use the
@@ -2140,7 +2156,7 @@ Cron
               >
                 <title id="data-map-title">Data processing map</title>
                 <desc id="data-map-desc">
-                  Customer data and bookings stored in Postgres; payments handled by WiPay; emails via Resend; invoice PDFs via configurable provider; uploads via Uploadcare when enabled; cron jobs via Netlify.
+                  Customer data and bookings stored in Postgres; payments handled by WiPay; emails via Resend; invoice PDFs via configurable provider; public and private uploads via Bunny Storage; cron jobs via Netlify.
                 </desc>
                 <defs>
                   <marker
@@ -2173,7 +2189,7 @@ Cron
                 />
                 <SvgBox x={650} y={290} width={250} height={84} title="Resend" lines={["Email notifications"]} />
                 <SvgBox x={60} y={290} width={250} height={84} title="PDF Provider" lines={["Gotenberg/PDFMonkey", "Invoice PDFs"]} />
-                <SvgBox x={60} y={190} width={250} height={84} title="Uploadcare" lines={["Uploads (optional)"]} />
+                <SvgBox x={60} y={190} width={250} height={84} title="Bunny Storage" lines={["Public CDN + private zone"]} />
                 <SvgBox x={355} y={290} width={250} height={84} title="Netlify Cron" lines={["Scheduled reminders", "/api/cron/*"]} />
 
                 <SvgArrow d="M310 116 L355 116" markerId="arrow-data-map" label="submit" labelX={318} labelY={104} />
@@ -2200,7 +2216,7 @@ Cron
             <ul className="list-disc space-y-2 pl-5">
               <li>Data collected: name, email, phone, booking dates, pickup location, vehicle selection.</li>
               <li>Payment data: store transaction references and reconciliation metadata; do not store raw card data.</li>
-              <li>Processors: WiPay (payments), Resend (email), configurable PDF provider (Gotenberg/PDFMonkey), Uploadcare (uploads).</li>
+              <li>Processors: WiPay (payments), Resend (email), configurable PDF provider (Gotenberg/PDFMonkey), and Bunny Storage (public and private uploads). Uploadcare remains a legacy processor only while historical assets are retained there.</li>
               <li>Retention: define retention windows for bookings, payments, and logs.</li>
               <li>User rights: provide contact method for access/deletion requests where applicable.</li>
             </ul>

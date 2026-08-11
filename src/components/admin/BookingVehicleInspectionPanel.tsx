@@ -247,8 +247,8 @@ function InspectionImagesSection({
           {uploadState.operation === "saving"
             ? "Upload complete. Verifying the file and saving it to this inspection."
             : uploadState.operation === "deleting"
-              ? "Removing the image and checking whether the Uploadcare file is still referenced."
-              : "Uploading selected files to Uploadcare."}
+              ? "Removing the image and checking whether the stored file is still referenced."
+              : "Uploading selected files to private storage."}
         </div>
       ) : null}
 
@@ -969,7 +969,7 @@ export function BookingVehicleInspectionPanel({
     }
 
     const confirmed = window.confirm(
-      "Remove this inspection image? It will be permanently deleted from Uploadcare when no other record uses it. This cannot be undone.",
+      "Remove this inspection image? It will be permanently deleted from storage when no other record uses it. This cannot be undone.",
     );
     if (!confirmed) return;
 
@@ -1022,9 +1022,9 @@ export function BookingVehicleInspectionPanel({
         message:
           payload.cleanupWarning ??
           (payload.providerFileShared
-            ? "Inspection image removed. The Uploadcare file was preserved because another record uses it."
+            ? "Inspection image removed. The stored file was preserved because another record uses it."
             : payload.providerFileDeleted
-              ? "Inspection image removed and permanently deleted from Uploadcare."
+              ? "Inspection image removed and permanently deleted from storage."
               : "Inspection image removed."),
       }));
     } catch (error) {

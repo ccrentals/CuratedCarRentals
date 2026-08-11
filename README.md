@@ -232,7 +232,9 @@ For a “goLiveReady: true” signal you must have:
 - WiPay configured + reachable.
 - Resend configured + reachable.
 - PDFMonkey configured + reachable.
-- Uploadcare public key configured + reachable.
+- Active file-storage provider configured + reachable: Bunny requires both public/private
+  Storage Zone credentials and the public Pull Zone URL; Uploadcare remains a legacy fallback
+  while historical assets are migrated.
 - DB OK.
 - Promo ledger schema present (`promo_redemption_events`).
 

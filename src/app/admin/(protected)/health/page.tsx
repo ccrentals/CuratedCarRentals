@@ -38,8 +38,8 @@ function checkLabel(key: keyof Awaited<ReturnType<typeof getHealthSnapshot>>["ch
       return "Resend";
     case "pdfmonkey":
       return "PDFMonkey";
-    case "uploadcare":
-      return "Uploadcare";
+    case "storage":
+      return "File storage";
     case "netlify":
       return "Netlify";
     default:
@@ -124,6 +124,7 @@ export default async function AdminHealthPage() {
                         .join(" · ");
                     })()
                   : [
+                      key === "storage" ? snapshot.checks.storage.provider : null,
                       check.configured === false ? "not configured" : check.configured ? "configured" : null,
                       formatStatus(check.status),
                       formatLatency(check.latencyMs),
