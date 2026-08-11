@@ -50,15 +50,18 @@ test("Admin logout only changes session state through CSRF-protected POST", () =
   assert.doesNotMatch(logoutRoute, /export async function GET[\s\S]*revokeCurrentClerkSession/);
 });
 
-test("CSP scopes legacy Uploadcare hosts to the directives that need them", () => {
-  const config = read("next.config.ts");
+test("CSP uses a proxy-provided nonce and scopes legacy Uploadcare hosts by directive", () => {
+  const csp = read("src/lib/security/csp.ts");
+  const proxy = read("src/proxy.ts");
+  const scriptSourceBlock = csp.slice(csp.indexOf("const scriptSrc"), csp.indexOf("const connectSrc"));
 
-  assert.match(config, /const UPLOADCARE_SCRIPT_DOMAINS = \[\s*\/\/[^\n]*\n\s*"https:\/\/ucarecdn\.com",\s*\]/);
-  assert.match(config, /const UPLOADCARE_IMAGE_DOMAINS = \[[\s\S]*"https:\/\/\*\.ucarecd\.net",/);
-  assert.match(config, /const UPLOADCARE_CONNECT_DOMAINS = \[[\s\S]*"https:\/\/upload\.uploadcare\.com",/);
-  assert.match(config, /scriptSrc[\s\S]*\.\.\.UPLOADCARE_SCRIPT_DOMAINS/);
-  assert.match(config, /connectSrc[\s\S]*\.\.\.UPLOADCARE_CONNECT_DOMAINS/);
-  assert.match(config, /img-src[^`]*\.\.\.UPLOADCARE_IMAGE_DOMAINS/);
+  assert.match(csp, /`'nonce-\$\{options\.nonce\}'`/);
+  assert.doesNotMatch(scriptSourceBlock, /'unsafe-inline'/);
+  assert.match(csp, /UPLOADCARE_SCRIPT_DOMAINS = \["https:\/\/ucarecdn\.com"\]/);
+  assert.match(csp, /UPLOADCARE_CONNECT_DOMAINS = \[\.\.\.UPLOADCARE_IMAGE_DOMAINS, "https:\/\/upload\.uploadcare\.com"\]/);
+  assert.match(proxy, /crypto\.randomUUID\(\)/);
+  assert.match(proxy, /request\.headers\.set\("x-nonce", nonce\)/);
+  assert.match(proxy, /request\.headers\.set\("Content-Security-Policy", contentSecurityPolicy\)/);
 });
 
 test("Returning-customer verification accepts stored legal IDs and does not require birthday", () => {
