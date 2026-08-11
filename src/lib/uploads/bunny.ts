@@ -232,6 +232,27 @@ export function createBunnyVehicleDocumentStorageKey(input: {
   return `private/vehicles/${vehicleId}/documents/${input.id ?? randomUUID()}-${safeName}`;
 }
 
+export function createBunnyBookingPrivateFileStorageKey(input: {
+  bookingId: string;
+  documentType: "DRIVERS_LICENSE" | "SIGNATURE";
+  fileName: string;
+  id?: string;
+}) {
+  const bookingId = normalizeText(input.bookingId).replace(/[^a-zA-Z0-9_-]+/g, "-");
+  const documentType = normalizeText(input.documentType).toLowerCase().replace(/_/g, "-");
+  if (!bookingId || !["drivers-license", "signature"].includes(documentType)) {
+    throw new BunnyStorageError("Invalid Bunny booking private file key.", 400);
+  }
+  const rawName = normalizeText(input.fileName) || "booking-file.bin";
+  const safeName = rawName
+    .split(/[\\/]/)
+    .at(-1)!
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 120) || "booking-file.bin";
+  return `private/bookings/${bookingId}/${documentType}/${input.id ?? randomUUID()}-${safeName}`;
+}
+
 type BunnyFetchOptions = {
   fetchFn?: typeof fetch;
 };

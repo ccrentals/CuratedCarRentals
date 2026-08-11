@@ -53,6 +53,13 @@ import {
 } from "@/lib/security/turnstile";
 import { consumeRouteRateLimit, withRateLimitHeaders } from "@/lib/security/rate-limit";
 import { extractUploadcareFileId } from "@/lib/uploads/uploadcare";
+import {
+  createBunnyBookingPrivateFileStorageKey,
+  deleteBunnyStorageObject,
+  getBunnyStorageConfig,
+  uploadBunnyStorageObject,
+} from "@/lib/uploads/bunny";
+import { getFileStorageProvider } from "@/lib/env";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -63,6 +70,11 @@ const PUBLIC_BOOKING_EMAIL_LIMIT = 3;
 const PUBLIC_BOOKING_EMAIL_WINDOW_SECONDS = 30 * 60;
 const PUBLIC_BOOKING_SUBMISSION_LIMIT = 6;
 const PUBLIC_BOOKING_SUBMISSION_WINDOW_SECONDS = 30 * 60;
+
+function privateImageFileName(documentType: "DRIVERS_LICENSE" | "SIGNATURE", index: number, mimeType: string) {
+  const extension = mimeType.split("/")[1]?.replace(/[^a-z0-9]+/gi, "") || "png";
+  return documentType === "SIGNATURE" ? `signature.${extension}` : `drivers-license-${index}.${extension}`;
+}
 
 function normalizeText(value: unknown) {
   if (typeof value !== "string") return "";
@@ -365,6 +377,7 @@ export async function POST(request: Request) {
 
   const pool = getDbPool();
   let bookingLocationConfigs;
+  const storedBunnyPrivateKeys: string[] = [];
   try {
     bookingLocationConfigs = await listActiveBookingLocationConfigs(pool);
   } catch (error) {
@@ -712,15 +725,30 @@ export async function POST(request: Request) {
       ).rows[0]?.public_id ?? null;
     const privateFileUploadedAt = new Date().toISOString();
 
+    const useBunnyPrivateStorage = getFileStorageProvider() === "bunny";
+    const privateBunnyConfig = useBunnyPrivateStorage ? getBunnyStorageConfig("private") : null;
+
     if (hasDriversLicenseDataUrl) {
       for (const [index, parsedDriversLicenseImage] of parsedDriversLicenseImages.entries()) {
         if (!parsedDriversLicenseImage) continue;
+        const storageKey = privateBunnyConfig
+          ? createBunnyBookingPrivateFileStorageKey({
+              bookingId: bookingInsert.rows[0].id,
+              documentType: "DRIVERS_LICENSE",
+              fileName: privateImageFileName("DRIVERS_LICENSE", index + 1, parsedDriversLicenseImage.mimeType),
+            })
+          : parsedDriversLicenseImage.normalizedDataUrl;
+        if (privateBunnyConfig) {
+          await uploadBunnyStorageObject(privateBunnyConfig, storageKey, parsedDriversLicenseImage.bytes);
+          storedBunnyPrivateKeys.push(storageKey);
+        }
         await client.query(
-          "insert into booking_private_files (customer_id, booking_id, document_type, storage_provider, storage_key, mime_type, metadata_json) values ($1, $2, 'DRIVERS_LICENSE', 'DATA_URL', $3, $4, $5::jsonb)",
+          "insert into booking_private_files (customer_id, booking_id, document_type, storage_provider, storage_key, mime_type, metadata_json) values ($1, $2, 'DRIVERS_LICENSE', $3, $4, $5, $6::jsonb)",
           [
             customerUpsert.customerId,
             bookingInsert.rows[0].id,
-            parsedDriversLicenseImage.normalizedDataUrl,
+            privateBunnyConfig ? "BUNNY_STORAGE" : "DATA_URL",
+            storageKey,
             parsedDriversLicenseImage.mimeType,
             JSON.stringify({
               customerId: customerUpsert.customerId,
@@ -734,7 +762,7 @@ export async function POST(request: Request) {
               originalFileName: null,
               mimeType: parsedDriversLicenseImage.mimeType,
               byteSize: parsedDriversLicenseImage.bytes.length,
-              fallback: "inline_data_url",
+              storageProvider: privateBunnyConfig ? "BUNNY_STORAGE" : "DATA_URL",
               imageIndex: index + 1,
               imageCount: parsedDriversLicenseImages.length,
               driversLicenseNumberTail: hasDriversLicenseNumber
@@ -767,12 +795,24 @@ export async function POST(request: Request) {
     }
 
     if (signatureDataUrl) {
+      const signatureStorageKey = privateBunnyConfig
+        ? createBunnyBookingPrivateFileStorageKey({
+            bookingId: bookingInsert.rows[0].id,
+            documentType: "SIGNATURE",
+            fileName: privateImageFileName("SIGNATURE", 1, parsedSignatureImage.mimeType),
+          })
+        : parsedSignatureImage.normalizedDataUrl;
+      if (privateBunnyConfig) {
+        await uploadBunnyStorageObject(privateBunnyConfig, signatureStorageKey, parsedSignatureImage.bytes);
+        storedBunnyPrivateKeys.push(signatureStorageKey);
+      }
       await client.query(
-        "insert into booking_private_files (customer_id, booking_id, document_type, storage_provider, storage_key, mime_type, metadata_json) values ($1, $2, 'SIGNATURE', 'DATA_URL', $3, $4, $5::jsonb)",
+        "insert into booking_private_files (customer_id, booking_id, document_type, storage_provider, storage_key, mime_type, metadata_json) values ($1, $2, 'SIGNATURE', $3, $4, $5, $6::jsonb)",
         [
           customerUpsert.customerId,
           bookingInsert.rows[0].id,
-          parsedSignatureImage.normalizedDataUrl,
+          privateBunnyConfig ? "BUNNY_STORAGE" : "DATA_URL",
+          signatureStorageKey,
           parsedSignatureImage.mimeType,
           JSON.stringify({
             customerId: customerUpsert.customerId,
@@ -784,6 +824,7 @@ export async function POST(request: Request) {
             uploadedByUserId: null,
             uploadedAt: privateFileUploadedAt,
             capturedAt: privateFileUploadedAt,
+            storageProvider: privateBunnyConfig ? "BUNNY_STORAGE" : "DATA_URL",
           }),
         ],
       );
@@ -846,6 +887,15 @@ export async function POST(request: Request) {
       promoApplied: Boolean(quoteSnapshot.promoId),
     });
   } catch (error) {
+    if (storedBunnyPrivateKeys.length > 0) {
+      try {
+        await Promise.allSettled(
+          storedBunnyPrivateKeys.map((key) => deleteBunnyStorageObject(getBunnyStorageConfig("private"), key)),
+        );
+      } catch {
+        // The booking failure is more useful than a best-effort storage cleanup failure.
+      }
+    }
     await client.query("rollback");
     if (error instanceof QuotePricingError) {
       return NextResponse.json({ error: error.message }, { status: error.status });

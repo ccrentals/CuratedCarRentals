@@ -15,6 +15,7 @@ import {
 } from "@/lib/payments/pricing";
 import { buildRentalAgreementPayload } from "@/lib/pdfmonkey";
 import { buildUploadcareCdnUrl, extractUploadcareFileId } from "@/lib/uploads/uploadcare";
+import { fetchBunnyStorageObject, getBunnyStorageConfig, normalizeBunnyStorageKey } from "@/lib/uploads/bunny";
 
 type DbQueryFn = typeof dbQuery;
 type FetchNetPaidToDateFn = typeof fetchNetPaidToDate;
@@ -239,6 +240,20 @@ async function loadSignature(
       signatureDataUrl: parsed?.normalizedDataUrl ?? null,
       signedAt,
     };
+  }
+
+  if (storageProvider === "BUNNY_STORAGE") {
+    try {
+      const bunnyStorageKey = normalizeBunnyStorageKey(storageKey);
+      if (!bunnyStorageKey.startsWith("private/bookings/")) return { signatureDataUrl: null as string | null, signedAt };
+      const upstream = await fetchBunnyStorageObject(getBunnyStorageConfig("private"), bunnyStorageKey);
+      const bytes = Buffer.from(await upstream.arrayBuffer());
+      const mimeType = resolveSafePrivateBookingResponseMimeType(signature.mime_type, upstream.headers.get("content-type"));
+      if (!mimeType || bytes.length < 1) return { signatureDataUrl: null as string | null, signedAt };
+      return { signatureDataUrl: `data:${mimeType};base64,${bytes.toString("base64")}`, signedAt };
+    } catch {
+      return { signatureDataUrl: null as string | null, signedAt };
+    }
   }
 
   const uploadcareFileId = extractUploadcareFileId(storageKey);
