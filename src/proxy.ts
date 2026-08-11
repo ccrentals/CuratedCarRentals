@@ -11,6 +11,46 @@ import {
   shouldEnforceClerkOnAdminRoutes,
 } from "@/lib/security/clerk";
 
+const CSP_NONCE_ENABLED = (process.env.CSP_NONCE_ENABLED ?? "").trim().toLowerCase() === "true";
+const CSP_REPORT_ONLY = (process.env.CSP_REPORT_ONLY ?? "").trim().toLowerCase() === "true";
+
+function buildNonceCsp(nonce: string) {
+  const bunnyOrigin = (() => {
+    try {
+      const value = process.env.BUNNY_PUBLIC_CDN_URL?.trim();
+      return value ? new URL(value).origin : null;
+    } catch {
+      return null;
+    }
+  })();
+  const clerkDomains = "https://*.clerk.com https://*.clerk.dev https://*.clerk.services https://*.clerk.accounts.dev";
+  const uploadcareImages = "https://ucarecdn.com https://ucarecd.net https://*.ucarecd.net";
+  return [
+    "default-src 'self'",
+    "base-uri 'self'",
+    "object-src 'none'",
+    "frame-ancestors 'none'",
+    `script-src 'self' 'nonce-${nonce}' ${clerkDomains} https://challenges.cloudflare.com https://ucarecdn.com`,
+    "style-src 'self' 'unsafe-inline'",
+    "font-src 'self' data:",
+    `img-src 'self' data: blob: ${clerkDomains} ${uploadcareImages} https://curatedcarrentals.com${bunnyOrigin ? ` ${bunnyOrigin}` : ""}`,
+    `connect-src 'self' ${clerkDomains} https://challenges.cloudflare.com ${uploadcareImages} https://upload.uploadcare.com`,
+    `frame-src 'self' ${clerkDomains} https://challenges.cloudflare.com https://jm.wipayfinancial.com`,
+    "worker-src 'self' blob:",
+    "media-src 'self' blob:",
+    "form-action 'self' https://jm.wipayfinancial.com",
+    "upgrade-insecure-requests",
+  ].join("; ");
+}
+
+function withNonceCsp(response: NextResponse | Response, nonce: string) {
+  response.headers.set(
+    CSP_REPORT_ONLY ? "Content-Security-Policy-Report-Only" : "Content-Security-Policy",
+    buildNonceCsp(nonce),
+  );
+  return response;
+}
+
 function readCanonicalSiteUrl() {
   const raw = process.env.SITE_URL?.trim();
   if (!raw) return null;
@@ -39,7 +79,7 @@ const clerkProxy = isClerkEnabled()
     })
   : null;
 
-export default function proxy(request: NextRequest, event: NextFetchEvent) {
+export default async function proxy(request: NextRequest, event: NextFetchEvent) {
   const canonicalSiteUrl = readCanonicalSiteUrl();
   const hostHeader = request.headers.get("host")?.toLowerCase() ?? "";
   const isZeroHost = hostHeader.startsWith("0.0.0.0");
@@ -74,10 +114,19 @@ export default function proxy(request: NextRequest, event: NextFetchEvent) {
     return NextResponse.redirect(localUrl);
   }
 
-  if (!clerkProxy) {
-    return NextResponse.next();
+  if (!CSP_NONCE_ENABLED) {
+    if (!clerkProxy) return NextResponse.next();
+    return (await clerkProxy(request, event)) ?? NextResponse.next();
   }
-  return clerkProxy(request, event);
+
+  const nonce = crypto.randomUUID().replaceAll("-", "");
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-nonce", nonce);
+  const requestWithNonce = new NextRequest(request, { headers: requestHeaders });
+  const response = clerkProxy
+    ? ((await clerkProxy(requestWithNonce, event)) ?? NextResponse.next({ request: { headers: requestHeaders } }))
+    : NextResponse.next({ request: { headers: requestHeaders } });
+  return withNonceCsp(response, nonce);
 }
 
 export const config = {

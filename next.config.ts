@@ -3,6 +3,7 @@ import type { NextConfig } from "next";
 const IS_PRODUCTION = process.env.NODE_ENV === "production";
 const CSP_REPORT_ONLY = (process.env.CSP_REPORT_ONLY ?? "").trim().toLowerCase() === "true";
 const CSP_REPORT_URI = process.env.CSP_REPORT_URI?.trim() ?? "";
+const CSP_NONCE_ENABLED = (process.env.CSP_NONCE_ENABLED ?? "").trim().toLowerCase() === "true";
 
 const CLERK_DOMAINS = [
   // Clerk frontend API + auth widgets.
@@ -122,7 +123,9 @@ const CSP_HEADER_NAME =
 
 function buildSecurityHeaders(options?: { frameAncestors?: string; xFrameOptions?: string }) {
   return [
-    { key: CSP_HEADER_NAME, value: buildCsp(options?.frameAncestors) },
+    // Nonce CSP is set per request by src/proxy.ts, because static headers cannot
+    // safely provide a unique nonce to the rendered document.
+    ...(CSP_NONCE_ENABLED ? [] : [{ key: CSP_HEADER_NAME, value: buildCsp(options?.frameAncestors) }]),
     { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
     { key: "X-Content-Type-Options", value: "nosniff" },
     { key: "X-Frame-Options", value: options?.xFrameOptions ?? "DENY" },

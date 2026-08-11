@@ -8,6 +8,10 @@
 [context.deploy-preview]
   command = "npm run build"
 
+[context.staging]
+  command = "npm run db:bootstrap && npm run migrate && npm run build"
+  environment = { NEXT_PUBLIC_SITE_ENV = "staging", CSP_NONCE_ENABLED = "true", CSP_REPORT_ONLY = "true" }
+
 [context.branch-deploy]
   command = "npm run build"
 
