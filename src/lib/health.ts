@@ -1,6 +1,7 @@
 import { dbQuery } from "@/lib/db";
-import { getInvoiceProvider, validateEnv, type EnvValidation } from "@/lib/env";
+import { getFileStorageProvider, getInvoiceProvider, validateEnv, type EnvValidation } from "@/lib/env";
 import { redactText } from "@/lib/log";
+import { getBunnyStorageConfig } from "@/lib/uploads/bunny";
 import { getWiPayBaseUrl } from "@/lib/wipay";
 
 type CheckResult = {
@@ -21,7 +22,7 @@ export type HealthSnapshot = {
     wipay: CheckResult;
     resend: CheckResult;
     pdfmonkey: CheckResult;
-    uploadcare: CheckResult;
+    storage: CheckResult & { provider: "uploadcare" | "bunny" };
     netlify: CheckResult & {
       context?: string;
       deployUrl?: string;
@@ -284,10 +285,42 @@ export async function getHealthSnapshot(): Promise<HealthSnapshot> {
     }
   })();
 
-  const uploadcareCheck = (async () => {
+  const storageCheck = (async () => {
+    const provider = getFileStorageProvider();
+    if (provider === "bunny") {
+      const started = Date.now();
+      try {
+        const config = getBunnyStorageConfig("public");
+        const response = await fetchWithTimeout(
+          `${config.endpoint}/${encodeURIComponent(config.storageZone)}/`,
+          4000,
+          { method: "GET", headers: { AccessKey: config.accessKey } },
+        );
+        const text = await response.text().catch(() => "");
+        return {
+          provider,
+          ok: response.ok,
+          configured: true,
+          status: response.status,
+          latencyMs: Date.now() - started,
+          error: response.ok ? undefined : safeSnippet(text || `HTTP ${response.status}`),
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Bunny Storage fetch failed";
+        return {
+          provider,
+          ok: false,
+          configured: strictOk(env.uploads),
+          status: 0,
+          latencyMs: Date.now() - started,
+          error: safeSnippet(message),
+        };
+      }
+    }
+
     const publicKey = process.env.NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY?.trim();
     const started = Date.now();
-    if (!publicKey) return { ok: false, configured: false };
+    if (!publicKey) return { provider, ok: false, configured: false };
     try {
       const res = await fetchWithTimeout(
         "https://ucarecdn.com/libs/widget/3.x/uploadcare.full.min.js",
@@ -295,6 +328,7 @@ export async function getHealthSnapshot(): Promise<HealthSnapshot> {
         { method: "GET" },
       );
       return {
+        provider,
         ok: res.ok,
         configured: true,
         status: res.status,
@@ -303,7 +337,7 @@ export async function getHealthSnapshot(): Promise<HealthSnapshot> {
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : "Uploadcare fetch failed";
-      return { ok: false, configured: true, status: 0, latencyMs: Date.now() - started, error: safeSnippet(message) };
+      return { provider, ok: false, configured: true, status: 0, latencyMs: Date.now() - started, error: safeSnippet(message) };
     }
   })();
 
@@ -319,13 +353,13 @@ export async function getHealthSnapshot(): Promise<HealthSnapshot> {
     };
   })();
 
-  const [db, promoLedger, wipay, resend, pdfmonkey, uploadcare, netlify] = await Promise.all([
+  const [db, promoLedger, wipay, resend, pdfmonkey, storage, netlify] = await Promise.all([
     dbCheck,
     promoLedgerCheck,
     wipayCheck,
     resendCheck,
     invoiceProviderCheck,
-    uploadcareCheck,
+    storageCheck,
     netlifyCheck,
   ]);
 
@@ -343,13 +377,13 @@ export async function getHealthSnapshot(): Promise<HealthSnapshot> {
     wipay.ok &&
     resend.ok &&
     pdfmonkey.ok &&
-    uploadcare.ok;
+    storage.ok;
 
   return {
     ok,
     goLiveReady,
     env,
-    checks: { db, promoLedger, wipay, resend, pdfmonkey, uploadcare, netlify },
+    checks: { db, promoLedger, wipay, resend, pdfmonkey, storage, netlify },
     timestamp: new Date().toISOString(),
   };
   })();
