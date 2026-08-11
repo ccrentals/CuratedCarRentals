@@ -8,6 +8,7 @@ import { requireCsrf } from "@/lib/security/csrf";
 import {
   BunnyStorageError,
   createBunnyVehicleDocumentStorageKey,
+  deleteBunnyStorageObject,
   getBunnyStorageConfig,
   normalizeBunnyStorageKey,
   uploadBunnyStorageObject,
