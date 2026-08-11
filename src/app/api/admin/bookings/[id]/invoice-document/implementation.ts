@@ -24,7 +24,6 @@ function parseRequestedProvider(value: string | null): InvoicePdfProvider | null
   }
   return null;
 }
-
 function statusForProviderResult(providerStatus: string) {
   const normalized = providerStatus.trim().toUpperCase();
   if (normalized === "SUCCESS") return 200;
@@ -104,4 +103,3 @@ export async function handleAdminBookingInvoiceDocumentGet(
     );
   }
 }
-

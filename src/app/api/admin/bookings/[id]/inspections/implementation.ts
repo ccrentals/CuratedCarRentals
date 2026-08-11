@@ -59,7 +59,6 @@ const DEFAULT_DEPS: AdminBookingInspectionRouteDeps = {
 function normalizeText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
-
 function normalizeNullableText(value: unknown, maxLength = 255) {
   const normalized = normalizeText(value);
   if (!normalized) return null;
@@ -584,4 +583,3 @@ export async function PUT(
 ) {
   return handleAdminBookingInspectionsPut(request, context);
 }
-
