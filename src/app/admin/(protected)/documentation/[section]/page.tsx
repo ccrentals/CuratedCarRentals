@@ -1243,7 +1243,7 @@ const DOCS: Record<string, DocSection> = {
               <li>
                 <code>GET /api/health/ready</code>
                 <DateRangeArrow />
-                readiness status used by <code>/admin/health</code>.
+                public liveness response (<code>{'{ ok: boolean }'}</code>); detailed provider diagnostics are available only in <code>/admin/health</code>.
               </li>
               <li>
                 <code>GET /api/security/csrf</code>
