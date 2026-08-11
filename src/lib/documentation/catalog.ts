@@ -79,7 +79,7 @@ export const DOCUMENTATION_CATALOG = [
         id: "non-functional-requirements",
         title: "Non-Functional Requirements",
         summary: "Performance, security, payment, SEO, reliability, and accessibility expectations.",
-        searchText: "security csrf sessions bcrypt rate limiting audit logs hosted checkout seo reliability accessibility",
+        searchText: "security csrf clerk roles legacy sessions rate limiting audit logs hosted checkout seo reliability accessibility",
       },
       {
         id: "site-map-information-architecture",
@@ -91,7 +91,7 @@ export const DOCUMENTATION_CATALOG = [
         id: "booking-flow-diagram",
         title: "Booking Flow Diagram",
         summary: "High-level customer booking and deposit payment flow with return and webhook reconciliation.",
-        searchText: "booking flow deposit payment wipay return webhook reconciliation success failed",
+        searchText: "booking flow deposit payment stripe wipay provider return webhook reconciliation success failed",
       },
       {
         id: "user-stories",
@@ -145,13 +145,13 @@ export const DOCUMENTATION_CATALOG = [
     label: "Integrations & Documents",
     description:
       "Operational reference for payment modes, PDF provider setup, template previews, and email attachment behavior.",
-    topics: ["WiPay payment flows", "Resend email flows", "Invoice/Quote providers", "Retention jobs"],
+    topics: ["Stripe and WiPay payment flows", "Resend email flows", "Invoice/Quote providers", "Retention jobs"],
     blocks: [
       {
         id: "payment-integration-matrix",
-        title: "Payment Integration Matrix (WiPay + Admin)",
-        summary: "Deposit, balance, full, and custom payment routes plus return and webhook reconciliation.",
-        searchText: "wipay deposit balance full custom return webhook payments",
+        title: "Payment Integration Matrix",
+        summary: "Configured Stripe or WiPay checkout, environment rules, and return/webhook reconciliation.",
+        searchText: "stripe wipay payment provider deposit balance full custom return webhook staging production",
       },
       {
         id: "invoice-quote-agreement-pipeline",
@@ -190,13 +190,13 @@ export const DOCUMENTATION_CATALOG = [
         id: "system-architecture-diagram",
         title: "System Architecture Diagram",
         summary: "High-level architecture connecting Next.js, Postgres, payments, email, PDF, and cron.",
-        searchText: "system architecture nextjs neon postgres wipay resend pdf cron netlify",
+        searchText: "system architecture nextjs neon postgres stripe wipay resend pdf cron netlify",
       },
       {
         id: "technology-stack",
         title: "Technology Stack",
         summary: "Framework, database, auth, payments, hosting, uploads, and document provider stack.",
-        searchText: "nextjs react tailwind postgres neon auth bcrypt wipay resend gotenberg pdfmonkey uploadcare netlify",
+        searchText: "nextjs react tailwind postgres neon clerk roles stripe wipay resend gotenberg pdfmonkey bunny uploadcare netlify",
       },
       {
         id: "api-documentation-key-endpoints",
@@ -226,7 +226,7 @@ export const DOCUMENTATION_CATALOG = [
         id: "production-go-live-checklist",
         title: "Production Go-Live Checklist",
         summary: "Deployment, provider, secret, cron, smoke-test, and rollback checks before production launch.",
-        searchText: "go live checklist production deploy dns tls backup wipay resend invoices uploads security rollback",
+        searchText: "go live checklist staging main production deploy dns tls backup stripe wipay resend invoices bunny uploads security rollback",
       },
       {
         id: "developer-workflow-code-documentation",
@@ -267,7 +267,7 @@ export const DOCUMENTATION_CATALOG = [
         id: "authentication-session-security",
         title: "Authentication & Session Security",
         summary: "Password storage, session cookies, login protection, CSRF, and secret management.",
-        searchText: "authentication sessions cookies bcrypt login rate limit csrf admin session secret",
+        searchText: "authentication clerk roles sessions cookies legacy bcrypt login rate limit csrf admin session secret",
       },
       {
         id: "payments-webhooks-cron-verification",
@@ -294,7 +294,7 @@ export const DOCUMENTATION_CATALOG = [
     label: "Operational & User Documentation",
     description:
       "Runbooks for day-to-day usage: content updates, roles, maintenance, support, and troubleshooting.",
-    topics: ["Content updates", "User roles", "Maintenance plan", "Troubleshooting"],
+    topics: ["Content updates", "Feature map", "User roles", "Maintenance plan", "Troubleshooting"],
     blocks: [
       {
         id: "booking-lifecycle-diagram",
@@ -305,14 +305,20 @@ export const DOCUMENTATION_CATALOG = [
       {
         id: "content-management-guide",
         title: "Content Management Guide",
-        summary: "How code-managed content, fleet data, and documentation notes are maintained.",
-        searchText: "content management src data vehicles services content admin documentation notes",
+        summary: "How fallback code, saved landing content, fleet data, and documentation notes are maintained.",
+        searchText: "content management landing settings saved content fallback src data vehicles services documentation notes bunny images",
+      },
+      {
+        id: "operational-feature-map",
+        title: "Operational Feature Map",
+        summary: "Where to manage bookings, inspections, customers, fleet, communications, reporting, and technical tools.",
+        searchText: "operations bookings quotes inspections customer private files vehicles maintenance depreciation messages emails payments reports settings health cron developer",
       },
       {
         id: "user-roles-capabilities",
         title: "User Roles & Capabilities",
         summary: "Operational meaning of user roles and where feature access is currently limited.",
-        searchText: "user roles capabilities admin user permissions access portal",
+        searchText: "user roles capabilities admin operations developer permissions access portal",
       },
       {
         id: "maintenance-support-plan",
@@ -324,7 +330,7 @@ export const DOCUMENTATION_CATALOG = [
         id: "troubleshooting-guide",
         title: "Troubleshooting Guide",
         summary: "Common operational failures for DB, CSRF, payments, email, invoices, and cron reminders.",
-        searchText: "troubleshooting database csrf wipay resend invoices cron reminders errors",
+        searchText: "troubleshooting database csrf stripe wipay bunny storage resend invoices cron reminders errors",
       },
     ],
   },
@@ -339,7 +345,7 @@ export const DOCUMENTATION_CATALOG = [
         id: "data-processing-diagram",
         title: "Data Processing Diagram",
         summary: "High-level map of customer, payment, email, document, upload, and cron data processors.",
-        searchText: "data processing privacy wipay resend pdf provider uploadcare cron processors",
+        searchText: "data processing privacy stripe wipay resend pdf provider bunny uploadcare cron processors",
       },
       {
         id: "privacy-policy-template-outline",
