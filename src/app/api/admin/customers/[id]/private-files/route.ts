@@ -26,6 +26,7 @@ import {
 } from "@/lib/uploads/bunny";
 import { getFileStorageProvider } from "@/lib/env";
 import { writeMediaAudit } from "@/lib/uploads/mediaAudit";
+import { validateRasterImageFile } from "@/lib/uploads/rasterImageValidation";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -41,7 +42,7 @@ function isUploadedImage(value: FormDataEntryValue): value is UploadedImage {
   return typeof value !== "string" && typeof value.name === "string" && typeof value.size === "number";
 }
 
-function validateBunnyCustomerImages(files: UploadedImage[]) {
+async function validateBunnyCustomerImages(files: UploadedImage[]) {
   if (files.length === 0) throw new BunnyStorageError("Select at least one valid ID image.", 400);
   if (files.length > MAX_CUSTOMER_ID_IMAGES_PER_UPLOAD) {
     throw new BunnyStorageError(
@@ -50,13 +51,11 @@ function validateBunnyCustomerImages(files: UploadedImage[]) {
     );
   }
   for (const file of files) {
-    const mimeType = file.type.trim().toLowerCase();
-    if (!new Set<string>(CUSTOMER_ID_IMAGE_POLICY.allowedMimeTypes).has(mimeType)) {
-      throw new BunnyStorageError("Choose a JPG, PNG, WebP, HEIC, or HEIF image.", 400);
-    }
     if (file.size <= 0 || file.size > CUSTOMER_ID_IMAGE_POLICY.maxBytes) {
       throw new BunnyStorageError("Each customer ID image must be no larger than 10 MB.", 400);
     }
+    const imageError = await validateRasterImageFile(file);
+    if (imageError) throw new BunnyStorageError(imageError, 400);
   }
 }
 
@@ -116,7 +115,7 @@ async function saveBunnyCustomerImages(input: {
   files: UploadedImage[];
   userId: string;
 }) {
-  validateBunnyCustomerImages(input.files);
+  await validateBunnyCustomerImages(input.files);
   const config = getBunnyStorageConfig("private");
   const pool = getDbPool();
   const client = await pool.connect();

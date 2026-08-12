@@ -119,7 +119,14 @@ export default async function AdminHealthPage() {
                 key === "netlify"
                   ? (() => {
                       const netlify = snapshot.checks.netlify;
-                      return [netlify.configured ? "netlify" : "local", netlify.context, netlify.deployUrl]
+                      return [
+                        netlify.configured ? "netlify" : "local",
+                        netlify.context,
+                        netlify.branch ? `branch ${netlify.branch}` : null,
+                        netlify.commitRef ? `commit ${netlify.commitRef.slice(0, 12)}` : null,
+                        netlify.deployId ? `deploy ${netlify.deployId}` : null,
+                        netlify.deployUrl,
+                      ]
                         .filter(Boolean)
                         .join(" · ");
                     })()

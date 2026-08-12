@@ -25,13 +25,12 @@ import {
   type BookingVehicleInspectionImageCategory,
   type BookingVehicleInspectionType,
 } from "@/lib/bookings/vehicleInspection";
-import { UPLOADCARE_ALLOWED_RASTER_IMAGE_MIME_TYPES } from "@/lib/uploads/uploadcare";
+import { validateRasterImageFile } from "@/lib/uploads/rasterImageValidation";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MAX_IMAGE_COUNT = 20;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
-const ALLOWED_IMAGE_TYPES = new Set<string>(UPLOADCARE_ALLOWED_RASTER_IMAGE_MIME_TYPES);
 
 type Context = { params: Promise<{ id: string }> };
 type UploadFile = File & { name: string; size: number; type: string };
@@ -94,9 +93,11 @@ export async function POST(request: Request, context: Context) {
     return NextResponse.json({ ok: false, error: `Select between 1 and ${MAX_IMAGE_COUNT} images.` }, { status: 400 });
   }
   for (const file of files) {
-    if (!ALLOWED_IMAGE_TYPES.has(file.type.trim().toLowerCase()) || file.size <= 0 || file.size > MAX_IMAGE_BYTES) {
+    if (file.size <= 0 || file.size > MAX_IMAGE_BYTES) {
       return NextResponse.json({ ok: false, error: "Each image must be a JPG, PNG, WebP, HEIC, or HEIF file no larger than 10 MB." }, { status: 400 });
     }
+    const imageError = await validateRasterImageFile(file);
+    if (imageError) return NextResponse.json({ ok: false, error: imageError }, { status: 400 });
   }
 
   const storedKeys: string[] = [];

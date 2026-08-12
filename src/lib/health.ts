@@ -25,7 +25,11 @@ export type HealthSnapshot = {
     storage: CheckResult & { provider: "uploadcare" | "bunny" };
     netlify: CheckResult & {
       context?: string;
+      branch?: string;
       deployUrl?: string;
+      deployId?: string;
+      commitRef?: string;
+      siteId?: string;
     };
   };
   timestamp: string;
@@ -64,6 +68,26 @@ function strictOk(section: { missing: string[]; invalid: string[] }) {
 const CACHE_TTL_MS = process.env.NODE_ENV === "production" ? 30_000 : 5_000;
 let cachedSnapshot: { value: HealthSnapshot; expiresAt: number } | null = null;
 let inflightSnapshot: Promise<HealthSnapshot> | null = null;
+
+export function readNetlifyReleaseAttestation(environment: NodeJS.ProcessEnv = process.env) {
+  const context = environment.CONTEXT ?? environment.NETLIFY_CONTEXT ?? "";
+  const deployUrl = environment.DEPLOY_URL ?? environment.URL ?? "";
+  const branch = environment.BRANCH ?? "";
+  const deployId = environment.DEPLOY_ID ?? "";
+  const commitRef = environment.COMMIT_REF ?? "";
+  const siteId = environment.SITE_ID ?? "";
+  const onNetlify = (environment.NETLIFY ?? "").toLowerCase() === "true";
+  return {
+    ok: true,
+    configured: onNetlify,
+    context: context || undefined,
+    branch: branch || undefined,
+    deployUrl: deployUrl || undefined,
+    deployId: deployId || undefined,
+    commitRef: commitRef || undefined,
+    siteId: siteId || undefined,
+  };
+}
 
 export async function getHealthSnapshot(): Promise<HealthSnapshot> {
   const now = Date.now();
@@ -342,15 +366,7 @@ export async function getHealthSnapshot(): Promise<HealthSnapshot> {
   })();
 
   const netlifyCheck = (async () => {
-    const context = process.env.CONTEXT ?? process.env.NETLIFY_CONTEXT ?? "";
-    const deployUrl = process.env.DEPLOY_URL ?? process.env.URL ?? "";
-    const onNetlify = (process.env.NETLIFY ?? "").toLowerCase() === "true";
-    return {
-      ok: true,
-      configured: onNetlify,
-      context: context || undefined,
-      deployUrl: deployUrl || undefined,
-    };
+    return readNetlifyReleaseAttestation();
   })();
 
   const [db, promoLedger, wipay, resend, pdfmonkey, storage, netlify] = await Promise.all([

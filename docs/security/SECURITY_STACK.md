@@ -8,7 +8,7 @@ This project uses a layered security model:
    - Clerk for customer authentication/session management.
    - Legacy custom admin session (`ccr_admin_session`) remains active during migration.
    - Cloudflare Turnstile verification on public submission endpoints.
-   - Centralized HTTP security headers + CSP in `next.config.ts`.
+   - Centralized static security headers in `next.config.ts` and a per-request nonce CSP in `src/proxy.ts`.
 2. **Edge layer (Cloudflare dashboard)**
    - WAF custom rules for abuse and method/path hardening.
    - Rate limiting for auth and public submission endpoints.
@@ -43,8 +43,22 @@ This project uses a layered security model:
     - `POST /api/public/returning-customer/verify`
     - `POST /api/public/auth/clerk-account-setup`
 - Security headers and CSP:
-  - Implemented in `next.config.ts`
-  - `CSP_REPORT_ONLY=true` switches CSP to report-only mode.
+  - Static headers are implemented in `next.config.ts`.
+  - `src/proxy.ts` generates a unique request nonce and emits the CSP when
+    `CSP_NONCE_ENABLED=true`; executable inline scripts are not allowed.
+  - `CSP_REPORT_ONLY=true` switches the nonce CSP to report-only mode for a
+    controlled compatibility assessment. Do not use report-only as the normal
+    production setting.
+- Direct Bunny image uploads:
+  - Require operations access, CSRF, an approved purpose, a maximum count and
+    size, an allowlisted image MIME type, and server-side file-signature checks
+    before Bunny receives the object.
+  - Customer ID images and booking inspection images use the same byte-signature
+    validation for their direct Bunny upload routes.
+- Release attestation:
+  - The developer-protected `/admin/health` page displays non-secret Netlify
+    context, branch, commit, deploy ID, site ID, and deploy URL when supplied by
+    Netlify. The public readiness endpoint remains boolean-only.
 
 ### Turnstile Protection Matrix
 
@@ -93,6 +107,8 @@ Add these in Netlify (Production + Preview as needed):
 - `TURNSTILE_SECRET_KEY`
 - `CSP_REPORT_ONLY` (optional, `false` for enforcement in production)
 - `CSP_REPORT_URI` (optional)
+- `CSP_NONCE_ENABLED` and `NEXT_PUBLIC_CSP_NONCE_ENABLED` (set both to `true`
+  for enforced nonce CSP)
 
 Existing required env vars (DB/payments/email/etc.) remain unchanged.
 
@@ -126,9 +142,38 @@ Migration references:
    - `/book`
    - Returning customer modal in `/book`
    - `/sign-up` account setup form
-4. **Run CSP in report-only first** (`CSP_REPORT_ONLY=true`) and review violations.
-5. **Switch CSP enforcement on** (`CSP_REPORT_ONLY=false`) after allowlist validation.
+4. **Run CSP report-only only for a controlled compatibility assessment**
+   (`CSP_REPORT_ONLY=true`) and review violations through the configured
+   `CSP_REPORT_URI` collector.
+5. **Enforce nonce CSP** (`CSP_NONCE_ENABLED=true`,
+   `NEXT_PUBLIC_CSP_NONCE_ENABLED=true`, `CSP_REPORT_ONLY=false`) after
+   allowlist validation. Verify the response has a different `script-src
+   'nonce-…'` value per request and no browser CSP violations.
 6. **Apply Cloudflare WAF + Rate Limiting** using `docs/security/CLOUDFLARE_WAF_SETUP.md`.
 7. Review password operations playbook: `docs/security/CLERK_PASSWORD_OPERATIONS.md`.
 8. Optional: stage admin migration with `CLERK_PROTECT_ADMIN_ROUTES=1` in Preview first.
 9. Optional: migrate admin auth to Clerk completely after cutover checklist passes.
+
+## Security release and provider checklist
+
+Before promoting a staging commit, confirm all of the following:
+
+1. GitHub Actions **Security Gate** is green. It runs `npm ci`,
+   `npm audit --omit=dev --audit-level=high`, TypeScript, and focused security
+   regressions.
+2. In staging, compare `/admin/health` to the intended release: context,
+   branch, commit ref, deploy ID, and deploy URL must identify the staging
+   deployment. Confirm `/api/health/ready` returns only `{ "ok": true }`.
+3. Repeat on production after the `main` deploy. Record the commit and deploy
+   ID in the release record; never copy secrets into that record.
+4. Run a browser CSP check for the customer site, admin sign-in, Turnstile,
+   payment start/return, Bunny public upload, Bunny private-file view, and any
+   remaining Uploadcare view. Treat any CSP refusal as a deployment blocker.
+5. Validate uploaded images using normal UI flows. The server now rejects
+   files whose bytes do not match their declared JPG, PNG, WebP, HEIC, or HEIF
+   MIME type. This is not malware scanning: configure a malware/quarantine
+   service before accepting file types outside the current raster-only policy.
+6. In the DNS/mail provider, verify SPF and all active Resend DKIM records;
+   monitor aligned mail, then change DMARC from `p=none` to `p=quarantine` and
+   eventually `p=reject`. This requires DNS-provider authority and must not be
+   performed by changing application code.
