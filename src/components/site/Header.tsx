@@ -62,8 +62,7 @@ function MobileTopBar({
         <SiteLogo size={56} className="h-11 w-11 shrink-0 sm:h-12 sm:w-12" />
         <span className="min-w-0 self-end pb-[2px]">
           <span
-            className="ccr-wordmark-curated block truncate whitespace-nowrap leading-[0.78] text-white"
-            style={{ fontSize: "1.2rem" }}
+            className="ccr-wordmark-curated block truncate whitespace-nowrap text-[1.2rem] leading-[0.78] text-white"
           >
             {content.brand}
           </span>
