@@ -46,6 +46,10 @@ This project uses a layered security model:
   - Static headers are implemented in `next.config.ts`.
   - `src/proxy.ts` generates a unique request nonce and emits the CSP when
     `CSP_NONCE_ENABLED=true`; executable inline scripts are not allowed.
+  - Static UI presentation belongs in stylesheet classes rather than React
+    `style` attributes. Runtime-calculated positioning, image URLs, and report
+    data remain a separate compatibility constraint before
+    `style-src 'unsafe-inline'` can be removed.
   - `CSP_REPORT_ONLY=true` switches the nonce CSP to report-only mode for a
     controlled compatibility assessment. Do not use report-only as the normal
     production setting.
