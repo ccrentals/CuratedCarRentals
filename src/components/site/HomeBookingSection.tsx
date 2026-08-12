@@ -13,18 +13,7 @@ export function HomeBookingSection({ content }: { content: LandingContent["home"
             <span className="inline-flex flex-wrap items-center justify-center gap-2.5 sm:gap-3">
               <span
                 aria-hidden="true"
-                className="inline-block h-8 w-8 shrink-0 align-middle sm:h-9 sm:w-9 md:h-10 md:w-10"
-                style={{
-                  backgroundColor: "var(--ccr-accent-strong)",
-                  maskImage: "url('/icons/home-booking-autoshop.png')",
-                  maskRepeat: "no-repeat",
-                  maskSize: "contain",
-                  maskPosition: "center",
-                  WebkitMaskImage: "url('/icons/home-booking-autoshop.png')",
-                  WebkitMaskRepeat: "no-repeat",
-                  WebkitMaskSize: "contain",
-                  WebkitMaskPosition: "center",
-                }}
+                className="ccr-home-booking-icon inline-block h-8 w-8 shrink-0 align-middle sm:h-9 sm:w-9 md:h-10 md:w-10"
               />
               <span>{content.bookingTitle}</span>
             </span>

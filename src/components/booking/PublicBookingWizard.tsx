@@ -3968,8 +3968,7 @@ export function PublicBookingWizard({
                       type="checkbox"
                       checked={acceptTerms}
                       onChange={(event) => setAcceptTerms(event.target.checked)}
-                      style={{ accentColor: "var(--ccr-accent)" }}
-                      className="mt-1 h-4 w-4 shrink-0 rounded border-[var(--ccr-border)] bg-[var(--ccr-surface)] shadow-sm outline-none ring-[var(--ccr-accent)]/35 transition focus-visible:ring-2"
+                      className="ccr-accent-checkbox mt-1 h-4 w-4 shrink-0 rounded border-[var(--ccr-border)] bg-[var(--ccr-surface)] shadow-sm outline-none ring-[var(--ccr-accent)]/35 transition focus-visible:ring-2"
                     />
                     <span>
                       By clicking here, I confirm that I accept the privacy policy and terms.

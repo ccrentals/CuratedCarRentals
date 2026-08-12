@@ -76,6 +76,26 @@ test("CSP scopes legacy Uploadcare hosts to the directives that need them", () =
   assert.match(config, /img-src[^`]*\.\.\.UPLOADCARE_IMAGE_DOMAINS/);
 });
 
+test("Static UI presentation uses stylesheet classes instead of inline style attributes", () => {
+  const staticStyleComponents = [
+    "src/components/site/HomeBookingSection.tsx",
+    "src/components/site/Header.tsx",
+    "src/components/security/AuthPageShell.tsx",
+    "src/components/booking/PublicBookingWizard.tsx",
+    "src/components/shared/NotFoundHero.tsx",
+  ];
+
+  for (const file of staticStyleComponents) {
+    assert.doesNotMatch(read(file), /style=\{/);
+  }
+
+  const globalStyles = read("src/app/globals.css");
+  assert.match(globalStyles, /\.ccr-home-booking-icon/);
+  assert.match(globalStyles, /\.ccr-auth-radial-wash/);
+  assert.match(globalStyles, /\.ccr-accent-checkbox/);
+  assert.match(globalStyles, /body:has\(\[data-page-not-found\]\)/);
+});
+
 test("Returning-customer verification accepts stored legal IDs and does not require birthday", () => {
   const startRoute = read("src/app/api/public/returning-customer/start/route.ts");
   const verifyRoute = read("src/app/api/public/returning-customer/verify/route.ts");

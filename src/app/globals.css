@@ -74,6 +74,55 @@
   --foreground: var(--ccr-text);
 }
 
+.ccr-home-booking-icon {
+  background-color: var(--ccr-accent-strong);
+  mask-image: url("/icons/home-booking-autoshop.png");
+  mask-position: center;
+  mask-repeat: no-repeat;
+  mask-size: contain;
+  -webkit-mask-image: url("/icons/home-booking-autoshop.png");
+  -webkit-mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+}
+
+.ccr-auth-radial-wash {
+  background: radial-gradient(
+    72rem 44rem at 50% -10%,
+    color-mix(in srgb, var(--ccr-surface-soft) 76%, transparent),
+    transparent
+  );
+}
+
+.ccr-auth-linear-wash {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--ccr-bg) 90%, var(--ccr-primary) 10%) 0%,
+    var(--ccr-bg) 100%
+  );
+}
+
+.ccr-auth-card-glow {
+  background: radial-gradient(
+    60% 55% at 50% 45%,
+    color-mix(in srgb, var(--ccr-clerk-surface) 36%, transparent),
+    transparent
+  );
+}
+
+.ccr-accent-checkbox {
+  accent-color: var(--ccr-accent);
+}
+
+body:has([data-page-not-found]) [data-site-header],
+body:has([data-page-not-found]) [data-site-footer],
+body:has([data-page-not-found]) [data-admin-full-header],
+body:has([data-page-not-found]) [data-admin-compact-header],
+body:has([data-page-not-found]) [data-admin-sidebar],
+body:has([data-page-not-found]) [data-admin-drawer] {
+  display: none !important;
+}
+
 [data-theme="dark"] {
   --ccr-bg: #0d1427;
   --ccr-text: #e8edf8;
