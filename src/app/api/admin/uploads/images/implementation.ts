@@ -13,10 +13,10 @@ import {
   type BunnyStorageConfig,
 } from "@/lib/uploads/bunny";
 import { dbQuery } from "@/lib/db";
+import { validateRasterImageFile } from "@/lib/uploads/rasterImageValidation";
 
 const MAX_IMAGE_COUNT = 20;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
-const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"]);
 const BUNNY_PUBLIC_IMAGE_PURPOSES = new Set(["vehicle-gallery", "landing-content"]);
 
 type UploadFile = File & { name: string; size: number; type: string };
@@ -137,13 +137,11 @@ export async function handleAdminImageUploadPost(
   }
 
   for (const file of files) {
-    const mimeType = file.type.trim().toLowerCase();
-    if (!ALLOWED_IMAGE_TYPES.has(mimeType)) {
-      return jsonNoStore({ error: "Choose a JPG, PNG, WebP, HEIC, or HEIF image." }, 400);
-    }
     if (file.size <= 0 || file.size > MAX_IMAGE_BYTES) {
       return jsonNoStore({ error: "Each image must be no larger than 10 MB." }, 400);
     }
+    const imageError = await validateRasterImageFile(file);
+    if (imageError) return jsonNoStore({ error: imageError }, 400);
   }
 
   let config: BunnyStorageConfig;

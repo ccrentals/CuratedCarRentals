@@ -1,0 +1,41 @@
+name: Security Gate
+
+on:
+  pull_request:
+  push:
+    branches: [main, staging]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-and-security-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Block known production dependency vulnerabilities
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Type-check
+        run: npx tsc --noEmit
+
+      - name: Run security regression tests
+        run: >-
+          node --import tsx --test
+          test/staticGuards.test.ts
+          test/envSecretSeparation.test.ts
+          test/bunnyStorage.test.ts
+          test/healthAttestation.test.ts
+          test/rasterImageValidation.test.ts
