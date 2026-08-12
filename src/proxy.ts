@@ -129,7 +129,10 @@ export default async function proxy(request: NextRequest, event: NextFetchEvent)
   // Next reads this request header while rendering and applies the nonce to its
   // own bootstrap scripts. The browser-facing policy remains report-only here.
   requestHeaders.set("Content-Security-Policy", buildNonceCsp(nonce));
-  const requestWithNonce = new NextRequest(request, { headers: requestHeaders });
+  // Clone before rebuilding the request. Passing the original request directly
+  // with an init object can leave POST route handlers with an empty body on
+  // Netlify's proxy runtime.
+  const requestWithNonce = new NextRequest(request.clone(), { headers: requestHeaders });
   const response = clerkProxy
     ? ((await clerkProxy(requestWithNonce, event)) ?? NextResponse.next({ request: { headers: requestHeaders } }))
     : NextResponse.next({ request: { headers: requestHeaders } });
