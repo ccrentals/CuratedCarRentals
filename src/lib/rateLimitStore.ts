@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { dbQuery } from "@/lib/db";
 
 export type RateLimitScope =
@@ -6,7 +8,23 @@ export type RateLimitScope =
   | "CONTACT_NOTIFY"
   | "QUOTE_EMAIL_QUOTE"
   | "QUOTE_EMAIL_ADMIN"
-  | "ADMIN_SETTINGS_USER";
+  | "PUBLIC_BOOKING_IP"
+  | "PUBLIC_BOOKING_EMAIL"
+  | "PUBLIC_BOOKING_SUBMISSION"
+  | "PUBLIC_PRICING_QUOTE_IP"
+  | "PUBLIC_PROMO_VALIDATE_IP"
+  | "PUBLIC_PROMO_VALIDATE_EMAIL"
+  | "PUBLIC_BOOKING_PROMO_IP"
+  | "PUBLIC_BOOKING_PROMO_BOOKING"
+  | "PUBLIC_CLERK_SETUP_IP"
+  | "PUBLIC_CLERK_SETUP_EMAIL"
+  | "ADMIN_SETTINGS_USER"
+  | "ADMIN_BOOKING_PAYMENT_USER"
+  | "ADMIN_BOOKING_MUTATION_USER"
+  | "ADMIN_BOOKING_EMAIL_USER"
+  | "ADMIN_PROMO_MUTATION_USER"
+  | "ADMIN_VEHICLE_MUTATION_USER"
+  | "ADMIN_MAINTENANCE_MUTATION_USER";
 
 export type ConsumeRateLimitInput = {
   scope: RateLimitScope;
@@ -26,6 +44,10 @@ export type ConsumeRateLimitResult = {
 
 function normalizeSubjectKey(value: string) {
   return value.trim().toLowerCase();
+}
+
+function hashSubjectKey(value: string) {
+  return createHash("sha256").update(`rate-limit:${value}`).digest("hex");
 }
 
 function startOfWindowIso(nowMs: number, windowSeconds: number) {
@@ -54,7 +76,7 @@ async function maybeCleanupRateLimits() {
 export async function consumeRateLimit(input: ConsumeRateLimitInput): Promise<ConsumeRateLimitResult> {
   const nowMs = Number.isFinite(input.nowMs) ? Number(input.nowMs) : Date.now();
   const windowStart = startOfWindowIso(nowMs, input.windowSeconds);
-  const subjectKey = normalizeSubjectKey(input.subjectKey);
+  const subjectKey = hashSubjectKey(normalizeSubjectKey(input.subjectKey));
   const limit = Math.max(1, Math.floor(input.limit));
 
   await maybeCleanupRateLimits();
