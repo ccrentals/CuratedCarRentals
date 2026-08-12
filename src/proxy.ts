@@ -27,7 +27,7 @@ function buildNonceCsp(nonce: string) {
       return null;
     }
   })();
-  const clerkDomains = "https://*.clerk.com https://*.clerk.dev https://*.clerk.services https://*.clerk.accounts.dev";
+  const clerkDomains = "https://*.clerk.com https://*.clerk.dev https://*.clerk.services https://*.clerk.accounts.dev https://clerk.curatedcarrentals.com";
   const uploadcareImages = "https://ucarecdn.com https://ucarecd.net https://*.ucarecd.net";
   return [
     "default-src 'self'",
