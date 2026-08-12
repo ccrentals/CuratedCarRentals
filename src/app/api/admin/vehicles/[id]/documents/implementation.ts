@@ -27,7 +27,7 @@ const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const VEHICLE_DOCUMENT_POLICY = {
   label: "Vehicle document",
-  maxCount: 1,
+  maxCount: 20,
   maxBytes: 20 * 1024 * 1024,
   allowedMimeTypes: ["application/pdf", ...UPLOADCARE_ALLOWED_RASTER_IMAGE_MIME_TYPES],
 } as const;
@@ -400,8 +400,9 @@ export async function handleAdminVehicleDocumentsPost(
 
   const folder = normalizeFolder(read("folder"));
   const documentType = normalizeDocumentType(read("document_type") ?? read("documentType"));
-  const uploadedFile = isMultipart ? form?.get("file") ?? null : null;
-  const isBunnyUpload = isMultipart && isUploadFile(uploadedFile);
+  const uploadedFiles = isMultipart ? form?.getAll("file").filter(isUploadFile) ?? [] : [];
+  const uploadedFile = uploadedFiles[0] ?? null;
+  const isBunnyUpload = isMultipart && uploadedFiles.length > 0;
   const storageProvider =
     isBunnyUpload ? "BUNNY_STORAGE" : normalizeText(read("storage_provider") ?? read("storageProvider")).toUpperCase() || "UPLOADCARE_FILE_ID";
   const rawStorageReference =
@@ -410,7 +411,7 @@ export async function handleAdminVehicleDocumentsPost(
   const uploadcareFileId = extractUploadcareFileId(rawStorageReference);
   const normalizedStorageKey =
     uploadcareFileId ?? extractUploadcareDeliveryUrl(rawStorageText);
-  const title = normalizeTitle(read("title"), documentType || "Document");
+  const requestedTitle = normalizeText(read("title"));
   const label = normalizeNullableText(read("label"), 140);
   const maintenanceRecordId = normalizeRecordId(
     read("maintenanceRecordId") ?? read("maintenance_record_id"),
@@ -418,9 +419,9 @@ export async function handleAdminVehicleDocumentsPost(
   const checklistItemId = normalizeRecordId(
     read("checklistItemId") ?? read("checklist_item_id"),
   );
-  const mimeType = isBunnyUpload ? normalizeMimeType(uploadedFile.type) : normalizeMimeType(read("mime_type") ?? read("mimeType"));
-  const sizeBytes = isBunnyUpload ? uploadedFile.size : normalizeSizeBytes(read("size_bytes") ?? read("sizeBytes"));
-  const fileSizeBytes = isBunnyUpload ? uploadedFile.size : normalizeSizeBytes(read("file_size_bytes") ?? read("fileSizeBytes") ?? sizeBytes);
+  const mimeType = uploadedFile ? normalizeMimeType(uploadedFile.type) : normalizeMimeType(read("mime_type") ?? read("mimeType"));
+  const sizeBytes = uploadedFile ? uploadedFile.size : normalizeSizeBytes(read("size_bytes") ?? read("sizeBytes"));
+  const fileSizeBytes = uploadedFile ? uploadedFile.size : normalizeSizeBytes(read("file_size_bytes") ?? read("fileSizeBytes") ?? sizeBytes);
   const tags = normalizeTags(body?.tags);
 
   if (!folder) {
@@ -438,62 +439,116 @@ export async function handleAdminVehicleDocumentsPost(
   if (isMultipart && (!isBunnyUpload || getFileStorageProvider() !== "bunny")) {
     return NextResponse.json({ ok: false, error: "Private Bunny uploads are not active for this environment." }, { status: 409 });
   }
-  if (isBunnyUpload && (
-    !mimeType || !VEHICLE_DOCUMENT_POLICY.allowedMimeTypes.includes(mimeType as never) || !sizeBytes || sizeBytes > VEHICLE_DOCUMENT_POLICY.maxBytes
-  )) {
+  if (uploadedFiles.length > VEHICLE_DOCUMENT_POLICY.maxCount) {
+    return NextResponse.json({ ok: false, error: "Select no more than 20 files at a time." }, { status: 400 });
+  }
+  if (uploadedFiles.some((file) => {
+    const fileMimeType = normalizeMimeType(file.type);
+    return !fileMimeType || !VEHICLE_DOCUMENT_POLICY.allowedMimeTypes.includes(fileMimeType as never) ||
+      !file.size || file.size > VEHICLE_DOCUMENT_POLICY.maxBytes;
+  })) {
     return NextResponse.json({ ok: false, error: "Select a PDF, JPG, PNG, WebP, HEIC, or HEIF file no larger than 20 MB." }, { status: 400 });
+  }
+  if (isBunnyUpload && checklistItemId && uploadedFiles.length > 1) {
+    return NextResponse.json({ ok: false, error: "Checklist items can only be attached to one file at a time." }, { status: 400 });
   }
   if (!["UPLOADCARE_FILE_ID", "UPLOADCARE", "UPLOADCARE_TOKEN", "BUNNY_STORAGE"].includes(storageProvider)) {
     return NextResponse.json({ ok: false, error: "Unsupported storage provider." }, { status: 400 });
   }
 
-  let uploadedBunnyStorageKey: string | null = null;
+  const uploadedBunnyStorageKeys: string[] = [];
+  let createdDocuments = 0;
   try {
-    let storageKey = normalizedStorageKey ?? "";
     if (isBunnyUpload) {
       const config = getBunnyStorageConfig("private");
-      storageKey = createBunnyVehicleDocumentStorageKey({ vehicleId: id, fileName: uploadedFile.name });
-      await uploadBunnyStorageObject(config, storageKey, uploadedFile);
-      uploadedBunnyStorageKey = storageKey;
-    } else {
-      await deps.validateUploads?.([storageKey], VEHICLE_DOCUMENT_POLICY);
-    }
-    const row = await deps.createDocument(id, {
-      folder,
-      maintenanceRecordId,
-      checklistItemId,
-      documentType,
-      title,
-      label,
-      storageProvider,
-      storageKey,
-      mimeType,
-      sizeBytes,
-      fileSizeBytes,
-      tags,
-      uploadedByUserId: session.userId,
-    });
-    try {
-      await deps.writeMediaAudit?.({
-        userId: session.userId,
-        action: "MEDIA_UPLOAD",
-        entityType: "vehicle",
-        entityId: id,
-        fileId: storageKey,
-        context: maintenanceRecordId ? "maintenance document" : "vehicle document",
-        label: title,
-        outcome: isBunnyUpload ? "Saved privately to Bunny Storage" : "Saved to vehicle files",
-        details: { documentId: row.id, folder, documentType, storageProvider },
-      });
-    } catch {
-      // Document creation remains successful when audit logging is unavailable.
-    }
+      const rows: VehicleDocumentRow[] = [];
 
-    return NextResponse.json({ ok: true, item: mapDocument(row) });
-  } catch (error) {
-    if (uploadedBunnyStorageKey) {
+      for (const [index, file] of uploadedFiles.entries()) {
+        const storageKey = createBunnyVehicleDocumentStorageKey({ vehicleId: id, fileName: file.name });
+        await uploadBunnyStorageObject(config, storageKey, file);
+        uploadedBunnyStorageKeys.push(storageKey);
+
+        const title = normalizeTitle(
+          uploadedFiles.length === 1 ? requestedTitle : file.name,
+          documentType || "Document",
+        );
+        const row = await deps.createDocument(id, {
+          folder,
+          maintenanceRecordId,
+          checklistItemId,
+          documentType,
+          title,
+          label,
+          storageProvider,
+          storageKey,
+          mimeType: normalizeMimeType(file.type),
+          sizeBytes: file.size,
+          fileSizeBytes: file.size,
+          tags,
+          uploadedByUserId: session.userId,
+        });
+        createdDocuments += 1;
+        rows.push(row);
+        try {
+          await deps.writeMediaAudit?.({
+            userId: session.userId,
+            action: "MEDIA_UPLOAD",
+            entityType: "vehicle",
+            entityId: id,
+            fileId: storageKey,
+            context: maintenanceRecordId ? "maintenance document" : "vehicle document",
+            label: title,
+            outcome: "Saved privately to Bunny Storage",
+            details: { documentId: row.id, folder, documentType, storageProvider, batchIndex: index + 1 },
+          });
+        } catch {
+          // Document creation remains successful when audit logging is unavailable.
+        }
+      }
+
+      const items = rows.map(mapDocument);
+      return NextResponse.json({ ok: true, item: items[0], items });
+    } else {
+      const storageKey = normalizedStorageKey ?? "";
+      await deps.validateUploads?.([storageKey], VEHICLE_DOCUMENT_POLICY);
+      const title = normalizeTitle(requestedTitle, documentType || "Document");
+      const row = await deps.createDocument(id, {
+        folder,
+        maintenanceRecordId,
+        checklistItemId,
+        documentType,
+        title,
+        label,
+        storageProvider,
+        storageKey,
+        mimeType,
+        sizeBytes,
+        fileSizeBytes,
+        tags,
+        uploadedByUserId: session.userId,
+      });
       try {
-        await deleteBunnyStorageObject(getBunnyStorageConfig("private"), uploadedBunnyStorageKey);
+        await deps.writeMediaAudit?.({
+          userId: session.userId,
+          action: "MEDIA_UPLOAD",
+          entityType: "vehicle",
+          entityId: id,
+          fileId: storageKey,
+          context: maintenanceRecordId ? "maintenance document" : "vehicle document",
+          label: title,
+          outcome: "Saved to vehicle files",
+          details: { documentId: row.id, folder, documentType, storageProvider },
+        });
+      } catch {
+        // Document creation remains successful when audit logging is unavailable.
+      }
+      return NextResponse.json({ ok: true, item: mapDocument(row) });
+    }
+  } catch (error) {
+    if (createdDocuments === 0 && uploadedBunnyStorageKeys.length > 0) {
+      try {
+        const config = getBunnyStorageConfig("private");
+        await Promise.all(uploadedBunnyStorageKeys.map((storageKey) => deleteBunnyStorageObject(config, storageKey)));
       } catch {
         // The primary save failure is more useful than a best-effort cleanup failure.
       }

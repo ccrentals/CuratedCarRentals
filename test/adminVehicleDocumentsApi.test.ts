@@ -14,6 +14,40 @@ const DOC_ID = "22222222-2222-4222-8222-222222222222";
 const CHECKLIST_ITEM_ID = "33333333-3333-4333-8333-333333333333";
 const FILE_ID = "7f6b5a4a-84f9-4e57-8be4-7b4b2cbf76ad";
 
+function createVehicleDocumentRow(input: {
+  folder: string;
+  documentType: string;
+  title: string;
+  label: string | null;
+  storageProvider: string;
+  mimeType: string | null;
+  sizeBytes: number | null;
+  fileSizeBytes: number | null;
+  tags: unknown[];
+  uploadedByUserId: string | null;
+}) {
+  return {
+    id: crypto.randomUUID(),
+    vehicle_id: VEHICLE_ID,
+    maintenance_record_id: null,
+    maintenance_title: null,
+    checklist_item_id: null,
+    checklist_label: null,
+    folder: input.folder,
+    document_type: input.documentType,
+    title: input.title,
+    label: input.label,
+    storage_provider: input.storageProvider,
+    mime_type: input.mimeType,
+    size_bytes: input.sizeBytes,
+    file_size_bytes: input.fileSizeBytes,
+    tags: input.tags,
+    uploaded_by_user_id: input.uploadedByUserId,
+    created_at: "2026-08-12T00:00:00.000Z",
+    archived_at: null,
+  };
+}
+
 test("admin vehicle documents API: GET requires auth", async () => {
   const response = await handleAdminVehicleDocumentsGet(
     new Request(`http://localhost/api/admin/vehicles/${VEHICLE_ID}/documents`),
@@ -173,6 +207,100 @@ test("admin vehicle documents API: POST rejects unsupported provider file metada
   assert.equal(response.status, 400);
   const body = (await response.json()) as { error?: string };
   assert.match(body.error ?? "", /does not support/i);
+});
+
+test("admin vehicle documents API: POST rejects more than 20 Bunny files", async () => {
+  const originalProvider = process.env.FILE_STORAGE_PROVIDER;
+  process.env.FILE_STORAGE_PROVIDER = "bunny";
+  try {
+    const form = new FormData();
+    form.set("csrfToken", "token");
+    form.set("folder", "Paperwork");
+    form.set("documentType", "Photo");
+    for (let index = 0; index < 21; index += 1) {
+      form.append("file", new Blob(["image"], { type: "image/png" }), `photo-${index + 1}.png`);
+    }
+
+    const response = await handleAdminVehicleDocumentsPost(
+      new Request(`http://localhost/api/admin/vehicles/${VEHICLE_ID}/documents`, {
+        method: "POST",
+        headers: { "x-csrf-token": "token" },
+        body: form,
+      }),
+      { params: Promise.resolve({ id: VEHICLE_ID }) },
+      {
+        getSession: async () => ({ userId: "admin-user-id", role: "ADMIN", issuedAt: Date.now(), expiresAt: Date.now() + 60_000 }),
+        requireCsrfCheck: async () => true,
+        listDocuments: async () => [],
+        createDocument: async () => {
+          throw new Error("Document should not be created");
+        },
+      },
+    );
+
+    assert.equal(response.status, 400);
+    const body = (await response.json()) as { error?: string };
+    assert.match(body.error ?? "", /no more than 20/i);
+  } finally {
+    if (originalProvider === undefined) delete process.env.FILE_STORAGE_PROVIDER;
+    else process.env.FILE_STORAGE_PROVIDER = originalProvider;
+  }
+});
+
+test("admin vehicle documents API: POST stores up to 20 Bunny files as separate documents", async () => {
+  const originalFetch = global.fetch;
+  const originalEnvironment = {
+    FILE_STORAGE_PROVIDER: process.env.FILE_STORAGE_PROVIDER,
+    BUNNY_STORAGE_PRIVATE_ZONE: process.env.BUNNY_STORAGE_PRIVATE_ZONE,
+    BUNNY_STORAGE_PRIVATE_ACCESS_KEY: process.env.BUNNY_STORAGE_PRIVATE_ACCESS_KEY,
+    BUNNY_STORAGE_ENDPOINT: process.env.BUNNY_STORAGE_ENDPOINT,
+  };
+  const createdTitles: string[] = [];
+  process.env.FILE_STORAGE_PROVIDER = "bunny";
+  process.env.BUNNY_STORAGE_PRIVATE_ZONE = "ccr-test-private";
+  process.env.BUNNY_STORAGE_PRIVATE_ACCESS_KEY = "test-access-key";
+  process.env.BUNNY_STORAGE_ENDPOINT = "https://storage.bunnycdn.com";
+  global.fetch = (async () => new Response(null, { status: 201 })) as typeof fetch;
+
+  try {
+    const form = new FormData();
+    form.set("csrfToken", "token");
+    form.set("folder", "Paperwork");
+    form.set("documentType", "Photo");
+    form.set("title", "Ignored batch title");
+    form.append("file", new Blob(["first"], { type: "image/png" }), "front.png");
+    form.append("file", new Blob(["second"], { type: "image/png" }), "rear.png");
+
+    const response = await handleAdminVehicleDocumentsPost(
+      new Request(`http://localhost/api/admin/vehicles/${VEHICLE_ID}/documents`, {
+        method: "POST",
+        headers: { "x-csrf-token": "token" },
+        body: form,
+      }),
+      { params: Promise.resolve({ id: VEHICLE_ID }) },
+      {
+        getSession: async () => ({ userId: "admin-user-id", role: "ADMIN", issuedAt: Date.now(), expiresAt: Date.now() + 60_000 }),
+        requireCsrfCheck: async () => true,
+        listDocuments: async () => [],
+        createDocument: async (_vehicleId, input) => {
+          createdTitles.push(input.title);
+          return createVehicleDocumentRow(input);
+        },
+      },
+    );
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(createdTitles, ["front.png", "rear.png"]);
+    const body = (await response.json()) as { ok?: boolean; items?: unknown[] };
+    assert.equal(body.ok, true);
+    assert.equal(body.items?.length, 2);
+  } finally {
+    global.fetch = originalFetch;
+    for (const [key, value] of Object.entries(originalEnvironment)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
 });
 
 test("admin vehicle documents API: POST forwards checklist link selection", async () => {

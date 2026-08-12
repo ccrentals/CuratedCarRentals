@@ -114,7 +114,7 @@ export function VehicleFilesPanel({
   const [checklistItems, setChecklistItems] = useState<ChecklistItemOption[]>([]);
   const [checklistError, setChecklistError] = useState<string | null>(null);
 
-  const [pendingUpload, setPendingUpload] = useState<PendingUpload | null>(null);
+  const [pendingUploads, setPendingUploads] = useState<PendingUpload[]>([]);
   const [documentType, setDocumentType] = useState(documentTypes[0] ?? "General");
   const [label, setLabel] = useState("");
   const [title, setTitle] = useState("");
@@ -454,29 +454,51 @@ export function VehicleFilesPanel({
         const picker = document.createElement("input");
         picker.type = "file";
         picker.accept = "application/pdf,image/jpeg,image/png,image/webp,image/heic,image/heif";
+        picker.multiple = true;
         picker.addEventListener("change", () => resolve(Array.from(picker.files ?? [])), { once: true });
         picker.addEventListener("cancel", () => resolve([]), { once: true });
         picker.click();
       });
-      const file = files[0];
-      if (!file) return;
-      setPendingUpload({ file, fileName: file.name || "Document", mimeType: file.type || null, sizeBytes: file.size || null });
-      setTitle(file.name || "Document");
-      setMessage("File selected. Review the document details, then save the file.");
+      if (files.length < 1) return;
+      if (files.length > 20) {
+        setError("Select no more than 20 files at a time.");
+        return;
+      }
+      if (files.some((file) => file.size > 20 * 1024 * 1024)) {
+        setError("Each file must be 20 MB or smaller.");
+        return;
+      }
+      const uploads = files.map((file) => ({
+        file,
+        fileName: file.name || "Document",
+        mimeType: file.type || null,
+        sizeBytes: file.size || null,
+      }));
+      setPendingUploads(uploads);
+      setTitle(uploads.length === 1 ? uploads[0].fileName : "");
+      setMessage(
+        uploads.length === 1
+          ? "File selected. Review the document details, then save the file."
+          : `${uploads.length} files selected. Their filenames will be used as document titles.`,
+      );
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Unable to select a file.");
     }
   };
 
   const saveUpload = async () => {
-    if (!pendingUpload) return;
+    if (pendingUploads.length < 1) return;
     if (saving) return;
 
     const normalizedType = documentType.trim();
     const normalizedLabel = label.trim();
     const normalizedTitle = title.trim();
-    if (!normalizedType || !normalizedTitle) {
+    if (!normalizedType || (pendingUploads.length === 1 && !normalizedTitle)) {
       setError("Document type and title are required.");
+      return;
+    }
+    if (pendingUploads.length > 1 && selectedChecklistItemId) {
+      setError("Checklist items can only be attached to one file at a time.");
       return;
     }
 
@@ -494,7 +516,9 @@ export function VehicleFilesPanel({
       form.set("documentType", normalizedType);
       form.set("label", normalizedLabel);
       form.set("title", normalizedTitle);
-      form.append("file", pendingUpload.file, pendingUpload.fileName);
+      for (const upload of pendingUploads) {
+        form.append("file", upload.file, upload.fileName);
+      }
       const response = await fetch(`/api/admin/vehicles/${vehicleId}/documents`, {
         method: "POST",
         headers: {
@@ -509,13 +533,13 @@ export function VehicleFilesPanel({
         return;
       }
 
-      setPendingUpload(null);
+      setPendingUploads([]);
       setLabel("");
       setTitle("");
       setSelectedChecklistItemId("");
       setFocusedChecklistUploadItemId(null);
       setDocumentType(documentTypes[0] ?? "General");
-      setMessage("File added.");
+      setMessage(pendingUploads.length === 1 ? "File added." : `${pendingUploads.length} files added.`);
       await Promise.all([loadDocuments(), loadChecklistItems()]);
     } catch {
       setError("Unable to save file.");
@@ -715,7 +739,7 @@ export function VehicleFilesPanel({
 
         <div className="mt-2 grid gap-1 text-xs text-[var(--ccr-muted)]">
           <p>Label is shown in the file list. Leave it blank to fall back to the title.</p>
-          <p>Title stores the file title and defaults to the uploaded filename.</p>
+          <p>Title stores the file title and defaults to the uploaded filename. For multiple files, each filename is used as its title.</p>
           <p>Linking a file marks that checklist item as attached. Archiving the file clears the link.</p>
           {showChecklistFolderMismatch ? (
             <>
@@ -761,20 +785,22 @@ export function VehicleFilesPanel({
             data-testid="vehicle-files-upload-button"
             className="min-h-11 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)]"
           >
-            Upload file
+            Upload files
           </button>
           <button
             type="button"
             onClick={() => void saveUpload()}
-            disabled={!pendingUpload || saving}
+            disabled={pendingUploads.length < 1 || saving}
             className="min-h-11 rounded-lg border border-[var(--ccr-accent)] bg-[var(--ccr-surface)] px-3 py-2 text-xs font-semibold text-[var(--ccr-text)] disabled:opacity-60"
           >
-            {saving ? "Saving..." : "Save file"}
+            {saving ? "Saving..." : pendingUploads.length > 1 ? "Save files" : "Save file"}
           </button>
           <p className="text-xs text-[var(--ccr-muted)] break-all">
-            {pendingUpload
-              ? `Selected: ${pendingUpload.fileName} (${normalizeBytes(pendingUpload.sizeBytes)})`
-              : "Select a file before saving."}
+            {pendingUploads.length === 1
+              ? `Selected: ${pendingUploads[0].fileName} (${normalizeBytes(pendingUploads[0].sizeBytes)})`
+              : pendingUploads.length > 1
+                ? `Selected: ${pendingUploads.length} files (maximum 20; 20 MB each).`
+                : "Select up to 20 files before saving."}
           </p>
         </div>
       </div>
