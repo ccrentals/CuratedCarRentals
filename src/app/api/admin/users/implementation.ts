@@ -8,7 +8,7 @@ import { isEmail, isNonEmptyString } from "@/lib/validators";
 import { hashPassword } from "@/lib/auth/password";
 import { writeAuditLog } from "@/lib/audit";
 import { requireCsrf } from "@/lib/security/csrf";
-import { logError } from "@/lib/log";
+import { logError, logWarn } from "@/lib/log";
 import { sendAdminUserWelcomeEmail } from "@/lib/notifications/email";
 import {
   generateStandardUsernameBase,
@@ -161,6 +161,15 @@ export async function POST(request: Request) {
         ? "ADMIN"
         : "";
   if (!role) {
+    logWarn("api.admin.users.invalidRole", {
+      actorUserId: actor.userId,
+      roleType: typeof body?.role,
+      roleLength: typeof body?.role === "string" ? body.role.length : null,
+      payloadKeys:
+        body && typeof body === "object" && !Array.isArray(body)
+          ? Object.keys(body).sort().slice(0, 12)
+          : [],
+    });
     return NextResponse.json(
       { error: "Invalid role. Only OPERATIONS, ADMIN, or DEVELOPER can be created here." },
       { status: 400 },
