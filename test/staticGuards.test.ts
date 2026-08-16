@@ -68,6 +68,9 @@ test("Static UI presentation uses stylesheet classes instead of inline style att
     "src/components/security/AuthPageShell.tsx",
     "src/components/booking/PublicBookingWizard.tsx",
     "src/components/shared/NotFoundHero.tsx",
+    "src/components/site/HomeContactSection.tsx",
+    "src/components/site/ThemeToggle.tsx",
+    "src/app/admin/(protected)/reports/page.tsx",
   ];
 
   for (const file of staticStyleComponents) {
@@ -79,6 +82,15 @@ test("Static UI presentation uses stylesheet classes instead of inline style att
   assert.match(globalStyles, /\.ccr-auth-radial-wash/);
   assert.match(globalStyles, /\.ccr-accent-checkbox/);
   assert.match(globalStyles, /body:has\(\[data-page-not-found\]\)/);
+});
+
+test("CSP disallows inline styles in both nonce and static-header modes", () => {
+  const cspSources = [read("src/proxy.ts"), read("next.config.ts")];
+
+  for (const source of cspSources) {
+    assert.match(source, /style-src 'self'/);
+    assert.doesNotMatch(source, /style-src 'self' 'unsafe-inline'/);
+  }
 });
 
 test("Returning-customer verification accepts stored legal IDs and does not require birthday", () => {

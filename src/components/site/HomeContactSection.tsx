@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { type FormEvent, useRef, useState } from "react";
 
 import { TurnstileWidget } from "@/components/security/TurnstileWidget";
@@ -100,13 +101,22 @@ export function HomeContactSection({
         <div className="grid gap-8 lg:grid-cols-[1fr_1.02fr] lg:items-start lg:gap-10">
           <div className="overflow-hidden rounded-[2rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)]/55 shadow-[0_24px_80px_rgba(15,23,42,0.08)]">
             <div
-              className="h-56 bg-cover bg-center sm:h-64 lg:h-72"
-              style={{
-                backgroundImage: `linear-gradient(135deg,rgba(7,11,18,0.8),rgba(46,169,244,0.45)),url('${content.contactImage.src}')`,
-              }}
+              className="relative h-56 overflow-hidden sm:h-64 lg:h-72"
               role="img"
               aria-label={content.contactImage.alt}
-            />
+            >
+              <Image
+                src={content.contactImage.src}
+                alt=""
+                fill
+                sizes="(min-width: 1024px) 50vw, 100vw"
+                className="object-cover"
+              />
+              <div
+                aria-hidden="true"
+                className="absolute inset-0 bg-[linear-gradient(135deg,rgba(7,11,18,0.8),rgba(46,169,244,0.45))]"
+              />
+            </div>
 
             <div className="grid gap-3 p-4 sm:gap-4 sm:p-5 md:grid-cols-2 md:gap-5 md:p-6">
               <article className="rounded-[1.35rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4 sm:p-5">

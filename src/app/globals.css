@@ -86,6 +86,31 @@
   -webkit-mask-size: contain;
 }
 
+.ccr-report-progress {
+  appearance: none;
+  overflow: hidden;
+  border: 1px solid var(--ccr-border);
+  border-radius: 9999px;
+  background: var(--ccr-surface-soft);
+  color: var(--ccr-accent);
+}
+
+.ccr-report-progress::-webkit-progress-bar {
+  background: var(--ccr-surface-soft);
+}
+
+.ccr-report-progress::-webkit-progress-value {
+  background: currentColor;
+}
+
+.ccr-report-progress::-moz-progress-bar {
+  background: currentColor;
+}
+
+.ccr-report-utilization-progress {
+  color: rgb(92, 195, 255);
+}
+
 .ccr-auth-radial-wash {
   background: radial-gradient(
     72rem 44rem at 50% -10%,

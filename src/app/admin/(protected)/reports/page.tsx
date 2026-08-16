@@ -1691,17 +1691,12 @@ export default async function AdminReportsPage({
                               <span className="mt-1 block text-sm font-semibold text-[var(--ccr-text)]">
                                 {formatJmd(point.grossRevenue)}
                               </span>
-                              <div className="mt-2 h-2 rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)]">
-                                <div
-                                  className="h-full rounded-full bg-[var(--ccr-accent)]"
-                                  style={{
-                                    width: `${normalizeRevenueBarWidthPercent(
-                                      point.grossRevenue,
-                                      maxRevenue,
-                                    )}%`,
-                                  }}
-                                />
-                              </div>
+                              <progress
+                                className="ccr-report-progress mt-2 h-2 w-full"
+                                value={normalizeRevenueBarWidthPercent(point.grossRevenue, maxRevenue)}
+                                max={100}
+                                aria-label={`${point.periodLabel} revenue share`}
+                              />
                             </Link>
                           );
                         })}
@@ -2083,15 +2078,12 @@ export default async function AdminReportsPage({
                                 <td className="px-3 py-2 text-[var(--ccr-text)]">{row.blockoutDays}</td>
                                 <td className="px-3 py-2 text-[var(--ccr-text)]">
                                   <div className="flex items-center gap-2">
-                                    <div className="h-2 w-24 rounded-full bg-[var(--ccr-surface-soft)]">
-                                      <div
-                                        className="h-2 rounded-full"
-                                        style={{
-                                          width: `${Math.max(2, row.utilizationPercent)}%`,
-                                          backgroundColor: "rgb(92, 195, 255)",
-                                        }}
-                                      />
-                                    </div>
+                                    <progress
+                                      className="ccr-report-progress ccr-report-utilization-progress h-2 w-24"
+                                      value={Math.max(2, row.utilizationPercent)}
+                                      max={100}
+                                      aria-label={`${row.vehicleLabel} utilization`}
+                                    />
                                     <span>{row.utilizationPercent.toFixed(1)}%</span>
                                   </div>
                                 </td>

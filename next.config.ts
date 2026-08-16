@@ -95,7 +95,7 @@ function buildCsp(frameAncestors: string = "'none'") {
     `object-src 'none'`,
     `frame-ancestors ${frameAncestors}`,
     `script-src ${scriptSrc.join(" ")}`,
-    `style-src 'self' 'unsafe-inline'`,
+    `style-src 'self'`,
     `font-src 'self' data:`,
     `img-src 'self' data: blob: ${[
       ...CLERK_DOMAINS,

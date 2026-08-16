@@ -35,7 +35,7 @@ function buildNonceCsp(nonce: string) {
     "object-src 'none'",
     "frame-ancestors 'none'",
     `script-src 'self' 'nonce-${nonce}' ${clerkDomains} https://challenges.cloudflare.com https://ucarecdn.com`,
-    "style-src 'self' 'unsafe-inline'",
+    "style-src 'self'",
     "font-src 'self' data:",
     `img-src 'self' data: blob: ${clerkDomains} ${uploadcareImages} https://curatedcarrentals.com${bunnyOrigin ? ` ${bunnyOrigin}` : ""}`,
     `connect-src 'self' ${clerkDomains} https://clerk-telemetry.com https://challenges.cloudflare.com ${uploadcareImages} https://upload.uploadcare.com`,
