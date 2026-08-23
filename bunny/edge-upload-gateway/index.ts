@@ -1,4 +1,4 @@
-import * as BunnySDK from "@bunny.net/edgescript-sdk";
+import * as BunnySDK from "npm:@bunny.net/edgescript-sdk@0.12.1";
 
 type Claim = {
   ok: true;
