@@ -55,7 +55,7 @@ This discovery pack consolidates lifecycle behavior across those docs and curren
 5. Converted booking joins the same payment + entitlement lifecycle above.
 
 ### C) Payment operations and replay
-1. Diagnostics endpoint: `GET /api/admin/payments/diagnostics`.
+1. Payment diagnostics are provided through the Stripe ledger, webhook logs, and `/admin/health`; the retired WiPay diagnostics endpoint has been removed.
 2. Replay endpoint: `POST /api/admin/payments/replay`.
 3. Replay resolves latest WiPay payment by booking/order/transaction and reuses `reconcileWiPayPayment(...)` (no duplicate reconciliation logic).
 
