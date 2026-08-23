@@ -56,7 +56,7 @@ Important:
 
 Set all values from `.env.example` in Netlify:
 1. Netlify dashboard → Site configuration → Environment variables.
-2. Add context-specific values for Clerk, Turnstile, the selected payment provider (Stripe or WiPay), Resend, the PDF provider, Bunny Storage, and database keys.
+2. Add context-specific values for Clerk, Turnstile, Stripe, Resend, the PDF provider, Bunny Storage, and database keys.
 3. Deploy after saving env vars so `src/proxy.ts` and security headers run with the new values.
 4. Keep secrets server-side only (`CLERK_SECRET_KEY`, `TURNSTILE_SECRET_KEY`, payment keys, DB URLs).
 
@@ -151,9 +151,8 @@ The app also normalizes `sslmode=require|prefer|verify-ca` to `verify-full` unle
 
 ## Payments
 
-Hosted checkout starts through `POST /api/payments/start`, which selects the active payment provider for the deployment.
-Staging requires Stripe test mode. Production uses the provider selected by `PAYMENT_PROVIDER` and must use the matching
-live credentials and verified webhook.
+Hosted checkout starts through `POST /api/payments/start` and uses Stripe Checkout. Staging requires Stripe test mode.
+Production requires Stripe live mode, live credentials, and a verified Stripe webhook.
 
 Stripe environment variables:
 - `PAYMENT_PROVIDER=stripe`
@@ -162,19 +161,8 @@ Stripe environment variables:
 - `STRIPE_SECRET_KEY`
 - `STRIPE_WEBHOOK_SECRET`
 
-WiPay remains supported when `PAYMENT_PROVIDER=wipay`. Its provider-specific routes are under `/api/payments/wipay/*`.
-Keep `WIPAY_COUNTRY_CODE` unset or set to `JM` unless multi-country support is deliberately added.
-
-WiPay environment variables (only when WiPay is selected; see `.env.example`):
-- `SITE_URL` (required; used to derive WiPay `response_url` as `${SITE_URL}/api/payments/wipay/return`)
-- `WIPAY_ACCOUNT_NUMBER` (digits only)
-- `WIPAY_API_KEY`
-- `WIPAY_ENV` (`sandbox` or `live`)
-- `WIPAY_FEE_STRUCTURE` (`customer_pay`, `merchant_absorb`, or `split`)
-- `WIPAY_COUNTRY_CODE` (optional; defaults to `JM`, current site should use `JM`)
-- `WIPAY_ORIGIN` (optional; defaults to `curated-car-rentals`, slug letters/numbers/dash/underscore)
-
-Do not add `WIPAY_RESPONSE_URL` or `WIPAY_CALLBACK_URL`; the app does not read them. The webhook route exists at `POST /api/payments/wipay/webhook`, but any provider-side registration of that webhook is external WiPay/dashboard setup, not a repo env var.
+WiPay checkout, callback, and webhook routes are retired. Historical `WIPAY` payment rows remain labelled with their
+original provider for ledger and audit accuracy; they are not evidence of an active WiPay integration.
 
 ## Emails (Resend)
 

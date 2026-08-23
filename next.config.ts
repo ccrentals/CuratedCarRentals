@@ -36,11 +36,6 @@ const UPLOADCARE_CONNECT_DOMAINS = [
   "https://upload.uploadcare.com",
 ];
 
-const WIPAY_DOMAINS = [
-  // WiPay hosted payment pages (redirect/form targets).
-  "https://jm.wipayfinancial.com",
-];
-
 const CUSTOMER_SITE_DOMAINS = [
   // Remote marketing/fleet assets mirrored from the live customer site.
   "https://curatedcarrentals.com",
@@ -121,10 +116,10 @@ function buildCsp(frameAncestors: string = "'none'") {
       ...BUNNY_PUBLIC_CDN_DOMAINS,
     ].join(" ")}`,
     `connect-src ${connectSrc.join(" ")}`,
-    `frame-src 'self' ${[...CLERK_DOMAINS, ...TURNSTILE_DOMAINS, ...WIPAY_DOMAINS].join(" ")}`,
+    `frame-src 'self' ${[...CLERK_DOMAINS, ...TURNSTILE_DOMAINS].join(" ")}`,
     `worker-src 'self' blob:`,
     `media-src 'self' blob:`,
-    `form-action 'self' ${WIPAY_DOMAINS.join(" ")}`,
+    `form-action 'self'`,
     ...(IS_PRODUCTION ? ["upgrade-insecure-requests"] : []),
     ...(CSP_REPORT_URI ? [`report-uri ${CSP_REPORT_URI}`] : []),
   ];
