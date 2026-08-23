@@ -33,15 +33,11 @@ This discovery pack consolidates lifecycle behavior across those docs and curren
 1. Public form prices rental via `POST /api/public/pricing/quote`.
 2. Public booking create calls `POST /api/public/bookings`.
 3. API writes booking (`status='PENDING_PAYMENT'`), customer upsert, pricing snapshot, promo redemption, private files.
-4. Customer starts checkout via WiPay start endpoints:
-   - `POST /api/payments/wipay/start`
-   - `POST /api/payments/wipay/full/start`
-   - `POST /api/payments/wipay/custom/start`
-   - `POST /api/payments/wipay/balance/start`
-5. Provider callbacks:
-   - Browser return `GET /api/payments/wipay/return`
-   - Provider webhook `POST /api/payments/wipay/webhook`
-6. Both callback paths call canonical reconciler `reconcileWiPayPayment(...)` in `src/lib/payments/wipayReconcile.ts`.
+4. Customer starts Stripe Checkout through `POST /api/payments/start` with a validated `deposit`, `full`, `custom`, or `balance` mode.
+5. Stripe completion paths:
+   - Browser return `GET /api/payments/stripe/return`
+   - Provider webhook `POST /api/payments/stripe/webhook`
+6. Both completion paths call the canonical `reconcileStripeCheckoutSession(...)` helper in `src/lib/payments/stripeReconcile.ts`.
 7. Reconciler updates payment row + booking pricing summary + entitlement/overlap outcomes.
 8. Payment success page/invoice page build invoice payload and may create PDF via PDFMonkey.
 
@@ -54,10 +50,11 @@ This discovery pack consolidates lifecycle behavior across those docs and curren
 4. Admin converts quote to booking via `POST /api/admin/quotes/:id/convert-to-booking`.
 5. Converted booking joins the same payment + entitlement lifecycle above.
 
-### C) Payment operations and replay
+### C) Payment operations and reconciliation
 1. Payment diagnostics are provided through the Stripe ledger, webhook logs, and `/admin/health`; the retired WiPay diagnostics endpoint has been removed.
-2. Replay endpoint: `POST /api/admin/payments/replay`.
-3. Replay resolves latest WiPay payment by booking/order/transaction and reuses `reconcileWiPayPayment(...)` (no duplicate reconciliation logic).
+2. Admin reconciliation endpoint: `POST /api/admin/payments/:paymentId/reconcile`.
+3. Admin reconciliation retrieves the existing Stripe Checkout Session recorded on the payment and reuses `reconcileStripeCheckoutSession(...)`; it never creates a new charge.
+4. Historical `WIPAY` rows retain their original provider label for ledger and audit accuracy, but no WiPay checkout, return, webhook, diagnostics, or replay runtime remains.
 
 ### D) Invoice + email traceability
 1. Invoice payload endpoint `GET /api/admin/bookings/:id/invoice-payload` computes payload and records ledger row (`booking_invoice_documents`).
@@ -106,6 +103,6 @@ Normalization appears in:
 - `src/app/admin/(protected)/calendar/page.tsx`
 
 ## External Integrations
-- WiPay: checkout initiation + return/webhook reconciliation (`src/lib/wipay.ts`, `src/app/api/payments/wipay/*`)
+- Stripe: hosted checkout + return/webhook reconciliation (`src/lib/payments/stripe.ts`, `src/lib/payments/stripeReconcile.ts`, `src/app/api/payments/stripe/*`)
 - Resend: transactional email (`src/lib/notifications/email.ts`)
 - PDFMonkey: invoice PDF generation (`src/lib/pdfmonkey.ts`)
