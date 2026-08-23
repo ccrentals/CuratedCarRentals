@@ -53,7 +53,10 @@ Bunny Edge Script:
   separate scripts or separately scoped secrets)
 - `UPLOAD_GATEWAY_SHARED_SECRET` matching Netlify's direct-upload shared secret
 - public/private Storage Zone names and access keys
-- `BUNNY_STORAGE_ENDPOINT`
+- `BUNNY_STORAGE_ENDPOINT`, set to the region-specific hostname displayed on each Storage Zone's
+  **FTP & API Access** page (for example, `https://ny.storage.bunnycdn.com`). Do not use the global
+  `https://storage.bunnycdn.com` hostname for streamed uploads because its redirect may require
+  replaying the request body.
 
 Never expose Bunny access keys or either shared secret through a `NEXT_PUBLIC_` variable.
 
