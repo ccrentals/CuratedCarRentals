@@ -1,7 +1,7 @@
 # WiPay retirement security audit
 
-Date: 2026-08-23  
-Scope: `customer/main...codex/wipay-followup-cleanup`  
+Date: 2026-08-23
+Scope: `customer/main...codex/wipay-followup-cleanup`
 Decision: suitable for staging; production remains gated on final staging verification.
 
 ## Executive summary
