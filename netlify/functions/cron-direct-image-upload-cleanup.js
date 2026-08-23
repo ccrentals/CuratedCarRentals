@@ -7,11 +7,11 @@ function resolveSiteUrl() {
   return null;
 }
 
-exports.handler = async () => {
+export default async function handler() {
   const siteUrl = resolveSiteUrl();
   const secret = process.env.CRON_SECRET;
   if (!siteUrl || !secret) {
-    return { statusCode: 500, body: JSON.stringify({ error: "SITE_URL or CRON_SECRET not configured" }) };
+    return Response.json({ error: "SITE_URL or CRON_SECRET not configured" }, { status: 500 });
   }
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
@@ -21,10 +21,16 @@ exports.handler = async () => {
       headers: { "x-cron-secret": secret },
       signal: controller.signal,
     });
-    return { statusCode: response.status, body: await response.text() };
+    return new Response(await response.text(), {
+      status: response.status,
+      headers: { "content-type": response.headers.get("content-type") ?? "application/json" },
+    });
   } catch (error) {
-    return { statusCode: 500, body: JSON.stringify({ error: error instanceof Error ? error.message : "Cron failed" }) };
+    return Response.json(
+      { error: error instanceof Error ? error.message : "Cron failed" },
+      { status: 500 },
+    );
   } finally {
     clearTimeout(timeout);
   }
-};
+}
