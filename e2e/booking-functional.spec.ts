@@ -635,35 +635,36 @@ test("step 6 custom payment updates the side summary due-now and pickup-balance 
   );
 });
 
-test("step 7 checkout route starts WiPay and follows redirect URL", async ({ page }) => {
+test("step 7 checkout route starts Stripe and follows redirect URL", async ({ page }) => {
   let startCallCount = 0;
 
-  await page.route("**/api/payments/wipay/start", async (route) => {
+  await page.route("**/api/payments/start", async (route) => {
     startCallCount += 1;
-    const payload = route.request().postDataJSON() as { bookingId?: string };
+    const payload = route.request().postDataJSON() as { bookingId?: string; mode?: string };
     expect(payload.bookingId).toBe("booking-123");
+    expect(payload.mode).toBe("deposit");
     await route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
         ok: true,
-        redirectUrl: "/mock-wipay-checkout",
+        redirectUrl: "/mock-stripe-checkout",
       }),
     });
   });
 
-  await page.route("**/mock-wipay-checkout", async (route) => {
+  await page.route("**/mock-stripe-checkout", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "text/html",
-      body: "<html><body><h1>Mock WiPay Checkout</h1></body></html>",
+      body: "<html><body><h1>Mock Stripe Checkout</h1></body></html>",
     });
   });
 
   await page.goto("/book/checkout?bookingId=booking-123&paymentOption=DEPOSIT", { waitUntil: "networkidle" });
-  await page.waitForURL("**/mock-wipay-checkout");
+  await page.waitForURL("**/mock-stripe-checkout");
   expect(startCallCount).toBe(1);
-  await expect(page.getByRole("heading", { name: "Mock WiPay Checkout" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Mock Stripe Checkout" })).toBeVisible();
 });
 
 test("booking draft can be restored then cleared with start over", async ({ page }) => {
