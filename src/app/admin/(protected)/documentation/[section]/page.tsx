@@ -1094,8 +1094,8 @@ const DOCS: Record<string, DocSection> = {
               </li>
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">Payments:</span> Stripe-hosted checkout in test
-                mode on staging and live mode in production, with return + webhook reconciliation. Legacy WiPay callbacks
-                remain temporarily available for historical payment reconciliation only.
+                mode on staging and live mode in production, with return + webhook reconciliation. Historical WiPay
+                records remain labelled with their original provider in the payment ledger.
               </li>
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">Email & documents:</span> Resend for notifications;
@@ -1157,17 +1157,14 @@ const DOCS: Record<string, DocSection> = {
                 starts Stripe checkout for deposit, balance, full, or custom payment and returns its hosted URL.
               </li>
               <li>
-                <code>GET /api/payments/wipay/return</code>
+                <code>POST /api/payments/stripe/webhook</code>
                 <DateRangeArrow />
-                legacy historical-payment redirect handler
-                <DateRangeArrow />
-                redirects to success/fail page.
+                verifies signed Stripe events and reconciles completed or failed payment attempts.
               </li>
               <li>
-                <code>POST /api/payments/wipay/webhook</code>
+                <code>GET /api/payments/stripe/return</code>
                 <DateRangeArrow />
-                reconciles historical WiPay events only. Active checkout uses
-                <code> POST /api/payments/stripe/webhook</code> and <code>GET /api/payments/stripe/return</code>.
+                confirms the Checkout Session and redirects the customer to the payment result page.
               </li>
             </ul>
 
@@ -1477,10 +1474,6 @@ Stripe staging / production
 - STRIPE_WEBHOOK_SECRET
 - STRIPE_TEST_MODE (true with sk_test_ in staging; false with sk_live_ in production)
 
-Legacy WiPay reconciliation only
-- WIPAY_API_KEY
-- WIPAY_ENV=live
-
 Email (Resend)
 - RESEND_API_KEY
 - RESEND_FROM
@@ -1696,9 +1689,8 @@ Cron
                 <code> PAYMENT_PROVIDER=stripe</code> with live-mode credentials and a signing secret.
               </li>
               <li>
-                <span className="font-semibold text-[var(--ccr-text)]">Legacy WiPay callbacks:</span>{" "}
-                <code>/api/payments/wipay/return</code> and <code>/api/payments/wipay/webhook</code> remain temporarily
-                available for historical reconciliation; they cannot start new payments.
+                <span className="font-semibold text-[var(--ccr-text)]">Historical WiPay payments:</span> remain labelled
+                <code> WIPAY</code> in the payment ledger for audit accuracy. No WiPay checkout or callback routes remain.
               </li>
               <li>
                 Active reconciliation uses <code>/api/payments/stripe/return</code> and
