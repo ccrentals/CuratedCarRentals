@@ -33,7 +33,7 @@ export type BookingFixtureRef = {
     manual?: PaymentFixtureRef;
     balance?: PaymentFixtureRef;
     refund?: PaymentFixtureRef;
-    wipay?: PaymentFixtureRef;
+    historicalProvider?: PaymentFixtureRef;
   };
 };
 
@@ -81,7 +81,7 @@ export type E2EFixtures = {
     partialBalance: BookingFixtureRef;
     fullyPaid: BookingFixtureRef;
     refundRequired: BookingFixtureRef;
-    refundableWipay: BookingFixtureRef;
+    refundableHistoricalPayment: BookingFixtureRef;
   };
   promoCodes: {
     active: PromoFixtureRef;
