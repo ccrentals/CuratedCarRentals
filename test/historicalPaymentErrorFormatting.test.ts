@@ -72,17 +72,38 @@ test("sanitizes historical payment metadata for UI logs and display", () => {
     hosted_page_url: "https://jm.wipayfinancial.com/test",
   };
 
-  assert.deepEqual(formatPaymentMetadataError(metadata), {
+  assert.deepEqual(formatPaymentMetadataError(metadata, "WIPAY"), {
     title: "WiPay unavailable (HTTP 522)",
     detail: "Provider timeout / upstream unavailable",
   });
 
-  assert.deepEqual(sanitizePaymentMetadataForUi(metadata), {
+  assert.deepEqual(sanitizePaymentMetadataForUi(metadata, "WIPAY"), {
     payment_type: "deposit",
     error: {
       title: "WiPay unavailable (HTTP 522)",
       detail: "Provider timeout / upstream unavailable",
     },
     hosted_page_url: "https://jm.wipayfinancial.com/test",
+  });
+});
+
+test("labels current provider errors without relabelling them as WiPay", () => {
+  const metadata = {
+    error: {
+      message: "HTTP 500: Internal Server Error",
+    },
+    response: { message: "should be hidden" },
+  };
+
+  assert.deepEqual(formatPaymentMetadataError(metadata, "STRIPE"), {
+    title: "Stripe unavailable (HTTP 500)",
+    detail: "Provider error / upstream unavailable",
+  });
+
+  assert.deepEqual(sanitizePaymentMetadataForUi(metadata, "STRIPE"), {
+    error: {
+      title: "Stripe unavailable (HTTP 500)",
+      detail: "Provider error / upstream unavailable",
+    },
   });
 });

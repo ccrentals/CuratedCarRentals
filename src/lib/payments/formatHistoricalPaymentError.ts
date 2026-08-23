@@ -1,4 +1,4 @@
-export type FormattedHistoricalPaymentError = {
+export type FormattedPaymentError = {
   title: string;
   detail: string;
 };
@@ -28,9 +28,17 @@ function extractRawErrorMessage(meta: Record<string, unknown> | null) {
   return "";
 }
 
-export function formatStoredHistoricalPaymentError(
+function paymentProviderLabel(provider: string) {
+  const normalized = provider.trim().toUpperCase();
+  if (normalized === "WIPAY") return "WiPay";
+  if (normalized === "STRIPE") return "Stripe";
+  return "Payment provider";
+}
+
+function formatStoredPaymentError(
   rawMessage?: string | null,
-): FormattedHistoricalPaymentError | null {
+  provider = "Payment provider",
+): FormattedPaymentError | null {
   const message = rawMessage?.trim();
   if (!message) return null;
 
@@ -39,53 +47,57 @@ export function formatStoredHistoricalPaymentError(
 
   if (statusCode === 522) {
     return {
-      title: "WiPay unavailable (HTTP 522)",
+      title: `${provider} unavailable (HTTP 522)`,
       detail: "Provider timeout / upstream unavailable",
     };
   }
 
   if (/timed out/i.test(message)) {
     return {
-      title: "WiPay unavailable (timeout)",
+      title: `${provider} unavailable (timeout)`,
       detail: "Provider did not respond before the request timeout",
     };
   }
 
   if (statusCode !== null && statusCode >= 500 && statusCode <= 599) {
     return {
-      title: `WiPay unavailable (HTTP ${statusCode})`,
+      title: `${provider} unavailable (HTTP ${statusCode})`,
       detail: "Provider error / upstream unavailable",
     };
   }
 
   if (statusCode !== null && statusCode >= 400 && statusCode <= 499) {
     return {
-      title: `WiPay request failed (HTTP ${statusCode})`,
+      title: `${provider} request failed (HTTP ${statusCode})`,
       detail: "Provider rejected the request",
     };
   }
 
   if (/(<!DOCTYPE html>|<html\b)/i.test(message)) {
     return {
-      title: "WiPay returned an unexpected error page",
+      title: `${provider} returned an unexpected error page`,
       detail: "Provider returned an invalid payment response",
     };
   }
 
   return {
-    title: "WiPay request failed",
+    title: `${provider} request failed`,
     detail: "Payment provider error",
   };
 }
 
-export function formatPaymentMetadataError(meta: Record<string, unknown> | null) {
-  return formatStoredHistoricalPaymentError(extractRawErrorMessage(meta));
+export function formatStoredHistoricalPaymentError(rawMessage?: string | null) {
+  return formatStoredPaymentError(rawMessage, "WiPay");
 }
 
-export function sanitizePaymentMetadataForUi(meta: Record<string, unknown> | null) {
+export function formatPaymentMetadataError(meta: Record<string, unknown> | null, provider: string) {
+  return formatStoredPaymentError(extractRawErrorMessage(meta), paymentProviderLabel(provider));
+}
+
+export function sanitizePaymentMetadataForUi(meta: Record<string, unknown> | null, provider: string) {
   if (!meta) return null;
 
-  const formatted = formatPaymentMetadataError(meta);
+  const formatted = formatPaymentMetadataError(meta, provider);
   if (!formatted) return meta;
 
   const next = JSON.parse(JSON.stringify(meta)) as Record<string, unknown>;
