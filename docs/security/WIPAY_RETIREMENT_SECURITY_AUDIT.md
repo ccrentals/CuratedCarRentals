@@ -2,7 +2,7 @@
 
 Date: 2026-08-23  
 Scope: `customer/main...codex/wipay-followup-cleanup`  
-Decision: suitable for staging; production remains gated on the external Cloudflare review and final staging verification.
+Decision: suitable for staging; production remains gated on final staging verification.
 
 ## Executive summary
 
@@ -33,10 +33,17 @@ Required production check: confirm `CSP_NONCE_ENABLED=true`, `NEXT_PUBLIC_CSP_NO
 
 ## Operational release gates
 
-1. Cloudflare authentication is currently unavailable to the audit session. Inspect the production WAF/payment-provider rule and remove or update any obsolete WiPay-specific rule before production.
-2. Redeploy after the completed Netlify environment cleanup so removal of the six `WIPAY_*` variables reaches the runtime.
-3. Complete staging smoke tests for Stripe Checkout, signed webhook reconciliation, admin diagnostics, historical WiPay labels, and operator authorization before merging to production.
-4. Re-run lint, build, focused tests, and the repository test suite on the final commit. Existing unrelated suite failures must be recorded and compared with the established baseline; no new payment-related failure is acceptable.
+1. Redeploy after the completed Netlify environment cleanup so removal of the six `WIPAY_*` variables reaches the runtime.
+2. Complete staging smoke tests for Stripe Checkout, signed webhook reconciliation, admin diagnostics, historical WiPay labels, and operator authorization before merging to production.
+3. Re-run lint, build, focused tests, and the repository test suite on the final commit. Existing unrelated suite failures must be recorded and compared with the established baseline; no new payment-related failure is acceptable.
+4. Complete one normal production Turnstile-protected form submission after deployment. The staging widget currently reports successful server-side Siteverify requests; the production widget reports no Siteverify requests in the reviewed 24-hour window, which is consistent with no protected form submission but must be confirmed after release.
+
+## Cloudflare external-state review
+
+- The account has no Cloudflare-managed domains or subdomains.
+- Account-level WAF is not configured and the dashboard offers it only as an Enterprise add-on. Therefore, no deployed WiPay webhook exception or rate-limit rule exists to remove or convert.
+- Turnstile is configured independently of Cloudflare proxying. Staging reports four Siteverify requests with four valid tokens in the reviewed 24-hour window.
+- The production widget reports challenges but no Siteverify request in that window. Repository code calls Siteverify and fails closed when configuration, token validation, or action validation fails (`src/lib/security/turnstile.ts:96-178`). Secret values are masked by Netlify and were not exposed during this audit.
 
 ## Verification evidence
 
@@ -44,4 +51,3 @@ Required production check: confirm `CSP_NONCE_ENABLED=true`, `NEXT_PUBLIC_CSP_NO
 - Focused Node test set: 49 passed, 0 failed.
 - Static scan: no `eval`, `new Function`, child-process execution, permissive CORS header, or client-exposed secret pattern in the reviewed payment/security paths.
 - Retirement guards verify that retired WiPay routes and runtime libraries remain absent.
-
