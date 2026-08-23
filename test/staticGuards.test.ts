@@ -23,15 +23,22 @@ test("RBAC: dangerous admin routes contain an explicit 403 Forbidden guard", () 
   }
 });
 
-test("Retired WiPay callback and replay entrypoints remain absent", () => {
-  const retiredEntrypoints = [
+test("Retired WiPay runtime remains absent", () => {
+  const retiredPaths = [
+    "src/app/api/payments/wipay/start/route.ts",
+    "src/app/api/payments/wipay/full/start/route.ts",
+    "src/app/api/payments/wipay/custom/start/route.ts",
+    "src/app/api/payments/wipay/balance/start/route.ts",
     "src/app/api/payments/wipay/return/route.ts",
     "src/app/api/payments/wipay/webhook/route.ts",
     "src/app/api/admin/payments/replay/route.ts",
+    "src/app/api/admin/payments/diagnostics/route.ts",
+    "src/lib/wipay.ts",
+    "src/lib/payments/wipayReconcile.ts",
   ];
 
-  for (const entrypoint of retiredEntrypoints) {
-    assert.equal(fs.existsSync(path.join(process.cwd(), entrypoint)), false);
+  for (const retiredPath of retiredPaths) {
+    assert.equal(fs.existsSync(path.join(process.cwd(), retiredPath)), false);
   }
 });
 
