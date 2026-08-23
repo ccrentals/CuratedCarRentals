@@ -110,7 +110,9 @@ function buildCsp(frameAncestors: string = "'none'") {
     `object-src 'none'`,
     `frame-ancestors ${frameAncestors}`,
     `script-src ${scriptSrc.join(" ")}`,
-    `style-src 'self'`,
+    // Required by Clerk's runtime CSS-in-JS components. This exception is limited to styles;
+    // inline scripts retain their separate CSP controls above.
+    `style-src 'self' 'unsafe-inline'`,
     `font-src 'self' data:`,
     `img-src 'self' data: blob: ${[
       ...CLERK_DOMAINS,
