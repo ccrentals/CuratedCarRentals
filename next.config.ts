@@ -46,7 +46,7 @@ const CUSTOMER_SITE_DOMAINS = [
   "https://curatedcarrentals.com",
 ];
 
-export function getConfiguredBunnyPublicCdn(value = process.env.BUNNY_PUBLIC_CDN_URL) {
+function getConfiguredHttpsOrigin(value: string | undefined, variableName: string) {
   const candidate = value?.trim();
   if (!candidate) return null;
   try {
@@ -63,12 +63,26 @@ export function getConfiguredBunnyPublicCdn(value = process.env.BUNNY_PUBLIC_CDN
     }
     return { origin: url.origin, hostname: url.hostname };
   } catch {
-    throw new Error("BUNNY_PUBLIC_CDN_URL must be a valid HTTPS origin.");
+    throw new Error(`${variableName} must be a valid HTTPS origin.`);
   }
+}
+
+export function getConfiguredBunnyPublicCdn(value = process.env.BUNNY_PUBLIC_CDN_URL) {
+  return getConfiguredHttpsOrigin(value, "BUNNY_PUBLIC_CDN_URL");
+}
+
+export function getConfiguredDirectImageUploadGateway(
+  value = process.env.DIRECT_IMAGE_UPLOAD_GATEWAY_URL,
+) {
+  return getConfiguredHttpsOrigin(value, "DIRECT_IMAGE_UPLOAD_GATEWAY_URL");
 }
 
 const BUNNY_PUBLIC_CDN = getConfiguredBunnyPublicCdn();
 const BUNNY_PUBLIC_CDN_DOMAINS = BUNNY_PUBLIC_CDN ? [BUNNY_PUBLIC_CDN.origin] : [];
+const DIRECT_IMAGE_UPLOAD_GATEWAY = getConfiguredDirectImageUploadGateway();
+const DIRECT_IMAGE_UPLOAD_GATEWAY_DOMAINS = DIRECT_IMAGE_UPLOAD_GATEWAY
+  ? [DIRECT_IMAGE_UPLOAD_GATEWAY.origin]
+  : [];
 
 function buildCsp(frameAncestors: string = "'none'") {
   const scriptSrc = [
@@ -86,6 +100,7 @@ function buildCsp(frameAncestors: string = "'none'") {
     ...CLERK_DOMAINS,
     ...TURNSTILE_DOMAINS,
     ...UPLOADCARE_CONNECT_DOMAINS,
+    ...DIRECT_IMAGE_UPLOAD_GATEWAY_DOMAINS,
     ...(!IS_PRODUCTION ? ["ws:", "wss:"] : []),
   ];
 
