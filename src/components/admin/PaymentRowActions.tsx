@@ -253,7 +253,7 @@ export function PaymentRowActions({
                   : mode === "refund"
                     ? isStripeRefund
                       ? "This sends a real refund to the original payment method through Stripe. The booking totals will update only after Stripe confirms it."
-                      : "This records a manual refund adjustment in the system and adjusts totals. It does not call WiPay automatically."
+                      : "This records a manual refund adjustment in the system and adjusts totals. No funds are sent automatically to an external payment provider."
                     : "This checks the existing Stripe Checkout Session and updates the booking only if Stripe confirms payment. It never creates a new charge."}
             </p>
 

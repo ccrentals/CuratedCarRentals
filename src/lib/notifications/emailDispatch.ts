@@ -26,7 +26,7 @@ export type EmailDispatchSource =
   | "admin_payment"
   | "admin_quote"
   | "admin_resend"
-  | "wipay_reconcile"
+  | "stripe_reconcile"
   | "cron"
   | "contact_alert"
   | "public_returning_customer"

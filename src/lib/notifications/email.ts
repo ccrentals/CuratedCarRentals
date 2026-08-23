@@ -1282,7 +1282,7 @@ export async function sendDepositReceiptEmail(input: {
         entityPublicId: summary.bookingReference,
         emailType: "deposit_receipt",
         recipientName: isInternal ? null : input.customerName,
-        triggerSource: isInternal ? "system" : "wipay_reconcile",
+        triggerSource: "system",
         relatedTransactionType: "payment",
         manualResendAllowed: true,
         metadata: {
@@ -1677,7 +1677,7 @@ export async function sendPaymentCompleteEmail(input: {
         entityPublicId: summary.bookingReference,
         emailType: "payment_complete",
         recipientName: isInternal ? null : input.customerName,
-        triggerSource: isInternal ? "system" : "wipay_reconcile",
+        triggerSource: "system",
         relatedTransactionType: "payment",
         manualResendAllowed: true,
         metadata: {
@@ -2219,7 +2219,7 @@ export async function sendBookingOverriddenByPaidBookingEmail(input: {
         entityPublicId: bookingReference,
         emailType: "booking_overridden_by_paid_booking",
         recipientName: input.recipientType === "customer" ? input.customerName : null,
-        triggerSource: "wipay_reconcile",
+        triggerSource: "system",
         relatedTransactionType: "booking",
         relatedTransactionId: input.overriddenByBookingId,
         manualResendAllowed: true,

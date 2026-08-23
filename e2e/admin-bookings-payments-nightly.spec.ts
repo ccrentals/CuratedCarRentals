@@ -60,19 +60,19 @@ test.describe("@nightly admin bookings and payments regression", () => {
     await expect(page.getByTestId("booking-refund-required-toast")).toBeVisible();
   });
 
-  test("@nightly desktop WIPAY refund bookkeeping works after cancellation", async ({
+  test("@nightly desktop historical WIPAY refund bookkeeping works after cancellation", async ({
     page,
   }, testInfo) => {
     test.skip(testInfo.project.name !== "desktop", "Desktop-only admin booking assertions.");
 
     const fixtures = readE2EFixtures((parsed) => {
-      if (!parsed.bookings?.refundableWipay?.payments?.wipay?.publicId) {
-        throw new Error("Fixtures file is missing the refundable WIPAY booking state.");
+      if (!parsed.bookings?.refundableHistoricalPayment?.payments?.historicalProvider?.publicId) {
+        throw new Error("Fixtures file is missing the refundable historical WIPAY booking state.");
       }
     });
 
-    const booking = fixtures.bookings.refundableWipay;
-    const wipayPublicId = booking.payments.wipay?.publicId ?? "";
+    const booking = fixtures.bookings.refundableHistoricalPayment;
+    const historicalPaymentPublicId = booking.payments.historicalProvider?.publicId ?? "";
 
     await authenticateAdmin(page, { actorId: fixtures.adminUser?.id ?? null });
     await page.goto(`/admin/bookings/${booking.id}`, { waitUntil: "networkidle" });
@@ -85,13 +85,13 @@ test.describe("@nightly admin bookings and payments regression", () => {
     await expect(page.getByTestId("booking-status-badge")).toContainText("CANCELLED");
     await expect(page.getByTestId("booking-summary-refund-required")).toBeVisible();
 
-    const wipayRow = page.locator(
-      `[data-testid="booking-payment-row"][data-payment-public-id="${wipayPublicId}"]`,
+    const historicalPaymentRow = page.locator(
+      `[data-testid="booking-payment-row"][data-payment-public-id="${historicalPaymentPublicId}"]`,
     );
-    await expect(wipayRow).toBeVisible();
-    await wipayRow.getByTestId("payment-row-action-refund").click();
+    await expect(historicalPaymentRow).toBeVisible();
+    await historicalPaymentRow.getByTestId("payment-row-action-refund").click();
     await expect(page.getByTestId("payment-row-action-dialog")).toBeVisible();
-    await page.getByTestId("payment-row-action-reason").fill("Nightly WIPAY refund coverage");
+    await page.getByTestId("payment-row-action-reason").fill("Nightly historical WIPAY refund coverage");
     await page.getByTestId("payment-row-action-confirm").click();
 
     await expect(page.getByTestId("booking-summary-paid-to-date")).toHaveText(formatJmd(0));

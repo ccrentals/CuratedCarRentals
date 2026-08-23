@@ -18,8 +18,11 @@ Runtime status definitions and transitions for Quotes, Bookings, Payments, and C
   - `src/app/api/admin/bookings/[id]/cancel/route.ts`
   - `src/lib/availability/entitlement.ts`
 - Payments:
-  - `src/app/api/payments/wipay/*`
-  - `src/lib/payments/wipayReconcile.ts`
+  - `src/app/api/payments/start/route.ts`
+  - `src/app/api/payments/stripe/*`
+  - `src/lib/payments/publicPaymentStart.ts`
+  - `src/lib/payments/stripeReconcile.ts`
+  - `src/app/api/admin/payments/[paymentId]/reconcile/route.ts`
   - `src/app/api/admin/payments/[paymentId]/refund/route.ts`
   - `src/lib/payments/pricing.ts`
   - `src/lib/payments/recalculateBooking.ts`
@@ -113,21 +116,21 @@ Computed in pricing helpers:
 - `PAID_IN_FULL`
 
 ### Transition paths
-- WiPay start endpoints insert `INITIATED` rows.
-- Reconcile path (return/webhook/replay) promotes to `DEPOSIT_PAID` or `FAILED`.
+- The unified payment start route inserts Stripe `INITIATED` rows and creates or reuses a Stripe Checkout Session.
+- Stripe return, webhook, and per-payment admin reconciliation promote a row to `DEPOSIT_PAID`, leave it pending, or mark it `FAILED` according to the provider session.
 - Manual admin payment actions insert `DEPOSIT_PAID` rows (`provider='MANUAL'`).
 - Refund endpoint inserts `REFUNDED` row, preserving original paid rows.
+- Historical `provider='WIPAY'` rows remain unchanged for ledger accuracy; no new WiPay rows are created.
 
 ### Reconciliation outcomes
-`reconcileWiPayPayment(...)` returns outcomes:
-- success
+`reconcileStripeCheckoutSession(...)` returns outcomes:
+- `paid`
+- `pending`
+- `failed`
 - `not_found`
-- `bad_hash`
-- `failed_status`
 - `overlap`
-- `db_error`
 
-Admin replay maps these to structured API errors (`src/app/api/admin/payments/replay/route.ts`).
+The Stripe return/webhook routes and `POST /api/admin/payments/:paymentId/reconcile` map these outcomes to their respective redirect or API responses.
 
 ## D) Calendar / Occupancy State Model
 
