@@ -206,7 +206,11 @@ export function PaymentRowActions({
                 ? "This will cancel the payment entry and roll totals back."
                 : mode === "restore"
                   ? "This will restore the payment and re-apply totals."
-                  : "This records a manual refund adjustment in the system and adjusts totals. It does not call WiPay automatically."}
+                  : mode === "refund"
+                    ? provider === "STRIPE"
+                      ? "This sends a real refund to the original payment method through Stripe. The booking totals will update only after Stripe confirms it."
+                      : "This records a manual refund adjustment in the system and adjusts totals. No funds are sent automatically to an external payment provider."
+                    : null}
             </p>
 
             {mode === "delete" ? (
