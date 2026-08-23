@@ -18,7 +18,10 @@ import { dbQuery } from "@/lib/db";
 import { formatJmd } from "@/lib/money";
 import { normalizePageSize, parsePositiveIntParam } from "@/lib/pagination/sharedPagination";
 import { formatPaymentStatus } from "@/lib/payments/formatPaymentStatus";
-import { formatPaymentMetadataError, sanitizePaymentMetadataForUi } from "@/lib/payments/formatWipayError";
+import {
+  formatPaymentMetadataError,
+  sanitizePaymentMetadataForUi,
+} from "@/lib/payments/formatHistoricalPaymentError";
 
 function extractPaymentType(meta: Record<string, unknown> | null) {
   const type = meta?.payment_type;
