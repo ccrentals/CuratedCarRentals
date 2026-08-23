@@ -1,5 +1,6 @@
 "use client";
 
+import { useClerk } from "@clerk/nextjs";
 import Link from "next/link";
 import { useState } from "react";
 
@@ -24,16 +25,24 @@ export function UserMenu({
   compactSidebarLayout = false,
   showSignOut = true,
 }: UserMenuProps) {
-  return (
-    <UserMenuInner
-      email={email}
-      className={className}
-      showEmail={showEmail}
-      showThemeLabel={showThemeLabel}
-      compactSidebarLayout={compactSidebarLayout}
-      showSignOut={showSignOut}
-    />
-  );
+  const props = { email, className, showEmail, showThemeLabel, compactSidebarLayout, showSignOut };
+
+  if (process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY?.trim()) {
+    return <ClerkUserMenu {...props} />;
+  }
+
+  return <UserMenuInner {...props} />;
+}
+
+function ClerkUserMenu(
+  props: Required<
+    Pick<UserMenuProps, "showEmail" | "showThemeLabel" | "compactSidebarLayout" | "showSignOut">
+  > &
+    UserMenuProps,
+) {
+  const { signOut } = useClerk();
+
+  return <UserMenuInner {...props} clerkSignOut={() => signOut({ redirectUrl: "/sign-in" })} />;
 }
 
 function UserMenuInner({
@@ -43,7 +52,9 @@ function UserMenuInner({
   showThemeLabel,
   compactSidebarLayout,
   showSignOut,
+  clerkSignOut,
 }: UserMenuProps & {
+  clerkSignOut?: () => Promise<void>;
 }) {
   const [loading, setLoading] = useState(false);
   const themeToggleId = compactSidebarLayout
@@ -55,18 +66,26 @@ function UserMenuInner({
   async function handleSignOut() {
     if (loading) return;
     setLoading(true);
-    const csrfToken = await ensureCsrfToken();
-    const response = await fetch("/api/admin/logout", {
-      method: "POST",
-      headers: { "x-csrf-token": csrfToken ?? "" },
-    });
+    try {
+      const csrfToken = await ensureCsrfToken();
+      const response = await fetch("/api/admin/logout", {
+        method: "POST",
+        headers: { "x-csrf-token": csrfToken ?? "" },
+      });
 
-    if (!response.ok) {
+      if (!response.ok) {
+        throw new Error("Unable to clear the local admin session.");
+      }
+
+      if (clerkSignOut) {
+        await clerkSignOut();
+        return;
+      }
+
+      window.location.replace("/admin/login");
+    } catch {
       setLoading(false);
-      return;
     }
-
-    window.location.assign("/");
   }
 
   if (compactSidebarLayout) {
