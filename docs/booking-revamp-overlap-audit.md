@@ -1,6 +1,10 @@
-# Booking Revamp Overlap Audit
+# Booking Revamp Overlap Audit (Historical)
 
-Last updated: 2026-02-19
+Original audit: 2026-02-19
+
+Retirement addendum: 2026-08-23
+
+> **Historical planning snapshot:** The requirement gaps below describe the repository before the booking revamp and are not a current implementation checklist. For current payment architecture, use `docs/discovery/01_SYSTEM_MAP.md` and `docs/discovery/04_STATE_MACHINES.md`. Public online payments are now Stripe-only; legacy provider rows remain unchanged solely for ledger and audit accuracy.
 
 ## Scope
 Audit of existing public booking + admin booking/payment systems before implementing the booking revamp requirements.
@@ -13,10 +17,9 @@ Audit of existing public booking + admin booking/payment systems before implemen
 - Creates booking via `POST /api/public/bookings` (`src/app/api/public/bookings/route.ts`).
 - After create, user is redirected to `/bookings/[id]` summary page.
 - Payment options are handled later on `/bookings/[id]/pay` using:
-  - deposit (`/api/payments/wipay/start`)
-  - full (`/api/payments/wipay/full/start`)
+  - deposit/full/custom (`POST /api/payments/start` with the corresponding mode)
   - pay on pickup (`/api/public/bookings/[id]/pay-on-pickup`)
-- Balance payments are separate (`/bookings/[id]/balance` + `/api/payments/wipay/balance/start`).
+- Balance payments use `/bookings/[id]/balance` + `POST /api/payments/start` with `mode='balance'`.
 
 ### Pricing + payment
 - Central pricing helper exists: `src/lib/payments/pricing.ts`.
@@ -25,7 +28,7 @@ Audit of existing public booking + admin booking/payment systems before implemen
   - admin CRUD in `/admin/promo-codes`
   - runtime validation/redemption in `src/lib/promos.ts`
   - public apply/remove endpoints in `src/app/api/public/bookings/[id]/promo/route.ts`
-- WiPay integration already uses `currency: "JMD"` in payload builder (`src/lib/wipay.ts`).
+- Stripe Checkout converts whole-JMD booking amounts to provider minor units through `src/lib/payments/stripe.ts`.
 
 ### Availability/hold behavior
 - Overlap hold logic exists in `src/lib/bookings/holds.ts`.
@@ -86,9 +89,9 @@ Audit of existing public booking + admin booking/payment systems before implemen
 - **Exists:** FULL, DEPOSIT, PAY_ON_PICKUP behavior already present (booking can exist unpaid).
 - **Missing:** `CUSTOM` amount option, validation/warnings for custom amount vs deposit, explicit entitlement messaging at booking finalization, and persisted structured payment intent fields.
 
-### K) WiPay + JMD end-to-end consistency
-- **Exists:** WiPay payload currency is JMD; most UI uses `formatJmd`.
-- **Missing:** enforce one central pricing source for wizard summary + WiPay amount parity for all new payment options, and audit remaining display labels in new booking flow pages.
+### K) Hosted checkout + JMD end-to-end consistency
+- **Current addendum:** Stripe is the only public payment provider. Checkout uses JMD and the shared pricing/payment-start helpers enforce amount conversion and option handling.
+- **Original gap:** enforce one central pricing source for wizard summary + provider amount parity for all payment options, and audit remaining display labels in new booking flow pages.
 
 ## High-impact implementation notes
 - Main booking/payout state lives in `bookings.pricing_json` today; this will be kept for backward compatibility, with additive columns/tables for new normalized data.
