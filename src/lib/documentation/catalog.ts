@@ -145,13 +145,13 @@ export const DOCUMENTATION_CATALOG = [
     label: "Integrations & Documents",
     description:
       "Operational reference for payment modes, PDF provider setup, template previews, and email attachment behavior.",
-    topics: ["Stripe payments and legacy WiPay reconciliation", "Resend email flows", "Invoice/Quote providers", "Retention jobs"],
+    topics: ["Stripe payments and historical provider records", "Resend email flows", "Invoice/Quote providers", "Retention jobs"],
     blocks: [
       {
         id: "payment-integration-matrix",
         title: "Payment Integration Matrix",
-        summary: "Stripe checkout, environment rules, and return/webhook reconciliation, including retained historical WiPay callbacks.",
-        searchText: "stripe payment provider deposit balance full custom return webhook staging production legacy wipay callback",
+        summary: "Stripe checkout, environment rules, return/webhook reconciliation, and historical payment-provider records.",
+        searchText: "stripe payment provider deposit balance full custom return webhook staging production historical wipay records",
       },
       {
         id: "invoice-quote-agreement-pipeline",

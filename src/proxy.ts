@@ -49,10 +49,10 @@ function buildNonceCsp(nonce: string) {
     "font-src 'self' data:",
     `img-src 'self' data: blob: ${clerkDomains} ${uploadcareImages} https://curatedcarrentals.com${bunnyOrigin ? ` ${bunnyOrigin}` : ""}`,
     `connect-src 'self' ${clerkDomains} https://clerk-telemetry.com https://challenges.cloudflare.com ${uploadcareImages} https://upload.uploadcare.com${directImageUploadGatewayOrigin ? ` ${directImageUploadGatewayOrigin}` : ""}`,
-    `frame-src 'self' ${clerkDomains} https://challenges.cloudflare.com https://jm.wipayfinancial.com`,
+    `frame-src 'self' ${clerkDomains} https://challenges.cloudflare.com`,
     "worker-src 'self' blob:",
     "media-src 'self' blob:",
-    "form-action 'self' https://jm.wipayfinancial.com",
+    "form-action 'self'",
     ...(CSP_REPORT_ONLY ? [] : ["upgrade-insecure-requests"]),
   ].join("; ");
 }
