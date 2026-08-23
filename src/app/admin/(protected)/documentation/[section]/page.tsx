@@ -2132,7 +2132,7 @@ Cron
               </li>
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">Customers and secure records:</span> manage customer
-                details and driver-license images in <code>/admin/customers</code>; open private files only through CCR's
+                details and driver-license images in <code>/admin/customers</code>; open private files only through CCR&apos;s
                 authorized routes, never a public Bunny URL.
               </li>
               <li>

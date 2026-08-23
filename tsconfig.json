@@ -32,6 +32,7 @@
   ],
   "exclude": [
     "node_modules",
+    "bunny",
     "test",
     "e2e",
     ".next/types/validator.ts",
