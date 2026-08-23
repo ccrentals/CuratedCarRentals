@@ -18,17 +18,17 @@ Use this as the starter dashboard configuration for this repository.
 - Generic APIs:
   - `/api/**`
 - Payment callbacks:
-  - `POST /api/payments/wipay/webhook` (must not be challenged)
-  - `GET /api/payments/wipay/return`
+  - `POST /api/payments/stripe/webhook` (must not be challenged; signature verification remains mandatory)
+  - `GET /api/payments/stripe/return` (normal customer browser traffic)
 
 ## WAF Custom Rules (Starter Set)
 
 Create rules in this order:
 
-### Rule 1: Skip security controls for WiPay webhook
+### Rule 1: Skip challenge controls for the Stripe webhook
 
 - Expression:
-  - `(http.request.uri.path eq "/api/payments/wipay/webhook" and http.request.method eq "POST")`
+  - `(http.request.uri.path eq "/api/payments/stripe/webhook" and http.request.method eq "POST")`
 - Action:
   - `Skip`
 - Skip phases/products:
@@ -37,7 +37,8 @@ Create rules in this order:
   - Super Bot Fight Mode
 - Notes:
   - Prevents payment callback failures caused by challenges.
-  - If WiPay provides fixed IPs, add an additional allowlist rule and block non-allowlisted webhook calls.
+  - The application still verifies the raw request body with `STRIPE_WEBHOOK_SECRET`; the WAF skip is not authentication.
+  - For defense in depth, restrict this path to Stripe's published webhook IP addresses and keep that list current.
 
 ### Rule 2: Block invalid methods on public submit endpoints
 
@@ -114,7 +115,7 @@ Use source characteristic: `IP`.
 ### RL 5: Generic API flood protection
 
 - Match:
-  - `starts_with(http.request.uri.path, "/api/") and http.request.uri.path ne "/api/payments/wipay/webhook"`
+  - `starts_with(http.request.uri.path, "/api/") and http.request.uri.path ne "/api/payments/stripe/webhook"`
 - Threshold:
   - `120 requests / 1 minute`
 - Action:
@@ -124,16 +125,17 @@ Use source characteristic: `IP`.
 
 Do not challenge:
 
-- `POST /api/payments/wipay/webhook`
+- `POST /api/payments/stripe/webhook`
 
-Do not rate-limit too aggressively:
+Do not create a callback exemption for:
 
-- `GET /api/payments/wipay/return` (user browser returns from payment flow)
+- `GET /api/payments/stripe/return` (this is normal customer browser traffic and can use the standard site rules)
 
 Recommended:
 
 - Add a dedicated rule to log (not block) abnormal non-POST requests to webhook path.
-- If WiPay sends from stable IP ranges, allowlist those IPs and block other webhook callers.
+- Allowlist Stripe's published webhook IP addresses when operationally feasible.
+- Treat Stripe signature verification in application code as mandatory even when IP restrictions are enabled.
 
 ## Bot Protection Notes
 
@@ -145,6 +147,7 @@ Recommended:
 
 1. Submit `/contact` and `/book` normally from a browser (should pass).
 2. Use repeated POSTs from one IP to confirm rate-limiting triggers.
-3. Verify `/api/payments/wipay/webhook` is not challenged.
-4. Verify admin login UI/API still function under normal use.
-5. Review Cloudflare Security Events and adjust thresholds before enforcing stricter blocks.
+3. Verify `/api/payments/stripe/webhook` is not challenged.
+4. Verify an invalid or missing Stripe signature returns HTTP 400, then verify a signed Stripe test event is accepted.
+5. Verify `/api/payments/stripe/return` and the admin login UI/API still function under normal browser rules.
+6. Review Cloudflare Security Events and adjust thresholds before enforcing stricter blocks.
