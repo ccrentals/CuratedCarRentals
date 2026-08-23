@@ -84,13 +84,14 @@ test("Static UI presentation uses stylesheet classes instead of inline style att
   assert.match(globalStyles, /body:has\(\[data-page-not-found\]\)/);
 });
 
-test("CSP disallows inline styles in both nonce and static-header modes", () => {
+test("CSP allows Clerk runtime styles without weakening inline script controls", () => {
   const cspSources = [read("src/proxy.ts"), read("next.config.ts")];
 
   for (const source of cspSources) {
-    assert.match(source, /style-src 'self'/);
-    assert.doesNotMatch(source, /style-src 'self' 'unsafe-inline'/);
+    assert.match(source, /style-src 'self' 'unsafe-inline'/);
   }
+
+  assert.doesNotMatch(read("src/proxy.ts"), /script-src[^\n]*'unsafe-inline'/);
 });
 
 test("Returning-customer verification accepts stored legal IDs and does not require birthday", () => {

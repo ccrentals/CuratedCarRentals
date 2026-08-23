@@ -45,7 +45,9 @@ function buildNonceCsp(nonce: string) {
     "object-src 'none'",
     "frame-ancestors 'none'",
     `script-src 'self' 'nonce-${nonce}' ${clerkDomains} https://challenges.cloudflare.com https://ucarecdn.com`,
-    "style-src 'self'",
+    // Clerk renders its component stylesheet through runtime CSS-in-JS. Clerk's documented
+    // manual CSP requires unsafe-inline for style-src; script-src remains nonce protected.
+    "style-src 'self' 'unsafe-inline'",
     "font-src 'self' data:",
     `img-src 'self' data: blob: ${clerkDomains} ${uploadcareImages} https://curatedcarrentals.com${bunnyOrigin ? ` ${bunnyOrigin}` : ""}`,
     `connect-src 'self' ${clerkDomains} https://clerk-telemetry.com https://challenges.cloudflare.com ${uploadcareImages} https://upload.uploadcare.com${directImageUploadGatewayOrigin ? ` ${directImageUploadGatewayOrigin}` : ""}`,

@@ -58,6 +58,15 @@ const clerkAppearance = {
   },
 } as const;
 
+const clerkLocalization = {
+  signIn: {
+    start: {
+      title: "Sign in to Curated Car Rentals",
+      titleCombined: "Continue to Curated Car Rentals",
+    },
+  },
+} as const;
+
 export function OptionalClerkProvider({ children }: { children: React.ReactNode }) {
   if (!isClerkPublishableKeyConfigured()) {
     return <>{children}</>;
@@ -68,6 +77,7 @@ export function OptionalClerkProvider({ children }: { children: React.ReactNode 
       signInUrl={process.env.NEXT_PUBLIC_CLERK_SIGN_IN_URL ?? "/sign-in"}
       signUpUrl={process.env.NEXT_PUBLIC_CLERK_SIGN_UP_URL ?? "/sign-up"}
       appearance={clerkAppearance}
+      localization={clerkLocalization}
       taskUrls={{
         "reset-password": "/task/reset-password",
       }}
