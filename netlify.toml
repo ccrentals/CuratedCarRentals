@@ -37,5 +37,8 @@
 [functions."cron-archive-file-cleanup"]
   schedule = "0 5 * * *"
 
+[functions."cron-direct-image-upload-cleanup"]
+  schedule = "17 * * * *"
+
 [[plugins]]
   package = "@netlify/plugin-nextjs"

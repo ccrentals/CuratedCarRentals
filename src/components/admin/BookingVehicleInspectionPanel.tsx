@@ -31,6 +31,7 @@ import {
 } from "@/lib/bookings/vehicleInspectionShared";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 import { getUploadcareClientErrorMessage } from "@/lib/uploads/uploadcare-client";
+import { selectAndUploadDirectImages } from "@/lib/uploads/directUpload-client";
 import type { MediaAuditActivity } from "@/lib/uploads/mediaAudit";
 
 type BookingVehicleInspectionPanelProps = {
@@ -868,17 +869,17 @@ export function BookingVehicleInspectionPanel({
         inspectionId = savedInspection.inspectionId;
       }
 
-      const files = await new Promise<File[]>((resolve) => {
-        const picker = document.createElement("input");
-        picker.type = "file";
-        picker.multiple = true;
-        picker.accept = "image/jpeg,image/png,image/webp,image/heic,image/heif";
-        picker.addEventListener("change", () => resolve(Array.from(picker.files ?? [])), { once: true });
-        picker.addEventListener("cancel", () => resolve([]), { once: true });
-        picker.click();
+      const uploaded = await selectAndUploadDirectImages({
+        purpose: "INSPECTION_IMAGE",
+        entityId: bookingId,
+        context: { inspectionId, inspectionType, category: uploadState.category },
+        onProgress: (progress) => setUploadState((current) => ({
+          ...current,
+          operation: progress.phase === "finalizing" ? "saving" : "uploading",
+          message: `${progress.phase === "finalizing" ? "Saving" : progress.phase === "authorizing" ? "Checking" : "Uploading"} ${progress.fileIndex + 1} of ${progress.fileCount}: ${progress.fileName}${progress.phase === "uploading" ? ` (${progress.percent}%)` : ""}`,
+        })),
       });
-
-      if (files.length < 1) {
+      if (uploaded.length === 0) {
         setUploadState((current) => ({
           ...current,
           loading: false,
@@ -887,49 +888,19 @@ export function BookingVehicleInspectionPanel({
         }));
         return;
       }
-
-      setUploadState((current) => ({
-        ...current,
-        operation: "saving",
-      }));
-      const csrfToken = await ensureCsrfToken();
-      if (!csrfToken) throw new Error("Unable to secure the upload. Refresh the page and try again.");
-      const form = new FormData();
-      form.set("csrfToken", csrfToken);
-      form.set("inspectionId", inspectionId);
-      form.set("inspectionType", inspectionType);
-      form.set("category", uploadState.category);
-      for (const file of files) form.append("files", file, file.name);
-      const response = await fetch(`/api/admin/bookings/${bookingId}/inspections/images/private-upload`, {
-        method: "POST",
-        headers: {
-          "x-csrf-token": csrfToken ?? "",
-        },
-        body: form,
-      });
-
-      const payload = (await response.json().catch(() => ({}))) as {
-        ok?: boolean;
-        error?: string;
-        inspections?: Pick<
-          LoadedBookingVehicleInspections,
-          "vehicleOdometerValue" | "vehicleOdometerUnit" | "pickup" | "returnInspection"
-        >;
-      };
-
-      if (!response.ok || !payload.ok || !payload.inspections) {
-        throw new Error(payload.error ?? "Unable to save inspection images.");
-      }
-
-      applyInspectionSet(payload.inspections);
+      const nextInspections = uploaded.at(-1)?.inspections as Pick<
+        LoadedBookingVehicleInspections,
+        "vehicleOdometerValue" | "vehicleOdometerUnit" | "pickup" | "returnInspection"
+      > | undefined;
+      if (nextInspections) applyInspectionSet(nextInspections);
       setUploadState((current) => ({
         ...current,
         loading: false,
         operation: "idle",
         message:
-          files.length === 1
+          uploaded.length === 1
             ? `${isPickup ? "Pickup" : "Return"} image uploaded.`
-            : `${files.length} ${isPickup ? "pickup" : "return"} images uploaded.`,
+            : `${uploaded.length} ${isPickup ? "pickup" : "return"} images uploaded.`,
       }));
     } catch (error) {
       setUploadState((current) => ({

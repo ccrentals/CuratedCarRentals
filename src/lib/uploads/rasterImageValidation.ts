@@ -12,7 +12,7 @@ export const RASTER_IMAGE_MIME_TYPES = [
 const HEIF_BRANDS = new Set(["heic", "heix", "hevc", "hevx", "mif1", "msf1"]);
 
 type RasterImageMimeType = (typeof RASTER_IMAGE_MIME_TYPES)[number];
-type UploadFile = Pick<File, "arrayBuffer" | "type">;
+type UploadFile = Pick<File, "slice" | "type">;
 
 function hasBytes(bytes: Uint8Array, signature: readonly number[], offset = 0) {
   return signature.every((byte, index) => bytes[offset + index] === byte);
@@ -41,7 +41,7 @@ export async function validateRasterImageFile(file: UploadFile) {
     return "Choose a JPG, PNG, WebP, HEIC, or HEIF image.";
   }
 
-  const bytes = new Uint8Array(await file.arrayBuffer());
+  const bytes = new Uint8Array(await file.slice(0, 12).arrayBuffer());
   const detected = detectedMimeType(bytes);
   if (!detected) return "The image contents are not a recognized supported raster format.";
 

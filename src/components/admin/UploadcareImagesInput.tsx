@@ -8,7 +8,10 @@ import {
   getUploadcareClientErrorMessage,
   getUploadcareSignedOptions,
 } from "@/lib/uploads/uploadcare-client";
-import { ensureCsrfToken } from "@/lib/security/csrf-client";
+import {
+  selectAndUploadDirectImages,
+  type DirectUploadProgress,
+} from "@/lib/uploads/directUpload-client";
 
 type UploadcareImagesInputProps = {
   label?: string;
@@ -150,6 +153,7 @@ export async function openUploadcareImagesDialog(input: {
   imagesOnly?: boolean;
   vehicleId?: string;
   purpose?: BunnyImageUploadPurpose;
+  onProgress?: (progress: DirectUploadProgress) => void;
 }) {
   const query = input.purpose ? `?purpose=${encodeURIComponent(input.purpose)}` : "";
   const providerResponse = await fetch(`/api/admin/uploads/images${query}`, {
@@ -197,48 +201,21 @@ export async function openUploadcareImagesDialog(input: {
   });
 }
 
-function selectBrowserImages(input: { multiple?: boolean; imagesOnly?: boolean }) {
-  return new Promise<File[]>((resolve) => {
-    const picker = document.createElement("input");
-    picker.type = "file";
-    picker.multiple = input.multiple ?? true;
-    picker.accept = input.imagesOnly === false ? "*/*" : "image/jpeg,image/png,image/webp,image/heic,image/heif";
-    picker.addEventListener("change", () => resolve(Array.from(picker.files ?? [])), { once: true });
-    picker.addEventListener("cancel", () => resolve([]), { once: true });
-    picker.click();
-  });
-}
-
 async function openBunnyImagesDialog(input: {
   multiple?: boolean;
   imagesOnly?: boolean;
   vehicleId?: string;
   purpose?: BunnyImageUploadPurpose;
+  onProgress?: (progress: DirectUploadProgress) => void;
 }) {
-  const files = await selectBrowserImages(input);
-  if (files.length === 0) return [];
-
-  const csrfToken = await ensureCsrfToken();
-  if (!csrfToken) throw new Error("Unable to secure the upload. Refresh the page and try again.");
-  const form = new FormData();
-  form.set("csrfToken", csrfToken);
-  if (input.vehicleId) form.set("vehicleId", input.vehicleId);
-  if (input.purpose) form.set("purpose", input.purpose);
-  for (const file of files) form.append("files", file, file.name);
-  const response = await fetch("/api/admin/uploads/images", {
-    method: "POST",
-    headers: { "x-csrf-token": csrfToken },
-    credentials: "include",
-    body: form,
+  const results = await selectAndUploadDirectImages({
+    purpose: input.purpose === "landing-content" ? "LANDING_CONTENT" : "VEHICLE_GALLERY",
+    entityId: input.vehicleId,
+    multiple: input.multiple,
+    onProgress: input.onProgress,
   });
-  const payload = (await response.json().catch(() => null)) as
-    | { error?: string; items?: Array<{ url?: unknown }> }
-    | null;
-  if (!response.ok || !Array.isArray(payload?.items)) {
-    throw new Error(payload?.error ?? "Unable to upload images.");
-  }
-  return payload.items
-    .map((item) => (typeof item.url === "string" ? item.url : ""))
+  return results
+    .map((item) => (typeof item.result.url === "string" ? item.result.url : ""))
     .filter(Boolean);
 }
 
@@ -361,7 +338,22 @@ export function UploadcareImagesInput({
         imagesOnly: true,
         vehicleId: uploadContext?.vehicleId,
         purpose: uploadPurpose,
+        onProgress: (progress) => {
+          const phase = progress.phase === "authorizing"
+            ? "Checking"
+            : progress.phase === "finalizing"
+              ? "Saving"
+              : "Uploading";
+          setMessage(
+            `${phase} ${progress.fileIndex + 1} of ${progress.fileCount}: ${progress.fileName}${progress.phase === "uploading" ? ` (${progress.percent}%)` : ""}`,
+          );
+        },
       });
+      if (nextUrls.length === 0) {
+        setMessage(null);
+        setLoading(false);
+        return;
+      }
       const mergedUrls = mergeUploadcareImageUrls(urls, nextUrls);
       setUrls(mergedUrls);
       setCurrentIndex(Math.max(0, mergedUrls.length - nextUrls.length));

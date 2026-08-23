@@ -27,6 +27,16 @@ function buildNonceCsp(nonce: string) {
       return null;
     }
   })();
+  const directImageUploadGatewayOrigin = (() => {
+    try {
+      const value = process.env.DIRECT_IMAGE_UPLOAD_GATEWAY_URL?.trim();
+      if (!value) return null;
+      const url = new URL(value);
+      return url.protocol === "https:" ? url.origin : null;
+    } catch {
+      return null;
+    }
+  })();
   const clerkDomains = "https://*.clerk.com https://*.clerk.dev https://*.clerk.services https://*.clerk.accounts.dev https://clerk.curatedcarrentals.com";
   const uploadcareImages = "https://ucarecdn.com https://ucarecd.net https://*.ucarecd.net";
   return [
@@ -38,7 +48,7 @@ function buildNonceCsp(nonce: string) {
     "style-src 'self' 'unsafe-inline'",
     "font-src 'self' data:",
     `img-src 'self' data: blob: ${clerkDomains} ${uploadcareImages} https://curatedcarrentals.com${bunnyOrigin ? ` ${bunnyOrigin}` : ""}`,
-    `connect-src 'self' ${clerkDomains} https://clerk-telemetry.com https://challenges.cloudflare.com ${uploadcareImages} https://upload.uploadcare.com`,
+    `connect-src 'self' ${clerkDomains} https://clerk-telemetry.com https://challenges.cloudflare.com ${uploadcareImages} https://upload.uploadcare.com${directImageUploadGatewayOrigin ? ` ${directImageUploadGatewayOrigin}` : ""}`,
     `frame-src 'self' ${clerkDomains} https://challenges.cloudflare.com https://jm.wipayfinancial.com`,
     "worker-src 'self' blob:",
     "media-src 'self' blob:",

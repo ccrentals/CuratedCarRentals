@@ -6,6 +6,7 @@ import { useState } from "react";
 import { buttonStyles } from "@/components/ui/Button";
 import type { CustomerPrivateFileItem } from "@/lib/customers/privateFiles";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
+import { selectAndUploadDirectImages } from "@/lib/uploads/directUpload-client";
 
 type Props = {
   customerId: string;
@@ -42,39 +43,22 @@ export function CustomerLegalIdImagesManager({
     setMessage(null);
     setError(null);
     try {
-      const files = await new Promise<File[]>((resolve) => {
-        const picker = document.createElement("input");
-        picker.type = "file";
-        picker.multiple = true;
-        picker.accept = "image/jpeg,image/png,image/webp,image/heic,image/heif";
-        picker.addEventListener("change", () => resolve(Array.from(picker.files ?? [])), { once: true });
-        picker.addEventListener("cancel", () => resolve([]), { once: true });
-        picker.click();
-      });
-      if (files.length === 0) {
-        setBusy(false);
-        return;
-      }
-      const csrfToken = await ensureCsrfToken();
-      if (!csrfToken) throw new Error("Unable to secure the upload. Refresh the page and try again.");
-      const form = new FormData();
-      form.set("csrfToken", csrfToken);
-      for (const file of files) form.append("files", file, file.name);
-      const response = await fetch(`/api/admin/customers/${customerId}/private-files`, {
-        method: "POST",
-        headers: {
-          "x-csrf-token": csrfToken ?? "",
+      const uploaded = await selectAndUploadDirectImages({
+        purpose: "CUSTOMER_LEGAL_ID",
+        entityId: customerId,
+        onProgress: (progress) => {
+          const phase = progress.phase === "authorizing"
+            ? "Checking"
+            : progress.phase === "finalizing"
+              ? "Saving"
+              : "Uploading";
+          setMessage(
+            `${phase} ${progress.fileIndex + 1} of ${progress.fileCount}: ${progress.fileName}${progress.phase === "uploading" ? ` (${progress.percent}%)` : ""}`,
+          );
         },
-        credentials: "include",
-        body: form,
       });
-      const payload = (await response.json().catch(() => null)) as
-        | { error?: string; items?: CustomerPrivateFileItem[] }
-        | null;
-      if (!response.ok) {
-        throw new Error(payload?.error || "Unable to save customer ID images.");
-      }
-      const added = payload?.items ?? [];
+      const added = uploaded.map((entry) => entry.result as unknown as CustomerPrivateFileItem);
+      if (added.length === 0) return;
       setItems((current) => [...added, ...current]);
       setMessage(
         added.length === 1
