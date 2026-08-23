@@ -76,6 +76,19 @@ export function getFileStorageProvider(): FileStorageProvider {
     : "uploadcare";
 }
 
+export function isProductionRuntime() {
+  if (process.env.CONTEXT === "production" || process.env.NETLIFY_CONTEXT === "production") return true;
+  if (process.env.BRANCH === "main") return true;
+
+  try {
+    const canonicalHost = new URL(process.env.URL ?? "").hostname;
+    const configuredHost = new URL(process.env.SITE_URL ?? "").hostname;
+    return Boolean(canonicalHost && configuredHost && canonicalHost === configuredHost);
+  } catch {
+    return false;
+  }
+}
+
 export function validateEnv(): EnvValidation {
   const notes: string[] = [];
 

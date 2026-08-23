@@ -25,6 +25,19 @@ test("JMD Checkout converts whole-JMD booking amounts into Stripe minor units", 
   assert.throws(() => toStripeJmdMinorUnits(Number.MAX_SAFE_INTEGER));
 });
 
+test("Stripe uses Netlify's forwarded public host instead of the internal function URL", () => {
+  const request = new Request("http://localhost:8888/api/payments/start", {
+    headers: {
+      "x-forwarded-host": "curatedcarrentals.com",
+      "x-forwarded-proto": "https",
+    },
+  });
+  assert.equal(
+    getPublicPaymentRequestUrl(request),
+    "https://curatedcarrentals.com/api/payments/start",
+  );
+});
+
 test("Stripe is enabled for staging with a test key", () => {
   setEnv({ PAYMENT_PROVIDER: "stripe", STRIPE_TEST_MODE: "true", STRIPE_SECRET_KEY: "sk_test_example", STRIPE_WEBHOOK_SECRET: "whsec_example", BRANCH: "staging", NODE_ENV: "production" });
   assert.equal(isStripeTestMode(), true);

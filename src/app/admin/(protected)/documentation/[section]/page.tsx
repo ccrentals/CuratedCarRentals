@@ -2106,7 +2106,7 @@ Cron
               </li>
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">Customers and secure records:</span> manage customer
-                details and driver-license images in <code>/admin/customers</code>; open private files only through CCR's
+                details and driver-license images in <code>/admin/customers</code>; open private files only through CCR&apos;s
                 authorized routes, never a public Bunny URL.
               </li>
               <li>
@@ -2315,7 +2315,7 @@ Cron
             <ul className="list-disc space-y-2 pl-5">
               <li>Data collected: name, email, phone, booking dates, pickup location, vehicle selection.</li>
               <li>Payment data: store transaction references and reconciliation metadata; do not store raw card data.</li>
-              <li>Processors: Stripe, Resend (email), configurable PDF provider (Gotenberg/PDFMonkey), and Bunny Storage (public and private uploads). WiPay remains a historical payment processor only while legacy transactions and callbacks are retained; Uploadcare remains a legacy processor only while historical assets are retained there.</li>
+              <li>Processors: Stripe, Resend (email), configurable PDF provider (Gotenberg/PDFMonkey), and Bunny Storage (public and private uploads). Historical WiPay transaction records retain their original labels for audit accuracy, but no WiPay checkout or callback runtime remains. Uploadcare remains a legacy processor only while historical assets are retained there.</li>
               <li>Retention: define retention windows for bookings, payments, and logs.</li>
               <li>User rights: provide contact method for access/deletion requests where applicable.</li>
             </ul>

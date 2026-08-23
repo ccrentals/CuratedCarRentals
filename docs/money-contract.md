@@ -5,7 +5,7 @@
 1. All commercial booking, quote, rental pricing, insurance, promotion, payment, refund, and customer-spend calculations use **JMD amounts at scale 1**.
 2. Several legacy database columns and pricing JSON keys in the commercial domain end in `_cents`, but their values are whole JMD amounts. The suffix does not authorize dividing or multiplying by 100.
 3. Fleet acquisition, depreciation, and maintenance accounting use **true JMD minor units at scale 100**.
-4. WiPay and other provider payloads receive decimal strings derived from commercial JMD amounts, such as `6500.00` for JMD 6,500.
+4. Stripe receives minor-unit values converted from commercial JMD amounts only at the provider boundary; for example, JMD 6,500 becomes `650000` Stripe minor units.
 5. Arithmetic stays numeric until the display or provider boundary. Formatting must not feed another calculation.
 6. Percentage discounts round once to the nearest JMD amount. Totals, balances, and refunds must use the same stored pricing snapshot.
 

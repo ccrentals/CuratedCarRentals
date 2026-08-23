@@ -87,4 +87,8 @@ test("public payment initiation is Stripe-only and uses the shared idempotent st
   assert.match(helper, /payment_in_progress/);
   assert.match(helper, /getPublicPaymentProvider\(paymentRequestUrl\)/);
   assert.doesNotMatch(helper, /WIPAY|buildRequestParams|requestHostedPageUrl/);
+
+  const wizard = read("src/components/booking/PublicBookingWizard.tsx");
+  assert.match(wizard, /const hostedPaymentProvider = "Stripe";/);
+  assert.doesNotMatch(wizard, /title:\s*"WiPay"/);
 });
