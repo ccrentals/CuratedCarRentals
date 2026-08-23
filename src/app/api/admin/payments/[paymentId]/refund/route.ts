@@ -60,7 +60,7 @@ export async function POST(
     if (original.provider !== "WIPAY" && original.provider !== "STRIPE") {
       await client.query("rollback");
       return NextResponse.json(
-        { error: "Only WiPay or staging Stripe payments can be refunded here" },
+        { error: "Only eligible online payments can be refunded here" },
         { status: 400 },
       );
     }

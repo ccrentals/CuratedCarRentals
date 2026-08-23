@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  assertWiPayAvailable,
+  getPublicPaymentRequestUrl,
   getPublicPaymentProvider,
   getStripePaymentMode,
   isStripeLiveMode,
@@ -23,6 +23,19 @@ test("JMD Checkout converts whole-JMD booking amounts into Stripe minor units", 
   assert.throws(() => toStripeJmdMinorUnits(0));
   assert.throws(() => toStripeJmdMinorUnits(12.5));
   assert.throws(() => toStripeJmdMinorUnits(Number.MAX_SAFE_INTEGER));
+});
+
+test("Stripe uses Netlify's forwarded public host instead of the internal function URL", () => {
+  const request = new Request("http://localhost:8888/api/payments/start", {
+    headers: {
+      "x-forwarded-host": "curatedcarrentals.com",
+      "x-forwarded-proto": "https",
+    },
+  });
+  assert.equal(
+    getPublicPaymentRequestUrl(request),
+    "https://curatedcarrentals.com/api/payments/start",
+  );
 });
 
 test("Stripe is enabled for staging with a test key", () => {
@@ -78,19 +91,25 @@ test("Stripe rejects a non-staging deployment even when a public environment mar
   assert.throws(() => getPublicPaymentProvider());
 });
 
-test("WiPay remains the safe default", () => {
-  setEnv({ PAYMENT_PROVIDER: undefined });
-  assert.equal(getPublicPaymentProvider(), "WIPAY");
+test("Stripe is the only supported public payment provider", () => {
+  setEnv({
+    STRIPE_TEST_MODE: "true",
+    STRIPE_SECRET_KEY: "sk_test_example",
+    BRANCH: "staging",
+  });
+  assert.equal(getPublicPaymentProvider(), "STRIPE");
+
+  setEnv({ PAYMENT_PROVIDER: "wipay" });
+  assert.throws(() => getPublicPaymentProvider(), /only supported public payment provider/);
 });
 
-test("staging cannot fall back to WiPay or call legacy WiPay payment routes", () => {
+test("staging cannot select WiPay as its public payment provider", () => {
   setEnv({
-    PAYMENT_PROVIDER: undefined,
+    PAYMENT_PROVIDER: "wipay",
     CONTEXT: "branch-deploy",
     SITE_URL: "https://staging--ccrentals.netlify.app",
   });
-  assert.throws(() => getPublicPaymentProvider(), /WiPay is disabled/);
-  assert.throws(() => assertWiPayAvailable(), /WiPay is disabled/);
+  assert.throws(() => getPublicPaymentProvider(), /only supported public payment provider/);
 });
 
 test("Stripe rejects other Netlify branch deploys", () => {

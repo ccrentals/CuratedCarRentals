@@ -20,7 +20,7 @@ Data model inventory for Quote / Booking / Payment / Calendar / Invoice traceabi
   - `src/lib/notifications/dedupe.ts`
   - `src/lib/invoices/ledger.ts`
   - `src/lib/pdfmonkey.ts`
-  - `src/lib/payments/wipayReconcile.ts`
+  - `src/lib/payments/stripeReconcile.ts`
 
 ## Entity Table Map
 

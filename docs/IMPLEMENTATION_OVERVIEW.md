@@ -10,7 +10,7 @@ runbooks.
 | Area | What changed | Outcome |
 | --- | --- | --- |
 | Media storage | Migrated supported public and private uploads from Uploadcare workflows to Bunny Storage. | Public media is served through Bunny CDN; sensitive files remain private and are delivered through authorized application routes. |
-| Payments | Completed Stripe production cutover and retained WiPay compatibility where configured. | Production payments use live Stripe only in the production runtime; staging stays in Stripe test mode. |
+| Payments | Completed the Stripe production cutover and retired WiPay payment entrypoints. | Production uses live Stripe only; staging stays in Stripe test mode, while historical WiPay ledger records retain their original labels. |
 | Security | Added stronger application, upload, deployment, and browser protections. | Reduced exposure of operational data, hardened file handling, and added automated security checks. |
 | Operations | Added release attestation and updated runbooks. | Staff can verify which commit and Netlify release is running without exposing secrets publicly. |
 

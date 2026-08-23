@@ -80,7 +80,7 @@ Based on:
 - `src/lib/notifications/dedupe.ts`
 - `src/app/api/admin/quotes/[id]/email/route.ts`
 - `src/app/api/cron/*`
-- `src/lib/payments/wipayReconcile.ts` (verify parity)
+- `src/lib/payments/stripeReconcile.ts` (verify parity)
 
 ### Acceptance checklist
 - Duplicate trigger paths do not send duplicate automated emails.
@@ -89,7 +89,7 @@ Based on:
 
 ### Tests
 - Unit tests for dedupe key strategy.
-- Integration tests for return+webhook+cron rerun duplicate scenarios.
+- Integration tests for Stripe return+webhook+cron rerun duplicate scenarios.
 
 ### E2E gate
 - `npm run e2e:watch` unaffected.

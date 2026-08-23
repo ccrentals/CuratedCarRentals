@@ -324,7 +324,7 @@ const SYSTEM_ARCH_DIAGRAM = `System architecture (simplified)
           v                v                         v
  +----------------+  +--------------+        +----------------------+
  | Neon Postgres  |  | Payments     |        | Resend + PDF Engine  |
- | (DATABASE_URL) |  | (Stripe/WiPay)|       | (Gotenberg/PDFMonkey)|
+ | (DATABASE_URL) |  |   (Stripe)    |       | (Gotenberg/PDFMonkey)|
  +----------------+  +--------------+        +----------------------+
                       ^      |
                       |      v
@@ -623,7 +623,7 @@ const DOCS: Record<string, DocSection> = {
                   width={120}
                   height={72}
                   title="Payment provider"
-                  lines={["Stripe or WiPay", "Card handled off-site"]}
+                  lines={["Stripe", "Card handled off-site"]}
                   fill="var(--ccr-accent)"
                   fillOpacity={0.14}
                   stroke="var(--ccr-accent-strong)"
@@ -641,7 +641,7 @@ const DOCS: Record<string, DocSection> = {
                   width={120}
                   height={72}
                   title="Return"
-                  lines={["GET", "/api/payments/wipay/return"]}
+                  lines={["GET", "/api/payments/stripe/return"]}
                 />
                 <SvgBox
                   x={770}
@@ -649,7 +649,7 @@ const DOCS: Record<string, DocSection> = {
                   width={120}
                   height={72}
                   title="Webhook"
-                  lines={["POST", "/api/payments/wipay/webhook"]}
+                  lines={["POST", "/api/payments/stripe/webhook"]}
                 />
 
                 <SvgArrow
@@ -1027,7 +1027,7 @@ const DOCS: Record<string, DocSection> = {
                   width={210}
                   height={92}
                   title="Payments"
-                  lines={["Stripe or WiPay", "return + webhook"]}
+                  lines={["Stripe", "return + webhook"]}
                   fill="var(--ccr-accent)"
                   fillOpacity={0.14}
                   stroke="var(--ccr-accent-strong)"
@@ -1093,9 +1093,9 @@ const DOCS: Record<string, DocSection> = {
                 remains during the cutover.
               </li>
               <li>
-                <span className="font-semibold text-[var(--ccr-text)]">Payments:</span> provider-selected hosted checkout
-                (Stripe for the staging test flow; Stripe or WiPay in production according to deployment configuration),
-                with return + webhook reconciliation.
+                <span className="font-semibold text-[var(--ccr-text)]">Payments:</span> Stripe-hosted checkout in test
+                mode on staging and live mode in production, with return + webhook reconciliation. Historical WiPay
+                records remain labelled with their original provider in the payment ledger.
               </li>
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">Email & documents:</span> Resend for notifications;
@@ -1154,30 +1154,17 @@ const DOCS: Record<string, DocSection> = {
               <li>
                 <code>POST /api/payments/start</code>
                 <DateRangeArrow />
-                starts the configured provider checkout and returns its hosted URL.
+                starts Stripe checkout for deposit, balance, full, or custom payment and returns its hosted URL.
               </li>
               <li>
-                <code>POST /api/payments/wipay/balance/start</code>
+                <code>POST /api/payments/stripe/webhook</code>
                 <DateRangeArrow />
-                starts hosted checkout for remaining balance.
+                verifies signed Stripe events and reconciles completed or failed payment attempts.
               </li>
               <li>
-                <code>POST /api/payments/wipay/full/start</code>
+                <code>GET /api/payments/stripe/return</code>
                 <DateRangeArrow />
-                starts hosted checkout for full amount.
-              </li>
-              <li>
-                <code>GET /api/payments/wipay/return</code>
-                <DateRangeArrow />
-                provider redirect handler
-                <DateRangeArrow />
-                redirects to success/fail page.
-              </li>
-              <li>
-                <code>POST /api/payments/wipay/webhook</code>
-                <DateRangeArrow />
-                reconcile WiPay events; Stripe uses <code>POST /api/payments/stripe/webhook</code> and
-                <code> GET /api/payments/stripe/return</code>.
+                confirms the Checkout Session and redirects the customer to the payment result page.
               </li>
             </ul>
 
@@ -1479,22 +1466,13 @@ x-csrf-token: <token>
 - CSRF_SECRET
 - SITE_URL
 
-Payments (choose the configured provider)
-- PAYMENT_PROVIDER (wipay|stripe)
+Payments
+- PAYMENT_PROVIDER=stripe
 
 Stripe staging / production
 - STRIPE_SECRET_KEY
 - STRIPE_WEBHOOK_SECRET
 - STRIPE_TEST_MODE (true with sk_test_ in staging; false with sk_live_ in production)
-
-WiPay production
-- SITE_URL (builds WiPay response_url)
-- WIPAY_ACCOUNT_NUMBER
-- WIPAY_API_KEY
-- WIPAY_ENV (sandbox|live)
-- WIPAY_FEE_STRUCTURE (customer_pay|merchant_absorb|split)
-- WIPAY_COUNTRY_CODE (optional; current site uses JM/JMD)
-- WIPAY_ORIGIN (optional; defaults to curated-car-rentals)
 
 Email (Resend)
 - RESEND_API_KEY
@@ -1587,10 +1565,9 @@ Cron
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">Payments:</span> Staging must use Stripe test
                 credentials (<code>STRIPE_TEST_MODE=true</code> with an <code>sk_test_</code> key). For production, validate
-                the selected <code>PAYMENT_PROVIDER</code>: Stripe requires <code>STRIPE_TEST_MODE=false</code>, an
-                <code>sk_live_</code> key, and a verified webhook; WiPay requires live credentials,
-                <code>WIPAY_ENV=live</code>, and the approved fee structure. Run a small real payment plus webhook
-                reconciliation only after the provider configuration is confirmed.
+                Stripe requires <code>PAYMENT_PROVIDER=stripe</code>, <code>STRIPE_TEST_MODE=false</code>, an
+                <code>sk_live_</code> key, and a verified webhook. Run a small real payment plus webhook reconciliation
+                only after the Stripe configuration is confirmed.
               </li>
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">Email (Resend):</span> Validate <code>RESEND_API_KEY</code>{" "}
@@ -1701,27 +1678,24 @@ Cron
             <ul className="list-disc space-y-2 pl-5">
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">Configured checkout:</span>{" "}
-                <code>POST /api/payments/start</code> selects the configured provider.
+                <code>POST /api/payments/start</code> starts Stripe Checkout.
               </li>
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">Staging:</span> Stripe test mode is required;
                 configure <code>STRIPE_TEST_MODE=true</code> with test credentials and validate the Stripe webhook.
               </li>
               <li>
-                <span className="font-semibold text-[var(--ccr-text)]">Production:</span> Use the provider named by
-                <code> PAYMENT_PROVIDER</code>. Stripe requires live-mode credentials and a signing secret; WiPay uses
-                its live account/API credentials and configured fee structure.
+                <span className="font-semibold text-[var(--ccr-text)]">Production:</span> Use
+                <code> PAYMENT_PROVIDER=stripe</code> with live-mode credentials and a signing secret.
               </li>
               <li>
-                <span className="font-semibold text-[var(--ccr-text)]">WiPay-specific routes:</span>{" "}
-                <code>/api/payments/wipay/*</code> support WiPay deposit, balance, full, and custom flows when WiPay is
-                the selected provider.
+                <span className="font-semibold text-[var(--ccr-text)]">Historical WiPay payments:</span> remain labelled
+                <code> WIPAY</code> in the payment ledger for audit accuracy. No WiPay checkout or callback routes remain.
               </li>
               <li>
-                Reconciliation is provider-specific: WiPay uses <code>/api/payments/wipay/return</code> and
-                <code> /api/payments/wipay/webhook</code>; Stripe uses <code>/api/payments/stripe/return</code> and
-                <code> /api/payments/stripe/webhook</code>. Register the matching webhook with the provider and never
-                place signing secrets in browser-accessible variables.
+                Active reconciliation uses <code>/api/payments/stripe/return</code> and
+                <code> /api/payments/stripe/webhook</code>. Register the Stripe webhook and never place signing secrets
+                in browser-accessible variables.
               </li>
             </ul>
           </>
@@ -1906,8 +1880,8 @@ Cron
           <>
             <ul className="list-disc space-y-2 pl-5">
               <li>
-                <span className="font-semibold text-[var(--ccr-text)]">Hosted checkout boundary:</span> the configured
-                payment provider (Stripe or WiPay) handles card entry, which reduces PCI scope; this app should only store
+                <span className="font-semibold text-[var(--ccr-text)]">Hosted checkout boundary:</span> Stripe handles
+                card entry, which reduces PCI scope; this app should only store
                 transaction references and reconciliation metadata.
               </li>
               <li>
@@ -2132,7 +2106,7 @@ Cron
               </li>
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">Customers and secure records:</span> manage customer
-                details and driver-license images in <code>/admin/customers</code>; open private files only through CCR's
+                details and driver-license images in <code>/admin/customers</code>; open private files only through CCR&apos;s
                 authorized routes, never a public Bunny URL.
               </li>
               <li>
@@ -2230,8 +2204,8 @@ Cron
               </li>
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">Payment start fails:</span> Confirm
-                <code>PAYMENT_PROVIDER</code> and the matching credentials. Staging requires Stripe test mode; production
-                Stripe requires live mode, while WiPay requires valid account-number formatting and provider reachability.
+                <code>PAYMENT_PROVIDER=stripe</code> and the matching credentials. Staging requires Stripe test mode;
+                production requires Stripe live mode and a valid webhook signing secret.
               </li>
               <li>
                 <span className="font-semibold text-[var(--ccr-text)]">File storage fails:</span> Check
@@ -2307,7 +2281,7 @@ Cron
                   width={250}
                   height={84}
                   title="Payment provider"
-                  lines={["Stripe or WiPay", "No card storage"]}
+                  lines={["Stripe", "No card storage"]}
                   fill="var(--ccr-accent)"
                   fillOpacity={0.14}
                   stroke="var(--ccr-accent-strong)"
@@ -2341,7 +2315,7 @@ Cron
             <ul className="list-disc space-y-2 pl-5">
               <li>Data collected: name, email, phone, booking dates, pickup location, vehicle selection.</li>
               <li>Payment data: store transaction references and reconciliation metadata; do not store raw card data.</li>
-              <li>Processors: the configured payment provider (Stripe or WiPay), Resend (email), configurable PDF provider (Gotenberg/PDFMonkey), and Bunny Storage (public and private uploads). Uploadcare remains a legacy processor only while historical assets are retained there.</li>
+              <li>Processors: Stripe, Resend (email), configurable PDF provider (Gotenberg/PDFMonkey), and Bunny Storage (public and private uploads). Historical WiPay transaction records retain their original labels for audit accuracy, but no WiPay checkout or callback runtime remains. Uploadcare remains a legacy processor only while historical assets are retained there.</li>
               <li>Retention: define retention windows for bookings, payments, and logs.</li>
               <li>User rights: provide contact method for access/deletion requests where applicable.</li>
             </ul>

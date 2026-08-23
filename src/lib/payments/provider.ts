@@ -1,8 +1,22 @@
-export type PaymentProvider = "WIPAY" | "STRIPE";
 export type StripePaymentMode = "test" | "live";
 
+export function getPublicPaymentRequestUrl(request: Request) {
+  const url = new URL(request.url);
+  const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const host = forwardedHost || request.headers.get("host")?.trim();
+  if (!host) return url.toString();
+
+  const forwardedProtocol = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  url.host = host;
+  url.port = "";
+  if (forwardedProtocol === "http" || forwardedProtocol === "https") {
+    url.protocol = `${forwardedProtocol}:`;
+  }
+  return url.toString();
+}
+
 function configuredProvider() {
-  return (process.env.PAYMENT_PROVIDER ?? "wipay").trim().toLowerCase();
+  return (process.env.PAYMENT_PROVIDER ?? "stripe").trim().toLowerCase();
 }
 
 function hasStagingHostname(value: string | undefined) {
@@ -21,12 +35,6 @@ export function isStripeStagingDeployment(requestUrl?: string) {
   return deployContext === "branch-deploy" && hasStagingHostname(process.env.SITE_URL);
 }
 
-export function assertWiPayAvailable(requestUrl?: string) {
-  if (isStripeStagingDeployment(requestUrl)) {
-    throw new Error("WiPay is disabled for the staging deployment.");
-  }
-}
-
 export function isStripeTestMode() {
   return (process.env.STRIPE_TEST_MODE ?? "").trim().toLowerCase() === "true" && (process.env.STRIPE_SECRET_KEY ?? "").trim().startsWith("sk_test_");
 }
@@ -35,12 +43,23 @@ export function isStripeLiveMode() {
   return (process.env.STRIPE_TEST_MODE ?? "").trim().toLowerCase() !== "true" && (process.env.STRIPE_SECRET_KEY ?? "").trim().startsWith("sk_live_");
 }
 
-function isProductionDeployment() {
-  return process.env.CONTEXT === "production" || process.env.NETLIFY_CONTEXT === "production";
+function isProductionDeployment(requestUrl?: string) {
+  if (process.env.CONTEXT === "production" || process.env.NETLIFY_CONTEXT === "production") {
+    return true;
+  }
+  if (process.env.BRANCH === "main") return true;
+
+  try {
+    const requestHost = new URL(requestUrl ?? "").hostname;
+    const siteHost = new URL(process.env.SITE_URL ?? "").hostname;
+    return Boolean(requestHost && siteHost && requestHost === siteHost);
+  } catch {
+    return false;
+  }
 }
 
 export function getStripePaymentMode(requestUrl?: string): StripePaymentMode {
-  if (isProductionDeployment()) {
+  if (isProductionDeployment(requestUrl)) {
     if (!isStripeLiveMode()) {
       throw new Error("Stripe production requires STRIPE_TEST_MODE=false and an sk_live_ STRIPE_SECRET_KEY.");
     }
@@ -53,11 +72,10 @@ export function getStripePaymentMode(requestUrl?: string): StripePaymentMode {
   return "test";
 }
 
-export function getPublicPaymentProvider(requestUrl?: string): PaymentProvider {
+export function getPublicPaymentProvider(requestUrl?: string): "STRIPE" {
   const provider = configuredProvider();
   if (provider !== "stripe") {
-    assertWiPayAvailable(requestUrl);
-    return "WIPAY";
+    throw new Error("Stripe is the only supported public payment provider.");
   }
 
   getStripePaymentMode(requestUrl);
@@ -65,9 +83,7 @@ export function getPublicPaymentProvider(requestUrl?: string): PaymentProvider {
 }
 
 export function assertStripeConfiguration(requestUrl?: string) {
-  if (getPublicPaymentProvider(requestUrl) !== "STRIPE") {
-    throw new Error("Stripe is not enabled for this deployment.");
-  }
+  getPublicPaymentProvider(requestUrl);
   const webhookSecret = (process.env.STRIPE_WEBHOOK_SECRET ?? "").trim();
   if (!webhookSecret.startsWith("whsec_")) {
     throw new Error("Missing Stripe webhook signing secret.");

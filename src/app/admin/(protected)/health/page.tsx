@@ -32,8 +32,6 @@ function checkLabel(key: keyof Awaited<ReturnType<typeof getHealthSnapshot>>["ch
       return "Neon (DB)";
     case "promoLedger":
       return "Promo Ledger";
-    case "wipay":
-      return "WiPay";
     case "resend":
       return "Resend";
     case "pdfmonkey":

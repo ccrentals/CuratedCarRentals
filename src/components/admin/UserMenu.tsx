@@ -25,7 +25,14 @@ export function UserMenu({
   compactSidebarLayout = false,
   showSignOut = true,
 }: UserMenuProps) {
-  const props = { email, className, showEmail, showThemeLabel, compactSidebarLayout, showSignOut };
+  const props = {
+    email,
+    className,
+    showEmail,
+    showThemeLabel,
+    compactSidebarLayout,
+    showSignOut,
+  };
 
   if (process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY?.trim()) {
     return <ClerkUserMenu {...props} />;
@@ -42,7 +49,12 @@ function ClerkUserMenu(
 ) {
   const { signOut } = useClerk();
 
-  return <UserMenuInner {...props} clerkSignOut={() => signOut({ redirectUrl: "/sign-in" })} />;
+  return (
+    <UserMenuInner
+      {...props}
+      clerkSignOut={() => signOut({ redirectUrl: "/sign-in" })}
+    />
+  );
 }
 
 function UserMenuInner({

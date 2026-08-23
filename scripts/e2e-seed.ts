@@ -51,7 +51,7 @@ type E2EFixtures = {
     partialBalance: BookingFixtureRef;
     fullyPaid: BookingFixtureRef;
     refundRequired: BookingFixtureRef;
-    refundableWipay: BookingFixtureRef;
+    refundableHistoricalPayment: BookingFixtureRef;
   };
   promoCodes: {
     active: PromoFixtureRef;
@@ -97,7 +97,7 @@ type BookingFixtureRef = {
     manual?: PaymentFixtureRef;
     balance?: PaymentFixtureRef;
     refund?: PaymentFixtureRef;
-    wipay?: PaymentFixtureRef;
+    historicalProvider?: PaymentFixtureRef;
   };
 };
 
@@ -1015,14 +1015,14 @@ async function main() {
       createdAt: addMinutes(bookingFixtureBaseCreatedAt, 31).toISOString(),
     });
 
-    const refundableWipayPricing = buildPricingSnapshot({
+    const refundableHistoricalPaymentPricing = buildPricingSnapshot({
       dailyRateCents: bookingFixtureDailyRateCents,
       days: bookingFixtureDays,
       depositCents: bookingFixtureDepositCents,
       paidToDate: bookingFixtureDepositCents,
       paymentOption: "DEPOSIT",
     });
-    const refundableWipayBooking = await insertPromoBooking(client, {
+    const refundableHistoricalPaymentBooking = await insertPromoBooking(client, {
       vehicleId,
       customerId: customerResult.rows[0].id,
       pickupLocation: pickupLabel,
@@ -1030,11 +1030,11 @@ async function main() {
       startDate: toDateOnly(addDays(now, 30)),
       endDate: toDateOnly(addDays(now, 33)),
       status: "CONFIRMED",
-      pricingJson: refundableWipayPricing,
+      pricingJson: refundableHistoricalPaymentPricing,
       createdAt: addMinutes(bookingFixtureBaseCreatedAt, 40).toISOString(),
     });
-    const refundableWipayPayment = await insertPayment(client, {
-      bookingId: refundableWipayBooking.id,
+    const refundableHistoricalPayment = await insertPayment(client, {
+      bookingId: refundableHistoricalPaymentBooking.id,
       provider: "WIPAY",
       amountCents: bookingFixtureDepositCents,
       status: "DEPOSIT_PAID",
@@ -1341,13 +1341,13 @@ async function main() {
             deposit: refundRequiredDepositPayment,
           },
         }),
-        refundableWipay: buildBookingFixtureRef({
-          booking: refundableWipayBooking,
+        refundableHistoricalPayment: buildBookingFixtureRef({
+          booking: refundableHistoricalPaymentBooking,
           status: "CONFIRMED",
-          pricingJson: refundableWipayPricing,
+          pricingJson: refundableHistoricalPaymentPricing,
           paidToDate: bookingFixtureDepositCents,
           payments: {
-            wipay: refundableWipayPayment,
+            historicalProvider: refundableHistoricalPayment,
           },
         }),
       },
@@ -1380,7 +1380,7 @@ async function main() {
           partialBalanceBookingId: fixtures.bookings.partialBalance.id,
           fullyPaidBookingId: fixtures.bookings.fullyPaid.id,
           refundRequiredBookingId: fixtures.bookings.refundRequired.id,
-          refundableWipayBookingId: fixtures.bookings.refundableWipay.id,
+          refundableHistoricalPaymentBookingId: fixtures.bookings.refundableHistoricalPayment.id,
           promoLimitReachedId: fixtures.promoCodes.limitReached.id,
           promoReconstructedId: fixtures.promoCodes.reconstructedHistory.id,
           fixturesPath: FIXTURES_PATH,

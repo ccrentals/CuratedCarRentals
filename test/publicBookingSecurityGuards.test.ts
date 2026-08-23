@@ -66,22 +66,29 @@ test("public booking creation uses submission-key idempotency guard", () => {
   assert.match(code, /createBookingAccessToken\(submissionKey\)/);
 });
 
-test("public WiPay start routes use shared idempotent start helper", () => {
-  const routeFiles = [
+test("public payment initiation is Stripe-only and uses the shared idempotent start helper", () => {
+  const legacyRouteFiles = [
     "src/app/api/payments/wipay/start/route.ts",
     "src/app/api/payments/wipay/full/start/route.ts",
     "src/app/api/payments/wipay/custom/start/route.ts",
     "src/app/api/payments/wipay/balance/start/route.ts",
   ];
 
-  for (const file of routeFiles) {
-    const code = read(file);
-    assert.match(code, /startPublicWipayPayment\(/);
+  for (const file of legacyRouteFiles) {
+    assert.equal(fs.existsSync(path.join(process.cwd(), file)), false);
   }
+
+  const route = read("src/app/api/payments/start/route.ts");
+  assert.match(route, /startPublicPayment\(/);
 
   const helper = read("src/lib/payments/publicPaymentStart.ts");
   assert.match(helper, /status = 'INITIATED'/);
   assert.match(helper, /hosted_page_url/);
   assert.match(helper, /payment_in_progress/);
-  assert.match(helper, /assertWiPayAvailable\(request\.url\)/);
+  assert.match(helper, /getPublicPaymentProvider\(paymentRequestUrl\)/);
+  assert.doesNotMatch(helper, /WIPAY|buildRequestParams|requestHostedPageUrl/);
+
+  const wizard = read("src/components/booking/PublicBookingWizard.tsx");
+  assert.match(wizard, /const hostedPaymentProvider = "Stripe";/);
+  assert.doesNotMatch(wizard, /title:\s*"WiPay"/);
 });

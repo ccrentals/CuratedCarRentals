@@ -2,7 +2,6 @@ import { dbQuery } from "@/lib/db";
 import { getFileStorageProvider, getInvoiceProvider, validateEnv, type EnvValidation } from "@/lib/env";
 import { redactText } from "@/lib/log";
 import { getBunnyStorageConfig } from "@/lib/uploads/bunny";
-import { getWiPayBaseUrl } from "@/lib/wipay";
 
 type CheckResult = {
   ok: boolean;
@@ -19,7 +18,6 @@ export type HealthSnapshot = {
   checks: {
     db: CheckResult;
     promoLedger: CheckResult;
-    wipay: CheckResult;
     resend: CheckResult;
     pdfmonkey: CheckResult;
     storage: CheckResult & { provider: "uploadcare" | "bunny" };
@@ -109,33 +107,6 @@ export async function getHealthSnapshot(): Promise<HealthSnapshot> {
     } catch (error) {
       const message = error instanceof Error ? error.message : "DB error";
       return { ok: false, configured: true, latencyMs: Date.now() - started, error: safeSnippet(message) };
-    }
-  })();
-
-  const wipayCheck = (async () => {
-    const started = Date.now();
-    const configured = strictOk(env.payments);
-    if (!configured) {
-      return { ok: false, configured: false, latencyMs: Date.now() - started };
-    }
-    try {
-      const baseUrl = getWiPayBaseUrl();
-      const res = await fetchWithTimeout(baseUrl, 4000, { method: "GET" });
-      return { ok: res.status < 500, configured: true, status: res.status, latencyMs: Date.now() - started };
-    } catch (error) {
-      const message =
-        error instanceof Error && error.name === "AbortError"
-          ? "WiPay connectivity timed out after 4000ms"
-          : error instanceof Error
-            ? error.message
-            : "WiPay fetch failed";
-      return {
-        ok: false,
-        configured: true,
-        status: 0,
-        latencyMs: Date.now() - started,
-        error: safeSnippet(message),
-      };
     }
   })();
 
@@ -369,10 +340,9 @@ export async function getHealthSnapshot(): Promise<HealthSnapshot> {
     return readNetlifyReleaseAttestation();
   })();
 
-  const [db, promoLedger, wipay, resend, pdfmonkey, storage, netlify] = await Promise.all([
+  const [db, promoLedger, resend, pdfmonkey, storage, netlify] = await Promise.all([
     dbCheck,
     promoLedgerCheck,
-    wipayCheck,
     resendCheck,
     invoiceProviderCheck,
     storageCheck,
@@ -390,7 +360,6 @@ export async function getHealthSnapshot(): Promise<HealthSnapshot> {
     strictOk(env.cron) &&
     db.ok &&
     promoLedger.ok &&
-    wipay.ok &&
     resend.ok &&
     pdfmonkey.ok &&
     storage.ok;
@@ -399,7 +368,7 @@ export async function getHealthSnapshot(): Promise<HealthSnapshot> {
     ok,
     goLiveReady,
     env,
-    checks: { db, promoLedger, wipay, resend, pdfmonkey, storage, netlify },
+    checks: { db, promoLedger, resend, pdfmonkey, storage, netlify },
     timestamp: new Date().toISOString(),
   };
   })();
