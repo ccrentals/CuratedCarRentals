@@ -22,9 +22,9 @@ Each item includes:
 | Gap | Observed behavior (code paths) | Risk | Minimal fix | Test needed |
 |---|---|---|---|---|
 | Pricing snapshot contract is still convention-based JSON | `pricing_json` is written/read by multiple modules (`src/lib/quotes/quotePricing.ts`, `src/lib/payments/pricing.ts`, `src/lib/payments/recalculateBooking.ts`, `src/lib/reports/adminReports.ts`). | Drift in key names/defaults causes inconsistent totals/status interpretation across surfaces. | Add shared runtime validator/normalizer for `pricing_json` at write and read boundaries. | Unit tests for malformed/missing snapshot keys; integration across quote->booking->payment. |
-| Notification dedupe is partial, not universal | High-risk paths use `notification_dispatch_log` (`src/lib/payments/wipayReconcile.ts`, `src/app/api/admin/bookings/[id]/resend-email/route.ts`), but quote emails and cron reminders use separate dedupe patterns (`quote_emails`, pricing JSON reminder stamps). | Duplicate/missed sends remain possible across mixed trigger paths. | Standardize all email sends through one dedupe helper + consistent event taxonomy. | Integration tests for duplicate-trigger scenarios (return+webhook+cron rerun). |
+| Notification dedupe is partial, not universal | High-risk paths use `notification_dispatch_log` (`src/lib/payments/stripeReconcile.ts`, `src/app/api/admin/bookings/[id]/resend-email/route.ts`), but quote emails and cron reminders use separate dedupe patterns (`quote_emails`, pricing JSON reminder stamps). | Duplicate/missed sends remain possible across mixed trigger paths. | Standardize all email sends through one dedupe helper + consistent event taxonomy. | Integration tests for duplicate-trigger scenarios (Stripe return+webhook+cron rerun). |
 | Invoice ledger exists but lacks first-class retrieval surface | Ledger rows are written in invoice payload and PDF generation paths (`src/app/api/admin/bookings/[id]/invoice-payload/route.ts`, `src/lib/pdfmonkey.ts`), but there is no dedicated admin endpoint/UI for invoice history. | Ops cannot quickly inspect document lineage/status/failures without DB access. | Add `GET /api/admin/bookings/:id/invoices` read endpoint and small admin detail panel. | API test for invoice list ordering and status fields. |
-| Replay endpoint still depends on provider context quality in metadata | `POST /api/admin/payments/replay` requires enough stored provider context (order/status/hash/total/transaction) or returns `MISSING_PROVIDER_CONTEXT` (`src/app/api/admin/payments/replay/route.ts`). | Some failed legacy rows still require manual SQL/provider lookup to replay. | Add operator-assisted replay form fields and context repair endpoint for known rows. | API tests for manual context override success/failure paths. |
+| Admin reconciliation depends on a stored Stripe Checkout Session reference | `POST /api/admin/payments/:paymentId/reconcile` requires a Stripe payment with a stored Checkout Session reference and retrieves that session before calling the canonical reconciler. | Older or malformed Stripe attempts without a session reference cannot be reconciled automatically. | Add a privileged, audited repair workflow only if real affected Stripe rows are identified. | API tests for missing, invalid, pending, and paid Stripe session references. |
 | Calendar/reporting semantics still partially duplicated | Blocking logic is centralized for blockouts (`src/lib/bookings/bookingBlocking.ts`), but reporting/list modules still apply local overridden filters (`src/lib/reports/adminReports.ts`, `src/lib/bookings/adminBookingsList.ts`). | Count mismatches across calendar/list/reports for overridden/lost bookings. | Reuse one shared operational-state helper across report/list/calendar queries. | Cross-surface parity tests for identical date/status windows. |
 
 ## Low Priority
@@ -43,7 +43,7 @@ Each item includes:
 - Medium: JSON snapshot contract drift risk.
 
 ### Payment reconciliation
-- Medium: replay works but context completeness can still block automated recovery.
+- Medium: per-payment Stripe reconciliation works, but missing Checkout Session references can still block automated recovery.
 
 ### Invoice/receipt triggers
 - Medium: invoice ledger exists; read/query surfaces are still thin.
@@ -63,5 +63,5 @@ Each item includes:
 ## What Is Already Improved (for context)
 - Quote status transition guard map + deterministic expiry checks are implemented.
 - Blockout overlap uses timestamp-normalized windows and shared blocking semantics.
-- Admin WiPay replay endpoint exists and reuses canonical reconciler.
+- Stripe return, webhook, and per-payment admin reconciliation reuse the canonical Stripe reconciler.
 - Notification dedupe log + booking invoice ledger tables are live and wired in key runtime paths.
