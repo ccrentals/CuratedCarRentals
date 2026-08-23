@@ -150,15 +150,16 @@
     <ul>
       <li>Payment gateway integration for deposit and additional payments (balance / pay-in-full).</li>
       <li>Webhook handling to confirm payments and keep booking status in sync.</li>
-      <li>Configurable fee handling (merchant-absorb vs other structures) depending on gateway agreement.</li>
+      <li>Stripe processing terms are governed by the merchant account and should be confirmed in the Stripe Dashboard.</li>
     </ul>
 
-    <h3>WiPay Online Payments (Implementation Notes)</h3>
+    <h3>Stripe Online Payments (Implementation Notes)</h3>
     <ul>
-      <li>Payments redirect customers to a hosted checkout page URL returned by the WiPay API.</li>
-      <li>After payment completion, customers return to a configured <code>response_url</code> with status + transaction details.</li>
-      <li>Typical return parameters include: <code>status</code>, <code>transaction_id</code>, <code>order_id</code>, <code>total</code>, <code>message</code>, and a verification <code>hash</code>.</li>
-      <li>Sandbox testing supports Visa/Mastercard test cards for end-to-end QA before go-live.</li>
+      <li>Payments redirect customers to a Stripe-hosted Checkout Session.</li>
+      <li>Browser returns and signed Stripe webhook events converge on the same canonical payment reconciliation flow.</li>
+      <li>Checkout Session and PaymentIntent references are stored for reconciliation and auditability.</li>
+      <li>Staging uses Stripe test mode and test cards; production uses live mode with a separate live webhook secret.</li>
+      <li>The site does not store raw card details.</li>
     </ul>
 
     <h3>Emails + Invoices</h3>
@@ -283,20 +284,18 @@
           <td class="small">Useful if you want managed uploads, but it can stay deferred for launch if those flows remain disabled.</td>
         </tr>
         <tr>
-          <td><strong>WiPay</strong></td>
+          <td><strong>Stripe</strong></td>
           <td>Online payments (deposit and optional balance payments)</td>
           <td>
             <ul>
-              <li>Rates vary by country and plan.</li>
-              <li>Published examples include:</li>
-              <li class="small">Jamaica (Basic Free): 4.20% + GCT</li>
-              <li class="small">Jamaica (Paid Plans): 3.80% + GCT</li>
+              <li>Stripe test and live modes use separate credentials.</li>
+              <li>Checkout Sessions provide the hosted payment experience.</li>
+              <li>Signed webhooks provide the authoritative payment confirmation.</li>
             </ul>
           </td>
           <td class="small">
-            For planning, assume published Jamaica rates as a guide only and confirm the final live merchant terms during
-            onboarding. This proposal previously used an estimated <strong>4.5%</strong> processing rate; for the current
-            launch plan, WiPay can remain deferred until public online payments are re-enabled.
+            Transaction fees vary by merchant account, payment method, card origin, currency, and applicable taxes.
+            Confirm current terms in the Stripe Dashboard or merchant agreement before go-live.
           </td>
         </tr>
       </tbody>
@@ -334,7 +333,7 @@
             <p><strong>Total fixed:</strong> <strong>$30.77/mo</strong> (≈ <strong>JMD 4,817.84/mo</strong>)</p>
             <p class="small">(excludes database usage if free-tier limits are exceeded)</p>
           </td>
-          <td class="small">Database usage only after free-tier limits; no WiPay processing while online payments remain disabled</td>
+          <td class="small">Database usage only after free-tier limits; no Stripe processing if online payments are disabled</td>
         </tr>
         <tr>
           <td><strong>Option 2</strong><br /><span class="small">Online payments + uploads enabled</span></td>
@@ -345,16 +344,16 @@
               <li>Uploadcare: Pro – $66/mo (production apps / websites)</li>
               <li>Resend: Free tier ($0, up to 3,000 emails/mo, 100 / day) <span class="small">(upgrade to Pro $20/mo if volume requires)</span></li>
               <li>PDFMonkey: Starter – €5/mo (≈ $5.77 USD)</li>
-              <li>WiPay processing – published Jamaica examples: 4.20% + GCT or 3.80% + GCT on paid plans</li>
+              <li>Stripe processing – variable; confirm current merchant pricing in the Stripe Dashboard</li>
               <li>Miscellaneous allowance – $25/mo</li>
             </ul>
           </td>
           <td>
             <p><strong>$100.00/mo</strong> + <strong>€5.00/mo</strong> (≈ <strong>$105.77/mo</strong>)</p>
             <p><strong>Total fixed:</strong> <strong>$105.77/mo</strong> (≈ <strong>JMD 16,562.74/mo</strong>)</p>
-            <p class="small">(excludes Neon usage and any WiPay paid-plan fees)</p>
+            <p class="small">(excludes Neon usage and Stripe transaction fees)</p>
           </td>
-          <td class="small">Neon usage-based + WiPay processing at the merchant rate you are approved for</td>
+          <td class="small">Neon usage-based + Stripe processing at the approved merchant-account rate</td>
         </tr>
       </tbody>
     </table>
@@ -389,15 +388,15 @@
     <h2>9) Responsibilities &amp; Go-Live</h2>
     <ul>
       <li>The site owner is expected to test all functionality before go-live (end-to-end).</li>
-      <li>Accounts required before initial launch are Netlify, Postgres/Neon, Resend, and PDFMonkey. WiPay and Uploadcare only need to be activated if those features are turned on.</li>
-      <li>WiPay live activation can be deferred until merchant onboarding is complete, live credentials are issued, and one small real payment has been tested end-to-end.</li>
+      <li>Accounts required before initial launch are Netlify, Postgres/Neon, Stripe, Resend, and PDFMonkey. Uploadcare only needs to be activated if that feature is turned on.</li>
+      <li>Stripe live activation requires live credentials, a verified webhook endpoint, and one small live payment tested end-to-end.</li>
     </ul>
 
     <h2>10) Assumptions &amp; Notes</h2>
     <ul>
       <li>All vendor prices are subject to change; validate during implementation/go-live.</li>
-      <li>Payment processing is handled by the gateway; the site should not store raw card data. Online payments can remain disabled at launch until WiPay is ready.</li>
-      <li>Final ongoing costs depend heavily on traffic, booking volume, emails, PDF invoices, database usage, and whether Uploadcare/WiPay are enabled.</li>
+      <li>Payment processing is handled by Stripe-hosted Checkout; the site does not store raw card data.</li>
+      <li>Final ongoing costs depend heavily on traffic, booking volume, emails, PDF invoices, database usage, and whether Uploadcare and Stripe online payments are enabled.</li>
     </ul>
 
     <h2>11) Sources (Pricing Pages)</h2>
@@ -407,8 +406,8 @@
       <li>Resend Pricing: https://resend.com/pricing</li>
       <li>PDFMonkey Pricing: https://pdfmonkey.io/pricing/</li>
       <li>Uploadcare Pricing: https://uploadcare.com/pricing/</li>
-      <li>WiPay Merchant Signup: https://wipayfinancial.com/concierge/signup</li>
-      <li>WiPay API Documentation: https://wipaycaribbean.com/WiPay-API-Documentation.pdf</li>
+      <li>Stripe Pricing: https://stripe.com/pricing</li>
+      <li>Stripe Checkout Documentation: https://docs.stripe.com/payments/checkout</li>
     </ul>
 
     <h2>12) Sign-Off</h2>
