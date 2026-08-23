@@ -1,5 +1,3 @@
-import { DEFAULT_WIPAY_ORIGIN } from "@/lib/wipay";
-
 function isNonEmpty(value: string | undefined) {
   return Boolean(value && value.trim().length > 0);
 }
@@ -8,8 +6,6 @@ function missingKeys(keys: string[]) {
   return keys.filter((key) => !isNonEmpty(process.env[key]));
 }
 
-const WIPAY_ALLOWED_FEE_STRUCTURES = new Set(["customer_pay", "merchant_absorb", "split"]);
-const WIPAY_ALLOWED_COUNTRY_CODES = new Set(["JM", "TT", "BB", "GY"]);
 const INVOICE_PROVIDERS = new Set(["pdfmonkey", "gotenberg"]);
 const DISALLOWED_PRODUCTION_DATABASE_HOSTS = new Set([
   "base",
@@ -112,49 +108,26 @@ export function validateEnv(): EnvValidation {
     notes.push("CSRF_SECRET is not set; development fallback secret will be used.");
   }
 
-  const configuredPaymentProvider = (process.env.PAYMENT_PROVIDER ?? "wipay").trim().toLowerCase();
-  const isStripe = configuredPaymentProvider === "stripe";
-  const paymentsMissing = isStripe
-    ? missingKeys(["STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "STRIPE_TEST_MODE"])
-    : missingKeys(["WIPAY_ACCOUNT_NUMBER", "WIPAY_API_KEY", "WIPAY_ENV", "WIPAY_FEE_STRUCTURE"]);
+  const configuredPaymentProvider = (process.env.PAYMENT_PROVIDER ?? "stripe").trim().toLowerCase();
+  const paymentsMissing = missingKeys([
+    "STRIPE_SECRET_KEY",
+    "STRIPE_WEBHOOK_SECRET",
+    "STRIPE_TEST_MODE",
+  ]);
   const paymentsInvalid: string[] = [];
-  if (!["wipay", "stripe"].includes(configuredPaymentProvider)) {
-    paymentsInvalid.push("PAYMENT_PROVIDER must be wipay or stripe");
+  if (configuredPaymentProvider !== "stripe") {
+    paymentsInvalid.push("PAYMENT_PROVIDER must be stripe");
   }
-  if (isStripe) {
-    const isProductionDeployment = isProductionRuntime();
-    const stripeTestMode = (process.env.STRIPE_TEST_MODE ?? "").trim().toLowerCase() === "true";
-    if (isProductionDeployment) {
-      if (stripeTestMode) paymentsInvalid.push("STRIPE_TEST_MODE must be false in production");
-      if (isNonEmpty(process.env.STRIPE_SECRET_KEY) && !process.env.STRIPE_SECRET_KEY!.startsWith("sk_live_")) paymentsInvalid.push("STRIPE_SECRET_KEY must be a Stripe live key in production");
-    } else {
-      if (!stripeTestMode) paymentsInvalid.push("STRIPE_TEST_MODE must be true for the staging trial");
-      if (isNonEmpty(process.env.STRIPE_SECRET_KEY) && !process.env.STRIPE_SECRET_KEY!.startsWith("sk_test_")) paymentsInvalid.push("STRIPE_SECRET_KEY must be a Stripe test key outside production");
-    }
-    if (isNonEmpty(process.env.STRIPE_WEBHOOK_SECRET) && !process.env.STRIPE_WEBHOOK_SECRET!.startsWith("whsec_")) paymentsInvalid.push("STRIPE_WEBHOOK_SECRET must be a webhook signing secret");
+  const isProductionDeployment = isProductionRuntime();
+  const stripeTestMode = (process.env.STRIPE_TEST_MODE ?? "").trim().toLowerCase() === "true";
+  if (isProductionDeployment) {
+    if (stripeTestMode) paymentsInvalid.push("STRIPE_TEST_MODE must be false in production");
+    if (isNonEmpty(process.env.STRIPE_SECRET_KEY) && !process.env.STRIPE_SECRET_KEY!.startsWith("sk_live_")) paymentsInvalid.push("STRIPE_SECRET_KEY must be a Stripe live key in production");
+  } else {
+    if (!stripeTestMode) paymentsInvalid.push("STRIPE_TEST_MODE must be true for the staging trial");
+    if (isNonEmpty(process.env.STRIPE_SECRET_KEY) && !process.env.STRIPE_SECRET_KEY!.startsWith("sk_test_")) paymentsInvalid.push("STRIPE_SECRET_KEY must be a Stripe test key outside production");
   }
-  if (!isNonEmpty(process.env.WIPAY_ORIGIN)) {
-    notes.push(`WIPAY_ORIGIN is not set; defaulting to ${DEFAULT_WIPAY_ORIGIN}.`);
-  }
-  const wipayEnv = (process.env.WIPAY_ENV ?? "").trim().toLowerCase();
-  if (isNonEmpty(process.env.WIPAY_ENV) && !["sandbox", "live"].includes(wipayEnv)) {
-    paymentsInvalid.push("WIPAY_ENV must be sandbox or live");
-  }
-  const fee = (process.env.WIPAY_FEE_STRUCTURE ?? "").trim().toLowerCase();
-  if (isNonEmpty(process.env.WIPAY_FEE_STRUCTURE) && !WIPAY_ALLOWED_FEE_STRUCTURES.has(fee)) {
-    paymentsInvalid.push("WIPAY_FEE_STRUCTURE must be customer_pay, merchant_absorb, or split");
-  }
-  const account = (process.env.WIPAY_ACCOUNT_NUMBER ?? "").trim();
-  if (isNonEmpty(process.env.WIPAY_ACCOUNT_NUMBER) && !/^\d+$/.test(account)) {
-    paymentsInvalid.push("WIPAY_ACCOUNT_NUMBER must be digits only");
-  }
-  const wipayCountryCode = (process.env.WIPAY_COUNTRY_CODE ?? "").trim().toUpperCase();
-  if (
-    isNonEmpty(process.env.WIPAY_COUNTRY_CODE) &&
-    !WIPAY_ALLOWED_COUNTRY_CODES.has(wipayCountryCode)
-  ) {
-    paymentsInvalid.push("WIPAY_COUNTRY_CODE must be JM, TT, BB, or GY");
-  }
+  if (isNonEmpty(process.env.STRIPE_WEBHOOK_SECRET) && !process.env.STRIPE_WEBHOOK_SECRET!.startsWith("whsec_")) paymentsInvalid.push("STRIPE_WEBHOOK_SECRET must be a webhook signing secret");
 
   const emailMissing = missingKeys(["RESEND_API_KEY", "RESEND_FROM"]);
   const emailInvalid: string[] = [];

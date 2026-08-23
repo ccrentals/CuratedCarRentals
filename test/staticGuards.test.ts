@@ -23,23 +23,16 @@ test("RBAC: dangerous admin routes contain an explicit 403 Forbidden guard", () 
   }
 });
 
-test("Idempotency: WiPay webhook uses webhook_events insert gate and short-circuits duplicates", () => {
-  const code = read("src/app/api/payments/wipay/webhook/route.ts");
-  assert.match(code, /insert into webhook_events/i);
-  assert.match(code, /on conflict\s*\(provider,\s*event_id\)\s*do nothing/i);
-  assert.match(code, /duplicate/i);
-});
+test("Retired WiPay callback and replay entrypoints remain absent", () => {
+  const retiredEntrypoints = [
+    "src/app/api/payments/wipay/return/route.ts",
+    "src/app/api/payments/wipay/webhook/route.ts",
+    "src/app/api/admin/payments/replay/route.ts",
+  ];
 
-test("WiPay callbacks use canonical SITE_URL rather than request-origin fallbacks", () => {
-  const returnRoute = read("src/app/api/payments/wipay/return/implementation.ts");
-  const paymentStart = read("src/lib/payments/publicPaymentStart.ts");
-
-  assert.match(returnRoute, /getCanonicalSiteUrl\(/);
-  assert.doesNotMatch(returnRoute, /request\.url\)\.origin/);
-  assert.doesNotMatch(returnRoute, /SITE_URL\s*\?\?\s*url\.origin/);
-
-  assert.match(paymentStart, /buildCanonicalSiteUrl\(\"\/api\/payments\/wipay\/return\"\)/);
-  assert.doesNotMatch(paymentStart, /request\.url\)\.origin/);
+  for (const entrypoint of retiredEntrypoints) {
+    assert.equal(fs.existsSync(path.join(process.cwd(), entrypoint)), false);
+  }
 });
 
 test("Stripe admin reconciliation uses the forwarded public payment URL", () => {
@@ -114,7 +107,7 @@ test("Pricing SSoT: quote preview and booking create use the shared quote snapsh
   }
 });
 
-test("Pricing SSoT: stored booking pricing is reused by booking follow-up and WiPay routes", () => {
+test("Pricing SSoT: stored booking pricing is reused by booking follow-up and hosted payments", () => {
   const files = [
     "src/app/api/public/bookings/implementation.ts",
     "src/app/api/public/bookings/[id]/promo/route.ts",
@@ -126,18 +119,6 @@ test("Pricing SSoT: stored booking pricing is reused by booking follow-up and Wi
   for (const file of files) {
     const code = read(file);
     assert.match(code, /computeBookingPricingFromStoredSnapshot\(/);
-  }
-
-  const routeFiles = [
-    "src/app/api/payments/wipay/start/route.ts",
-    "src/app/api/payments/wipay/full/start/route.ts",
-    "src/app/api/payments/wipay/custom/start/route.ts",
-    "src/app/api/payments/wipay/balance/start/route.ts",
-  ];
-
-  for (const file of routeFiles) {
-    const code = read(file);
-    assert.match(code, /startPublicWipayPayment\(/);
   }
 });
 
@@ -153,15 +134,15 @@ test("Pricing SSoT: insurance-aware pricing is wired into public quote and booki
   }
 });
 
-test("Entitlement SSoT wiring: public availability and payment reconciliation use entitlement helper", () => {
+test("Entitlement SSoT wiring: public availability and Stripe reconciliation use entitlement helper", () => {
   const publicVehicles = read("src/lib/publicVehicles.ts");
   assert.match(publicVehicles, /evaluateVehicleAvailability/);
 
   const publicBookingsCreate = read("src/app/api/public/bookings/implementation.ts");
   assert.match(publicBookingsCreate, /isPublicVehicleUnavailableForWindow/);
 
-  const wipayReconcile = read("src/lib/payments/wipayReconcile.ts");
-  assert.match(wipayReconcile, /maybeEntitleBookingAfterPayment/);
+  const stripeReconcile = read("src/lib/payments/stripeReconcile.ts");
+  assert.match(stripeReconcile, /maybeEntitleBookingAfterPayment/);
 });
 
 test("Upcoming SSoT wiring: dashboard + bookings SQL filters and calendar/day labels use shared helpers", () => {

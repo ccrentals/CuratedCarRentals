@@ -19,14 +19,6 @@ import { formatJmd } from "@/lib/money";
 import { normalizePageSize, parsePositiveIntParam } from "@/lib/pagination/sharedPagination";
 import { formatPaymentStatus } from "@/lib/payments/formatPaymentStatus";
 import { formatPaymentMetadataError, sanitizePaymentMetadataForUi } from "@/lib/payments/formatWipayError";
-import { isStripeStagingDeployment } from "@/lib/payments/provider";
-import { getWiPayRequestOrigin } from "@/lib/wipay";
-
-function maskValue(value: string | undefined, visible = 4) {
-  if (!value) return "missing";
-  if (value.length <= visible) return value;
-  return `${"*".repeat(Math.max(0, value.length - visible))}${value.slice(-visible)}`;
-}
 
 function extractPaymentType(meta: Record<string, unknown> | null) {
   const type = meta?.payment_type;
@@ -63,18 +55,10 @@ type PaymentRow = {
   metadata_json: Record<string, unknown> | null;
 };
 
-type WipayRow = {
-  id: string;
-  public_id: string;
-  booking_id: string;
-  booking_public_id: string | null;
-  status: string;
-  deposit_amount_cents: number;
-  provider_ref: string | null;
-  provider_transaction_id: string | null;
-  metadata_json: Record<string, unknown> | null;
-  created_at: string;
-};
+type StripeAttemptRow = Pick<
+  PaymentRow,
+  "id" | "public_id" | "booking_id" | "booking_public_id" | "status" | "deposit_amount_cents" | "created_at"
+>;
 
 const PAYMENT_SORT_COLUMNS = [
   "payment",
@@ -172,26 +156,20 @@ export default async function AdminPaymentsPage({
     orderBySql;
 
   const payments = await dbQuery<PaymentRow>(queryText, values);
+  const latestStripeAttempts = await dbQuery<StripeAttemptRow>(
+    `select p.id, p.public_id, p.booking_id, b.public_id as booking_public_id,
+            p.status, p.deposit_amount_cents, p.created_at
+       from payments p
+       join bookings b on b.id = p.booking_id
+      where p.provider = 'STRIPE'
+      order by p.created_at desc, p.public_id desc
+      limit 5`,
+  );
   const visibleCount = Math.max(rowsPerPage, requestedVisible ?? rowsPerPage);
   const visiblePayments = payments.rows.slice(0, visibleCount);
-  const isStripeStaging = isStripeStagingDeployment();
-  const wipayRecent = isStripeStaging
-    ? { rows: [] as WipayRow[] }
-    : await dbQuery<WipayRow>(
-        "select p.id, p.public_id, p.booking_id, b.public_id as booking_public_id, p.status, p.deposit_amount_cents, p.provider_ref, p.provider_transaction_id, p.metadata_json, p.created_at from payments p join bookings b on b.id = p.booking_id where p.provider = 'WIPAY' order by p.created_at desc limit 5",
-      );
-
-  const accountNumber = process.env.WIPAY_ACCOUNT_NUMBER?.trim() ?? "";
-  const originConfigured = Boolean(process.env.WIPAY_ORIGIN?.trim());
-  const envSummary = {
-    env: process.env.WIPAY_ENV ?? "missing",
-    fee: process.env.WIPAY_FEE_STRUCTURE ?? "missing",
-    origin: originConfigured ? getWiPayRequestOrigin() : `${getWiPayRequestOrigin()} (default)`,
-    siteUrl: process.env.SITE_URL ?? "missing",
-    accountNumber: maskValue(accountNumber),
-    accountNumberValid: accountNumber ? /^\d+$/.test(accountNumber) : false,
-    apiKey: process.env.WIPAY_API_KEY ? "set" : "missing",
-  };
+  const stripeTestMode = (process.env.STRIPE_TEST_MODE ?? "").trim().toLowerCase() === "true";
+  const stripeSecretConfigured = Boolean(process.env.STRIPE_SECRET_KEY?.trim());
+  const stripeWebhookConfigured = Boolean(process.env.STRIPE_WEBHOOK_SECRET?.trim());
 
   const exportParams = new URLSearchParams();
   if (q) exportParams.set("q", q);
@@ -295,112 +273,71 @@ export default async function AdminPaymentsPage({
         })}
       </div>
 
-      {isStripeStaging ? (
-        <div className="mt-6 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
+      <div className="mt-6 grid gap-4 lg:grid-cols-2" data-testid="stripe-diagnostics">
+        <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-5">
           <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-            Staging payment provider
-          </p>
-          <p className="mt-2 text-sm font-semibold text-[var(--ccr-text)]">Stripe test mode is active.</p>
-          <p className="mt-1 text-sm text-[var(--ccr-muted)]">
-            New WiPay checkout attempts are disabled on this deployment. Historic WiPay payments remain in the table below.
-          </p>
-        </div>
-      ) : (
-      <div className="mt-6 grid gap-4 lg:grid-cols-[1.1fr_1.9fr]">
-        <div className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-            WiPay Diagnostics
+            Stripe Diagnostics
           </p>
           <h2 className="mt-2 text-lg font-semibold text-[var(--ccr-text)]">Environment</h2>
-          <dl className="mt-3 space-y-2 text-sm text-[var(--ccr-text)]">
-            <div className="flex items-center justify-between gap-3">
-              <dt className="text-[var(--ccr-muted)]">Environment</dt>
-              <dd className="font-semibold">{envSummary.env}</dd>
+          <dl className="mt-4 space-y-3 text-sm">
+            <div className="flex items-center justify-between gap-4">
+              <dt className="text-[var(--ccr-muted)]">Active provider</dt>
+              <dd className="font-semibold text-[var(--ccr-text)]">Stripe</dd>
             </div>
-            <div className="flex items-center justify-between gap-3">
-              <dt className="text-[var(--ccr-muted)]">Fee structure</dt>
-              <dd className="font-semibold">{envSummary.fee}</dd>
-            </div>
-            <div className="flex items-center justify-between gap-3">
-              <dt className="text-[var(--ccr-muted)]">Origin</dt>
-              <dd className="font-semibold">{envSummary.origin}</dd>
-            </div>
-            <div className="flex items-center justify-between gap-3">
-              <dt className="text-[var(--ccr-muted)]">Site URL</dt>
-              <dd className="truncate font-semibold">{envSummary.siteUrl}</dd>
-            </div>
-            <div className="flex items-center justify-between gap-3">
-              <dt className="text-[var(--ccr-muted)]">Account #</dt>
-              <dd className="font-semibold">
-                {envSummary.accountNumber}
-                <span className="ml-2 text-xs text-[var(--ccr-muted)]">
-                  {envSummary.accountNumberValid ? "valid" : "invalid"}
-                </span>
+            <div className="flex items-center justify-between gap-4">
+              <dt className="text-[var(--ccr-muted)]">Mode</dt>
+              <dd className="font-semibold text-[var(--ccr-text)]">
+                {stripeTestMode ? "Test" : "Live"}
               </dd>
             </div>
-            <div className="flex items-center justify-between gap-3">
-              <dt className="text-[var(--ccr-muted)]">API key</dt>
-              <dd className="font-semibold">{envSummary.apiKey}</dd>
+            <div className="flex items-center justify-between gap-4">
+              <dt className="text-[var(--ccr-muted)]">Checkout configuration</dt>
+              <dd className="font-semibold text-[var(--ccr-text)]">
+                {stripeSecretConfigured ? "Configured" : "Missing"}
+              </dd>
+            </div>
+            <div className="flex items-center justify-between gap-4">
+              <dt className="text-[var(--ccr-muted)]">Webhook signing</dt>
+              <dd className="font-semibold text-[var(--ccr-text)]">
+                {stripeWebhookConfigured ? "Configured" : "Missing"}
+              </dd>
             </div>
           </dl>
-        </div>
+        </section>
 
-        <div className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
+        <section className="rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-5">
           <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-            Latest WiPay Attempts
+            Latest Stripe Attempts
           </p>
-          {wipayRecent.rows.length === 0 ? (
-            <p className="mt-4 text-sm text-[var(--ccr-muted)]">No WiPay attempts yet.</p>
-          ) : (
-            <ul className="mt-4 space-y-3 text-sm">
-              {wipayRecent.rows.map((row: WipayRow) => {
-                const formattedError = formatPaymentMetadataError(row.metadata_json);
-                const statusLabel = formatPaymentStatus(row.status, {
-                  paymentType: extractPaymentType(row.metadata_json),
-                });
-                return (
-                  <li key={row.id}>
-                    <Link
-                      href={`/admin/bookings/${row.booking_id}`}
-                      className="block rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-bg)] p-3 transition hover:border-[var(--ccr-accent)] hover:bg-[var(--ccr-surface-soft)]"
-                      title="Open booking"
-                    >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="font-semibold text-[var(--ccr-text)]">
-                        {statusLabel} · {formatJmd(row.deposit_amount_cents)}
-                      </div>
+          {latestStripeAttempts.rows.length > 0 ? (
+            <ul className="mt-4 space-y-3">
+              {latestStripeAttempts.rows.map((payment: StripeAttemptRow) => (
+                <li key={payment.id}>
+                  <Link
+                    href={`/admin/bookings/${payment.booking_id}`}
+                    className="block rounded-xl border border-[var(--ccr-border)] px-4 py-3 transition hover:border-[var(--ccr-accent)]"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <span className="font-semibold text-[var(--ccr-text)]">
+                        {formatPaymentStatus(payment.status)} · {formatJmd(payment.deposit_amount_cents)}
+                      </span>
                       <DateTimeInline
-                        value={row.created_at}
+                        value={payment.created_at}
                         className="text-xs text-[var(--ccr-muted)]"
                       />
                     </div>
-                    <div className="mt-2 text-xs text-[var(--ccr-muted)]">
-                      Booking:{" "}
-                      <span className="font-mono font-semibold text-[var(--ccr-text)]">
-                        {row.booking_public_id ?? row.booking_id}
-                      </span>{" "}
-                      · Order: {row.provider_ref ?? "-"}
-                    </div>
-                    {row.provider_transaction_id ? (
-                      <div className="mt-1 text-xs text-[var(--ccr-muted)]">
-                        Txn: {row.provider_transaction_id}
-                      </div>
-                    ) : null}
-                    {formattedError ? (
-                      <div className="mt-2 space-y-1">
-                        <div className="text-xs font-semibold text-red-300">{formattedError.title}</div>
-                        <div className="text-xs text-[var(--ccr-muted)]">{formattedError.detail}</div>
-                      </div>
-                    ) : null}
-                    </Link>
-                  </li>
-                );
-              })}
+                    <p className="mt-1 text-xs text-[var(--ccr-muted)]">
+                      Payment: {payment.public_id} · Booking: {payment.booking_public_id ?? payment.booking_id}
+                    </p>
+                  </Link>
+                </li>
+              ))}
             </ul>
+          ) : (
+            <p className="mt-4 text-sm text-[var(--ccr-muted)]">No Stripe payment attempts yet.</p>
           )}
-        </div>
+        </section>
       </div>
-      )}
 
       <PaymentsFilters initialQuery={q} />
 
