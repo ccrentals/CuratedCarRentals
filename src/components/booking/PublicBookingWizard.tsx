@@ -428,10 +428,8 @@ export function PublicBookingWizard({
   turnstileDevBypassEnabled = false,
 }: PublicBookingWizardProps) {
   const router = useRouter();
-  const hostedPaymentProvider =
-    process.env.NEXT_PUBLIC_PAYMENT_PROVIDER?.trim().toLowerCase() === "stripe"
-      ? "Stripe"
-      : "WiPay";
+  const hostedPaymentProvider = "Stripe";
+  const checkoutStep = { step: 7, title: hostedPaymentProvider } as const;
   const [requestedVehicleFromQuery, setRequestedVehicleFromQuery] = useState("");
   const draftHydratedRef = useRef(false);
   const preselectedVehicleIdRef = useRef("");

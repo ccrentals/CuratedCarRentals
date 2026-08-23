@@ -91,7 +91,7 @@ export const DOCUMENTATION_CATALOG = [
         id: "booking-flow-diagram",
         title: "Booking Flow Diagram",
         summary: "High-level customer booking and deposit payment flow with return and webhook reconciliation.",
-        searchText: "booking flow deposit payment stripe wipay provider return webhook reconciliation success failed",
+        searchText: "booking flow deposit payment stripe return webhook reconciliation success failed",
       },
       {
         id: "user-stories",
@@ -145,13 +145,13 @@ export const DOCUMENTATION_CATALOG = [
     label: "Integrations & Documents",
     description:
       "Operational reference for payment modes, PDF provider setup, template previews, and email attachment behavior.",
-    topics: ["Stripe and WiPay payment flows", "Resend email flows", "Invoice/Quote providers", "Retention jobs"],
+    topics: ["Stripe payments and legacy WiPay reconciliation", "Resend email flows", "Invoice/Quote providers", "Retention jobs"],
     blocks: [
       {
         id: "payment-integration-matrix",
         title: "Payment Integration Matrix",
-        summary: "Configured Stripe or WiPay checkout, environment rules, and return/webhook reconciliation.",
-        searchText: "stripe wipay payment provider deposit balance full custom return webhook staging production",
+        summary: "Stripe checkout, environment rules, and return/webhook reconciliation, including retained historical WiPay callbacks.",
+        searchText: "stripe payment provider deposit balance full custom return webhook staging production legacy wipay callback",
       },
       {
         id: "invoice-quote-agreement-pipeline",
@@ -190,13 +190,13 @@ export const DOCUMENTATION_CATALOG = [
         id: "system-architecture-diagram",
         title: "System Architecture Diagram",
         summary: "High-level architecture connecting Next.js, Postgres, payments, email, PDF, and cron.",
-        searchText: "system architecture nextjs neon postgres stripe wipay resend pdf cron netlify",
+        searchText: "system architecture nextjs neon postgres stripe resend pdf cron netlify",
       },
       {
         id: "technology-stack",
         title: "Technology Stack",
         summary: "Framework, database, auth, payments, hosting, uploads, and document provider stack.",
-        searchText: "nextjs react tailwind postgres neon clerk roles stripe wipay resend gotenberg pdfmonkey bunny uploadcare netlify",
+        searchText: "nextjs react tailwind postgres neon clerk roles stripe resend gotenberg pdfmonkey bunny uploadcare netlify",
       },
       {
         id: "api-documentation-key-endpoints",
@@ -226,7 +226,7 @@ export const DOCUMENTATION_CATALOG = [
         id: "production-go-live-checklist",
         title: "Production Go-Live Checklist",
         summary: "Deployment, provider, secret, cron, smoke-test, and rollback checks before production launch.",
-        searchText: "go live checklist staging main production deploy dns tls backup stripe wipay resend invoices bunny uploads security rollback",
+        searchText: "go live checklist staging main production deploy dns tls backup stripe resend invoices bunny uploads security rollback",
       },
       {
         id: "developer-workflow-code-documentation",
@@ -330,7 +330,7 @@ export const DOCUMENTATION_CATALOG = [
         id: "troubleshooting-guide",
         title: "Troubleshooting Guide",
         summary: "Common operational failures for DB, CSRF, payments, email, invoices, and cron reminders.",
-        searchText: "troubleshooting database csrf stripe wipay bunny storage resend invoices cron reminders errors",
+        searchText: "troubleshooting database csrf stripe bunny storage resend invoices cron reminders errors",
       },
     ],
   },
@@ -345,7 +345,7 @@ export const DOCUMENTATION_CATALOG = [
         id: "data-processing-diagram",
         title: "Data Processing Diagram",
         summary: "High-level map of customer, payment, email, document, upload, and cron data processors.",
-        searchText: "data processing privacy stripe wipay resend pdf provider bunny uploadcare cron processors",
+        searchText: "data processing privacy stripe resend pdf provider bunny uploadcare cron processors legacy wipay records",
       },
       {
         id: "privacy-policy-template-outline",

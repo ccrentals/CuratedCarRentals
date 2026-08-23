@@ -6,7 +6,7 @@ import {
 } from "@/lib/bookings/bookingDateTime";
 import { hasPublicBookingAccessForRequest } from "@/lib/bookings/publicAccess";
 import { getDbPool } from "@/lib/db";
-import { logError, logWarn } from "@/lib/log";
+import { logError } from "@/lib/log";
 import { formatJmdDecimal } from "@/lib/money";
 import {
   computeBookingPricingFromStoredSnapshot,
@@ -14,11 +14,10 @@ import {
   readPaymentOption,
 } from "@/lib/payments/pricing";
 import { isVehicleUnavailableEntitlementBased } from "@/lib/availability/entitlement";
-import { buildCanonicalSiteUrl, buildRequestParams, getCanonicalSiteUrl, requestHostedPageUrl } from "@/lib/wipay";
 import {
-  assertWiPayAvailable,
+  getPublicPaymentRequestUrl,
   getPublicPaymentProvider,
-  type PaymentProvider,
+  getStripePaymentMode,
 } from "@/lib/payments/provider";
 import { getStripeClient, stripeCheckoutUrls, toStripeJmdMinorUnits } from "@/lib/payments/stripe";
 
@@ -125,44 +124,6 @@ function parseAmount(value: unknown) {
   return null;
 }
 
-function validateEnvironment() {
-  const requiredEnv = [
-    "WIPAY_ACCOUNT_NUMBER",
-    "WIPAY_API_KEY",
-    "WIPAY_ENV",
-    "WIPAY_FEE_STRUCTURE",
-    "SITE_URL",
-  ];
-  for (const key of requiredEnv) {
-    if (!process.env[key]) {
-      logWarn("public_wipay_start_missing_env", { missing: key });
-      return jsonError(400, "env_missing", `Missing ${key}`);
-    }
-  }
-
-  const accountNumber = (process.env.WIPAY_ACCOUNT_NUMBER ?? "").trim();
-  if (!/^\d+$/.test(accountNumber)) {
-    logWarn("public_wipay_start_invalid_account_number");
-    return jsonError(400, "env_invalid", "Invalid WIPAY_ACCOUNT_NUMBER: must be digits only");
-  }
-
-  if (!["sandbox", "live"].includes(process.env.WIPAY_ENV ?? "")) {
-    logWarn("public_wipay_start_invalid_env", { env: process.env.WIPAY_ENV });
-    return jsonError(400, "env_invalid", "Invalid WIPAY_ENV", { env: process.env.WIPAY_ENV });
-  }
-
-  try {
-    getCanonicalSiteUrl();
-  } catch (error) {
-    logWarn("public_wipay_start_invalid_site_url", {
-      message: error instanceof Error ? error.message : "Invalid SITE_URL",
-    });
-    return jsonError(400, "env_invalid", "Invalid SITE_URL");
-  }
-
-  return null;
-}
-
 function buildPricingUpdate(
   pricing: Record<string, unknown> | null,
   paymentOptionSelected: "DEPOSIT" | "FULL" | "CUSTOM" | "NONE",
@@ -197,7 +158,7 @@ async function findExistingAttempt(
   bookingId: string,
   paymentType: "deposit" | "full" | "custom" | "balance",
   amountCents: number,
-  provider: PaymentProvider,
+  provider: "STRIPE",
 ) {
   const result = await client.query<ExistingPaymentAttemptRow>(
     "select id, deposit_amount_cents, created_at, provider_ref, metadata_json from payments where booking_id = $1 and provider = $4 and status = 'INITIATED' and deposit_amount_cents = $2 and coalesce(metadata_json->>'payment_type', 'deposit') = $3 order by created_at desc limit 1",
@@ -346,35 +307,31 @@ async function markPaymentFailed(paymentId: string, reason: string) {
   );
 }
 
-export async function startPublicWipayPayment({
+export async function startPublicPayment({
   request,
   bookingId,
   mode,
   customAmountCents = null,
-  forceProvider,
 }: {
   request: Request;
   bookingId: string;
   mode: PublicPaymentStartMode;
   customAmountCents?: number | null;
-  /** Existing WiPay/mobile callers pass WIPAY; the website-neutral route omits this. */
-  forceProvider?: PaymentProvider;
 }) {
-  const provider = forceProvider ?? getPublicPaymentProvider(request.url);
-  if (provider === "WIPAY") {
-    try {
-      assertWiPayAvailable(request.url);
-    } catch (error) {
-      return jsonError(
-        409,
-        "provider_unavailable",
-        error instanceof Error ? error.message : "WiPay is unavailable for this deployment.",
-      );
-    }
+  const paymentRequestUrl = getPublicPaymentRequestUrl(request);
+  let provider: "STRIPE";
+  try {
+    provider = getPublicPaymentProvider(paymentRequestUrl);
+  } catch (error) {
+    logError("public_payment_provider_configuration_invalid", error, {
+      bookingId,
+    });
+    return jsonError(
+      503,
+      "provider_unavailable",
+      "Online payment is temporarily unavailable. Please try again shortly.",
+    );
   }
-  const envError = provider === "WIPAY" ? validateEnvironment() : null;
-  if (envError) return envError;
-
   const pool = getDbPool();
   const client = await pool.connect();
 
@@ -470,7 +427,7 @@ export async function startPublicWipayPayment({
       );
     }
 
-    if (provider === "STRIPE" && existingAttempt) {
+    if (existingAttempt) {
       const staleSessionId =
         typeof existingAttempt.metadata_json?.checkout_session_id === "string"
           ? existingAttempt.metadata_json.checkout_session_id
@@ -527,7 +484,7 @@ export async function startPublicWipayPayment({
           custom_amount_cents: startDetails.customAmountCents ?? null,
           total_amount: mode === "deposit" ? startDetails.amountCents : undefined,
           total_decimal: startDetails.totalDecimal,
-          env: provider === "STRIPE" ? "stripe_test" : process.env.WIPAY_ENV ?? "sandbox",
+          env: `stripe_${getStripePaymentMode(paymentRequestUrl)}`,
           provider: provider,
           created_at: new Date().toISOString(),
         },
@@ -537,48 +494,40 @@ export async function startPublicWipayPayment({
 
     await client.query("commit");
 
-    let redirectUrl = "";
-    if (provider === "STRIPE") {
-      const stripe = getStripeClient(request.url);
-      const urls = stripeCheckoutUrls();
-      const paymentLabel = startDetails.paymentType === "deposit" ? "Deposit" : startDetails.paymentType === "full" ? "Full payment" : startDetails.paymentType === "balance" ? "Balance payment" : "Custom payment";
-      const vehicleLabel = `${booking.vehicle_year} ${booking.vehicle_make} ${booking.vehicle_model}`.trim();
-      const session = await stripe.checkout.sessions.create({
-        mode: "payment",
-        success_url: urls.successUrl,
-        cancel_url: urls.cancelUrl,
-        customer_email: booking.customer_email || undefined,
-        client_reference_id: paymentId ?? undefined,
-        metadata: { payment_id: paymentId ?? "", booking_id: booking.id, payment_type: startDetails.paymentType },
-        payment_intent_data: { metadata: { payment_id: paymentId ?? "", booking_id: booking.id, payment_type: startDetails.paymentType } },
-        line_items: [{
-          price_data: {
-            currency: "jmd",
-            product_data: {
-              name: `${paymentLabel} — ${vehicleLabel}`,
-            },
-            unit_amount: toStripeJmdMinorUnits(startDetails.amountCents),
+    const stripe = getStripeClient(paymentRequestUrl);
+    const urls = stripeCheckoutUrls();
+    const paymentLabel = startDetails.paymentType === "deposit" ? "Deposit" : startDetails.paymentType === "full" ? "Full payment" : startDetails.paymentType === "balance" ? "Balance payment" : "Custom payment";
+    const vehicleLabel = `${booking.vehicle_year} ${booking.vehicle_make} ${booking.vehicle_model}`.trim();
+    const session = await stripe.checkout.sessions.create({
+      mode: "payment",
+      success_url: urls.successUrl,
+      cancel_url: urls.cancelUrl,
+      customer_email: booking.customer_email || undefined,
+      client_reference_id: paymentId ?? undefined,
+      metadata: { payment_id: paymentId ?? "", booking_id: booking.id, payment_type: startDetails.paymentType },
+      payment_intent_data: { metadata: { payment_id: paymentId ?? "", booking_id: booking.id, payment_type: startDetails.paymentType } },
+      line_items: [{
+        price_data: {
+          currency: "jmd",
+          product_data: {
+            name: `${paymentLabel} — ${vehicleLabel}`,
           },
-          quantity: 1,
-        }],
-      });
-      if (!session.url) throw new Error("Stripe did not return a Checkout URL.");
-      redirectUrl = session.url;
-      await getDbPool().query(
-        "update payments set provider_ref = $1, metadata_json = metadata_json || $2::jsonb, updated_at = now() where id = $3",
-        [session.id, JSON.stringify({ checkout_session_id: session.id, payment_intent_id: typeof session.payment_intent === "string" ? session.payment_intent : null, hosted_page_url: session.url, hosted_page_created_at: new Date().toISOString(), stripe_livemode: session.livemode }), paymentId],
-      );
-    } else {
-      const responseUrl = buildCanonicalSiteUrl("/api/payments/wipay/return");
-      const params = buildRequestParams({ orderId, amountDecimal: startDetails.totalDecimal, responseUrl, name: booking.customer_name, email: booking.customer_email, phone: booking.customer_phone });
-      const wipayResponse = await requestHostedPageUrl(params);
-      redirectUrl = wipayResponse.url;
-    }
+          unit_amount: toStripeJmdMinorUnits(startDetails.amountCents),
+        },
+        quantity: 1,
+      }],
+    });
+    if (!session.url) throw new Error("Stripe did not return a Checkout URL.");
+    const redirectUrl = session.url;
+    await getDbPool().query(
+      "update payments set provider_ref = $1, metadata_json = metadata_json || $2::jsonb, updated_at = now() where id = $3",
+      [session.id, JSON.stringify({ checkout_session_id: session.id, payment_intent_id: typeof session.payment_intent === "string" ? session.payment_intent : null, hosted_page_url: session.url, hosted_page_created_at: new Date().toISOString(), stripe_livemode: session.livemode }), paymentId],
+    );
     if (paymentId) {
       try {
         await updatePaymentHostedPageUrl(paymentId, redirectUrl);
       } catch (metadataError) {
-        logError("public_wipay_start_metadata_update_failed", metadataError, {
+        logError("public_payment_start_metadata_update_failed", metadataError, {
           bookingId,
           paymentId,
           orderId,
@@ -602,7 +551,7 @@ export async function startPublicWipayPayment({
       try {
         await markPaymentFailed(paymentId, reason);
       } catch (dbError) {
-        logError("public_wipay_start_db_update_failed", dbError, {
+        logError("public_payment_start_db_update_failed", dbError, {
           bookingId,
           orderId,
           paymentId,
@@ -610,12 +559,12 @@ export async function startPublicWipayPayment({
       }
     }
 
-    logError("public_wipay_start_failed", error, {
+    logError("public_payment_start_failed", error, {
       bookingId,
       orderId,
       paymentId,
       amountDecimal: totalDecimal,
-      env: process.env.WIPAY_ENV ?? "sandbox",
+      env: `stripe_${getStripePaymentMode(paymentRequestUrl)}`,
       bookingStatus: bookingForLog?.status ?? null,
     });
 

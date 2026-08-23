@@ -35,8 +35,6 @@ Endpoint inventory for Quote / Booking / Payments / Calendar lifecycle, includin
 | `PATCH /api/admin/payments/:paymentId` | action `delete|restore` + metadata + CSRF | `{ ok, summary }` | Admin + CSRF | soft-delete/restore payment rows, recalc booking, audit | `src/app/api/admin/payments/[paymentId]/route.ts` |
 | `POST /api/admin/payments/:paymentId/refund` | reason + CSRF | `{ ok, summary }` | Admin + CSRF | inserts negative `REFUNDED` row, recalc booking, audit | `src/app/api/admin/payments/[paymentId]/refund/route.ts` |
 | `GET /api/admin/payments/export` | query filters | CSV | Admin | export only | `src/app/api/admin/payments/export/route.ts` |
-| `GET /api/admin/payments/diagnostics` | none | `{ ok, env, missing, recent }` | Admin | diagnostics read only | `src/app/api/admin/payments/diagnostics/route.ts` |
-| `POST /api/admin/payments/replay` | one of `bookingId|orderId|transactionId` (+ optional provider context), CSRF | `{ ok, bookingId, paymentId, outcome, note }` or structured error | Admin + CSRF | resolves payment, calls canonical reconcile, writes audit `PAYMENT_WIPAY_REPLAY_REQUESTED` | `src/app/api/admin/payments/replay/route.ts` |
 | `GET /api/admin/blockouts` | query `start,end,vehicleId` | `{ blockouts }` | Staff/Admin | read only | `src/app/api/admin/blockouts/route.ts` |
 | `POST /api/admin/blockouts` | `vehicleId,startAt,endAt,reason,notes,csrfToken` | `{ blockout }` or `{ blockout, autoCancelledBookings }` | Staff/Admin + CSRF | writes blockout; optional supersede cancels blocking bookings + recalc + email + audit | `src/app/api/admin/blockouts/route.ts` |
 | `PATCH /api/admin/blockouts/:id` | blockout fields + CSRF | `{ blockout }` | Staff/Admin + CSRF | updates blockout row | `src/app/api/admin/blockouts/[id]/route.ts` |
@@ -57,17 +55,6 @@ Endpoint inventory for Quote / Booking / Payments / Calendar lifecycle, includin
 | `GET /api/public/insurance` | optional `vehicleId` | `{ insurance }` | Public | read only | `src/app/api/public/insurance/route.ts` |
 | `POST /api/public/promos/validate` | promo validation input | validation payload | Public | read only | `src/app/api/public/promos/validate/route.ts` |
 
-## WiPay Provider Surfaces
-
-| Method + Path | Request shape | Response shape | Auth | Side effects | File |
-|---|---|---|---|---|---|
-| `POST /api/payments/wipay/start` | `bookingId` + CSRF | `{ ok, redirectUrl, paymentId }` | Public+CSRF | inserts `payments(INITIATED)` + rechecks availability | `src/app/api/payments/wipay/start/route.ts` |
-| `POST /api/payments/wipay/full/start` | `bookingId` + CSRF | `{ ok, redirectUrl, paymentId }` | Public+CSRF | inserts full payment intent row | `src/app/api/payments/wipay/full/start/route.ts` |
-| `POST /api/payments/wipay/custom/start` | `bookingId, custom amount` + CSRF | `{ ok, redirectUrl, paymentId }` | Public+CSRF | inserts custom payment intent row | `src/app/api/payments/wipay/custom/start/route.ts` |
-| `POST /api/payments/wipay/balance/start` | `bookingId` + CSRF | `{ ok, redirectUrl, paymentId }` | Public+CSRF | inserts balance payment intent row | `src/app/api/payments/wipay/balance/start/route.ts` |
-| `GET /api/payments/wipay/return` | query: `order_id,transaction_id,status,total,currency,hash,...` | redirect | Public | calls canonical reconciler | `src/app/api/payments/wipay/return/route.ts` |
-| `POST /api/payments/wipay/webhook` | provider payload | `{ ok, bookingId? }` | Provider webhook | dedupe in `webhook_events`; calls canonical reconciler | `src/app/api/payments/wipay/webhook/route.ts` |
-
 ## Cron / Scheduled Endpoints
 
 | Method + Path | Auth | Side effects | File |
@@ -77,8 +64,3 @@ Endpoint inventory for Quote / Booking / Payments / Calendar lifecycle, includin
 | `POST /api/cron/note-emails` | CronSecret | sends scheduled note emails, stamps markers, run logs/audit | `src/app/api/cron/note-emails/route.ts` |
 | `POST /api/cron/maintenance-reminders` | CronSecret | sends maintenance reminders and logs run | `src/app/api/cron/maintenance-reminders/route.ts` |
 | `POST /api/admin/cron/run-*` / `simulate-reminders` | Admin + CSRF | admin wrappers invoke cron surfaces for manual operations | `src/app/api/admin/cron/*` |
-
-## Canonical Internal Engine Entry
-- `src/lib/payments/wipayReconcile.ts` -> `reconcileWiPayPayment(...)`
-  - Called by: return route, webhook route, admin replay route.
-  - Owns payment finalization + entitlement + overlap side effects + high-value payment email sends.
