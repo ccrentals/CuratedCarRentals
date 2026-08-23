@@ -37,8 +37,8 @@ function displayProvider(provider: string, meta: Record<string, unknown> | null)
   return "MANUAL";
 }
 
-function formatPaymentLog(meta: Record<string, unknown> | null) {
-  const sanitized = sanitizePaymentMetadataForUi(meta);
+function formatPaymentLog(meta: Record<string, unknown> | null, provider: string) {
+  const sanitized = sanitizePaymentMetadataForUi(meta, provider);
   return sanitized ? JSON.stringify(sanitized, null, 2) : "";
 }
 
@@ -353,7 +353,7 @@ export default async function AdminPaymentsPage({
           <>
             <div className="divide-y divide-[var(--ccr-border)] md:hidden">
               {visiblePayments.map((payment: PaymentRow) => {
-                const formattedError = formatPaymentMetadataError(payment.metadata_json);
+                const formattedError = formatPaymentMetadataError(payment.metadata_json, payment.provider);
                 const statusLabel = formatPaymentStatus(payment.status, {
                   paymentType: extractPaymentType(payment.metadata_json),
                 });
@@ -426,7 +426,7 @@ export default async function AdminPaymentsPage({
                           )}
                         </div>
                         <PaymentLogToggle
-                          log={formatPaymentLog(payment.metadata_json)}
+                          log={formatPaymentLog(payment.metadata_json, payment.provider)}
                         />
                       </div>
                     ) : null}
@@ -452,7 +452,7 @@ export default async function AdminPaymentsPage({
                 </thead>
                 <tbody>
                   {visiblePayments.map((payment: PaymentRow) => {
-                    const formattedError = formatPaymentMetadataError(payment.metadata_json);
+                    const formattedError = formatPaymentMetadataError(payment.metadata_json, payment.provider);
                     const statusLabel = formatPaymentStatus(payment.status, {
                       paymentType: extractPaymentType(payment.metadata_json),
                     });
@@ -526,7 +526,7 @@ export default async function AdminPaymentsPage({
                             )}
                             <div className="mt-2">
                               <PaymentLogToggle
-                                log={formatPaymentLog(payment.metadata_json)}
+                                log={formatPaymentLog(payment.metadata_json, payment.provider)}
                               />
                             </div>
                           </td>
