@@ -8,7 +8,9 @@ Scope: Operations/Admin browser uploads, Netlify authorization/finalization rout
 
 The direct-upload design removes image bytes from Netlify request bodies and supports raster images through 50 MiB. The reviewed implementation uses authenticated and CSRF-protected authorization/finalization calls, random one-time tokens stored only as SHA-256 hashes, server-generated storage paths, exact origin CORS, separate public/private zones, byte-count and checksum enforcement, transactional finalization, audit records, and orphan cleanup.
 
-Production promotion is approved only after DIU-003 is closed by provisioning a separate production gateway and configuring its URL and shared secret. No staging gateway, zone, secret, or application origin may be reused in production.
+Production promotion is approved. DIU-003 was closed by provisioning a separate production gateway
+and configuring its URL and shared secret. No staging gateway, zone, secret, or application origin
+is reused in production.
 
 ## Findings
 
@@ -40,14 +42,25 @@ Production promotion is approved only after DIU-003 is closed by provisioning a 
 
 - Rule ID: NEXT-SECRETS-001 / NEXT-CORS-001
 - Severity: High
-- Status: Release gate
+- Status: Resolved before release
 - Location: Netlify production environment and Bunny Edge Script inventory
-- Evidence: Production Bunny public/private zones exist, but the audit found no production Edge Script and no production values for `DIRECT_IMAGE_UPLOAD_GATEWAY_URL` or `DIRECT_IMAGE_UPLOAD_GATEWAY_SHARED_SECRET`.
+- Evidence: The initial audit found no production Edge Script or direct-upload variables. A separate
+  production script was subsequently published as Bunny script 86573 at
+  `https://ccr-production-image-upload-gateway-pegxm.bunny.run`. Netlify production now has the
+  matching URL and a write-only shared secret; Bunny holds the matching shared secret and the two
+  production zone keys as environment secrets.
 - Impact: Promoting application code before configuration would fail uploads; reusing staging resources would break environment isolation.
-- Fix: Create a production-only script, configure exact production origins, production zone keys, and a new shared secret; set only the gateway URL and matching shared secret in Netlify.
+- Fix: Created the production-only script, configured the exact production origin, production zone
+  keys, and a new shared secret, then set the URL and matching write-only secret in Netlify.
 - Mitigation: The upload authorization route returns a configuration error when the gateway is
   absent, while CSP rejects a configured non-HTTPS or non-origin gateway value at build time.
 - False positive notes: Existing Bunny storage variables are present and were not exposed or changed by this audit.
+
+Post-provision smoke evidence:
+
+- Production-origin CORS preflight: HTTP 204 with the exact production origin.
+- Staging-origin CORS preflight: HTTP 403 with no wildcard origin.
+- Production-origin PUT without a token: HTTP 400 before token claim or object creation.
 
 ### DIU-004 — Bunny account does not show two-factor authentication
 
