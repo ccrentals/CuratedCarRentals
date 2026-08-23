@@ -926,6 +926,40 @@ create table if not exists audit_logs (
   created_at timestamptz not null default now()
 );
 
+create table if not exists admin_image_upload_sessions (
+  id uuid primary key default gen_random_uuid(),
+  token_hash text not null unique,
+  user_id uuid not null references users(id) on delete cascade,
+  purpose text not null check (
+    purpose in ('VEHICLE_GALLERY', 'LANDING_CONTENT', 'CUSTOMER_LEGAL_ID', 'INSPECTION_IMAGE')
+  ),
+  storage_scope text not null check (storage_scope in ('public', 'private')),
+  entity_type text not null,
+  entity_id uuid,
+  storage_key text not null unique,
+  original_file_name text not null,
+  mime_type text not null,
+  expected_bytes bigint not null check (expected_bytes > 0 and expected_bytes <= 52428800),
+  checksum_sha256 text check (checksum_sha256 is null or checksum_sha256 ~ '^[A-F0-9]{64}$'),
+  received_bytes bigint,
+  received_checksum_sha256 text check (
+    received_checksum_sha256 is null or received_checksum_sha256 ~ '^[A-F0-9]{64}$'
+  ),
+  status text not null default 'AUTHORIZED' check (
+    status in ('AUTHORIZED', 'UPLOADING', 'UPLOADED', 'FINALIZED', 'FAILED', 'CLEANUP_PENDING', 'EXPIRED')
+  ),
+  context_json jsonb not null default '{}'::jsonb,
+  final_result_json jsonb,
+  expires_at timestamptz not null,
+  started_at timestamptz,
+  uploaded_at timestamptz,
+  finalized_at timestamptz,
+  failed_at timestamptz,
+  failure_reason text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists contact_messages (
   id uuid primary key default gen_random_uuid(),
   created_at timestamptz not null default now(),

@@ -183,6 +183,8 @@ export function validateEnv(): EnvValidation {
           "BUNNY_STORAGE_PRIVATE_ZONE",
           "BUNNY_STORAGE_PRIVATE_ACCESS_KEY",
           "BUNNY_PUBLIC_CDN_URL",
+          "DIRECT_IMAGE_UPLOAD_GATEWAY_URL",
+          "DIRECT_IMAGE_UPLOAD_GATEWAY_SHARED_SECRET",
         ])
       : missingKeys(["NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY"]);
   const uploadsInvalid: string[] = [];
@@ -194,6 +196,9 @@ export function validateEnv(): EnvValidation {
   }
   if (fileStorageProvider === "bunny" && !isValidUrl(process.env.BUNNY_PUBLIC_CDN_URL)) {
     uploadsInvalid.push("BUNNY_PUBLIC_CDN_URL must be a valid http(s) URL");
+  }
+  if (fileStorageProvider === "bunny" && !isValidUrl(process.env.DIRECT_IMAGE_UPLOAD_GATEWAY_URL)) {
+    uploadsInvalid.push("DIRECT_IMAGE_UPLOAD_GATEWAY_URL must be a valid http(s) URL");
   }
 
   const cronMissing = missingKeys(["CRON_SECRET"]);
