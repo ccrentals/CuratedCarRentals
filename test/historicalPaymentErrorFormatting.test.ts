@@ -3,13 +3,15 @@ import test from "node:test";
 
 import {
   formatPaymentMetadataError,
-  formatStoredWiPayError,
+  formatStoredHistoricalPaymentError,
   sanitizePaymentMetadataForUi,
-} from "@/lib/payments/formatWipayError";
+} from "@/lib/payments/formatHistoricalPaymentError";
 
-test("formats HTTP 522 HTML responses into a readable WiPay availability message", () => {
+test("formats HTTP 522 HTML responses into a readable historical WiPay availability message", () => {
   assert.deepEqual(
-    formatStoredWiPayError(`HTTP 522: <!DOCTYPE html><html lang="en-US"><head></head><body></body></html>`),
+    formatStoredHistoricalPaymentError(
+      `HTTP 522: <!DOCTYPE html><html lang="en-US"><head></head><body></body></html>`,
+    ),
     {
       title: "WiPay unavailable (HTTP 522)",
       detail: "Provider timeout / upstream unavailable",
@@ -17,9 +19,9 @@ test("formats HTTP 522 HTML responses into a readable WiPay availability message
   );
 });
 
-test("formats timeout errors into a readable timeout message", () => {
+test("formats historical timeout errors into a readable timeout message", () => {
   assert.deepEqual(
-    formatStoredWiPayError(
+    formatStoredHistoricalPaymentError(
       "WiPay request timed out after 12000ms (https://jm.wipayfinancial.com/plugins/payments/request)",
     ),
     {
@@ -29,21 +31,21 @@ test("formats timeout errors into a readable timeout message", () => {
   );
 });
 
-test("formats generic 5xx and 4xx errors into readable request status messages", () => {
-  assert.deepEqual(formatStoredWiPayError("HTTP 500: Internal Server Error"), {
+test("formats historical 5xx and 4xx errors into readable request status messages", () => {
+  assert.deepEqual(formatStoredHistoricalPaymentError("HTTP 500: Internal Server Error"), {
     title: "WiPay unavailable (HTTP 500)",
     detail: "Provider error / upstream unavailable",
   });
 
-  assert.deepEqual(formatStoredWiPayError("HTTP 400: Bad Request"), {
+  assert.deepEqual(formatStoredHistoricalPaymentError("HTTP 400: Bad Request"), {
     title: "WiPay request failed (HTTP 400)",
     detail: "Provider rejected the request",
   });
 });
 
-test("formats HTML error pages without a status into an unexpected page message", () => {
+test("formats historical HTML error pages without a status into an unexpected page message", () => {
   assert.deepEqual(
-    formatStoredWiPayError('<!DOCTYPE html><html class="no-js"><body>Error</body></html>'),
+    formatStoredHistoricalPaymentError('<!DOCTYPE html><html class="no-js"><body>Error</body></html>'),
     {
       title: "WiPay returned an unexpected error page",
       detail: "Provider returned an invalid payment response",
@@ -51,14 +53,14 @@ test("formats HTML error pages without a status into an unexpected page message"
   );
 });
 
-test("falls back to a generic provider error when no known pattern matches", () => {
-  assert.deepEqual(formatStoredWiPayError("Something went wrong upstream"), {
+test("falls back to a generic provider error when no known historical pattern matches", () => {
+  assert.deepEqual(formatStoredHistoricalPaymentError("Something went wrong upstream"), {
     title: "WiPay request failed",
     detail: "Payment provider error",
   });
 });
 
-test("sanitizes payment metadata for UI logs and display", () => {
+test("sanitizes historical payment metadata for UI logs and display", () => {
   const metadata = {
     payment_type: "deposit",
     error: {

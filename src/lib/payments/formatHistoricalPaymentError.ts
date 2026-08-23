@@ -1,4 +1,4 @@
-export type FormattedWiPayError = {
+export type FormattedHistoricalPaymentError = {
   title: string;
   detail: string;
 };
@@ -28,7 +28,9 @@ function extractRawErrorMessage(meta: Record<string, unknown> | null) {
   return "";
 }
 
-export function formatStoredWiPayError(rawMessage?: string | null): FormattedWiPayError | null {
+export function formatStoredHistoricalPaymentError(
+  rawMessage?: string | null,
+): FormattedHistoricalPaymentError | null {
   const message = rawMessage?.trim();
   if (!message) return null;
 
@@ -77,7 +79,7 @@ export function formatStoredWiPayError(rawMessage?: string | null): FormattedWiP
 }
 
 export function formatPaymentMetadataError(meta: Record<string, unknown> | null) {
-  return formatStoredWiPayError(extractRawErrorMessage(meta));
+  return formatStoredHistoricalPaymentError(extractRawErrorMessage(meta));
 }
 
 export function sanitizePaymentMetadataForUi(meta: Record<string, unknown> | null) {
