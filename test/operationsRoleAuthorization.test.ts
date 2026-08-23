@@ -63,6 +63,8 @@ test("signed upload credentials still reject unauthenticated users", async () =>
 test("operations workflow routes use operations-level authorization", async () => {
   const routePaths = [
     "src/app/api/admin/uploads/uploadcare/signature/implementation.ts",
+    "src/app/api/admin/uploads/direct/authorize/route.ts",
+    "src/app/api/admin/uploads/direct/finalize/route.ts",
     "src/app/api/admin/bookings/implementation.ts",
     "src/app/api/admin/bookings/[id]/implementation.ts",
     "src/app/api/admin/bookings/[id]/inspections/implementation.ts",
