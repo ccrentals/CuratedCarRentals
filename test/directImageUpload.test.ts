@@ -55,6 +55,9 @@ test("gateway enforces exact origin, authorized metadata, raster signatures, and
   assert.match(source, /contentLength !== claim\.expectedBytes/);
   assert.match(source, /imageSignatureMatches\(signaturePrefix, claim\.mimeType\)/);
   assert.match(source, /Checksum: claim\.checksum/);
+  assert.match(source, /Image storage authentication is misconfigured/);
+  assert.match(source, /Bunny Storage rejected the upload with HTTP/);
+  assert.match(source, /event: "direct_upload_failed"/);
   assert.match(source, /method: "DELETE"/);
 });
 

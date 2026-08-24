@@ -10,6 +10,18 @@ type Claim = {
   checksum: string | null;
 };
 
+class GatewayUploadError extends Error {
+  clientMessage: string;
+  responseStatus: number;
+
+  constructor(message: string, clientMessage: string, responseStatus = 502) {
+    super(message);
+    this.name = "GatewayUploadError";
+    this.clientMessage = clientMessage;
+    this.responseStatus = responseStatus;
+  }
+}
+
 const SIGNATURE_BYTES = 12;
 const HEIF_BRANDS = new Set(["heic", "heix", "hevc", "hevx", "mif1", "msf1"]);
 
@@ -91,6 +103,26 @@ function storageObjectUrl(scope: "public" | "private", storageKey: string) {
   return `${endpoint}/${encodeURIComponent(zone)}/${storageKey.split("/").map(encodeURIComponent).join("/")}`;
 }
 
+function compactResponseText(value: string) {
+  return value.replace(/[\r\n\t]+/g, " ").replace(/\s{2,}/g, " ").trim().slice(0, 200);
+}
+
+async function bunnyStorageFailure(response: Response) {
+  const detail = compactResponseText(await response.text().catch(() => ""));
+  const diagnostic = `Bunny Storage rejected the upload with HTTP ${response.status}${detail ? `: ${detail}` : "."}`;
+  if (response.status === 401 || response.status === 403) {
+    return new GatewayUploadError(
+      diagnostic,
+      "Image storage authentication is misconfigured. Contact an administrator.",
+      503,
+    );
+  }
+  return new GatewayUploadError(
+    diagnostic,
+    "Image storage rejected the upload. Contact an administrator.",
+  );
+}
+
 async function handle(request: Request) {
   const origin = allowedOrigin(request);
   if (!origin) return new Response("Origin not allowed", { status: 403 });
@@ -159,7 +191,13 @@ async function handle(request: Request) {
       },
       body: countedBody,
     });
-    if (!bunnyResponse.ok || receivedBytes !== claim.expectedBytes) throw new Error(`Bunny upload failed with ${bunnyResponse.status}.`);
+    if (!bunnyResponse.ok) throw await bunnyStorageFailure(bunnyResponse);
+    if (receivedBytes !== claim.expectedBytes) {
+      throw new GatewayUploadError(
+        `Gateway received ${receivedBytes} of ${claim.expectedBytes} authorized bytes.`,
+        "The image upload ended before all bytes were stored. Please retry.",
+      );
+    }
     const resultResponse = await callback("/api/internal/uploads/direct/result", {
       uploadId: claim.uploadId,
       ok: true,
@@ -169,13 +207,26 @@ async function handle(request: Request) {
     if (!resultResponse.ok) throw new Error("Unable to record upload completion.");
     return Response.json({ ok: true, uploadId: claim.uploadId }, { status: 201, headers: corsHeaders(origin) });
   } catch (error) {
+    const gatewayError = error instanceof GatewayUploadError ? error : null;
+    const failureReason = error instanceof Error ? error.message : "Gateway upload failed.";
+    console.error(JSON.stringify({
+      event: "direct_upload_failed",
+      uploadId: claim.uploadId,
+      scope: claim.scope,
+      expectedBytes: claim.expectedBytes,
+      receivedBytes,
+      failureReason,
+    }));
     await fetch(storageObjectUrl(claim.scope, claim.storageKey), { method: "DELETE", headers: { AccessKey: accessKey } }).catch(() => null);
     await callback("/api/internal/uploads/direct/result", {
       uploadId: claim.uploadId,
       ok: false,
-      failureReason: error instanceof Error ? error.message : "Gateway upload failed.",
+      failureReason,
     }).catch(() => null);
-    return new Response("Unable to store image", { status: 502, headers: corsHeaders(origin) });
+    return new Response(gatewayError?.clientMessage ?? "Unable to store image", {
+      status: gatewayError?.responseStatus ?? 502,
+      headers: corsHeaders(origin),
+    });
   }
 }
 
