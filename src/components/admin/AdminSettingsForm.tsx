@@ -81,8 +81,8 @@ const TOGGLE_FIELDS: ToggleField[] = [
   },
   {
     key: "sendPickupReminder",
-    label: "Send pickup-day email",
-    description: "Enable automatic customer reminders on pickup day.",
+    label: "Send day-before pickup reminder",
+    description: "Enable the automatic customer reminder one calendar day before pickup.",
   },
   {
     key: "sendDropoffReminder",

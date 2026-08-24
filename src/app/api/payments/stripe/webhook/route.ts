@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { getDbPool } from "@/lib/db";
+import { getPublicPaymentRequestUrl } from "@/lib/payments/provider";
 import { getStripeClient } from "@/lib/payments/stripe";
 import { reconcileStripeCheckoutSession } from "@/lib/payments/stripeReconcile";
-import { getPublicPaymentRequestUrl } from "@/lib/payments/provider";
 
 export async function POST(request: Request) {
-  const signature = request.headers.get("stripe-signature");
   const paymentRequestUrl = getPublicPaymentRequestUrl(request);
+  const signature = request.headers.get("stripe-signature");
   if (!signature) return new Response("Missing Stripe signature", { status: 400 });
   let event;
   try { event = getStripeClient(paymentRequestUrl).webhooks.constructEvent(await request.text(), signature, process.env.STRIPE_WEBHOOK_SECRET!.trim()); }
