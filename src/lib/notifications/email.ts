@@ -612,6 +612,7 @@ async function buildOptionalInvoiceEmailAttachment(
   if (attachments && attachments.length > 0) {
     return {
       attachments,
+      invoiceAttached: true,
       noticeHtml:
         '<p style="font-size:12px; color:#64748b;">The attached invoice includes your live payment ledger.</p>',
     };
@@ -624,6 +625,7 @@ async function buildOptionalInvoiceEmailAttachment(
 
   return {
     attachments: undefined,
+    invoiceAttached: false,
     noticeHtml:
       '<p style="font-size:12px; color:#64748b;">Your invoice attachment is temporarily unavailable, but your booking and payment details are still available online.</p>',
   };
@@ -1057,7 +1059,7 @@ export async function sendBookingCreatedEmail(input: {
   `;
 
   const agreementAttachment = isInternal
-    ? { attachments: [] as EmailDispatchAttachment[], noticeHtml: "" }
+    ? { attachments: [] as EmailDispatchAttachment[], invoiceAttached: false, noticeHtml: "" }
     : await buildOptionalRentalAgreementEmailAttachment(
         {
           bookingId: input.bookingId,
@@ -1233,7 +1235,7 @@ export async function sendDepositReceiptEmail(input: {
   `;
 
   const invoiceAttachment = isInternal
-    ? { attachments: [] as EmailDispatchAttachment[], noticeHtml: "" }
+    ? { attachments: [] as EmailDispatchAttachment[], invoiceAttached: false, noticeHtml: "" }
     : await buildOptionalInvoiceEmailAttachment(
         {
           bookingId: input.bookingId,
@@ -1324,7 +1326,7 @@ export async function sendPaymentUpdateEmail(input: {
   recipientType?: NotificationRecipientType;
   recipientEmail?: string;
   dispatch?: EmailDispatchOverrides;
-}): Promise<SendEmailResult> {
+}): Promise<SendEmailResult & { invoiceAttached: boolean }> {
   const recipientType = input.recipientType ?? "customer";
   const isInternal = recipientType === "internal";
   const recipientEmail = isInternal ? input.recipientEmail ?? input.customerEmail : input.customerEmail;
@@ -1423,7 +1425,7 @@ export async function sendPaymentUpdateEmail(input: {
       <p style="margin-top: 16px;">
         ${renderPrimaryEmailButton("View Booking", bookingLink)}
         <span style="display:inline-block; width:12px;"></span>
-        ${renderPrimaryEmailButton("Pay Balance", balanceLink, { accent: "secondary" })}
+        ${renderPrimaryEmailButton("Make a Payment", balanceLink, { accent: "secondary" })}
         <span style="display:inline-block; width:12px;"></span>
         ${renderPrimaryEmailButton("View Invoice", invoiceLink, { accent: "secondary" })}
       </p>
@@ -1434,7 +1436,7 @@ export async function sendPaymentUpdateEmail(input: {
   `;
 
   const invoiceAttachment = isInternal
-    ? { attachments: [] as EmailDispatchAttachment[], noticeHtml: "" }
+    ? { attachments: [] as EmailDispatchAttachment[], invoiceAttached: false, noticeHtml: "" }
     : await buildOptionalInvoiceEmailAttachment(
         {
           bookingId: input.bookingId,
@@ -1469,11 +1471,11 @@ export async function sendPaymentUpdateEmail(input: {
         invoiceAttachment.noticeHtml,
       );
 
-  return sendResendEmail({
+  const result = await sendResendEmail({
     to: recipientEmail,
     subject: isInternal
       ? `[Internal] Payment updated — ${summary.bookingReference}`
-      : "Payment update — balance outstanding",
+      : "Payment received — balance outstanding",
     html: htmlWithAttachmentNotice,
     attachments: invoiceAttachment.attachments,
     dispatch: withDispatchContext(
@@ -1500,6 +1502,7 @@ export async function sendPaymentUpdateEmail(input: {
       input.dispatch,
     ),
   });
+  return { ...result, invoiceAttached: invoiceAttachment.invoiceAttached ?? false };
 }
 
 export async function sendPaymentCompleteEmail(input: {
@@ -1523,7 +1526,7 @@ export async function sendPaymentCompleteEmail(input: {
   recipientType?: NotificationRecipientType;
   recipientEmail?: string;
   dispatch?: EmailDispatchOverrides;
-}): Promise<SendEmailResult> {
+}): Promise<SendEmailResult & { invoiceAttached: boolean }> {
   const recipientType = input.recipientType ?? "customer";
   const isInternal = recipientType === "internal";
   const recipientEmail = isInternal ? input.recipientEmail ?? input.customerEmail : input.customerEmail;
@@ -1628,7 +1631,7 @@ export async function sendPaymentCompleteEmail(input: {
   `;
 
   const invoiceAttachment = isInternal
-    ? { attachments: [] as EmailDispatchAttachment[], noticeHtml: "" }
+    ? { attachments: [] as EmailDispatchAttachment[], invoiceAttached: false, noticeHtml: "" }
     : await buildOptionalInvoiceEmailAttachment(
         {
           bookingId: input.bookingId,
@@ -1663,7 +1666,7 @@ export async function sendPaymentCompleteEmail(input: {
         invoiceAttachment.noticeHtml,
       );
 
-  return sendResendEmail({
+  const result = await sendResendEmail({
     to: recipientEmail,
     subject: isInternal
       ? `[Internal] Payment complete — ${summary.bookingReference}`
@@ -1694,6 +1697,96 @@ export async function sendPaymentCompleteEmail(input: {
       input.dispatch,
     ),
   });
+  return { ...result, invoiceAttached: invoiceAttachment.invoiceAttached ?? false };
+}
+
+export async function sendUpdatedInvoiceEmail(input: {
+  bookingId: string;
+  customerEmail: string;
+  customerName: string;
+  customerPhone?: string;
+  vehicleLabel: string;
+  startDate: string;
+  endDate: string;
+  pickupLocation: string;
+  dailyRate: number;
+  deposit: number;
+  total: number;
+  paidToDate: number;
+  balanceDue: number;
+  paymentReference?: string;
+  dispatch?: EmailDispatchOverrides;
+}): Promise<SendEmailResult & { invoiceAttached: boolean }> {
+  const summary = await resolveEmailFinancialSummary({
+    bookingId: input.bookingId,
+    total: input.total,
+    deposit: input.deposit,
+    paidToDate: input.paidToDate,
+    balanceDue: input.balanceDue,
+  });
+  const invoiceLink = await buildPublicBookingEmailLink(input.bookingId, "invoice");
+  const invoiceAttachment = await buildOptionalInvoiceEmailAttachment(
+    {
+      bookingId: input.bookingId,
+      bookingPublicId: summary.bookingReference,
+      bookingStatus: "CONFIRMED",
+      startDate: input.startDate,
+      endDate: input.endDate,
+      pickupLocation: summary.pickupLocationDisplay || input.pickupLocation,
+      customerName: input.customerName,
+      customerEmail: input.customerEmail,
+      customerPhone: input.customerPhone ?? "",
+      vehicleMake: input.vehicleLabel,
+      vehicleModel: "",
+      vehicleYear: 0,
+      dailyRate: input.dailyRate,
+      deposit: summary.depositRequired,
+      insuranceTotal: summary.insuranceTotal,
+      promoCode: summary.promoCode,
+      promoDiscount: summary.promoDiscount,
+      total: summary.subtotal,
+      paidToDate: summary.paidToDate,
+      balanceDue: summary.balanceDue,
+      payments: [],
+    },
+    "updated_invoice",
+  );
+  if (!invoiceAttachment.invoiceAttached || !invoiceAttachment.attachments) {
+    return { ok: false, error: "Invoice attachment is not available yet.", invoiceAttached: false };
+  }
+  const result = await sendResendEmail({
+    to: input.customerEmail,
+    subject: `Updated invoice — ${summary.bookingReference}`,
+    html: `
+      <div style="font-family:Arial,sans-serif;color:#0f172a;line-height:1.5">
+        <h2>Updated invoice</h2>
+        <p>Hi ${input.customerName},</p>
+        <p>Your updated invoice for booking ${summary.bookingReference} is now available and attached.</p>
+        <p><strong>Paid to date:</strong> ${formatAmount(summary.paidToDate)}</p>
+        <p><strong>Balance due:</strong> ${formatAmount(summary.balanceDue)}</p>
+        <p>${renderPrimaryEmailButton("View Invoice", invoiceLink, { accent: "secondary" })}</p>
+      </div>`,
+    attachments: invoiceAttachment.attachments,
+    dispatch: withDispatchContext(
+      {
+        entityType: "booking",
+        entityId: input.bookingId,
+        entityPublicId: summary.bookingReference,
+        emailType: "updated_invoice",
+        recipientName: input.customerName,
+        triggerSource: "cron",
+        relatedTransactionType: "payment",
+        manualResendAllowed: true,
+        metadata: {
+          bookingId: input.bookingId,
+          bookingReference: summary.bookingReference,
+          paymentReference: input.paymentReference ?? null,
+        },
+      },
+      input.dispatch,
+    ),
+  });
+  return { ...result, invoiceAttached: true };
 }
 
 export async function sendInternalBookingCreatedNotifications(input: {
@@ -2508,10 +2601,12 @@ export async function sendPickupReminderEmail(input: {
         dropoffLocation: summary.dropoffLocationDisplay || input.pickupLocation,
       })}
       <hr />
-      <p><strong>Outstanding balance:</strong> ${formatAmount(input.balanceDue)}</p>
+      <p><strong>Paid to date:</strong> ${formatAmount(summary.paidToDate)}</p>
+      <p><strong>Balance due:</strong> ${formatAmount(summary.balanceDue)}</p>
+      ${summary.balanceDue > 0 ? "<p>You may pay part of the balance or the full remaining amount using the secure payment page.</p>" : "<p><strong>Paid in full</strong></p>"}
       <p style="margin-top: 16px;">
         <a href="${bookingLink}" style="background:#1f2d4d; color:#fff; padding:10px 16px; border-radius:8px; text-decoration:none;">View Booking</a>
-        <a href="${balanceLink}" style="margin-left:12px; background:#e2a100; color:#111827; padding:10px 16px; border-radius:8px; text-decoration:none;">Pay Balance</a>
+        ${summary.balanceDue > 0 ? `<a href="${balanceLink}" style="margin-left:12px; background:#e2a100; color:#111827; padding:10px 16px; border-radius:8px; text-decoration:none;">Make a Payment</a>` : ""}
       </p>
       ${policyHtml()}
       <p style="font-size:12px; color:#64748b;">Need help? Reply to this email.</p>
@@ -2520,7 +2615,7 @@ export async function sendPickupReminderEmail(input: {
 
   return sendResendEmail({
     to: input.customerEmail,
-    subject: "Pickup reminder — balance due",
+    subject: summary.balanceDue > 0 ? "Pickup reminder — balance due" : "Pickup reminder",
     html,
     dispatch: withDispatchContext(
       {

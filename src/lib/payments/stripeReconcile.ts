@@ -5,14 +5,13 @@ import { dbQuery, getDbPool } from "@/lib/db";
 import { maybeEntitleBookingAfterPayment } from "@/lib/availability/entitlement";
 import { logError } from "@/lib/log";
 import {
-  sendDepositReceiptEmail,
-  sendInternalDepositReceiptNotifications,
   sendInternalPaymentCompleteNotifications,
+  sendInternalPaymentUpdateNotifications,
   sendPaymentCompleteEmail,
+  sendPaymentUpdateEmail,
 } from "@/lib/notifications/email";
 import { computeDedupeKey, markDedupeResult, retryFailedDedupe, tryAcquireDedupe } from "@/lib/notifications/dedupe";
 import { recalculateBookingPayments } from "@/lib/payments/recalculateBooking";
-import { readPromoPricingFields } from "@/lib/payments/pricing";
 import { getStripePaymentMode } from "@/lib/payments/provider";
 import { toStripeJmdMinorUnits } from "@/lib/payments/stripe";
 
@@ -36,8 +35,7 @@ async function sendStripePaymentConfirmationEmails(input: {
   summary: Awaited<ReturnType<typeof recalculateBookingPayments>>;
 }) {
   const stripeMode = getStripePaymentMode();
-  const paymentType = String(input.session.metadata?.payment_type ?? input.payment.metadata_json?.payment_type ?? "deposit").toLowerCase();
-  const eventType = paymentType === "deposit" ? "DEPOSIT_RECEIPT" : "PAYMENT_COMPLETE";
+  const eventType = input.summary.balanceDue > 0 ? "PAYMENT_UPDATE" : "PAYMENT_COMPLETE";
   const dedupeKey = computeDedupeKey({
     entityType: "booking",
     entityId: input.payment.booking_id,
@@ -78,7 +76,6 @@ async function sendStripePaymentConfirmationEmails(input: {
     if (!bookingResult.rowCount) throw new Error("Booking not found while sending Stripe payment receipt.");
 
     const booking = bookingResult.rows[0];
-    const { promoCode, promoDiscount } = readPromoPricingFields(booking.pricing_json);
     const common = {
       bookingId: booking.id,
       customerEmail: booking.customer_email,
@@ -106,13 +103,17 @@ async function sendStripePaymentConfirmationEmails(input: {
       },
     };
 
-    const customerResult = paymentType === "deposit"
-      ? await sendDepositReceiptEmail({ ...common, promoCode, promoDiscount })
+    const customerResult = input.summary.balanceDue > 0
+      ? await sendPaymentUpdateEmail({ ...common, total: input.summary.totalAmount, balanceDue: input.summary.balanceDue })
       : await sendPaymentCompleteEmail({ ...common, total: input.summary.totalAmount, balanceDue: input.summary.balanceDue });
     if (!customerResult.ok) throw new Error(customerResult.error ?? "Stripe payment receipt email failed.");
 
-    if (paymentType === "deposit") {
-      await sendInternalDepositReceiptNotifications({ ...common, promoCode, promoDiscount });
+    if (input.summary.balanceDue > 0) {
+      await sendInternalPaymentUpdateNotifications({
+        ...common,
+        total: input.summary.totalAmount,
+        balanceDue: input.summary.balanceDue,
+      });
     } else {
       await sendInternalPaymentCompleteNotifications({
         ...common,
@@ -122,9 +123,30 @@ async function sendStripePaymentConfirmationEmails(input: {
     }
 
     await markDedupeResult({ dedupeKey, status: "SENT", provider: "resend" });
+    const now = new Date();
+    const invoiceMetadata = customerResult.invoiceAttached
+      ? {
+          receipt_email_sent: true,
+          invoice_delivery_status: "sent",
+          invoice_email_sent: true,
+          invoice_sent_at: now.toISOString(),
+          invoice_retry_count: 0,
+          invoice_next_retry_at: null,
+          invoice_last_error: null,
+          invoice_retry_exhausted: false,
+        }
+      : {
+          receipt_email_sent: true,
+          invoice_delivery_status: "pending",
+          invoice_email_sent: false,
+          invoice_retry_count: 0,
+          invoice_next_retry_at: new Date(now.getTime() + 15 * 60 * 1000).toISOString(),
+          invoice_last_error: "Invoice attachment was unavailable during payment acknowledgement.",
+          invoice_retry_exhausted: false,
+        };
     await dbQuery(
-      "update payments set metadata_json = jsonb_set(metadata_json, '{receipt_email_sent}', 'true'::jsonb, true), updated_at = now() where id = $1",
-      [input.payment.id],
+      "update payments set metadata_json = coalesce(metadata_json, '{}'::jsonb) || $2::jsonb, updated_at = now() where id = $1",
+      [input.payment.id, JSON.stringify(invoiceMetadata)],
     );
   } catch (error) {
     await markDedupeResult({
