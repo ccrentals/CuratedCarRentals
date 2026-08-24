@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { PayBalanceButton } from "@/components/payments/PayBalanceButton";
+import { BalancePaymentOptions } from "@/components/payments/BalancePaymentOptions";
 import { hasPublicBookingAccessForPage } from "@/lib/bookings/publicAccess";
 import { DateRangeArrow } from "@/components/shared/DateRangeArrow";
 import { readBookingOverrideInfo } from "@/lib/bookings/holds";
@@ -64,14 +64,20 @@ export default async function BookingBalancePage({
 
   const pricing = booking.pricing_json ?? {};
   const overrideInfo = readBookingOverrideInfo(pricing);
-  const isCancelled = String(booking.status).toUpperCase() === "CANCELLED";
+  const bookingStatus = String(booking.status).toUpperCase();
+  const isCancelled = bookingStatus === "CANCELLED";
+  const isReturned = bookingStatus === "RETURNED";
 
-  if (isCancelled) {
+  if (isCancelled || isReturned) {
     return (
       <div className="mx-auto w-full max-w-3xl px-6 py-12">
         <div className="rounded-3xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-8 shadow-sm">
           <h1 className="text-3xl font-bold text-[var(--ccr-text)]">Balance payment unavailable</h1>
-          <p className="mt-2 text-sm text-[var(--ccr-muted)]">This booking is no longer active.</p>
+          <p className="mt-2 text-sm text-[var(--ccr-muted)]">
+            {isReturned
+              ? "This rental has been returned and can no longer be paid online."
+              : "This booking is no longer active."}
+          </p>
           {overrideInfo.isOverridden ? (
             <div className="mt-4 rounded-xl border border-red-300/40 bg-red-500/15 p-4 text-sm text-red-100">
               <p className="font-semibold">Overridden</p>
@@ -100,9 +106,9 @@ export default async function BookingBalancePage({
   return (
     <div className="mx-auto w-full max-w-3xl px-6 py-12">
       <div className="rounded-3xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-8 shadow-sm">
-        <h1 className="text-3xl font-bold text-[var(--ccr-text)]">Pay Balance</h1>
+        <h1 className="text-3xl font-bold text-[var(--ccr-text)]">Make a Payment</h1>
         <p className="mt-2 text-sm text-[var(--ccr-muted)]">
-          Pay the remaining balance to complete your booking.
+          Pay part of your balance now or pay the full remaining amount.
         </p>
 
         <div className="mt-4 space-y-2 text-sm text-[var(--ccr-muted)]">
@@ -155,10 +161,10 @@ export default async function BookingBalancePage({
 
         <div className="mt-6 flex flex-wrap gap-3">
           {summary.balanceDue > 0 ? (
-            <PayBalanceButton bookingId={booking.id} />
+            <BalancePaymentOptions bookingId={booking.id} balanceDue={summary.balanceDue} />
           ) : (
             <span className="rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)]">
-              Balance paid in full
+              Paid in full
             </span>
           )}
           <Link

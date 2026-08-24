@@ -28,6 +28,13 @@ function extractPaymentType(meta: Record<string, unknown> | null) {
   return typeof type === "string" ? type : null;
 }
 
+function invoiceDeliveryLabel(meta: Record<string, unknown> | null) {
+  const status = typeof meta?.invoice_delivery_status === "string" ? meta.invoice_delivery_status : "";
+  if (status === "failed") return "Invoice failed — manual resend required";
+  if (status === "pending") return "Invoice pending automatic retry";
+  return null;
+}
+
 function displayProvider(provider: string, meta: Record<string, unknown> | null) {
   if (provider !== "MANUAL") return provider;
   const label = meta?.method_label;
@@ -358,6 +365,7 @@ export default async function AdminPaymentsPage({
                   paymentType: extractPaymentType(payment.metadata_json),
                 });
                 const providerLabel = displayProvider(payment.provider, payment.metadata_json);
+                const invoiceLabel = invoiceDeliveryLabel(payment.metadata_json);
                 const bookingHref = `/admin/bookings/${payment.booking_id}`;
                 return (
                   <article
@@ -411,6 +419,7 @@ export default async function AdminPaymentsPage({
                       <div>
                         <dt className="uppercase tracking-wide text-[var(--ccr-muted)]">Status</dt>
                         <dd className="font-semibold text-[var(--ccr-text)]">{statusLabel}</dd>
+                        {invoiceLabel ? <dd className="mt-1 text-amber-300">{invoiceLabel}</dd> : null}
                       </div>
                     </dl>
                     {canViewPaymentErrors ? (
@@ -457,6 +466,7 @@ export default async function AdminPaymentsPage({
                       paymentType: extractPaymentType(payment.metadata_json),
                     });
                     const providerLabel = displayProvider(payment.provider, payment.metadata_json);
+                    const invoiceLabel = invoiceDeliveryLabel(payment.metadata_json);
                     const bookingHref = `/admin/bookings/${payment.booking_id}`;
                     return (
                       <tr
@@ -502,6 +512,7 @@ export default async function AdminPaymentsPage({
                         <td className="px-4 py-3 text-[var(--ccr-text)]">
                           <Link href={bookingHref} className="block">
                             {statusLabel}
+                            {invoiceLabel ? <span className="mt-1 block text-xs text-amber-300">{invoiceLabel}</span> : null}
                           </Link>
                         </td>
                         <td className="px-4 py-3 text-[var(--ccr-text)]">

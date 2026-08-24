@@ -22,6 +22,7 @@ type ExportRow = {
   customer_email: string;
   vehicle_make: string;
   vehicle_model: string;
+  metadata_json: Record<string, unknown> | null;
 };
 
 const PAYMENT_SORT_COLUMNS = [
@@ -92,7 +93,7 @@ export async function GET(request: Request) {
                   : `order by p.created_at ${directionSql}, p.public_id ${directionSql}`;
 
   const queryText =
-    "select p.id, p.public_id, p.booking_id, b.public_id as booking_public_id, p.provider, p.status, p.deposit_amount_cents, p.created_at, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model from payments p join bookings b on b.id = p.booking_id join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id " +
+    "select p.id, p.public_id, p.booking_id, b.public_id as booking_public_id, p.provider, p.status, p.deposit_amount_cents, p.created_at, p.metadata_json, c.full_name as customer_name, c.email as customer_email, v.make as vehicle_make, v.model as vehicle_model from payments p join bookings b on b.id = p.booking_id join customers c on c.id = b.customer_id join vehicles v on v.id = b.vehicle_id " +
     (conditions.length ? `where ${conditions.join(" and ")} ` : "") +
     orderBySql;
 
@@ -105,7 +106,9 @@ export async function GET(request: Request) {
     "customer_email",
     "vehicle",
     "provider",
+    "payment_type",
     "status",
+    "invoice_delivery_status",
     "amount",
     "created_at",
   ];
@@ -119,7 +122,9 @@ export async function GET(request: Request) {
       row.customer_email,
       `${row.vehicle_make} ${row.vehicle_model}`,
       row.provider,
+      String(row.metadata_json?.payment_type ?? "deposit"),
       row.status,
+      String(row.metadata_json?.invoice_delivery_status ?? ""),
       String(row.deposit_amount_cents),
       row.created_at,
     ].map((value) => csvEscape(String(value ?? "")));

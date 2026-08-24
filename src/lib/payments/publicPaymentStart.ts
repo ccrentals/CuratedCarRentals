@@ -24,7 +24,8 @@ import { getStripeClient, stripeCheckoutUrls, toStripeJmdMinorUnits } from "@/li
 const ACTIVE_PAYMENT_WINDOW_MS = 30 * 60 * 1000;
 const PENDING_PAYMENT_WINDOW_MS = 2 * 60 * 1000;
 
-type PublicPaymentStartMode = "deposit" | "full" | "custom" | "balance";
+export type PublicPaymentStartMode = "deposit" | "full" | "custom" | "partial" | "balance";
+type PaymentType = "deposit" | "full" | "custom" | "partial_balance" | "balance";
 
 type PublicPaymentStartBookingRow = {
   id: string;
@@ -52,6 +53,8 @@ type ExistingPaymentAttemptRow = {
   provider_ref?: string | null;
   metadata_json: Record<string, unknown> | null;
 };
+
+export const MINIMUM_PARTIAL_PAYMENT_JMD = 1_000;
 
 type Queryable = {
   query: <T>(text: string, params?: unknown[]) => Promise<{ rows: T[]; rowCount: number }>;
@@ -156,21 +159,58 @@ async function loadLockedBooking(client: Queryable, bookingId: string) {
 async function findExistingAttempt(
   client: Queryable,
   bookingId: string,
-  paymentType: "deposit" | "full" | "custom" | "balance",
-  amountCents: number,
   provider: "STRIPE",
 ) {
   const result = await client.query<ExistingPaymentAttemptRow>(
-    "select id, deposit_amount_cents, created_at, provider_ref, metadata_json from payments where booking_id = $1 and provider = $4 and status = 'INITIATED' and deposit_amount_cents = $2 and coalesce(metadata_json->>'payment_type', 'deposit') = $3 order by created_at desc limit 1",
-    [bookingId, amountCents, paymentType, provider],
+    "select id, deposit_amount_cents, created_at, provider_ref, metadata_json from payments where booking_id = $1 and provider = $2 and status = 'INITIATED' order by created_at desc limit 1 for update",
+    [bookingId, provider],
   );
   return result.rows[0] ?? null;
+}
+
+export function paymentAttemptMatches(
+  attempt: ExistingPaymentAttemptRow,
+  paymentType: PaymentType,
+  amountCents: number,
+) {
+  return (
+    attempt.deposit_amount_cents === amountCents &&
+    (attempt.metadata_json?.payment_type ?? "deposit") === paymentType
+  );
+}
+
+export function stripeCheckoutIdempotencyKey(paymentId: string) {
+  return `ccr_checkout_${paymentId}`;
+}
+
+export function isBookingPayableStatus(status: unknown) {
+  return !["CANCELLED", "RETURNED"].includes(String(status ?? "").trim().toUpperCase());
+}
+
+export function validatePartialPaymentAmount(amountJmd: unknown, balanceDue: number) {
+  if (typeof amountJmd !== "number" || !Number.isFinite(amountJmd) || !Number.isInteger(amountJmd)) {
+    return { ok: false, code: "invalid_amount", error: "Enter a whole JMD amount without cents." } as const;
+  }
+  if (balanceDue <= 0) {
+    return { ok: false, code: "already_paid", error: "Balance already paid" } as const;
+  }
+  if (amountJmd > balanceDue) {
+    return { ok: false, code: "stale_balance", error: "The payment amount exceeds the latest balance due." } as const;
+  }
+  if (amountJmd === balanceDue) {
+    return { ok: false, code: "pay_full_balance", error: "Use Pay Full Balance to pay the entire amount due." } as const;
+  }
+  if (amountJmd < MINIMUM_PARTIAL_PAYMENT_JMD) {
+    return { ok: false, code: "below_minimum", error: "Partial payments must be at least J$1,000." } as const;
+  }
+  return { ok: true, amountJmd } as const;
 }
 
 function buildStartDetails(
   mode: PublicPaymentStartMode,
   booking: PublicPaymentStartBookingRow,
   requestedCustomAmount: number | null,
+  requestedPartialAmount: number | null,
   netPaidToDate: number,
 ) {
   const pricing = booking.pricing_json ?? {};
@@ -270,6 +310,39 @@ function buildStartDetails(
     } as const;
   }
 
+  if (mode === "partial") {
+    const summary = computeBookingPricingFromStoredSnapshot({
+      bookingId: booking.id,
+      bookingStatus: booking.status,
+      startDate: booking.start_date,
+      endDate: booking.end_date,
+      pricing,
+      fallbackDailyRate: booking.daily_rate_cents,
+      fallbackDeposit: booking.deposit_cents,
+      paymentOption: readPaymentOption(pricing),
+      netPaidToDate,
+    });
+    const validation = validatePartialPaymentAmount(requestedPartialAmount, summary.balanceDue);
+    if (!validation.ok) {
+      return {
+        ok: false,
+        response: jsonError(
+          validation.code === "stale_balance" || validation.code === "already_paid" ? 409 : 400,
+          validation.code,
+          validation.error,
+          { requestedAmount: requestedPartialAmount, balanceDue: summary.balanceDue },
+        ),
+      } as const;
+    }
+    return {
+      ok: true,
+      amountCents: validation.amountJmd,
+      paymentType: "partial_balance",
+      totalDecimal: formatJmdDecimal(validation.amountJmd),
+      nextPricing: pricing,
+    } as const;
+  }
+
   const summary = computeBookingPricingFromStoredSnapshot({
     bookingId: booking.id,
     bookingStatus: booking.status,
@@ -300,9 +373,9 @@ async function updatePaymentHostedPageUrl(paymentId: string, redirectUrl: string
   );
 }
 
-async function markPaymentFailed(paymentId: string, reason: string) {
+async function markPaymentStartError(paymentId: string, reason: string) {
   await getDbPool().query(
-    "update payments set status = 'FAILED', metadata_json = jsonb_set(coalesce(metadata_json, '{}'::jsonb), '{error}', $1::jsonb, true), updated_at = now() where id = $2",
+    "update payments set metadata_json = jsonb_set(coalesce(metadata_json, '{}'::jsonb), '{error}', $1::jsonb, true), updated_at = now() where id = $2",
     [JSON.stringify({ message: reason }), paymentId],
   );
 }
@@ -312,11 +385,13 @@ export async function startPublicPayment({
   bookingId,
   mode,
   customAmountCents = null,
+  partialAmountJmd = null,
 }: {
   request: Request;
   bookingId: string;
   mode: PublicPaymentStartMode;
   customAmountCents?: number | null;
+  partialAmountJmd?: number | null;
 }) {
   const paymentRequestUrl = getPublicPaymentRequestUrl(request);
   let provider: "STRIPE";
@@ -360,7 +435,7 @@ export async function startPublicPayment({
       return jsonError(403, "forbidden", "Forbidden");
     }
 
-    if (["CANCELLED", "RETURNED"].includes(booking.status)) {
+    if (!isBookingPayableStatus(booking.status)) {
       await client.query("rollback");
       return jsonError(400, "invalid_booking_state", "Booking cannot be paid", {
         status: booking.status,
@@ -394,7 +469,13 @@ export async function startPublicPayment({
       }
     }
 
-    const startDetails = buildStartDetails(mode, booking, customAmountCents, netPaidToDate);
+    const startDetails = buildStartDetails(
+      mode,
+      booking,
+      customAmountCents,
+      partialAmountJmd,
+      netPaidToDate,
+    );
     if (!startDetails.ok) {
       await client.query("rollback");
       return startDetails.response;
@@ -404,12 +485,13 @@ export async function startPublicPayment({
     const existingAttempt = await findExistingAttempt(
       client,
       booking.id,
-      startDetails.paymentType,
-      startDetails.amountCents,
       provider,
     );
+    const isIdenticalAttempt = existingAttempt
+      ? paymentAttemptMatches(existingAttempt, startDetails.paymentType, startDetails.amountCents)
+      : false;
     const classifiedAttempt = classifyExistingPaymentAttempt(existingAttempt);
-    if (classifiedAttempt.type === "reuse") {
+    if (isIdenticalAttempt && classifiedAttempt.type === "reuse") {
       await client.query("rollback");
       return NextResponse.json({
         ok: true,
@@ -427,15 +509,33 @@ export async function startPublicPayment({
       );
     }
 
-    if (existingAttempt) {
+    const recoverExistingAttempt = Boolean(
+      existingAttempt &&
+      isIdenticalAttempt &&
+      classifiedAttempt.type === "none" &&
+      !existingAttempt.provider_ref?.startsWith("cs_"),
+    );
+
+    if (existingAttempt && !recoverExistingAttempt) {
       const staleSessionId =
         typeof existingAttempt.metadata_json?.checkout_session_id === "string"
           ? existingAttempt.metadata_json.checkout_session_id
           : existingAttempt.provider_ref;
 
-      if (staleSessionId) {
+      if (staleSessionId?.startsWith("cs_")) {
         try {
-          await getStripeClient(paymentRequestUrl).checkout.sessions.expire(staleSessionId);
+          const stripe = getStripeClient(paymentRequestUrl);
+          const staleSession = await stripe.checkout.sessions.retrieve(staleSessionId);
+          if (staleSession.status === "open") {
+            await stripe.checkout.sessions.expire(staleSessionId);
+          } else if (staleSession.status === "complete" && staleSession.payment_status === "paid") {
+            await client.query("rollback");
+            return jsonError(
+              409,
+              "payment_in_progress",
+              "Your previous Stripe payment is being confirmed. Refresh the page in a moment.",
+            );
+          }
         } catch {
           await client.query("rollback");
           return jsonError(
@@ -470,33 +570,38 @@ export async function startPublicPayment({
       );
     }
 
-    orderId = buildOrderId();
-    const insertResult = (await client.query(
-      "insert into payments (booking_id, provider, deposit_amount_cents, currency, status, provider_ref, metadata_json) values ($1, $2, $3, 'JMD', 'INITIATED', $4, $5) returning id",
-      [
-        booking.id,
-        provider,
-        startDetails.amountCents,
-        orderId,
-        {
-          bookingId: booking.id,
-          payment_type: startDetails.paymentType,
-          custom_amount_cents: startDetails.customAmountCents ?? null,
-          total_amount: mode === "deposit" ? startDetails.amountCents : undefined,
-          total_decimal: startDetails.totalDecimal,
-          env: `stripe_${getStripePaymentMode(paymentRequestUrl)}`,
-          provider: provider,
-          created_at: new Date().toISOString(),
-        },
-      ],
-    )) as { rows: Array<{ id: string }> };
-    paymentId = insertResult.rows[0]?.id ?? null;
+    if (recoverExistingAttempt && existingAttempt) {
+      paymentId = existingAttempt.id;
+      orderId = existingAttempt.provider_ref ?? null;
+    } else {
+      orderId = buildOrderId();
+      const insertResult = (await client.query(
+        "insert into payments (booking_id, provider, deposit_amount_cents, currency, status, provider_ref, metadata_json) values ($1, $2, $3, 'JMD', 'INITIATED', $4, $5) returning id",
+        [
+          booking.id,
+          provider,
+          startDetails.amountCents,
+          orderId,
+          {
+            bookingId: booking.id,
+            payment_type: startDetails.paymentType,
+            custom_amount_cents: startDetails.customAmountCents ?? null,
+            total_amount: mode === "deposit" ? startDetails.amountCents : undefined,
+            total_decimal: startDetails.totalDecimal,
+            env: `stripe_${getStripePaymentMode(paymentRequestUrl)}`,
+            provider: provider,
+            created_at: new Date().toISOString(),
+          },
+        ],
+      )) as { rows: Array<{ id: string }> };
+      paymentId = insertResult.rows[0]?.id ?? null;
+    }
 
     await client.query("commit");
 
     const stripe = getStripeClient(paymentRequestUrl);
     const urls = stripeCheckoutUrls();
-    const paymentLabel = startDetails.paymentType === "deposit" ? "Deposit" : startDetails.paymentType === "full" ? "Full payment" : startDetails.paymentType === "balance" ? "Balance payment" : "Custom payment";
+    const paymentLabel = startDetails.paymentType === "deposit" ? "Deposit" : startDetails.paymentType === "full" ? "Full payment" : startDetails.paymentType === "balance" ? "Balance payment" : startDetails.paymentType === "partial_balance" ? "Partial balance payment" : "Custom payment";
     const vehicleLabel = `${booking.vehicle_year} ${booking.vehicle_make} ${booking.vehicle_model}`.trim();
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
@@ -516,11 +621,11 @@ export async function startPublicPayment({
         },
         quantity: 1,
       }],
-    });
+    }, { idempotencyKey: stripeCheckoutIdempotencyKey(paymentId ?? "") });
     if (!session.url) throw new Error("Stripe did not return a Checkout URL.");
     const redirectUrl = session.url;
     await getDbPool().query(
-      "update payments set provider_ref = $1, metadata_json = metadata_json || $2::jsonb, updated_at = now() where id = $3",
+      "update payments set provider_ref = $1, metadata_json = (coalesce(metadata_json, '{}'::jsonb) - 'error') || $2::jsonb, updated_at = now() where id = $3",
       [session.id, JSON.stringify({ checkout_session_id: session.id, payment_intent_id: typeof session.payment_intent === "string" ? session.payment_intent : null, hosted_page_url: session.url, hosted_page_created_at: new Date().toISOString(), stripe_livemode: session.livemode }), paymentId],
     );
     if (paymentId) {
@@ -549,7 +654,7 @@ export async function startPublicPayment({
     const reason = error instanceof Error ? error.message : "Unknown error";
     if (paymentId) {
       try {
-        await markPaymentFailed(paymentId, reason);
+        await markPaymentStartError(paymentId, reason);
       } catch (dbError) {
         logError("public_payment_start_db_update_failed", dbError, {
           bookingId,
