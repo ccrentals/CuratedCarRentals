@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
@@ -45,4 +46,12 @@ test("direct upload helpers normalize checksums and isolate storage scopes", () 
   assert.equal(uploadScopeForPurpose("INSPECTION_IMAGE"), "private");
   assert.equal(formatBytes(MAX_DIRECT_IMAGE_BYTES), "50 MB");
   assert.equal(MAX_DIRECT_IMAGES_PER_SELECTION, 20);
+});
+
+test("gateway reports storage authentication failures without exposing credentials", async () => {
+  const source = await readFile("bunny/edge-upload-gateway/index.ts", "utf8");
+  assert.match(source, /Image storage authentication is misconfigured/);
+  assert.match(source, /Bunny Storage rejected the upload with HTTP/);
+  assert.match(source, /event: "direct_upload_failed"/);
+  assert.match(source, /method: "DELETE"/);
 });
