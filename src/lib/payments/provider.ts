@@ -59,7 +59,10 @@ function isProductionDeployment(requestUrl?: string) {
 }
 
 export function getStripePaymentMode(requestUrl?: string): StripePaymentMode {
-  if (isProductionDeployment(requestUrl)) {
+  const deployContext = process.env.CONTEXT ?? process.env.NETLIFY_CONTEXT;
+  const isExplicitProduction = deployContext === "production" || process.env.BRANCH === "main";
+
+  if (isExplicitProduction) {
     if (!isStripeLiveMode()) {
       throw new Error("Stripe production requires STRIPE_TEST_MODE=false and an sk_live_ STRIPE_SECRET_KEY.");
     }
@@ -67,9 +70,19 @@ export function getStripePaymentMode(requestUrl?: string): StripePaymentMode {
   }
 
   const isStaging = process.env.NODE_ENV === "test" || isStripeStagingDeployment(requestUrl);
-  if (!isStaging) throw new Error("Stripe is enabled only for the staging or production deployment.");
-  if (!isStripeTestMode()) throw new Error("Stripe staging requires STRIPE_TEST_MODE=true and an sk_test_ STRIPE_SECRET_KEY.");
-  return "test";
+  if (isStaging) {
+    if (!isStripeTestMode()) throw new Error("Stripe staging requires STRIPE_TEST_MODE=true and an sk_test_ STRIPE_SECRET_KEY.");
+    return "test";
+  }
+
+  if (isProductionDeployment(requestUrl)) {
+    if (!isStripeLiveMode()) {
+      throw new Error("Stripe production requires STRIPE_TEST_MODE=false and an sk_live_ STRIPE_SECRET_KEY.");
+    }
+    return "live";
+  }
+
+  throw new Error("Stripe is enabled only for the staging or production deployment.");
 }
 
 export function getPublicPaymentProvider(requestUrl?: string): "STRIPE" {
