@@ -81,6 +81,21 @@ test("Stripe recognizes the exact staging request host when runtime deploy varia
   );
 });
 
+test("Stripe keeps the staging request in test mode when scoped SITE_URL matches the staging host", () => {
+  setEnv({
+    PAYMENT_PROVIDER: "stripe",
+    CONTEXT: "branch-deploy",
+    BRANCH: "staging",
+    SITE_URL: "https://staging--ccrentals.netlify.app",
+    STRIPE_TEST_MODE: "true",
+    STRIPE_SECRET_KEY: "sk_test_example",
+  });
+  assert.equal(
+    getStripePaymentMode("https://staging--ccrentals.netlify.app/api/payments/start"),
+    "test",
+  );
+});
+
 test("Stripe rejects a non-staging deployment even when a public environment marker is set", () => {
   setEnv({
     PAYMENT_PROVIDER: "stripe",
