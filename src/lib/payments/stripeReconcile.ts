@@ -33,8 +33,8 @@ async function sendStripePaymentConfirmationEmails(input: {
   session: Stripe.Checkout.Session;
   paymentIntentId: string | null;
   summary: Awaited<ReturnType<typeof recalculateBookingPayments>>;
+  stripeMode: "test" | "live";
 }) {
-  const stripeMode = getStripePaymentMode();
   const eventType = input.summary.balanceDue > 0 ? "PAYMENT_UPDATE" : "PAYMENT_COMPLETE";
   const dedupeKey = computeDedupeKey({
     entityType: "booking",
@@ -89,7 +89,7 @@ async function sendStripePaymentConfirmationEmails(input: {
       deposit: Number(booking.deposit_cents || 0),
       paidToDate: input.summary.netPaidToDate,
       paymentAmount: Number(input.payment.deposit_amount_cents || 0),
-      paymentMethod: stripeMode === "test" ? "Stripe (test)" : "Stripe",
+      paymentMethod: input.stripeMode === "test" ? "Stripe (test)" : "Stripe",
       paymentDateTime: new Date().toISOString(),
       paymentReference: input.paymentIntentId ?? input.session.id,
       dispatch: {
@@ -163,8 +163,8 @@ async function sendStripePaymentConfirmationEmails(input: {
   }
 }
 
-export async function reconcileStripeCheckoutSession(session: Stripe.Checkout.Session, source: "webhook" | "return" | "admin"): Promise<ReconcileResult> {
-  const stripeMode = getStripePaymentMode();
+export async function reconcileStripeCheckoutSession(session: Stripe.Checkout.Session, source: "webhook" | "return" | "admin", requestUrl?: string): Promise<ReconcileResult> {
+  const stripeMode = getStripePaymentMode(requestUrl);
   if (session.livemode !== (stripeMode === "live") || session.currency?.toLowerCase() !== "jmd") {
     throw new Error("Unexpected Stripe Checkout currency or mode.");
   }
@@ -200,7 +200,7 @@ export async function reconcileStripeCheckoutSession(session: Stripe.Checkout.Se
     await client.query("commit");
     const paymentIntentId = intentId(session.payment_intent);
     await writeAuditLog({ userId: "system", action: stripeMode === "test" ? "PAYMENT_CONFIRMED_STRIPE_TEST" : "PAYMENT_CONFIRMED_STRIPE", entityType: "booking", entityId: payment.booking_id, details: { paymentId: payment.id, sessionId: session.id, paymentIntentId, source, netPaidToDate: summary.netPaidToDate, entitlementState: entitlement.state } });
-    await sendStripePaymentConfirmationEmails({ payment, session, paymentIntentId, summary });
+    await sendStripePaymentConfirmationEmails({ payment, session, paymentIntentId, summary, stripeMode });
     return entitlement.state === "LOST" ? { ok: false, bookingId: payment.booking_id, status: "overlap" } : { ok: true, bookingId: payment.booking_id, status: "paid" };
   } catch (error) {
     await client.query("rollback").catch(() => undefined);

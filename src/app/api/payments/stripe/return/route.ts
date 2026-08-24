@@ -11,7 +11,7 @@ export async function GET(request: Request) {
   try {
     const session = await getStripeClient(request.url).checkout.sessions.retrieve(sessionId);
     bookingId = session.metadata?.booking_id ?? "";
-    const result = await reconcileStripeCheckoutSession(session, "return");
+    const result = await reconcileStripeCheckoutSession(session, "return", request.url);
     const destination = result.ok ? `/payment/success?bookingId=${encodeURIComponent(result.bookingId ?? "")}` : `/payment/failed?reason=${encodeURIComponent(result.status)}${result.bookingId ? `&bookingId=${encodeURIComponent(result.bookingId)}` : ""}`;
     return NextResponse.redirect(new URL(destination, siteUrl));
   } catch (error) {
