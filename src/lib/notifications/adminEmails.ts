@@ -17,6 +17,7 @@ import {
   sendPickupConfirmedEmail,
   sendPaymentUpdateEmail,
   sendPickupReminderEmail,
+  sendUpdatedInvoiceEmail,
 } from "@/lib/notifications/email";
 import { readPromoPricingFields } from "@/lib/payments/pricing";
 import {
@@ -472,7 +473,7 @@ function baseCombinedSql() {
         null::text as triggered_by_user_id,
         null::text as triggered_by_name,
         ndl.error as last_error,
-        false as manual_resend_allowed
+        (ndl.event_type = 'UPDATED_INVOICE') as manual_resend_allowed
       from notification_dispatch_log ndl
       left join bookings b on ndl.entity_type = 'booking' and b.id = ndl.entity_id
       left join quotes q on ndl.entity_type = 'quote' and q.id = ndl.entity_id
@@ -728,7 +729,7 @@ async function fetchLegacyNotificationDispatchDetail(rawId: string): Promise<Adm
     triggeredByUserId: null,
     triggeredByName: null,
     lastError: row.error,
-    manualResendAllowed: false,
+    manualResendAllowed: row.event_type === "UPDATED_INVOICE",
     metadata: {
       provider: row.provider,
     },
@@ -1019,6 +1020,7 @@ export async function resendAdminEmail(recordId: string, actorUserId: string) {
     | Awaited<ReturnType<typeof sendDepositReceiptEmail>>
     | Awaited<ReturnType<typeof sendPaymentUpdateEmail>>
     | Awaited<ReturnType<typeof sendPaymentCompleteEmail>>
+    | Awaited<ReturnType<typeof sendUpdatedInvoiceEmail>>
     | Awaited<ReturnType<typeof sendPickupConfirmedEmail>>
     | Awaited<ReturnType<typeof sendPickupReminderEmail>>
     | Awaited<ReturnType<typeof sendDropoffReminderEmail>>
@@ -1028,6 +1030,45 @@ export async function resendAdminEmail(recordId: string, actorUserId: string) {
     | Awaited<ReturnType<typeof sendBookingNoteEmail>>;
 
   switch (detail.emailType) {
+    case "UPDATED_INVOICE":
+      result = await sendUpdatedInvoiceEmail({
+        bookingId: booking.id,
+        customerEmail: booking.customer_email,
+        customerName: booking.customer_name,
+        customerPhone: booking.customer_phone,
+        vehicleLabel,
+        startDate: booking.start_date,
+        endDate: booking.end_date,
+        pickupLocation: booking.pickup_location,
+        dailyRate: Number(booking.daily_rate_cents || 0),
+        deposit: depositValue,
+        total: totalValue,
+        paidToDate,
+        balanceDue,
+        dispatch: { ...commonDispatch },
+      });
+      if (result.ok) {
+        await dbQuery(
+          `update payments
+              set metadata_json = coalesce(metadata_json, '{}'::jsonb) || $2::jsonb,
+                  updated_at = now()
+            where id = (
+              select id from payments
+               where booking_id = $1::uuid
+                 and coalesce(metadata_json->>'invoice_delivery_status', '') = 'failed'
+               order by created_at desc limit 1
+            )`,
+          [booking.id, JSON.stringify({
+            invoice_delivery_status: "sent",
+            invoice_email_sent: true,
+            invoice_sent_at: new Date().toISOString(),
+            invoice_next_retry_at: null,
+            invoice_last_error: null,
+            invoice_retry_exhausted: false,
+          })],
+        );
+      }
+      break;
     case "booking_created":
       result = await sendBookingCreatedEmail({
         bookingId: booking.id,

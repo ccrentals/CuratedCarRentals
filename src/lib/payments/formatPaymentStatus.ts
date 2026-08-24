@@ -26,6 +26,9 @@ export function formatPaymentStatus(
   if (normalized === "DEPOSIT_PAID" && (paymentType === "balance" || paymentType === "full")) {
     return "Payment Complete";
   }
+  if (normalized === "DEPOSIT_PAID" && paymentType === "partial_balance") {
+    return "Partial Payment Received";
+  }
   if (normalized === "DEPOSIT_PAID") return "Deposit Paid";
 
   if (!normalized) return "";

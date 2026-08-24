@@ -1,7 +1,7 @@
 import { requireCsrf } from "@/lib/security/csrf";
 import { startPublicPayment } from "@/lib/payments/publicPaymentStart";
 
-const modes = new Set(["deposit", "full", "custom", "balance"]);
+const modes = new Set(["deposit", "full", "custom", "partial", "balance"]);
 
 export async function POST(request: Request) {
   if (!(await requireCsrf(request))) return Response.json({ ok: false, error: "Invalid CSRF token" }, { status: 403 });
@@ -10,5 +10,12 @@ export async function POST(request: Request) {
   const mode = typeof body?.mode === "string" ? body.mode.toLowerCase() : "";
   if (!bookingId || !modes.has(mode)) return Response.json({ ok: false, error: "Invalid payment request" }, { status: 400 });
   const customAmountCents = Number.isFinite(Number(body?.customAmountCents)) ? Math.round(Number(body.customAmountCents)) : null;
-  return startPublicPayment({ request, bookingId, mode: mode as "deposit" | "full" | "custom" | "balance", customAmountCents });
+  const partialAmountJmd = typeof body?.amountJmd === "number" ? body.amountJmd : null;
+  return startPublicPayment({
+    request,
+    bookingId,
+    mode: mode as "deposit" | "full" | "custom" | "partial" | "balance",
+    customAmountCents,
+    partialAmountJmd,
+  });
 }
