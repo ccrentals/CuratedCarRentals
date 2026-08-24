@@ -15,7 +15,7 @@ export async function POST(request: Request) {
   const sessionEvent = ["checkout.session.completed", "checkout.session.async_payment_succeeded", "checkout.session.async_payment_failed", "checkout.session.expired"].includes(event.type);
   if (sessionEvent) {
     try {
-      await reconcileStripeCheckoutSession(event.data.object as import("stripe").Stripe.Checkout.Session, "webhook");
+      await reconcileStripeCheckoutSession(event.data.object as import("stripe").Stripe.Checkout.Session, "webhook", request.url);
     } catch (error) {
       await pool.query("delete from webhook_events where provider = 'STRIPE' and event_id = $1", [event.id]);
       throw error;
