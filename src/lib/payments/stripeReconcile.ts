@@ -35,7 +35,6 @@ async function sendStripePaymentConfirmationEmails(input: {
   summary: Awaited<ReturnType<typeof recalculateBookingPayments>>;
   stripeMode: ReturnType<typeof getStripePaymentMode>;
 }) {
-  const { stripeMode } = input;
   const eventType = input.summary.balanceDue > 0 ? "PAYMENT_UPDATE" : "PAYMENT_COMPLETE";
   const dedupeKey = computeDedupeKey({
     entityType: "booking",
