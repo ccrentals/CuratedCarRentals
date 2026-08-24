@@ -90,7 +90,7 @@ async function sendStripePaymentConfirmationEmails(input: {
       deposit: Number(booking.deposit_cents || 0),
       paidToDate: input.summary.netPaidToDate,
       paymentAmount: Number(input.payment.deposit_amount_cents || 0),
-      paymentMethod: stripeMode === "test" ? "Stripe (test)" : "Stripe",
+      paymentMethod: input.stripeMode === "test" ? "Stripe (test)" : "Stripe",
       paymentDateTime: new Date().toISOString(),
       paymentReference: input.paymentIntentId ?? input.session.id,
       dispatch: {
