@@ -3,9 +3,7 @@ import { NextResponse } from "next/server";
 import { requireAdminAccess } from "@/lib/auth/adminGuards";
 import { type AdminSession, getSessionFromRequest } from "@/lib/auth/session";
 import {
-  deleteVehiclePricingRules,
   getVehiclePricingProfile,
-  upsertVehiclePricingRules,
   type VehiclePricingDateRangeOverride,
   type VehiclePricingDeliveryZone,
   type VehiclePricingProfile,
@@ -14,6 +12,9 @@ import {
 import { dbQuery } from "@/lib/db";
 import { requireCsrf } from "@/lib/security/csrf";
 import { isVehicleExtensionsMissingTableError } from "@/lib/vehicles/extensionTables";
+import { validateDurationTiers } from "@/lib/bookings/durationPricing";
+import { savePricingRules, PricingEditConflict, type PricingEdit } from "@/lib/bookings/savePricingRules";
+import { revalidatePath } from "next/cache";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -30,8 +31,8 @@ export type AdminVehiclePricingRulesRouteDeps = {
   requireCsrfCheck: (request: Request, bodyToken?: string | null) => Promise<boolean>;
   vehicleExists: (vehicleId: string) => Promise<boolean>;
   getProfile: (vehicleId: string) => Promise<VehiclePricingProfile | null>;
-  deleteRules: (vehicleId: string) => Promise<void>;
-  saveRules: (vehicleId: string, patch: VehiclePricingRulesPatch) => Promise<{
+  deleteRules: (vehicleId: string, edit?: PricingEdit) => Promise<void>;
+  saveRules: (vehicleId: string, patch: VehiclePricingRulesPatch, edit?: PricingEdit) => Promise<{
     id: string | null;
     vehicleId: string;
     baseDailyRateCents: number | null;
@@ -59,8 +60,8 @@ const DEFAULT_DEPS: AdminVehiclePricingRulesRouteDeps = {
     return Boolean(result.rows[0]?.exists);
   },
   getProfile: (vehicleId) => getVehiclePricingProfile(vehicleId),
-  deleteRules: (vehicleId) => deleteVehiclePricingRules(vehicleId),
-  saveRules: (vehicleId, patch) => upsertVehiclePricingRules(vehicleId, patch),
+  deleteRules: async (vehicleId, edit) => { await savePricingRules(vehicleId, null, edit); },
+  saveRules: (vehicleId, patch, edit) => savePricingRules(vehicleId, patch, edit),
 };
 
 function readBodyValue(body: RawBody, keys: string[]) {
@@ -240,6 +241,11 @@ function normalizePatchInput(
   profile: VehiclePricingProfile,
 ): { patch: VehiclePricingRulesPatch | null; error: string | null } {
   const current = profile.rules;
+  let durationTiers;
+  try { durationTiers = validateDurationTiers(body?.durationTiers ?? current.durationTiers ?? []); }
+  catch (error) { return { patch: null, error: (error as Error).message }; }
+  const durationPricingEnabled = normalizeBoolean(body?.durationPricingEnabled, current.durationPricingEnabled ?? false);
+  if (durationPricingEnabled && !durationTiers.length) return { patch: null, error: "Add at least one duration range before enabling duration pricing." };
   const weekendDaily = normalizeOptionalMoney(
     readBodyValue(body, ["weekendDailyRateCents", "weekend_daily_rate_cents"]),
     current.weekendDailyRateCents,
@@ -268,6 +274,8 @@ function normalizePatchInput(
 
   return {
     patch: {
+      durationPricingEnabled,
+      durationTiers,
       baseDailyRateCents: null,
       baseDepositCents: null,
       weekendDailyRateCents: weekendDaily.value,
@@ -315,6 +323,7 @@ export async function handleAdminVehiclePricingRulesGet(
       defaultsApplied: profile.defaultsApplied,
     });
   } catch (error) {
+    if (error instanceof PricingEditConflict) return NextResponse.json({ok: false, code: "PRICING_EDIT_CONFLICT", error: error.message}, {status: 409});
     if (isVehicleExtensionsMissingTableError(error)) {
       return NextResponse.json(
         { ok: false, error: "Vehicle pricing rules tables are not installed." },
@@ -352,7 +361,8 @@ export async function handleAdminVehiclePricingRulesDelete(
       return NextResponse.json({ ok: false, error: "Vehicle not found." }, { status: 404 });
     }
 
-    await deps.deleteRules(id);
+    await deps.deleteRules(id, { expectedUpdatedAt: body?.expectedUpdatedAt, userId: auth.session.userId });
+    if (deps === DEFAULT_DEPS) revalidatePath("/", "layout");
     const profile = await deps.getProfile(id);
     if (!profile) {
       return NextResponse.json({ ok: false, error: "Vehicle not found." }, { status: 404 });
@@ -371,8 +381,8 @@ export async function handleAdminVehiclePricingRulesDelete(
       );
     }
     return NextResponse.json(
-      { ok: false, error: "Failed to restore default vehicle pricing rules." },
-      { status: 500 },
+      { ok: false, error: error instanceof PricingEditConflict ? error.message : "Failed to restore default vehicle pricing rules." },
+      { status: error instanceof PricingEditConflict ? 409 : 500 },
     );
   }
 }
@@ -407,6 +417,10 @@ export async function handleAdminVehiclePricingRulesPatch(
     }
 
     const normalized = normalizePatchInput(body, profile);
+    if ((body?.standardDailyRateJmd !== undefined || body?.standardDepositJmd !== undefined) &&
+      ![body?.standardDailyRateJmd, body?.standardDepositJmd].every(value => typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= 2147483647)) {
+      return NextResponse.json({ok:false,error:"Standard rate and deposit must be whole JMD amounts."},{status:400});
+    }
     if (!normalized.patch || normalized.error) {
       return NextResponse.json(
         { ok: false, error: normalized.error ?? "Invalid pricing rules payload." },
@@ -414,7 +428,11 @@ export async function handleAdminVehiclePricingRulesPatch(
       );
     }
 
-    const rules = await deps.saveRules(id, normalized.patch);
+    const rules = await deps.saveRules(id, normalized.patch, {
+      expectedUpdatedAt: body?.expectedUpdatedAt, userId: auth.session.userId,
+      dailyRate: body?.standardDailyRateJmd, deposit: body?.standardDepositJmd,
+    });
+    if (deps === DEFAULT_DEPS) { revalidatePath("/", "layout"); }
     return NextResponse.json({
       ok: true,
       rules,
@@ -428,8 +446,8 @@ export async function handleAdminVehiclePricingRulesPatch(
       );
     }
     return NextResponse.json(
-      { ok: false, error: "Failed to save vehicle pricing rules." },
-      { status: 500 },
+      { ok: false, error: error instanceof PricingEditConflict ? error.message : "Failed to save vehicle pricing rules." },
+      { status: error instanceof PricingEditConflict ? 409 : 500 },
     );
   }
 }

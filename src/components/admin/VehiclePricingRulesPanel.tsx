@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react
 
 import { buttonStyles } from "@/components/ui/Button";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
+import { DurationPricingEditor, parseTierInputs, type DurationTierInput } from "./DurationPricingEditor";
+import type { DurationTier } from "@/lib/bookings/durationPricing";
 
 type DateRangeOverride = {
   start: string;
@@ -18,6 +20,8 @@ type DeliveryZone = {
 };
 
 type RulesPayload = {
+  durationPricingEnabled?: boolean;
+  durationTiers?: DurationTier[];
   id: string | null;
   vehicleId: string;
   baseDailyRateCents: number | null;
@@ -50,6 +54,9 @@ type DeliveryZoneFormItem = {
 };
 
 type FormState = {
+  durationPricingEnabled: boolean;
+  durationTiers: DurationTierInput[];
+  expectedUpdatedAt: string | null;
   baseDailyRateCents: string;
   baseDepositCents: string;
   weekendDailyRateCents: string;
@@ -91,6 +98,9 @@ function toInput(value: number | null) {
 
 function toFormState(rules: RulesPayload): FormState {
   return {
+    expectedUpdatedAt: rules.updatedAt,
+    durationPricingEnabled: rules.durationPricingEnabled === true,
+    durationTiers: (rules.durationTiers ?? []).map(t => ({minDays: String(t.minDays), maxDays: t.maxDays === null ? "" : String(t.maxDays), dailyRateJmd: String(t.dailyRateJmd)})),
     baseDailyRateCents: toInput(rules.baseDailyRateCents),
     baseDepositCents: toInput(rules.baseDepositCents),
     weekendDailyRateCents: toInput(rules.weekendDailyRateCents),
@@ -162,6 +172,9 @@ export function VehiclePricingRulesPanel({ vehicleId }: VehiclePricingRulesPanel
   const [restoringDefaults, setRestoringDefaults] = useState(false);
   const [defaultsApplied, setDefaultsApplied] = useState(true);
   const [form, setForm] = useState<FormState>({
+    expectedUpdatedAt: null,
+    durationPricingEnabled: false,
+    durationTiers: [],
     baseDailyRateCents: "",
     baseDepositCents: "",
     weekendDailyRateCents: "",
@@ -359,28 +372,7 @@ export function VehiclePricingRulesPanel({ vehicleId }: VehiclePricingRulesPanel
 
     try {
       const csrfToken = await ensureCsrfToken();
-      const vehicleResponse = await fetch(`/api/admin/vehicles/${vehicleId}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          "x-csrf-token": csrfToken ?? "",
-        },
-        body: JSON.stringify({
-          daily_rate_cents: baseDaily.value ?? 0,
-          deposit_cents: baseDeposit.value ?? 0,
-        }),
-      });
-
-      const vehiclePayload = (await vehicleResponse.json().catch(() => ({}))) as {
-        vehicle?: {
-          daily_rate_cents?: number;
-          deposit_cents?: number;
-        };
-        error?: string;
-      };
-      if (!vehicleResponse.ok || !vehiclePayload.vehicle) {
-        throw new Error(vehiclePayload.error ?? "Failed to save vehicle pricing.");
-      }
+      const durationTiers = parseTierInputs(form.durationTiers);
 
       const response = await fetch(`/api/admin/vehicles/${vehicleId}/pricing-rules`, {
         method: "PATCH",
@@ -390,6 +382,11 @@ export function VehiclePricingRulesPanel({ vehicleId }: VehiclePricingRulesPanel
         },
         body: JSON.stringify({
           // Base rates are now managed on the vehicle record so all pricing surfaces stay in sync.
+          expectedUpdatedAt: form.expectedUpdatedAt,
+          standardDailyRateJmd: baseDaily.value ?? 0,
+          standardDepositJmd: baseDeposit.value ?? 0,
+          durationPricingEnabled: form.durationPricingEnabled,
+          durationTiers,
           baseDailyRateCents: null,
           baseDepositCents: null,
           weekendDailyRateCents: weekendDaily.value,
@@ -414,8 +411,8 @@ export function VehiclePricingRulesPanel({ vehicleId }: VehiclePricingRulesPanel
       }
 
       const next = toFormState(payload.rules);
-      next.baseDailyRateCents = toInput(vehiclePayload.vehicle.daily_rate_cents ?? 0);
-      next.baseDepositCents = toInput(vehiclePayload.vehicle.deposit_cents ?? 0);
+      next.baseDailyRateCents = toInput(baseDaily.value ?? 0);
+      next.baseDepositCents = toInput(baseDeposit.value ?? 0);
       setForm(next);
       setDefaultsApplied(Boolean(payload.defaultsApplied));
       const nextMessage = "Vehicle pricing saved.";
@@ -443,6 +440,7 @@ export function VehiclePricingRulesPanel({ vehicleId }: VehiclePricingRulesPanel
             "x-csrf-token": csrfToken ?? "",
           },
           body: JSON.stringify({
+            expectedUpdatedAt: form.expectedUpdatedAt,
             csrfToken: csrfToken ?? null,
           }),
         }),
@@ -522,6 +520,9 @@ export function VehiclePricingRulesPanel({ vehicleId }: VehiclePricingRulesPanel
 
       {!loading ? (
         <form className="mt-4 space-y-6" onSubmit={handleSave}>
+          <DurationPricingEditor enabled={form.durationPricingEnabled} rows={form.durationTiers} standardRate={Number(form.baseDailyRateCents) || 0}
+            onEnabled={durationPricingEnabled => setForm(previous => ({...previous,durationPricingEnabled}))}
+            onRows={durationTiers => setForm(previous => ({...previous,durationTiers}))} />
           <p className="text-xs text-[var(--ccr-muted)]">
             {panelState.helperText}
           </p>
@@ -548,7 +549,7 @@ export function VehiclePricingRulesPanel({ vehicleId }: VehiclePricingRulesPanel
 
           <div className="grid gap-4 sm:grid-cols-3">
             <label className="space-y-1">
-              <span className="text-xs font-semibold text-[var(--ccr-muted)]">Daily rate (cents)</span>
+              <span className="text-xs font-semibold text-[var(--ccr-muted)]">Daily rate (JMD)</span>
               <input
                 data-testid="pricing-base-daily"
                 type="number"
@@ -566,7 +567,7 @@ export function VehiclePricingRulesPanel({ vehicleId }: VehiclePricingRulesPanel
             </label>
 
             <label className="space-y-1">
-              <span className="text-xs font-semibold text-[var(--ccr-muted)]">Deposit (cents)</span>
+              <span className="text-xs font-semibold text-[var(--ccr-muted)]">Deposit (JMD)</span>
               <input
                 data-testid="pricing-base-deposit"
                 type="number"
@@ -584,7 +585,7 @@ export function VehiclePricingRulesPanel({ vehicleId }: VehiclePricingRulesPanel
             </label>
 
             <label className="space-y-1">
-              <span className="text-xs font-semibold text-[var(--ccr-muted)]">Weekend daily rate (cents)</span>
+              <span className="text-xs font-semibold text-[var(--ccr-muted)]">Weekend daily rate (JMD)</span>
               <input
                 data-testid="pricing-weekend-daily"
                 type="number"
@@ -654,7 +655,7 @@ export function VehiclePricingRulesPanel({ vehicleId }: VehiclePricingRulesPanel
                     type="number"
                     min={0}
                     step={1}
-                    placeholder="Daily rate cents"
+                    placeholder="Daily rate JMD"
                     value={entry.dailyRateCents}
                     onChange={(event) =>
                       setForm((current) => {
@@ -669,7 +670,7 @@ export function VehiclePricingRulesPanel({ vehicleId }: VehiclePricingRulesPanel
                     type="number"
                     min={0}
                     step={1}
-                    placeholder="Deposit cents (optional)"
+                    placeholder="Deposit JMD (optional)"
                     value={entry.depositCents}
                     onChange={(event) =>
                       setForm((current) => {
@@ -716,7 +717,7 @@ export function VehiclePricingRulesPanel({ vehicleId }: VehiclePricingRulesPanel
               </label>
 
               <label className="space-y-1">
-                <span className="text-xs font-semibold text-[var(--ccr-muted)]">Delivery fee (cents)</span>
+                <span className="text-xs font-semibold text-[var(--ccr-muted)]">Delivery fee (JMD)</span>
                 <input
                   data-testid="pricing-delivery-fee"
                   type="number"
@@ -792,7 +793,7 @@ export function VehiclePricingRulesPanel({ vehicleId }: VehiclePricingRulesPanel
                         return { ...current, deliveryZones: next };
                       })
                     }
-                    placeholder="Fee cents"
+                    placeholder="Fee JMD"
                     className="min-h-11 rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 text-sm text-[var(--ccr-text)]"
                   />
                   <button

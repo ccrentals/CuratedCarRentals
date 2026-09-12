@@ -1,4 +1,5 @@
 "use client";
+import { savedDurationTierLabel } from "@/lib/bookings/durationPricing";
 
 import { startTransition, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
@@ -278,8 +279,12 @@ export function BookingUpdateForm({
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewRevision, setPreviewRevision] = useState(0);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [preview, setPreview] = useState<{
+    pricingFingerprint: string;
+    durationTier?: unknown;
+    dailyRate?: number;
     vehicleLabel: string;
     days: number;
     baseTotal: number;
@@ -429,6 +434,8 @@ export function BookingUpdateForm({
     }
     let cancelled = false;
     const controller = new AbortController();
+    setPreview(null);
+    setPreviewLoading(true);
     async function loadPreview() {
       setPreviewLoading(true);
       setPreviewError(null);
@@ -469,7 +476,7 @@ export function BookingUpdateForm({
       controller.abort();
       window.clearTimeout(timeout);
     };
-  }, [bookingId, nextCustomerEmail, nextDropoffTime, nextEndDate, nextInsuranceSelected, nextPickupTime, nextPromoCode, nextStartDate, nextVehicleId, open]);
+  }, [bookingId, nextCustomerEmail, nextDropoffTime, nextEndDate, nextInsuranceSelected, nextPickupTime, nextPromoCode, nextStartDate, nextVehicleId, open, previewRevision]);
 
   useEffect(() => {
     setNextPickupLocationValues((current) =>
@@ -613,7 +620,7 @@ export function BookingUpdateForm({
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (loading || disabled) return;
-    if (!preview || previewError) {
+    if (!preview || previewError || previewLoading) {
       setError(previewError ?? "Wait for a valid booking change preview before saving.");
       return;
     }
@@ -667,6 +674,7 @@ export function BookingUpdateForm({
         },
         body: JSON.stringify({
           action: "update_details",
+          pricingFingerprint: preview.pricingFingerprint,
           vehicleId: nextVehicleId,
           startDate: nextStartDate,
           endDate: nextEndDate,
@@ -694,6 +702,10 @@ export function BookingUpdateForm({
         bookingDetail?: AdminBookingDetailViewModel;
       };
       if (!response.ok) {
+        if (response.status === 409) {
+          setPreview(null);
+          setPreviewRevision((value) => value + 1);
+        }
         setError(data.error ?? "Unable to update booking");
         return;
       }
@@ -1012,6 +1024,7 @@ export function BookingUpdateForm({
               <dl className="mt-2 grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
                 <div><dt className="text-[var(--ccr-muted)]">Vehicle</dt><dd className="font-semibold">{preview.vehicleLabel}</dd></div>
                 <div><dt className="text-[var(--ccr-muted)]">Days</dt><dd className="font-semibold">{preview.days}</dd></div>
+                <div><dt className="text-[var(--ccr-muted)]">Rate selection</dt><dd>{savedDurationTierLabel(preview.durationTier) || "Standard pricing"} · {formatCurrency(preview.dailyRate ?? 0)}/day</dd></div>
                 <div><dt className="text-[var(--ccr-muted)]">New total</dt><dd className="font-semibold">{formatCurrency(preview.total)}</dd></div>
                 <div><dt className="text-[var(--ccr-muted)]">New balance</dt><dd className="font-semibold">{formatCurrency(preview.balanceDue)}</dd></div>
                 <div><dt className="text-[var(--ccr-muted)]">Base rental</dt><dd>{formatCurrency(preview.baseTotal)}</dd></div>

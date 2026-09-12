@@ -1,4 +1,5 @@
 import { evaluateVehicleAvailability } from "@/lib/bookings/vehicleAvailabilityDiagnostics";
+import { createHash } from "node:crypto";
 import { buildQuotePricingSnapshot, QuotePricingError } from "@/lib/quotes/quotePricing";
 import {
   computeBookingPricing,
@@ -163,6 +164,15 @@ export async function evaluateBookingItineraryChange(input: {
   });
 
   return {
+    durationTier: pricing.duration_tier ?? null,
+    pricingFingerprint: createHash("sha256").update(JSON.stringify({
+      pricing: pricing.pricing_fingerprint,
+      vehicleId: input.vehicleId,
+      startAt: input.startAt,
+      endAt: input.endAt,
+      paidToDate: summary.netPaidToDate,
+      previousPricing: currentPricing,
+    })).digest("hex"),
     vehicle,
     vehicleLabel: quote.vehicleLabel,
     insurancePlanId: quote.insurancePlanId,

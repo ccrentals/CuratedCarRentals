@@ -1,4 +1,5 @@
 import Image from "next/image";
+import { DurationRates } from "@/components/booking/DurationRates";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
@@ -167,7 +168,8 @@ export default async function FleetVehicleDetailPage({
                 <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
                   <div>
                     <p className="text-[2rem] font-semibold sm:text-3xl">{formatPublicJmd(vehicle.pricePerDay)}</p>
-                    <p className="mt-1 text-sm text-white/68">{fleet.detailPerDayLabel}</p>
+                    <p className="mt-1 text-sm text-white/68">{vehicle.durationTiers?.length ? "Standard rate per day" : fleet.detailPerDayLabel}</p>
+                    <DurationRates tiers={vehicle.durationTiers} standardRate={vehicle.pricePerDay} />
                   </div>
                   {vehicle.deposit_cents > 0 ? (
                     <div className="sm:text-right">

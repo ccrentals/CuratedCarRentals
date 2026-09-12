@@ -1,4 +1,5 @@
 "use client";
+import { savedDurationTierLabel } from "@/lib/bookings/durationPricing";
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
@@ -37,6 +38,8 @@ type VehicleOption = {
 };
 
 type PricingPreview = {
+  pricingFingerprint: string;
+  durationTier: unknown;
   days: number;
   dailyRateCents: number;
   baseTotalCents: number;
@@ -55,7 +58,7 @@ type PricingPreview = {
   rateBreakdown: Array<{
     date: string;
     dailyRateCents: number;
-    source: "base" | "weekend" | "date_override";
+    source: "base" | "weekend" | "date_override" | "duration_tier";
   }>;
   currency: "JMD";
 };
@@ -152,6 +155,7 @@ export function AdminCreateBookingModal({
   const [vehiclesLoading, setVehiclesLoading] = useState(false);
   const [vehiclesError, setVehiclesError] = useState<string | null>(null);
   const [preview, setPreview] = useState<PricingPreview | null>(null);
+  const [previewRevision, setPreviewRevision] = useState(0);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
 
@@ -612,6 +616,7 @@ export function AdminCreateBookingModal({
   }, [
     appliedPromoCode,
     datesValid,
+    previewRevision,
     email,
     endDate,
     insuranceOption.planId,
@@ -853,6 +858,7 @@ export function AdminCreateBookingModal({
       },
       body: JSON.stringify({
         vehicleId,
+        pricingFingerprint: preview?.pricingFingerprint,
         customerId: selectedCustomerId || undefined,
         fullName,
         email,
@@ -877,6 +883,10 @@ export function AdminCreateBookingModal({
 
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
+      if (data.code === "PRICE_CHANGED") {
+        setPreview(null);
+        setPreviewRevision((value) => value + 1);
+      }
       setError(data.error ?? "Unable to create booking.");
       setLoading(false);
       return;
@@ -1389,6 +1399,8 @@ export function AdminCreateBookingModal({
                   ) : previewError ? (
                     <p className="text-sm text-red-600">{previewError}</p>
                   ) : preview ? (
+                    <>
+                    {savedDurationTierLabel(preview.durationTier) ? <p className="mb-2 text-sm">Duration rate: {savedDurationTierLabel(preview.durationTier)}. Started 24-hour rental periods.</p> : null}
                     <dl className="grid gap-2 text-sm text-[var(--ccr-muted)] sm:grid-cols-2">
                       <div className="rounded-lg border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-3 py-2">
                         <dt>Start date</dt>
@@ -1475,6 +1487,7 @@ export function AdminCreateBookingModal({
                         </div>
                       ) : null}
                     </dl>
+                    </>
                   ) : null}
                 </section>
 

@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { savedDurationTierLabel } from "@/lib/bookings/durationPricing";
 
 import {
   getOrCreateInvoiceLedgerRow,
@@ -27,6 +28,7 @@ export type InvoicePaymentLine = {
 };
 
 export type InvoicePayloadInput = {
+  durationTier?: unknown;
   bookingId: string;
   bookingPublicId?: string;
   invoiceNumber?: string;
@@ -673,7 +675,7 @@ function renderGotenbergInvoiceHtml(
             </thead>
             <tbody>
               <tr>
-                <td>${vehicleLabel} rental</td>
+                <td>${vehicleLabel} rental${charges.duration_tier_label ? `<br/><small>${escapeHtml(String(charges.duration_tier_label))} duration rate; started 24-hour periods</small>` : ""}</td>
                 <td>${startDate}</td>
                 <td>${endDate}</td>
                 <td>${rentalDaysLabel} day(s)</td>
@@ -697,7 +699,9 @@ function renderGotenbergInvoiceHtml(
         <div class="totals">
           <div class="totals-row"><span>Subtotal</span><span>${baseTotal}</span></div>
           ${insuranceTotalValue > 0 ? `<div class="totals-row"><span>Insurance Total</span><span>${insuranceTotal}</span></div>` : ""}
+          ${asNumber(charges.additional_fees) > 0 ? `<div class="totals-row"><span>Delivery / additional fees</span><span>${formatJmd(asNumber(charges.additional_fees))}</span></div>` : ""}
           ${promoDiscountValue > 0 ? `<div class="totals-row"><span>Promo Discount</span><span>${promoDiscount}</span></div>` : ""}
+          <div class="totals-row"><span>Total</span><span>${formatJmd(Math.max(0, asNumber(charges.total) - promoDiscountValue))}</span></div>
           <div class="totals-row"><span>Deposit</span><span>${remainingDeposit}</span></div>
           <div class="totals-row"><span>Paid to date</span><span>${paidToDate}</span></div>
           <div class="totals-row balance"><span>Balance due on pickup</span><span>${balanceDue}</span></div>
@@ -770,7 +774,9 @@ export async function buildPdfMonkeyInvoiceDocumentPayload(payload: Record<strin
       display_rental_days: `${rentalDays}`,
       display_base_total: formatJmd(baseTotalValue),
       display_insurance_total: formatJmd(insuranceTotalValue),
+      display_additional_fees: formatJmd(asNumber(charges.additional_fees)),
       display_promo_discount: formatJmd(-promoDiscountValue),
+      display_total: formatJmd(Math.max(0, asNumber(charges.total) - promoDiscountValue)),
       display_deposit: formatJmd(remainingDepositValue),
       display_paid_to_date: formatJmd(paidToDateValue),
       display_balance_due: formatJmd(balanceDueValue),
@@ -1038,7 +1044,7 @@ export function renderPdfMonkeyInvoiceTemplateBody() {
         </thead>
         <tbody>
           <tr>
-            <td>{{ vehicle.display_label }} rental</td>
+            <td>{{ vehicle.display_label }} rental{% if charges.duration_tier_label != blank %}<br/><small>{{ charges.duration_tier_label }} duration rate; started 24-hour periods</small>{% endif %}</td>
             <td>{{ booking.display_start_date }}</td>
             <td>{{ booking.display_end_date }}</td>
             <td>{{ charges.display_rental_days }} day(s)</td>
@@ -1077,9 +1083,13 @@ export function renderPdfMonkeyInvoiceTemplateBody() {
       {%- if charges.insurance_total > 0 -%}
         <div class="totals-row"><span>Insurance Total</span><span>{{ charges.display_insurance_total }}</span></div>
       {%- endif -%}
+      {%- if charges.additional_fees > 0 -%}
+        <div class="totals-row"><span>Delivery / additional fees</span><span>{{ charges.display_additional_fees }}</span></div>
+      {%- endif -%}
       {%- if charges.promo_discount > 0 -%}
         <div class="totals-row"><span>Promo Discount</span><span>{{ charges.display_promo_discount }}</span></div>
       {%- endif -%}
+      <div class="totals-row"><span>Total</span><span>{{ charges.display_total }}</span></div>
       <div class="totals-row"><span>Deposit</span><span>{{ charges.display_deposit }}</span></div>
       <div class="totals-row"><span>Paid to date</span><span>{{ charges.display_paid_to_date }}</span></div>
       <div class="totals-row balance"><span>Balance due on pickup</span><span>{{ charges.display_balance_due }}</span></div>
@@ -1917,9 +1927,12 @@ export function buildInvoicePayload(input: InvoicePayloadInput) {
     },
     charges: {
       total: input.total,
+      duration_tier: input.durationTier ?? null,
+      duration_tier_label: savedDurationTierLabel(input.durationTier),
       deposit: input.deposit,
       base_total: baseTotal,
       insurance_total: insuranceTotal,
+      additional_fees: Math.max(0, Number(input.total) - baseTotal - insuranceTotal),
       promo_discount: input.promoDiscount ?? 0,
       promo_code: input.promoCode ?? null,
       paid_to_date: input.paidToDate,

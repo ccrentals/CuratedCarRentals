@@ -29,6 +29,8 @@ export type AdminCreateBookingVehicleOption = {
 };
 
 export type AdminCreateBookingPricingPreview = {
+  pricingFingerprint: string;
+  durationTier: unknown;
   days: number;
   dailyRateCents: number;
   baseTotalCents: number;
@@ -47,7 +49,7 @@ export type AdminCreateBookingPricingPreview = {
   rateBreakdown: Array<{
     date: string;
     dailyRateCents: number;
-    source: "base" | "weekend" | "date_override";
+    source: "base" | "weekend" | "date_override" | "duration_tier";
   }>;
   currency: "JMD";
 };
@@ -131,6 +133,8 @@ export function computeAdminCreateBookingPricingPreview(input: {
   return {
     days,
     dailyRateCents: normalizedDailyRate,
+    pricingFingerprint: "",
+    durationTier: null,
     baseTotalCents: subtotalCents,
     insuranceSelected: false,
     insurancePlanId: null,
@@ -166,14 +170,14 @@ function mapQuoteSnapshotToAdminPreview(
         const source = value.source;
         if (
           typeof value.date !== "string" ||
-          !["base", "weekend", "date_override"].includes(String(source))
+          !["base", "weekend", "date_override", "duration_tier"].includes(String(source))
         ) {
           return [];
         }
         return [{
           date: value.date,
           dailyRateCents: Math.max(0, Number(value.dailyRateCents ?? value.daily_rate_cents ?? 0)),
-          source: source as "base" | "weekend" | "date_override",
+          source: source as "base" | "weekend" | "date_override" | "duration_tier",
         }];
       })
     : [];
@@ -184,6 +188,8 @@ function mapQuoteSnapshotToAdminPreview(
 
   return {
     days,
+    pricingFingerprint: String(pricing.pricing_fingerprint ?? ""),
+    durationTier: pricing.duration_tier ?? null,
     dailyRateCents,
     baseTotalCents: snapshot.summary.baseTotalCents,
     insuranceSelected: snapshot.insuranceEnabled,

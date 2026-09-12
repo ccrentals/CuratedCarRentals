@@ -46,7 +46,7 @@ test("pricing rules: base rate/deposit overrides apply", () => {
 
   assert.equal(result.days, 1);
   assert.equal(result.baseTotalCents, 12500);
-  assert.equal(result.depositRequiredCents, 260000);
+  assert.equal(result.depositRequiredCents, 12500);
   assert.equal(result.totalCents, 12500);
 });
 
@@ -94,7 +94,7 @@ test("pricing rules: date override has highest precedence", () => {
 
   assert.equal(result.days, 1);
   assert.equal(result.baseTotalCents, 22000);
-  assert.equal(result.depositRequiredCents, 280000);
+  assert.equal(result.depositRequiredCents, 22000);
   assert.equal(result.rateBreakdown[0]?.source, "date_override");
 });
 

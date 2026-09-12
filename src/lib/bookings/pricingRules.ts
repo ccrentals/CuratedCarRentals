@@ -1,8 +1,11 @@
 import { dbQuery } from "@/lib/db";
 import { dateOnlyUtc } from "@/lib/payments/dateMath";
 import type { Queryable } from "@/lib/payments/pricing";
+import { billableRentalDays, matchDurationTier, validateDurationTiers, type DurationTier } from "./durationPricing";
 
 type VehiclePricingRulesRow = {
+  duration_pricing_enabled?: boolean;
+  duration_tiers_json?: unknown;
   id: string;
   vehicle_id: string;
   base_daily_rate_cents: number | null;
@@ -19,6 +22,8 @@ type VehiclePricingRulesRow = {
 };
 
 type VehiclePricingProfileRow = {
+  duration_pricing_enabled?: boolean;
+  duration_tiers_json?: unknown;
   vehicle_id: string;
   make: string;
   model: string;
@@ -53,6 +58,8 @@ export type VehiclePricingDeliveryZone = {
 };
 
 export type VehiclePricingRules = {
+  durationPricingEnabled?: boolean;
+  durationTiers?: DurationTier[];
   id: string | null;
   vehicleId: string;
   baseDailyRateCents: number | null;
@@ -69,6 +76,8 @@ export type VehiclePricingRules = {
 };
 
 export type VehiclePricingRulesPatch = {
+  durationPricingEnabled?: boolean;
+  durationTiers?: DurationTier[];
   baseDailyRateCents: number | null;
   baseDepositCents: number | null;
   weekendDailyRateCents: number | null;
@@ -106,7 +115,7 @@ export type ComputedVehicleQuotePrice = {
   totalCents: number;
   depositRequiredCents: number;
   amountDueCents: number;
-  rateBreakdown: Array<{ date: string; dailyRateCents: number; source: "base" | "weekend" | "date_override" }>;
+  rateBreakdown: Array<{ date: string; dailyRateCents: number; source: "base" | "weekend" | "date_override" | "duration_tier" }>;
   pricingSnapshotJson: Record<string, unknown>;
 };
 
@@ -208,6 +217,8 @@ function parseDeliveryZones(value: unknown): VehiclePricingDeliveryZone[] {
 
 function defaults(vehicleId: string): VehiclePricingRules {
   return {
+    durationPricingEnabled: false,
+    durationTiers: [],
     id: null,
     vehicleId,
     baseDailyRateCents: null,
@@ -224,10 +235,12 @@ function defaults(vehicleId: string): VehiclePricingRules {
   };
 }
 
-function normalizeRulesRow(vehicleId: string, row: VehiclePricingRulesRow | null): VehiclePricingRules {
+export function normalizeRulesRow(vehicleId: string, row: VehiclePricingRulesRow | null): VehiclePricingRules {
   if (!row) return defaults(vehicleId);
 
   return {
+    durationPricingEnabled: row.duration_pricing_enabled === true,
+    durationTiers: validateDurationTiers(row.duration_tiers_json ?? []),
     id: row.id,
     vehicleId,
     baseDailyRateCents: normalizeOptionalMoney(row.base_daily_rate_cents),
@@ -261,6 +274,8 @@ export async function getVehiclePricingProfile(
          v.deposit_cents,
          v.features_json,
          r.id as rule_id,
+         r.duration_pricing_enabled,
+         r.duration_tiers_json,
          r.base_daily_rate_cents,
          r.base_deposit_cents,
          r.weekend_daily_rate_cents,
@@ -287,6 +302,8 @@ export async function getVehiclePricingProfile(
       row.rule_id
         ? {
             id: row.rule_id,
+            duration_pricing_enabled: row.duration_pricing_enabled,
+            duration_tiers_json: row.duration_tiers_json,
             vehicle_id: row.vehicle_id,
             base_daily_rate_cents: row.base_daily_rate_cents,
             base_deposit_cents: row.base_deposit_cents,
@@ -362,9 +379,11 @@ export async function upsertVehiclePricingRules(
        delivery_fee_cents,
        delivery_zones_json,
        currency,
-       is_active
+       is_active,
+       duration_pricing_enabled,
+       duration_tiers_json
      )
-     values ($1::uuid, $2, $3, $4, $5::jsonb, $6, $7, $8::jsonb, $9, $10)
+     values ($1::uuid, $2, $3, $4, $5::jsonb, $6, $7, $8::jsonb, $9, $10, $11, $12::jsonb)
      on conflict (vehicle_id)
      do update set
        base_daily_rate_cents = excluded.base_daily_rate_cents,
@@ -376,6 +395,8 @@ export async function upsertVehiclePricingRules(
        delivery_zones_json = excluded.delivery_zones_json,
        currency = excluded.currency,
        is_active = excluded.is_active,
+       duration_pricing_enabled = excluded.duration_pricing_enabled,
+       duration_tiers_json = excluded.duration_tiers_json,
        updated_at = now()
      returning
        id,
@@ -390,7 +411,9 @@ export async function upsertVehiclePricingRules(
        currency,
        is_active,
        created_at,
-       updated_at`,
+       updated_at,
+       duration_pricing_enabled,
+       duration_tiers_json`,
     [
       vehicleId,
       patch.baseDailyRateCents,
@@ -402,6 +425,8 @@ export async function upsertVehiclePricingRules(
       JSON.stringify(patch.deliveryZones),
       normalizeCurrency(patch.currency),
       patch.isActive,
+      patch.durationPricingEnabled === true,
+      JSON.stringify(validateDurationTiers(patch.durationTiers ?? [])),
     ],
   );
 
@@ -417,7 +442,8 @@ export async function deleteVehiclePricingRules(
 }
 
 function normalizeDateAtUtcMidnight(value: Date) {
-  const asDateOnly = dateOnlyUtc(value);
+  // Rental pricing follows the local Jamaica calendar, not the server timezone.
+  const asDateOnly = dateOnlyUtc(new Date(value.getTime() - 5 * 60 * 60 * 1000));
   return asDateOnly ? new Date(asDateOnly) : null;
 }
 
@@ -518,18 +544,22 @@ export function computeQuotePrice(input: {
     throw new Error("Invalid rental dates.");
   }
 
-  const days = Math.ceil((endDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000));
+  const days = billableRentalDays(startDate, endDate);
   if (days <= 0) {
     throw new Error("Invalid rental duration.");
   }
 
   const rateBreakdown: ComputedVehicleQuotePrice["rateBreakdown"] = [];
+  const durationTier = input.profile.rules.isActive && input.profile.rules.durationPricingEnabled
+    ? matchDurationTier(validateDurationTiers(input.profile.rules.durationTiers ?? []), days) : null;
   let baseTotalCents = 0;
 
   for (let dayIndex = 0; dayIndex < days; dayIndex += 1) {
     const dayDate = new Date(startDateUtc.getTime() + dayIndex * 24 * 60 * 60 * 1000);
     const dateKey = dayDate.toISOString().slice(0, 10);
-    const resolved = resolveDailyRateForDate(dateKey, dayDate.getUTCDay(), input.profile);
+    const resolved = durationTier
+      ? { dailyRateCents: durationTier.dailyRateJmd, source: "duration_tier" as const }
+      : resolveDailyRateForDate(dateKey, dayDate.getUTCDay(), input.profile);
     baseTotalCents += resolved.dailyRateCents;
     rateBreakdown.push({
       date: dateKey,
@@ -557,14 +587,17 @@ export function computeQuotePrice(input: {
     Math.max(0, normalizeMoney(input.promoDiscountCents) ?? 0),
   );
   const totalCents = Math.max(0, subtotalCents - discountTotalCents);
+  if (!Number.isSafeInteger(totalCents) || totalCents > 2147483647) throw new Error("Rental total exceeds the supported amount limit.");
 
   const startDateKey = startDateUtc.toISOString().slice(0, 10);
-  const depositRequiredCents = resolveDeposit(input.profile, startDateKey);
+  const depositRequiredCents = Math.min(totalCents, resolveDeposit(input.profile, startDateKey));
 
   const dailyRateCents = days > 0 ? Math.round(baseTotalCents / days) : 0;
   const promoCode = normalizeOptionalText(input.promoCode)?.toUpperCase() ?? null;
 
   const pricingSnapshotJson: Record<string, unknown> = {
+    duration_tier: durationTier,
+    rental_day_basis: "started_24_hour_periods",
     days,
     currency: normalizeCurrency(input.profile.rules.currency),
     daily_rate_cents: dailyRateCents,

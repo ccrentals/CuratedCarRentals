@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AgreedDurationRate } from "@/components/booking/AgreedDurationRate";
 import { notFound } from "next/navigation";
 
 import { hasPublicBookingAccessForPage } from "@/lib/bookings/publicAccess";
@@ -107,6 +108,7 @@ export default async function BookingSummaryPage({
         ) : null}
 
         <div className="mt-4 space-y-2 text-sm text-[var(--ccr-muted)]">
+          <AgreedDurationRate pricing={booking.pricing_json} />
           <p>
             Vehicle: <span className="font-semibold text-[var(--ccr-text)]">{booking.vehicle_make} {booking.vehicle_model}</span>
           </p>

@@ -9,8 +9,11 @@ import {
   evaluateVehicleAvailability,
 } from "@/lib/bookings/vehicleAvailabilityDiagnostics";
 import { bookingDateTimeToUtcIso } from "@/lib/bookings/bookingDateTime";
+import { validateDurationTiers } from "@/lib/bookings/durationPricing";
+import { computeQuotePrice, normalizeRulesRow } from "@/lib/bookings/pricingRules";
 
 export type PublicVehicle = Vehicle & {
+  rentalQuote?: { days: number; baseTotal: number; dailyRate: number };
   make: string;
   model: string;
   year: number;
@@ -247,7 +250,7 @@ function mapRowToPublicVehicle(
   };
 }
 
-export async function getPublicVehicles(): Promise<PublicVehicle[]> {
+export async function getPublicVehicles(pricingWindow?: {startAt: string; endAt: string}): Promise<PublicVehicle[]> {
   const [{ settings }, result] = await Promise.all([
     loadAdminSettings(),
     dbQuery<VehicleRow>(
@@ -258,7 +261,22 @@ export async function getPublicVehicles(): Promise<PublicVehicle[]> {
   const mapped: Array<PublicVehicle | null> = result.rows.map((row: VehicleRow) =>
     mapRowToPublicVehicle(row, settings),
   );
-  return mapped.filter((vehicle): vehicle is PublicVehicle => vehicle !== null);
+  return attachDurationTiers(mapped.filter((vehicle): vehicle is PublicVehicle => vehicle !== null), pricingWindow);
+}
+
+async function attachDurationTiers(vehicles: PublicVehicle[], window?: {startAt: string; endAt: string}) {
+  if (!vehicles.length) return vehicles;
+  const result = await dbQuery<NonNullable<Parameters<typeof normalizeRulesRow>[1]>>(
+    "select * from vehicle_pricing_rules where vehicle_id = any($1::uuid[])",
+    [vehicles.map(v => v.id)],
+  );
+  const profiles = new Map((result.rows as NonNullable<Parameters<typeof normalizeRulesRow>[1]>[]).map(row => [row.vehicle_id, normalizeRulesRow(row.vehicle_id, row)]));
+  return vehicles.map(v => {
+    const rules = profiles.get(v.id) ?? normalizeRulesRow(v.id, null);
+    const quote = window ? computeQuotePrice({profile: {vehicleId:v.id, vehicleLabel:v.name, vehicleClass:v.category, defaultDailyRateCents:v.daily_rate_cents, defaultDepositCents:v.deposit_cents, rules, defaultsApplied:!rules.id}, ...window}) : null;
+    return {...v, durationTiers: rules.isActive && rules.durationPricingEnabled ? validateDurationTiers(rules.durationTiers ?? []) : [],
+      ...(quote ? {rentalQuote:{days:quote.days, baseTotal:quote.baseTotalCents, dailyRate:quote.dailyRateCents}} : {})};
+  });
 }
 
 export async function getPublicVehiclesAvailableForWindow(
@@ -267,7 +285,7 @@ export async function getPublicVehiclesAvailableForWindow(
   const window = toNormalizedAvailabilityWindow(input);
   if (!window) return [];
 
-  const vehicles = await getPublicVehicles();
+  const vehicles = await getPublicVehicles({startAt: window.startAtIso, endAt: window.endAtIso});
   if (vehicles.length === 0) return [];
 
   const decisions = await evaluateVehicleAvailability(
@@ -315,5 +333,6 @@ export async function getPublicVehicleByIdentifier(identifier: string): Promise<
   ]);
 
   if (result.rows.length === 0) return null;
-  return mapRowToPublicVehicle(result.rows[0], settings);
+  const vehicle = mapRowToPublicVehicle(result.rows[0], settings);
+  return vehicle ? (await attachDurationTiers([vehicle]))[0] : null;
 }
