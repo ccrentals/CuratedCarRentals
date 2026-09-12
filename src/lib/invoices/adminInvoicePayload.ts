@@ -101,6 +101,7 @@ export async function loadAdminBookingInvoicePayload(
   }));
 
   const payload = buildInvoicePayload({
+    durationTier: pricing.duration_tier,
     bookingId: booking.id,
     bookingPublicId: (booking.public_id ?? "").trim() || booking.id.slice(0, 8),
     bookingStatus: booking.status,

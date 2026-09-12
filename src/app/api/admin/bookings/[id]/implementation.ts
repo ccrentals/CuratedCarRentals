@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { ItineraryPaymentPending, retireItineraryCheckout } from "@/lib/payments/itineraryCheckout";
+import { reconcileStripeCheckoutSession } from "@/lib/payments/stripeReconcile";
 
 import { requireOperationsAccess } from "@/lib/auth/adminGuards";
 import { isAdminRole, isDeveloperRole } from "@/lib/auth/roles";
@@ -963,6 +965,7 @@ export async function PATCH(
         return NextResponse.json({ error: dropoffLocationError }, { status: 400 });
       }
 
+      await client.query("select id from vehicles where id = $1 for share", [requestedVehicleId ?? booking.vehicle_id]);
       const evaluatedItinerary = await evaluateBookingItineraryChange({
         client,
         booking,
@@ -975,6 +978,12 @@ export async function PATCH(
         insuranceSelected: requestedInsuranceSelected,
         promoCode: requestedPromoCode,
       });
+      if (body?.pricingFingerprint !== evaluatedItinerary.pricingFingerprint) {
+        throw new BookingItineraryChangeError(
+          "Pricing or paid-to-date has changed. Review the refreshed preview before saving.", 409, "PRICE_CHANGED",
+        );
+      }
+      await retireItineraryCheckout(client, booking.id, request.url);
       const pricingSummary = evaluatedItinerary.summary;
       const previousPricingSummary = computeBookingPricingFromStoredSnapshot({
         bookingId: booking.id,
@@ -1279,6 +1288,12 @@ export async function PATCH(
       const bookingPublicId = String(booking.public_id ?? "").trim() || booking.id;
       const vehicleLabel = evaluatedItinerary.vehicleLabel;
       const bookingDetail = buildAdminBookingDetailView({
+        durationPricingSnapshot: {
+          duration_tier: evaluatedItinerary.durationTier,
+          daily_rate_cents: pricingSummary.dailyRate,
+          days: pricingSummary.days,
+          base_total_cents: pricingSummary.baseTotal,
+        },
         versionKey: `${booking.id}:${Date.now()}`,
         bookingId: booking.id,
         bookingPublicId,
@@ -1357,6 +1372,12 @@ export async function PATCH(
           { error: error.message, code: error.code },
           { status: error.status },
         );
+      }
+      if (error instanceof ItineraryPaymentPending) {
+        if (error.completedSession) {
+          await reconcileStripeCheckoutSession(error.completedSession, "admin", request.url).catch(() => undefined);
+        }
+        return NextResponse.json({ error: error.message, code: "PAYMENT_IN_PROGRESS" }, { status: 409 });
       }
       const schemaError = toBookingLocationConfigSchemaError(error);
       if (schemaError) {

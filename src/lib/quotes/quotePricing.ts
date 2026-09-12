@@ -1,4 +1,5 @@
 import { dbQuery } from "@/lib/db";
+import { pricingFingerprint } from "@/lib/bookings/pricingFingerprint";
 import {
   normalizeAdminSettingsValue,
   resolveMinimumRentalDays as resolveGlobalMinimumRentalDays,
@@ -320,6 +321,8 @@ export async function buildQuotePricingSnapshot(
     deposit_required_cents: computed.depositRequiredCents,
     currency: computed.currency,
   };
+
+  pricingJson.pricing_fingerprint = pricingFingerprint(pricingJson);
 
   return {
     vehicleLabel: pricingProfile.vehicleLabel,

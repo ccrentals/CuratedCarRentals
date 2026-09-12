@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import type { Vehicle } from "@/data/vehicles";
 import { formatPublicJmd } from "@/lib/money";
 import { buttonStyles } from "@/components/ui/Button";
+import { DurationRates } from "@/components/booking/DurationRates";
 
 type VehicleCardVehicle = Vehicle & {
   slug?: string;
@@ -117,10 +118,11 @@ export function VehicleCard({
               <span className="text-[2rem] font-semibold leading-none text-[var(--ccr-text)]">
                 {formatPublicJmd(vehicle.pricePerDay)}
               </span>{" "}
-              per day
+              {vehicle.durationTiers?.length ? "standard / day" : "per day"}
             </div>
           </div>
 
+          <DurationRates tiers={vehicle.durationTiers} standardRate={vehicle.pricePerDay} />
           <div className="flex flex-wrap gap-x-4 gap-y-2.5 text-sm text-[var(--ccr-muted)] sm:gap-x-6 sm:gap-y-3 sm:text-[1.05rem]">
             <div className="inline-flex items-center gap-2">
               <span className="text-[var(--ccr-muted)]/90">
@@ -209,11 +211,12 @@ export function VehicleCard({
             </Link>
             <div className="mt-2 text-sm text-[var(--ccr-muted)]">
               <span className="text-[1.7rem] font-semibold leading-none text-[var(--ccr-text)] sm:text-[2rem]">{formatPublicJmd(vehicle.pricePerDay)}</span>{" "}
-              per day
+              {vehicle.durationTiers?.length ? "standard / day" : "per day"}
             </div>
           </div>
         </div>
 
+        <DurationRates tiers={vehicle.durationTiers} standardRate={vehicle.pricePerDay} />
         <div className="grid grid-cols-1 gap-2 text-sm text-[var(--ccr-muted)] min-[430px]:grid-cols-3 sm:gap-3">
           <div className="rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-3 py-2 text-center">
             {vehicle.seats} Passengers

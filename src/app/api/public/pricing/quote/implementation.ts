@@ -189,6 +189,10 @@ export async function handlePublicPricingQuotePost(
       ok: true,
       summary: {
         days,
+        durationTier: pricing.duration_tier ?? null,
+        dailyRate: parseInteger(pricing.daily_rate_cents, 0),
+        pricingFingerprint: pricing.pricing_fingerprint,
+        deliveryTotal: parseInteger(pricing.extra_fees_cents, 0),
         baseTotal: snapshot.summary.baseTotalCents,
         insurancePricePerDay,
         insuranceTotal: snapshot.summary.insuranceTotalCents,

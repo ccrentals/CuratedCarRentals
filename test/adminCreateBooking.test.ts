@@ -144,6 +144,8 @@ test("admin create booking helper: computes pricing preview once dates and vehic
   });
 
   assert.deepEqual(preview, {
+    pricingFingerprint: "",
+    durationTier: null,
     days: 2,
     dailyRateCents: 15000,
     baseTotalCents: 30000,

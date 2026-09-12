@@ -173,6 +173,12 @@ export async function reconcileStripeCheckoutSession(session: Stripe.Checkout.Se
   const client = await pool.connect();
   try {
     await client.query("begin");
+    const owner = await client.query(
+      "select booking_id from payments where provider = 'STRIPE' and (provider_ref = $1 or id::text = $2)",
+      [session.id, paymentId],
+    );
+    if (!owner.rowCount) { await client.query("rollback"); return { ok: false, status: "not_found" }; }
+    await client.query("select id from bookings where id = $1 for update", [owner.rows[0].booking_id]);
     const result = await client.query(
       "select id, booking_id, status, deposit_amount_cents, metadata_json from payments where provider = 'STRIPE' and (provider_ref = $1 or id::text = $2) for update",
       [session.id, paymentId],
