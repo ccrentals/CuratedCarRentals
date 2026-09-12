@@ -588,6 +588,12 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
       ).rows[0]?.public_id ?? overriddenByBookingId
     : null;
   const initialDetail = buildAdminBookingDetailView({
+    durationPricingSnapshot: {
+      duration_tier: pricing.duration_tier,
+      daily_rate_cents: summary.dailyRate,
+      days: summary.days,
+      base_total_cents: summary.baseTotal,
+    },
     versionKey: [
       booking.id,
       booking.start_date,

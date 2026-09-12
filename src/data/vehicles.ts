@@ -1,4 +1,5 @@
 export type Vehicle = {
+  durationTiers?: import("@/lib/bookings/durationPricing").DurationTier[];
   id: string;
   name: string;
   category: string;

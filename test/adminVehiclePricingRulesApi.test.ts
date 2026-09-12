@@ -7,6 +7,22 @@ import {
   handleAdminVehiclePricingRulesPatch,
 } from "@/app/api/admin/vehicles/[id]/pricing-rules/implementation";
 import type { VehiclePricingProfile } from "@/lib/bookings/pricingRules";
+import { PricingEditConflict } from "@/lib/bookings/savePricingRules";
+
+test("vehicle duration API validates ranges and reports conflicting admin edits", async () => {
+  for (const [tiers,status] of [
+    [[{minDays:2,maxDays:3,dailyRateJmd:3000},{minDays:3,maxDays:null,dailyRateJmd:4000}],400],
+    [[{minDays:2,maxDays:3,dailyRateJmd:3000}],409],
+  ] as const) {
+    let saved = false;
+    const response = await handleAdminVehiclePricingRulesPatch(new Request(`http://localhost/api/admin/vehicles/${VEHICLE_ID}/pricing-rules`,{
+      method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({durationPricingEnabled:true,durationTiers:tiers,expectedUpdatedAt:null}),
+    }),{params:Promise.resolve({id:VEHICLE_ID})},{getSession:async()=>adminSession(),requireCsrfCheck:async()=>true,
+      vehicleExists:async()=>true,getProfile:async()=>defaultProfile(),deleteRules:async()=>{},saveRules:async()=>{saved=true;throw new PricingEditConflict("Pricing changed");},
+    });
+    assert.equal(response.status,status); assert.equal(saved,status===409);
+  }
+});
 
 const VEHICLE_ID = "11111111-1111-4111-8111-111111111111";
 

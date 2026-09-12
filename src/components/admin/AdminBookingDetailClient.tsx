@@ -1,4 +1,5 @@
 "use client";
+import { AgreedDurationRate } from "@/components/booking/AgreedDurationRate";
 
 import Link from "next/link";
 import { UserRoundPen } from "lucide-react";
@@ -499,6 +500,7 @@ export function AdminBookingDetailClient({
                 {formatJmd(detail.chargesSummary.dailyRate)}
               </span>
             </div>
+            <AgreedDurationRate pricing={detail.chargesSummary.durationPricingSnapshot ?? null} />
             <div className="flex items-center justify-between">
               <span>Insurance price/day</span>
               <span className="font-semibold text-[var(--ccr-text)]">

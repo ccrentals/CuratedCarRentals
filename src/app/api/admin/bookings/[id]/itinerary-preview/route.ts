@@ -50,6 +50,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     return NextResponse.json({
       ok: true,
       preview: {
+        pricingFingerprint: evaluated.pricingFingerprint,
+        durationTier: evaluated.durationTier,
+        dailyRate: evaluated.summary.dailyRate,
         vehicleId: evaluated.vehicle.id,
         vehicleLabel: evaluated.vehicleLabel,
         days: evaluated.summary.days,

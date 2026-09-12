@@ -409,6 +409,7 @@ export async function handleAdminBookingsPost(
     }
 
     const promoCode = typeof promoCodeRaw === "string" ? promoCodeRaw.trim() : "";
+    await client.query("select id from vehicles where id = $1 for share", [vehicleId]);
     const quoteSnapshot = await deps.buildPricingSnapshot(
       {
         vehicleId,
@@ -422,6 +423,10 @@ export async function handleAdminBookingsPost(
       },
       { client },
     );
+    if (body?.pricingFingerprint !== quoteSnapshot.pricingJson.pricing_fingerprint) {
+      await client.query("rollback");
+      return NextResponse.json({ code: "PRICE_CHANGED", error: "Pricing has changed. Review the refreshed quote before creating the booking.", pricing: quoteSnapshot.pricingJson }, { status: 409 });
+    }
     const pricingSummary = computeBookingPricingFromStoredSnapshot({
       bookingId: "draft",
       bookingStatus: "PENDING_PAYMENT",

@@ -51,13 +51,16 @@ import {
   normalizeCountryName,
   normalizeJamaicaParish,
 } from "@/lib/jamaicaParishes";
-import { calcRentalDays } from "@/lib/payments/dateMath";
+import { billableRentalDays, durationTierLabel, type DurationTier } from "@/lib/bookings/durationPricing";
+import { bookingDateTimeToUtcIso } from "@/lib/bookings/bookingDateTime";
 import { formatJmd } from "@/lib/money";
 import { ensureCsrfToken } from "@/lib/security/csrf-client";
 import { cn } from "@/lib/utils";
 import { isEmail, isNonEmptyString } from "@/lib/validators";
 
 type PublicVehicle = {
+  durationTiers?: DurationTier[];
+  rentalQuote?: { days: number; baseTotal: number; dailyRate: number };
   id: string;
   name: string;
   make: string;
@@ -116,6 +119,10 @@ type PromoValidationResponse = {
 };
 
 type PricingQuoteSummary = {
+  durationTier?: DurationTier | null;
+  dailyRate?: number;
+  deliveryTotal?: number;
+  pricingFingerprint?: string;
   days: number;
   baseTotal: number;
   insurancePricePerDay: number;
@@ -147,6 +154,7 @@ type MinimumRentalDaysResponse = {
 };
 
 type BookingCreateResponse = {
+  code?: string;
   bookingId?: string;
   bookingAccessToken?: string;
   error?: string;
@@ -286,12 +294,12 @@ function addDaysToDateInput(value: string, days: number) {
 }
 
 function combineDateTime(date: string, time: string) {
-  if (!date || !time) return null;
-  const value = new Date(`${date}T${time}:00`);
-  return Number.isNaN(value.getTime()) ? null : value;
+  const iso = bookingDateTimeToUtcIso(date, time);
+  return iso ? new Date(iso) : null;
 }
 
 function buildPricingQuoteKey(input: {
+  insurancePlanId: string | null;
   vehicleId: string;
   startAt: Date;
   endAt: Date;
@@ -305,6 +313,7 @@ function buildPricingQuoteKey(input: {
 }) {
   return JSON.stringify({
     vehicleId: input.vehicleId,
+    insurancePlanId: input.insurancePlanId,
     startAt: input.startAt.toISOString(),
     endAt: input.endAt.toISOString(),
     insuranceSelected: input.insuranceSelected,
@@ -438,6 +447,7 @@ export function PublicBookingWizard({
   const initialDropoffTimeRef = useRef(initialBookingDateTimeRef.current.dropoffTime);
 
   const [step, setStep] = useState<WizardStep>(1);
+  const [quoteRefreshRevision, setQuoteRefreshRevision] = useState(0);
   const [maxStepCompleted, setMaxStepCompleted] = useState<WizardStep>(1);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -1093,7 +1103,10 @@ export function PublicBookingWizard({
     destroyVehicleLightbox();
   }, [destroyVehicleLightbox]);
 
-  const rentalDays = pricingQuote?.days ?? calcRentalDays(pickupDate, dropoffDate);
+  const rentalDays = pricingQuote?.days ?? billableRentalDays(
+    bookingDateTimeToUtcIso(pickupDate, pickupTime) ?? "",
+    bookingDateTimeToUtcIso(dropoffDate, dropoffTime) ?? "",
+  );
   const standardProtectionAvailable = insuranceEnabled && !insuranceLoading;
   const standardProtectionTotal = rentalDays * insurancePricePerDay;
   const baseTotal = pricingQuote?.baseTotal ?? (selectedVehicle ? selectedVehicle.daily_rate_cents * rentalDays : 0);
@@ -1156,6 +1169,7 @@ export function PublicBookingWizard({
   const currentPricingQuoteKey = useMemo(() => {
     if (!hasSelectedVehicleId || !pickupAt || !dropoffAt || !datesValid) return "";
     return buildPricingQuoteKey({
+      insurancePlanId,
       vehicleId: selectedVehicleId,
       startAt: pickupAt,
       endAt: dropoffAt,
@@ -1177,6 +1191,7 @@ export function PublicBookingWizard({
     emailAddress,
     hasSelectedVehicleId,
     insuranceEnabled,
+    insurancePlanId,
     insuranceSelected,
     paymentOption,
     pickupAt,
@@ -1282,6 +1297,8 @@ export function PublicBookingWizard({
               typeof vehicle.model === "string",
           )
           .map((vehicle) => ({
+            durationTiers: Array.isArray(vehicle.durationTiers) ? vehicle.durationTiers as DurationTier[] : [],
+            rentalQuote: vehicle.rentalQuote as PublicVehicle["rentalQuote"],
             id: String(vehicle.id),
             name: typeof vehicle.name === "string" ? vehicle.name : "",
             make: String(vehicle.make),
@@ -1684,6 +1701,7 @@ export function PublicBookingWizard({
     }
 
     const quoteKey = buildPricingQuoteKey({
+      insurancePlanId,
       vehicleId: selectedVehicleId,
       startAt: pickup,
       endAt: dropoff,
@@ -1733,6 +1751,7 @@ export function PublicBookingWizard({
             startAt: pickup.toISOString(),
             endAt: dropoff.toISOString(),
             insuranceSelected: insuranceEnabled && insuranceSelected,
+            insurancePlanId,
             promoCode: couponAppliedCode,
             paymentOption,
             customAmount: paymentOption === "CUSTOM" ? customPaymentAmount : undefined,
@@ -1807,12 +1826,14 @@ export function PublicBookingWizard({
     hasSelectedVehicleId,
     hydrated,
     insuranceEnabled,
+    insurancePlanId,
     insuranceSelected,
     paymentOption,
     pickupDate,
     pickupTime,
     resetQuoteRefresh,
     selectedVehicleId,
+    quoteRefreshRevision,
   ]);
 
   useEffect(() => {
@@ -2944,6 +2965,7 @@ export function PublicBookingWizard({
         body: JSON.stringify({
           vehicleId: selectedVehicleId,
           submissionKey,
+          pricingFingerprint: pricingQuote?.pricingFingerprint,
           turnstileToken,
           customerId,
           fullName,
@@ -2997,6 +3019,12 @@ export function PublicBookingWizard({
 
       const bookingData = (await bookingResponse.json().catch(() => ({}))) as BookingCreateResponse;
       if (!bookingResponse.ok || !bookingData.bookingId) {
+        if (bookingData.code === "PRICE_CHANGED") {
+          lastQuoteSuccessKeyRef.current = "";
+          setPricingState((previous) => startPricingLifecycleRefresh(previous));
+          setQuoteRefreshRevision((value) => value + 1);
+          setStep(6);
+        }
         setTurnstileToken(null);
         setTurnstileResetKey((value) => value + 1);
         throw new Error(bookingData.error ?? "Unable to create booking.");
@@ -4278,6 +4306,15 @@ export function PublicBookingWizard({
                     <div className="flex items-start justify-between gap-3">
                       <span className="min-w-0">Base rental</span>
                       <span className="shrink-0 text-right font-semibold">{hideFallbackTotals ? "—" : formatJmd(baseTotal)}</span>
+                    </div>
+                    <p className="text-xs text-[var(--ccr-on-primary-muted)]">
+                      {pricingQuote?.durationTier ? durationTierLabel(pricingQuote.durationTier) : "Standard pricing"}
+                      {pricingQuote?.dailyRate != null ? ` · ${formatJmd(pricingQuote.dailyRate)}/day` : ""}.
+                      {" "}Rental days are started 24-hour periods: 48 hours = 2 days; 49 hours = 3 days.
+                    </p>
+                    <div className="flex items-start justify-between gap-3">
+                      <span>Delivery / additional fees</span>
+                      <span>{hideFallbackTotals ? "—" : formatJmd(pricingQuote?.deliveryTotal ?? 0)}</span>
                     </div>
                     <div className="flex items-start justify-between gap-3">
                       <span className="min-w-0">Insurance</span>

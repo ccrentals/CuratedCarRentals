@@ -91,6 +91,7 @@ export type AdminBookingDetailViewModel = {
     hasSignatureDoc: boolean;
   };
   chargesSummary: {
+    durationPricingSnapshot?: Record<string, unknown> | null;
     paymentIncomplete: boolean;
     refundRequired: boolean;
     days: number;
@@ -169,6 +170,7 @@ export function buildAdminBookingDateTimeLabel(input: {
 }
 
 export function buildAdminBookingDetailView(input: {
+  durationPricingSnapshot?: Record<string, unknown> | null;
   versionKey: string;
   bookingId: string;
   bookingPublicId: string;
@@ -259,6 +261,7 @@ export function buildAdminBookingDetailView(input: {
       hasSignatureDoc: input.hasSignatureDoc,
     },
     chargesSummary: {
+      durationPricingSnapshot: input.durationPricingSnapshot,
       paymentIncomplete: !input.isPaidInFull && input.total > 0,
       refundRequired: input.refundRequired,
       days: input.days,

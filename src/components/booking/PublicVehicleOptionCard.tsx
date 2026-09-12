@@ -2,8 +2,12 @@ import type { ReactNode } from "react";
 import Image from "next/image";
 
 import { cn } from "@/lib/utils";
+import { DurationRates } from "./DurationRates";
+import type { DurationTier } from "@/lib/bookings/durationPricing";
 
 type PublicVehicleOption = {
+  durationTiers?: DurationTier[];
+  rentalQuote?: {days: number; baseTotal: number; dailyRate: number};
   id: string;
   name: string;
   make: string;
@@ -220,7 +224,7 @@ export function PublicVehicleOptionCard({
   const category = normalizeText(vehicle.category);
   const subtitle = [vehicle.year ? String(vehicle.year) : "", category].filter(Boolean).join(" • ");
   const specs = buildSpecs(vehicle);
-  const rentalTotal = Math.max(0, Math.round(vehicle.daily_rate_cents || 0) * Math.max(1, rentalDays));
+  const rentalTotal = vehicle.rentalQuote?.baseTotal;
   const description = normalizeText(vehicle.description);
   const canOpenGallery = typeof onImageClick === "function";
 
@@ -281,10 +285,11 @@ export function PublicVehicleOptionCard({
 
         {description ? <p className="mt-4 break-words text-sm text-[var(--ccr-muted)]">{description}</p> : null}
 
+        <DurationRates tiers={vehicle.durationTiers} standardRate={vehicle.daily_rate_cents} days={rentalDays} />
         <div className="mt-4 flex min-w-0 flex-col gap-3 min-[430px]:flex-row min-[430px]:items-center min-[430px]:justify-between">
           <div className="min-w-0 space-y-1">
-            <p className="text-sm font-semibold text-[var(--ccr-text)]">{formatMoney(vehicle.daily_rate_cents)} / Day</p>
-            <p className="break-words text-xs text-[var(--ccr-muted)]">{rentalDays} day total: {formatMoney(rentalTotal)}</p>
+            <p className="text-sm font-semibold text-[var(--ccr-text)]">{formatMoney(vehicle.rentalQuote?.dailyRate ?? vehicle.daily_rate_cents)} / Day{!vehicle.rentalQuote ? " (standard)" : ""}</p>
+            <p className="break-words text-xs text-[var(--ccr-muted)]">{rentalTotal === undefined ? "Select dates for your rental total" : `${vehicle.rentalQuote?.days} day rental total: ${formatMoney(rentalTotal)}`}</p>
             <p className="break-words text-xs text-[var(--ccr-muted)]">Deposit: {formatMoney(vehicle.deposit_cents)}</p>
           </div>
           <div className="flex w-full flex-col gap-2 min-[430px]:w-auto min-[430px]:flex-row">

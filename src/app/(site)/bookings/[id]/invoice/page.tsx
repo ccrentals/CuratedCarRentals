@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { AgreedDurationRate } from "@/components/booking/AgreedDurationRate";
 
 import InvoiceAutoPrint from "@/components/payments/InvoiceAutoPrint";
 import PrintInvoiceButton from "@/components/payments/PrintInvoiceButton";
@@ -153,6 +154,7 @@ export default async function BookingInvoicePage({
                 {booking.vehicle_year} {booking.vehicle_make} {booking.vehicle_model}
               </p>
               <p className="text-[var(--ccr-muted)]">Daily rate: {formatJmd(summary.dailyRate)}</p>
+              <AgreedDurationRate pricing={pricing} />
             </div>
             <div>
               <p className="text-xs uppercase text-[var(--ccr-muted)]">Rental</p>

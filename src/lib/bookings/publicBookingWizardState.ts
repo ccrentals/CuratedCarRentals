@@ -36,6 +36,8 @@ export type PricingLifecycleState<T> = {
 };
 
 export type VehicleRefreshComparable = {
+  durationTiers?: unknown;
+  rentalQuote?: unknown;
   id: string;
   name?: string;
   make?: string;
@@ -180,6 +182,8 @@ export function createVehicleRefreshSignature<T extends VehicleRefreshComparable
       model: normalizeText(vehicle.model),
       year: Number(vehicle.year ?? 0),
       dailyRateCents: Number(vehicle.daily_rate_cents ?? 0),
+      durationTiers: vehicle.durationTiers ?? [],
+      rentalQuote: vehicle.rentalQuote ?? null,
       depositCents: Number(vehicle.deposit_cents ?? 0),
       images: Array.isArray(vehicle.images)
         ? vehicle.images
