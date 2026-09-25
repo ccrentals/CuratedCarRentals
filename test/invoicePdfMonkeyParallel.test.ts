@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
+  buildInvoicePayload,
   buildPdfMonkeyInvoiceDocumentPayload,
   buildPdfMonkeyInvoiceTemplateSampleData,
   buildPdfMonkeyRentalAgreementDocumentPayload,
@@ -13,6 +14,7 @@ import {
   resolveInvoicePdfProvider,
   resolveRentalAgreementPdfProvider,
 } from "@/lib/pdfmonkey";
+import { formatBookingDateOnly } from "@/lib/bookings/bookingDateTime";
 import { getInvoiceProvider } from "@/lib/env";
 import { handleAdminBookingInvoiceDocumentGet } from "@/app/api/admin/bookings/[id]/invoice-document/implementation";
 import { handleAdminBookingAgreementDocumentGet } from "@/app/api/admin/bookings/[id]/agreement-document/implementation";
@@ -125,6 +127,69 @@ function sampleRentalAgreementPayload() {
     },
     issued_at: "2026-03-15T03:21:51.903Z",
   };
+}
+
+for (const dates of [
+  { label: "date-only strings", start: "2026-10-06", end: "2026-10-11" },
+  {
+    label: "serialized dates at midnight UTC",
+    start: "2026-10-06T00:00:00.000Z",
+    end: "2026-10-11T00:00:00.000Z",
+  },
+  {
+    // PostgreSQL DATE values are parsed as local-midnight Date objects.
+    label: "database Date objects",
+    start: new Date(2026, 9, 6),
+    end: new Date(2026, 9, 11),
+  },
+]) {
+  test(`invoice dates match booking dates for ${dates.label}`, async () => {
+    const invoice = buildInvoicePayload({
+      bookingId: "11111111-1111-4111-8111-111111111111",
+      bookingPublicId: "BK000072",
+      bookingStatus: "CONFIRMED",
+      startDate: dates.start,
+      endDate: dates.end,
+      pickupLocation: "Kingston",
+      customerName: "Test Customer",
+      customerEmail: "customer@example.com",
+      customerPhone: "",
+      vehicleMake: "Daihatsu",
+      vehicleModel: "Mira ES",
+      vehicleYear: 2020,
+      dailyRate: 500000,
+      deposit: 150000,
+      total: 2500000,
+      paidToDate: 150000,
+      balanceDue: 2350000,
+      payments: [{
+        provider: "STRIPE",
+        status: "DEPOSIT_PAID",
+        amount: 150000,
+        date: "2026-09-24T02:00:00.000Z",
+      }],
+    });
+    const pdf = await buildPdfMonkeyInvoiceDocumentPayload({
+      ...invoice,
+      issued_at: "2026-09-24T02:00:00.000Z",
+    });
+
+    assert.equal(formatBookingDateOnly(dates.start), "10/6/2026");
+    assert.equal(formatBookingDateOnly(dates.end), "10/11/2026");
+    assert.equal(pdf.booking.display_start_date, "06 Oct 2026");
+    assert.equal(pdf.booking.display_end_date, "11 Oct 2026");
+    assert.equal(pdf.booking.display_due_date, "06 Oct 2026");
+    // Both PDF providers receive calendar dates from the shared builder.
+    assert.equal(invoice.booking.start_date, "2026-10-06");
+    assert.equal(invoice.booking.end_date, "2026-10-11");
+    assert.equal(invoice.charges.rental_days, 5);
+    assert.equal(invoice.charges.total, 2500000);
+    assert.equal(invoice.charges.balance_due, 2350000);
+    // Actual event timestamps must still be displayed in Jamaica time.
+    assert.equal(invoice.payments[0].date, "2026-09-24T02:00:00.000Z");
+    assert.equal(pdf.payments[0].date_display, "23 Sept 2026");
+    assert.equal(pdf.display.issued_at, "23 Sept 2026");
+  });
 }
 
 test("invoice PDF generation: explicit PDFMonkey override stores ledger metadata", async () => {
@@ -718,7 +783,7 @@ test("admin invoice document route returns structured provider errors instead of
 
 test("admin invoice document route stays decoupled from email senders", () => {
   const source = readFileSync(
-    "/Users/damianthompson/curated-car-rentals/src/app/api/admin/bookings/[id]/invoice-document/implementation.ts",
+    new URL("../src/app/api/admin/bookings/[id]/invoice-document/implementation.ts", import.meta.url),
     "utf8",
   );
 
@@ -856,7 +921,7 @@ test("admin agreement document route rejects invalid provider values", async () 
 
 test("admin agreement document route stays decoupled from email senders", () => {
   const source = readFileSync(
-    "/Users/damianthompson/curated-car-rentals/src/app/api/admin/bookings/[id]/agreement-document/implementation.ts",
+    new URL("../src/app/api/admin/bookings/[id]/agreement-document/implementation.ts", import.meta.url),
     "utf8",
   );
 

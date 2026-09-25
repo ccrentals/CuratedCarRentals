@@ -10,6 +10,7 @@ import {
 import { getInvoiceProvider } from "@/lib/env";
 import { logError, redactText } from "@/lib/log";
 import { calcRentalDays } from "@/lib/payments/dateMath";
+import { toBookingDateOnly } from "@/lib/bookings/bookingDateTime";
 
 const PDFMONKEY_BASE_URL = "https://api.pdfmonkey.io/api/v1";
 const DEFAULT_GOTENBERG_URL = "http://localhost:3001";
@@ -31,8 +32,8 @@ export type InvoicePayloadInput = {
   bookingPublicId?: string;
   invoiceNumber?: string;
   bookingStatus: string;
-  startDate: string;
-  endDate: string;
+  startDate: string | Date;
+  endDate: string | Date;
   pickupLocation: string;
   customerName: string;
   customerEmail: string;
@@ -1886,6 +1887,10 @@ async function createDocumentWithGotenberg(
 }
 
 export function buildInvoicePayload(input: InvoicePayloadInput) {
+  // Rental dates are calendar days, including PostgreSQL DATE objects from email callers.
+  // Normalize before PDF formatting can turn midnight into the previous day in Jamaica.
+  const startDate = toBookingDateOnly(input.startDate) ?? asString(input.startDate);
+  const endDate = toBookingDateOnly(input.endDate) ?? asString(input.endDate);
   const bookingPublicId = (input.bookingPublicId ?? "").trim() || input.bookingId.slice(0, 8);
   const invoiceReference = (input.invoiceNumber ?? "").trim() || bookingPublicId;
   const insuranceTotal = Math.max(0, Number(input.insuranceTotal ?? 0));
@@ -1900,8 +1905,8 @@ export function buildInvoicePayload(input: InvoicePayloadInput) {
       invoice_number: invoiceReference,
       status: input.bookingStatus,
       pickup_location: input.pickupLocation,
-      start_date: input.startDate,
-      end_date: input.endDate,
+      start_date: startDate,
+      end_date: endDate,
     },
     customer: {
       name: input.customerName,
@@ -1924,7 +1929,7 @@ export function buildInvoicePayload(input: InvoicePayloadInput) {
       promo_code: input.promoCode ?? null,
       paid_to_date: input.paidToDate,
       balance_due: input.balanceDue,
-      rental_days: input.rentalDays ?? computeRentalDays(input.startDate, input.endDate),
+      rental_days: input.rentalDays ?? computeRentalDays(startDate, endDate),
     },
     payments: input.payments,
     issued_at: new Date().toISOString(),
