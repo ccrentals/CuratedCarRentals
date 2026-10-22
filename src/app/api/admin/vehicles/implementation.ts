@@ -18,6 +18,7 @@ const allowedStatuses = ["AVAILABLE", "UNAVAILABLE", "RESERVED", "RENTED", "MAIN
 const INVALID_SEAT_COUNT = Symbol("INVALID_SEAT_COUNT");
 const ADMIN_VEHICLE_MUTATION_LIMIT = 20;
 const ADMIN_VEHICLE_MUTATION_WINDOW_SECONDS = 10 * 60;
+const MAX_ADMIN_VEHICLE_REQUEST_BYTES = 1024 * 1024;
 const VEHICLE_GALLERY_POLICY = {
   label: "Vehicle gallery",
   maxCount: 20,
@@ -167,6 +168,14 @@ export async function handleAdminVehiclePost(
 ) {
   const auth = await deps.authorize();
   if (!auth.ok) return auth.response;
+
+  const declaredLength = Number(request.headers.get("content-length") ?? 0);
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_ADMIN_VEHICLE_REQUEST_BYTES) {
+    return NextResponse.json(
+      { error: "Vehicle request is too large." },
+      { status: 413 },
+    );
+  }
 
   const contentType = request.headers.get("content-type") ?? "";
   let body: Record<string, unknown> = {};
