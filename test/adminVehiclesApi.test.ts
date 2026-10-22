@@ -73,6 +73,7 @@ test("admin vehicle create API defaults vehicles to private and stores gallery m
     {
       authorize: async () => authorizedActor(),
       requireCsrfCheck: async () => true,
+      consumeRateLimitCheck: async () => allowRateLimit(),
       connect: async () =>
         ({
           async query(text: string, values?: unknown[]) {
@@ -173,6 +174,7 @@ test("admin vehicle patch API toggles public visibility and refreshes gallery me
     {
       authorize: async () => authorizedActor(),
       requireCsrfCheck: async () => true,
+      consumeRateLimitCheck: async () => allowRateLimit(),
       connect: async () =>
         ({
           async query(text: string, values?: unknown[]) {
@@ -576,6 +578,7 @@ test("admin vehicle patch API maps unavailable to UNAVAILABLE", async () => {
     {
       authorize: async () => authorizedActor(),
       requireCsrfCheck: async () => true,
+      consumeRateLimitCheck: async () => allowRateLimit(),
       connect: async () =>
         ({
           async query(text: string, values?: unknown[]) {
@@ -646,6 +649,7 @@ test("admin vehicle patch API still succeeds when post-commit audit logging fail
     {
       authorize: async () => authorizedActor(),
       requireCsrfCheck: async () => true,
+      consumeRateLimitCheck: async () => allowRateLimit(),
       connect: async () =>
         ({
           async query(text: string) {
