@@ -161,7 +161,7 @@ html[data-theme="forest"], html[data-theme="forest"] body {
     }
     var theme = allowed.indexOf(cookieTheme) !== -1 ? cookieTheme : localStorage.getItem(key);
     if (!theme || allowed.indexOf(theme) === -1) {
-      theme = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+      theme = "light";
     }
     document.documentElement.setAttribute("data-theme", theme);
     var darkThemes = ["dark", "midnight", "ocean", "forest"];
