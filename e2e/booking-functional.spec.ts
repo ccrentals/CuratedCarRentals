@@ -173,59 +173,42 @@ async function mockBookingApis(page: Page) {
     });
   });
 
-  await page.route("https://upload.uploadcare.com/base/", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ file: "22222222-2222-4222-8222-222222222222" }),
-    });
-  });
 }
 
 async function advanceToPaymentsStep(page: Page) {
-  await page.getByRole("button", { name: "Next Step" }).click();
+  await page.getByTestId("booking-section-continue").click();
   await page.getByRole("button", { name: /^Select$/ }).first().click();
-  await page.getByRole("button", { name: "Next Step" }).click();
-  await page.getByRole("button", { name: "Next Step" }).click();
+  await page.getByTestId("booking-section-continue").click();
+  await page.getByRole("button", { name: /^No Protection/ }).click();
+  await page.getByTestId("booking-section-continue").click();
 
   await page.getByLabel("First Name *").fill("Draft");
   await page.getByLabel("Last Name *").fill("Restore");
   await page.getByLabel("Email Address *").fill("draft.restore@example.com");
   await page.getByLabel("Phone Number *").fill("8765551234");
-  await page.getByLabel("DL Number").fill("D1234567");
-  const fileInputs = page.locator('input[type="file"]');
-  await fileInputs.first().setInputFiles({
-    name: "dl.jpg",
-    mimeType: "image/jpeg",
-    buffer: Buffer.from("fake-dl-image"),
-  });
-  await page.getByRole("button", { name: "Next Step" }).click();
+  await page.getByTestId("booking-date-of-birth").fill("1990-01-15");
+  await page.getByTestId("booking-section-continue").click();
 
   const signatureCanvas = page.locator("canvas").first();
   await signatureCanvas.click({ position: { x: 20, y: 20 } });
   await page.getByLabel("By clicking here, I confirm that I accept the privacy policy and terms.").check();
-  await page.getByRole("button", { name: "Next Step" }).click();
+  await page.getByTestId("booking-section-continue").click();
   await expect(page.locator('[data-testid="booking-step-payments"]')).toBeVisible();
 }
 
 async function advanceToConfirmStep(page: Page) {
-  await page.getByRole("button", { name: "Next Step" }).click();
+  await page.getByTestId("booking-section-continue").click();
   await page.getByRole("button", { name: /^Select$/ }).first().click();
-  await page.getByRole("button", { name: "Next Step" }).click();
-  await page.getByRole("button", { name: "Next Step" }).click();
+  await page.getByTestId("booking-section-continue").click();
+  await page.getByRole("button", { name: /^No Protection/ }).click();
+  await page.getByTestId("booking-section-continue").click();
 
   await page.getByLabel("First Name *").fill("Theme");
   await page.getByLabel("Last Name *").fill("Check");
   await page.getByLabel("Email Address *").fill("theme.check@example.com");
   await page.getByLabel("Phone Number *").fill("8765551234");
-  await page.getByLabel("DL Number").fill("D1234567");
-  const fileInputs = page.locator('input[type="file"]');
-  await fileInputs.first().setInputFiles({
-    name: "dl.jpg",
-    mimeType: "image/jpeg",
-    buffer: Buffer.from("fake-dl-image"),
-  });
-  await page.getByRole("button", { name: "Next Step" }).click();
+  await page.getByTestId("booking-date-of-birth").fill("1990-01-15");
+  await page.getByTestId("booking-section-continue").click();
 
   await expect(page.getByRole("heading", { name: "Confirm Reservation" })).toBeVisible();
 }
@@ -237,20 +220,21 @@ test.beforeEach(async ({ page }) => {
 test("booking requires vehicle selection before continue", async ({ page }) => {
   await page.goto("/book", { waitUntil: "networkidle" });
 
-  await page.getByRole("button", { name: "Next Step" }).click();
+  await page.getByTestId("booking-section-continue").click();
   await expect(page.locator('[data-testid="booking-step-vehicles"]')).toBeVisible();
 
-  await page.getByRole("button", { name: "Next Step" }).click();
+  await page.getByTestId("booking-section-continue").click();
   await expect(page.getByText("Select a vehicle to continue.")).toBeVisible();
 });
 
-test("driver's license number, expiration date, and image are optional on customer step", async ({ page }) => {
+test("customer step asks for no driver's licence information", async ({ page }) => {
   await page.goto("/book", { waitUntil: "networkidle" });
 
-  await page.getByRole("button", { name: "Next Step" }).click();
+  await page.getByTestId("booking-section-continue").click();
   await page.getByRole("button", { name: /^Select$/ }).first().click();
-  await page.getByRole("button", { name: "Next Step" }).click();
-  await page.getByRole("button", { name: "Next Step" }).click();
+  await page.getByTestId("booking-section-continue").click();
+  await page.getByRole("button", { name: /^No Protection/ }).click();
+  await page.getByTestId("booking-section-continue").click();
 
   await expect(page.getByRole("heading", { name: "Customer Information" })).toBeVisible();
 
@@ -258,11 +242,10 @@ test("driver's license number, expiration date, and image are optional on custom
   await page.getByLabel("Last Name *").fill("Driver");
   await page.getByLabel("Email Address *").fill("test.driver@example.com");
   await page.getByLabel("Phone Number *").fill("8765551234");
-  await page.getByRole("button", { name: "Next Step" }).click();
-  await expect(page.getByText("Driver's license number is required.")).toHaveCount(0);
-  await expect(page.getByText("Driver's license image upload is required.")).toHaveCount(0);
-  await page.getByRole("button", { name: "Next Step" }).click();
-  await expect(page.getByRole("heading", { name: "Confirm Reservation" })).toBeVisible();
+  await page.getByTestId("booking-date-of-birth").fill("1990-01-15");
+  await page.getByTestId("booking-section-continue").click();
+  await expect(page.getByTestId("booking-step-confirm")).toBeVisible();
+  await expect(page.getByText(/licen[cs]e/i)).toHaveCount(0);
 });
 
 test("insurance and promo update totals using pricing quote", async ({ page }) => {
@@ -285,14 +268,14 @@ test("insurance and promo update totals using pricing quote", async ({ page }) =
     .nth(1)
     .inputValue();
 
-  await page.getByRole("button", { name: "Next Step" }).click();
+  await page.getByTestId("booking-section-continue").click();
   await page.getByRole("button", { name: /^Select$/ }).first().click();
   const initialQuotePromise = page.waitForResponse((response) => {
     if (!response.url().includes("/api/public/pricing/quote")) return false;
     const body = response.request().postData() ?? "";
     return body.includes(`\"vehicleId\":\"${VEHICLE_ID}\"`) && body.includes("\"insuranceSelected\":false");
   });
-  await page.getByRole("button", { name: "Next Step" }).click();
+  await page.getByTestId("booking-section-continue").click();
 
   const pricingPanel = page.locator("aside").filter({ hasText: "Pricing (JMD)" });
   const quoteBeforeJson = (await (await initialQuotePromise).json()) as { summary: { total: number } };
@@ -303,7 +286,7 @@ test("insurance and promo update totals using pricing quote", async ({ page }) =
     const body = response.request().postData() ?? "";
     return body.includes(`\"vehicleId\":\"${VEHICLE_ID}\"`) && body.includes("\"insuranceSelected\":true");
   });
-  await page.getByLabel("Add plan").check();
+  await page.getByRole("button", { name: /^Standard Protection/ }).click();
   const quoteWithInsuranceJson = (await (await quoteWithInsurancePromise).json()) as {
     summary: { total: number };
   };
@@ -490,7 +473,7 @@ test("restored unavailable vehicle is retained until explicitly deselected", asy
     "Selected vehicle is no longer available for these dates. Choose another.",
   );
 
-  const summaryPanel = page.locator("aside").filter({ hasText: "Summary" });
+  const summaryPanel = page.locator("aside").filter({ hasText: "Your Booking" });
   await expect(summaryPanel).toContainText("Vehicle: Unavailable for selected dates");
   await expect(page.locator('[data-testid="booking-continue-payment"]')).toBeDisabled();
 
@@ -503,11 +486,11 @@ test("step tabs unlock by completion and preserve entered Step 3 values", async 
   await page.goto("/book", { waitUntil: "networkidle" });
 
   await expect(page.locator('[data-testid="booking-step-tab-2"]')).toBeDisabled();
-  await page.getByRole("button", { name: "Next Step" }).click();
+  await page.getByTestId("booking-section-continue").click();
   await expect(page.locator('[data-testid="booking-step-tab-3"]')).toBeDisabled();
 
   await page.getByRole("button", { name: /^Select$/ }).first().click();
-  await page.getByRole("button", { name: "Next Step" }).click();
+  await page.getByTestId("booking-section-continue").click();
   await expect(page.locator('[data-testid="booking-step-tab-4"]')).toBeDisabled();
 
   const quoteWithPromoPromise = page.waitForResponse((response) => {
@@ -516,34 +499,27 @@ test("step tabs unlock by completion and preserve entered Step 3 values", async 
     return body.includes(`\"vehicleId\":\"${VEHICLE_ID}\"`) && body.includes("\"promoCode\":\"SAVE5\"");
   });
 
-  await page.getByLabel("Add plan").check();
+  await page.getByRole("button", { name: /^Standard Protection/ }).click();
   await page.getByPlaceholder("Enter coupon code").fill("SAVE5");
   await page.getByRole("button", { name: "Apply" }).click();
   const quoteWithPromoJson = (await (await quoteWithPromoPromise).json()) as { summary: { total: number } };
 
-  await page.getByRole("button", { name: "Next Step" }).click();
+  await page.getByTestId("booking-section-continue").click();
   await page.getByLabel("First Name *").fill("Step");
   await page.getByLabel("Last Name *").fill("Tabs");
   await page.getByLabel("Email Address *").fill("step.tabs@example.com");
   await page.getByLabel("Phone Number *").fill("8765551234");
-  await page.getByLabel("DL Number").fill("D1234567");
-  const fileInputs = page.locator('input[type="file"]');
-  await fileInputs.first().setInputFiles({
-    name: "dl.jpg",
-    mimeType: "image/jpeg",
-    buffer: Buffer.from("fake-dl-image"),
-  });
-  await page.getByRole("button", { name: "Next Step" }).click();
+  await page.getByTestId("booking-date-of-birth").fill("1990-01-15");
+  await page.getByTestId("booking-section-continue").click();
 
   const signatureCanvas = page.locator("canvas").first();
   await signatureCanvas.click({ position: { x: 20, y: 20 } });
   await page.getByLabel("By clicking here, I confirm that I accept the privacy policy and terms.").check();
-  await page.getByRole("button", { name: "Next Step" }).click();
+  await page.getByTestId("booking-section-continue").click();
   await expect(page.locator('[data-testid="booking-step-payments"]')).toBeVisible();
 
   await page.locator('[data-testid="booking-step-tab-3"]').click();
-  await expect(page.getByRole("heading", { name: "Protections & Coverage" })).toBeVisible();
-  await expect(page.getByLabel("Add plan")).toBeChecked();
+  await expect(page.getByRole("button", { name: /^Protection & Extras/ })).toBeVisible();
   await expect(page.getByPlaceholder("Enter coupon code")).toHaveValue("SAVE5");
 
   await page.locator('[data-testid="booking-step-tab-6"]').click();
@@ -569,7 +545,6 @@ test("step 5 does not show vehicle as not selected while draft selection resolve
         selectedVehicleId: vehicleId,
         firstName: "Draft",
         lastName: "User",
-        driversLicenseNumber: "D1234567",
       }),
     );
   }, { storageKey: WIZARD_DRAFT_STORAGE_KEY, vehicleId: VEHICLE_ID });
@@ -629,7 +604,7 @@ test("step 6 custom payment updates the side summary due-now and pickup-balance 
   await expect(pricingPanel).toContainText(
     `Minimum Deposit to Reserve${formatJmd(customQuote.summary.depositRequired)}`,
   );
-  await expect(pricingPanel).toContainText(`Due Now${formatJmd(customQuote.summary.dueNow)}`);
+  await expect(pricingPanel).toContainText(`Amount Due Now${formatJmd(customQuote.summary.dueNow)}`);
   await expect(pricingPanel).toContainText(
     `Balance Due on Pickup${formatJmd(customQuote.summary.dueOnPickup)}`,
   );
@@ -718,4 +693,75 @@ test("turnstile retry guidance appears when widget script fails to load", async 
     "Security check couldn't load.",
   );
   await expect(securityPanel.locator('[data-testid="turnstile-retry-button"]')).toBeVisible();
+});
+
+test("customer completes a reservation and reaches checkout without any driver's licence information @smoke", async ({ page }) => {
+  let bookingPayload: Record<string, unknown> | null = null;
+  let paymentStartCount = 0;
+
+  await page.route("**/api/public/bookings", async (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    bookingPayload = route.request().postDataJSON() as Record<string, unknown>;
+    await route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({ bookingId: "booking-no-licence", bookingAccessToken: "test-access-token" }),
+    });
+  });
+  await page.route("**/api/payments/start", async (route) => {
+    paymentStartCount += 1;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: true, redirectUrl: "/mock-stripe-checkout" }),
+    });
+  });
+  await page.route("**/mock-stripe-checkout", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "text/html",
+      body: "<html><body><h1>Mock Stripe Checkout</h1></body></html>",
+    });
+  });
+
+  await page.goto("/book", { waitUntil: "networkidle" });
+  await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
+
+  await page.getByTestId("booking-section-continue").click();
+  await page.getByRole("button", { name: /^Select$/ }).first().click();
+  await page.getByTestId("booking-section-continue").click();
+  await page.getByRole("button", { name: /^No Protection/ }).click();
+  await page.getByTestId("booking-section-continue").click();
+
+  const customerStep = page.getByTestId("booking-step-customer");
+  await expect(customerStep).toBeVisible();
+  await expect(customerStep).not.toContainText(/licen[cs]e/i);
+  await expect(page.locator('input[type="file"]')).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Returning Customer?" })).toHaveCount(0);
+
+  await page.getByLabel("First Name *").fill("Test");
+  await page.getByLabel("Last Name *").fill("Customer");
+  await page.getByLabel("Email Address *").fill("test.customer@example.com");
+  await page.getByLabel("Phone Number *").fill("8765551234");
+  await page.getByTestId("booking-date-of-birth").fill("1990-01-15");
+  await page.getByTestId("booking-section-continue").click();
+
+  const signatureCanvas = page.locator("canvas").first();
+  await signatureCanvas.click({ position: { x: 20, y: 20 } });
+  await page.getByLabel("By clicking here, I confirm that I accept the privacy policy and terms.").check();
+  await page.getByTestId("booking-section-continue").click();
+  await expect(page.getByTestId("booking-step-payments")).toBeVisible();
+
+  const pricingPanel = page.locator("aside").filter({ hasText: "Pricing (JMD)" });
+  await expect(pricingPanel).toContainText(`Amount Due Now${formatJmd(3_000)}`);
+  await expect(page.locator("body")).not.toContainText(/US\$50|credited toward/i);
+
+  await page.getByTestId("booking-continue-payment").click();
+  await page.waitForURL("**/mock-stripe-checkout");
+  await expect(page.getByRole("heading", { name: "Mock Stripe Checkout" })).toBeVisible();
+
+  expect(paymentStartCount).toBe(1);
+  expect(bookingPayload).not.toBeNull();
+  const submittedKeys = Object.keys(bookingPayload ?? {});
+  expect(submittedKeys.filter((key) => /licen[cs]e|legalId/i.test(key))).toEqual([]);
 });

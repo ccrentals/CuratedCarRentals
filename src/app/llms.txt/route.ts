@@ -56,7 +56,7 @@ export async function GET() {
     "- Service area: Jamaica",
     "",
     "## Important booking facts",
-    "- Drivers must be 23 years or older and hold a driver's license that has been valid for at least one year.",
+    "- Drivers must be 21 years or older and hold a driver's license that has been valid for at least one year.",
     "- All rentals require a security deposit; the applicable amount depends on the vehicle.",
     "- A paid reservation secures the selected vehicle and is required for airport pickup.",
     "- Optional insurance may affect the final total.",

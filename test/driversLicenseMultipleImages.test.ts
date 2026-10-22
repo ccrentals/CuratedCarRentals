@@ -9,15 +9,19 @@ function read(relativePath: string) {
   return fs.readFileSync(path.join(process.cwd(), relativePath), "utf8");
 }
 
-test("driver's license upload supports a bounded multi-image selection", () => {
+test("customer booking wizard does not collect or require any driver's license information", () => {
   const wizard = read("src/components/booking/PublicBookingWizard.tsx");
 
   assert.equal(MAX_DRIVERS_LICENSE_IMAGES, 4);
-  assert.match(wizard, /driversLicenseImageUrls/);
-  assert.match(wizard, /driversLicenseDataUrls: driversLicenseImageUrls/);
-  assert.match(wizard, /type="file"[\s\S]*?accept="image\/\*"[\s\S]*?multiple/);
-  assert.match(wizard, /setDriversLicenseImageUrls\(\(current\) => \[\.\.\.current, \.\.\.dataUrls\]\)/);
-  assert.match(wizard, /current\.filter\(\(_, imageIndex\) => imageIndex !== index\)/);
+  assert.doesNotMatch(wizard, /type="file"/);
+  assert.doesNotMatch(wizard, /driversLicenseImageUrls/);
+  assert.doesNotMatch(wizard, /driversLicenseDataUrls/);
+  assert.doesNotMatch(wizard, /legalIdImageUploadToken/);
+  assert.doesNotMatch(wizard, /legalIdNumber/);
+  assert.doesNotMatch(wizard, /driversLicenseNumber/);
+  assert.doesNotMatch(wizard, /driversLicenseExpirationDate/);
+  assert.doesNotMatch(wizard, /licenceHeldConfirmed/);
+  assert.doesNotMatch(wizard, /returning-customer/);
 });
 
 test("public booking API validates and stores every driver's license image", () => {

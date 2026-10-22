@@ -1,16 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
-import NextImage from "next/image";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { TurnstileWidget } from "@/components/security/TurnstileWidget";
+import { BookingAccordionSection } from "@/components/booking/BookingAccordionSection";
 import { PublicVehicleOptionCard } from "@/components/booking/PublicVehicleOptionCard";
 import { Container } from "@/components/site/Container";
-import { PublicPageIntro } from "@/components/site/PublicPageIntro";
 import { siteContent } from "@/data/content";
 import { clearBookingDraft } from "@/lib/bookings/draft";
-import { MAX_DRIVERS_LICENSE_IMAGES } from "@/lib/bookings/privateFiles";
 import {
   buildBookingLocationConfigs,
   type BookingLocationConfig,
@@ -78,33 +76,6 @@ type PublicVehicle = {
   hybrid?: boolean;
   drivetrain?: string;
   description?: string;
-};
-
-type ReturningStartResponse = {
-  ok?: boolean;
-  next?: "VERIFY";
-  challengeToken?: string;
-  error?: string;
-};
-
-type ReturningVerifyResponse = {
-  ok?: boolean;
-  error?: string;
-  customer?: {
-    customerId?: string;
-    firstName?: string | null;
-    lastName?: string | null;
-    emailAddress?: string | null;
-    phoneNumber?: string | null;
-    street?: string | null;
-    street2?: string | null;
-    city?: string | null;
-    parish?: string | null;
-    country?: string | null;
-    birthday?: string | null;
-    driversLicenseNumber?: string | null;
-    driversLicenseExpirationDate?: string | null;
-  };
 };
 
 type PromoValidationResponse = {
@@ -224,22 +195,35 @@ type BookingWizardDraft = {
   parish?: string;
   country?: string;
   birthday?: string;
-  driversLicenseNumber?: string;
-  driversLicenseExpirationDate?: string;
   customerId?: string | null;
   paymentOption?: "FULL" | "DEPOSIT" | "CUSTOM" | "NONE";
   customPaymentAmount?: string;
   acceptTerms?: boolean;
 };
 
-const STEPS: Array<{ step: WizardStep; title: string }> = [
-  { step: 1, title: "Dates" },
-  { step: 2, title: "Vehicles" },
-  { step: 3, title: "Features" },
-  { step: 4, title: "Customer" },
-  { step: 5, title: "Confirm" },
-  { step: 6, title: "Payments" },
-];
+const SECTION_TITLES: Record<WizardStep, string> = {
+  1: "Dates & Locations",
+  2: "Choose Your Car",
+  3: "Protection & Extras",
+  4: "Your Details",
+  5: "Review & Confirm",
+  6: "Payment",
+};
+const MINIMUM_DRIVER_AGE = 21;
+
+function ageFromBirthday(value: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const today = new Date();
+  let age = today.getFullYear() - year;
+  if (today.getMonth() + 1 < month || (today.getMonth() + 1 === month && today.getDate() < day)) {
+    age -= 1;
+  }
+  return age >= 0 && age < 130 ? age : null;
+}
 const WIZARD_DRAFT_STORAGE_KEY = "ccr_booking_wizard_draft_v1";
 const WIZARD_DEBUG_ENABLED = process.env.NEXT_PUBLIC_WIZARD_DEBUG === "1";
 const BACKGROUND_VEHICLE_REFRESH_INTERVAL_MS = 15000;
@@ -248,8 +232,6 @@ const bookingFieldClassName =
   "mt-2 min-w-0 w-full max-w-full rounded-[1.1rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-3 text-sm text-[var(--ccr-text)] shadow-sm shadow-black/5 outline-none ring-[var(--ccr-accent)] transition focus:ring-2";
 const bookingSoftFieldClassName =
   "mt-2 min-w-0 w-full max-w-full rounded-[1.1rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-4 py-3 text-sm text-[var(--ccr-text)] shadow-sm shadow-black/5 outline-none ring-[var(--ccr-accent)] transition focus:ring-2";
-const bookingReadonlyFieldClassName =
-  "mt-2 min-w-0 w-full max-w-full rounded-[1.1rem] border border-[var(--ccr-border)] bg-[var(--ccr-bg)] px-4 py-3 text-sm text-[var(--ccr-text)] shadow-sm shadow-black/5";
 const bookingPrimaryButtonClassName =
   "rounded-[1rem] bg-[var(--ccr-primary)] px-5 py-3 text-sm font-semibold text-[var(--ccr-on-primary)] transition hover:bg-[var(--ccr-primary-soft)] disabled:opacity-60";
 const bookingOutlineButtonClassName =
@@ -365,12 +347,6 @@ function getVehicleGalleryImages(vehicle: PublicVehicle | null | undefined) {
   return images.length > 0 ? images : ["/window.svg"];
 }
 
-function setIfPresent(current: string, next: string | null | undefined) {
-  if (typeof next !== "string") return current;
-  const value = next.trim();
-  return value.length > 0 ? value : current;
-}
-
 function parseWizardStep(value: unknown): WizardStep {
   const parsed = Number(value);
   if (parsed === 1 || parsed === 2 || parsed === 3 || parsed === 4 || parsed === 5 || parsed === 6) {
@@ -405,7 +381,6 @@ function draftContainsMeaningfulProgress(draft: BookingWizardDraft) {
   if (normalizeText(draft.lastName ?? "").length > 0) return true;
   if (normalizeText(draft.emailAddress ?? "").length > 0) return true;
   if (normalizeText(draft.phoneNumber ?? "").length > 0) return true;
-  if (normalizeText(draft.driversLicenseNumber ?? "").length > 0) return true;
   if (normalizeText(draft.customPaymentAmount ?? "").length > 0) return true;
   if (draft.paymentOption === "FULL" || draft.paymentOption === "CUSTOM" || draft.paymentOption === "NONE") {
     return true;
@@ -427,7 +402,6 @@ export function PublicBookingWizard({
 }: PublicBookingWizardProps) {
   const router = useRouter();
   const hostedPaymentProvider = "Stripe";
-  const checkoutStep = { step: 7, title: hostedPaymentProvider } as const;
   const [requestedVehicleFromQuery, setRequestedVehicleFromQuery] = useState("");
   const draftHydratedRef = useRef(false);
   const preselectedVehicleIdRef = useRef("");
@@ -509,26 +483,10 @@ export function PublicBookingWizard({
   const [parish, setParish] = useState("");
   const [country, setCountry] = useState("Jamaica");
   const [birthday, setBirthday] = useState("");
+  const [collapsedStep, setCollapsedStep] = useState<WizardStep | null>(null);
 
-  const [driversLicenseNumber, setDriversLicenseNumber] = useState("");
-  const [driversLicenseExpirationDate, setDriversLicenseExpirationDate] = useState("");
-  const [driversLicenseImageUrls, setDriversLicenseImageUrls] = useState<string[]>([]);
-  const [driversLicenseUploading, setDriversLicenseUploading] = useState(false);
-  const uploadInputRef = useRef<HTMLInputElement | null>(null);
-  const cameraInputRef = useRef<HTMLInputElement | null>(null);
 
   const [customerId, setCustomerId] = useState<string | null>(null);
-  const [showReturningCustomerModal, setShowReturningCustomerModal] = useState(false);
-  const [returningDlInput, setReturningDlInput] = useState("");
-  const [returningChallengeToken, setReturningChallengeToken] = useState("");
-  const [returningSessionKey, setReturningSessionKey] = useState("");
-  const [returningOtpCode, setReturningOtpCode] = useState("");
-  const [returningLastName, setReturningLastName] = useState("");
-  const [returningBusy, setReturningBusy] = useState(false);
-  const [returningStage, setReturningStage] = useState<"lookup" | "verify">("lookup");
-  const [returningError, setReturningError] = useState<string | null>(null);
-  const [returningTurnstileToken, setReturningTurnstileToken] = useState<string | null>(null);
-  const [returningTurnstileResetKey, setReturningTurnstileResetKey] = useState(0);
 
   const signatureCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const signatureDrawingRef = useRef(false);
@@ -606,22 +564,6 @@ export function PublicBookingWizard({
         inFlightQuoteRef.current = null;
       }
     };
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const existing = window.sessionStorage.getItem("ccr-returning-customer-session") ?? "";
-    if (existing.trim()) {
-      setReturningSessionKey(existing.trim());
-      return;
-    }
-
-    const generated =
-      typeof window.crypto?.randomUUID === "function"
-        ? window.crypto.randomUUID()
-        : `session-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    window.sessionStorage.setItem("ccr-returning-customer-session", generated);
-    setReturningSessionKey(generated);
   }, []);
 
   const clearWizardDraft = useCallback(() => {
@@ -767,21 +709,16 @@ export function PublicBookingWizard({
         null;
       if (restoredParish) setParish(restoredParish);
       if (typeof draft.birthday === "string") setBirthday(draft.birthday);
-      if (typeof draft.driversLicenseNumber === "string") setDriversLicenseNumber(draft.driversLicenseNumber);
-      if (typeof draft.driversLicenseExpirationDate === "string") {
-        setDriversLicenseExpirationDate(draft.driversLicenseExpirationDate);
-      }
       if (typeof draft.customerId === "string" || draft.customerId === null) {
         setCustomerId(draft.customerId ?? null);
       }
       if (typeof draft.customPaymentAmount === "string") setCustomPaymentAmount(draft.customPaymentAmount);
       if (typeof draft.acceptTerms === "boolean") setAcceptTerms(draft.acceptTerms);
 
-      // For security, DL uploads and signatures are never restored from browser storage.
+      // For security, signatures are never restored from browser storage.
       const security = draftRestoreSecurityState();
-      setDriversLicenseImageUrls(security.driversLicenseImageUrls);
       setSignatureDataUrl(security.signatureDataUrl);
-      if (security.requiresDriversLicenseUpload || security.requiresSignatureUpload) {
+      if (security.requiresSignatureUpload) {
         setStatusMessage(security.notice);
       }
       setDraftWasRestored(true);
@@ -836,8 +773,6 @@ export function PublicBookingWizard({
       parish,
       country,
       birthday,
-      driversLicenseNumber,
-      driversLicenseExpirationDate,
       customerId,
       paymentOption,
       customPaymentAmount,
@@ -864,7 +799,6 @@ export function PublicBookingWizard({
       normalizeText(phoneNumber).length > 0 ||
       normalizeText(parish).length > 0 ||
       (normalizeText(country).length > 0 && country !== "Jamaica") ||
-      normalizeText(driversLicenseNumber).length > 0 ||
       normalizeText(customPaymentAmount).length > 0 ||
       paymentOption !== "DEPOSIT" ||
       acceptTerms;
@@ -884,8 +818,6 @@ export function PublicBookingWizard({
     couponDiscount,
     customerId,
     customPaymentAmount,
-    driversLicenseExpirationDate,
-    driversLicenseNumber,
     dropoffDate,
     dropoffLocationId,
     dropoffLocationManuallyEdited,
@@ -2229,10 +2161,13 @@ export function PublicBookingWizard({
     !validateBookingLocationSelection(dropoffLocationConfig, "dropoff", dropoffLocationValues);
   const step2Complete = step1Complete && hasResolvedVehicle;
   const step3Complete = step2Complete;
+  const driverAge = ageFromBirthday(birthday);
   const step4Complete =
     step3Complete &&
     Boolean(normalizeText(firstName)) &&
-    Boolean(normalizeText(lastName));
+    Boolean(normalizeText(lastName)) &&
+    driverAge !== null &&
+    driverAge >= MINIMUM_DRIVER_AGE;
   const step5Complete = step4Complete && Boolean(signatureDataUrl) && acceptTerms;
 
   function getEarliestMissingStep(targetStep: WizardStep): WizardStep | null {
@@ -2247,31 +2182,26 @@ export function PublicBookingWizard({
   function jumpToStep(targetStep: WizardStep) {
     if (submitting) return;
     resetMessages();
-    const scrollToWizardTop = () => {
-      wizardContainerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    };
+    setCollapsedStep(null);
 
     if (targetStep < step) {
       setStep(targetStep);
-      scrollToWizardTop();
       return;
     }
 
     if (targetStep > maxStepCompleted) {
-      setErrorMessage(`Complete Step ${maxStepCompleted} first to unlock this step.`);
+      setErrorMessage(`Complete ${SECTION_TITLES[maxStepCompleted]} first.`);
       return;
     }
 
     const missingStep = getEarliestMissingStep(targetStep);
     if (missingStep) {
       setStep(missingStep);
-      setErrorMessage(`Please complete Step ${missingStep} before continuing.`);
-      scrollToWizardTop();
+      setErrorMessage(`Please complete ${SECTION_TITLES[missingStep]} before continuing.`);
       return;
     }
 
     setStep(targetStep);
-    scrollToWizardTop();
   }
 
   function verifyStep(stepToValidate: WizardStep) {
@@ -2345,6 +2275,14 @@ export function PublicBookingWizard({
         setErrorMessage("A valid phone number is required.");
         return false;
       }
+      if (driverAge === null) {
+        setErrorMessage("Enter your date of birth.");
+        return false;
+      }
+      if (driverAge < MINIMUM_DRIVER_AGE) {
+        setErrorMessage(`Drivers must be ${MINIMUM_DRIVER_AGE} years or older to rent a vehicle.`);
+        return false;
+      }
     }
 
     if (stepToValidate === 5) {
@@ -2415,7 +2353,7 @@ export function PublicBookingWizard({
       setSelectedVehicleId(vehicleId);
       setProtectionChoice(null);
       setVehicleSelectionUnavailable(false);
-      wizardContainerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      setCollapsedStep(null);
       setStep(3);
       setMaxStepCompleted((current) => (current < 3 ? 3 : current));
       setStatusMessage("Vehicle selected and availability confirmed. Continue with your rental details.");
@@ -2425,7 +2363,7 @@ export function PublicBookingWizard({
 
   function handleDeselectVehicle() {
     resetMessages();
-    wizardContainerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setCollapsedStep(null);
     setStep(2);
     setMaxStepCompleted((current) => (current > 2 ? 2 : current));
     clearSelectedVehicleSelection({
@@ -2443,20 +2381,14 @@ export function PublicBookingWizard({
     }
     if (step >= 6) return;
     const nextStep = (step + 1) as WizardStep;
-    wizardContainerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setCollapsedStep(null);
     setStep(nextStep);
     setMaxStepCompleted((previous) => (nextStep > previous ? nextStep : previous));
   }
 
-  function moveToPreviousStep() {
-    resetMessages();
-    wizardContainerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    setStep((current) => (current > 1 ? ((current - 1) as WizardStep) : current));
-  }
-
   function handleChangeDates() {
     resetMessages();
-    wizardContainerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setCollapsedStep(null);
     setStep(1);
     setMaxStepCompleted(1);
     clearSelectedVehicleSelection({
@@ -2467,7 +2399,7 @@ export function PublicBookingWizard({
 
   function handleChangeVehicle() {
     resetMessages();
-    wizardContainerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setCollapsedStep(null);
     setStep(2);
     setMaxStepCompleted((current) => (current < 2 ? 2 : current));
     setStatusMessage("Review your selected vehicle or choose another.");
@@ -2492,7 +2424,7 @@ export function PublicBookingWizard({
     setRequestedVehicleFromQuery("");
     setShowStartOverConfirm(false);
     setDraftWasRestored(false);
-    wizardContainerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setCollapsedStep(null);
 
     const defaultDateTime = defaultBookingDateTime({ minimumDays: minimumRentalGlobalDays });
     initialBookingDateTimeRef.current = defaultDateTime;
@@ -2569,9 +2501,6 @@ export function PublicBookingWizard({
     setParish("");
     setCountry("Jamaica");
     setBirthday("");
-    setDriversLicenseNumber("");
-    setDriversLicenseExpirationDate("");
-    setDriversLicenseImageUrls([]);
     setCustomerId(null);
     setAcceptTerms(false);
     setSignatureDataUrl("");
@@ -2589,72 +2518,10 @@ export function PublicBookingWizard({
     setCustomPaymentAmount("");
     setTurnstileToken(null);
     setTurnstileResetKey((value) => value + 1);
-    setReturningTurnstileToken(null);
-    setReturningTurnstileResetKey((value) => value + 1);
-    setShowReturningCustomerModal(false);
-    setReturningStage("lookup");
-    setReturningError(null);
-    setReturningChallengeToken("");
-    setReturningOtpCode("");
-    setReturningLastName("");
-    setReturningBusy(false);
     setSubmitting(false);
     setErrorMessage(null);
     setStatusMessage("Booking draft cleared. Start again with dates and vehicle selection.");
     router.replace("/book");
-  }
-
-  async function uploadDriversLicenseFiles(files: File[]) {
-    if (files.length === 0) return;
-    setErrorMessage(null);
-    setDriversLicenseUploading(true);
-    try {
-      const availableSlots = Math.max(
-        0,
-        MAX_DRIVERS_LICENSE_IMAGES - driversLicenseImageUrls.length,
-      );
-      if (availableSlots === 0) {
-        throw new Error(
-          `You can upload up to ${MAX_DRIVERS_LICENSE_IMAGES} driver's license images.`,
-        );
-      }
-      const selectedFiles = files.slice(0, availableSlots);
-      const dataUrls = await Promise.all(
-        selectedFiles.map(
-          (file) =>
-            new Promise<string>((resolve, reject) => {
-              const reader = new FileReader();
-              reader.onerror = () => reject(new Error("Unable to read driver's license image."));
-              reader.onload = () => {
-                if (typeof reader.result === "string" && reader.result.startsWith("data:image/")) {
-                  resolve(reader.result);
-                  return;
-                }
-                reject(new Error("Driver's license image must be a valid image file."));
-              };
-              reader.readAsDataURL(file);
-            }),
-        ),
-      );
-      setDriversLicenseImageUrls((current) => [...current, ...dataUrls]);
-      if (files.length > availableSlots) {
-        setStatusMessage(
-          `Only ${MAX_DRIVERS_LICENSE_IMAGES} driver's license images can be attached.`,
-        );
-      }
-    } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : "Unable to upload driver's license images.",
-      );
-    } finally {
-      setDriversLicenseUploading(false);
-    }
-  }
-
-  async function onDriversLicenseFilePicked(event: ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(event.target.files ?? []);
-    event.target.value = "";
-    await uploadDriversLicenseFiles(files);
   }
 
   async function applyCoupon() {
@@ -2790,111 +2657,6 @@ export function PublicBookingWizard({
     setSignatureDataUrl("");
   }
 
-  async function startReturningCustomerLookup() {
-    if (returningBusy) return;
-    if (!returningTurnstileToken) {
-      setReturningError("Please complete the security check before continuing.");
-      return;
-    }
-    setReturningBusy(true);
-    setReturningError(null);
-
-    try {
-      const response = await fetch("/api/public/returning-customer/start", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          driversLicenseNumber: returningDlInput,
-          sessionKey: returningSessionKey,
-          turnstileToken: returningTurnstileToken,
-        }),
-      });
-      const data = (await response.json().catch(() => ({}))) as ReturningStartResponse;
-
-      if (!response.ok || !data.ok) {
-        throw new Error(data.error || "We couldn't verify your details.");
-      }
-
-      setReturningChallengeToken(data.challengeToken ?? "");
-      setReturningStage("verify");
-      setReturningTurnstileToken(null);
-      setReturningTurnstileResetKey((value) => value + 1);
-    } catch (error) {
-      setReturningError(
-        error instanceof Error && error.message
-          ? error.message
-          : "Verification failed. Please complete the security check and retry.",
-      );
-      setReturningTurnstileToken(null);
-      setReturningTurnstileResetKey((value) => value + 1);
-    } finally {
-      setReturningBusy(false);
-    }
-  }
-
-  async function verifyReturningCustomer() {
-    if (returningBusy) return;
-    if (!returningTurnstileToken) {
-      setReturningError("Please complete the security check before verifying.");
-      return;
-    }
-    setReturningBusy(true);
-    setReturningError(null);
-
-    try {
-      const response = await fetch("/api/public/returning-customer/verify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          driversLicenseNumber: returningDlInput,
-          challengeToken: returningChallengeToken,
-          otpCode: returningOtpCode,
-          lastName: returningLastName,
-          sessionKey: returningSessionKey,
-          turnstileToken: returningTurnstileToken,
-        }),
-      });
-
-      const data = (await response.json().catch(() => ({}))) as ReturningVerifyResponse;
-      if (!response.ok || !data.ok || !data.customer) {
-        throw new Error(data.error || "We couldn't verify your details.");
-      }
-
-      setCustomerId(data.customer.customerId ?? null);
-      setFirstName((current) => setIfPresent(current, data.customer?.firstName));
-      setLastName((current) => setIfPresent(current, data.customer?.lastName));
-      setEmailAddress((current) => setIfPresent(current, data.customer?.emailAddress));
-      setPhoneNumber((current) => setIfPresent(current, data.customer?.phoneNumber));
-      setStreet((current) => setIfPresent(current, data.customer?.street));
-      setStreet2((current) => setIfPresent(current, data.customer?.street2));
-      setCity((current) => setIfPresent(current, data.customer?.city));
-      setParish((current) => setIfPresent(current, data.customer?.parish));
-      setCountry((current) => setIfPresent(current, data.customer?.country));
-      setBirthday((current) => setIfPresent(current, data.customer?.birthday));
-      setDriversLicenseNumber((current) =>
-        setIfPresent(current, data.customer?.driversLicenseNumber),
-      );
-      setDriversLicenseExpirationDate((current) =>
-        setIfPresent(current, data.customer?.driversLicenseExpirationDate),
-      );
-
-      setShowReturningCustomerModal(false);
-      setStatusMessage("Returning customer details loaded. Please verify and continue.");
-      setReturningTurnstileToken(null);
-      setReturningTurnstileResetKey((value) => value + 1);
-    } catch (error) {
-      setReturningError(
-        error instanceof Error && error.message
-          ? error.message
-          : "Verification failed. Please complete the security check and retry.",
-      );
-      setReturningTurnstileToken(null);
-      setReturningTurnstileResetKey((value) => value + 1);
-    } finally {
-      setReturningBusy(false);
-    }
-  }
-
   function buildCheckoutRoute(
     bookingId: string,
     mode: "DEPOSIT" | "FULL" | "CUSTOM",
@@ -2972,13 +2734,6 @@ export function PublicBookingWizard({
           insuranceTotalCents: insuranceTotal,
           paymentOption,
           customPaymentAmountCents: normalizedCustomAmount,
-          legalIdType: "DRIVERS_LICENSE",
-          legalIdNumber: normalizeText(driversLicenseNumber),
-          legalIdImageUploadToken: driversLicenseImageUrls[0] ?? "",
-          driversLicenseDataUrl: driversLicenseImageUrls[0] ?? "",
-          driversLicenseDataUrls: driversLicenseImageUrls,
-          driversLicenseNumber: normalizeText(driversLicenseNumber),
-          driversLicenseExpirationDate: normalizeText(driversLicenseExpirationDate) || null,
           signatureDataUrl,
           customerProfile: {
             firstName: normalizeText(firstName),
@@ -3072,19 +2827,16 @@ export function PublicBookingWizard({
       ? pricingQuoteLoading || pricingQuoteUpdating || pricingState.status === "loading"
         ? "Refreshing live pricing…"
         : pricingState.status === "error"
-          ? "Live pricing could not be loaded. Return to Step 2 and reselect your vehicle."
+          ? "Live pricing could not be loaded. Reopen Choose Your Car and reselect your vehicle."
           : pricingQuote && !pricingQuoteReadyForCurrentSelection
             ? "Live pricing is refreshing for these dates."
           : null
       : null;
-  const step6SecurityHint = driversLicenseUploading
-    ? "Driver's license image is still processing. Wait for it to finish before continuing."
-    : !turnstileToken
-      ? "Complete the security check to enable checkout."
-      : null;
+  const step6SecurityHint = !turnstileToken
+    ? "Complete the security check to enable checkout."
+    : null;
   const continueToPaymentDisabled =
     submitting ||
-    driversLicenseUploading ||
     !turnstileToken ||
     !hasResolvedVehicle ||
     vehicleSelectionUnavailable ||
@@ -3103,64 +2855,144 @@ export function PublicBookingWizard({
         : "Refreshing selection..."
       : "Not selected";
   const hideFallbackTotals = hasSelectedVehicleId && !pricingQuote;
-  const bookingSupportHighlights = (
-    <div className="grid gap-3 sm:grid-cols-3">
-      <article className="rounded-[1.4rem] border border-white/12 bg-white/8 px-4 py-4 backdrop-blur-sm">
-        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--ccr-accent)]">
-          Simple pricing
-        </p>
-        <p className="mt-3 text-sm leading-6 text-white/76">
-          Live totals stay updated as your dates, protections, and payment choices change.
-        </p>
-      </article>
-      <article className="rounded-[1.4rem] border border-white/12 bg-white/8 px-4 py-4 backdrop-blur-sm">
-        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--ccr-accent)]">
-          Local support
-        </p>
-        <p className="mt-3 text-sm leading-6 text-white/76">
-          {`Questions before checkout? Reach the Kingston team at ${siteContent.phones[0]?.label}.`}
-        </p>
-      </article>
-      <article className="rounded-[1.4rem] border border-white/12 bg-white/8 px-4 py-4 backdrop-blur-sm">
-        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--ccr-accent)]">
-          Secure checkout
-        </p>
-        <p className="mt-3 text-sm leading-6 text-white/76">
-          {`Reservation details are reviewed in six steps before Step 7 launches ${hostedPaymentProvider}.`}
-        </p>
-      </article>
+  const bookingIntro = (
+    <section className="relative overflow-hidden border-b border-[var(--ccr-border)] bg-[var(--ccr-primary)] text-white">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.16),transparent_42%),radial-gradient(circle_at_bottom_right,rgba(255,207,109,0.18),transparent_38%)]" />
+      <Container className="relative py-6 sm:py-10 md:pb-20 md:pt-14 min-[1160px]:pt-40">
+        <div className="max-w-xl">
+          <p className="text-xs font-semibold uppercase tracking-[0.26em] text-[var(--ccr-accent)]">
+            Book
+          </p>
+          <h1 className="mt-3 text-[1.95rem] font-semibold leading-[1.08] tracking-tight text-white sm:text-4xl">
+            Reserve your vehicle
+          </h1>
+          <p className="mt-3 text-sm leading-6 text-white/78 sm:text-base">
+            Pick your dates, choose your car, and see your live total before checkout.
+          </p>
+        </div>
+      </Container>
+    </section>
+  );
+
+  const lastScrolledStepRef = useRef<WizardStep | null>(null);
+  useEffect(() => {
+    if (!hydrated) return;
+    if (lastScrolledStepRef.current === null) {
+      lastScrolledStepRef.current = step;
+      return;
+    }
+    if (lastScrolledStepRef.current === step) return;
+    lastScrolledStepRef.current = step;
+    const frame = window.requestAnimationFrame(() => {
+      document
+        .getElementById(`booking-section-${step}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [hydrated, step]);
+
+  const securityDepositNotice = (
+    <div className="rounded-xl border border-[var(--ccr-accent)]/50 bg-[var(--ccr-accent)]/10 px-4 py-3 text-sm text-[var(--ccr-text)]">
+      <p className="text-xs font-bold uppercase tracking-[0.14em]">Refundable security deposit required</p>
+      <p className="mt-1 text-[var(--ccr-muted)]">
+        {refundableSecurityDepositJmd > 0
+          ? `${formatJmd(refundableSecurityDepositJmd)} is collected at pickup and refunded when the vehicle is returned in the same condition. It is not charged online.`
+          : "Collected at pickup and refunded when the vehicle is returned in the same condition. It is not charged online."}
+      </p>
     </div>
   );
-  const bookingIntro = (
+  const paymentActionLabel =
+    paymentOption === "NONE"
+      ? "Confirm Booking"
+      : paymentOption === "DEPOSIT"
+        ? "Pay Deposit & Reserve"
+        : `Continue to ${hostedPaymentProvider}`;
+  const primaryAction =
+    step >= 6
+      ? {
+          label: submitting ? "Submitting..." : paymentActionLabel,
+          disabled: continueToPaymentDisabled,
+          onClick: () => {
+            setCollapsedStep(null);
+            void submitBooking();
+          },
+        }
+      : {
+          label: step === 5 ? "Continue to Payment" : "Continue",
+          disabled: submitting || vehicleLoading,
+          onClick: () => {
+            setCollapsedStep(null);
+            void moveToNextStep();
+          },
+        };
+  const paymentOptionSummary =
+    paymentOption === "DEPOSIT"
+      ? "Pay deposit"
+      : paymentOption === "FULL"
+        ? "Pay in full"
+        : paymentOption === "CUSTOM"
+          ? "Custom amount"
+          : "Pay at pickup";
+  const sectionSummaries: Record<WizardStep, string> = {
+    1: `${pickupDate} → ${dropoffDate}${pickupLocationText ? ` · ${pickupLocationText}` : ""}`,
+    2: summaryVehicleLabel,
+    3: `${protectionChoice === "STANDARD" ? "Standard Protection" : protectionChoice === "NONE" ? "No Protection" : "Choose protection"}${couponAppliedCode ? ` · ${couponAppliedCode}` : ""}`,
+    4: [normalizeText(`${firstName} ${lastName}`), normalizeText(emailAddress)].filter(Boolean).join(" · "),
+    5: signatureDataUrl && acceptTerms ? "Signed and accepted" : "Signature and terms",
+    6: paymentOptionSummary,
+  };
+  function accordionSectionProps(section: WizardStep) {
+    const isCurrent = section === step;
+    return {
+      id: `booking-section-${section}`,
+      title: SECTION_TITLES[section],
+      summary: sectionSummaries[section],
+      open: isCurrent && collapsedStep !== section,
+      completed: section < maxStepCompleted || (section < step),
+      locked: section > maxStepCompleted,
+      disabled: submitting,
+      testId: `booking-step-tab-${section}`,
+      onToggle: () => {
+        if (isCurrent) {
+          setCollapsedStep((current) => (current === section ? null : section));
+          return;
+        }
+        jumpToStep(section);
+      },
+    };
+  }
+  const panelFooter = (
     <>
-      <section className="relative overflow-hidden border-b border-[var(--ccr-border)] bg-[var(--ccr-primary)] text-white sm:hidden">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.16),transparent_42%),radial-gradient(circle_at_bottom_right,rgba(255,207,109,0.18),transparent_38%)]" />
-        <Container className="relative py-6">
-          <div className="max-w-xl">
-            <p className="text-xs font-semibold uppercase tracking-[0.26em] text-[var(--ccr-accent)]">
-              Book
-            </p>
-            <h1 className="mt-3 text-[1.95rem] font-semibold leading-[1.08] tracking-tight text-white">
-              Start your reservation.
-            </h1>
-            <p className="mt-3 text-sm leading-6 text-white/78">
-              Choose your dates and continue through the guided booking steps below.
-            </p>
-          </div>
-        </Container>
-      </section>
-
-      <div className="hidden sm:block">
-        <PublicPageIntro
-          eyebrow="Book"
-          title="Reserve your Curated vehicle with guided steps and clear pricing."
-          description="Choose your dates, review the right vehicle, confirm your details, and continue to secure checkout when you are ready."
-          primaryAction={{ href: "/fleet", label: "Browse Fleet" }}
-          secondaryAction={{ href: "/contact", label: "Need Help?" }}
+      {errorMessage ? (
+        <p className="mt-4 rounded-[1.1rem] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          {errorMessage}
+        </p>
+      ) : null}
+      {statusMessage ? (
+        <p
+          className={cn(
+            "mt-4 break-words rounded-[1.1rem] border px-4 py-3 text-sm",
+            statusIsDraftRestoreNotice
+              ? "border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] text-[var(--ccr-text)] shadow-sm shadow-black/5"
+              : "border-emerald-200 bg-emerald-50 text-emerald-800",
+          )}
         >
-          {bookingSupportHighlights}
-        </PublicPageIntro>
-      </div>
+          {statusMessage}
+        </p>
+      ) : null}
+      {step < 6 ? (
+        <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={primaryAction.onClick}
+            disabled={primaryAction.disabled}
+            className={cn("w-full justify-center sm:w-auto", bookingPrimaryButtonClassName)}
+            data-testid="booking-section-continue"
+          >
+            {primaryAction.label}
+          </button>
+        </div>
+      ) : null}
     </>
   );
 
@@ -3186,147 +3018,37 @@ export function PublicBookingWizard({
   }
 
   return (
-    <div className="bg-[var(--ccr-bg)] pb-12 sm:pb-16" data-testid="booking-wizard-hydrated">
+    <div className="bg-[var(--ccr-bg)] pb-32 sm:pb-36 lg:pb-16" data-testid="booking-wizard-hydrated">
       {bookingIntro}
       <div ref={wizardContainerRef} className="scroll-mt-24 sm:scroll-mt-28">
         <Container className="-mt-6 sm:-mt-8 md:-mt-12">
           <div className="min-w-0 overflow-hidden rounded-[1.7rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)]/96 shadow-[0_32px_110px_rgba(15,23,42,0.14)] backdrop-blur-sm sm:rounded-[2rem]">
-          <div className="border-b border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)]/75 px-3.5 py-3 sm:px-4 sm:py-6 md:px-8">
-            <div className="sm:hidden">
-              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--ccr-accent-strong)]">
-                Start booking
-              </p>
-              <p className="mt-2 text-sm text-[var(--ccr-muted)]">
-                Step {step} of 6. Begin with your dates below.
-              </p>
-            </div>
-
-            <div className="hidden min-w-0 flex-col gap-6 sm:flex xl:flex-row xl:items-end xl:justify-between">
-              <div className="min-w-0 max-w-2xl">
-                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--ccr-accent-strong)]">
-                  Guided reservation
-                </p>
-                <h2 className="mt-3 break-words text-[1.8rem] font-semibold tracking-tight text-[var(--ccr-text)] sm:text-3xl md:text-4xl">
-                  Complete six steps before secure checkout.
-                </h2>
-                <p className="mt-4 break-words text-base leading-7 text-[var(--ccr-muted)]">
-                  Keep your selections accurate as dates, availability, pricing, and payment details
-                  update in real time.
+          <div className="border-b border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)]/75 px-4 py-4 sm:px-6 sm:py-6 md:px-8">
+            <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+              <div className="min-w-0">
+                <p className="break-words text-sm text-[var(--ccr-muted)]">
+                  {`${effectiveMinimumRentalDays}-day minimum rental · Prices in Jamaican dollars (JMD)`}
                 </p>
               </div>
-
-              <div className="grid min-w-0 gap-3 sm:grid-cols-3 xl:w-[34rem]">
-                <article className="min-w-0 rounded-[1.35rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)]/90 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--ccr-accent-strong)]">
-                    Pickup window
-                  </p>
-                  <p className="mt-3 break-words text-sm font-semibold text-[var(--ccr-text)]">
-                    {pickupDate} at {pickupTime}
-                  </p>
-                </article>
-                <article className="min-w-0 rounded-[1.35rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)]/90 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--ccr-accent-strong)]">
-                    Vehicle status
-                  </p>
-                  <p className="mt-3 break-words text-sm font-semibold text-[var(--ccr-text)]">
-                    {summaryVehicleLabel}
-                  </p>
-                </article>
-                <article className="min-w-0 rounded-[1.35rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)]/90 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--ccr-accent-strong)]">
-                    Reserve now
-                  </p>
-                  <p className="mt-3 break-words text-sm font-semibold text-[var(--ccr-text)]">
-                    {hideFallbackTotals ? "Pricing updating" : formatJmd(depositRequired)}
-                  </p>
-                </article>
-              </div>
-            </div>
-
-            <div className="-mx-1 mt-4 min-w-0 overflow-x-auto pb-1 sm:mx-0 sm:mt-6 sm:overflow-visible">
-              <ol className="flex min-w-max gap-2 px-1 sm:grid sm:min-w-0 sm:grid-cols-3 sm:px-0 sm:gap-3 lg:grid-cols-7">
-                {STEPS.map((item) => {
-                  const isActive = item.step === step;
-                  const isDone = item.step < step;
-                  const isUnlocked = item.step <= maxStepCompleted;
-                  return (
-                    <li key={item.step} className="min-w-[6.1rem] shrink-0 sm:min-w-0">
-                      <button
-                        type="button"
-                        onClick={() => jumpToStep(item.step)}
-                        disabled={!isUnlocked || submitting}
-                        className={cn(
-                          "w-full rounded-[1.15rem] border px-2 py-2 text-left transition disabled:opacity-55 sm:rounded-[1.35rem] sm:px-4 sm:py-3",
-                          isActive
-                            ? "border-[var(--ccr-accent)] bg-[var(--ccr-accent)]/10 text-[var(--ccr-text)] shadow-sm shadow-[var(--ccr-accent)]/10"
-                            : isDone
-                              ? "border-[var(--ccr-accent)]/40 bg-[var(--ccr-accent)]/5 text-[var(--ccr-text)]"
-                              : "border-[var(--ccr-border)] bg-[var(--ccr-surface)]/90 text-[var(--ccr-muted)]",
-                        )}
-                        data-testid={`booking-step-tab-${item.step}`}
-                      >
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em]">
-                          Step {item.step}
-                        </p>
-                        <p className="mt-1.5 text-[13px] font-semibold sm:mt-2 sm:text-sm">{item.title}</p>
-                      </button>
-                    </li>
-                  );
-                })}
-                <li className="min-w-[6.1rem] shrink-0 sm:min-w-0">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      resetMessages();
-                      wizardContainerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-                      setStep(6);
-                      setStatusMessage("Step 7 launches when you continue from Payments.");
-                    }}
-                    disabled={maxStepCompleted < 6 || submitting}
-                    className={cn(
-                      "w-full rounded-[1.15rem] border px-2 py-2 text-left transition disabled:opacity-55 sm:rounded-[1.35rem] sm:px-4 sm:py-3",
-                      maxStepCompleted >= 6
-                        ? "border-[var(--ccr-accent)]/40 bg-[var(--ccr-accent)]/5 text-[var(--ccr-text)]"
-                        : "border-[var(--ccr-border)] bg-[var(--ccr-surface)]/90 text-[var(--ccr-muted)]",
-                    )}
-                    data-testid="booking-step-tab-7"
-                  >
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em]">
-                      Step {checkoutStep.step}
-                    </p>
-                    <p className="mt-1.5 text-[13px] font-semibold sm:mt-2 sm:text-sm">{checkoutStep.title}</p>
-                  </button>
-                </li>
-              </ol>
+              <p className="w-fit shrink-0 rounded-full border border-[var(--ccr-accent)]/50 bg-[var(--ccr-accent)]/10 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--ccr-text)]">
+                Refundable security deposit required
+              </p>
             </div>
           </div>
 
           <div className="grid min-w-0 items-start gap-5 bg-[linear-gradient(180deg,rgba(148,163,184,0.06),transparent)] px-3.5 py-4 sm:px-4 sm:py-5 md:px-6 md:py-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] xl:grid-cols-[minmax(0,1fr)_minmax(0,24rem)]">
-            <div className="min-w-0 rounded-[1.5rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)]/96 px-3.5 py-4 shadow-[0_18px_56px_rgba(15,23,42,0.08)] sm:rounded-[1.75rem] sm:px-4 sm:py-5 md:px-6 md:py-7">
-              <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-[var(--ccr-border)] pb-4 sm:mb-6 sm:pb-5">
-                <div className="min-w-0">
-                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--ccr-accent-strong)]">
-                    Step {step} of 6
-                  </p>
-                  <p className="mt-2 hidden break-words text-sm text-[var(--ccr-muted)] sm:block">
-                    Review each section carefully. Live availability and pricing stay connected while you move through the wizard.
-                  </p>
-                </div>
-                <div className="hidden w-full rounded-full border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-4 py-2 text-center text-xs font-semibold uppercase tracking-[0.16em] text-[var(--ccr-muted)] min-[430px]:w-auto sm:block">
-                  Secure booking flow
-                </div>
-              </div>
-              {step === 1 ? (
+            <div className="min-w-0">
+              <div className="space-y-3" data-testid="booking-accordion">
+              <BookingAccordionSection {...accordionSectionProps(1)}>
                 <section className="min-w-0" data-testid="booking-step-dates">
-                  <h2 className="break-words text-xl font-bold text-[var(--ccr-text)]">Date & Time</h2>
-                  <p className="mt-1 text-sm text-[var(--ccr-muted)]">
-                    Select pickup and dropoff date/time plus location options.
+                  <p className="text-sm text-[var(--ccr-muted)]">
+                    {`Rentals require a minimum of ${effectiveMinimumRentalDays} days.`}
                   </p>
                   {locationsLoading ? (
                     <p className="mt-2 text-xs text-[var(--ccr-muted)]">Refreshing available locations…</p>
                   ) : null}
 
-                  <div className="mt-5 grid gap-4 md:grid-cols-2">
+                  <div className="mt-4 grid gap-4 sm:grid-cols-2">
                     <label className="block">
                       <span className="text-sm font-semibold text-[var(--ccr-muted)]">Pickup Date</span>
                       <input
@@ -3347,7 +3069,7 @@ export function PublicBookingWizard({
                       />
                     </label>
                     <label className="block">
-                      <span className="text-sm font-semibold text-[var(--ccr-muted)]">Dropoff Date</span>
+                      <span className="text-sm font-semibold text-[var(--ccr-muted)]">Return Date</span>
                       <input
                         type="date"
                         value={dropoffDate}
@@ -3357,7 +3079,7 @@ export function PublicBookingWizard({
                       />
                     </label>
                     <label className="block">
-                      <span className="text-sm font-semibold text-[var(--ccr-muted)]">Dropoff Time</span>
+                      <span className="text-sm font-semibold text-[var(--ccr-muted)]">Return Time</span>
                       <input
                         type="time"
                         value={dropoffTime}
@@ -3391,7 +3113,7 @@ export function PublicBookingWizard({
                     <div className="min-w-0">
                       <div className="flex flex-col items-start gap-2 min-[430px]:flex-row min-[430px]:items-center min-[430px]:justify-between">
                         <span className="text-sm font-semibold text-[var(--ccr-muted)]">
-                          Dropoff Location
+                          Return Location
                         </span>
                         {dropoffLocationManuallyEdited ? (
                           <button
@@ -3476,13 +3198,13 @@ export function PublicBookingWizard({
                     </div>
                   </div>
                 </section>
-              ) : null}
+                {panelFooter}
+              </BookingAccordionSection>
 
-              {step === 2 ? (
+              <BookingAccordionSection {...accordionSectionProps(2)}>
                 <section className="min-w-0" data-testid="booking-step-vehicles">
-                  <h2 className="break-words text-xl font-bold text-[var(--ccr-text)]">Available Vehicles</h2>
-                  <p className="mt-1 text-sm text-[var(--ccr-muted)]">
-                    Choose a vehicle for your dates. Details are pulled from your admin fleet setup.
+                  <p className="text-sm text-[var(--ccr-muted)]">
+                    {`Showing cars available for ${rentalDays} day${rentalDays === 1 ? "" : "s"}.`}
                   </p>
                   {unavailableVehicleWarning ? (
                     <div className="mt-4 rounded-xl border border-[var(--ccr-clerk-danger-border)] bg-[var(--ccr-clerk-danger-bg)] px-4 py-3 text-sm text-[var(--ccr-clerk-danger-text)]">
@@ -3536,11 +3258,12 @@ export function PublicBookingWizard({
                     ) : null}
                   </div>
                 </section>
-              ) : null}
+                {panelFooter}
+              </BookingAccordionSection>
 
-              {step === 3 ? (
-                <section className="min-w-0">
-                  <div className="mt-4 min-w-0 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
+              <BookingAccordionSection {...accordionSectionProps(3)}>
+                <section className="min-w-0" data-testid="booking-step-features">
+                  <div className="min-w-0 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
                     <p className="text-sm font-semibold text-[var(--ccr-text)]">Coupon Code</p>
                     <div className="mt-2 flex min-w-0 flex-col gap-2 min-[430px]:flex-row min-[430px]:items-start">
                       <input
@@ -3577,10 +3300,8 @@ export function PublicBookingWizard({
                   <div className="mt-6 border-t border-[var(--ccr-border)]" />
 
                   <div className="mt-6">
-                    <h2 className="break-words text-xl font-bold text-[var(--ccr-text)]">Insurance Coverage</h2>
-                    <p className="mt-1 text-sm text-[var(--ccr-muted)]">
-                      Choose your insurance preference. This selection is required.
-                    </p>
+                    <h3 className="break-words text-lg font-bold text-[var(--ccr-text)]">Insurance Coverage</h3>
+                    <p className="mt-1 text-sm text-[var(--ccr-muted)]">Choose one option.</p>
 
                     <div className="mt-5 grid gap-4 lg:grid-cols-2">
                       <button
@@ -3669,34 +3390,15 @@ export function PublicBookingWizard({
                     </div>
                   </div>
                 </section>
-              ) : null}
+                {panelFooter}
+              </BookingAccordionSection>
 
-              {step === 4 ? (
-                <section className="min-w-0">
-                  <div className="flex min-w-0 flex-col items-start gap-3 min-[430px]:flex-row min-[430px]:items-center min-[430px]:justify-between">
-                    <div className="min-w-0">
-                      <h2 className="break-words text-xl font-bold text-[var(--ccr-text)]">Customer Information</h2>
-                      <p className="mt-1 text-sm text-[var(--ccr-muted)]">
-                        Enter your details and driver&apos;s license information.
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setReturningStage("lookup");
-                        setReturningError(null);
-                        setReturningTurnstileToken(null);
-                        setReturningTurnstileResetKey((value) => value + 1);
-                        setShowReturningCustomerModal(true);
-                      }}
-                      className="w-full rounded-xl border border-[var(--ccr-accent)] bg-[var(--ccr-accent)]/10 px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] sm:w-auto"
-                    >
-                      Returning Customer?
-                    </button>
+              <BookingAccordionSection {...accordionSectionProps(4)}>
+                <section className="min-w-0" data-testid="booking-step-customer">
+                  <div className="min-w-0">
+                    <h3 className="break-words text-lg font-bold text-[var(--ccr-text)]">Customer Information</h3>
+                    <p className="mt-1 text-sm text-[var(--ccr-muted)]">Your contact details.</p>
                   </div>
-                  <p className="mt-2 text-xs text-[var(--ccr-muted)]">
-                    Enter your Driver&apos;s License number to prefill your details.
-                  </p>
 
                   <div className="mt-5 grid min-w-0 gap-4 md:grid-cols-2">
                     <label className="block min-w-0">
@@ -3781,133 +3483,41 @@ export function PublicBookingWizard({
                       />
                     </label>
                     <label className="block min-w-0">
-                      <span className="text-sm font-semibold text-[var(--ccr-muted)]">Birthday</span>
+                      <span className="text-sm font-semibold text-[var(--ccr-muted)]">Date of Birth *</span>
                       <input
                         type="date"
                         value={birthday}
+                        max={dateInputForOffset(0)}
                         onChange={(event) => setBirthday(event.target.value)}
                         className={bookingFieldClassName}
+                        data-testid="booking-date-of-birth"
                       />
+                      <span
+                        className={cn(
+                          "mt-1 block text-xs",
+                          driverAge !== null && driverAge < MINIMUM_DRIVER_AGE
+                            ? "text-rose-600"
+                            : "text-[var(--ccr-muted)]",
+                        )}
+                        data-testid="booking-driver-age"
+                      >
+                        {driverAge === null
+                          ? `Drivers must be ${MINIMUM_DRIVER_AGE}+.`
+                          : driverAge < MINIMUM_DRIVER_AGE
+                            ? `Age ${driverAge} · drivers must be ${MINIMUM_DRIVER_AGE}+.`
+                            : `Age ${driverAge}`}
+                      </span>
                     </label>
                   </div>
 
-                  <div className="mt-6 min-w-0 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4">
-                    <p className="text-base font-semibold text-[var(--ccr-text)]">
-                      Driver&apos;s License
-                    </p>
-                    <p className="mt-1 text-sm text-[var(--ccr-muted)]">
-                      Driver&apos;s license details are optional.
-                    </p>
-                    <div className="mt-4 grid min-w-0 gap-4 md:grid-cols-2">
-                      <label className="block min-w-0">
-                        <span className="text-sm font-semibold text-[var(--ccr-muted)]">DL Number</span>
-                        <input
-                          value={driversLicenseNumber}
-                          onChange={(event) => setDriversLicenseNumber(event.target.value)}
-                          className={bookingSoftFieldClassName}
-                        />
-                      </label>
-                      <label className="block min-w-0">
-                        <span className="text-sm font-semibold text-[var(--ccr-muted)]">
-                          Expiration Date
-                        </span>
-                        <input
-                          type="date"
-                          value={driversLicenseExpirationDate}
-                          onChange={(event) => setDriversLicenseExpirationDate(event.target.value)}
-                          className={bookingSoftFieldClassName}
-                        />
-                      </label>
-                    </div>
-                    <div className="mt-4 flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap">
-                      <button
-                        type="button"
-                        onClick={() => uploadInputRef.current?.click()}
-                        disabled={driversLicenseUploading}
-                        className="w-full rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] disabled:opacity-60 sm:w-auto"
-                      >
-                        {driversLicenseUploading ? "Uploading..." : "Upload from phone/computer"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => cameraInputRef.current?.click()}
-                        disabled={driversLicenseUploading}
-                        className="w-full rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] px-4 py-2 text-sm font-semibold text-[var(--ccr-text)] disabled:opacity-60 sm:w-auto"
-                      >
-                        Take photo
-                      </button>
-                      <input
-                        ref={uploadInputRef}
-                        type="file"
-                        accept="image/*"
-                        multiple
-                        onChange={onDriversLicenseFilePicked}
-                        className="hidden"
-                      />
-                      <input
-                        ref={cameraInputRef}
-                        type="file"
-                        accept="image/*"
-                        capture="environment"
-                        onChange={onDriversLicenseFilePicked}
-                        className="hidden"
-                      />
-                    </div>
-                    {driversLicenseImageUrls.length > 0 ? (
-                      <div className="mt-3">
-                        <p className="text-sm text-emerald-700">
-                          {driversLicenseImageUrls.length} driver&apos;s license{" "}
-                          {driversLicenseImageUrls.length === 1 ? "image" : "images"} attached.
-                        </p>
-                        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
-                          {driversLicenseImageUrls.map((imageUrl, index) => (
-                            <div
-                              key={`${imageUrl.slice(-24)}-${index}`}
-                              className="overflow-hidden rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)]"
-                            >
-                              <NextImage
-                                src={imageUrl}
-                                alt={`Driver's license image ${index + 1}`}
-                                width={240}
-                                height={144}
-                                unoptimized
-                                className="aspect-[5/3] w-full object-cover"
-                              />
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setDriversLicenseImageUrls((current) =>
-                                    current.filter((_, imageIndex) => imageIndex !== index),
-                                  )
-                                }
-                                className="w-full border-t border-[var(--ccr-border)] px-2 py-2 text-xs font-semibold text-[var(--ccr-text)]"
-                              >
-                                Remove
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                        <p className="mt-2 text-xs text-[var(--ccr-muted)]">
-                          Up to {MAX_DRIVERS_LICENSE_IMAGES} images can be attached.
-                        </p>
-                      </div>
-                    ) : (
-                      <p className="mt-2 text-sm text-[var(--ccr-muted)]">
-                        Optional: upload front, back, or supporting driver&apos;s license images.
-                      </p>
-                    )}
-                  </div>
                 </section>
-              ) : null}
+                {panelFooter}
+              </BookingAccordionSection>
 
-              {step === 5 ? (
-                <section className="min-w-0">
-                  <h2 className="break-words text-xl font-bold text-[var(--ccr-text)]">Confirm Reservation</h2>
-                  <p className="mt-1 text-sm text-[var(--ccr-muted)]">
-                    Review your details, sign, and proceed to payment.
-                  </p>
-
-                  <div className="mt-5 min-w-0 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4 text-sm text-[var(--ccr-muted)]">
+              <BookingAccordionSection {...accordionSectionProps(5)}>
+                <section className="min-w-0" data-testid="booking-step-confirm">
+                  <h3 className="sr-only">Confirm Reservation</h3>
+                  <div className="min-w-0 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-4 text-sm text-[var(--ccr-muted)]">
                     <p className="break-words">
                       <span className="font-semibold text-[var(--ccr-text)]">Vehicle:</span>{" "}
                       {summaryVehicleLabel}
@@ -3917,7 +3527,7 @@ export function PublicBookingWizard({
                       {pickupTime} · {pickupLocationText}
                     </p>
                     <p className="mt-1 break-words">
-                      <span className="font-semibold text-[var(--ccr-text)]">Dropoff:</span> {dropoffDate}{" "}
+                      <span className="font-semibold text-[var(--ccr-text)]">Return:</span> {dropoffDate}{" "}
                       {dropoffTime} · {dropoffLocationText}
                     </p>
                     <p className="mt-1 break-words">
@@ -3925,6 +3535,34 @@ export function PublicBookingWizard({
                       {lastName}
                     </p>
                   </div>
+
+                  <div
+                    className="mt-4 min-w-0 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4 text-sm"
+                    data-testid="booking-review-pricing"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="min-w-0 text-[var(--ccr-muted)]">
+                        {`Rental price · ${rentalDays} day${rentalDays === 1 ? "" : "s"}`}
+                      </span>
+                      <span className="shrink-0 text-right text-base font-bold text-[var(--ccr-text)]">
+                        {hideFallbackTotals ? "—" : formatJmd(amountDue)}
+                      </span>
+                    </div>
+                    <div className="mt-2 flex items-start justify-between gap-3">
+                      <span className="min-w-0 text-[var(--ccr-muted)]">Amount due now</span>
+                      <span className="shrink-0 text-right font-semibold text-[var(--ccr-text)]">
+                        {hideFallbackTotals ? "—" : formatJmd(paymentPreviewDueNow)}
+                      </span>
+                    </div>
+                    <div className="mt-2 flex items-start justify-between gap-3 border-t border-[var(--ccr-border)] pt-2">
+                      <span className="min-w-0 font-semibold text-[var(--ccr-text)]">Balance at pickup</span>
+                      <span className="shrink-0 text-right font-semibold text-[var(--ccr-text)]">
+                        {hideFallbackTotals ? "—" : formatJmd(balanceDueOnPickup)}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="mt-4">{securityDepositNotice}</div>
 
                   <div className="mt-5 min-w-0 rounded-2xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-4">
                     <p className="text-sm font-semibold text-[var(--ccr-text)]">Signature *</p>
@@ -3973,13 +3611,13 @@ export function PublicBookingWizard({
                     </span>
                   </label>
                 </section>
-              ) : null}
+                {panelFooter}
+              </BookingAccordionSection>
 
-              {step === 6 ? (
+              <BookingAccordionSection {...accordionSectionProps(6)}>
                 <section className="min-w-0" data-testid="booking-step-payments">
-                  <h2 className="break-words text-xl font-bold text-[var(--ccr-text)]">Payments</h2>
-                  <p className="mt-1 text-sm text-[var(--ccr-muted)]">
-                    {`Choose your payment option in JMD. Step 7 launches hosted ${hostedPaymentProvider} checkout.`}
+                  <p className="text-sm text-[var(--ccr-muted)]">
+                    {`Payments are processed securely by ${hostedPaymentProvider} in JMD.`}
                   </p>
                   {step6VehicleWarning ? (
                     <div
@@ -4057,7 +3695,7 @@ export function PublicBookingWizard({
                       )}
                     >
                       <p className="font-semibold text-[var(--ccr-text)]">No Payment</p>
-                      <p className="text-sm text-[var(--ccr-muted)]">Pay at pickup</p>
+                      <p className="text-sm text-[var(--ccr-muted)]">Pay at pickup · availability not guaranteed</p>
                     </button>
                   </div>
 
@@ -4082,16 +3720,9 @@ export function PublicBookingWizard({
                     </div>
                   ) : null}
 
-                  {refundableSecurityDepositJmd > 0 ? (
-                    <div
-                      className="mt-4 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] px-4 py-3 text-sm text-[var(--ccr-text)]"
-                      data-testid="booking-refundable-security-deposit"
-                    >
-                      This vehicle requires a refundable security deposit of JMD{" "}
-                      {formatJmd(refundableSecurityDepositJmd)}. This amount is collected at pickup
-                      and is not charged during online booking.
-                    </div>
-                  ) : null}
+                  <div className="mt-4" data-testid="booking-refundable-security-deposit">
+                    {securityDepositNotice}
+                  </div>
 
                   <div
                     className="mt-4 min-w-0 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-3 sm:p-4"
@@ -4122,77 +3753,34 @@ export function PublicBookingWizard({
                       type="button"
                       onClick={submitBooking}
                       disabled={continueToPaymentDisabled}
-                      className={cn("w-full justify-center sm:w-auto", bookingPrimaryButtonClassName)}
+                      className={cn("w-full justify-center", bookingPrimaryButtonClassName)}
                       data-testid="booking-continue-payment"
                     >
-                      {submitting
-                        ? "Submitting..."
-                        : paymentOption === "NONE"
-                          ? "Confirm Booking"
-                          : `Continue to ${hostedPaymentProvider}`}
+                      {submitting ? "Submitting..." : paymentActionLabel}
                     </button>
                   </div>
                 </section>
-              ) : null}
+                {panelFooter}
+              </BookingAccordionSection>
 
-              {errorMessage ? (
-                <p className="mt-4 rounded-[1.1rem] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-                  {errorMessage}
-                </p>
-              ) : null}
-              {statusMessage ? (
-                <p
-                  className={cn(
-                    "mt-4 break-words rounded-[1.1rem] border px-4 py-3 text-sm",
-                    statusIsDraftRestoreNotice
-                      ? "border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] text-[var(--ccr-text)] shadow-sm shadow-black/5"
-                      : "border-emerald-200 bg-emerald-50 text-emerald-800",
-                  )}
-                >
-                  {statusMessage}
-                </p>
-              ) : null}
+              </div>
 
-              <div className="mt-8 flex flex-col gap-3 border-t border-[var(--ccr-border)] pt-6 sm:flex-row sm:flex-wrap sm:items-center">
+              <div className="mt-4 flex justify-center sm:justify-start">
                 <button
                   type="button"
                   onClick={() => setShowStartOverConfirm(true)}
                   disabled={submitting}
-                  className={cn("w-full justify-center sm:w-auto", bookingResetButtonClassName)}
+                  className="rounded-full px-3 py-2 text-sm font-semibold text-[var(--ccr-muted)] underline-offset-4 transition hover:text-[var(--ccr-text)] hover:underline disabled:opacity-40"
                   data-testid="booking-start-over"
                 >
                   Start over
                 </button>
-                <button
-                  type="button"
-                  onClick={moveToPreviousStep}
-                  disabled={step === 1 || submitting}
-                  className={cn("w-full justify-center sm:w-auto", bookingOutlineButtonClassName)}
-                >
-                  Back
-                </button>
-                {step < 6 ? (
-                  <button
-                    type="button"
-                    onClick={() => void moveToNextStep()}
-                    disabled={submitting}
-                    className={cn("w-full justify-center sm:w-auto", bookingPrimaryButtonClassName)}
-                  >
-                    Next Step
-                  </button>
-                ) : null}
               </div>
             </div>
 
             <aside className="min-w-0 lg:sticky lg:top-24 lg:self-start">
               <div className="min-w-0 overflow-hidden rounded-[1.5rem] border border-[var(--ccr-border)] bg-[linear-gradient(160deg,var(--ccr-primary),rgba(15,23,42,0.96))] px-3.5 py-4 text-[var(--ccr-on-primary)] shadow-[0_28px_90px_rgba(15,23,42,0.2)] sm:rounded-[1.75rem] sm:px-4 sm:py-5 md:px-6 md:py-6">
-              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--ccr-accent)]">
-                Booking summary
-              </p>
-              <h3 className="mt-3 text-[1.65rem] font-semibold tracking-tight sm:text-2xl">Review before checkout</h3>
-              <p className="mt-3 break-words text-sm leading-6 text-[var(--ccr-on-primary-muted)]">
-                Use these controls to update your itinerary or change the vehicle before final payment.
-              </p>
+              <h3 className="text-xl font-semibold tracking-tight sm:text-2xl">Your Booking</h3>
               <div className="-mx-1 mt-4 min-w-0 overflow-x-auto pb-1 sm:mx-0 sm:overflow-visible">
                 <div className="flex min-w-max items-center gap-1.5 px-1 sm:min-w-0 sm:flex-wrap sm:px-0">
                   <button
@@ -4238,14 +3826,14 @@ export function PublicBookingWizard({
                   <span className="text-[var(--ccr-on-primary-muted)]">Pickup:</span> {pickupDate} {pickupTime}
                 </p>
                 <p className="break-words">
-                  <span className="text-[var(--ccr-on-primary-muted)]">Dropoff:</span> {dropoffDate} {dropoffTime}
+                  <span className="text-[var(--ccr-on-primary-muted)]">Return:</span> {dropoffDate} {dropoffTime}
                 </p>
                 <p className="break-words">
                   <span className="text-[var(--ccr-on-primary-muted)]">Pickup Location:</span>{" "}
                   {pickupLocationText || "Not selected"}
                 </p>
                 <p className="break-words">
-                  <span className="text-[var(--ccr-on-primary-muted)]">Dropoff Location:</span>{" "}
+                  <span className="text-[var(--ccr-on-primary-muted)]">Return Location:</span>{" "}
                   {dropoffLocationText || "Not selected"}
                 </p>
                 <p className="break-words">
@@ -4296,9 +3884,12 @@ export function PublicBookingWizard({
                       <span className="min-w-0">Minimum Deposit to Reserve</span>
                       <span className="shrink-0 text-right font-semibold">{hideFallbackTotals ? "—" : formatJmd(depositRequired)}</span>
                     </div>
-                    <div className="flex items-start justify-between gap-3">
-                      <span className="min-w-0">Due Now</span>
-                      <span className="shrink-0 text-right font-semibold">
+                    <div
+                      className="flex items-start justify-between gap-3 text-base"
+                      data-testid="booking-amount-due-now"
+                    >
+                      <span className="min-w-0 font-semibold uppercase tracking-[0.08em]">Amount Due Now</span>
+                      <span className="shrink-0 text-right font-bold">
                         {hideFallbackTotals ? "—" : formatJmd(paymentPreviewDueNow)}
                       </span>
                     </div>
@@ -4317,117 +3908,34 @@ export function PublicBookingWizard({
                   <p className="mt-3 text-xs text-amber-200">{pricingQuoteError}</p>
                 ) : null}
               </div>
-              <div className="mt-6 min-w-0 rounded-[1.35rem] border border-white/10 bg-black/10 p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--ccr-accent)]">
-                  Need assistance?
+              <div className="mt-4 min-w-0 rounded-[1.35rem] border border-[var(--ccr-accent)]/50 bg-[var(--ccr-accent)]/10 p-4">
+                <p className="text-xs font-bold uppercase tracking-[0.16em] text-[var(--ccr-accent)]">
+                  Refundable security deposit required
                 </p>
-                <p className="mt-3 break-words text-sm leading-6 text-[var(--ccr-on-primary-muted)]">
-                  Contact the Curated Car Rentals team at {siteContent.phones[0]?.label} if you need help before checkout.
+                <p className="mt-2 break-words text-sm leading-6 text-[var(--ccr-on-primary-muted)]">
+                  {refundableSecurityDepositJmd > 0
+                    ? `${formatJmd(refundableSecurityDepositJmd)} collected at pickup and refunded when the vehicle is returned in the same condition.`
+                    : "Collected at pickup and refunded when the vehicle is returned in the same condition."}
                 </p>
               </div>
+              <button
+                type="button"
+                onClick={primaryAction.onClick}
+                disabled={primaryAction.disabled}
+                className="mt-5 hidden w-full justify-center rounded-[1rem] bg-[var(--ccr-accent)] px-5 py-3 text-sm font-bold text-[var(--ccr-primary)] transition hover:brightness-105 disabled:opacity-60 lg:flex"
+                data-testid="booking-summary-primary-action"
+              >
+                {primaryAction.label}
+              </button>
+              <p className="mt-4 break-words text-xs leading-5 text-[var(--ccr-on-primary-muted)]">
+                Need help? Call {siteContent.phones[0]?.label}.
+              </p>
               </div>
             </aside>
           </div>
           </div>
         </Container>
       </div>
-
-      {showReturningCustomerModal ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--ccr-primary)]/65 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-[calc(100vw-2rem)] rounded-[1.75rem] border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-5 shadow-[0_28px_90px_rgba(15,23,42,0.22)] sm:max-w-md sm:p-6">
-            <h4 className="text-lg font-bold text-[var(--ccr-text)]">Returning Customer</h4>
-            <p className="mt-1 text-sm text-[var(--ccr-muted)]">
-              Verify with your Driver&apos;s License number before prefilling details.
-            </p>
-
-            {returningStage === "lookup" ? (
-              <div className="mt-4 space-y-3">
-                <label className="block">
-                  <span className="text-sm font-semibold text-[var(--ccr-muted)]">Driver&apos;s License or ID Number</span>
-                  <input
-                    value={returningDlInput}
-                    onChange={(event) => setReturningDlInput(event.target.value)}
-                    className={bookingFieldClassName}
-                  />
-                </label>
-                <button
-                  type="button"
-                  onClick={startReturningCustomerLookup}
-                  disabled={returningBusy || !returningTurnstileToken}
-                  className={cn("w-full", bookingPrimaryButtonClassName)}
-                >
-                  {returningBusy ? "Checking..." : "Continue"}
-                </button>
-              </div>
-            ) : (
-              <div className="mt-4 space-y-3">
-                <label className="block">
-                  <span className="text-sm font-semibold text-[var(--ccr-muted)]">Driver&apos;s License or ID Number</span>
-                  <input
-                    value={returningDlInput}
-                    readOnly
-                    className={bookingReadonlyFieldClassName}
-                  />
-                </label>
-                <p className="text-xs text-[var(--ccr-muted)]">
-                  Enter the code we sent and confirm your last name.
-                </p>
-                <label className="block">
-                  <span className="text-sm font-semibold text-[var(--ccr-muted)]">One-Time Code</span>
-                  <input
-                    value={returningOtpCode}
-                    onChange={(event) => setReturningOtpCode(event.target.value)}
-                    className={bookingFieldClassName}
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-sm font-semibold text-[var(--ccr-muted)]">Last Name</span>
-                  <input
-                    value={returningLastName}
-                    onChange={(event) => setReturningLastName(event.target.value)}
-                    className={bookingFieldClassName}
-                  />
-                </label>
-                <button
-                  type="button"
-                  onClick={verifyReturningCustomer}
-                  disabled={returningBusy || !returningTurnstileToken}
-                  className={cn("w-full", bookingPrimaryButtonClassName)}
-                >
-                  {returningBusy ? "Verifying..." : "Verify & Prefill"}
-                </button>
-              </div>
-            )}
-
-            <div className="mt-4 rounded-xl border border-[var(--ccr-border)] bg-[var(--ccr-surface-soft)] p-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ccr-muted)]">
-                Security Check
-              </p>
-              <TurnstileWidget
-                action="public_returning_customer"
-                onTokenChange={setReturningTurnstileToken}
-                resetKey={returningTurnstileResetKey}
-                devBypassEnabled={turnstileDevBypassEnabled}
-                className="mt-2"
-              />
-            </div>
-
-            {returningError ? <p className="mt-3 text-sm text-rose-600">{returningError}</p> : null}
-
-            <button
-              type="button"
-              onClick={() => {
-                setReturningTurnstileToken(null);
-                setReturningTurnstileResetKey((value) => value + 1);
-                setShowReturningCustomerModal(false);
-              }}
-              className={cn("mt-4 w-full", bookingOutlineButtonClassName)}
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      ) : null}
 
       {showStartOverConfirm ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--ccr-primary)]/65 p-4 backdrop-blur-sm">
@@ -4467,9 +3975,30 @@ export function PublicBookingWizard({
         </div>
       ) : null}
 
-      <Container className="mt-5 sm:hidden">
-        {bookingSupportHighlights}
-      </Container>
+      <div
+        className="fixed inset-x-0 bottom-0 z-40 border-t border-[var(--ccr-border)] bg-[var(--ccr-surface)]/95 px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 shadow-[0_-12px_40px_rgba(15,23,42,0.12)] backdrop-blur-md lg:hidden"
+        data-testid="booking-mobile-action-bar"
+      >
+        <div className="mx-auto flex max-w-3xl items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--ccr-muted)]">
+              {hideFallbackTotals || !hasSelectedVehicleId ? "Rental price" : `Total · ${rentalDays} day${rentalDays === 1 ? "" : "s"}`}
+            </p>
+            <p className="truncate text-lg font-bold text-[var(--ccr-text)]">
+              {hideFallbackTotals || !hasSelectedVehicleId ? "—" : formatJmd(amountDue)}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={primaryAction.onClick}
+            disabled={primaryAction.disabled}
+            className={cn("shrink-0 justify-center", bookingPrimaryButtonClassName)}
+            data-testid="booking-mobile-primary-action"
+          >
+            {primaryAction.label}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
