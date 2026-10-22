@@ -19,9 +19,7 @@ export type DraftRestoreOptions = {
 };
 
 export type DraftRestoreSecurityState = {
-  requiresDriversLicenseUpload: boolean;
   requiresSignatureUpload: boolean;
-  driversLicenseImageUrls: string[];
   signatureDataUrl: "";
   notice: string;
 };
@@ -110,9 +108,7 @@ export function restoreSelectionFieldsFromDraft(
 
 export function draftRestoreSecurityState(): DraftRestoreSecurityState {
   return {
-    requiresDriversLicenseUpload: false,
     requiresSignatureUpload: true,
-    driversLicenseImageUrls: [],
     signatureDataUrl: "",
     notice: DRAFT_RESTORE_SECURITY_NOTICE,
   };

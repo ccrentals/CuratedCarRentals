@@ -64,19 +64,19 @@ function BookingCheckoutContent() {
 
     async function startCheckout() {
       if (!bookingId) {
-        setErrorMessage("Missing booking reference. Return to Step 6 and try again.");
+        setErrorMessage("Missing booking reference. Return to your booking and try again.");
         setStarting(false);
         return;
       }
 
       if (!option) {
-        setErrorMessage("Missing payment option. Return to Step 6 and try again.");
+        setErrorMessage("Missing payment option. Return to your booking and try again.");
         setStarting(false);
         return;
       }
 
       if (option === "CUSTOM" && !customAmountCents) {
-        setErrorMessage("Custom payment amount is missing. Return to Step 6 and try again.");
+        setErrorMessage("Custom payment amount is missing. Return to your booking and try again.");
         setStarting(false);
         return;
       }
@@ -128,9 +128,9 @@ function BookingCheckoutContent() {
       <div className="mx-auto w-full max-w-2xl px-4 sm:px-6">
         <div className="rounded-3xl border border-[var(--ccr-border)] bg-[var(--ccr-surface)] p-6 shadow-lg md:p-8">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--ccr-muted)]">
-            Reservation Wizard
+            Curated Car Rentals
           </p>
-          <h1 className="mt-2 text-2xl font-bold text-[var(--ccr-text)]">Step 7: Secure Checkout</h1>
+          <h1 className="mt-2 text-2xl font-bold text-[var(--ccr-text)]">Secure Checkout</h1>
           <p className="mt-2 text-sm text-[var(--ccr-muted)]">
             We are preparing your secure hosted checkout.
           </p>

@@ -102,12 +102,10 @@ test("draft restore keeps the draft vehicle when there is no explicit vehicle ov
   assert.equal(restored.selectedVehicleId, "previous-vehicle");
 });
 
-test("draft restore security state keeps license upload optional and re-requires signature", () => {
+test("draft restore security state re-requires signature", () => {
   const security = draftRestoreSecurityState();
 
-  assert.equal(security.requiresDriversLicenseUpload, false);
   assert.equal(security.requiresSignatureUpload, true);
-  assert.deepEqual(security.driversLicenseImageUrls, []);
   assert.equal(security.signatureDataUrl, "");
   assert.match(security.notice, /Draft restored\./i);
 });

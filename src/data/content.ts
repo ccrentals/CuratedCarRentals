@@ -200,7 +200,7 @@ export const drivingTips: DrivingTip[] = [
 ];
 
 export const rentalPolicyRequirements = [
-  "Drivers must be 23 years or older to rent any vehicle.",
+  "Drivers must be 21 years or older to rent any vehicle.",
   "Driver's license must be at least 1 year old and in good standing.",
 ];
 
@@ -233,7 +233,7 @@ export const reservationOptions = {
 export const rentalFaqs = [
   {
     question: "What is the minimum age to rent a vehicle?",
-    answer: "Drivers must be 23 years or older to rent a vehicle from Curated Car Rentals.",
+    answer: "Drivers must be 21 years or older to rent a vehicle from Curated Car Rentals.",
   },
   {
     question: "How long must my driver's license have been valid?",
