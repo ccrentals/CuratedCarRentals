@@ -28,6 +28,31 @@ function allowRateLimit() {
   };
 }
 
+test("admin vehicle create API rejects oversized multipart bodies before parsing", async () => {
+  const response = await handleAdminVehiclePost(
+    new Request("http://localhost/api/admin/vehicles", {
+      method: "POST",
+      headers: {
+        "Content-Type": "multipart/form-data; boundary=vehicle-boundary",
+        "Content-Length": String(1024 * 1024 + 1),
+      },
+      body: "--vehicle-boundary--\r\n",
+    }),
+    {
+      authorize: async () => authorizedActor(),
+      requireCsrfCheck: async () => {
+        throw new Error("CSRF validation should not run for an oversized request");
+      },
+      connect: async () => {
+        throw new Error("Database should not be reached for an oversized request");
+      },
+    },
+  );
+
+  assert.equal(response.status, 413);
+  assert.deepEqual(await response.json(), { error: "Vehicle request is too large." });
+});
+
 test("admin vehicle create API defaults vehicles to private and stores gallery metadata", async () => {
   let storedFeatures: Record<string, unknown> | null = null;
 
