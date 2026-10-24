@@ -70,6 +70,7 @@ const PUBLIC_BOOKING_EMAIL_LIMIT = 3;
 const PUBLIC_BOOKING_EMAIL_WINDOW_SECONDS = 30 * 60;
 const PUBLIC_BOOKING_SUBMISSION_LIMIT = 6;
 const PUBLIC_BOOKING_SUBMISSION_WINDOW_SECONDS = 30 * 60;
+export const MINIMUM_DRIVER_AGE = 21;
 
 function privateImageFileName(documentType: "DRIVERS_LICENSE" | "SIGNATURE", index: number, mimeType: string) {
   const extension = mimeType.split("/")[1]?.replace(/[^a-z0-9]+/gi, "") || "png";
@@ -100,6 +101,27 @@ function parseOptionalDate(value: unknown) {
   const normalized = normalizeText(value);
   if (!normalized) return null;
   return isISODate(normalized) ? normalized : null;
+}
+
+function jamaicaCalendarDate(now = new Date()) {
+  const values = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Jamaica",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(values.find((value) => value.type === type)?.value ?? 0);
+
+  return { year: part("year"), month: part("month"), day: part("day") };
+}
+
+export function meetsMinimumDriverAge(birthday: string, now = new Date()) {
+  if (!isISODate(birthday)) return false;
+  const [year, month, day] = birthday.split("-").map(Number);
+  const today = jamaicaCalendarDate(now);
+  const age = today.year - year - (today.month < month || (today.month === month && today.day < day) ? 1 : 0);
+  return age >= MINIMUM_DRIVER_AGE;
 }
 
 export function isValidBookingDateTimeWindow(input: {
@@ -185,6 +207,7 @@ export async function POST(request: Request) {
     body?.customerProfile && typeof body.customerProfile === "object"
       ? (body.customerProfile as Record<string, unknown>)
       : null;
+  const birthday = parseOptionalDate(customerProfile?.birthday);
   const legalIdType = normalizeLegalIdType(body?.legalIdType);
   const legalIdNumber = hasDriversLicenseNumber
     ? normalizeText(body?.legalIdNumber) || driversLicenseNumber
@@ -225,6 +248,15 @@ export async function POST(request: Request) {
   }
   if (!isISODate(startDate) || !isISODate(endDate)) {
     return NextResponse.json({ error: "Invalid dates" }, { status: 400 });
+  }
+  if (!birthday) {
+    return NextResponse.json({ error: "Valid date of birth is required" }, { status: 400 });
+  }
+  if (!meetsMinimumDriverAge(birthday)) {
+    return NextResponse.json(
+      { error: `Drivers must be ${MINIMUM_DRIVER_AGE} years or older to rent a vehicle.` },
+      { status: 400 },
+    );
   }
   if (hasDriversLicenseNumber && !legalIdType) {
     return NextResponse.json({ error: "Valid legalIdType is required" }, { status: 400 });
@@ -584,7 +616,7 @@ export async function POST(request: Request) {
     const lastName =
       normalizeText(customerProfile?.lastName) ||
       fullName.split(/\s+/).slice(1).join(" ");
-    const profileBirthday = parseOptionalDate(customerProfile?.birthday);
+    const profileBirthday = birthday;
     const street = normalizeText(customerProfile?.street);
     const street2 = normalizeText(customerProfile?.street2);
     const city = normalizeText(customerProfile?.city);

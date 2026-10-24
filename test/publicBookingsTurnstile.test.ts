@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   isValidBookingDateTimeWindow,
+  meetsMinimumDriverAge,
   POST as postPublicBooking,
 } from "@/app/api/public/bookings/implementation";
 import { MAX_BOOKING_PRIVATE_IMAGE_BYTES } from "@/lib/bookings/privateFiles";
@@ -34,6 +35,58 @@ test("public bookings date window allows same-day rentals when return time is la
     }),
     false,
   );
+});
+
+test("minimum driver age is calculated using Jamaica's calendar date", () => {
+  const dayBeforeBirthdayInJamaica = new Date("2026-10-24T04:00:00.000Z");
+  const birthdayInJamaica = new Date("2026-10-24T05:00:00.000Z");
+
+  assert.equal(meetsMinimumDriverAge("2005-10-24", dayBeforeBirthdayInJamaica), false);
+  assert.equal(meetsMinimumDriverAge("2005-10-24", birthdayInJamaica), true);
+});
+
+test("public bookings API rejects drivers younger than 21 after Turnstile passes", { concurrency: false }, async () => {
+  const originalNodeEnv = process.env.NODE_ENV;
+  const originalSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+  const originalSecret = process.env.TURNSTILE_SECRET_KEY;
+  const originalFetch = globalThis.fetch;
+
+  try {
+    setEnv("NODE_ENV", "production");
+    setEnv("NEXT_PUBLIC_TURNSTILE_SITE_KEY", "site-key");
+    setEnv("TURNSTILE_SECRET_KEY", "secret-key");
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ success: true, action: "public_booking" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })) as typeof fetch;
+
+    const response = await postPublicBooking(
+      new Request("http://localhost/api/public/bookings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          vehicleId: "11111111-1111-4111-8111-111111111111",
+          turnstileToken: "valid-token",
+          fullName: "Test Customer",
+          email: "test@example.com",
+          phone: "1234567",
+          startDate: "2026-10-25",
+          endDate: "2026-10-27",
+          customerProfile: { birthday: "2020-01-01" },
+        }),
+      }),
+    );
+
+    assert.equal(response.status, 400);
+    const body = (await response.json()) as { error?: string };
+    assert.equal(body.error, "Drivers must be 21 years or older to rent a vehicle.");
+  } finally {
+    setEnv("NODE_ENV", originalNodeEnv);
+    setEnv("NEXT_PUBLIC_TURNSTILE_SITE_KEY", originalSiteKey);
+    setEnv("TURNSTILE_SECRET_KEY", originalSecret);
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("public bookings API blocks missing turnstile token", { concurrency: false }, async () => {
@@ -188,6 +241,7 @@ test("public bookings API requires a submission key once turnstile passes", { co
           fullName: "Test Customer",
           email: "test@example.com",
           phone: "1234567",
+          customerProfile: { birthday: "1990-01-01" },
           startDate: "2026-03-20",
           endDate: "2026-03-21",
           pickupLocation: "Kingston",
@@ -238,6 +292,7 @@ test("public bookings API rejects non-image signature payloads once turnstile pa
           fullName: "Test Customer",
           email: "test@example.com",
           phone: "1234567",
+          customerProfile: { birthday: "1990-01-01" },
           startDate: "2026-04-01",
           endDate: "2026-04-03",
           pickupLocation: "Kingston",
@@ -292,6 +347,7 @@ test("public bookings API rejects oversized driver's license payloads once turns
           fullName: "Test Customer",
           email: "test@example.com",
           phone: "1234567",
+          customerProfile: { birthday: "1990-01-01" },
           startDate: "2026-04-01",
           endDate: "2026-04-03",
           pickupLocation: "Kingston",
